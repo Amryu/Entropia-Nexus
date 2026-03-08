@@ -108,7 +108,7 @@
       case 'consumable':
         return getTypeLink(name, 'Consumable');
       case 'healingtool':
-        return getTypeLink(name, 'MedicalTool');
+        return getTypeLink(name, medicalChips.some(c => c.Name === name) ? 'MedicalChip' : 'MedicalTool');
       default:
         return null;
     }
@@ -147,6 +147,7 @@
   let clothing = [];
   let pets = [];
   let medicalTools = [];
+  let medicalChips = [];
   let stimulants = [];
   let effectsCatalog = [];
   let effectCaps = {};
@@ -484,6 +485,7 @@
     clothing = (entities.clothings || []).sort(alphabeticalSort);
     pets = (entities.pets || []).sort(alphabeticalSort);
     medicalTools = (entities.medicalTools || []).sort(alphabeticalSort);
+    medicalChips = (entities.medicalChips || []).sort(alphabeticalSort);
     stimulants = (entities.consumables || []).sort(alphabeticalSort);
     entitiesVersion += 1;
     if (loadout) {
@@ -507,6 +509,36 @@
   $: selectedConsumables = effectiveLoadoutData?.Gear?.Consumables || [];
   $: leftRing = effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Left') : null;
   $: rightRing = effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Right') : null;
+  $: selectedHealingIsChip = !!effectiveLoadoutData?.Gear?.Healing?.Name
+    && medicalChips.some(c => c.Name === effectiveLoadoutData.Gear.Healing.Name);
+  $: nonActiveHotBonuses = (() => {
+    if (!loadout?.Sets?.Healing || loadout.Sets.Healing.length <= 1) return [];
+    const activeIdx = activeSetIndices.Healing;
+    const bonuses = [];
+    for (let i = 0; i < loadout.Sets.Healing.length; i++) {
+      if (i === activeIdx) continue;
+      const setEntry = loadout.Sets.Healing[i];
+      const healName = setEntry.gear?.Name;
+      if (!healName) continue;
+      const chip = medicalChips.find(c => c.Name === healName);
+      if (!chip) continue;
+      const hotEffect = chip.EffectsOnUse?.find(e => e.Name === 'Heal Over Time');
+      if (!hotEffect) continue;
+      const effHeal = ((chip.Properties.MaxHeal ?? 0) + (chip.Properties.MinHeal ?? chip.Properties.MaxHeal ?? 0)) / 2;
+      const hotPct = Number(hotEffect.Values?.Strength ?? hotEffect.Strength ?? 0);
+      const hotDuration = Number(hotEffect.DurationSeconds ?? hotEffect.Values?.DurationSeconds ?? 0);
+      const cooldown = chip.Properties.Mindforce?.Cooldown ?? (chip.Properties.UsesPerMinute ? 60 / chip.Properties.UsesPerMinute : 0);
+      if (hotDuration <= 0 || hotPct <= 0) continue;
+      const hotHeal = hotPct >= 100 ? effHeal * 1.5 : effHeal * hotPct / 100;
+      const healMult = stats.healMultiplier ?? 1;
+      const hotHPS = (hotHeal * healMult) / hotDuration;
+      const mainHPS = stats.hps ?? 0;
+      const overhead = 0.5;
+      const lostHPS = cooldown > 0 ? mainHPS * overhead / cooldown : 0;
+      bonuses.push({ name: healName, hotHPS, lostHPS, netHPS: hotHPS - lostHPS, cooldown, setIndex: i });
+    }
+    return bonuses;
+  })();
   $: activePet = effectiveLoadoutData?.Gear?.Pet?.Name
     ? pets.find(pet => pet.Name === effectiveLoadoutData.Gear.Pet.Name)
     : null;
@@ -537,7 +569,8 @@
             clothing,
             pets,
             stimulants,
-            medicalTools
+            medicalTools,
+            medicalChips
           },
           { effectsCatalog, effectCaps, isLimitedName }
         )
@@ -591,7 +624,8 @@
       clothing,
       pets,
       stimulants,
-      medicalTools
+      medicalTools,
+      medicalChips
     };
   }
 
@@ -3361,24 +3395,28 @@
     }
 
     if (kind === 'healingtool') {
+      const allHealingItems = [...medicalTools, ...medicalChips].sort(alphabeticalSort);
+      const mapHealingItem = item => ({
+        name: item.Name,
+        type: medicalChips.some(c => c.Name === item.Name) ? 'Chip' : 'Tool',
+        maxHeal: item.Properties?.MaxHeal != null ? item.Properties.MaxHeal.toFixed(1) : 'N/A',
+        minHeal: item.Properties?.MinHeal != null ? item.Properties.MinHeal.toFixed(1) : 'N/A',
+        upm: item.Properties?.UsesPerMinute != null ? item.Properties.UsesPerMinute.toFixed(1) : 'N/A',
+        decay: item.Properties?.Economy?.Decay != null ? `${item.Properties.Economy.Decay.toFixed(4)}` : 'N/A',
+        efficiency: item.Properties?.Economy?.Efficiency != null ? `${item.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'
+      });
       return {
-        title: 'Select Healing Tool',
+        title: 'Select Healing Item',
         columns: finalizePickerColumns(kind, [
           { key: 'name', header: 'Name', main: true },
+          { key: 'type', header: 'Type', width: '55px' },
           { key: 'maxHeal', header: 'Max Heal', width: '80px' },
           { key: 'minHeal', header: 'Min Heal', width: '80px' },
           { key: 'upm', header: 'Uses/min', width: '80px' },
           { key: 'decay', header: 'Decay', width: '80px' },
           { key: 'efficiency', header: 'Efficiency', width: '90px' }
         ]),
-        rows: buildPickerRows(medicalTools, item => ({
-          name: item.Name,
-          maxHeal: item.Properties?.MaxHeal != null ? item.Properties.MaxHeal.toFixed(1) : 'N/A',
-          minHeal: item.Properties?.MinHeal != null ? item.Properties.MinHeal.toFixed(1) : 'N/A',
-          upm: item.Properties?.UsesPerMinute != null ? item.Properties.UsesPerMinute.toFixed(1) : 'N/A',
-          decay: item.Properties?.Economy?.Decay != null ? `${item.Properties.Economy.Decay.toFixed(4)}` : 'N/A',
-          efficiency: item.Properties?.Economy?.Efficiency != null ? `${item.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'
-        }))
+        rows: buildPickerRows(allHealingItems, mapHealingItem)
       };
     }
 
@@ -4224,14 +4262,34 @@
             <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
-            <h4 class="section-title">Healing</h4>
+            <h4 class="section-title">Healing{stats.healMultiplier != null && Math.abs(stats.healMultiplier - 1) > 0.001 ? ` (${stats.healMultiplier > 1 ? '+' : ''}${((stats.healMultiplier - 1) * 100).toFixed(1)}%)` : ''}</h4>
             <div class="stat-row"><span class="stat-label">Total Heal</span><span class="stat-value">{stats.totalHeal != null ? stats.totalHeal.toFixed(1) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Effective Heal</span><span class="stat-value">{stats.effectiveHeal != null ? stats.effectiveHeal.toFixed(2) : 'N/A'}</span></div>
+            {#if stats.hotBreakdown}
+              <div class="stat-row"><span class="stat-label">Instant Heal</span><span class="stat-value">{stats.hotBreakdown.instantHeal.toFixed(2)}</span></div>
+              <div class="stat-row"><span class="stat-label">HoT Heal</span><span class="stat-value">{stats.hotBreakdown.hotHeal.toFixed(2)} / {stats.hotBreakdown.hotDuration}s</span></div>
+            {/if}
             <div class="stat-row"><span class="stat-label">Heal Interval</span><span class="stat-value">{stats.healInterval != null ? `${stats.healInterval.min.toFixed(1)} - ${stats.healInterval.max.toFixed(1)}` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Reload</span><span class="stat-value">{stats.healReload != null ? `${stats.healReload.toFixed(2)}s` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Uses/min</span><span class="stat-value">{stats.healReload != null ? `${clampDecimals(60 / stats.healReload, 0, 2)}` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{stats.healDecay != null ? `${stats.healDecay.toFixed(4)} PEC` : 'N/A'}</span></div>
+            {#if stats.healAmmoBurn != null}
+              <div class="stat-row"><span class="stat-label">Ammo Burn</span><span class="stat-value">{Math.round(stats.healAmmoBurn)}</span></div>
+              <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">{stats.healCost != null ? `${stats.healCost.toFixed(4)} PEC` : 'N/A'}</span></div>
+            {/if}
             <div class="stat-row"><span class="stat-label">HPS</span><span class="stat-value">{stats.hps != null ? stats.hps.toFixed(4) : 'N/A'}</span></div>
+            {#if stats.hotBreakdown}
+              <div class="stat-row"><span class="stat-label">HoT HPS</span><span class="stat-value">{stats.hotBreakdown.hotHPS.toFixed(4)}</span></div>
+            {/if}
+            {#if stats.lifestealHPS != null}
+              <div class="stat-row"><span class="stat-label">Lifesteal HPS</span><span class="stat-value">{stats.lifestealHPS.toFixed(4)}</span></div>
+            {/if}
+            {#each nonActiveHotBonuses as bonus}
+              <div class="stat-row stat-row-accent"><span class="stat-label">HoT Bonus</span><span class="stat-value" title="{bonus.name} (every {bonus.cooldown}s, 0.5s overhead)">+{bonus.netHPS.toFixed(4)} HPS</span></div>
+            {/each}
+            {#if stats.lifestealHPS != null || nonActiveHotBonuses.length > 0}
+              <div class="stat-row stat-row-total"><span class="stat-label">Total HPS</span><span class="stat-value">{((stats.hps ?? 0) + (stats.lifestealHPS ?? 0) + nonActiveHotBonuses.reduce((sum, b) => sum + Math.max(0, b.netHPS), 0)).toFixed(4)}</span></div>
+            {/if}
             <div class="stat-row"><span class="stat-label">HPP</span><span class="stat-value">{stats.hpp != null ? stats.hpp.toFixed(4) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Heal Uses</span><span class="stat-value">{stats.healTotalUses != null ? stats.healTotalUses : 'N/A'}</span></div>
           </div>
@@ -4596,15 +4654,15 @@
         <DataSection title="Healing">
           <div class="panel-grid two-col">
             <div class="panel-block">
-              <h3 class="panel-title">Healing Tool</h3>
+              <h3 class="panel-title">Healing</h3>
               <div class="form-grid">
-                <div class="form-label">Healing Tool</div>
+                <div class="form-label">Healing Tool / Chip</div>
                 {#if sharedLoadoutData?.Gear?.Healing?.Name}
                   <a class="slot select-button read-only link-slot" href={getEquipmentLink('healingtool', sharedLoadoutData.Gear.Healing.Name)}>
                     {sharedLoadoutData.Gear.Healing.Name}
                   </a>
                 {:else}
-                  <div class="slot select-button read-only read-only-slot"><span class="placeholder-muted">No healing tool selected.</span></div>
+                  <div class="slot select-button read-only read-only-slot"><span class="placeholder-muted">No healing item selected.</span></div>
                 {/if}
                 {#if isLimitedName(sharedLoadoutData?.Gear?.Healing?.Name)}
                   <div class="form-label">Healing Tool MU</div>
@@ -4615,15 +4673,18 @@
                 {/if}
               </div>
             </div>
-            <div class="panel-block">
+            <div class="panel-block" class:disabled-panel={selectedHealingIsChip}>
               <h3 class="panel-title">Enhancers</h3>
+              {#if selectedHealingIsChip}
+                <div class="enhancer-chip-notice">Chips cannot use enhancers</div>
+              {/if}
               <div class="form-grid">
                 <div class="form-label">Heal</div>
-                <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.Heal ?? 0} />
+                <input class="read-only-field" type="number" readonly disabled={selectedHealingIsChip} value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.Heal ?? 0} />
                 <div class="form-label">Economy</div>
-                <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.Economy ?? 0} />
+                <input class="read-only-field" type="number" readonly disabled={selectedHealingIsChip} value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.Economy ?? 0} />
                 <div class="form-label">Skill Modification</div>
-                <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.SkillMod ?? 0} />
+                <input class="read-only-field" type="number" readonly disabled={selectedHealingIsChip} value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.SkillMod ?? 0} />
               </div>
             </div>
           </div>
@@ -5091,14 +5152,34 @@
             <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
-            <h4 class="section-title">Healing</h4>
+            <h4 class="section-title">Healing{stats.healMultiplier != null && Math.abs(stats.healMultiplier - 1) > 0.001 ? ` (${stats.healMultiplier > 1 ? '+' : ''}${((stats.healMultiplier - 1) * 100).toFixed(1)}%)` : ''}</h4>
             <div class="stat-row"><span class="stat-label">Total Heal</span><span class="stat-value">{stats.totalHeal != null ? stats.totalHeal.toFixed(1) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Effective Heal</span><span class="stat-value">{stats.effectiveHeal != null ? stats.effectiveHeal.toFixed(2) : 'N/A'}</span></div>
+            {#if stats.hotBreakdown}
+              <div class="stat-row"><span class="stat-label">Instant Heal</span><span class="stat-value">{stats.hotBreakdown.instantHeal.toFixed(2)}</span></div>
+              <div class="stat-row"><span class="stat-label">HoT Heal</span><span class="stat-value">{stats.hotBreakdown.hotHeal.toFixed(2)} / {stats.hotBreakdown.hotDuration}s</span></div>
+            {/if}
             <div class="stat-row"><span class="stat-label">Heal Interval</span><span class="stat-value">{stats.healInterval != null ? `${stats.healInterval.min.toFixed(1)} - ${stats.healInterval.max.toFixed(1)}` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Reload</span><span class="stat-value">{stats.healReload != null ? `${stats.healReload.toFixed(2)}s` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Uses/min</span><span class="stat-value">{stats.healReload != null ? `${clampDecimals(60 / stats.healReload, 0, 2)}` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{stats.healDecay != null ? `${stats.healDecay.toFixed(4)} PEC` : 'N/A'}</span></div>
+            {#if stats.healAmmoBurn != null}
+              <div class="stat-row"><span class="stat-label">Ammo Burn</span><span class="stat-value">{Math.round(stats.healAmmoBurn)}</span></div>
+              <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">{stats.healCost != null ? `${stats.healCost.toFixed(4)} PEC` : 'N/A'}</span></div>
+            {/if}
             <div class="stat-row"><span class="stat-label">HPS</span><span class="stat-value">{stats.hps != null ? stats.hps.toFixed(4) : 'N/A'}</span></div>
+            {#if stats.hotBreakdown}
+              <div class="stat-row"><span class="stat-label">HoT HPS</span><span class="stat-value">{stats.hotBreakdown.hotHPS.toFixed(4)}</span></div>
+            {/if}
+            {#if stats.lifestealHPS != null}
+              <div class="stat-row"><span class="stat-label">Lifesteal HPS</span><span class="stat-value">{stats.lifestealHPS.toFixed(4)}</span></div>
+            {/if}
+            {#each nonActiveHotBonuses as bonus}
+              <div class="stat-row stat-row-accent"><span class="stat-label">HoT Bonus</span><span class="stat-value" title="{bonus.name} (every {bonus.cooldown}s, 0.5s overhead)">+{bonus.netHPS.toFixed(4)} HPS</span></div>
+            {/each}
+            {#if stats.lifestealHPS != null || nonActiveHotBonuses.length > 0}
+              <div class="stat-row stat-row-total"><span class="stat-label">Total HPS</span><span class="stat-value">{((stats.hps ?? 0) + (stats.lifestealHPS ?? 0) + nonActiveHotBonuses.reduce((sum, b) => sum + Math.max(0, b.netHPS), 0)).toFixed(4)}</span></div>
+            {/if}
             <div class="stat-row"><span class="stat-label">HPP</span><span class="stat-value">{stats.hpp != null ? stats.hpp.toFixed(4) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Heal Uses</span><span class="stat-value">{stats.healTotalUses != null ? stats.healTotalUses : 'N/A'}</span></div>
           </div>
@@ -5673,15 +5754,15 @@
               {/if}
               <div class="panel-grid two-col">
                 <div class="panel-block">
-                  <h3 class="panel-title">Healing Tool</h3>
+                  <h3 class="panel-title">Healing</h3>
                   <div class="form-grid">
-                    <div class="form-label">Healing Tool</div>
+                    <div class="form-label">Healing Tool / Chip</div>
                     <div class="control-row">
                       <button class="slot select-button" on:contextmenu={e => clearSlot(e, 'healingtool')} on:click={() => openPicker('healingtool')}>
                         {#if loadout?.Gear?.Healing?.Name != null}
                           {loadout.Gear.Healing.Name}
                         {:else}
-                          <span class="placeholder-text">Select healing tool...</span>
+                          <span class="placeholder-text">Select healing item...</span>
                         {/if}
                       </button>
                     </div>
@@ -5694,8 +5775,11 @@
                     {/if}
                   </div>
                 </div>
-                <div class="panel-block">
+                <div class="panel-block" class:disabled-panel={selectedHealingIsChip}>
                   <h3 class="panel-title">Enhancers</h3>
+                  {#if selectedHealingIsChip}
+                    <div class="enhancer-chip-notice">Chips cannot use enhancers</div>
+                  {/if}
                   <div class="enhancer-grid">
                     <div class="enhancer-field">
                       <label>Heal</label>
@@ -5703,6 +5787,7 @@
                         type="number"
                         min="0"
                         max="10"
+                        disabled={selectedHealingIsChip}
                         bind:value={loadout.Gear.Healing.Enhancers.Heal}
                       />
                     </div>
@@ -5712,6 +5797,7 @@
                         type="number"
                         min="0"
                         max="10"
+                        disabled={selectedHealingIsChip}
                         bind:value={loadout.Gear.Healing.Enhancers.Economy}
                       />
                     </div>
@@ -5721,6 +5807,7 @@
                         type="number"
                         min="0"
                         max="10"
+                        disabled={selectedHealingIsChip}
                         bind:value={loadout.Gear.Healing.Enhancers.SkillMod}
                       />
                     </div>

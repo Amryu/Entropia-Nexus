@@ -540,18 +540,20 @@ class LoadoutPage(QWidget):
         vbox = QVBoxLayout()
         vbox.setSpacing(4)
 
-        self._heal_field = FuzzyLineEdit("Select healing tool...")
+        self._heal_field = FuzzyLineEdit("Select healing item...")
         self._heal_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Healing Tool", self._heal_field, "HealingTool",
+        self._heal_field.textChanged.connect(self._on_healing_changed)
+        vbox.addWidget(self._make_gear_row("Healing Tool / Chip", self._heal_field, "HealingTool",
                                               picker_kind="healing"))
 
         outer.addLayout(vbox)
 
         # Enhancers (wrapping grid)
         self._heal_enhancers: dict[str, QSpinBox] = {}
-        outer.addWidget(self._make_enhancer_group(
+        self._heal_enhancer_group = self._make_enhancer_group(
             "Enhancers", ["Heal", "Economy", "SkillMod"], self._heal_enhancers,
-        ))
+        )
+        outer.addWidget(self._heal_enhancer_group)
 
         outer.addStretch()
         self._editor_tabs.addTab(self._scrollable_tab(tab), "Healing")
@@ -768,8 +770,12 @@ class LoadoutPage(QWidget):
             "Decay", "Ammo Burn", "Weapon Cost", "Total Uses",
         ])
         heal_grp, self._heal_stats = _make_group("Healing", [
-            "Total Heal", "Effective Heal", "Heal Reload",
-            "HPS", "HPP", "Heal Total Uses",
+            "Total Heal", "Effective Heal",
+            "Instant Heal", "HoT Heal",
+            "Heal Reload",
+            "Heal Decay", "Heal Ammo Burn", "Heal Cost",
+            "HPS", "HoT HPS", "Lifesteal HPS", "Total HPS",
+            "HPP", "Heal Total Uses",
         ])
         def_grp, self._def_stats = _make_group("Defense", [
             "Armor Defense", "Plate Defense", "Total Defense",
@@ -1098,6 +1104,7 @@ class LoadoutPage(QWidget):
             enh = gear.get("Enhancers") or {}
             for k, spin in self._heal_enhancers.items():
                 spin.setValue(enh.get(k, 0))
+            self._on_healing_changed()
         elif section == "Accessories":
             self._clothing_items = list(gear.get("Clothing") or [])
             self._consumable_items = list(gear.get("Consumables") or [])
@@ -1125,6 +1132,23 @@ class LoadoutPage(QWidget):
     # ------------------------------------------------------------------
     # Weapon class → show/hide fields
     # ------------------------------------------------------------------
+
+    def _is_healing_chip(self, name: str | None = None) -> bool:
+        """Check whether the given (or currently selected) healing item is a medical chip."""
+        if name is None:
+            name = self._heal_field.current_value()
+        if not name:
+            return False
+        chips = self._entity_data.get("medical_chips", [])
+        return any(c.get("Name") == name for c in chips)
+
+    def _on_healing_changed(self, _text: str = ""):
+        if self._applying:
+            return
+        is_chip = self._is_healing_chip()
+        self._heal_enhancer_group.setEnabled(not is_chip)
+        for spin in self._heal_enhancers.values():
+            spin.setEnabled(not is_chip)
 
     def _on_weapon_changed(self, text: str):
         if self._applying:
@@ -1689,9 +1713,14 @@ class LoadoutPage(QWidget):
 
         # === Healing ===
         if kind == "healing":
-            items = self._entity_data.get("medical_tools", [])
+            chip_names = {it.get("Name", "") for it in self._entity_data.get("medical_chips", [])}
+            all_items = (
+                self._entity_data.get("medical_tools", [])
+                + self._entity_data.get("medical_chips", [])
+            )
+            all_items.sort(key=lambda x: (x.get("Name") or "").lower())
             rows = []
-            for it in items:
+            for it in all_items:
                 name = it.get("Name", "")
                 if not name:
                     continue
@@ -1703,6 +1732,7 @@ class LoadoutPage(QWidget):
                 rows.append({
                     "_name": name,
                     "Name": name,
+                    "Type": "Chip" if name in chip_names else "Tool",
                     "Max Heal": _fmt(max_heal, 1) if max_heal is not None else "",
                     "Min Heal": _fmt(min_heal, 1) if min_heal is not None else "",
                     "Uses/min": _fmt(upm, 1) if upm is not None else "",
@@ -1710,9 +1740,10 @@ class LoadoutPage(QWidget):
                     "Efficiency": f"{eff:.1f}%" if eff is not None else "",
                 })
             return {
-                "title": "Select Healing Tool",
+                "title": "Select Healing Item",
                 "columns": [
                     {"key": "Name", "header": "Name"},
+                    {"key": "Type", "header": "Type", "width": 55},
                     {"key": "Max Heal", "header": "Max Heal", "width": 80},
                     {"key": "Min Heal", "header": "Min Heal", "width": 80},
                     {"key": "Uses/min", "header": "Uses/min", "width": 80},
@@ -1796,6 +1827,7 @@ class LoadoutPage(QWidget):
                 "armor_platings": self._data_client.get_armor_platings(),
                 "enhancers": self._data_client.get_enhancers(),
                 "medical_tools": self._data_client.get_medical_tools(),
+                "medical_chips": self._data_client.get_medical_chips(),
                 "clothing": self._data_client.get_clothing(),
                 "pets": self._data_client.get_pets(),
                 "stimulants": self._data_client.get_stimulants(),
@@ -1829,7 +1861,10 @@ class LoadoutPage(QWidget):
                 "implants": _entity_names(self._entity_data.get("implants", [])),
                 "armor_sets": _entity_names(self._entity_data.get("armor_sets", [])),
                 "plates": _entity_names(self._entity_data.get("armor_platings", [])),
-                "heals": _entity_names(self._entity_data.get("medical_tools", [])),
+                "heals": sorted(set(
+                    _entity_names(self._entity_data.get("medical_tools", []))
+                    + _entity_names(self._entity_data.get("medical_chips", []))
+                )),
                 "pets": _entity_names(self._entity_data.get("pets", [])),
                 "rings_left": sorted({
                     item.get("Name", "") for item in all_clothing
@@ -2096,6 +2131,7 @@ class LoadoutPage(QWidget):
         self._heal_field.set_value(healing.get("Name") or "")
         for k, spin in self._heal_enhancers.items():
             spin.setValue((healing.get("Enhancers") or {}).get(k, 0))
+        self._on_healing_changed()
 
         # Settings
         for k, spin in self._skill_inputs.items():
@@ -2413,9 +2449,17 @@ class LoadoutPage(QWidget):
             # Healing
             "Total Heal": ("total_heal", "", None),
             "Effective Heal": ("effective_heal", "", None),
-            "HPS": ("hps", "", None),
-            "HPP": ("hpp", "", None),
+            "Instant Heal": ("_hot_instant", "", None),
+            "HoT Heal": ("_hot_heal", "", None),
             "Heal Reload": ("heal_reload", " s", None),
+            "Heal Decay": ("heal_decay", " PEC", "pec"),
+            "Heal Ammo Burn": ("heal_ammo_burn", "", "int"),
+            "Heal Cost": ("heal_cost", " PEC", "pec"),
+            "HPS": ("hps", "", None),
+            "HoT HPS": ("_hot_hps", "", None),
+            "Lifesteal HPS": ("lifesteal_hps", "", None),
+            "Total HPS": ("_total_hps", "", None),
+            "HPP": ("hpp", "", None),
             "Heal Total Uses": ("heal_total_uses", "", "int"),
             # Skill
             "Hit Ability": ("hit_ability", "/10.0", "hit"),
@@ -2445,13 +2489,30 @@ class LoadoutPage(QWidget):
             self._tier1_stats, self._off_stats, self._econ_stats,
             self._heal_stats, self._def_stats, self._skill_stats,
         )
+        # Compute derived HoT and total HPS values
+        hot = stats.hot_breakdown or {}
+        derived = {
+            "_hot_instant": hot.get("instantHeal"),
+            "_hot_heal": hot.get("hotHeal"),
+            "_hot_hps": hot.get("hotHPS"),
+            "_total_hps": None,
+        }
+        total_hps_parts = stats.hps or 0
+        if stats.lifesteal_hps:
+            total_hps_parts += stats.lifesteal_hps
+        if stats.lifesteal_hps or hot.get("hotHPS"):
+            derived["_total_hps"] = total_hps_parts
+
         for labels_dict in all_labels:
             for display_name, vlbl in labels_dict.items():
                 defn = STAT_DEFS.get(display_name)
                 if not defn:
                     continue
                 attr, suffix, fmt = defn
-                val = getattr(stats, attr, None)
+                if attr.startswith("_"):
+                    val = derived.get(attr)
+                else:
+                    val = getattr(stats, attr, None)
                 vlbl.setText(_fmt(val, suffix, fmt))
 
         try:

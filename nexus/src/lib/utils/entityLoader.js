@@ -253,6 +253,7 @@ export async function loadLoadoutEntities() {
     'pets',
     'clothings',
     'consumables',
-    'medicalTools'
+    'medicalTools',
+    'medicalChips'
   ]);
 }

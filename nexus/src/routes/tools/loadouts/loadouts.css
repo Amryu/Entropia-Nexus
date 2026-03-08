@@ -330,6 +330,26 @@
     text-align: right;
   }
 
+  & .stat-row-accent .stat-label,
+  & .stat-row-accent .stat-value {
+    color: var(--accent-color);
+    font-style: italic;
+  }
+
+  & .stat-row-total {
+    border-top: 1px solid var(--border-color);
+    margin-top: 2px;
+    padding-top: 4px;
+  }
+
+  & .stat-row-total .stat-label {
+    font-weight: 600;
+  }
+
+  & .stat-row-total .stat-value {
+    font-weight: 600;
+  }
+
   & .stats-empty {
     padding: 12px;
     text-align: center;
@@ -1291,6 +1311,19 @@
   & .enhancer-field input {
     width: 70px;
     padding: 4px 6px;
+  }
+
+  & .disabled-panel .enhancer-grid,
+  & .disabled-panel .form-grid {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  & .enhancer-chip-notice {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+    margin-bottom: 6px;
+    font-style: italic;
   }
 
   & .checkbox-row {

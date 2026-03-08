@@ -30,7 +30,8 @@ class LoadoutCalculator:
             entities: Dict of entity lists from DataClient:
                       {weapons, amplifiers, scopes_sights, absorbers,
                        implants, armors, armor_platings, armor_sets,
-                       clothing, pets, stimulants, medical_tools, effects}
+                       clothing, pets, stimulants, medical_tools,
+                       medical_chips, effects}
         """
         scopes_sights = entities.get("scopes_sights", [])
         amplifiers = entities.get("amplifiers", [])
@@ -51,6 +52,7 @@ class LoadoutCalculator:
             "pets": entities.get("pets", []),
             "stimulants": entities.get("stimulants", []),
             "medicalTools": entities.get("medical_tools", []),
+            "medicalChips": entities.get("medical_chips", []),
         }
 
         # Build options with effects catalog for proper effect capping
@@ -116,7 +118,14 @@ class LoadoutCalculator:
         stats.hps = js_stats.get("hps") or 0
         stats.hpp = js_stats.get("hpp") or 0
         stats.heal_reload = js_stats.get("healReload") or 0
+        stats.heal_decay = js_stats.get("healDecay") or 0
+        stats.heal_ammo_burn = js_stats.get("healAmmoBurn")
+        stats.heal_cost = js_stats.get("healCost")
         stats.heal_total_uses = js_stats.get("healTotalUses") or 0
+        stats.heal_multiplier = js_stats.get("healMultiplier") or 1.0
+        stats.hot_breakdown = js_stats.get("hotBreakdown")
+        stats.lifesteal_percent = js_stats.get("lifestealPercent") or 0
+        stats.lifesteal_hps = js_stats.get("lifestealHPS")
 
         # Effects data (for calculator overlay)
         stats.offensive_totals = result.get("offensiveTotals") or {}

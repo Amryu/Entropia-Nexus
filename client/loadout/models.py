@@ -47,7 +47,14 @@ class LoadoutStats:
     hps: float = 0
     hpp: float = 0
     heal_reload: float = 0
+    heal_decay: float = 0
+    heal_ammo_burn: float | None = None
+    heal_cost: float | None = None
     heal_total_uses: int = 0
+    heal_multiplier: float = 1.0
+    hot_breakdown: dict | None = None
+    lifesteal_percent: float = 0
+    lifesteal_hps: float | None = None
 
 
 def create_empty_loadout() -> dict:

@@ -287,7 +287,8 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
     clothing: context.clothing || [],
     pets: context.pets || [],
     stimulants: context.stimulants || [],
-    medicalTools: context.medicalTools || []
+    medicalTools: context.medicalTools || [],
+    medicalChips: context.medicalChips || []
   };
 
   const effectsCatalog = options.effectsCatalog || [];
@@ -302,8 +303,10 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
   const clothingEquipEffects = getClothingEquipEffects(loadout, entities.clothing);
   const clothingSetEffects = getClothingSetEffects(loadout, entities.clothing);
 
-  // Healing tool effects
-  const healingTool = findByName(entities.medicalTools, loadout?.Gear?.Healing?.Name);
+  // Healing tool effects (resolve from both medical tools and medical chips)
+  const healingName = loadout?.Gear?.Healing?.Name;
+  const healingTool = findByName(entities.medicalTools, healingName) || findByName(entities.medicalChips, healingName);
+  const healingIsChip = !!healingTool && !findByName(entities.medicalTools, healingName);
   const healingEquipEffects = healingTool?.EffectsOnEquip ?? [];
   const healingUseEffects = healingTool?.EffectsOnUse ?? [];
 
@@ -496,9 +499,10 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
   const plateMarkupCost = calcPlateMarkupCost(loadout, armorSlots, entities, isLimitedName);
 
   // ---------- Healing Stats ----------
-  const healEnhancers = loadout?.Gear?.Healing?.Enhancers?.Heal ?? 0;
-  const healEcoEnhancers = loadout?.Gear?.Healing?.Enhancers?.Economy ?? 0;
-  const healSkillModEnhancers = loadout?.Gear?.Healing?.Enhancers?.SkillMod ?? 0;
+  // Chips cannot use enhancers — force to 0
+  const healEnhancers = healingIsChip ? 0 : (loadout?.Gear?.Healing?.Enhancers?.Heal ?? 0);
+  const healEcoEnhancers = healingIsChip ? 0 : (loadout?.Gear?.Healing?.Enhancers?.Economy ?? 0);
+  const healSkillModEnhancers = healingIsChip ? 0 : (loadout?.Gear?.Healing?.Enhancers?.SkillMod ?? 0);
 
   const totalHeal = LoadoutCalc.calculateTotalHeal(healingTool, healEnhancers);
   const healInterval = LoadoutCalc.calculateHealInterval(
@@ -519,13 +523,36 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
     healEcoEnhancers,
     loadout?.Markup?.HealingTool ?? 100
   );
-  const hps = LoadoutCalc.calculateHPS(effectiveHeal, healReload);
-  const hpp = LoadoutCalc.calculateHPP(effectiveHeal, healDecay);
+  const healAmmoBurn = LoadoutCalc.calculateHealAmmoBurn(healingTool);
+  const healCost = LoadoutCalc.calculateHealCost(healDecay, healAmmoBurn);
   const healTotalUses = LoadoutCalc.calculateHealTotalUses(
     healingTool,
     healEnhancers,
     healEcoEnhancers
   );
+
+  // Heal multiplier from buffs (Healing Increased, Electrotherapy)
+  const healMultiplier = LoadoutCalc.calculateHealMultiplier(allEffects);
+  let amplifiedTotalHeal = totalHeal != null ? totalHeal * healMultiplier : null;
+  let amplifiedEffectiveHeal = effectiveHeal != null ? effectiveHeal * healMultiplier : null;
+
+  // HoT breakdown (uses amplified effective heal)
+  const hotBreakdown = LoadoutCalc.calculateHotBreakdown(healingTool, amplifiedEffectiveHeal);
+
+  // For HoT >= 100%, total heal per cycle is 1.5x (the HoT gives more than the base heal)
+  if (hotBreakdown && hotBreakdown.hotPercent >= 100) {
+    amplifiedTotalHeal = amplifiedTotalHeal != null ? amplifiedTotalHeal * 1.5 : null;
+    amplifiedEffectiveHeal = amplifiedEffectiveHeal != null ? amplifiedEffectiveHeal * 1.5 : null;
+  }
+
+  // HPS/HPP with amplified values
+  const hps = LoadoutCalc.calculateHPS(amplifiedEffectiveHeal, healReload);
+  const hpp = LoadoutCalc.calculateHPP(amplifiedEffectiveHeal, healCost ?? healDecay);
+
+  // Lifesteal HPS — also amplified by heal multiplier (and penalties)
+  const lifestealPercent = (allEffects.find(e => e?.name === 'Lifesteal Added')?.signedTotal) ?? 0;
+  const rawLifestealHPS = LoadoutCalc.calculateLifestealHPS(dps, allEffects);
+  const lifestealHPS = rawLifestealHPS != null ? rawLifestealHPS * healMultiplier : null;
 
   return {
     offensiveTotals,
@@ -568,14 +595,21 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
       lowestTotalUses,
       armorMarkupCost,
       plateMarkupCost,
-      totalHeal,
+      totalHeal: amplifiedTotalHeal,
       healInterval,
-      effectiveHeal,
+      effectiveHeal: amplifiedEffectiveHeal,
       healReload,
       healDecay,
+      healAmmoBurn,
+      healCost,
+      healingIsChip,
+      healMultiplier,
       hps,
       hpp,
-      healTotalUses
+      healTotalUses,
+      hotBreakdown,
+      lifestealPercent,
+      lifestealHPS
     }
   };
 }

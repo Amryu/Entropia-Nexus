@@ -876,7 +876,14 @@ export function calculateEffectiveHeal(healInterval) {
 }
 
 export function calculateHealReload(tool, healSkill, skillModEnhancers) {
-  if (tool == null || !tool.Properties || !tool.Properties.UsesPerMinute) return null;
+  if (tool == null || !tool.Properties) return null;
+
+  // Chips with Mindforce cooldown: use cooldown directly (no SIB scaling)
+  if (tool.Properties.Mindforce?.Cooldown) {
+    return tool.Properties.Mindforce.Cooldown;
+  }
+
+  if (!tool.Properties.UsesPerMinute) return null;
 
   const effectiveHealSkill = healSkill + (skillModEnhancers ?? 0) * 0.5;
 
@@ -918,6 +925,16 @@ export function calculateHPP(effectiveHeal, healDecay) {
     : null;
 }
 
+export function calculateHealAmmoBurn(tool) {
+  if (tool == null || tool.Properties?.Economy?.AmmoBurn == null) return null;
+  return tool.Properties.Economy.AmmoBurn;
+}
+
+export function calculateHealCost(healDecay, healAmmoBurn) {
+  if (healDecay == null) return null;
+  return healDecay + (healAmmoBurn ?? 0) / 100;
+}
+
 export function calculateHealTotalUses(tool, healEnhancers, economyEnhancers) {
   if (tool == null) return null;
   const maxTT = tool.Properties?.Economy?.MaxTT ?? null;
@@ -926,4 +943,59 @@ export function calculateHealTotalUses(tool, healEnhancers, economyEnhancers) {
   if (maxTT == null || baseDecay == null) return null;
   const decay = baseDecay * (1 + (healEnhancers ?? 0) * 0.1) * (1 - (economyEnhancers ?? 0) * 0.01111);
   return Math.floor((maxTT - minTT) / (decay / 100));
+}
+
+export function calculateHotBreakdown(tool, effectiveHeal) {
+  if (tool == null || effectiveHeal == null) return null;
+  const hotEffect = tool.EffectsOnUse?.find(e => e.Name === 'Heal Over Time');
+  if (!hotEffect) return null;
+
+  const hotPercent = Number(hotEffect.Values?.Strength ?? hotEffect.Strength ?? 0);
+  const hotDuration = Number(hotEffect.DurationSeconds ?? hotEffect.Values?.DurationSeconds ?? 0);
+  if (hotPercent <= 0 || hotDuration <= 0) return null;
+
+  let instantHeal, hotHeal;
+  if (hotPercent >= 100) {
+    // Above 100%: no instant heal, HoT is 150% of the base heal
+    instantHeal = 0;
+    hotHeal = effectiveHeal * 1.5;
+  } else {
+    instantHeal = effectiveHeal * (1 - hotPercent / 100);
+    hotHeal = effectiveHeal * (hotPercent / 100);
+  }
+
+  return {
+    hotPercent,
+    hotDuration,
+    instantHeal,
+    hotHeal,
+    hotHPS: hotHeal / hotDuration
+  };
+}
+
+export function calculateHealMultiplier(allEffects) {
+  if (!Array.isArray(allEffects)) return 1;
+  // "Healing Increased"/"Healing Decreased" are prefix-summarized (base: "Healing", type: "mult")
+  // signedTotal can be negative if Healing Decreased outweighs Increased
+  const healingEffect = allEffects.find(e =>
+    e?.prefix?.type === 'mult' && e?.prefix?.base === 'Healing'
+  );
+  const healingPct = healingEffect?.signedTotal ?? 0;
+
+  // "Electrotherapy" is a standalone effect (no suffix rule)
+  const electroEffect = allEffects.find(e => e?.name === 'Electrotherapy');
+  const electroPct = electroEffect?.signedTotal ?? 0;
+
+  if (Math.abs(healingPct) < 0.0001 && Math.abs(electroPct) < 0.0001) return 1;
+
+  // Multiplicative stacking (this might be wrong — could be additive instead)
+  return (1 + healingPct / 100) * (1 + electroPct / 100);
+}
+
+export function calculateLifestealHPS(dps, allEffects) {
+  if (dps == null || dps <= 0 || !Array.isArray(allEffects)) return null;
+  const lifestealEffect = allEffects.find(e => e?.name === 'Lifesteal Added');
+  const lifestealPct = lifestealEffect?.signedTotal ?? 0;
+  if (lifestealPct <= 0) return null;
+  return dps * lifestealPct / 100;
 }
