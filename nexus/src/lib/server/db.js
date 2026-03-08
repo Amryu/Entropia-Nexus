@@ -4957,7 +4957,7 @@ function mpsCacheSet(key, data) {
 /** Invalidate cache entries for a specific item (called after finalization). */
 export function invalidateMarketPriceCache(itemId) {
   for (const key of mpsCache.keys()) {
-    if (key.startsWith(`mps:${itemId}:`) || key.startsWith('mps-latest:') || key === 'mps-all') {
+    if (key.startsWith(`mps:${itemId}:`) || key.startsWith('mps-latest:') || key.startsWith('mps-name:') || key === 'mps-all') {
       mpsCache.delete(key);
     }
   }

@@ -56,6 +56,13 @@ if (import.meta.env.SSR) {
     syncSteamNews().catch(err => console.error('[news-sync] Error syncing Steam news:', err));
   }, STEAM_SYNC_INTERVAL_MS).unref();
 
+  // Periodically finalize pending market price submissions
+  const { maybeRunMarketFinalization } = await import('$lib/server/ingestion.js');
+  const MARKET_FINALIZATION_INTERVAL_MS = 5 * 60_000; // 5 minutes
+  setInterval(() => {
+    maybeRunMarketFinalization();
+  }, MARKET_FINALIZATION_INTERVAL_MS).unref();
+
   // Initialize mob/maturity resolver for global event ingestion (hourly refresh)
   const { initMobResolver } = await import('$lib/server/mobResolver.js');
   initMobResolver().catch(err => console.error('[mobResolver] Error initializing mob resolver:', err));

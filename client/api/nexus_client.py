@@ -850,12 +850,9 @@ class NexusClient:
     def get_ingame_prices(self) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?all=true — fetch latest market price snapshots."""
         try:
-            headers = self._auth_headers("get ingame prices")
-            if headers is None:
-                return None
             resp = self._session.get(
                 self._url("/market/prices/snapshots/latest"),
-                headers=headers,
+                headers=self._headers(),
                 params={"all": "true"},
                 timeout=15,
             )
@@ -868,12 +865,9 @@ class NexusClient:
     def get_item_market_prices(self, item_id: int) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?itemIds={item_id} — latest snapshot for one item."""
         try:
-            headers = self._auth_headers("get item market prices")
-            if headers is None:
-                return None
             resp = self._session.get(
                 self._url("/market/prices/snapshots/latest"),
-                headers=headers,
+                headers=self._headers(),
                 params={"itemIds": str(item_id)},
                 timeout=10,
             )
@@ -886,12 +880,9 @@ class NexusClient:
     def get_item_market_prices_by_name(self, name: str) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?name={name} — latest snapshot by item name."""
         try:
-            headers = self._auth_headers("get item market prices by name")
-            if headers is None:
-                return None
             resp = self._session.get(
                 self._url("/market/prices/snapshots/latest"),
-                headers=headers,
+                headers=self._headers(),
                 params={"name": name},
                 timeout=10,
             )
@@ -906,14 +897,11 @@ class NexusClient:
     def get_item_market_price_history(self, item_id: int, days: int = 30) -> list[dict] | None:
         """GET /api/market/prices/snapshots/{item_id} — price history for one item."""
         try:
-            headers = self._auth_headers("get item market price history")
-            if headers is None:
-                return None
             from datetime import datetime, timedelta, timezone
             from_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
             resp = self._session.get(
                 self._url(f"/market/prices/snapshots/{item_id}"),
-                headers=headers,
+                headers=self._headers(),
                 params={"from": from_date, "limit": "750"},
                 timeout=15,
             )
