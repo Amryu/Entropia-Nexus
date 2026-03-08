@@ -71,6 +71,9 @@ export async function execute(interaction) {
   }
 
   await promptModeratorForConfirmation(interaction, async () => {
+    // Fetch the entity BEFORE applying changes so reward matching can diff against pre-change state
+    const preChangeEntity = await fetchEntityForReward(change);
+
     if (!(await applyChange(change))) {
       await thread.send('An error occurred while applying the changes. Please try again later.');
       return false;
@@ -81,7 +84,7 @@ export async function execute(interaction) {
     await thread.send('The changes were approved!');
 
     // Evaluate reward rules and auto-assign or prompt
-    const archived = await handleReward(interaction, thread, change);
+    const archived = await handleReward(interaction, thread, change, preChangeEntity);
     if (!archived) {
       await thread.setArchived(true);
     }
@@ -93,9 +96,9 @@ export async function execute(interaction) {
  * Evaluate matching reward rules and handle assignment.
  * Returns true if the thread will be archived by this function (deferred archive).
  */
-async function handleReward(interaction, thread, change) {
+async function handleReward(interaction, thread, change, preChangeEntity = null) {
   try {
-    const changedKeys = await getChangedDataKeys(change);
+    const changedKeys = await getChangedDataKeys(change, preChangeEntity);
     if (change.type === 'Update' && changedKeys.length === 0) {
       return false;
     }
@@ -401,13 +404,11 @@ async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, o
   });
 }
 
-async function getChangedDataKeys(change) {
-  if (!change?.data) return [];
-  if (change.type === 'Create') return Object.keys(change.data);
-  if (change.type !== 'Update') return [];
+async function fetchEntityForReward(change) {
+  if (!change?.data || change.type !== 'Update') return null;
 
   const rawChangeId = change.data.Id;
-  if (!Number.isFinite(Number(rawChangeId))) return [];
+  if (!Number.isFinite(Number(rawChangeId))) return null;
 
   const apartmentId = change.entity === 'Apartment'
     ? (Number(rawChangeId) > 300000 ? Number(rawChangeId) - 300000 : Number(rawChangeId))
@@ -415,9 +416,17 @@ async function getChangedDataKeys(change) {
   const fetchId = change.entity === 'Apartment' ? apartmentId : rawChangeId;
 
   const fetchUrl = `${process.env.API_URL}/${getEntityApiCollection(change.entity)}/${fetchId}`;
-  const entity = await fetch(fetchUrl)
+  return fetch(fetchUrl)
     .then(res => res.status === 404 ? Promise.resolve({}) : res.json())
     .catch(_ => null);
+}
+
+async function getChangedDataKeys(change, preChangeEntity = null) {
+  if (!change?.data) return [];
+  if (change.type === 'Create') return Object.keys(change.data);
+  if (change.type !== 'Update') return [];
+
+  const entity = preChangeEntity ?? await fetchEntityForReward(change);
   if (!entity) return [];
 
   const validatedEntity = JSON.parse(JSON.stringify(entity));
