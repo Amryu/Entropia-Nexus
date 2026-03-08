@@ -219,8 +219,21 @@ class IngestionUploader:
             if clean.get(key) == -1:
                 clean[key] = None
 
+        # Use OCR confidence (aggregated cell-reading quality) as the
+        # submission confidence, not the template match confidence.
+        # The server stores this as the authoritative quality metric.
+        if "ocr_confidence" in clean:
+            clean["confidence"] = clean.pop("ocr_confidence")
+
+        # Drop low-confidence scans — not worth sending to the server.
+        # Manually reviewed submissions bypass this since the user corrected them.
+        MIN_SUBMISSION_CONFIDENCE = 0.60
         now = datetime.now()
         is_reviewed = bool(clean.get("manually_reviewed"))
+        if not is_reviewed and clean.get("confidence", 0) < MIN_SUBMISSION_CONFIDENCE:
+            log.debug("Dropping low-confidence scan for '%s' (%.2f < %.2f)",
+                       name, clean.get("confidence", 0), MIN_SUBMISSION_CONFIDENCE)
+            return
         with self._lock:
             # 1hr dedup: skip if same item was buffered within the last hour.
             # Manually reviewed submissions always bypass dedup since they

@@ -179,11 +179,8 @@ def _handle_crash(report: str) -> None:
     # If we're on a background thread and Qt is available, schedule on main thread
     if _qt_app is not None:
         try:
-            from PyQt6.QtCore import QTimer, QMetaObject, Qt, Q_ARG
-            QMetaObject.invokeMethod(
-                _qt_app, lambda: _show_crash_dialog(report),
-                Qt.ConnectionType.QueuedConnection,
-            )
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: _show_crash_dialog(report))
             return
         except Exception:
             pass

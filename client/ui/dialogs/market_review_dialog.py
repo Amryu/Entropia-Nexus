@@ -59,6 +59,7 @@ class MarketReviewDialog(QDialog):
     reviewed = pyqtSignal(dict, dict, list)
     skipped = pyqtSignal(dict)
     config_changed = pyqtSignal()  # tutorial/never state changed — save config
+    _enqueue_requested = pyqtSignal(dict)  # thread-safe bridge → enqueue()
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
@@ -71,6 +72,7 @@ class MarketReviewDialog(QDialog):
         self.setMinimumWidth(440)
         self.setStyleSheet(f"QDialog {{ background-color: {SECONDARY}; }}")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        self._enqueue_requested.connect(self.enqueue)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)

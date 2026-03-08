@@ -383,14 +383,10 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         def _on_deauth(state):
             if state.authenticated:
                 return
-            event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, _on_deauth)
-            from PyQt6.QtCore import QMetaObject, Qt as QtNamespace
-            QMetaObject.invokeMethod(
-                main_window,
-                lambda: _show_splash_over_main(main_window, oauth, event_bus),
-                QtNamespace.ConnectionType.QueuedConnection,
-            )
-        event_bus.subscribe(EVENT_AUTH_STATE_CHANGED, _on_deauth)
+            signals.auth_state_changed.disconnect(_on_deauth)
+            _show_splash_over_main(main_window, oauth, event_bus)
+
+        signals.auth_state_changed.connect(_on_deauth)
         oauth.refresh_in_background()
     else:
         # Not authenticated — still re-emit so sidebar shows logged-out state
@@ -793,17 +789,11 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
                 review_dialog.config_changed.connect(_on_review_config_changed)
 
-                # Bridge event bus (background thread) → Qt main thread
-                from PyQt6.QtCore import QMetaObject, Qt as QtNamespace
-
-                def _on_review_event(review_request):
-                    QMetaObject.invokeMethod(
-                        review_dialog,
-                        lambda: review_dialog.enqueue(review_request),
-                        QtNamespace.ConnectionType.QueuedConnection,
-                    )
-
-                event_bus.subscribe(EVENT_MARKET_PRICE_REVIEW, _on_review_event)
+                # Bridge event bus (background thread) → Qt main thread via signal
+                event_bus.subscribe(
+                    EVENT_MARKET_PRICE_REVIEW,
+                    review_dialog._enqueue_requested.emit,
+                )
             except Exception as e:
                 log.warning("Market review dialog failed: %s", e)
 

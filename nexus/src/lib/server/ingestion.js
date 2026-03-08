@@ -1268,9 +1268,15 @@ export function validateMarketPrice(entry) {
   if (now - ts.getTime() > MAX_EVENT_AGE_MS) return 'Timestamp too old';
 
   // confidence: optional, number 0.0-1.0
+  // Minimum 0.60 required — low-confidence scans are too noisy to be useful.
+  // Manually reviewed submissions bypass the minimum (user corrected values).
+  const MIN_CONFIDENCE = 0.60;
   if (entry.confidence != null) {
     if (typeof entry.confidence !== 'number' || !Number.isFinite(entry.confidence)) return 'Invalid confidence';
     if (entry.confidence < 0 || entry.confidence > 1) return 'confidence out of range';
+  }
+  if (!entry.manually_reviewed && (entry.confidence ?? 0) < MIN_CONFIDENCE) {
+    return `Confidence too low (${(entry.confidence ?? 0).toFixed(2)} < ${MIN_CONFIDENCE})`;
   }
 
   // manually_reviewed: optional, array of field name strings
