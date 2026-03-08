@@ -19,12 +19,19 @@ CAPTURED_DIR = Path("./data/captured_templates")
 
 # Match thresholds for TM_CCOEFF_NORMED (penalizes both extra and missing).
 # STPK templates are matched at native 1x resolution against noise-cleaned
-# grayscale cells; 0.80 accommodates slight rendering differences.
-SKILL_THRESHOLD = 0.80
-RANK_THRESHOLD = 0.80
+# grayscale cells; 0.70 accommodates slight rendering differences.
+SKILL_THRESHOLD = 0.70
+RANK_THRESHOLD = 0.70
 
 # Binary threshold (must match preprocessor)
 BINARY_THRESHOLD = 110
+
+# Pre-normalization floor: suppress dim background text visible through the
+# semi-transparent game window.  Applied before cv2.normalize to prevent
+# amplification.  Orange text in grayscale is ~85+ (min orange: R=120 G~80
+# B~30 → ~86 via BGR2GRAY weights), so 75 safely preserves all game text
+# while aggressively filtering background bleed-through.
+BACKGROUND_FLOOR = 75
 
 # Minimum match score a NEW capture must achieve against its source cell
 # before it's saved to disk.  This prevents saving noisy or misaligned
@@ -62,21 +69,12 @@ MIN_SPLIT_MARGIN = 3     # minimum pixels on left side of split
 # already matches a digit well (>= this threshold), skip splitting.
 MIN_UNSPLIT_SCORE = 500
 
-# 0-vs-9 tiebreaker: max score margin to apply bridge-row heuristic.
-# Use asymmetric margins: wider for 0→9 (HDR glow shifts scores a lot)
-# but tighter for 9→0 (avoid overriding real 9s in non-HDR).
-ZERO_NINE_MAX_MARGIN_0TO9 = 100
-ZERO_NINE_MAX_MARGIN_9TO0 = 30
-# 5-vs-6 tiebreaker: max score margin to apply top-bar heuristic
-FIVE_SIX_MAX_MARGIN = 30
-# 0-vs-6 tiebreaker: only apply when scores are close
-ZERO_SIX_MAX_MARGIN = 30
-# 0-vs-6 tiebreaker: minimum middle-core intensity sum for digit '6'
-ZERO_SIX_CENTER_SUM_MIN = 80
-# 3-vs-8 tiebreaker: max score margin to apply left-side heuristic.
-# HDR glow fills left-side gaps of '3', making it match '8' closely;
-# use a wider margin than other tiebreakers to catch these cases.
-THREE_EIGHT_MAX_MARGIN = 100
+# Digit tiebreaker constants and heuristics live in skill_disambiguation.py.
+from .skill_disambiguation import (  # noqa: E402
+    normalize_blob as _normalize_blob,
+    disambiguate_zero_six as _disambiguate_zero_six,  # re-export for tests
+    apply_digit_tiebreakers,
+)
 
 
 class DigitMatcher:
@@ -173,6 +171,31 @@ def _extract_text_intensity(
     return intensity, int(np.sum(orange_mask)) > int(np.sum(white_mask))
 
 
+def _detect_orange(cell_rgb: np.ndarray) -> bool:
+    """Detect whether a BGR cell contains predominantly orange text."""
+    r = cell_rgb[:, :, 2].astype(np.int16)
+    g = cell_rgb[:, :, 1].astype(np.int16)
+    b = cell_rgb[:, :, 0].astype(np.int16)
+    br = np.maximum(np.maximum(r, g), b)
+    orange_count = int(np.sum(
+        (r > ORANGE_MIN_R) & (r > g) & (g > b)
+        & ((r - b) > ORANGE_MIN_DIFF) & (br > 60)
+    ))
+    return orange_count > 0
+
+
+def _orange_grayscale(cell_rgb: np.ndarray) -> np.ndarray:
+    """Extract R channel as grayscale for orange text — preserves anti-aliasing.
+
+    Unlike _extract_text_intensity (designed for 4-bit digit classification),
+    this returns the raw R channel which naturally preserves anti-aliased edges.
+    TM_CCOEFF_NORMED matching benefits from smooth edges that match the STPK
+    templates.  Background suppression is left to _match_against_index (floor +
+    normalize + threshold).
+    """
+    return cell_rgb[:, :, 2]  # BGR → R channel
+
+
 def _extract_text_intensity_gray(cell_gray: np.ndarray) -> np.ndarray:
     """Fallback: extract text intensity from grayscale only (no color info)."""
     out = cell_gray.copy()
@@ -196,78 +219,6 @@ def _find_blobs_4bit(
             blobs.append((start, col - 1))
             start = -1
     return blobs
-
-
-def _normalize_blob(
-    intensity_4bit: np.ndarray,
-    x0: int, x1: int,
-    text_top: int, text_h: int,
-    grid_w: int, grid_h: int,
-) -> np.ndarray:
-    """Right-align and bottom-align a blob into a grid_w x grid_h 4-bit grid."""
-    rows = min(text_h, grid_h)
-    y_end = min(text_top + rows, intensity_4bit.shape[0])
-    x_end = min(x1 + 1, intensity_4bit.shape[1])
-
-    region = intensity_4bit[text_top:y_end, x0:x_end]
-    content_mask = region > 0
-    if not content_mask.any():
-        return np.zeros((grid_h, grid_w), dtype=np.uint8)
-
-    row_has = np.any(content_mask, axis=1)
-    col_has = np.any(content_mask, axis=0)
-    ct = int(np.argmax(row_has))
-    cb = int(len(row_has) - 1 - np.argmax(row_has[::-1]))
-    cl = int(np.argmax(col_has))
-    cr = int(len(col_has) - 1 - np.argmax(col_has[::-1]))
-
-    content = region[ct:cb + 1, cl:cr + 1]
-    ch, cw = content.shape
-
-    # Right-align, bottom-align
-    gx = max(grid_w - cw, 0)
-    gy = max(grid_h - ch, 0)
-    ph = min(ch, grid_h - gy)
-    pw = min(cw, grid_w - gx)
-
-    grid = np.zeros((grid_h, grid_w), dtype=np.uint8)
-    grid[gy:gy + ph, gx:gx + pw] = content[:ph, :pw]
-    return grid
-
-
-def _disambiguate_zero_six(grid: np.ndarray) -> Optional[int]:
-    """Resolve an ambiguous 0/6 classification from a normalized digit grid.
-
-    Returns:
-        0 or 6 when enough shape information is present, else None.
-    """
-    content_cols = np.any(grid > 0, axis=0)
-    content_rows = np.any(grid > 0, axis=1)
-    if not content_cols.any() or not content_rows.any():
-        return None
-
-    col_l = int(np.argmax(content_cols))
-    col_r = int(len(content_cols) - 1 - np.argmax(content_cols[::-1]))
-    row_t = int(np.argmax(content_rows))
-    row_b = int(len(content_rows) - 1 - np.argmax(content_rows[::-1]))
-    cw = col_r - col_l + 1
-    ch = row_b - row_t + 1
-    if cw < 3 or ch < 5:
-        return None
-
-    # The center of '6' is denser than '0' because the upper bowl closes
-    # into a mid-band stroke; '0' keeps a clearer hollow center.
-    mid_row_start = row_t + ch // 3
-    mid_row_end = row_t + 2 * ch // 3
-    mid_col_start = col_l + cw // 3
-    mid_col_end = col_l + 2 * cw // 3
-    if mid_row_end < mid_row_start or mid_col_end < mid_col_start:
-        return None
-
-    center_sum = int(np.sum(
-        grid[mid_row_start:mid_row_end + 1, mid_col_start:mid_col_end + 1]
-    ))
-    return 6 if center_sum >= ZERO_SIX_CENTER_SUM_MIN else 0
 
 
 def _find_first_content(
@@ -438,19 +389,31 @@ class FontMatcher:
         """Return the pre-rendered template image for a skill name."""
         return self._skill_templates.get(name)
 
-    def best_skill_match(self, cell: np.ndarray) -> Optional[tuple[str, float]]:
+    def best_skill_match(self, cell: np.ndarray,
+                         cell_rgb: np.ndarray | None = None,
+                         ) -> Optional[tuple[str, float]]:
         """Return the best skill name match regardless of confidence threshold."""
         if not self._calibrated or not self._skill_width_index:
             return None
+        match_gray = cell
+        if cell_rgb is not None and len(cell_rgb.shape) == 3:
+            if _detect_orange(cell_rgb):
+                match_gray = _orange_grayscale(cell_rgb)
         return self._match_against_index(
-            cell, self._skill_width_index, threshold=-1.0)
+            match_gray, self._skill_width_index, threshold=-1.0)
 
-    def best_rank_match(self, cell: np.ndarray) -> Optional[tuple[str, float]]:
+    def best_rank_match(self, cell: np.ndarray,
+                        cell_rgb: np.ndarray | None = None,
+                        ) -> Optional[tuple[str, float]]:
         """Return the best rank match regardless of confidence threshold."""
         if not self._calibrated or not self._rank_width_index:
             return None
+        match_gray = cell
+        if cell_rgb is not None and len(cell_rgb.shape) == 3:
+            if _detect_orange(cell_rgb):
+                match_gray = _orange_grayscale(cell_rgb)
         return self._match_against_index(
-            cell, self._rank_width_index, threshold=-1.0)
+            match_gray, self._rank_width_index, threshold=-1.0)
 
     def calibrate(self, panel_height: int) -> None:
         """Set calibrated flag and compute text zone height.
@@ -856,12 +819,20 @@ class FontMatcher:
 
         return image[rmin:rmax + 1, cmin:cmax + 1]
 
-    def match_skill_name(self, cell_gray: np.ndarray, *, trace: bool = True) -> Optional[tuple[str, float]]:
+    def match_skill_name(self, cell_gray: np.ndarray,
+                         cell_rgb: np.ndarray | None = None,
+                         *, trace: bool = True) -> Optional[tuple[str, float]]:
         """Match a cell image against skill name templates.
 
         Tries exact pixel-match against captured game templates first (O(1)
         hash lookup).  Falls back to fuzzy template matching if no exact
         match is found.
+
+        Args:
+            cell_gray: (H, W) uint8 grayscale cell image.
+            cell_rgb:  (H, W, 3) uint8 BGR cell image (optional).
+                       When provided, orange text detection extracts the R
+                       channel for better matching of trained-skill rows.
 
         Returns:
             (skill_name, confidence) if matched, else None.
@@ -884,25 +855,41 @@ class FontMatcher:
         # Fall back to fuzzy template matching
         if not self._skill_width_index:
             return None
+
+        # For orange text, use R channel — preserves anti-aliased edges
+        # that standard grayscale conversion would wash out.
+        match_gray = cell_gray
+        if cell_rgb is not None and len(cell_rgb.shape) == 3:
+            if _detect_orange(cell_rgb):
+                match_gray = _orange_grayscale(cell_rgb)
+
         result = self._match_against_index(
-            cell_gray, self._skill_width_index, SKILL_THRESHOLD)
+            match_gray, self._skill_width_index, SKILL_THRESHOLD)
         if result:
             log.debug("match_skill: fuzzy → '%s' (score=%.3f)", result[0], result[1])
             if trace and self._tracer and self._tracer.enabled:
                 self._tracer.log("SKILL", f"fuzzy={result[0]}({result[1]:.2f})")
-                self._trace_match_image("skill", cell_gray, result[0], result[1])
+                self._trace_match_image("skill", match_gray, result[0], result[1])
         else:
             log.debug("match_skill: no match")
             if trace and self._tracer and self._tracer.enabled:
                 self._tracer.log("SKILL", "no_match")
-                self._tracer.save_image("skill_miss", cell_gray)
+                self._tracer.save_image("skill_miss", match_gray)
         return result
 
-    def match_rank(self, cell_gray: np.ndarray) -> Optional[tuple[str, float]]:
+    def match_rank(self, cell_gray: np.ndarray,
+                   cell_rgb: np.ndarray | None = None,
+                   ) -> Optional[tuple[str, float]]:
         """Match a cell image against rank name templates.
 
         Tries exact pixel-match against captured game templates first.
         Falls back to fuzzy template matching.
+
+        Args:
+            cell_gray: (H, W) uint8 grayscale cell image.
+            cell_rgb:  (H, W, 3) uint8 BGR cell image (optional).
+                       When provided, orange/white text detection extracts
+                       a better intensity image for selected (orange) rows.
 
         Returns:
             (rank_name, confidence) if matched, else None.
@@ -924,16 +911,40 @@ class FontMatcher:
         # Fall back to fuzzy template matching
         if not self._rank_width_index:
             return None
+
+        # For orange text, use R channel directly — preserves anti-aliased
+        # edges that _extract_text_intensity's binary masks would discard.
+        # TM_CCOEFF_NORMED needs smooth edges to match the STPK templates.
+        match_gray = cell_gray
+        if cell_rgb is not None and len(cell_rgb.shape) == 3:
+            if _detect_orange(cell_rgb):
+                match_gray = _orange_grayscale(cell_rgb)
+
         result = self._match_against_index(
-            cell_gray, self._rank_width_index, RANK_THRESHOLD)
+            match_gray, self._rank_width_index, RANK_THRESHOLD)
         if result:
             log.debug("match_rank: fuzzy → '%s' (score=%.3f)", result[0], result[1])
             if self._tracer and self._tracer.enabled:
                 self._tracer.log("RANK", f"fuzzy={result[0]}({result[1]:.2f})")
+                self._trace_match_image("rank", match_gray, result[0], result[1])
         else:
-            log.debug("match_rank: no match")
-            if self._tracer and self._tracer.enabled:
-                self._tracer.log("RANK", "no_match")
+            # Get the best candidate even though it's below threshold
+            best = self._match_against_index(
+                match_gray, self._rank_width_index, threshold=-1.0)
+            if best:
+                log.debug("match_rank: no match (best='%s' score=%.3f < %.2f)",
+                          best[0], best[1], RANK_THRESHOLD)
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log(
+                        "RANK",
+                        f"no_match best={best[0]}({best[1]:.2f})<{RANK_THRESHOLD}",
+                    )
+                    self._trace_match_image("rank_miss", match_gray, best[0], best[1])
+            else:
+                log.debug("match_rank: no match (no candidates)")
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("RANK", "no_match no_candidates")
+                    self._tracer.save_image("rank_miss", match_gray)
         return result
 
     def read_points(self, cell_gray: np.ndarray,
@@ -1015,145 +1026,9 @@ class FontMatcher:
                 "score": score, "scores": scores,
             })
 
-        # 0-vs-9 tiebreaker: '9' has a solid bridge row in its middle
-        # (where the loop closes into the tail) while '0' has a hollow center.
-        # Asymmetric margins: aggressive 0→9 (HDR), conservative 9→0.
-        for c in classified:
-            if c["digit"] not in (0, 9):
-                continue
-            margin = abs(c["scores"][0] - c["scores"][9])
-            max_margin = (ZERO_NINE_MAX_MARGIN_0TO9 if c["digit"] == 0
-                          else ZERO_NINE_MAX_MARGIN_9TO0)
-            if margin > max_margin:
-                continue
-
-            grid = _normalize_blob(
-                intensity_4bit, c["x0"], c["x1"],
-                text_top, text_h, grid_w, grid_h)
-
-            content_cols = np.any(grid > 0, axis=0)
-            if not content_cols.any():
-                continue
-            col_l = int(np.argmax(content_cols))
-            col_r = int(len(content_cols) - 1 - np.argmax(content_cols[::-1]))
-            cw = col_r - col_l + 1
-            if cw < 3:
-                continue
-
-            content_rows = np.any(grid > 0, axis=1)
-            row_t = int(np.argmax(content_rows))
-            row_b = int(len(content_rows) - 1 - np.argmax(content_rows[::-1]))
-            ch = row_b - row_t + 1
-            if ch < 5:
-                continue
-
-            mid_start = row_t + ch // 3
-            mid_end = row_t + 2 * ch // 3
-            has_bridge = False
-            for r in range(mid_start, mid_end + 1):
-                # Lenient check: >= 75% of row pixels non-zero (anti-aliasing
-                # can leave some zero pixels in non-HDR rendering).
-                row_pixels = grid[r, col_l:col_r + 1]
-                if np.count_nonzero(row_pixels) >= 0.75 * len(row_pixels):
-                    has_bridge = True
-                    break
-
-            if has_bridge and c["digit"] == 0:
-                log.debug("0→9 override: x%d-%d margin=%.1f bridge at row %d",
-                          c["x0"], c["x1"], margin, r)
-                c["digit"] = 9
-                c["score"] = c["scores"][9]
-            elif not has_bridge and c["digit"] == 9:
-                log.debug("9→0 override: x%d-%d margin=%.1f no bridge",
-                          c["x0"], c["x1"], margin)
-                c["digit"] = 0
-                c["score"] = c["scores"][0]
-
-        # 5-vs-6 tiebreaker: '5' has a flat top bar filling the top row(s)
-        # of the grid, while '6' has a curved top leaving the top row empty
-        # (content_h=9 vs 10, bottom-aligned → empty first row for 6).
-        for c in classified:
-            if c["digit"] not in (5, 6):
-                continue
-            margin = abs(c["scores"][5] - c["scores"][6])
-            if margin > FIVE_SIX_MAX_MARGIN:
-                continue
-
-            grid = _normalize_blob(
-                intensity_4bit, c["x0"], c["x1"],
-                text_top, text_h, grid_w, grid_h)
-
-            top_sum = int(np.sum(grid[0, :]))
-            if top_sum == 0 and c["digit"] == 5:
-                log.debug("5→6 override: x%d-%d margin=%.1f top_sum=%d",
-                          c["x0"], c["x1"], margin, top_sum)
-                c["digit"] = 6
-                c["score"] = c["scores"][6]
-            elif top_sum > 0 and c["digit"] == 6:
-                log.debug("6→5 override: x%d-%d margin=%.1f top_sum=%d",
-                          c["x0"], c["x1"], margin, top_sum)
-                c["digit"] = 5
-                c["score"] = c["scores"][5]
-
-        # 3-vs-8 tiebreaker: '8' has content on the left side of its upper
-        # half (closed loop), while '3' is open on the left throughout.
-        for c in classified:
-            if c["digit"] not in (3, 8):
-                continue
-            margin = abs(c["scores"][3] - c["scores"][8])
-            if margin > THREE_EIGHT_MAX_MARGIN:
-                continue
-
-            grid = _normalize_blob(
-                intensity_4bit, c["x0"], c["x1"],
-                text_top, text_h, grid_w, grid_h)
-
-            content_cols = np.any(grid > 0, axis=0)
-            content_rows = np.any(grid > 0, axis=1)
-            if not content_cols.any() or not content_rows.any():
-                continue
-            col_l = int(np.argmax(content_cols))
-            row_t = int(np.argmax(content_rows))
-            row_b = int(len(content_rows) - 1 - np.argmax(content_rows[::-1]))
-            ch = row_b - row_t + 1
-            if ch < 5:
-                continue
-
-            # Check left column(s) in the upper third for content
-            upper_end = row_t + ch // 3
-            left_zone = grid[row_t:upper_end + 1, col_l:col_l + 2]
-            left_sum = int(np.sum(left_zone))
-
-            if left_sum > 0 and c["digit"] == 3:
-                log.debug("3→8 override: x%d-%d margin=%.1f left_sum=%d",
-                          c["x0"], c["x1"], margin, left_sum)
-                c["digit"] = 8
-                c["score"] = c["scores"][8]
-            elif left_sum == 0 and c["digit"] == 8:
-                log.debug("8→3 override: x%d-%d margin=%.1f left_sum=%d",
-                          c["x0"], c["x1"], margin, left_sum)
-                c["digit"] = 3
-                c["score"] = c["scores"][3]
-
-        # 0-vs-6 tiebreaker: use center-core density when scores are close.
-        for c in classified:
-            if c["digit"] not in (0, 6):
-                continue
-            margin = abs(c["scores"][0] - c["scores"][6])
-            if margin > ZERO_SIX_MAX_MARGIN:
-                continue
-
-            grid = _normalize_blob(
-                intensity_4bit, c["x0"], c["x1"],
-                text_top, text_h, grid_w, grid_h)
-            resolved = _disambiguate_zero_six(grid)
-            if resolved is None or resolved == c["digit"]:
-                continue
-
-            log.debug("0/6 override: x%d-%d margin=%.1f %d→%d",
-                      c["x0"], c["x1"], margin, c["digit"], resolved)
-            c["digit"] = resolved
-            c["score"] = c["scores"][resolved]
+        # Apply shared digit tiebreakers (0/9, 5/6, 3/8, 0/6)
+        apply_digit_tiebreakers(
+            classified, intensity_4bit, text_top, text_h, grid_w, grid_h)
 
         # Build output and log diagnostics
         num_str = ""
@@ -1311,10 +1186,18 @@ class FontMatcher:
                       "in cell %dx%d", cell_h, cell_w)
             return None
 
+        # Suppress dim background bleed-through before normalization.
+        # The semi-transparent game window lets background UI text show
+        # through at low brightness; normalize would amplify it above
+        # BINARY_THRESHOLD.  Zeroing below BACKGROUND_FLOOR prevents this
+        # while preserving orange text (grayscale ~85+).
+        cell_floor = cell_gray.copy()
+        cell_floor[cell_floor < BACKGROUND_FLOOR] = 0
+
         # Contrast normalization — stretches to full 0-255 range so
         # semi-transparent backgrounds with varying brightness don't
         # produce weak text that falls below the fixed threshold.
-        cell_norm = cv2.normalize(cell_gray, None, 0, 255,
+        cell_norm = cv2.normalize(cell_floor, None, 0, 255,
                                   cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
         # Suppress background noise before matching
