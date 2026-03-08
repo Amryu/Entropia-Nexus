@@ -788,7 +788,7 @@ class MarketPriceDetector:
     _TEXT_ALLOWED = set(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "0123456789"
-        "(),.-' "
+        "(),.-'! "
     )
 
     def _match_stpk_text(self, region: np.ndarray) -> tuple[str, float]:
@@ -980,6 +980,23 @@ class MarketPriceDetector:
                 blob_positions.append((x0, blobs[i + best_multi_span - 1][1]))
                 i += best_multi_span
                 continue
+
+            # Auto-detect baseline periods: narrow blobs (w≤2) with content
+            # only in the bottom 3 rows are periods.  These are too small to
+            # score well against STPK templates (period is 2px, blob can be 1px)
+            # but are unambiguous from their position.
+            if right_align and blob_w <= 2:
+                region_slice = intensity_4bit[text_top:text_top + text_h, x0:x1 + 1]
+                content_rows = np.any(region_slice > 0, axis=1)
+                if content_rows.any():
+                    first_content = int(np.argmax(content_rows))
+                    if first_content >= text_h - 3:
+                        result_chars.append(".")
+                        result_scores.append(0.9)
+                        all_entry_scores.append({".": 0.9})
+                        blob_positions.append((x0, x1))
+                        i += 1
+                        continue
 
             # Single-blob matching: use grid matching (4-bit soft overlap),
             # like the skill scanner's font_matcher. Grid matching is more

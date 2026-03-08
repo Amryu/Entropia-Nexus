@@ -53,3 +53,10 @@ client/.wsl-build-tmp.sh
 /dist/
 *.bak
 *.ps1
+
+# Development scripts and test data
+/scripts/
+client/market_price_examples/
+client/assets/stpk/*_preview.png
+client/assets/stpk/*.orig
+nexus-crash-*.txt

@@ -23,16 +23,23 @@ log = get_logger("MarketDisambiguation")
 # Margin constants
 # ---------------------------------------------------------------------------
 
-# Digit margins (market-specific, can differ from skill scanner)
-ZERO_NINE_MAX_MARGIN_0TO9 = 100
-ZERO_NINE_MAX_MARGIN_9TO0 = 30
-FIVE_SIX_MAX_MARGIN = 30
-THREE_EIGHT_MAX_MARGIN = 100
-ZERO_SIX_MAX_MARGIN = 30
+# Digit margins (market-specific — 0-1 normalized scores, NOT raw integers).
+# The skill scanner uses raw integer scores (margins 30-100); the market
+# detector uses _score_grid which returns normalized 0.0-1.0 floats.
+ZERO_NINE_MAX_MARGIN = 0.15
+FIVE_SIX_MAX_MARGIN = 0.15
+THREE_EIGHT_MAX_MARGIN = 0.20
+ZERO_SIX_MAX_MARGIN = 0.15
 ZERO_SIX_CENTER_SUM_MIN = 80
 
-# Text disambiguation margin (grid score difference)
+# Text disambiguation margin (grid score difference).
+# Default margin — tight enough to avoid false overrides.
 TEXT_DISAMBIGUATION_MARGIN = 0.15
+
+# Per-pair margin overrides for pairs that need wider tolerance.
+TEXT_MARGIN_OVERRIDES: dict[tuple[str, str], float] = {
+    ("C", "O"): 0.20,  # C/O scoring is close in many renderings
+}
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +312,8 @@ def disambiguate_c_o(grid: np.ndarray) -> Optional[str]:
 
     'O' is a closed loop — right side has content in the middle rows.
     'C' is open on the right — middle rows have no right-side content.
+    Uses a tight middle band (40%-60% of height) to avoid the C's
+    curve tips at the top/bottom of the middle third.
     """
     bounds = get_content_bounds(grid)
     if bounds is None:
@@ -315,14 +324,17 @@ def disambiguate_c_o(grid: np.ndarray) -> Optional[str]:
     if cw < 4 or ch < 5:
         return None
 
-    mid_start = row_t + ch // 3
-    mid_end = row_t + 2 * ch // 3
+    # Tight middle band avoids C's curve tips
+    mid_start = row_t + int(ch * 0.4)
+    mid_end = row_t + int(ch * 0.6)
+    if mid_end <= mid_start:
+        mid_end = mid_start + 1
     right_mid = grid[mid_start:mid_end + 1, col_r - 1:col_r + 1]
     right_mid_sum = int(np.sum(right_mid))
 
-    if right_mid_sum > 25:
+    if right_mid_sum > 15:
         return "O"
-    if right_mid_sum < 10:
+    if right_mid_sum < 5:
         return "C"
     return None
 
@@ -349,6 +361,117 @@ def disambiguate_d_c(grid: np.ndarray) -> Optional[str]:
     if left_coverage < 0.75:
         return "C"
     return None
+
+
+def disambiguate_l_i(grid: np.ndarray) -> Optional[str]:
+    """Resolve 'L' vs 'I' using bottom horizontal bar.
+
+    'L' has a horizontal bar at the bottom extending to the right.
+    'I' is a narrow vertical bar with no significant bottom extension.
+    """
+    bounds = get_content_bounds(grid)
+    if bounds is None:
+        return None
+    col_l, col_r, row_t, row_b = bounds
+    cw = col_r - col_l + 1
+    ch = row_b - row_t + 1
+    if ch < 5:
+        return None
+
+    # Check bottom 2 rows for horizontal extent
+    bottom = grid[row_b - 1:row_b + 1, col_l:col_r + 1]
+    bottom_cols = int(np.sum(np.any(bottom > 0, axis=0)))
+
+    # L's bottom bar spans most of the width; I's bottom is narrow
+    if bottom_cols >= cw * 0.6:
+        return "L"
+    if bottom_cols <= cw * 0.35:
+        return "I"
+    return None
+
+
+def disambiguate_g_c(grid: np.ndarray) -> Optional[str]:
+    """Resolve 'G' vs 'C' using right-side crossbar.
+
+    'G' has a horizontal crossbar extending inward from the right in
+    the lower half; 'C' is a simple arc with no inward protrusion.
+    """
+    bounds = get_content_bounds(grid)
+    if bounds is None:
+        return None
+    col_l, col_r, row_t, row_b = bounds
+    cw = col_r - col_l + 1
+    ch = row_b - row_t + 1
+    if cw < 4 or ch < 5:
+        return None
+
+    # Check interior right side in the lower-middle zone
+    mid_row = row_t + ch // 2
+    lower_mid = row_t + 3 * ch // 4
+    mid_col = col_l + cw // 2
+    interior = grid[mid_row:lower_mid + 1, mid_col:col_r - 1]
+    interior_sum = int(np.sum(interior))
+
+    if interior_sum > 30:
+        return "G"
+    if interior_sum < 10:
+        return "C"
+    return None
+
+
+def disambiguate_g_o(grid: np.ndarray) -> Optional[str]:
+    """Resolve 'G' vs 'O' using bottom-right inward bar.
+
+    'G' has a horizontal bar extending inward from the right side in
+    its lower half (the crossbar); 'O' is a smooth curve with no inward
+    protrusion.
+    """
+    bounds = get_content_bounds(grid)
+    if bounds is None:
+        return None
+    col_l, col_r, row_t, row_b = bounds
+    cw = col_r - col_l + 1
+    ch = row_b - row_t + 1
+    if cw < 4 or ch < 5:
+        return None
+
+    # Check the interior of the right side in the lower-middle zone.
+    # G's crossbar pushes inward; O stays hollow.
+    mid_row = row_t + ch // 2
+    lower_mid_end = row_t + 3 * ch // 4
+    mid_col = col_l + cw // 2
+    interior = grid[mid_row:lower_mid_end + 1, mid_col:col_r - 1]
+    interior_sum = int(np.sum(interior))
+
+    if interior_sum > 40:
+        return "G"
+    if interior_sum < 15:
+        return "O"
+    return None
+
+
+def disambiguate_excl_i(grid: np.ndarray) -> Optional[str]:
+    """Resolve '!' vs 'I' using bottom gap.
+
+    '!' has a gap between the vertical stroke and the dot at the bottom.
+    'I' is a continuous vertical bar with no gap.
+    """
+    bounds = get_content_bounds(grid)
+    if bounds is None:
+        return None
+    col_l, col_r, row_t, row_b = bounds
+    ch = row_b - row_t + 1
+    if ch < 5:
+        return None
+
+    # Check for a gap in the lower portion — a row with no content
+    # between the stroke and the dot
+    lower_start = row_t + int(ch * 0.5)
+    for r in range(lower_start, row_b):
+        row_sum = int(np.sum(grid[r, col_l:col_r + 1]))
+        if row_sum == 0:
+            return "!"
+    return "I"
 
 
 def disambiguate_apostrophe_backtick(grid: np.ndarray) -> Optional[str]:
@@ -391,7 +514,7 @@ DIGIT_TIEBREAKER_PAIRS = [
 ]
 
 DIGIT_TIEBREAKER_MARGINS = {
-    (0, 9): (ZERO_NINE_MAX_MARGIN_0TO9, ZERO_NINE_MAX_MARGIN_9TO0),
+    (0, 9): (ZERO_NINE_MAX_MARGIN, ZERO_NINE_MAX_MARGIN),
     (5, 6): (FIVE_SIX_MAX_MARGIN, FIVE_SIX_MAX_MARGIN),
     (3, 8): (THREE_EIGHT_MAX_MARGIN, THREE_EIGHT_MAX_MARGIN),
     (0, 6): (ZERO_SIX_MAX_MARGIN, ZERO_SIX_MAX_MARGIN),
@@ -404,8 +527,14 @@ TEXT_TIEBREAKER_PAIRS = [
     ("1", "I", disambiguate_one_i),
     ("8", "B", disambiguate_eight_b),
     ("R", "P", disambiguate_r_p),
-    ("C", "O", disambiguate_c_o),
+    ("!", "I", disambiguate_excl_i),
+    ("L", "I", disambiguate_l_i),
+    # D/C and G/C must run before C/O: if a D or G is misscored as C,
+    # these resolve it first so C/O doesn't incorrectly flip to O.
     ("D", "C", disambiguate_d_c),
+    ("G", "C", disambiguate_g_c),
+    ("G", "O", disambiguate_g_o),
+    ("C", "O", disambiguate_c_o),
     ("'", "`", disambiguate_apostrophe_backtick),
 ]
 
@@ -467,6 +596,8 @@ def apply_text_tiebreakers(
             score_idx += 1
 
     for char_a, char_b, disambiguator in TEXT_TIEBREAKER_PAIRS:
+        pair_margin = TEXT_MARGIN_OVERRIDES.get(
+            (char_a, char_b), TEXT_DISAMBIGUATION_MARGIN)
         for ci, ch in enumerate(result_chars):
             if ch not in (char_a, char_b):
                 continue
@@ -478,7 +609,7 @@ def apply_text_tiebreakers(
             score_a = scores.get(char_a, -999.0)
             score_b = scores.get(char_b, -999.0)
             margin = abs(score_a - score_b)
-            if margin > TEXT_DISAMBIGUATION_MARGIN:
+            if margin > pair_margin:
                 continue
 
             x0, x1 = blob_positions[si]
