@@ -20,7 +20,8 @@ import threading
 from ...core.config import save_config
 from ...core.inventory_utils import (
     enrich_item, get_top_category, format_ped, format_markup,
-    is_absolute_markup, ALL_CATEGORIES, PLANETS,
+    is_absolute_markup, build_ingame_lookup,
+    ALL_CATEGORIES, PLANETS, INGAME_PERIODS,
 )
 from ...core.logger import get_logger
 from ...exchange.bg_populate import populate_in_background
@@ -293,6 +294,7 @@ class InventoryPage(QWidget):
         self._slim_lookup: dict[int, dict] = {}
         self._markup_lookup: dict[int, float] = {}
         self._ingame_lookup: dict[str, float] = {}
+        self._raw_ingame_data: list[dict] = []
         self._loading = False
         self._data_loaded = False
 
@@ -314,6 +316,8 @@ class InventoryPage(QWidget):
         self._saved_planet = prefs.get("planet", "all")
         self._saved_category = prefs.get("category", "all")
         self._saved_markup_filter = prefs.get("markup_filter", "all")
+        self._markup_source = prefs.get("markup_source", "ingame")
+        self._ingame_period = prefs.get("ingame_period", "1d")
 
         # Suppress pref save during initial UI construction
         self._suppress_pref_save = True
@@ -462,6 +466,22 @@ class InventoryPage(QWidget):
         self._markup_combo.setMinimumWidth(110)
         self._markup_combo.currentIndexChanged.connect(self._on_filter_changed)
         filter_row.addWidget(self._markup_combo)
+
+        # Markup source selector
+        self._source_combo = QComboBox()
+        self._source_combo.addItem("In-Game", "ingame")
+        self._source_combo.addItem("Exchange", "exchange")
+        self._source_combo.setMinimumWidth(100)
+        self._source_combo.currentIndexChanged.connect(self._on_source_changed)
+        filter_row.addWidget(self._source_combo)
+
+        # In-game period selector (visible only when In-Game is selected)
+        self._period_combo = QComboBox()
+        for key, label, _ in INGAME_PERIODS:
+            self._period_combo.addItem(label, key)
+        self._period_combo.setMinimumWidth(90)
+        self._period_combo.currentIndexChanged.connect(self._on_period_changed)
+        filter_row.addWidget(self._period_combo)
 
         # Search
         self._search = QLineEdit()
@@ -613,6 +633,42 @@ class InventoryPage(QWidget):
         self._schedule_pref_save()
 
     # ------------------------------------------------------------------
+    # Markup source / period
+    # ------------------------------------------------------------------
+
+    def _on_source_changed(self, *_args):
+        source = self._source_combo.currentData() or 'ingame'
+        self._markup_source = source
+        self._period_combo.setVisible(source == 'ingame')
+        self._rebuild_and_refresh()
+        self._schedule_pref_save()
+
+    def _on_period_changed(self, *_args):
+        period = self._period_combo.currentData() or '1d'
+        self._ingame_period = period
+        self._rebuild_ingame_lookup()
+        self._rebuild_and_refresh()
+        self._schedule_pref_save()
+
+    def _rebuild_ingame_lookup(self):
+        self._ingame_lookup = build_ingame_lookup(
+            self._raw_ingame_data, self._ingame_period,
+        )
+
+    def _rebuild_enriched(self):
+        ingame = self._ingame_lookup if self._markup_source == 'ingame' else None
+        self._enriched = [
+            enrich_item(item, self._slim_lookup, self._markup_lookup, ingame)
+            for item in self._raw_items
+        ]
+
+    def _rebuild_and_refresh(self):
+        if not self._data_loaded:
+            return
+        self._rebuild_enriched()
+        self._on_filter_changed()
+
+    # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
 
@@ -663,23 +719,12 @@ class InventoryPage(QWidget):
             except (ValueError, TypeError):
                 pass
 
-        # Build in-game price lookup (name → markup%)
-        self._ingame_lookup = {}
-        for row in (ingame or []):
-            name = row.get("item_name")
-            if not name:
-                continue
-            mu = (row.get("markup_1d") or row.get("markup_7d")
-                  or row.get("markup_30d") or row.get("markup_90d")
-                  or row.get("markup_365d"))
-            if mu is not None:
-                self._ingame_lookup[name] = float(mu)
+        # Store raw in-game data and build lookup based on selected period
+        self._raw_ingame_data = ingame or []
+        self._rebuild_ingame_lookup()
 
         # Enrich items
-        self._enriched = [
-            enrich_item(item, self._slim_lookup, self._markup_lookup, self._ingame_lookup)
-            for item in self._raw_items
-        ]
+        self._rebuild_enriched()
 
         # Populate planet filter
         self._update_planet_filter()
@@ -1407,6 +1452,24 @@ class InventoryPage(QWidget):
             if idx >= 0:
                 self._markup_combo.setCurrentIndex(idx)
 
+        # Markup source
+        src = server_data.get("markup_source", "ingame")
+        if src != self._markup_source and src in ('ingame', 'exchange'):
+            self._markup_source = src
+            idx = self._source_combo.findData(src)
+            if idx >= 0:
+                self._source_combo.setCurrentIndex(idx)
+            self._period_combo.setVisible(src == 'ingame')
+
+        # In-game period
+        period = server_data.get("ingame_period", "1d")
+        valid_periods = [k for k, _, _ in INGAME_PERIODS]
+        if period != self._ingame_period and period in valid_periods:
+            self._ingame_period = period
+            idx = self._period_combo.findData(period)
+            if idx >= 0:
+                self._period_combo.setCurrentIndex(idx)
+
         # Planet (applied after data loads, just save value)
         self._saved_planet = server_data.get("planet", "all")
 
@@ -1426,6 +1489,15 @@ class InventoryPage(QWidget):
         idx = self._markup_combo.findData(self._saved_markup_filter)
         if idx >= 0:
             self._markup_combo.setCurrentIndex(idx)
+        # Markup source
+        idx = self._source_combo.findData(self._markup_source)
+        if idx >= 0:
+            self._source_combo.setCurrentIndex(idx)
+        self._period_combo.setVisible(self._markup_source == 'ingame')
+        # In-game period
+        idx = self._period_combo.findData(self._ingame_period)
+        if idx >= 0:
+            self._period_combo.setCurrentIndex(idx)
         # Planet is applied after data loads (combo is populated then)
         self._suppress_pref_save = False
 
@@ -1442,6 +1514,8 @@ class InventoryPage(QWidget):
             "planet": self._planet_combo.currentData() or "all",
             "category": self._category_combo.currentData() or "all",
             "markup_filter": self._markup_combo.currentData() or "all",
+            "markup_source": self._markup_source,
+            "ingame_period": self._ingame_period,
         }
         # Save locally
         if self._config:

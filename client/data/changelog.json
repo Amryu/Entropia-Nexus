@@ -10,6 +10,9 @@
       {"type": "feat", "text": "Market price OCR: detect and scan in-game market price windows for item name, tier, markup, and sales data"},
       {"type": "feat", "text": "Market price confidence scoring for OCR quality filtering"},
       {"type": "feat", "text": "Market price display: wiki detail sections and overlay tab showing markup/sales per period with price history charts"},
+      {"type": "feat", "text": "Inventory markup source selector: choose between In-Game prices and Exchange WAP, with period fallback (Daily→Weekly→Monthly→Yearly→Decade)"},
+      {"type": "feat", "text": "Market price preliminary snapshots: price data available immediately after ingestion instead of waiting for next hour"},
+      {"type": "feat", "text": "Market price fraud detection with outlier scoring and admin alerts"},
       {"type": "feat", "text": "Gear picker dialog: searchable, sortable table for browsing weapons, armor, healing tools, and accessories"},
       {"type": "feat", "text": "Loadout sets: manage multiple weapon, armor, healing, and accessory sets within a single loadout"},
       {"type": "feat", "text": "Loadout comparison widget: side-by-side stat comparison with set permutations and delta mode"},
@@ -31,7 +34,9 @@
       {"type": "fix", "text": "Profile overlay display refinements"},
       {"type": "fix", "text": "Notification center styling and layout fixes"},
       {"type": "fix", "text": "Ingestion uploader reliability improvements"},
-      {"type": "fix", "text": "Globals page mob name resolution fix"}
+      {"type": "fix", "text": "Globals page mob name resolution fix"},
+      {"type": "fix", "text": "Fixed stale markup_90d column references (renamed to markup_365d in migration 095)"},
+      {"type": "fix", "text": "Sitemap generation: added Strongbox type and null-safe item type lookup"}
     ]
   },
   {

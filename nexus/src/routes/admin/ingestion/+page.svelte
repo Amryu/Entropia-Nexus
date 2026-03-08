@@ -338,6 +338,18 @@
       <h3>Trade Channels</h3>
       <p class="stat-value">{formatNumber(stats.configured_channels)}</p>
     </div>
+    <div class="stat-card">
+      <h3>Price Submissions</h3>
+      <p class="stat-value">{formatNumber(stats.total_mp_submissions)}</p>
+    </div>
+    <div class="stat-card">
+      <h3>Price Contributors</h3>
+      <p class="stat-value">{formatNumber(stats.mp_contributors)}</p>
+    </div>
+    <div class="stat-card">
+      <h3>Finalized Snapshots</h3>
+      <p class="stat-value">{formatNumber(stats.finalized_snapshots)}</p>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -366,7 +378,8 @@
           <div class="alert-card">
             <div class="alert-header">
               <span class="alert-type"
-                class:badge-danger={alert.type === 'collusion_pattern' || alert.type === 'solo_fabrication'}>
+                class:badge-danger={alert.type === 'collusion_pattern' || alert.type === 'solo_fabrication'}
+                class:badge-warning={alert.type === 'mp_consistent_outlier' || alert.type === 'mp_confidence_cluster'}>
                 {alert.type.replace(/_/g, ' ')}
               </span>
               <span class="alert-date">{formatDate(alert.created_at)}</span>
@@ -396,6 +409,20 @@
                       <span class="stat-denied">Solo HoFs: {alert.details.solo_hof_count}</span>
                     {/if}
                     <span>Avg solo rate: {alert.details.avg_solo_rate}%</span>
+                  {/if}
+
+                  <!-- mp_consistent_outlier -->
+                  {#if alert.type === 'mp_consistent_outlier'}
+                    <span>Price Submissions: {alert.details.total_submissions}</span>
+                    <span>Outliers: {alert.details.outlier_count} ({alert.details.outlier_rate}%)</span>
+                    <span>Avg outlier score: {alert.details.avg_outlier_score}</span>
+                  {/if}
+
+                  <!-- mp_confidence_cluster -->
+                  {#if alert.type === 'mp_confidence_cluster'}
+                    <span>Price Submissions: {alert.details.total_submissions}</span>
+                    <span>Mode confidence: {alert.details.mode_confidence}</span>
+                    <span>At mode: {alert.details.mode_count} ({alert.details.mode_pct}%)</span>
                   {/if}
                 </div>
               {/if}
@@ -427,6 +454,7 @@
             <tr>
               <th>User</th>
               <th>Submissions</th>
+              <th>Prices</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -438,6 +466,7 @@
                   <a href="/admin/users/{user.user_id}">{user.username || `User ${user.user_id}`}</a>
                 </td>
                 <td>{formatNumber(user.submission_count)}</td>
+                <td>{formatNumber(user.mp_count)}</td>
                 <td>
                   {#if user.banned}
                     <span class="status-badge status-banned">Banned</span>
@@ -591,8 +620,9 @@
     <div class="dialog" on:click|stopPropagation>
       <h3>Purge User Data</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
-        This will permanently delete all ingested data from this user and recalculate
-        confirmation counts for all affected entries. This action cannot be undone.
+        This will permanently delete all ingested data (globals, trades, and market prices)
+        from this user, recalculate confirmation counts, and re-finalize affected price snapshots.
+        This action cannot be undone.
         {selectedUserName ? `User: ${selectedUserName}` : ''}
       </p>
 
@@ -878,6 +908,11 @@
   .badge-danger {
     background-color: rgba(239, 68, 68, 0.2);
     color: var(--error-color);
+  }
+
+  .badge-warning {
+    background-color: rgba(232, 168, 56, 0.2);
+    color: var(--warning-color);
   }
 
   .alert-date {

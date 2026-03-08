@@ -1,8 +1,20 @@
 /**
  * Shared markup source utilities.
- * Fetches exchange WAP data and inventory markups for use
- * in the tiering editor and construction calculator.
+ * Fetches exchange WAP data, in-game market prices, and inventory markups
+ * for use in the inventory page, tiering editor, and construction calculator.
  */
+
+/**
+ * In-game market price periods in order from shortest to longest.
+ * Used by buildInGameLookup for period-based fallback.
+ */
+export const INGAME_PERIODS = [
+  { key: '1d',    label: 'Daily',   column: 'markup_1d' },
+  { key: '7d',    label: 'Weekly',  column: 'markup_7d' },
+  { key: '30d',   label: 'Monthly', column: 'markup_30d' },
+  { key: '365d',  label: 'Yearly',  column: 'markup_365d' },
+  { key: '3650d', label: 'Decade',  column: 'markup_3650d' },
+];
 
 /**
  * Recursively flatten the nested exchange categorization into a flat array of slim items.
@@ -47,25 +59,52 @@ export async function fetchExchangeWapByName() {
 }
 
 /**
- * Fetch in-game market price data from OCR'd snapshots.
- * Returns Map<itemName, markupPercent> using first non-null markup
- * in priority: 1d → 7d → 30d → 90d → 365d.
+ * Fetch raw in-game market price snapshots from the API.
+ * Returns the raw array of snapshot objects (no markup resolution).
  */
-export async function fetchInGamePrices() {
+export async function fetchInGamePriceSnapshots() {
   try {
     const res = await fetch('/api/market/prices/snapshots/latest?all=true');
-    if (!res.ok) return new Map();
-    const data = await res.json();
-    const map = new Map();
-    for (const row of data) {
-      const mu = row.markup_1d ?? row.markup_7d ?? row.markup_30d
-                ?? row.markup_90d ?? row.markup_365d;
-      if (mu != null && row.item_name) map.set(row.item_name, parseFloat(mu));
-    }
-    return map;
+    if (!res.ok) return [];
+    return await res.json();
   } catch {
-    return new Map();
+    return [];
   }
+}
+
+/**
+ * Build a name → markup lookup from raw in-game price snapshots.
+ * Starts from the given period and falls back to the next longer period
+ * when the value is null (e.g. startPeriod='7d' tries 7d → 30d → 365d → 3650d).
+ *
+ * @param {Array} snapshots - Raw snapshot objects from fetchInGamePriceSnapshots()
+ * @param {string} startPeriod - Period key to start from ('1d'|'7d'|'30d'|'365d'|'3650d')
+ * @returns {Map<string, number>} itemName → markup percentage
+ */
+export function buildInGameLookup(snapshots, startPeriod = '1d') {
+  const startIdx = INGAME_PERIODS.findIndex(p => p.key === startPeriod);
+  const periods = startIdx >= 0 ? INGAME_PERIODS.slice(startIdx) : INGAME_PERIODS;
+  const map = new Map();
+  for (const row of snapshots) {
+    if (!row.item_name) continue;
+    let mu = null;
+    for (const p of periods) {
+      const v = row[p.column];
+      if (v != null) { mu = v; break; }
+    }
+    if (mu != null) map.set(row.item_name, parseFloat(mu));
+  }
+  return map;
+}
+
+/**
+ * Fetch in-game market price data from OCR'd snapshots.
+ * Returns Map<itemName, markupPercent> using first non-null markup
+ * in priority: 1d → 7d → 30d → 365d → 3650d.
+ */
+export async function fetchInGamePrices() {
+  const snapshots = await fetchInGamePriceSnapshots();
+  return buildInGameLookup(snapshots, '1d');
 }
 
 /**

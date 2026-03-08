@@ -312,6 +312,49 @@ def format_markup(value, absolute: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
+# In-game market price periods (shortest → longest)
+# ---------------------------------------------------------------------------
+
+INGAME_PERIODS = [
+    ('1d',    'Daily',   'markup_1d'),
+    ('7d',    'Weekly',  'markup_7d'),
+    ('30d',   'Monthly', 'markup_30d'),
+    ('365d',  'Yearly',  'markup_365d'),
+    ('3650d', 'Decade',  'markup_3650d'),
+]
+
+
+def build_ingame_lookup(
+    raw_rows: list[dict],
+    start_period: str = '1d',
+) -> dict[str, float]:
+    """Build name → markup lookup from raw in-game price snapshot rows.
+
+    Starts from *start_period* and falls back to longer periods when null
+    (e.g. start_period='7d' tries 7d → 30d → 365d → 3650d, skipping 1d).
+    """
+    start_idx = next(
+        (i for i, (k, _, _) in enumerate(INGAME_PERIODS) if k == start_period),
+        0,
+    )
+    periods = INGAME_PERIODS[start_idx:]
+    lookup: dict[str, float] = {}
+    for row in raw_rows:
+        name = row.get('item_name')
+        if not name:
+            continue
+        mu = None
+        for _, _, col in periods:
+            v = row.get(col)
+            if v is not None:
+                mu = v
+                break
+        if mu is not None:
+            lookup[name] = float(mu)
+    return lookup
+
+
+# ---------------------------------------------------------------------------
 # Enrichment
 # ---------------------------------------------------------------------------
 

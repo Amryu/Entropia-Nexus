@@ -12,8 +12,8 @@ export async function GET({ params, url, locals }) {
   }
 
   const type = url.searchParams.get('type') || 'global';
-  if (type !== 'global' && type !== 'trade') {
-    return getResponse({ error: 'Invalid type (must be global or trade)' }, 400);
+  if (type !== 'global' && type !== 'trade' && type !== 'market_price') {
+    return getResponse({ error: 'Invalid type (must be global, trade, or market_price)' }, 400);
   }
 
   const page = parseInt(url.searchParams.get('page') || '1');

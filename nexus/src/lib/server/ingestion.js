@@ -1,6 +1,6 @@
 // @ts-nocheck
 import crypto from 'crypto';
-import { pool, startTransaction, invalidateMarketPriceCache } from './db.js';
+import { pool, startTransaction, invalidateMarketPriceCache, getLatestMarketPrices } from './db.js';
 import { resolveUserGrants } from './grants.js';
 import { resolveMob } from './mobResolver.js';
 import { invalidateGlobalsCache } from './globals-cache.js';
@@ -657,7 +657,10 @@ export async function getIngestionStats() {
       (SELECT count(*) FROM ingestion_bans) AS active_bans,
       (SELECT count(*) FROM ingestion_alerts WHERE NOT resolved) AS pending_alerts,
       (SELECT count(*) FROM ingestion_allowed_clients) AS allowed_clients,
-      (SELECT count(*) FROM ingestion_trade_channels) AS configured_channels
+      (SELECT count(*) FROM ingestion_trade_channels) AS configured_channels,
+      (SELECT count(*) FROM market_price_submissions) AS total_mp_submissions,
+      (SELECT count(DISTINCT submitted_by) FROM market_price_submissions) AS mp_contributors,
+      (SELECT count(*) FROM ONLY market_price_snapshots WHERE finalized_at IS NOT NULL) AS finalized_snapshots
   `);
   return rows[0];
 }
@@ -706,13 +709,24 @@ export async function getIngestionUsers(page = 1, limit = 50) {
          SELECT user_id, weight FROM ingested_trade_submissions
        ) all_subs
        GROUP BY user_id
+     ),
+     mp_stats AS (
+       SELECT submitted_by AS user_id,
+              count(*) AS mp_count
+       FROM market_price_submissions
+       GROUP BY submitted_by
      )
-     SELECT us.user_id, u.username, us.submission_count, us.total_weight,
+     SELECT COALESCE(us.user_id, ms.user_id) AS user_id,
+            u.username,
+            COALESCE(us.submission_count, 0) AS submission_count,
+            COALESCE(us.total_weight, 0) AS total_weight,
+            COALESCE(ms.mp_count, 0) AS mp_count,
             CASE WHEN ib.id IS NOT NULL THEN true ELSE false END AS banned
      FROM user_stats us
-     JOIN ONLY users u ON u.id = us.user_id
-     LEFT JOIN ingestion_bans ib ON ib.user_id = us.user_id
-     ORDER BY us.submission_count DESC
+     FULL OUTER JOIN mp_stats ms ON ms.user_id = us.user_id
+     JOIN ONLY users u ON u.id = COALESCE(us.user_id, ms.user_id)
+     LEFT JOIN ingestion_bans ib ON ib.user_id = COALESCE(us.user_id, ms.user_id)
+     ORDER BY COALESCE(us.submission_count, 0) + COALESCE(ms.mp_count, 0) DESC
      LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
@@ -730,6 +744,18 @@ export async function getUserSubmissions(userId, type, page = 1, limit = 50) {
        JOIN ingested_globals ig ON ig.id = gs.global_id
        WHERE gs.user_id = $1
        ORDER BY gs.submitted_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+    return rows;
+  }
+
+  if (type === 'market_price') {
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM market_price_submissions
+       WHERE submitted_by = $1
+       ORDER BY submitted_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset]
     );
@@ -814,7 +840,7 @@ export async function removeAllowedClient(clientId) {
  */
 export async function purgeUserData(userId, purgedBy) {
   const client = await startTransaction();
-  let globalIds = [], tradeIds = [];
+  let globalIds = [], tradeIds = [], mpAffected = [];
 
   try {
     // 1. Collect affected global IDs
@@ -899,7 +925,20 @@ export async function purgeUserData(userId, purgedBy) {
       );
     }
 
-    // 5. Update ban record with purge metadata
+    // 5. Collect affected market price (item_id, bucket_hour) pairs
+    const { rows: mpRows } = await client.query(
+      'SELECT DISTINCT item_id, bucket_hour FROM market_price_submissions WHERE submitted_by = $1',
+      [userId]
+    );
+    mpAffected = mpRows;
+
+    // 6. Delete market price submissions
+    await client.query(
+      'DELETE FROM market_price_submissions WHERE submitted_by = $1',
+      [userId]
+    );
+
+    // 7. Update ban record with purge metadata
     await client.query(
       `UPDATE ingestion_bans
        SET data_purged = true, data_purged_at = now(), data_purged_by = $2
@@ -920,7 +959,30 @@ export async function purgeUserData(userId, purgedBy) {
     invalidateGlobalsCache();
   }
 
-  return { purgedGlobals: globalIds.length, purgedTrades: tradeIds.length };
+  // Re-finalize affected market price snapshots (outside transaction — idempotent)
+  for (const { item_id, bucket_hour } of mpAffected) {
+    try {
+      const { rows: [{ cnt }] } = await pool.query(
+        'SELECT count(*) AS cnt FROM market_price_submissions WHERE item_id = $1 AND bucket_hour = $2',
+        [item_id, bucket_hour]
+      );
+      if (parseInt(cnt) === 0) {
+        // No submissions remain — delete the snapshot
+        await pool.query(
+          'DELETE FROM ONLY market_price_snapshots WHERE item_id = $1 AND recorded_at = $2',
+          [item_id, bucket_hour]
+        );
+      } else {
+        // Re-run finalization with remaining submissions
+        await finalizeMarketPriceHour(item_id, bucket_hour);
+      }
+      invalidateMarketPriceCache(item_id);
+    } catch (err) {
+      console.error(`[ingestion] Re-finalize after purge failed: item=${item_id} hour=${bucket_hour}`, err.message);
+    }
+  }
+
+  return { purgedGlobals: globalIds.length, purgedTrades: tradeIds.length, purgedMarketPrices: mpAffected.length };
 }
 
 // --- Background: Fraud Detection ---
@@ -1200,9 +1262,124 @@ export function maybeRunFraudDetection() {
       await detectCollusion();
       await detectSoloFabrication();
     }
+    // Market price fraud detection runs independently of global contributor count
+    await detectMarketPriceOutliers();
+    await detectConfidenceClustering();
   })()
     .catch(err => console.error('[ingestion] Fraud detection failed:', err))
     .finally(() => { _fraudDetectionRunning = false; });
+}
+
+// --- Market Price Fraud Detection (Background) ---
+
+/**
+ * Flag users whose market price submissions consistently deviate from
+ * finalized consensus snapshots. Requires outlier_score to be populated
+ * by inline scoring during ingestion.
+ */
+async function detectMarketPriceOutliers() {
+  const { rows: candidates } = await pool.query(`
+    SELECT submitted_by,
+           count(*) AS total,
+           count(*) FILTER (WHERE outlier_score > $1) AS outlier_count,
+           round(avg(outlier_score)::numeric, 3) AS avg_outlier
+    FROM market_price_submissions
+    WHERE submitted_at > now() - interval '7 days'
+      AND outlier_score IS NOT NULL
+    GROUP BY submitted_by
+    HAVING count(*) >= $2
+      AND (
+        count(*) FILTER (WHERE outlier_score > $1)::numeric / count(*) > $3
+        OR avg(outlier_score) > $4
+      )
+  `, [OUTLIER_FLAG_THRESHOLD, MP_OUTLIER_MIN_SUBMISSIONS, MP_OUTLIER_RATE_THRESHOLD, MP_OUTLIER_SCORE_THRESHOLD]);
+
+  for (const user of candidates) {
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM ingestion_alerts
+       WHERE NOT resolved AND type = 'mp_consistent_outlier'
+         AND $1 = ANY(user_ids)
+       LIMIT 1`,
+      [user.submitted_by]
+    );
+    if (existing.length > 0) continue;
+
+    await pool.query(
+      `INSERT INTO ingestion_alerts (type, user_ids, details)
+       VALUES ('mp_consistent_outlier', $1, $2)`,
+      [
+        [user.submitted_by],
+        JSON.stringify({
+          total_submissions: parseInt(user.total),
+          outlier_count: parseInt(user.outlier_count),
+          outlier_rate: Math.round(parseInt(user.outlier_count) / parseInt(user.total) * 100),
+          avg_outlier_score: parseFloat(user.avg_outlier),
+          period: '7 days',
+        }),
+      ]
+    );
+  }
+}
+
+/**
+ * Flag users whose OCR confidence values cluster suspiciously around a
+ * single value. Real OCR produces natural variance; a fixed confidence
+ * suggests automated/spoofed submissions.
+ */
+async function detectConfidenceClustering() {
+  // Single-pass: bucket confidences to 2 decimal places, find the mode and
+  // its count per user in one aggregate query (no self-join).
+  const { rows: candidates } = await pool.query(`
+    WITH bucketed AS (
+      SELECT submitted_by,
+             round(confidence::numeric, 2) AS conf_bucket,
+             count(*) AS bucket_count
+      FROM market_price_submissions
+      WHERE submitted_at > now() - interval '7 days'
+        AND confidence IS NOT NULL
+      GROUP BY submitted_by, round(confidence::numeric, 2)
+    ),
+    user_totals AS (
+      SELECT submitted_by,
+             sum(bucket_count) AS total,
+             max(bucket_count) AS mode_count
+      FROM bucketed
+      GROUP BY submitted_by
+      HAVING sum(bucket_count) >= $1
+    )
+    SELECT ut.submitted_by, ut.total, ut.mode_count,
+           b.conf_bucket AS mode_conf
+    FROM user_totals ut
+    JOIN bucketed b ON b.submitted_by = ut.submitted_by
+                   AND b.bucket_count = ut.mode_count
+    WHERE ut.mode_count::numeric / ut.total > $2
+  `, [MP_CONFIDENCE_CLUSTER_MIN, MP_CONFIDENCE_CLUSTER_RATE]);
+
+  for (const user of candidates) {
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM ingestion_alerts
+       WHERE NOT resolved AND type = 'mp_confidence_cluster'
+         AND $1 = ANY(user_ids)
+       LIMIT 1`,
+      [user.submitted_by]
+    );
+    if (existing.length > 0) continue;
+
+    await pool.query(
+      `INSERT INTO ingestion_alerts (type, user_ids, details)
+       VALUES ('mp_confidence_cluster', $1, $2)`,
+      [
+        [user.submitted_by],
+        JSON.stringify({
+          total_submissions: parseInt(user.total),
+          mode_confidence: parseFloat(user.mode_conf),
+          mode_count: parseInt(user.mode_count),
+          mode_pct: Math.round(parseInt(user.mode_count) / parseInt(user.total) * 100),
+          period: '7 days',
+        }),
+      ]
+    );
+  }
 }
 
 // --- Market Price Ingestion ---
@@ -1211,16 +1388,21 @@ const MAX_ITEM_NAME_LENGTH = 200;
 const MAX_MARKUP_VALUE = 100_000_000;
 const MARKET_PRICE_PERIODS = ['1d', '7d', '30d', '365d', '3650d'];
 const MARKET_PRICE_VALUE_COLS = MARKET_PRICE_PERIODS.flatMap(p => [`markup_${p}`, `sales_${p}`]);
-const FINALIZATION_GRACE_MS = 5 * 60 * 1000;              // 5 min after hour before finalizing
-const SUBMISSION_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;  // 3 days
 const MANUAL_REVIEW_CONFIDENCE_BOOST = 1.5;                // voting weight multiplier
+const OUTLIER_FLAG_THRESHOLD = 0.5;                        // per-column deviation to flag
+const MARKUP_COLS = MARKET_PRICE_PERIODS.map(p => `markup_${p}`);
+const SALES_COLS = MARKET_PRICE_PERIODS.map(p => `sales_${p}`);
+
+// --- Fraud Detection Thresholds (market prices) ---
+const MP_OUTLIER_MIN_SUBMISSIONS = 20;   // min submissions to evaluate a user
+const MP_OUTLIER_SCORE_THRESHOLD = 0.5;  // avg outlier score to flag
+const MP_OUTLIER_RATE_THRESHOLD = 0.4;   // fraction of submissions > 0.5 to flag
+const MP_CONFIDENCE_CLUSTER_MIN = 50;    // min submissions to check clustering
+const MP_CONFIDENCE_CLUSTER_RATE = 0.90; // 90% at same confidence = suspicious
 
 let _lastMarketFinalization = 0;
 let _marketFinalizationRunning = false;
 const MARKET_FINALIZATION_INTERVAL_MS = 60 * 1000; // at most once per minute
-
-let _lastSubmissionCleanup = 0;
-const SUBMISSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // at most once per hour
 
 /**
  * Validate a single market price entry.
@@ -1288,6 +1470,60 @@ export function validateMarketPrice(entry) {
   return null;
 }
 
+// --- Market Price Fraud Scoring ---
+
+/**
+ * Compute an outlier score for a submission by comparing its values against
+ * the latest finalized snapshot for the same item.
+ *
+ * @returns {{ outlierScore: number|null, fraudFlags: object[]|null }}
+ */
+async function computeOutlierScore(itemId, entry) {
+  let snapshot;
+  try {
+    const rows = await getLatestMarketPrices([itemId]);
+    snapshot = rows?.[0];
+  } catch {
+    return { outlierScore: null, fraudFlags: null };
+  }
+
+  if (!snapshot) return { outlierScore: null, fraudFlags: null };
+
+  // Skip if snapshot is older than 7 days (prices may have legitimately changed)
+  const snapshotAge = Date.now() - new Date(snapshot.recorded_at).getTime();
+  if (snapshotAge > 7 * 24 * 60 * 60 * 1000) return { outlierScore: null, fraudFlags: null };
+
+  let maxDeviation = 0;
+  const flags = [];
+
+  for (const col of MARKUP_COLS) {
+    const submitted = entry[col];
+    const expected = parseFloat(snapshot[col]);
+    if (submitted == null || isNaN(expected)) continue;
+    const deviation = Math.min(Math.abs(submitted - expected) / Math.max(Math.abs(expected), 1.0), 1.0);
+    if (deviation > maxDeviation) maxDeviation = deviation;
+    if (deviation > OUTLIER_FLAG_THRESHOLD) {
+      flags.push({ type: 'value_anomaly', col, submitted, expected: parseFloat(expected.toFixed(4)) });
+    }
+  }
+
+  for (const col of SALES_COLS) {
+    const submitted = entry[col];
+    const expected = parseFloat(snapshot[col]);
+    if (submitted == null || isNaN(expected)) continue;
+    const deviation = Math.min(Math.abs(Math.log10(submitted + 1) - Math.log10(expected + 1)) / 3.0, 1.0);
+    if (deviation > maxDeviation) maxDeviation = deviation;
+    if (deviation > OUTLIER_FLAG_THRESHOLD) {
+      flags.push({ type: 'value_anomaly', col, submitted, expected: parseFloat(expected.toFixed(4)) });
+    }
+  }
+
+  return {
+    outlierScore: maxDeviation > 0 ? parseFloat(maxDeviation.toFixed(4)) : null,
+    fraudFlags: flags.length > 0 ? flags : null,
+  };
+}
+
 /**
  * Ingest a batch of market price submissions.
  *
@@ -1304,6 +1540,7 @@ export function validateMarketPrice(entry) {
 export async function ingestMarketPrices(userId, prices, resolveItem) {
   userId = String(userId);
   let accepted = 0, duplicates = 0, rejected = 0;
+  const preliminaryPairs = new Map(); // "itemId:hour" → { itemId, bucketHour }
 
   for (const entry of prices) {
     const ocrName = entry.item_name.trim();
@@ -1326,7 +1563,8 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
 
     // Insert submission — on conflict (same user+item+hour), replace with
     // latest data. Manual review always overwrites; otherwise higher
-    // confidence wins.
+    // confidence wins. Once the hour is finalized (snapshot exists),
+    // submissions become read-only — only manual reviews can still update.
     const { rowCount } = await pool.query(
       `INSERT INTO market_price_submissions
        (item_id, tier, bucket_hour,
@@ -1346,8 +1584,18 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
          confidence = EXCLUDED.confidence,
          manually_reviewed = EXCLUDED.manually_reviewed,
          submitted_at = now()
-       WHERE EXCLUDED.manually_reviewed IS NOT NULL
-         OR COALESCE(EXCLUDED.confidence, 0) >= COALESCE(market_price_submissions.confidence, 0)`,
+       WHERE (
+         EXCLUDED.manually_reviewed IS NOT NULL
+         OR (
+           NOT EXISTS (
+             SELECT 1 FROM ONLY market_price_snapshots snap
+             WHERE snap.item_id = EXCLUDED.item_id
+               AND snap.recorded_at = EXCLUDED.bucket_hour
+               AND snap.finalized_at IS NOT NULL
+           )
+           AND COALESCE(EXCLUDED.confidence, 0) >= COALESCE(market_price_submissions.confidence, 0)
+         )
+       )`,
       [
         itemId,
         entry.tier ?? null,
@@ -1363,8 +1611,26 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
       ]
     );
 
-    if (rowCount > 0) accepted++;
-    else duplicates++;
+    if (rowCount > 0) {
+      accepted++;
+      const pairKey = `${itemId}:${bucketHour.toISOString()}`;
+      if (!preliminaryPairs.has(pairKey)) {
+        preliminaryPairs.set(pairKey, { itemId, bucketHour: new Date(bucketHour) });
+      }
+
+      // Compute outlier score against latest snapshot (non-blocking best-effort)
+      computeOutlierScore(itemId, entry).then(({ outlierScore, fraudFlags }) => {
+        if (outlierScore == null && fraudFlags == null) return;
+        pool.query(
+          `UPDATE market_price_submissions
+           SET outlier_score = $1, fraud_flags = $2
+           WHERE item_id = $3 AND submitted_by = $4 AND bucket_hour = $5`,
+          [outlierScore, fraudFlags ? JSON.stringify(fraudFlags) : null, itemId, userId, bucketHour.toISOString()]
+        ).catch(err => console.error('[ingestion] Failed to store outlier score:', err.message));
+      }).catch(() => {});
+    } else {
+      duplicates++;
+    }
 
     // Late manual review for an already-finalized hour → re-finalize
     if (entry.manually_reviewed) {
@@ -1376,9 +1642,18 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
     }
   }
 
-  // Fire-and-forget: finalize elapsed hours + cleanup old submissions
+  // Fire-and-forget: create preliminary snapshots for this batch immediately
+  // (bypasses global throttle since it's scoped to accepted items only)
+  if (preliminaryPairs.size > 0) {
+    void (async () => {
+      for (const { itemId: id, bucketHour: bh } of preliminaryPairs.values()) {
+        try { await finalizeMarketPriceHour(id, bh); } catch { /* non-fatal */ }
+      }
+    })().catch(() => {});
+  }
+
+  // Fire-and-forget: finalize any other pending hours
   maybeRunMarketFinalization();
-  maybeCleanupSubmissions();
 
   return { accepted, duplicates, rejected };
 }
@@ -1501,18 +1776,16 @@ async function finalizeMarketPriceHour(itemId, bucketHour) {
 }
 
 /**
- * Finalize all pending hours across all items.
- * Only finalizes hours that are past the grace period and don't have a
- * snapshot yet (or have newer submissions than the existing finalization).
+ * Finalize all pending hours across all items (including current hour).
+ * Creates preliminary snapshots for the current hour and definitive ones
+ * for past hours. Re-finalizes any snapshot with newer submissions.
  */
 async function finalizeAllPendingHours() {
-  const graceTime = new Date(Date.now() - FINALIZATION_GRACE_MS);
-
   // Find (item_id, bucket_hour) pairs needing finalization
   const { rows: pending } = await pool.query(`
     SELECT DISTINCT s.item_id, s.bucket_hour
     FROM market_price_submissions s
-    WHERE s.bucket_hour < date_trunc('hour', $1::timestamptz)
+    WHERE s.bucket_hour <= date_trunc('hour', now())
       AND (
         NOT EXISTS (
           SELECT 1 FROM ONLY market_price_snapshots snap
@@ -1528,7 +1801,7 @@ async function finalizeAllPendingHours() {
         )
       )
     LIMIT 200
-  `, [graceTime.toISOString()]);
+  `);
 
   for (const { item_id, bucket_hour } of pending) {
     try {
@@ -1541,8 +1814,9 @@ async function finalizeAllPendingHours() {
 
 /**
  * Fire-and-forget market price finalization, throttled to once per minute.
+ * Exported for stale-while-revalidate use by the snapshots API endpoint.
  */
-function maybeRunMarketFinalization() {
+export function maybeRunMarketFinalization() {
   const now = Date.now();
   if (_marketFinalizationRunning || now - _lastMarketFinalization < MARKET_FINALIZATION_INTERVAL_MS) return;
   _lastMarketFinalization = now;
@@ -1553,16 +1827,3 @@ function maybeRunMarketFinalization() {
     .finally(() => { _marketFinalizationRunning = false; });
 }
 
-/**
- * Delete submissions older than 3 days. Throttled to once per hour.
- * PostgreSQL autovacuum reclaims the freed space automatically.
- */
-function maybeCleanupSubmissions() {
-  const now = Date.now();
-  if (now - _lastSubmissionCleanup < SUBMISSION_CLEANUP_INTERVAL_MS) return;
-  _lastSubmissionCleanup = now;
-
-  void pool.query(
-    `DELETE FROM market_price_submissions WHERE submitted_at < now() - interval '3 days'`
-  ).catch(err => console.error('[ingestion] Submission cleanup failed:', err));
-}

@@ -13,6 +13,7 @@
     formatMarkupForItem, getTopCategory, itemTypeBadge
   } from '../../market/exchange/orderUtils';
   import { PLANETS } from '../../market/exchange/exchangeConstants.js';
+  import { INGAME_PERIODS, buildInGameLookup } from '$lib/markupSources.js';
   import InventoryImportDialog from '../../market/exchange/[[slug]]/[[id]]/InventoryImportDialog.svelte';
   import InventoryItemDialog from '../../market/exchange/[[slug]]/[[id]]/InventoryItemDialog.svelte';
   import ItemDetailDialog from './ItemDetailDialog.svelte';
@@ -30,6 +31,7 @@
   let importHistory = [];
   let userSellOrders = new Map(); // item_id → [{ id, planet, computed_state }]
   let containerNames = new Map(); // container_path → custom_name
+  let rawInGameSnapshots = [];   // Raw in-game price snapshots for period switching
   let loading = true;
   let error = null;
 
@@ -39,6 +41,8 @@
   let selectedCategory = 'all';
   let searchTerm = '';
   let markupFilter = 'all';     // 'all' | 'has-markup' | 'no-markup'
+  let markupSource = 'ingame';  // 'ingame' | 'exchange'
+  let ingamePeriod = '1d';      // '1d' | '7d' | '30d' | '365d' | '3650d'
   let mobileSidebarOpen = false;
 
   // --- Dialogs ---
@@ -74,6 +78,13 @@
     const stored = localStorage.getItem('nexus.inventory.viewMode');
     viewMode = VALID_VIEWS.includes(stored) ? stored : 'list';
 
+    // Read markup source prefs from localStorage
+    const storedSource = localStorage.getItem('nexus.inventory.markupSource');
+    if (storedSource === 'ingame' || storedSource === 'exchange') markupSource = storedSource;
+    const storedPeriod = localStorage.getItem('nexus.inventory.ingamePeriod');
+    const validPeriods = INGAME_PERIODS.map(p => p.key);
+    if (validPeriods.includes(storedPeriod)) ingamePeriod = storedPeriod;
+
     // Read filters from URL
     const params = $page.url.searchParams;
     if (params.get('planet')) selectedPlanet = params.get('planet');
@@ -90,13 +101,14 @@
     loading = true;
     error = null;
     try {
-      const [invRes, exchangeRes, markupRes, histRes, ordersRes, containerNamesRes] = await Promise.all([
+      const [invRes, exchangeRes, markupRes, histRes, ordersRes, containerNamesRes, ingameRes] = await Promise.all([
         fetch('/api/users/inventory'),
         fetch('/api/market/exchange'),
         user?.verified ? fetch('/api/users/inventory/markups') : Promise.resolve(null),
         user?.verified ? fetch('/api/users/inventory/imports?limit=5') : Promise.resolve(null),
         user?.verified ? fetch('/api/market/exchange/orders') : Promise.resolve(null),
         user?.verified ? fetch('/api/users/inventory/containers') : Promise.resolve(null),
+        fetch('/api/market/prices/snapshots/latest?all=true'),
       ]);
 
       if (invRes.ok) {
@@ -150,6 +162,10 @@
           containerNames.set(entry.container_path, entry.custom_name);
         }
       }
+
+      if (ingameRes?.ok) {
+        rawInGameSnapshots = await ingameRes.json();
+      }
     } catch (err) {
       console.error('Error loading inventory data:', err);
       error = 'Failed to load inventory data.';
@@ -185,6 +201,19 @@
     goto(`/account/inventory${qs ? '?' + qs : ''}`, { replaceState: true, keepFocus: true });
   }
 
+  // --- In-game price lookup (rebuilt when period changes) ---
+  $: inGameLookup = buildInGameLookup(rawInGameSnapshots, ingamePeriod);
+
+  // --- Markup source handlers ---
+  function setMarkupSource(src) {
+    markupSource = src;
+    localStorage.setItem('nexus.inventory.markupSource', src);
+  }
+  function setIngamePeriod(period) {
+    ingamePeriod = period;
+    localStorage.setItem('nexus.inventory.ingamePeriod', period);
+  }
+
   // --- Enriched items ---
   $: enrichedItems = inventoryItems.map(item => {
     const slim = itemLookup.get(item.item_id);
@@ -202,13 +231,13 @@
       ttValue = isItemStackable(slim) ? maxTT * item.quantity : maxTT;
     }
 
-    // Compute total value: custom markup > market price > TT
+    // Compute total value: custom markup > (in-game or exchange) > TT
     // For non-stackable condition items, use CurrentTT from inventory instead of MaxTT
     const orderLike = !isItemStackable(slim) && item.value != null
       ? { details: { CurrentTT: Number(item.value) } }
       : undefined;
     let totalValue = null;
-    let valueSource = 'default'; // 'custom' | 'exchange' | 'default'
+    let valueSource = 'default'; // 'custom' | 'ingame' | 'exchange' | 'default'
     if (markup != null && slim) {
       const unitPrice = computeUnitPrice(slim, markup, orderLike);
       if (unitPrice != null) {
@@ -216,7 +245,19 @@
         valueSource = 'custom';
       }
     }
-    if (valueSource === 'default' && marketPrice != null && slim) {
+    // Apply selected markup source (in-game or exchange)
+    if (valueSource === 'default' && markupSource === 'ingame' && slim) {
+      const itemName = slim.n || item.item_name;
+      const igm = itemName ? inGameLookup.get(itemName) : null;
+      if (igm != null) {
+        const unitPrice = computeUnitPrice(slim, Number(igm), orderLike);
+        if (unitPrice != null && unitPrice > 0) {
+          totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
+          valueSource = 'ingame';
+        }
+      }
+    }
+    if (valueSource === 'default' && markupSource === 'exchange' && marketPrice != null && slim) {
       const unitPrice = computeUnitPrice(slim, Number(marketPrice), orderLike);
       if (unitPrice != null && unitPrice > 0) {
         totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
@@ -617,7 +658,7 @@
         if (v == null) return '<span class="text-muted">-</span>';
         const src = row._valueSource;
         if (src === 'custom') return `<span style="color:var(--accent-color)">${formatPedRaw(v)}</span>`;
-        if (src === 'market') return `<span style="color:var(--text-color)">${formatPedRaw(v)}</span>`;
+        if (src === 'ingame' || src === 'exchange') return `<span style="color:var(--text-color)">${formatPedRaw(v)}</span>`;
         if (src === 'default') return `<span class="text-muted">${formatPedRaw(v)}</span>`;
         return formatPedRaw(v);
       },
@@ -809,6 +850,20 @@
                 <option value="has-markup">Has markup</option>
                 <option value="no-markup">No markup</option>
               </select>
+              <label class="toolbar-label">
+                <span class="toolbar-label-text">MU Source:</span>
+                <select class="markup-source" bind:value={markupSource} on:change={() => setMarkupSource(markupSource)}>
+                  <option value="ingame">In-Game</option>
+                  <option value="exchange">Exchange</option>
+                </select>
+              </label>
+              {#if markupSource === 'ingame'}
+                <select class="period-select" bind:value={ingamePeriod} on:change={() => setIngamePeriod(ingamePeriod)}>
+                  {#each INGAME_PERIODS as p}
+                    <option value={p.key}>{p.label}</option>
+                  {/each}
+                </select>
+              {/if}
             </div>
             <div class="toolbar-right">
               <!-- View toggle -->
@@ -972,7 +1027,7 @@
                   </div>
                   <div class="grid-stat">
                     <span class="grid-stat-label">Value</span>
-                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-exchange={item._valueSource === 'exchange'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
+                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-exchange={item._valueSource === 'exchange' || item._valueSource === 'ingame'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
                       {item._totalValue != null ? formatPedRaw(item._totalValue) : '-'}
                     </span>
                   </div>
@@ -1102,6 +1157,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
   }
 
   /* Header */
@@ -1337,13 +1393,25 @@
     outline: none;
   }
 
-  .markup-filter {
+  .markup-filter, .markup-source, .period-select {
     padding: 0.4rem 0.5rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--primary-color);
     color: var(--text-color);
     font-size: 0.82rem;
+  }
+
+  .toolbar-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .toolbar-label-text {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    white-space: nowrap;
   }
 
   /* Toggle groups */
@@ -1834,23 +1902,64 @@
       transform: translateX(0);
     }
 
+    .page-container {
+      padding: 0.5rem;
+      overflow-x: hidden;
+    }
+
+    .inventory-header {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .inventory-header h1 {
+      font-size: 1.2rem;
+    }
+
+    .summary-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 0.4rem 0.75rem;
+      padding: 0.5rem 0.75rem;
+    }
+
+    .summary-label {
+      font-size: 0.6rem;
+    }
+
+    .summary-value {
+      font-size: 0.8rem;
+    }
+
+    .inventory-toolbar {
+      gap: 0.5rem;
+    }
+
     .toolbar-left {
       min-width: 0;
-    }
-
-    .search-input {
-      max-width: none;
-    }
-  }
-
-  @media (max-width: 600px) {
-    .summary-bar {
-      gap: 1rem;
+      flex-wrap: wrap;
+      width: 100%;
     }
 
     .toolbar-right {
       width: 100%;
       justify-content: flex-start;
     }
+
+    .search-input {
+      max-width: none;
+      flex: 1 1 100%;
+    }
+
+    .markup-filter, .markup-source, .period-select {
+      padding: 0.35rem 0.4rem;
+      font-size: 0.78rem;
+    }
+
+    .search-input {
+      padding: 0.35rem 0.5rem;
+      font-size: 0.82rem;
+    }
   }
+
 </style>

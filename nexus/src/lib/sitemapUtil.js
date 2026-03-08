@@ -72,10 +72,14 @@ export async function getAllLinks(fetch) {
     {Type: 'Sign', Route: 'signs'},
 
     {Type: 'Clothing', Route: 'clothing'},
+
+    {Type: 'Strongbox', Route: 'strongboxes'},
   ];
 
   const itemsXML = items.filter(x => x.Properties.Type !== 'Armor' && x.Properties.Type !== 'BlueprintBook').map(item => {
-    let route = ITEM_TYPES.find(x => x.Type === item.Properties.Type).Route;
+    let typeEntry = ITEM_TYPES.find(x => x.Type === item.Properties.Type);
+    if (!typeEntry) return null;
+    let route = typeEntry.Route;
 
     if (MEDICAL_TOOL_TYPES.includes(item.Properties.Type)) {
       return `/items/medicaltools/${route}/${encodeURIComponentSafe(item.Name)}`;
@@ -90,7 +94,7 @@ export async function getAllLinks(fetch) {
     } else {
       return `/items/${route}/${encodeURIComponentSafe(item.Name)}`;
     }
-  });
+  }).filter(Boolean);
 
   let armorSetsXML = armorSets.map(armorSet => `/items/armorsets/${encodeURIComponentSafe(armorSet.Name)}`);
   let mobsXML = mobs.map(mob => `/information/mobs/${encodeURIComponentSafe(mob.Name)}`);

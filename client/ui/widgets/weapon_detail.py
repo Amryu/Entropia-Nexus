@@ -623,8 +623,8 @@ class _TiersWidget(QWidget):
                         if not name:
                             continue
                         mu = (row.get("markup_1d") or row.get("markup_7d")
-                              or row.get("markup_30d") or row.get("markup_90d")
-                              or row.get("markup_365d"))
+                              or row.get("markup_30d") or row.get("markup_365d")
+                              or row.get("markup_3650d"))
                         if mu is not None:
                             self._ingame_markups[name] = float(mu)
                     self._ingame_data_ready.emit()

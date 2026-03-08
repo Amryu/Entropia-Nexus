@@ -3,6 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getLatestMarketPrices, getLatestMarketPriceByName, getAllLatestMarketPrices } from '$lib/server/db.js';
 import { resolveItemByName, resolveItemDataByItemId } from '$lib/server/item-type-cache.js';
+import { maybeRunMarketFinalization } from '$lib/server/ingestion.js';
 
 const RATE_LIMIT_WINDOW = 60_000; // 60 seconds
 const PENDING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -107,6 +108,10 @@ export async function GET({ url, locals, request, fetch }) {
   } catch (e) {
     console.error('[market-prices] Failed to fetch latest snapshots:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    // Stale-while-revalidate: trigger background finalization so the next
+    // request picks up any pending submissions. Uses global 1-min cooldown.
+    maybeRunMarketFinalization();
   }
 }
 

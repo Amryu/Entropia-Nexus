@@ -290,10 +290,10 @@ class MarkupResolver:
                 name = row.get("item_name")
                 if not name:
                     continue
-                # Use first non-null markup: 1d → 7d → 30d → 90d → 365d
+                # Use first non-null markup: 1d → 7d → 30d → 365d → 3650d
                 mu = (row.get("markup_1d") or row.get("markup_7d")
-                      or row.get("markup_30d") or row.get("markup_90d")
-                      or row.get("markup_365d"))
+                      or row.get("markup_30d") or row.get("markup_365d")
+                      or row.get("markup_3650d"))
                 if mu is not None:
                     cache[name.lower()] = float(mu)
 

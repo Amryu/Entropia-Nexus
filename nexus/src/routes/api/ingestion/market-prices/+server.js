@@ -8,6 +8,7 @@ import {
   validateMarketPrice,
   ingestMarketPrices,
   parseRequestBody,
+  maybeRunFraudDetection,
 } from '$lib/server/ingestion.js';
 import { resolveItemByName, resolveItemByPrefix, resolveItemByFuzzy } from '$lib/server/item-type-cache.js';
 
@@ -102,6 +103,7 @@ export async function POST({ request, locals, fetch }) {
       return fuzzy?.itemId ?? null;
     };
     const result = await ingestMarketPrices(user.id, validPrices, resolveItem);
+    maybeRunFraudDetection();
 
     const response = {
       ...result,
