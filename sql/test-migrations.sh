@@ -45,11 +45,25 @@ for arg in "$@"; do
 done
 
 # --- Database credentials ---------------------------------------------------
+# Load from sql/.env if present (for PGPASSWORD etc.)
+
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
 
 export PGHOST="${PGHOST:-localhost}"
 export PGPORT="${PGPORT:-5432}"
 export PGUSER="${PGUSER:-postgres}"
-export PGPASSWORD="${PGPASSWORD:-***REMOVED***}"
+
+if [ -z "${PGPASSWORD:-}" ]; then
+  echo "Error: PGPASSWORD is not set."
+  echo "Set it via environment variable or create sql/.env with PGPASSWORD=..."
+  exit 1
+fi
+export PGPASSWORD
 
 PASS_COUNT=0
 FAIL_COUNT=0
