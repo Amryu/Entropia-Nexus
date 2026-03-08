@@ -567,15 +567,23 @@ class TrackerPage(QWidget):
                 return (1, m.get("order", 0))
             return (2, m.get("order", 0))
 
+        def reorder_group(pair):
+            m, r = pair
+            if m.get("is_custom") and not m.get("enabled", True):
+                return 2  # disabled — no arrows shown
+            if r > 0:
+                return 0  # on-cooldown — position driven by timer
+            return 1      # ready or idle (enabled) — reorderable
+
         entries.sort(key=sort_key)
 
         self._missions_table.setUpdatesEnabled(False)
         try:
-            self.__populate_missions_rows(entries)
+            self.__populate_missions_rows(entries, reorder_group)
         finally:
             self._missions_table.setUpdatesEnabled(True)
 
-    def __populate_missions_rows(self, entries):
+    def __populate_missions_rows(self, entries, reorder_group=None):
         num_entries = len(entries)
         self._missions_table.setRowCount(num_entries)
         icon_size = QSize(14, 14)
@@ -708,9 +716,16 @@ class TrackerPage(QWidget):
                 start_btn.clicked.connect(lambda _, i=mid: self._start_cooldown(i))
                 actions_layout.addWidget(start_btn)
 
-            if not is_disabled:
-                # Up arrow
-                prev_mid = entries[row - 1][0].get("id") if row > 0 else None
+            # Reorder arrows: only for enabled, non-cooldown items
+            # (disabled items have no arrows; cooldown items sort by time)
+            my_group = reorder_group(entries[row]) if reorder_group else None
+            can_reorder = not is_disabled and remaining <= 0 and my_group is not None
+
+            if can_reorder:
+                # Up arrow — only if previous neighbor is in the same group
+                prev_mid = None
+                if row > 0 and reorder_group(entries[row - 1]) == my_group:
+                    prev_mid = entries[row - 1][0].get("id")
                 up_btn = QPushButton()
                 up_btn.setFixedSize(22, 22)
                 up_btn.setIconSize(icon_size)
@@ -721,8 +736,10 @@ class TrackerPage(QWidget):
                 up_btn.clicked.connect(lambda _, a=mid, b=prev_mid: self._swap_mission_order(a, b))
                 actions_layout.addWidget(up_btn)
 
-                # Down arrow
-                next_mid = entries[row + 1][0].get("id") if row < num_entries - 1 else None
+                # Down arrow — only if next neighbor is in the same group
+                next_mid = None
+                if row < num_entries - 1 and reorder_group(entries[row + 1]) == my_group:
+                    next_mid = entries[row + 1][0].get("id")
                 down_btn = QPushButton()
                 down_btn.setFixedSize(22, 22)
                 down_btn.setIconSize(icon_size)
@@ -733,6 +750,7 @@ class TrackerPage(QWidget):
                 down_btn.clicked.connect(lambda _, a=mid, b=next_mid: self._swap_mission_order(a, b))
                 actions_layout.addWidget(down_btn)
 
+            if not is_disabled:
                 # Bell — notification settings
                 bell_btn = QPushButton()
                 bell_btn.setFixedSize(22, 22)
