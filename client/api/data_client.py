@@ -314,9 +314,14 @@ class DataClient:
             self._memory_cache.pop(endpoint, None)
             safe_name = endpoint.strip('/').replace('/', '_').replace('?', '_').replace('=', '_')
             cache_file = CACHE_DIR / f"{safe_name}.json"
-            if cache_file.exists():
-                cache_file.unlink()
+            try:
+                cache_file.unlink(missing_ok=True)
+            except PermissionError:
+                pass  # file locked by another thread, will be refreshed on next fetch
         else:
             self._memory_cache.clear()
             for f in CACHE_DIR.glob("*.json"):
-                f.unlink()
+                try:
+                    f.unlink()
+                except PermissionError:
+                    pass  # file locked by another thread
