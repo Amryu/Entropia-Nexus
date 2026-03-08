@@ -9,6 +9,7 @@
       {"type": "feat", "text": "Goal dialog for creating, editing, and tracking skill and profession targets"},
       {"type": "feat", "text": "Market price OCR: detect and scan in-game market price windows for item name, tier, markup, and sales data"},
       {"type": "feat", "text": "Market price confidence scoring for OCR quality filtering"},
+      {"type": "feat", "text": "Market price display: wiki detail sections and overlay tab showing markup/sales per period with price history charts"},
       {"type": "feat", "text": "Gear picker dialog: searchable, sortable table for browsing weapons, armor, healing tools, and accessories"},
       {"type": "feat", "text": "Loadout sets: manage multiple weapon, armor, healing, and accessory sets within a single loadout"},
       {"type": "feat", "text": "Loadout comparison widget: side-by-side stat comparison with set permutations and delta mode"},
