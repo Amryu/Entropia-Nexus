@@ -38,6 +38,9 @@ let cache = {
 let rebuildPromise = null;
 let athRebuildPromise = null;
 let athLastRebuiltAt = 0;
+let athLastCutoff = null;               // confirmed_at cutoff for incremental rebuilds
+const ATH_FULL_REBUILD_INTERVAL_MS = 24 * 60 * 60_000; // full rebuild every 24h as safety net
+let athLastFullRebuildAt = 0;
 let invalidateTimer = null;
 
 // --- Helpers ---
@@ -262,12 +265,40 @@ async function rebuildAthLeaderboard() {
   if (athRebuildPromise) return athRebuildPromise;
 
   athRebuildPromise = (async () => {
+    let client;
     try {
+      client = await pool.connect();
       // Check if leaderboard table exists
-      const { rows: tableCheck } = await pool.query(
+      const { rows: tableCheck } = await client.query(
         `SELECT 1 FROM information_schema.tables WHERE table_name = 'globals_ath_leaderboard' LIMIT 1`
       );
       if (tableCheck.length === 0) return; // table not yet created
+
+      // Determine rebuild mode: incremental (delta) vs full
+      let cutoff = athLastCutoff;
+
+      // On cold start, recover cutoff from the leaderboard table
+      if (!cutoff) {
+        const { rows } = await client.query(
+          `SELECT MAX(updated_at) AS last_updated FROM globals_ath_leaderboard`
+        );
+        if (rows[0]?.last_updated) {
+          cutoff = rows[0].last_updated;
+        }
+      }
+
+      // Force full rebuild periodically as safety net to correct any drift
+      // (only after we've been running long enough, not on cold start)
+      const forceFullRebuild = athLastFullRebuildAt > 0
+        && (now - athLastFullRebuildAt > ATH_FULL_REBUILD_INTERVAL_MS);
+      const isIncremental = !!cutoff && !forceFullRebuild;
+
+      if (!isIncremental) {
+        // Full rebuild needs a generous timeout (2M+ rows to aggregate)
+        await client.query('SET statement_timeout = 120000'); // 2 min
+      } else {
+        await client.query('SET statement_timeout = 30000'); // 30s for incremental
+      }
 
       for (const { category, typeFilter, useMobKey } of ATH_CATEGORIES) {
         const targetKeyExpr = useMobKey
@@ -278,30 +309,63 @@ async function rebuildAthLeaderboard() {
           : "MAX(target_name)";
         const mobIdExpr = useMobKey ? "MAX(mob_id)" : "NULL::integer";
 
-        // Upsert aggregated data
-        await pool.query(
-          `INSERT INTO globals_ath_leaderboard
-             (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
-           SELECT $1, ${targetKeyExpr}, player_name,
-                  COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
-                  ${mobIdExpr}, ${bestTargetExpr},
-                  0, 0, now()
-           FROM ingested_globals
-           WHERE confirmed = true AND ${typeFilter}
-           GROUP BY player_name, ${targetKeyExpr}
-           ON CONFLICT (category, target_key, player_name)
-           DO UPDATE SET
-             total_value = EXCLUDED.total_value,
-             best_value = EXCLUDED.best_value,
-             count = EXCLUDED.count,
-             mob_id = EXCLUDED.mob_id,
-             best_target_name = EXCLUDED.best_target_name,
-             updated_at = now()`,
-          [category]
-        );
+        const cutoffFilter = isIncremental ? ` AND confirmed_at > $2` : '';
+        const params = isIncremental ? [category, cutoff] : [category];
+
+        if (isIncremental) {
+          // Delta upsert: add new values to existing totals
+          const { rowCount } = await client.query(
+            `INSERT INTO globals_ath_leaderboard
+               (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
+             SELECT $1, ${targetKeyExpr}, player_name,
+                    COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
+                    ${mobIdExpr}, ${bestTargetExpr},
+                    0, 0, now()
+             FROM ingested_globals
+             WHERE confirmed = true AND ${typeFilter}${cutoffFilter}
+             GROUP BY player_name, ${targetKeyExpr}
+             ON CONFLICT (category, target_key, player_name)
+             DO UPDATE SET
+               total_value = globals_ath_leaderboard.total_value + EXCLUDED.total_value,
+               best_value = GREATEST(globals_ath_leaderboard.best_value, EXCLUDED.best_value),
+               count = globals_ath_leaderboard.count + EXCLUDED.count,
+               mob_id = COALESCE(EXCLUDED.mob_id, globals_ath_leaderboard.mob_id),
+               best_target_name = CASE
+                 WHEN EXCLUDED.best_value > globals_ath_leaderboard.best_value THEN EXCLUDED.best_target_name
+                 ELSE globals_ath_leaderboard.best_target_name
+               END,
+               updated_at = now()`,
+            params
+          );
+
+          // Only recompute ranks if there were changes
+          if (rowCount === 0) continue;
+        } else {
+          // Full rebuild: replace totals entirely
+          await client.query(
+            `INSERT INTO globals_ath_leaderboard
+               (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
+             SELECT $1, ${targetKeyExpr}, player_name,
+                    COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
+                    ${mobIdExpr}, ${bestTargetExpr},
+                    0, 0, now()
+             FROM ingested_globals
+             WHERE confirmed = true AND ${typeFilter}
+             GROUP BY player_name, ${targetKeyExpr}
+             ON CONFLICT (category, target_key, player_name)
+             DO UPDATE SET
+               total_value = EXCLUDED.total_value,
+               best_value = EXCLUDED.best_value,
+               count = EXCLUDED.count,
+               mob_id = EXCLUDED.mob_id,
+               best_target_name = EXCLUDED.best_target_name,
+               updated_at = now()`,
+            [category]
+          );
+        }
 
         // Compute ranks
-        await pool.query(
+        await client.query(
           `UPDATE globals_ath_leaderboard a
            SET total_rank = sub.total_rank, best_rank = sub.best_rank
            FROM (
@@ -316,11 +380,18 @@ async function rebuildAthLeaderboard() {
         );
       }
 
+      athLastCutoff = new Date();
       athLastRebuiltAt = Date.now();
-      console.log('[globals-cache] ATH leaderboard rebuilt successfully');
+      // Start/reset the 24h full-rebuild safety-net timer
+      if (!isIncremental || athLastFullRebuildAt === 0) athLastFullRebuildAt = Date.now();
+      console.log(`[globals-cache] ATH leaderboard rebuilt successfully (${isIncremental ? 'incremental' : 'full'})`);
     } catch (e) {
       console.error('[globals-cache] ATH leaderboard rebuild error:', e);
     } finally {
+      if (client) {
+        await client.query('RESET statement_timeout').catch(() => {});
+        client.release();
+      }
       athRebuildPromise = null;
     }
   })();

@@ -8,6 +8,7 @@
   //@ts-nocheck
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
+  import { browser } from '$app/environment';
   import DataSection from './DataSection.svelte';
   import MarketPriceChart from './MarketPriceChart.svelte';
 
@@ -131,8 +132,8 @@
     return `${days}d ago`;
   }
 
-  // Reactive: fetch when itemId/itemName changes
-  $: if (itemId || itemName) {
+  // Reactive: fetch when itemId/itemName changes (client-side only)
+  $: if (browser && (itemId || itemName)) {
     fetchLatest(itemId, itemName);
   }
 </script>
