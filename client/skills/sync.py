@@ -269,7 +269,10 @@ class SkillDataManager:
         return dict(self._skill_values)
 
     def sync_scan_results(self, scanned_skills: list) -> dict:
-        """Compare scanned skills against current values, compute delta.
+        """Compare scanned skills against persisted values, compute delta.
+
+        Compares against DB values (not in-memory) because _on_skill_scanned
+        updates the in-memory dict during scanning for live UI refresh.
 
         Returns {
             "changes": {skill_name: new_value, ...},
@@ -277,12 +280,21 @@ class SkillDataManager:
             "total_scanned": int,
         }
         """
+        # Read persisted values from DB — the in-memory dict was already
+        # overwritten during scanning for live display updates.
+        persisted: dict[str, float] = {}
+        if self._db:
+            try:
+                persisted = self._db.get_local_skill_values()
+            except Exception:
+                pass
+
         changes = {}
         shrunk = {}
         for skill in scanned_skills:
             name = skill.skill_name
             new_val = skill.current_points
-            old_val = self._skill_values.get(name, 0)
+            old_val = persisted.get(name, 0)
             if new_val != old_val:
                 changes[name] = new_val
                 if new_val < old_val:

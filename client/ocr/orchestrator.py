@@ -29,7 +29,9 @@ from .preprocessor import ImagePreprocessor
 from .skill_parser import SkillMatcher, RankVerifier
 from .progress_bar import ProgressBarReader
 from .detector import SkillsWindowDetector, SAVE_DEBUG_IMAGES, DEBUG_DIR
-from .font_matcher import FontMatcher
+from .font_matcher import (
+    FontMatcher, _detect_orange, _orange_grayscale,
+)
 from .navigator import SkillsNavigator
 from .trace import OcrTracer
 
@@ -71,6 +73,11 @@ PAGE_CHANGE_CONFIRM_TICKS = 2
 # If first-row anchor is unreadable, wait this many monitor ticks before
 # forcing a full page re-scan.
 PAGE_UNKNOWN_RESCAN_TICKS = 20  # ~2s at 100ms poll interval
+
+# Number of rows to store as anchors for page-change detection.
+# If the first row is unreadable (background bleed-through, etc.),
+# subsequent rows serve as fallback anchors.
+MAX_ANCHOR_FALLBACK_ROWS = 3
 
 # Minimum number of bright pixels (>80 grayscale) to consider a row non-empty.
 # Using an absolute count instead of a fraction of cell area avoids rejecting
@@ -117,6 +124,7 @@ class ScanOrchestrator:
         self._event_bus = event_bus
         self._db = db
         self._stop_event = threading.Event()
+        self._rescan_requested = threading.Event()
         self._shutdown = False  # True only when app is shutting down (not on cancel)
         self._pause_until_window_reopen = False
 
@@ -525,8 +533,10 @@ class ScanOrchestrator:
             window_closed=True  → window was closed, caller should wait for reopen
             window_closed=False → user cancelled via stop_event
         """
-        anchor_skill: Optional[str] = None
-        anchor_first_row_key: bytes | None = None
+        # Per-row anchors for page-change detection.  Each entry is
+        # (skill_name | None, pixel_key | None) indexed by visual row.
+        # None entries mean the row was unreadable at scan time.
+        anchor_entries: list[tuple[Optional[str], bytes | None]] = []
         page_change_confirm_count = 0
         unknown_anchor_ticks = 0
         verify_fail_count = 0
@@ -537,6 +547,15 @@ class ScanOrchestrator:
         log.info("Monitoring skills window. Navigate in-game; scans happen automatically.")
 
         while not self._stop_event.is_set():
+            # Check for manual re-scan request (clears anchors so the
+            # current page is scanned again without leaving the loop).
+            if self._rescan_requested.is_set():
+                self._rescan_requested.clear()
+                anchor_entries.clear()
+                page_change_confirm_count = 0
+                unknown_anchor_ticks = 0
+                log.info("Manual re-scan requested, clearing anchors")
+
             # Capture the full game window (ignores overlays)
             game_image = self._detector.capture_game()
             if game_image is None:
@@ -564,8 +583,7 @@ class ScanOrchestrator:
                             "re-detecting...", verify_fail_count)
                 verify_fail_count = 0
                 self._event_bus.publish(EVENT_OCR_OVERLAYS_HIDE, lambda: None)
-                anchor_skill = None
-                anchor_first_row_key = None
+                anchor_entries.clear()
                 page_change_confirm_count = 0
                 unknown_anchor_ticks = 0
                 self._detector.invalidate_cache()
@@ -629,71 +647,115 @@ class ScanOrchestrator:
                 stale_frame_count = 0
             last_frame_hash = frame_hash
 
-            # Fast page-change detection: read the first row's skill name
-            # via font matcher and compare against the last scanned page.
-            # This is robust to semi-transparent backgrounds (unlike pixel
-            # hashing) and survives anchor clears from stale-frame detection.
+            # Fast page-change detection: check anchor rows against the
+            # last scan.  Tries up to MAX_ANCHOR_FALLBACK_ROWS rows so that
+            # if the first row is unreadable (background bleed-through, etc.)
+            # subsequent rows serve as fallback anchors.
             _, _, _, wh_check = window_bounds
             rh = self._detector.get_row_height(wh_check)
             ns = L["col_ranges"]["name"][0]
             ne_local = L["col_ranges"]["name"][1] - ns
             th, tw = table_image.shape[:2]
-            first_row_key = None
-            if rh <= th and ne_local <= tw:
-                first_cell = table_image[0:rh, 0:ne_local]
-                first_gray = (cv2.cvtColor(first_cell, cv2.COLOR_BGR2GRAY)
-                              if len(first_cell.shape) == 3 else first_cell)
-                first_row_key = self._font_matcher._to_lookup_key(first_gray)
-                match = self._font_matcher.match_skill_name(first_gray, trace=False)
-                current_name = match[0] if match else None
 
-                same_by_name = (
-                    current_name is not None and current_name == anchor_skill
-                )
-                same_by_key = (
-                    first_row_key is not None
-                    and anchor_first_row_key is not None
-                    and first_row_key == anchor_first_row_key
-                )
-                if same_by_name or same_by_key:
-                    # Same first-row anchor - page hasn't changed.
-                    page_change_confirm_count = 0
+            current_name = None  # for logging
+            page_same = False
+            any_readable = False
+            num_check = min(
+                len(anchor_entries), MAX_ANCHOR_FALLBACK_ROWS,
+                th // rh if rh > 0 else 0,
+            )
+
+            if rh > 0 and ne_local <= tw:
+                for check_idx in range(num_check):
+                    anchor_name, anchor_key = anchor_entries[check_idx]
+                    if anchor_name is None and anchor_key is None:
+                        continue  # row was unreadable at scan time too
+
+                    row_y = check_idx * rh
+                    if row_y + rh > th:
+                        break
+                    cell = table_image[row_y:row_y + rh, 0:ne_local]
+                    gray = (cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+                            if len(cell.shape) == 3 else cell)
+                    cell_bgr = cell if len(cell.shape) == 3 else None
+                    row_key = self._font_matcher._to_lookup_key(gray)
+                    match = self._font_matcher.match_skill_name(
+                        gray, cell_bgr, trace=False)
+                    row_name = match[0] if match else None
+
+                    if row_name is None and row_key is None:
+                        continue  # row unreadable this tick, try next
+
+                    any_readable = True
+                    if current_name is None:
+                        current_name = row_name
+
+                    same_by_name = (
+                        row_name is not None and row_name == anchor_name
+                    )
+                    same_by_key = (
+                        row_key is not None
+                        and anchor_key is not None
+                        and row_key == anchor_key
+                    )
+                    if same_by_name or same_by_key:
+                        page_same = True
+                        break
+
+            if page_same:
+                page_change_confirm_count = 0
+                unknown_anchor_ticks = 0
+                self._stop_event.wait(timeout=MONITOR_INTERVAL)
+                continue
+
+            if anchor_entries:
+                if not any_readable:
+                    # All anchor rows unreadable — wait before forcing re-scan.
+                    unknown_anchor_ticks += 1
+                    if unknown_anchor_ticks < PAGE_UNKNOWN_RESCAN_TICKS:
+                        self._stop_event.wait(timeout=MONITOR_INTERVAL)
+                        continue
+                    log.debug(
+                        "Anchor rows unreadable for %d ticks; forcing re-scan",
+                        unknown_anchor_ticks,
+                    )
                     unknown_anchor_ticks = 0
-                    self._stop_event.wait(timeout=MONITOR_INTERVAL)
-                    continue
-                if anchor_skill is not None:
-                    # A single bad sample should not trigger a full page re-scan.
-                    if current_name is None and first_row_key is None:
-                        unknown_anchor_ticks += 1
-                        if unknown_anchor_ticks < PAGE_UNKNOWN_RESCAN_TICKS:
-                            self._stop_event.wait(timeout=MONITOR_INTERVAL)
-                            continue
-                        log.debug(
-                            "First-row anchor unreadable for %d ticks; forcing re-scan",
-                            unknown_anchor_ticks,
-                        )
-                        unknown_anchor_ticks = 0
-                        page_change_confirm_count = 0
-                    else:
-                        unknown_anchor_ticks = 0
-                        page_change_confirm_count += 1
-                        if page_change_confirm_count < PAGE_CHANGE_CONFIRM_TICKS:
-                            self._stop_event.wait(timeout=MONITOR_INTERVAL)
-                            continue
-                        page_change_confirm_count = 0
-                        log.debug(
-                            "Page change detected (first skill: '%s' -> '%s')",
-                            anchor_skill, current_name,
-                        )
+                    page_change_confirm_count = 0
+                else:
+                    # At least one row readable but none match — page changed.
+                    unknown_anchor_ticks = 0
+                    page_change_confirm_count += 1
+                    if page_change_confirm_count < PAGE_CHANGE_CONFIRM_TICKS:
+                        self._stop_event.wait(timeout=MONITOR_INTERVAL)
+                        continue
+                    page_change_confirm_count = 0
+                    prev_anchor = next(
+                        (n for n, _ in anchor_entries if n is not None),
+                        None,
+                    )
+                    log.debug(
+                        "Page change detected (anchor: '%s' -> '%s')",
+                        prev_anchor, current_name,
+                    )
+
             # Page changed — clear old checkmarks
             self._event_bus.publish(EVENT_OCR_PAGE_CHANGED, None)
             if self._tracer.enabled:
-                self._tracer.log("PAGE", f"anchor={anchor_skill}->{current_name} scan=#{scan_count + 1}")
+                prev_anchor = next(
+                    (n for n, _ in anchor_entries if n is not None), None,
+                )
+                self._tracer.log(
+                    "PAGE",
+                    f"anchor={prev_anchor}->{current_name} "
+                    f"scan=#{scan_count + 1}",
+                )
                 page_annotated = table_image.copy()
                 if len(page_annotated.shape) == 2:
-                    page_annotated = cv2.cvtColor(page_annotated, cv2.COLOR_GRAY2BGR)
-                cv2.putText(page_annotated, f"Scan #{scan_count + 1}", (4, 14),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+                    page_annotated = cv2.cvtColor(
+                        page_annotated, cv2.COLOR_GRAY2BGR)
+                cv2.putText(page_annotated, f"Scan #{scan_count + 1}",
+                            (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                            (0, 255, 255), 1)
                 self._tracer.save_image("page", page_annotated)
 
             scan_count += 1
@@ -704,22 +766,35 @@ class ScanOrchestrator:
                 window_bounds, L["table_sy"],
             )
             if page_skills is None:
-                # Bad scan - window likely moved. Reset anchor so the next
-                # capture is treated as fresh.
-                anchor_skill = None
-                anchor_first_row_key = None
+                # Bad scan — window likely moved.  Reset anchors so the
+                # next capture is treated as fresh.
+                anchor_entries.clear()
                 page_change_confirm_count = 0
                 unknown_anchor_ticks = 0
                 self._stop_event.wait(timeout=MONITOR_INTERVAL)
                 continue
 
-            # Update anchor from the first matched skill for next poll
-            if page_skills:
-                anchor_skill = page_skills[0].skill_name
-                anchor_first_row_key = first_row_key
-            else:
-                anchor_skill = None
-                anchor_first_row_key = None
+            # Update per-row anchors from the first readable rows.
+            anchor_entries.clear()
+            max_anchor = min(
+                MAX_ANCHOR_FALLBACK_ROWS,
+                th // rh if rh > 0 else 0,
+            )
+            for ai in range(max_anchor):
+                row_y = ai * rh
+                if row_y + rh > th:
+                    break
+                cell = table_image[row_y:row_y + rh, 0:ne_local]
+                gray = (cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+                        if len(cell.shape) == 3 else cell)
+                cell_bgr = cell if len(cell.shape) == 3 else None
+                match = self._font_matcher.match_skill_name(
+                    gray, cell_bgr, trace=False)
+                if match:
+                    key = self._font_matcher._to_lookup_key(gray)
+                    anchor_entries.append((match[0], key))
+                else:
+                    anchor_entries.append((None, None))
             page_change_confirm_count = 0
             unknown_anchor_ticks = 0
             result.skills.extend(page_skills)
@@ -1128,6 +1203,9 @@ class ScanOrchestrator:
             if len(points_text_zone.shape) == 3 else points_text_zone
 
         # Match skill name via font templates
+        # Pass BGR cell for orange/white text detection (trained skills
+        # are rendered in orange which needs R-channel extraction).
+        name_bgr = name_text_zone if len(name_text_zone.shape) == 3 else None
         matched_name = None
         name_text = ""
         font_attempt = None
@@ -1136,7 +1214,8 @@ class ScanOrchestrator:
         fallback_score = 0.0
         fallback_warn_threshold = FALLBACK_LOW_CONFIDENCE
         if self._font_matcher.calibrated:
-            skill_match = self._font_matcher.match_skill_name(name_gray)
+            skill_match = self._font_matcher.match_skill_name(
+                name_gray, name_bgr)
             if skill_match:
                 matched_name, confidence = skill_match
                 name_text = matched_name
@@ -1144,7 +1223,8 @@ class ScanOrchestrator:
                 font_attempt = {"name": matched_name, "score": confidence,
                                 "template": tpl}
             else:
-                best = self._font_matcher.best_skill_match(name_gray)
+                best = self._font_matcher.best_skill_match(
+                    name_gray, name_bgr)
                 if best:
                     log.debug("Row %d: font match below threshold, "
                               "best='%s' (score=%.3f)",
@@ -1210,16 +1290,24 @@ class ScanOrchestrator:
         # Capture missing rank templates BEFORE matching so freshly
         # captured game-rendered templates are immediately available.
         fm = self._font_matcher
+        # Pass BGR cell for orange/white text detection in rank matching
+        rank_bgr = rank_text_zone if len(rank_text_zone.shape) == 3 else None
         if fm.calibrated:
-            best_rank = fm.best_rank_match(rank_gray)
+            best_rank = fm.best_rank_match(rank_gray, rank_bgr)
             if best_rank and not fm.has_captured_rank(best_rank[0]):
                 fm.capture_rank(best_rank[0], rank_gray)
 
         # Read rank via font templates (can now use freshly captured templates)
+        # Compute the same effective grayscale that match_rank uses internally
+        # so debug images reflect what the matcher actually sees.
+        rank_match_gray = rank_gray
+        if rank_bgr is not None and _detect_orange(rank_bgr):
+            rank_match_gray = _orange_grayscale(rank_bgr)
+
         rank_text = None
         rank_score = 0.0
         if fm.calibrated:
-            rank_match = fm.match_rank(rank_gray)
+            rank_match = fm.match_rank(rank_gray, rank_bgr)
             if rank_match:
                 rank_text, rank_score = rank_match[0], rank_match[1]
 
@@ -1259,7 +1347,7 @@ class ScanOrchestrator:
                 row_idx=row_idx,
                 row_image=row_image,
                 name_gray=name_gray,
-                rank_gray=rank_gray,
+                rank_gray=rank_match_gray,
                 points_gray=points_gray,
                 matched_name=matched_name,
                 fallback_score=fallback_score,
@@ -1289,7 +1377,6 @@ class ScanOrchestrator:
                     "rank_progress": rank_progress,
                     "points_progress": progress,
                 })
-
         # Trace: per-row summary
         if self._tracer.enabled:
             ns = font_attempt["score"] if font_attempt else 0
