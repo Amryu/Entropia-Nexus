@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.2.1",
+    "date": "2026-03-09",
+    "changes": [
+      {"type": "fix", "text": "Market price overlay: fix missing data due to materials API not returning global ItemId"},
+      {"type": "fix", "text": "Market price cache invalidation now clears name-based lookups after finalization"},
+      {"type": "fix", "text": "Market price client endpoints no longer require authentication for public data"},
+      {"type": "fix", "text": "Periodic market price finalization scheduler (every 5 minutes)"},
+      {"type": "fix", "text": "Acquisition and usage data use memory-only caching to avoid disk cache bloat"},
+      {"type": "fix", "text": "Tracker mission reorder arrows restricted to same-group neighbors"}
+    ]
+  },
+  {
     "version": "0.2.0",
     "date": "2026-03-08",
     "changes": [
