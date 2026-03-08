@@ -54,6 +54,26 @@ NA_TEXT = "N/A"
 # bright white/cyan.  This threshold separates text from background bleed.
 TEXT_BRIGHTNESS_THRESHOLD = 80
 
+# --- Blob segmentation (calibrated via capture_market_glyphs.py) ---
+# Minimum bright pixels per column to count as a "text column".
+# Anti-aliased bridge pixels between characters often produce columns with
+# only 1 bright pixel; real text columns have 2+.  Filtering these prevents
+# characters from merging through subpixel bridges.
+MARKET_MIN_COL_DENSITY = 2
+
+# Valley-based blob splitting: column-sum threshold.
+# Character gaps show column sums of ~5-22 in 4-bit space; interiors are 28+.
+MARKET_VALLEY_THRESHOLD = 23
+
+# Max single character width (no splitting attempted below this).
+# Text chars are up to ~10px wide at size 14; digits ~8px at size 12.
+MARKET_TEXT_MAX_SINGLE_W = 10
+MARKET_DIGIT_MAX_SINGLE_W = 8
+
+# Minimum sub-blob width after splitting; prevents fragmenting characters
+# like 'm' whose internal humps create false valleys.
+MARKET_MIN_SUB_BLOB_W = 3
+
 # --- Period labels for the 5 data rows ---
 PERIODS = ["1d", "7d", "30d", "90d", "365d"]
 
@@ -164,10 +184,23 @@ class MarketPriceDetector:
         digit_name = getattr(self._config, "market_price_digit_stpk", "market_digits.stpk")
         text_name = getattr(self._config, "market_price_text_stpk", "market_text.stpk")
 
+        # 4-bit threshold: the detector zeroes pixels below
+        # TEXT_BRIGHTNESS_THRESHOLD (80).  After /16 quantization that
+        # means 4-bit values 0-4 are never produced from game pixels.
+        # Template grids must match, otherwise faint anti-aliased edge
+        # pixels inflate template content_h causing alignment mismatches
+        # in normalize_blob (bottom-aligned placement differs when the
+        # template is taller than the observed blob).
+        grid_4bit_threshold = int(TEXT_BRIGHTNESS_THRESHOLD / 16)  # = 5
+
         digit_path = STPK_DIR / digit_name
         if digit_path.exists():
             try:
                 header, entries = read_stpk(digit_path)
+                for e in entries:
+                    g = e.get("grid")
+                    if g is not None:
+                        e["grid"] = np.where(g >= grid_4bit_threshold, g, 0).astype(np.uint8)
                 self._digit_entries = entries
                 self._digit_grid_w = header.get("grid_w", 0)
                 self._digit_grid_h = header.get("grid_h", 0)
@@ -182,6 +215,10 @@ class MarketPriceDetector:
         if text_path.exists():
             try:
                 header, entries = read_stpk(text_path)
+                for e in entries:
+                    g = e.get("grid")
+                    if g is not None:
+                        e["grid"] = np.where(g >= grid_4bit_threshold, g, 0).astype(np.uint8)
                 self._text_entries = entries
                 self._text_grid_w = header.get("grid_w", 0)
                 self._text_grid_h = header.get("grid_h", 0)
@@ -283,11 +320,7 @@ class MarketPriceDetector:
 
             # Read all ROIs
             data = self._read_all_rois(image, x, y)
-            # Combined confidence: weighted geometric mean of template match
-            # and OCR quality. Template is already gated by threshold (~0.85+),
-            # so OCR quality gets more weight.
-            ocr_conf = data.pop("ocr_confidence", 1.0)
-            data["confidence"] = (confidence ** 0.3) * (ocr_conf ** 0.7)
+            data["confidence"] = confidence
             data["timestamp"] = datetime.now(timezone.utc).isoformat()
 
             # Publish debug data every tick (screen-absolute coordinates)
@@ -835,10 +868,12 @@ class MarketPriceDetector:
         if text_h < 3:
             return "", []
 
-        # Find blobs: contiguous column ranges with content
-        col_has = np.any(
-            intensity_4bit[text_top:text_bot + 1, :] > 0, axis=0
-        )
+        # Find blobs: contiguous column ranges with sufficient text density.
+        # Using column density >= MARKET_MIN_COL_DENSITY filters out single
+        # anti-aliased pixels that would otherwise bridge character gaps.
+        text_region = intensity_4bit[text_top:text_bot + 1, :]
+        col_density = np.sum(text_region > 0, axis=0)
+        col_has = col_density >= MARKET_MIN_COL_DENSITY
         blobs: list[tuple[int, int]] = []
         start = -1
         for col in range(len(col_has) + 1):
@@ -852,10 +887,14 @@ class MarketPriceDetector:
         if not blobs:
             return "", []
 
-        # Split wide blobs that likely contain multiple characters
-        blobs = self._split_wide_blobs(
-            intensity_4bit, blobs, text_top, text_h, grid_w,
+        # Split wide blobs at intensity valleys (character boundaries)
+        max_single_w = (MARKET_DIGIT_MAX_SINGLE_W if right_align
+                        else MARKET_TEXT_MAX_SINGLE_W)
+        blobs = self._split_blobs_at_valleys(
+            intensity_4bit, blobs, text_top, text_h, max_single_w,
         )
+        # Merge narrow pairs (e.g. '"' rendered as two tick marks)
+        blobs = self._merge_narrow_pairs(blobs)
 
         # Compute median inter-blob gap to detect word spaces
         gaps = []
@@ -878,8 +917,11 @@ class MarketPriceDetector:
             if len(e.get("text", "")) > 1 and e.get("content_w", 0) > 0
         ]
 
-        result_chars = []
+        result_chars: list[str] = []
         result_scores: list[float] = []
+        # Per-blob tracking for disambiguation (parallel to result_scores)
+        all_entry_scores: list[dict[str, float]] = []
+        blob_positions: list[tuple[int, int]] = []
         i = 0
         while i < len(blobs):
             x0, x1 = blobs[i]
@@ -914,20 +956,7 @@ class MarketPriceDetector:
                 actual_w = actual_x1 - x0 + 1
                 if abs(actual_w - cw) > 5:
                     continue
-                # Try bitmap matching first (handles size differences)
-                entry_bmp = entry.get("bitmap")
-                if entry_bmp is not None:
-                    span_gray = self._extract_blob_gray(
-                        intensity, x0, actual_x1, text_top, text_h,
-                    )
-                    if span_gray is not None:
-                        score = self._score_bitmap(span_gray, entry_bmp)
-                        if score > best_multi_score:
-                            best_multi_score = score
-                            best_multi_text = entry.get("text", "")
-                            best_multi_span = span_count
-                            continue
-                # Fall back to grid matching
+                # Use grid matching (same approach as font_matcher)
                 entry_grid = entry.get("grid")
                 if entry_grid is not None:
                     candidate = self._normalize_blob(
@@ -947,216 +976,206 @@ class MarketPriceDetector:
                         f"'{best_multi_text}' s={best_multi_score:.3f}")
                 result_chars.append(best_multi_text)
                 result_scores.append(best_multi_score)
+                all_entry_scores.append({best_multi_text: best_multi_score})
+                blob_positions.append((x0, blobs[i + best_multi_span - 1][1]))
                 i += best_multi_span
                 continue
 
-            # Single-blob matching: try bitmap matching first (more robust
-            # against anti-aliasing), fall back to grid matching.
+            # Single-blob matching: use grid matching (4-bit soft overlap),
+            # like the skill scanner's font_matcher. Grid matching is more
+            # robust with font-generated Scaleform templates since it avoids
+            # bitmap resize interpolation artifacts.
             best_score = -1.0
             best_text = None
+            entry_scores: dict[str, float] = {}
 
-            blob_region = self._extract_blob_gray(
-                intensity, x0, x1, text_top, text_h,
+            candidate = self._normalize_blob(
+                intensity_4bit, x0, x1,
+                text_top, text_h, grid_w, grid_h, right_align,
             )
-            if blob_region is not None and blob_region.size > 0:
-                for entry in single_entries:
-                    bmp = entry.get("bitmap")
-                    if bmp is None:
-                        continue
-                    score = self._score_bitmap(blob_region, bmp)
-                    if score > best_score:
-                        best_score = score
-                        best_text = entry.get("text", "")
-
-            # Fall back to grid matching if bitmap matching is weak
-            if best_score < 0.6:
-                candidate = self._normalize_blob(
-                    intensity_4bit, x0, x1,
-                    text_top, text_h, grid_w, grid_h, right_align,
-                )
-                for entry in single_entries:
-                    entry_grid = entry.get("grid")
-                    if entry_grid is None:
-                        continue
-                    score = self._score_grid(candidate, entry_grid)
-                    if score > best_score:
-                        best_score = score
-                        best_text = entry.get("text", "")
+            for entry in single_entries:
+                entry_grid = entry.get("grid")
+                if entry_grid is None:
+                    continue
+                score = self._score_grid(candidate, entry_grid)
+                char = entry.get("text", "")
+                if len(char) == 1:
+                    entry_scores[char] = max(
+                        entry_scores.get(char, -999.0), score)
+                if score > best_score:
+                    best_score = score
+                    best_text = char
 
             if best_score > 0.4 and best_text:
                 result_chars.append(best_text)
                 result_scores.append(best_score)
+                all_entry_scores.append(entry_scores)
+                blob_positions.append((x0, x1))
                 if self._tracer and self._tracer.enabled:
                     self._tracer.log("MARKET_OCR",
                         f"x={x0}-{x1} '{best_text}' s={best_score:.3f}")
             else:
                 result_scores.append(0.0)
+                all_entry_scores.append(entry_scores)
+                blob_positions.append((x0, x1))
                 if self._tracer and self._tracer.enabled:
                     self._tracer.log("MARKET_OCR",
                         f"x={x0}-{x1} NO_MATCH best_s={best_score:.3f}")
             i += 1
 
+        # Apply disambiguation tiebreakers
+        from .market_disambiguation import (
+            apply_digit_tiebreakers, apply_text_tiebreakers,
+        )
+        if right_align:
+            # Digit mode: build classified list for digit tiebreakers
+            classified = []
+            score_idx = 0
+            for ci, ch in enumerate(result_chars):
+                if ch == " ":
+                    continue
+                if score_idx >= len(all_entry_scores):
+                    break
+                scores_dict = all_entry_scores[score_idx]
+                if ch in "0123456789" and len(ch) == 1:
+                    digit_scores = [
+                        scores_dict.get(str(d), -999.0) for d in range(10)
+                    ]
+                    classified.append({
+                        "char_idx": ci, "score_idx": score_idx,
+                        "x0": blob_positions[score_idx][0],
+                        "x1": blob_positions[score_idx][1],
+                        "digit": int(ch),
+                        "score": result_scores[score_idx],
+                        "scores": digit_scores,
+                    })
+                score_idx += 1
+            if classified:
+                apply_digit_tiebreakers(
+                    classified, intensity_4bit,
+                    text_top, text_h, grid_w, grid_h,
+                )
+                # Apply overrides back
+                for c in classified:
+                    result_chars[c["char_idx"]] = str(c["digit"])
+                    result_scores[c["score_idx"]] = c["score"]
+        else:
+            # Text mode: apply text tiebreakers
+            apply_text_tiebreakers(
+                result_chars, result_scores, all_entry_scores,
+                intensity_4bit, blob_positions,
+                text_top, text_h, grid_w, grid_h,
+            )
+
         return "".join(result_chars), result_scores
 
     @staticmethod
-    def _split_wide_blobs(
+    def _split_blobs_at_valleys(
         intensity_4bit: np.ndarray,
         blobs: list[tuple[int, int]],
         text_top: int,
         text_h: int,
-        grid_w: int,
+        max_single_w: int,
     ) -> list[tuple[int, int]]:
-        """Split blobs wider than the grid into individual character blobs.
+        """Split wide blobs at low-intensity column valleys.
 
-        Uses vertical projection (column sums) within each blob to find
-        local minima that indicate character boundaries.  Blobs narrower
-        than grid_w * 1.3 are left as-is.
+        Character boundaries show column sums of ~5-22 in 4-bit space,
+        while character interiors are 28+.  Columns below MARKET_VALLEY_THRESHOLD
+        are treated as split points.  This is more robust than local-minima
+        detection because it uses an absolute threshold calibrated against
+        game screenshots rather than relative comparisons.
         """
-        max_single_w = int(grid_w * 1.3)
-        # Minimum character width for splitting (narrowest chars: I=2, comma=3)
-        min_char_w = 4
         result: list[tuple[int, int]] = []
+        rows = min(text_h, intensity_4bit.shape[0] - text_top)
 
         for x0, x1 in blobs:
-            blob_w = x1 - x0 + 1
-            if blob_w <= max_single_w:
+            w = x1 - x0 + 1
+            if w <= max_single_w:
                 result.append((x0, x1))
                 continue
 
-            # Vertical projection: sum of pixel intensities per column
-            rows = min(text_h, intensity_4bit.shape[0] - text_top)
+            # Compute column intensity profile within the text band
             region = intensity_4bit[text_top:text_top + rows, x0:x1 + 1]
-            col_sums = region.sum(axis=0).astype(np.float32)
+            col_sums = region.sum(axis=0)
 
-            # Find ALL local minima in the column projection
-            minima: list[tuple[int, float]] = []  # (column, value)
-            for c in range(1, len(col_sums) - 1):
-                if col_sums[c] <= col_sums[c - 1] and col_sums[c] <= col_sums[c + 1]:
-                    minima.append((c, float(col_sums[c])))
-
-            # Sort minima by intensity (best split points first)
-            minima.sort(key=lambda m: m[1])
-
-            # Greedily pick split points that create valid-width segments
-            split_cols: list[int] = []
-            for col, val in minima:
-                # Check this split wouldn't create a too-narrow segment
-                points = sorted(split_cols + [col])
-                boundaries = [0] + points + [len(col_sums)]
-                valid = True
-                for j in range(len(boundaries) - 1):
-                    seg_w = boundaries[j + 1] - boundaries[j]
-                    if seg_w < min_char_w:
-                        valid = False
-                        break
-                # Also check: all segments should fit in the grid
-                all_fit = all(
-                    (boundaries[j + 1] - boundaries[j]) <= max_single_w
-                    for j in range(len(boundaries) - 1)
-                )
-                if valid and not all_fit:
-                    # Still has segments too wide — keep adding splits
-                    split_cols.append(col)
-                elif valid and all_fit:
-                    split_cols.append(col)
-                    break  # All segments fit now
-
-            # If we didn't get all segments to fit, keep adding splits
-            if split_cols:
-                split_cols_sorted = sorted(split_cols)
-            else:
-                # Fallback: split at regular intervals
-                n_chars = max(2, round(blob_w / (grid_w * 0.7)))
-                step = blob_w / n_chars
-                split_cols_sorted = [int((i + 1) * step)
-                                     for i in range(n_chars - 1)]
-
-            # If still have oversized segments, continue adding minima
-            boundaries = [0] + sorted(split_cols) + [len(col_sums)]
-            remaining_minima = [m for m in minima if m[0] not in split_cols]
-            for col, val in remaining_minima:
-                # Find which segment this minimum falls in
-                for j in range(len(boundaries) - 1):
-                    if boundaries[j] < col < boundaries[j + 1]:
-                        seg_w = boundaries[j + 1] - boundaries[j]
-                        if seg_w > max_single_w:
-                            left_w = col - boundaries[j]
-                            right_w = boundaries[j + 1] - col
-                            if left_w >= min_char_w and right_w >= min_char_w:
-                                split_cols.append(col)
-                                boundaries = [0] + sorted(split_cols) + [len(col_sums)]
-                        break
-
-            split_cols_sorted = sorted(split_cols)
-
-            # Build sub-blobs from split points
+            # Find split points: columns where intensity is below threshold.
+            # Group consecutive valley columns, split at each group boundary.
+            sub_start = 0
+            i = 0
             sub_blobs: list[tuple[int, int]] = []
-            prev = 0
-            for sc in split_cols_sorted:
-                if sc - prev >= min_char_w:
-                    sub_blobs.append((x0 + prev, x0 + sc - 1))
-                    prev = sc
-            sub_blobs.append((x0 + prev, x1))
+            while i < len(col_sums):
+                if col_sums[i] < MARKET_VALLEY_THRESHOLD:
+                    # Found a valley — record the sub-blob before it
+                    if i > sub_start:
+                        sub_blobs.append((x0 + sub_start, x0 + i - 1))
+                    # Skip through the valley
+                    while i < len(col_sums) and col_sums[i] < MARKET_VALLEY_THRESHOLD:
+                        i += 1
+                    sub_start = i
+                else:
+                    i += 1
 
-            result.extend(sub_blobs)
+            # Last sub-blob
+            if sub_start < len(col_sums):
+                sub_blobs.append((x0 + sub_start, x1))
+
+            if len(sub_blobs) > 1:
+                # Reject if multiple fragments are too narrow (indicates
+                # internal character structure, e.g. 'm' humps)
+                narrow = sum(1 for sb in sub_blobs
+                             if sb[1] - sb[0] + 1 < MARKET_MIN_SUB_BLOB_W)
+                if narrow > 1:
+                    result.append((x0, x1))
+                else:
+                    result.extend(sub_blobs)
+            else:
+                result.append((x0, x1))
 
         return result
 
     @staticmethod
-    def _normalize_blob(
-        intensity_4bit: np.ndarray,
-        x0: int, x1: int,
-        text_top: int, text_h: int,
-        grid_w: int, grid_h: int,
-        right_align: bool,
-    ) -> np.ndarray:
-        """Place a blob into a grid at the correct alignment position.
+    def _merge_narrow_pairs(
+        blobs: list[tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        """Merge pairs of very narrow, closely-spaced blobs.
 
-        Extracts the tight content bounding box from the blob region,
-        then places it right-aligned + bottom-aligned (digits) or
-        left-aligned + bottom-aligned (text) in the target grid.
-        No stretching — pixel-exact placement.
+        Characters like '"' are rendered as two separate tick marks with a
+        small gap.  This merges adjacent blobs where both are <= 2px wide
+        and the gap between them is <= 2px.
         """
-        rows = min(text_h, intensity_4bit.shape[0] - text_top)
-        cols = min(x1 + 1, intensity_4bit.shape[1])
-        region = intensity_4bit[text_top:text_top + rows, x0:cols]
+        if len(blobs) < 2:
+            return blobs
 
-        content_mask = region > 0
-        if not content_mask.any():
-            return np.zeros((grid_h, grid_w), dtype=np.uint8)
+        MAX_TICK_W = 2
+        MAX_GAP = 2
 
-        # Tight bounding box of content within region
-        row_has = np.any(content_mask, axis=1)
-        col_has = np.any(content_mask, axis=0)
-        ct = int(np.argmax(row_has))
-        cb = int(len(row_has) - 1 - np.argmax(row_has[::-1]))
-        cl = int(np.argmax(col_has))
-        cr = int(len(col_has) - 1 - np.argmax(col_has[::-1]))
+        result: list[tuple[int, int]] = []
+        i = 0
+        while i < len(blobs):
+            if i + 1 < len(blobs):
+                x0a, x1a = blobs[i]
+                x0b, x1b = blobs[i + 1]
+                wa = x1a - x0a + 1
+                wb = x1b - x0b + 1
+                gap = x0b - x1a - 1
+                if wa <= MAX_TICK_W and wb <= MAX_TICK_W and gap <= MAX_GAP:
+                    result.append((x0a, x1b))
+                    i += 2
+                    continue
+            result.append(blobs[i])
+            i += 1
+        return result
 
-        content = region[ct:cb + 1, cl:cr + 1]
-        ch, cw = content.shape
-
-        # Place in grid: right-align or left-align, bottom-align
-        if right_align:
-            gx = max(grid_w - cw, 0)
-        else:
-            gx = 0
-        gy = max(grid_h - ch, 0)
-
-        pw = min(cw, grid_w - gx)
-        ph = min(ch, grid_h - gy)
-
-        grid = np.zeros((grid_h, grid_w), dtype=np.uint8)
-        grid[gy:gy + ph, gx:gx + pw] = content[:ph, :pw]
-        return grid
+    from .skill_disambiguation import normalize_blob as _normalize_blob_fn
+    _normalize_blob = staticmethod(_normalize_blob_fn)
 
     @staticmethod
-    def _score_grid(candidate: np.ndarray, template: np.ndarray) -> float:
+    def _score_grid_raw(candidate: np.ndarray, template: np.ndarray) -> float:
         """Score a candidate grid against a template using soft overlap.
 
         Uses the same formula as font_matcher.DigitMatcher:
           6 * sum(min(obs, tmpl)) - 2 * sum(tmpl) - sum(obs)
-        Normalized to 0-100 range for threshold comparison.
+        Normalized by 3 * sum(tmpl) for comparability.
         """
         if candidate.shape != template.shape:
             return -1.0
@@ -1167,12 +1186,33 @@ class MarketPriceDetector:
         c_sum = int(np.sum(c))
         if t_sum == 0:
             return 0.0
-        # Raw score; normalize by template energy for comparability
         raw = 6 * overlap - 2 * t_sum - c_sum
-        max_possible = 6 * t_sum - 2 * t_sum - t_sum  # = 3 * t_sum
+        max_possible = 3 * t_sum
         if max_possible <= 0:
             return 0.0
         return float(raw) / float(max_possible)
+
+    @staticmethod
+    def _score_grid(candidate: np.ndarray, template: np.ndarray) -> float:
+        """Shift-tolerant grid scoring.
+
+        Each game character renders at a slightly different subpixel position,
+        so the normalized blob may be shifted ±1 column relative to the
+        template.  We try horizontal shifts of -1, 0, +1 and return the
+        best score.
+        """
+        best = MarketPriceDetector._score_grid_raw(candidate, template)
+        h, w = candidate.shape
+        for shift in (-1, 1):
+            shifted = np.zeros_like(candidate)
+            if shift > 0:
+                shifted[:, shift:] = candidate[:, :-shift]
+            else:
+                shifted[:, :w + shift] = candidate[:, -shift:]
+            s = MarketPriceDetector._score_grid_raw(shifted, template)
+            if s > best:
+                best = s
+        return best
 
     @staticmethod
     def _extract_blob_gray(
@@ -1257,8 +1297,7 @@ class MarketPriceDetector:
         ("kPED",  1_000.0),        # Kilo-PED
         ("PED",   1.0),            # PED
         ("mPEC",  0.00001),        # Milli-PEC (1 PEC = 0.01 PED)
-        ("\u00b5PED", 0.000001),   # µPED (micro-PED, µ = U+00B5)
-        ("\u03bcPED", 0.000001),   # µPED (micro-PED, µ = U+03BC)
+        ("uPEC",  0.00000001),     # Micro-PEC (game displays µ as 'u')
         ("PEC",   0.01),           # PEC (1 PEC = 0.01 PED)
     ]
 
@@ -1284,14 +1323,16 @@ class MarketPriceDetector:
             if text.endswith(suffix):
                 num_part = text[:len(text) - len(suffix)].strip()
                 try:
-                    return float(num_part) * multiplier
+                    val = float(num_part) * multiplier
+                    return 0.0 if val == 0.0 else val  # normalize -0.0
                 except ValueError:
                     return None
 
         # Strip trailing '%' for markup values
         text = text.rstrip("%").strip()
         try:
-            return float(text)
+            val = float(text)
+            return 0.0 if val == 0.0 else val  # normalize -0.0
         except ValueError:
             return None
 
