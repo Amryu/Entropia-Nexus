@@ -865,6 +865,44 @@ class NexusClient:
             self._handle_error(e, "get ingame prices")
             return None
 
+    def get_item_market_prices(self, item_id: int) -> list[dict] | None:
+        """GET /api/market/prices/snapshots/latest?itemIds={item_id} — latest snapshot for one item."""
+        try:
+            headers = self._auth_headers("get item market prices")
+            if headers is None:
+                return None
+            resp = self._session.get(
+                self._url("/market/prices/snapshots/latest"),
+                headers=headers,
+                params={"itemIds": str(item_id)},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get item market prices")
+            return None
+
+    def get_item_market_price_history(self, item_id: int, days: int = 30) -> list[dict] | None:
+        """GET /api/market/prices/snapshots/{item_id} — price history for one item."""
+        try:
+            headers = self._auth_headers("get item market price history")
+            if headers is None:
+                return None
+            from datetime import datetime, timedelta, timezone
+            from_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            resp = self._session.get(
+                self._url(f"/market/prices/snapshots/{item_id}"),
+                headers=headers,
+                params={"from": from_date, "limit": "750"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get item market price history")
+            return None
+
     def get_ingested_globals(self, since: str, limit: int = 200) -> dict | None:
         """GET /api/ingestion/globals — fetch globals since a timestamp."""
         try:

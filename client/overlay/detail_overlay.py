@@ -199,6 +199,11 @@ _TAB_EFFECTS_SVG = (
     '<path d="M12 2 L14 9 L21 9 L15.5 13.5 L17.5 21 L12 16.5 L6.5 21 L8.5 13.5 L3 9 L10 9 Z"/>'
 )
 
+# Market prices (bar chart icon)
+_TAB_MARKET_PRICES_SVG = (
+    '<path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zM16.2 13H19v6h-2.8v-6z"/>'
+)
+
 # Module-level callback set by app.py to open the map overlay.
 # Signature: (planet_name: str, location_id: int) -> None
 _map_overlay_callback = None
@@ -220,6 +225,7 @@ TAB_TIERS = "tiers"
 TAB_CONSTRUCTION = "construction"
 TAB_UNLOCKS = "unlocks"
 TAB_EFFECTS = "effects"
+TAB_MARKET_PRICES = "market_prices"
 
 # Entity types that support tiering (have tier materials)
 _TIERABLE_TYPES = {"Weapon", "ArmorSet", "MedicalTool", "Finder", "Excavator"}
@@ -271,6 +277,7 @@ def _get_tab_defs(entity_type: str, item_name: str = "") -> list[tuple[str, str,
             tabs.append((_TAB_TIERS_SVG, "Tier Calculator", TAB_TIERS))
         if entity_type == "Blueprint":
             tabs.append((_TAB_BLUEPRINT_SVG, "Construction Cost", TAB_CONSTRUCTION))
+        tabs.append((_TAB_MARKET_PRICES_SVG, "Market Prices", TAB_MARKET_PRICES))
         tabs += [
             (_TAB_ACQUIRE_SVG, "Acquisition", TAB_ACQUISITION),
             (_TAB_USAGE_SVG, "Usage", TAB_USAGE),
@@ -364,6 +371,7 @@ class DetailOverlayWidget(OverlayWidget):
     _entity_loaded = pyqtSignal(dict, str)  # (entity, page_type_id)
     _acquisition_loaded = pyqtSignal(dict)
     _usage_loaded = pyqtSignal(dict)
+    _market_prices_loaded = pyqtSignal(object)
     _map_data_ready = pyqtSignal(dict, object, list)  # (planet, pixmap, locations)
 
     def __init__(
@@ -388,6 +396,7 @@ class DetailOverlayWidget(OverlayWidget):
         self._full_item: dict | None = None
         self._acq_data: dict | None = None
         self._usage_data: dict | None = None
+        self._market_prices_data: dict | None = None
         self._page_type_id: str = ""
         self._pinned = False
         self._expanded = False
@@ -501,6 +510,7 @@ class DetailOverlayWidget(OverlayWidget):
         self._entity_loaded.connect(self._on_entity_loaded)
         self._acquisition_loaded.connect(self._on_acquisition_loaded)
         self._usage_loaded.connect(self._on_usage_loaded)
+        self._market_prices_loaded.connect(self._on_market_prices_loaded)
         self._map_data_ready.connect(self._on_map_data_ready)
         self._map_canvas = None
 
@@ -721,6 +731,7 @@ class DetailOverlayWidget(OverlayWidget):
         self._full_item = None
         self._acq_data = None
         self._usage_data = None
+        self._market_prices_data = None
         self._page_type_id = ""
         self._map_canvas = None
 
@@ -906,6 +917,9 @@ class DetailOverlayWidget(OverlayWidget):
         # Lazy-init construction cost tab
         if tab_id == TAB_CONSTRUCTION and not hasattr(self, "_construction_tab_built"):
             self._init_construction_tab()
+        # Lazy-load market prices tab
+        if tab_id == TAB_MARKET_PRICES and self._market_prices_data is None:
+            self._fetch_market_prices()
         # Show/hide stats panel based on active tab
         if hasattr(self, "_calc_stats_panel"):
             self._calc_stats_panel.set_wants_visible(tab_id == TAB_CALCULATOR)
@@ -1004,6 +1018,147 @@ class DetailOverlayWidget(OverlayWidget):
         self._usage_data = data
         self._rebuild_usage_tab()
 
+    # --- Market prices ---
+
+    def _fetch_market_prices(self):
+        nc = self._nexus_client
+        if not nc:
+            self._market_prices_loaded.emit({"_item_name": self._item.get("Name", ""), "snapshot": None})
+            return
+        item_id = (self._full_item or self._item).get("Id")
+        item_name = self._item.get("Name", "")
+
+        def fetch():
+            snapshot = None
+            if item_id:
+                rows = nc.get_item_market_prices(item_id)
+                if rows:
+                    snapshot = rows[0]
+            self._market_prices_loaded.emit({
+                "_item_name": item_name,
+                "snapshot": snapshot,
+            })
+
+        threading.Thread(
+            target=fetch, daemon=True, name="detail-overlay-mps",
+        ).start()
+
+    def _on_market_prices_loaded(self, data):
+        if not isinstance(data, dict):
+            return
+        if data.get("_item_name") != self._item.get("Name", ""):
+            return
+        self._market_prices_data = data
+        self._rebuild_market_prices_tab()
+
+    def _rebuild_market_prices_tab(self):
+        data = self._market_prices_data
+        if data is None:
+            return
+        scroll = self._tab_scrolls.get(TAB_MARKET_PRICES)
+        if scroll:
+            scroll.setWidget(self._build_market_prices_content(data))
+
+    def _build_market_prices_content(self, data: dict) -> QWidget:
+        widget = QWidget()
+        widget.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(2)
+
+        snapshot = data.get("snapshot")
+        if not snapshot:
+            layout.addWidget(_make_centered_label("No market price data available"))
+            layout.addStretch(1)
+            return widget
+
+        layout.addWidget(_section_label("Market Prices"))
+
+        periods = [
+            ("1d", "1 Day"),
+            ("7d", "7 Days"),
+            ("30d", "30 Days"),
+            ("365d", "1 Year"),
+            ("3650d", "10 Years"),
+        ]
+
+        for key, label in periods:
+            markup = snapshot.get(f"markup_{key}")
+            sales = snapshot.get(f"sales_{key}")
+            markup_str = f"{float(markup):.2f}%" if markup is not None else "—"
+            sales_str = f"{int(sales):,}" if sales is not None else "—"
+            row = self._mps_row(label, markup_str, sales_str)
+            layout.addWidget(row)
+
+        # Last updated
+        recorded_at = snapshot.get("recorded_at", "")
+        if recorded_at:
+            from datetime import datetime, timezone
+            try:
+                dt = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+                diff = datetime.now(timezone.utc) - dt
+                mins = int(diff.total_seconds() / 60)
+                if mins < 1:
+                    ago = "just now"
+                elif mins < 60:
+                    ago = f"{mins}m ago"
+                elif mins < 1440:
+                    ago = f"{mins // 60}h ago"
+                else:
+                    ago = f"{mins // 1440}d ago"
+                updated_lbl = QLabel(f"Updated {ago}")
+                updated_lbl.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+                    " padding: 4px 0 0 0;"
+                )
+                layout.addWidget(updated_lbl)
+            except (ValueError, TypeError):
+                pass
+
+        confidence = snapshot.get("confidence")
+        if confidence is not None and confidence < 0.5:
+            warn_lbl = QLabel("Low confidence")
+            warn_lbl.setStyleSheet(
+                "color: #e8a838; font-size: 10px; font-weight: bold;"
+                " background: transparent; padding: 2px 0;"
+            )
+            layout.addWidget(warn_lbl)
+
+        layout.addStretch(1)
+        return widget
+
+    @staticmethod
+    def _mps_row(period: str, markup: str, sales: str) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 2, 0, 2)
+        rl.setSpacing(4)
+
+        period_lbl = QLabel(period)
+        period_lbl.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+        )
+        period_lbl.setFixedWidth(60)
+        rl.addWidget(period_lbl)
+
+        markup_lbl = QLabel(markup)
+        markup_lbl.setStyleSheet(
+            f"color: {ACCENT}; font-size: 12px; background: transparent;"
+        )
+        markup_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        rl.addWidget(markup_lbl, 1)
+
+        sales_lbl = QLabel(sales)
+        sales_lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        sales_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        sales_lbl.setFixedWidth(70)
+        rl.addWidget(sales_lbl)
+
+        return row
+
     def _get_exchange_url(self) -> str | None:
         """Compute the exchange detail URL from the loaded entity data."""
         full = self._full_item
@@ -1038,6 +1193,7 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_CONSTRUCTION: "Loading materials...",
             TAB_UNLOCKS: "Loading unlock data...",
             TAB_EFFECTS: "Loading effects...",
+            TAB_MARKET_PRICES: "Loading market prices...",
         }
         for tab_id in self._tab_ids:
             scroll = self._make_scroll(

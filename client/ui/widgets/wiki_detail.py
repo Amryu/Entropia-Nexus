@@ -221,6 +221,83 @@ def make_section_table(
     return table
 
 
+def build_market_prices_content(snapshot) -> QWidget:
+    """Build a compact table showing latest market price snapshot values.
+
+    ``snapshot`` is a dict from the API, or None if no data.
+    """
+    container = QWidget()
+    container.setStyleSheet("background: transparent;")
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(8)
+
+    if not snapshot:
+        lbl = QLabel("No market price data available")
+        lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        layout.addWidget(lbl)
+        return container
+
+    periods = [
+        ("1d", "1 Day"),
+        ("7d", "7 Days"),
+        ("30d", "30 Days"),
+        ("365d", "1 Year"),
+        ("3650d", "10 Years"),
+    ]
+
+    rows = []
+    for key, label in periods:
+        markup = snapshot.get(f"markup_{key}")
+        sales = snapshot.get(f"sales_{key}")
+        markup_str = f"{float(markup):.2f}%" if markup is not None else "—"
+        sales_str = f"{int(sales):,}" if sales is not None else "—"
+        rows.append({"period": label, "markup": markup_str, "sales": sales_str})
+
+    table = FancyTable(
+        columns=[
+            ColumnDef("period", "Period"),
+            ColumnDef("markup", "Markup", alignment=Qt.AlignmentFlag.AlignRight),
+            ColumnDef("sales", "Sales", alignment=Qt.AlignmentFlag.AlignRight),
+        ],
+        sortable=False,
+        max_visible_rows=5,
+        compact_threshold=99,
+    )
+    table.set_data(rows)
+    layout.addWidget(table)
+
+    # Last updated
+    recorded_at = snapshot.get("recorded_at", "")
+    if recorded_at:
+        from datetime import datetime, timezone
+        try:
+            dt = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+            diff = datetime.now(timezone.utc) - dt
+            mins = int(diff.total_seconds() / 60)
+            if mins < 1:
+                ago = "just now"
+            elif mins < 60:
+                ago = f"{mins}m ago"
+            elif mins < 1440:
+                ago = f"{mins // 60}h ago"
+            else:
+                ago = f"{mins // 1440}d ago"
+            meta = QLabel(f"Updated {ago}")
+            meta.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+            layout.addWidget(meta)
+        except (ValueError, TypeError):
+            pass
+
+    confidence = snapshot.get("confidence")
+    if confidence is not None and confidence < 0.5:
+        warn = QLabel("Low confidence — few submissions")
+        warn.setStyleSheet("color: #e8a838; font-size: 12px; font-weight: bold;")
+        layout.addWidget(warn)
+
+    return container
+
+
 def build_acquisition_content(
     data: dict,
     *,
@@ -1101,6 +1178,7 @@ class WikiDetailView(QWidget):
     """
 
     _image_loaded = pyqtSignal(bytes)  # raw image bytes from background thread
+    _market_prices_loaded = pyqtSignal(object)
     entity_navigate = pyqtSignal(dict)  # {"Name": str, "Type": str}
 
     IMAGE_SIZE = 100
@@ -1339,6 +1417,39 @@ class WikiDetailView(QWidget):
     def _add_article_section(self, section: QWidget):
         """Add a widget to the bottom of the main layout."""
         self._main_layout.addWidget(section)
+
+    # --- Market Prices section ---
+
+    def _setup_market_prices_section(self):
+        """Create a collapsible 'Market Prices' section and start async loading.
+
+        Requires ``self._nexus_client`` to be set on the instance. If missing or
+        not authenticated, the section is not created.
+        """
+        nc = getattr(self, "_nexus_client", None)
+        if not nc:
+            return
+        self._mps_section = DataSection("Market Prices", expanded=True)
+        self._mps_section.set_loading()
+        self._add_article_section(self._mps_section)
+        self._market_prices_loaded.connect(self._on_market_prices_loaded)
+
+        item_id = self._item.get("Id")
+        if not item_id:
+            return
+
+        def fetch():
+            rows = nc.get_item_market_prices(item_id)
+            self._market_prices_loaded.emit(rows[0] if rows else None)
+
+        threading.Thread(
+            target=fetch, daemon=True, name="wiki-detail-mps",
+        ).start()
+
+    def _on_market_prices_loaded(self, snapshot):
+        if not hasattr(self, "_mps_section"):
+            return
+        self._mps_section.set_content(build_market_prices_content(snapshot))
 
     # --- Async image loading ---
 

@@ -20,6 +20,7 @@
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import MarketPriceSection from '$lib/components/wiki/MarketPriceSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
@@ -491,6 +492,7 @@
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
     tiering: true,
+    marketPrices: true,
     acquisition: true
   };
 
@@ -1186,6 +1188,14 @@
             <TieringEditor entity={activeEntity} entityType={getEntityType(additional.type)} tierInfo={additional.tierInfo} />
           </DataSection>
         {/if}
+
+        <!-- Market Prices Section -->
+        <MarketPriceSection
+          itemId={activeEntity?.Id}
+          itemName={activeEntity?.Name}
+          bind:expanded={panelStates.marketPrices}
+          on:toggle={savePanelStates}
+        />
 
         <!-- Acquisition Section -->
         {#if additional.acquisition}

@@ -17,6 +17,7 @@
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import MarketPriceSection from '$lib/components/wiki/MarketPriceSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
@@ -207,6 +208,7 @@
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
     defense: true,
+    marketPrices: true,
     acquisition: true
   };
 
@@ -677,6 +679,16 @@
             </div>
           {/if}
         </div>
+
+        <!-- Market Prices Section -->
+        {#if !isCreateMode}
+          <MarketPriceSection
+            itemId={activeVehicle?.Id}
+            itemName={activeVehicle?.Name}
+            bind:expanded={panelStates.marketPrices}
+            on:toggle={savePanelStates}
+          />
+        {/if}
 
         <!-- Acquisition Section -->
         {#if additional.acquisition && !isCreateMode}

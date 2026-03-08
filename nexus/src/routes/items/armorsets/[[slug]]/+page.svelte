@@ -24,6 +24,7 @@
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import MarketPriceSection from '$lib/components/wiki/MarketPriceSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import DefenseGridEdit from '$lib/components/wiki/DefenseGridEdit.svelte';
@@ -420,6 +421,7 @@
   let panelStates = {
     pieces: true,
     tiering: true,
+    marketPrices: true,
     acquisition: true,
     usage: true
   };
@@ -683,6 +685,14 @@
             <TieringEditor entity={activeEntity} entityType="ArmorSet" tierInfo={additional.tierInfo || []} setPieceCount={pieceCount} />
           </DataSection>
         {/if}
+
+        <!-- Market Prices Section -->
+        <MarketPriceSection
+          itemId={activeEntity?.Id}
+          itemName={activeEntity?.Name}
+          bind:expanded={panelStates.marketPrices}
+          on:toggle={savePanelStates}
+        />
 
         <!-- Acquisition Section -->
         {#if additional.acquisition}

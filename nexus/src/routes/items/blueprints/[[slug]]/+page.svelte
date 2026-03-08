@@ -38,6 +38,7 @@
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import MarketPriceSection from '$lib/components/wiki/MarketPriceSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
@@ -364,6 +365,7 @@
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
     construction: true,
+    marketPrices: true,
     acquisition: true,
     drops: true
   };
@@ -878,6 +880,14 @@
             <BlueprintMaterials blueprint={activeEntity} availableMaterials={materials} />
           </DataSection>
         {/if}
+
+        <!-- Market Prices Section -->
+        <MarketPriceSection
+          itemId={activeEntity?.Id}
+          itemName={activeEntity?.Name}
+          bind:expanded={panelStates.marketPrices}
+          on:toggle={savePanelStates}
+        />
 
         <!-- Acquisition Section -->
         {#if additional.acquisition}

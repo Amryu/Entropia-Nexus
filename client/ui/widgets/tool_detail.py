@@ -249,6 +249,9 @@ class ToolDetailView(WikiDetailView):
                 tiers_section.set_subtitle("No data")
             self._add_article_section(tiers_section)
 
+        # --- Market Prices panel ---
+        self._setup_market_prices_section()
+
         # --- Acquisition panel ---
         self._acquisition_section = DataSection("Acquisition", expanded=True)
         self._acquisition_section.set_loading()

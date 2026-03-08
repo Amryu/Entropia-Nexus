@@ -31,7 +31,8 @@ class VehicleDetailView(WikiDetailView):
     _usage_loaded = pyqtSignal(dict)
 
     def __init__(self, item: dict, *, nexus_base_url: str = "",
-                 data_client=None, parent=None):
+                 data_client=None, nexus_client=None, parent=None):
+        self._nexus_client = nexus_client
         super().__init__(
             item, nexus_base_url=nexus_base_url,
             data_client=data_client, parent=parent,
@@ -155,6 +156,9 @@ class VehicleDetailView(WikiDetailView):
         self._set_article_title(name)
         description = deep_get(item, "Properties", "Description") or ""
         self._set_description_html(description)
+
+        # --- Market Prices panel ---
+        self._setup_market_prices_section()
 
         # --- Acquisition panel ---
         self._acquisition_section = DataSection("Acquisition", expanded=True)

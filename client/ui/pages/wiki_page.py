@@ -984,12 +984,14 @@ class WikiPage(QWidget):
             detail_view = VehicleDetailView(
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
+                nexus_client=self._nexus_client,
             )
         elif page_type_id == "pets":
             from ..widgets.pet_detail import PetDetailView
             detail_view = PetDetailView(
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
+                nexus_client=self._nexus_client,
             )
         elif page_type_id in ("medicaltools", "medicalchips"):
             from ..widgets.medical_detail import MedicalDetailView
@@ -1063,6 +1065,7 @@ class WikiPage(QWidget):
                 item, page_type_id=page_type_id,
                 nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
+                nexus_client=self._nexus_client,
             )
 
         # Add edit button if URL is available
