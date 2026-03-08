@@ -1,13 +1,16 @@
 """SVG icon rendering for the sidebar and other UI elements."""
 
 import os
+import sys
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QPainter
 from PyQt6.QtSvg import QSvgRenderer
 
 # Resolve logo path relative to this file
-_LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
+_ASSETS = os.path.join(os.path.dirname(__file__), "..", "assets")
+_LOGO_PATH = os.path.join(_ASSETS, "logo.png")
+_ICO_PATH = os.path.join(_ASSETS, "logo.ico")
 
 # --- SVG path data (24x24 viewBox) ---
 
@@ -133,6 +136,13 @@ TRACKER = (
     '<rect x="11" y="17" width="5" height="2" rx="0.3" fill="currentColor" opacity="0.5"/>'
 )
 
+# Pencil (edit)
+PENCIL = (
+    '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z'
+    'M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0'
+    'l-1.83 1.83 3.75 3.75 1.83-1.83z"/>'
+)
+
 # Update available (download arrow + bar)
 UPDATE = (
     '<path d="M13 7h-2v4H7l5 5 5-5h-4V7z"/>'
@@ -179,16 +189,30 @@ def svg_pixmap(svg_elements: str, color: str, size: int = 24) -> QPixmap:
 
 
 def nexus_logo_icon(size: int = 16) -> QIcon:
-    """Load the Nexus logo PNG as a QIcon."""
+    """Load the Nexus logo as a QIcon with multiple resolutions.
+
+    On Windows, loads the .ico file which contains pre-rendered sizes
+    for reliable taskbar, Alt+Tab, and Task Manager display.
+    On other platforms, builds a multi-size QIcon from the PNG.
+    """
+    # Windows: prefer .ico (Qt reads all embedded sizes automatically)
+    if sys.platform == "win32" and os.path.isfile(_ICO_PATH):
+        icon = QIcon(_ICO_PATH)
+        if not icon.isNull():
+            return icon
+
+    # Fallback: build multi-size QIcon from PNG
     pixmap = QPixmap(_LOGO_PATH)
     if pixmap.isNull():
         return QIcon()
-    scaled = pixmap.scaled(
-        size, size,
-        Qt.AspectRatioMode.KeepAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-    return QIcon(scaled)
+    icon = QIcon()
+    for s in (16, 24, 32, 48, 64, 128, 256):
+        icon.addPixmap(
+            pixmap.scaled(s, s,
+                          Qt.AspectRatioMode.KeepAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation),
+        )
+    return icon
 
 
 def nexus_logo_pixmap(size: int = 16) -> QPixmap:

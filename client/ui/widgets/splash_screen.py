@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QApplication, QSpacerItem, QSizePolicy,
 )
 
+from ..icons import nexus_logo_icon
 from ..theme import PRIMARY, TEXT_MUTED
 from ...platform import backend as _platform
 
@@ -40,6 +41,7 @@ class SplashScreen(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedSize(SPLASH_WIDTH, SPLASH_HEIGHT)
+        self.setWindowIcon(nexus_logo_icon())
 
         self._login_error.connect(self.show_login_error)
         self._drag_pos = None

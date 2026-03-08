@@ -287,6 +287,21 @@ CREATE TABLE IF NOT EXISTS tracker_missions (
     has_expiry INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS custom_dailies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    cooldown_duration TEXT NOT NULL DEFAULT '1 day',
+    cooldown_starts_on TEXT NOT NULL DEFAULT 'Completion',
+    cooldown_ms INTEGER NOT NULL DEFAULT 86400000,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    cooldown_started_at TEXT,
+    notify INTEGER NOT NULL DEFAULT 1,
+    notify_minutes_before INTEGER NOT NULL DEFAULT 5,
+    waypoint TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
 """
 
 # Indexes that depend on columns added by _migrate()
@@ -798,7 +813,7 @@ class Database:
 
     def update_goal(self, goal_id: int, **kwargs) -> None:
         """Update goal fields (target_value, is_active, sort_order, etc.)."""
-        allowed = {"target_value", "is_active", "sort_order", "completed_at"}
+        allowed = {"target_value", "start_value", "is_active", "sort_order", "completed_at"}
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:
             return
@@ -917,6 +932,71 @@ class Database:
         with self._lock:
             self._conn.execute(
                 "DELETE FROM tracker_missions WHERE mission_id = ?", (mission_id,)
+            )
+            self._conn.commit()
+
+    # Custom dailies
+    def get_custom_dailies(self) -> list[dict]:
+        """Get all custom dailies ordered by sort_order."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT id, name, cooldown_duration, cooldown_starts_on, "
+                "cooldown_ms, sort_order, cooldown_started_at, notify, "
+                "notify_minutes_before, waypoint, enabled "
+                "FROM custom_dailies ORDER BY sort_order, id"
+            )
+            results = []
+            for r in cur.fetchall():
+                results.append({
+                    "id": f"c_{r[0]}",
+                    "is_custom": True,
+                    "name": r[1],
+                    "cooldown_duration": r[2],
+                    "cooldown_starts_on": r[3],
+                    "cooldown_ms": r[4],
+                    "order": r[5],
+                    "cooldown_started_at": r[6],
+                    "notify": bool(r[7]),
+                    "notify_minutes_before": r[8],
+                    "waypoint": r[9] or "",
+                    "enabled": bool(r[10]),
+                    "has_expiry": False,
+                })
+            return results
+
+    def save_custom_dailies(self, dailies: list[dict]) -> None:
+        """Replace all custom dailies atomically."""
+        with self._lock:
+            self._conn.execute("DELETE FROM custom_dailies")
+            for m in dailies:
+                raw_id = m["id"]
+                if isinstance(raw_id, str) and raw_id.startswith("c_"):
+                    raw_id = int(raw_id[2:])
+                self._conn.execute(
+                    "INSERT INTO custom_dailies "
+                    "(id, name, cooldown_duration, cooldown_starts_on, "
+                    "cooldown_ms, sort_order, cooldown_started_at, notify, "
+                    "notify_minutes_before, waypoint, enabled, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        raw_id, m.get("name", "?"),
+                        m.get("cooldown_duration", "1 day"),
+                        m.get("cooldown_starts_on", "Completion"),
+                        m.get("cooldown_ms", 86_400_000), m.get("order", 0),
+                        m.get("cooldown_started_at"), int(m.get("notify", True)),
+                        m.get("notify_minutes_before", 5),
+                        m.get("waypoint", ""),
+                        int(m.get("enabled", True)),
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+            self._conn.commit()
+
+    def delete_custom_daily(self, daily_id: int) -> None:
+        """Remove a custom daily by its integer id."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM custom_dailies WHERE id = ?", (daily_id,)
             )
             self._conn.commit()
 

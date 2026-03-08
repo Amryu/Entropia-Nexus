@@ -391,8 +391,6 @@ def save_config(config: AppConfig, config_path: str = "config.json") -> None:
         # Write to temp file, then atomic rename
         with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
 
         os.replace(tmp_path, config_path)
     except Exception as e:

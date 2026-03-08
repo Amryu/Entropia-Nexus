@@ -30,13 +30,14 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QLabel, QGraphicsOpacityEffect,
+)
 from PyQt6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtSlot,
 )
 from PyQt6.QtGui import (
     QPixmap, QPainter, QPainterPath, QColor, QMouseEvent,
-    QGraphicsOpacityEffect,
 )
 
 _LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.png")

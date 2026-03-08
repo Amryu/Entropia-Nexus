@@ -199,7 +199,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     local_server.listen(_SINGLE_INSTANCE_SERVER_NAME)
 
     from .ui.icons import nexus_logo_icon
-    app.setWindowIcon(nexus_logo_icon(32))
+    app.setWindowIcon(nexus_logo_icon())
 
     from PyQt6.QtWidgets import QStyleFactory
     app.setStyle(QStyleFactory.create("Fusion"))
@@ -272,8 +272,76 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         data_client=data_client,
     )
 
+    # Exchange stores — lightweight Python objects needed by the exchange page.
+    # Must be assigned before prewarm_all_pages() creates the exchange page.
+    from .exchange.exchange_store import ExchangeStore
+    from .exchange.favourites_store import FavouritesStore
+    _exchange_store = ExchangeStore(nexus_client, event_bus)
+    _exchange_store.load_items()
+    _favourites_store = FavouritesStore(nexus_client)
+    main_window._exchange_store = _exchange_store
+    main_window._favourites_store = _favourites_store
+    main_window.connect_exchange_store(_exchange_store)
+
     # Build all pages synchronously while the loading splash covers the screen.
     main_window.prewarm_all_pages()
+
+    # Overlay manager (focus detection, widget registry, snap) — lightweight,
+    # needed before building overlay widgets below.
+    from .overlay.overlay_manager import OverlayManager
+    overlay_manager = OverlayManager(config=config, event_bus=event_bus)
+
+    # Build heavy overlay widgets while splash still covers the screen.
+    # These take 400-700ms each and would cause visible freezes if deferred.
+    from .overlay.map_overlay import MapOverlay
+    _map_overlay = MapOverlay(
+        config=config, config_path=config_path,
+        data_client=data_client, manager=overlay_manager,
+    )
+    from .overlay.exchange_overlay import ExchangeOverlay
+    _exchange_overlay = ExchangeOverlay(
+        config=config, config_path=config_path,
+        store=_exchange_store, favourites=_favourites_store,
+        manager=overlay_manager,
+    )
+    from .overlay.notifications_overlay import NotificationsOverlay
+    _notifications_overlay = NotificationsOverlay(
+        config=config, config_path=config_path,
+        notif_manager=main_window._notif_manager,
+        manager=overlay_manager,
+    )
+
+    # Search overlay
+    _search_overlay = None
+    try:
+        from .overlay.search_overlay import SearchOverlayWidget
+        _search_overlay = SearchOverlayWidget(
+            config=config, config_path=config_path,
+            data_client=data_client, manager=overlay_manager,
+        )
+    except Exception as e:
+        log.warning("Search overlay failed: %s", e)
+
+    # Scan summary overlay
+    _scan_summary = None
+    try:
+        from .overlay.scan_summary_overlay import ScanSummaryOverlay
+        from .ui.main_window import PAGE_SKILLS
+
+        def _get_skill_values():
+            if PAGE_SKILLS in main_window._page_created:
+                page = main_window._pages.widget(PAGE_SKILLS)
+                return page._manager.get_all_values()
+            return {}
+
+        _scan_summary = ScanSummaryOverlay(
+            config=config, config_path=config_path,
+            event_bus=event_bus, manager=overlay_manager,
+            skill_values_fn=_get_skill_values,
+        )
+        overlay_manager._scan_summary = _scan_summary
+    except Exception as e:
+        log.warning("Scan summary overlay failed: %s", e)
 
     # Close the loading splash and show the main window.
     if _splash_proc is not None:
@@ -354,43 +422,13 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_player_status_detector(config, event_bus, frame_cache))
     workers.extend(_start_market_price_detector(config, event_bus, frame_cache))
 
-    # Overlay manager (focus detection, widget registry, snap)
-    from .overlay.overlay_manager import OverlayManager
-    overlay_manager = OverlayManager(config=config, event_bus=event_bus)
-
-    # Defer overlay widget creation so the main window renders first.
-    # The OverlayManager itself is lightweight (timer + state); the actual
-    # overlay widgets are heavy (Qt windows, stylesheets, layouts).
+    # Defer overlay wiring so the main window renders first.
+    # Heavy overlay widgets are already built during the splash phase;
+    # this callback handles lightweight signal wiring and scan overlays.
     def _create_overlays():
-        # Overlay creation is staggered across multiple frames to avoid
-        # a burst of widget construction that would cause frame jank.
-        # Closures capture overlay variables by reference (read at call time),
-        # so toggle functions work as soon as the overlay is created.
-        _map_overlay = None
-        _exchange_overlay = None
-        _notifications_overlay = None
-
-        # --- Lightweight setup (immediate) ---
-
-        search_overlay = None
-        try:
-            from .overlay.search_overlay import SearchOverlayWidget
-            search_overlay = SearchOverlayWidget(
-                config=config, config_path=config_path,
-                data_client=data_client, manager=overlay_manager,
-            )
-        except Exception as e:
-            log.warning("Search overlay failed: %s", e)
-
-        # Exchange stores (lightweight Python objects, needed by main_window)
-        from .exchange.exchange_store import ExchangeStore
-        from .exchange.favourites_store import FavouritesStore
-        _exchange_store = ExchangeStore(nexus_client, event_bus)
-        _exchange_store.load_items()
-        _favourites_store = FavouritesStore(nexus_client)
-        main_window._exchange_store = _exchange_store
-        main_window._favourites_store = _favourites_store
-        main_window.connect_exchange_store(_exchange_store)
+        # Heavy overlay widgets (_map_overlay, _exchange_overlay,
+        # _notifications_overlay) are already built during the splash phase.
+        # This function wires up signals, toggle callbacks, and scan overlays.
 
         # Toast manager (lightweight widget)
         from .overlay.toast_widget import ToastManager
@@ -574,14 +612,14 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         # Allow any page to open entity detail overlays via signals
         signals.open_entity_overlay.connect(_on_overlay_result_selected)
 
-        if search_overlay:
-            search_overlay.result_selected.connect(_on_overlay_result_selected)
+        if _search_overlay:
+            _search_overlay.result_selected.connect(_on_overlay_result_selected)
 
             # Logo click — focus client on the overlay's monitor
             from PyQt6.QtWidgets import QApplication
-            search_overlay.logo_clicked.connect(
+            _search_overlay.logo_clicked.connect(
                 lambda: main_window.bring_to_front_on_screen(
-                    QApplication.screenAt(search_overlay.geometry().center())
+                    QApplication.screenAt(_search_overlay.geometry().center())
                 )
             )
 
@@ -594,55 +632,16 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 elif action == "notifications":
                     _toggle_notifications_overlay()
 
-            search_overlay.menu_action.connect(_on_search_menu_action)
+            _search_overlay.menu_action.connect(_on_search_menu_action)
 
             # Notification badge on logo
-            main_window.set_search_overlay(search_overlay)
+            main_window.set_search_overlay(_search_overlay)
 
-        # --- Staggered heavy overlay creation ---
-        # Each overlay is created on a separate frame to avoid jank.
-
-        def _create_map():
-            nonlocal _map_overlay
-            from .overlay.map_overlay import MapOverlay
-            _map_overlay = MapOverlay(
-                config=config,
-                config_path=config_path,
-                data_client=data_client,
-                manager=overlay_manager,
-            )
-
-        def _create_exchange():
-            nonlocal _exchange_overlay
-            from .overlay.exchange_overlay import ExchangeOverlay
-            _exchange_overlay = ExchangeOverlay(
-                config=config,
-                config_path=config_path,
-                store=_exchange_store,
-                favourites=_favourites_store,
-                manager=overlay_manager,
-            )
-            _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
-
-        def _create_notifications_and_scan():
-            nonlocal _notifications_overlay
-            from .overlay.notifications_overlay import NotificationsOverlay
-            _notifications_overlay = NotificationsOverlay(
-                config=config,
-                config_path=config_path,
-                notif_manager=main_window._notif_manager,
-                manager=overlay_manager,
-            )
-            _notifications_overlay.read_state_changed.connect(
-                main_window._update_badge
-            )
-
-            # Scan highlight overlay (click-through, shows scanned rows + target lock)
-            _create_scan_overlays()
-
-        QTimer.singleShot(50, _create_map)
-        QTimer.singleShot(100, _create_exchange)
-        QTimer.singleShot(150, _create_notifications_and_scan)
+        # Wire signals on the pre-built overlays
+        _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
+        _notifications_overlay.read_state_changed.connect(
+            main_window._update_badge
+        )
 
         def _create_scan_overlays():
             # Scan highlight overlay
@@ -698,22 +697,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             except Exception as e:
                 log.warning("Scan highlight overlay failed: %s", e)
 
-            # Scan summary overlay (draggable panel, shows scan results + validation)
-            try:
-                from .overlay.scan_summary_overlay import ScanSummaryOverlay
+            # Scan summary overlay signal wiring (widget built during splash)
+            if _scan_summary is not None:
                 from .ui.main_window import PAGE_SKILLS
-
-                def _get_skill_values():
-                    if PAGE_SKILLS in main_window._page_created:
-                        page = main_window._pages.widget(PAGE_SKILLS)
-                        return page._manager.get_all_values()
-                    return {}
-
-                overlay_manager._scan_summary = ScanSummaryOverlay(
-                    config=config, config_path=config_path,
-                    event_bus=event_bus, manager=overlay_manager,
-                    skill_values_fn=_get_skill_values,
-                )
 
                 def _clear_scan_selection():
                     if PAGE_SKILLS not in main_window._page_created:
@@ -762,14 +748,15 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     else:
                         threading.Thread(target=do_sync, daemon=True, name="skill-sync").start()
 
-                overlay_manager._scan_summary.scan_marked_complete.connect(
+                _scan_summary.scan_marked_complete.connect(
                     _on_scan_marked_complete
                 )
-                overlay_manager._scan_summary.scan_entries_cleared.connect(
+                _scan_summary.scan_entries_cleared.connect(
                     _clear_scan_selection
                 )
-            except Exception as e:
-                log.warning("Scan summary overlay failed: %s", e)
+
+        # Scan highlight overlay (click-through, shows scanned rows + target lock)
+        _create_scan_overlays()
 
     QTimer.singleShot(0, _create_overlays)
 
@@ -996,10 +983,15 @@ def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
         manual_trigger = threading.Event()
 
         def _on_manual_trigger(_data=None):
-            # Force the current OCR loop to restart so the visible page
-            # is scanned again immediately.
-            orchestrator._stop_event.set()
-            manual_trigger.set()
+            if orchestrator._current_window_bounds is not None:
+                # Monitor loop is active — request a re-scan of the current
+                # page without tearing down and restarting the pipeline.
+                orchestrator._rescan_requested.set()
+            else:
+                # No active monitor loop — wake the OCR thread to start
+                # a fresh scan (e.g. manual mode first trigger).
+                orchestrator._stop_event.set()
+                manual_trigger.set()
 
         def _on_config_changed(_data=None):
             orchestrator.set_capture_backend(

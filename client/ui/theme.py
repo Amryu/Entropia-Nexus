@@ -106,8 +106,50 @@ QWidget {{
 
 /* ===== Labels ===== */
 
-QLabel {{
+QLabel, QRadioButton, QCheckBox {{
     background-color: transparent;
+}}
+
+QCheckBox::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {BORDER_HOVER};
+    border-radius: 2px;
+    background-color: {MAIN_DARK};
+}}
+
+QCheckBox::indicator:checked {{
+    background-color: {ACCENT};
+    border-color: {ACCENT};
+    image: url({_ASSETS_DIR}/check.svg);
+}}
+
+QCheckBox::indicator:disabled {{
+    border-color: {BORDER};
+    background-color: {SECONDARY};
+}}
+
+QCheckBox::indicator:checked:disabled {{
+    background-color: {DISABLED};
+    border-color: {DISABLED};
+}}
+
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {BORDER_HOVER};
+    border-radius: 8px;
+    background-color: {MAIN_DARK};
+}}
+
+QRadioButton::indicator:checked {{
+    background-color: {ACCENT};
+    border-color: {ACCENT};
+}}
+
+QRadioButton::indicator:disabled {{
+    border-color: {BORDER};
+    background-color: {SECONDARY};
 }}
 
 QLabel#pageHeader {{

@@ -100,11 +100,13 @@ class MainWindow(QWidget):
 
         self._wiki_page = None
         self._markup_resolver = None
+        self._exchange_store = None
+        self._favourites_store = None
         self._quitting = False
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Entropia Nexus")
-        self.setWindowIcon(nexus_logo_icon(32))
+        self.setWindowIcon(nexus_logo_icon())
         self.setMinimumSize(960, 640)
 
         # Navigation history
@@ -298,6 +300,8 @@ class MainWindow(QWidget):
                              config_path=self._config_path)
 
     def _create_exchange_page(self):
+        if self._exchange_store is None:
+            raise RuntimeError("Exchange stores not ready yet")
         from .pages.exchange_page import ExchangePage
         return ExchangePage(
             signals=self._signals,
@@ -677,7 +681,7 @@ class MainWindow(QWidget):
     def _setup_tray(self):
         self._tray = QSystemTrayIcon(self)
         self._tray.setToolTip("Entropia Nexus")
-        self._tray.setIcon(nexus_logo_icon(32))
+        self._tray.setIcon(nexus_logo_icon())
 
         tray_menu = QMenu(self)
 
