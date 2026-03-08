@@ -134,8 +134,9 @@ class ScanHighlightOverlay(QWidget):
         # State — target lock
         self._target_lock_data: dict | None = None  # Last target lock update
 
-        # State — market price
-        self._market_price_data: dict | None = None  # Last market price debug update
+        # State — market price (supports multiple simultaneous windows)
+        self._market_price_windows: list[dict] = []
+        self._mp_current_tick: int = 0  # timestamp hash for tick dedup
 
         # State — skills template
         self._skills_template_data: dict | None = None  # Last skills template match
@@ -308,7 +309,7 @@ class ScanHighlightOverlay(QWidget):
             self._game_focused = focused
             has_content = (self._regions is not None
                           or self._target_lock_data is not None
-                          or self._market_price_data is not None
+                          or len(self._market_price_windows) > 0
                           or self._player_status_data is not None
                           or self._skills_template_data is not None)
             if focused and has_content:
@@ -364,14 +365,14 @@ class ScanHighlightOverlay(QWidget):
         if not getattr(config, "target_lock_enabled", True):
             self._target_lock_data = None
         if not getattr(config, "market_price_enabled", True):
-            self._market_price_data = None
+            self._market_price_windows.clear()
         if not getattr(config, "player_status_enabled", True):
             self._player_status_data = None
 
         self.update()
         # Hide if nothing to show
         if (self._regions is None and self._target_lock_data is None
-                and self._market_price_data is None
+                and len(self._market_price_windows) == 0
                 and self._player_status_data is None
                 and self._skills_template_data is None):
             self.hide()
@@ -390,7 +391,7 @@ class ScanHighlightOverlay(QWidget):
         self._target_lock_data = None
         self.update()
         # Hide if no other content
-        if (self._regions is None and self._market_price_data is None
+        if (self._regions is None and len(self._market_price_windows) == 0
                 and self._player_status_data is None):
             self.hide()
 
@@ -415,8 +416,18 @@ class ScanHighlightOverlay(QWidget):
             self.update()
 
     def _on_market_price_debug(self, data: dict) -> None:
-        """Market price window detected — store position and repaint."""
-        self._market_price_data = data
+        """Market price window detected — accumulate for this tick and repaint.
+
+        Multiple events arrive per tick when several market price windows are
+        open.  We detect a new tick by checking if the timestamp changed.
+        """
+        ts = data.get("data", {}).get("timestamp", "")
+        # New tick: clear accumulated windows from previous tick
+        tick_id = hash(ts)
+        if tick_id != self._mp_current_tick:
+            self._mp_current_tick = tick_id
+            self._market_price_windows.clear()
+        self._market_price_windows.append(data)
         self._update_game_origin(data)
         if self._game_focused and self._debug:
             if not self.isVisible():
@@ -425,7 +436,7 @@ class ScanHighlightOverlay(QWidget):
 
     def _on_market_price_lost(self) -> None:
         """Market price window lost — clear and repaint."""
-        self._market_price_data = None
+        self._market_price_windows.clear()
         self.update()
         if (self._regions is None and self._target_lock_data is None
                 and self._player_status_data is None):
@@ -445,7 +456,7 @@ class ScanHighlightOverlay(QWidget):
         self._player_status_data = None
         self.update()
         if (self._regions is None and self._target_lock_data is None
-                and self._market_price_data is None):
+                and len(self._market_price_windows) == 0):
             self.hide()
 
     def _on_complete(self) -> None:
@@ -503,7 +514,7 @@ class ScanHighlightOverlay(QWidget):
 
         has_scan = self._regions is not None
         has_lock = self._target_lock_data is not None
-        has_mp = self._market_price_data is not None
+        has_mp = len(self._market_price_windows) > 0
         has_ps = self._player_status_data is not None
         has_st = self._skills_template_data is not None
         if not has_scan and not has_lock and not has_mp and not has_ps and not has_st:
@@ -755,11 +766,12 @@ class ScanHighlightOverlay(QWidget):
     # ── Market price debug ────────────────────────────────────────────
 
     def _paint_market_price(self, painter: QPainter) -> None:
-        """Draw debug overlay for the market price window (debug mode only)."""
-        data = self._market_price_data
-        if not data:
-            return
+        """Draw debug overlay for all detected market price windows."""
+        for mp_data in self._market_price_windows:
+            self._paint_one_market_price(painter, mp_data)
 
+    def _paint_one_market_price(self, painter: QPainter, data: dict) -> None:
+        """Draw debug overlay for a single market price window."""
         x = data.get("x", 0)
         y = data.get("y", 0)
         w = data.get("w", 0)
@@ -805,13 +817,17 @@ class ScanHighlightOverlay(QWidget):
             # Label above box
             painter.setFont(MP_LABEL_FONT)
             painter.drawText(rx + 2, ry - 2, label)
-            # Value text to the right of the box (avoids overlapping game text)
+            # Value text at the bottom-right of the box
             if value_text:
                 painter.setFont(MP_VALUE_FONT)
                 painter.setPen(QPen(QColor(255, 255, 255, 220)))
+                fm = painter.fontMetrics()
+                tw = fm.horizontalAdvance(value_text)
+                th = fm.height()
                 painter.drawText(
-                    rx + rw + 4, ry, 500, rh,
-                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    rx + rw - tw - 2, ry + rh - th,
+                    tw + 4, th,
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
                     value_text,
                 )
 
@@ -839,7 +855,7 @@ class ScanHighlightOverlay(QWidget):
             off_x = cell_offset.get("x", 0)
             off_y = cell_offset.get("y", 0)
 
-            periods = ["1d", "7d", "30d", "90d", "365d"]
+            periods = ["1d", "7d", "30d", "365d", "3650d"]
             metrics = ["markup", "sales"]
             for row_idx, period in enumerate(periods):
                 for col_idx, metric in enumerate(metrics):
@@ -849,9 +865,42 @@ class ScanHighlightOverlay(QWidget):
                                 "w": cell_w, "h": cell_h}
                     key = f"{metric}_{period}"
                     val = parsed.get(key)
-                    val_str = f"{val}" if val is not None else "—"
+                    val_str = self._format_cell_value(val, metric)
                     label = f"{metric[0].upper()}{period}"
                     draw_roi(cell_roi, MP_ROI_CELL, label, val_str)
+
+    @staticmethod
+    def _format_cell_value(val, metric: str) -> str:
+        """Format a parsed cell value for the debug overlay.
+
+        Sales values use scientific notation for very small numbers
+        (mPEC/uPEC range).  Markup values use compact notation for
+        large percentages.
+        """
+        if val is None:
+            return "—"
+        if not isinstance(val, (int, float)):
+            return str(val)
+        if val == 0:
+            return "0"
+        if metric == "sales":
+            # Sales are in PED; 1 PEC = 0.01 PED
+            abs_val = abs(val)
+            if abs_val >= 1_000_000:
+                return f"{val:.2g}M"
+            if abs_val >= 1_000:
+                return f"{val:.4g}k"
+            if abs_val >= 0.01:
+                return f"{val:.4g}"
+            # Sub-PEC: use scientific notation
+            return f"{val:.2e}"
+        # Markup
+        abs_val = abs(val)
+        if abs_val >= 100_000:
+            return f"{val:.3g}%"
+        if abs_val >= 100:
+            return f"{val:.4g}%"
+        return f"{val:.4g}"
 
     # ── Player status (heart) ────────────────────────────────────────
 

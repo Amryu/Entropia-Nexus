@@ -29,6 +29,7 @@ from ..core.constants import (
     EVENT_MARKET_PRICE_DEBUG,
     EVENT_MARKET_PRICE_ERROR,
     EVENT_MARKET_PRICE_LOST,
+    EVENT_MARKET_PRICE_REVIEW,
     EVENT_MARKET_PRICE_SCAN,
     GAME_TITLE_PREFIX,
 )
@@ -75,7 +76,10 @@ MARKET_DIGIT_MAX_SINGLE_W = 8
 MARKET_MIN_SUB_BLOB_W = 3
 
 # --- Period labels for the 5 data rows ---
-PERIODS = ["1d", "7d", "30d", "90d", "365d"]
+PERIODS = ["1d", "7d", "30d", "365d", "3650d"]
+
+# Sentinel for markup overflow (game shows ">999999%" or em dash)
+MARKUP_OVERFLOW = -1
 
 # --- STPK assets directory ---
 STPK_DIR = Path(__file__).parent.parent / "assets" / "stpk"
@@ -92,7 +96,7 @@ class MarketPriceDetector:
     using STPK font templates when available.
     """
 
-    def __init__(self, config, event_bus, capturer_or_cache):
+    def __init__(self, config, event_bus, capturer_or_cache, data_client=None):
         self._config = config
         self._event_bus = event_bus
 
@@ -109,6 +113,15 @@ class MarketPriceDetector:
         self._thread = None
         self._tracer = None  # OcrTracer, set via set_tracer()
 
+        # Item name matcher (optional — gracefully degrades without it)
+        self._item_matcher = None
+        if data_client:
+            try:
+                from .item_name_matcher import ItemNameMatcher
+                self._item_matcher = ItemNameMatcher(data_client)
+            except Exception as e:
+                log.warning("Item name matcher not available: %s", e)
+
         # Game window
         self._game_hwnd = None
         self._game_geometry: tuple[int, int, int, int] | None = None
@@ -122,10 +135,9 @@ class MarketPriceDetector:
         self._template_h = 0
         self._template_w = 0
 
-        # Tracking state
-        self._last_pos: tuple[int, int] | None = None
-        self._last_region_pixels: np.ndarray | None = None
-        self._last_data: dict | None = None  # last published data (skip if unchanged)
+        # Tracking state (multi-window)
+        # Each tracked window: {"pos": (x,y), "pixels": ndarray, "data": dict}
+        self._tracked_windows: list[dict] = []
 
         # STPK entries (loaded lazily, None = not loaded, [] = loaded but empty)
         self._digit_entries: list[dict] | None = None
@@ -306,13 +318,41 @@ class MarketPriceDetector:
             return
 
         threshold = getattr(self._config, "market_price_match_threshold", 0.85)
-        pos, confidence = self._find_template(image, threshold)
 
-        if pos is not None:
-            self._last_pos = pos
+        # Quick check: if all tracked positions are pixel-identical, emit
+        # debug events for the cached data and skip the expensive search.
+        if self._tracked_windows and self._all_positions_unchanged(image):
+            gx, gy = self._game_origin
+            for tw in self._tracked_windows:
+                x, y = tw["pos"]
+                self._event_bus.publish(EVENT_MARKET_PRICE_DEBUG, {
+                    "x": gx + x, "y": gy + y,
+                    "w": self._template_w, "h": self._template_h,
+                    "confidence": tw["data"].get("confidence", 1.0),
+                    "data": tw["data"],
+                    "game_origin": self._game_origin,
+                })
+            return
+
+        # Find all market price windows in the screenshot
+        matches = self._find_all_matches(image, threshold)
+
+        if not matches:
+            if self._tracked_windows:
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET", "all templates lost")
+                self._tracked_windows.clear()
+                self._event_bus.publish(EVENT_MARKET_PRICE_LOST, {})
+            return
+
+        gx, gy = self._game_origin
+        new_tracked: list[dict] = []
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        for pos, confidence in matches:
             x, y = pos
-            self._last_region_pixels = self._extract_region(
-                image, x, y, self._template_w, self._template_h
+            pixels = self._extract_region(
+                image, x, y, self._template_w, self._template_h,
             )
 
             if self._tracer and self._tracer.enabled:
@@ -321,50 +361,116 @@ class MarketPriceDetector:
             # Read all ROIs
             data = self._read_all_rois(image, x, y)
             data["confidence"] = confidence
-            data["timestamp"] = datetime.now(timezone.utc).isoformat()
+            data["timestamp"] = timestamp
 
             # Publish debug data every tick (screen-absolute coordinates)
-            gx, gy = self._game_origin
             self._event_bus.publish(EVENT_MARKET_PRICE_DEBUG, {
                 "x": gx + x, "y": gy + y,
                 "w": self._template_w, "h": self._template_h,
-                "confidence": data["confidence"],
+                "confidence": confidence,
                 "data": data,
                 "game_origin": self._game_origin,
             })
 
-            # Only publish scan event if data changed from last scan
-            if self._data_changed(data):
-                self._last_data = data
-                self._event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
+            # Find previous tracked window near this position
+            prev = self._find_tracked_near(pos)
+            prev_data = prev["data"] if prev else None
+
+            if prev_data is None or self._data_changed(data, prev_data):
+                # Check if manual review is needed (overflow / ambiguity)
+                review = self._build_review_request(data)
+                if review:
+                    # Hold data — dialog will publish SCAN after user acts
+                    self._event_bus.publish(
+                        EVENT_MARKET_PRICE_REVIEW, review)
+                else:
+                    self._event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
+
                 self._print_scan(data)
-                log.info("Scan: '%s' tier=%s conf=%.2f",
-                         data.get("item_name", "?"),
-                         data.get("tier"), data["confidence"])
+                self._log_scan_detail(data)
                 if self._tracer and self._tracer.enabled:
                     self._tracer.log("MARKET_SCAN",
                         f"'{data.get('item_name', '?')}' tier={data.get('tier')}")
-                    # Save annotated debug image of the market price window area
-                    self._trace_save_window(image, x, y)
-        else:
-            # Window not detected — clear tracking
-            if self._last_pos is not None:
-                if self._tracer and self._tracer.enabled:
-                    self._tracer.log("MARKET", "template lost")
-                self._last_pos = None
-                self._last_region_pixels = None
-                self._event_bus.publish(EVENT_MARKET_PRICE_LOST, {})
+                    self._trace_save_window(
+                        image, x, y, data.get("item_name", ""))
 
-    def _data_changed(self, data: dict) -> bool:
-        """Check if the scan data differs from the last published data."""
-        if self._last_data is None:
-            return True
-        # Compare key fields
+            new_tracked.append({"pos": pos, "pixels": pixels, "data": data})
+
+        # Emit lost event if we went from having windows to none
+        had_windows = len(self._tracked_windows) > 0
+        self._tracked_windows = new_tracked
+        if had_windows and not new_tracked:
+            self._event_bus.publish(EVENT_MARKET_PRICE_LOST, {})
+
+    def _all_positions_unchanged(self, image: np.ndarray) -> bool:
+        """Check if all tracked window positions have identical pixels."""
+        for tw in self._tracked_windows:
+            x, y = tw["pos"]
+            current = self._extract_region(
+                image, x, y, self._template_w, self._template_h,
+            )
+            if current is None or tw.get("pixels") is None:
+                return False
+            if current.shape != tw["pixels"].shape:
+                return False
+            if not np.array_equal(current, tw["pixels"]):
+                return False
+        return True
+
+    def _find_tracked_near(self, pos: tuple[int, int]) -> dict | None:
+        """Find a previously tracked window near the given position."""
+        x, y = pos
+        for tw in self._tracked_windows:
+            tx, ty = tw["pos"]
+            if abs(x - tx) < self._template_w and abs(y - ty) < self._template_h:
+                return tw
+        return None
+
+    @staticmethod
+    def _build_review_request(data: dict) -> dict | None:
+        """Check if a scan needs manual review and build the review payload.
+
+        Returns a dict with ``data``, ``editable_fields``, ``candidates``,
+        and ``reason`` — or None when no review is needed.
+        """
+        editable: list[str] = []
+        reasons: list[str] = []
+
+        # Overflow markup: game shows >999999% / em dash
+        for period in PERIODS:
+            key = f"markup_{period}"
+            if data.get(key) == MARKUP_OVERFLOW:
+                editable.append(key)
+                reasons.append(f"{key} overflow")
+
+        # Ambiguous item name (matcher couldn't resolve confidently)
+        match_result = data.get("_match_result")
+        if match_result and getattr(match_result, "ambiguous", False):
+            editable.append("item_name")
+            reasons.append("ambiguous item name")
+
+        if not editable:
+            return None
+
+        candidates = []
+        if match_result and hasattr(match_result, "candidates"):
+            candidates = list(match_result.candidates or [])
+
+        return {
+            "data": data,
+            "editable_fields": editable,
+            "candidates": candidates,
+            "reason": "; ".join(reasons),
+        }
+
+    @staticmethod
+    def _data_changed(data: dict, prev: dict) -> bool:
+        """Check if the scan data differs from previous data."""
         for key in ("item_name", "tier",
                      "markup_1d", "sales_1d", "markup_7d", "sales_7d",
-                     "markup_30d", "sales_30d", "markup_90d", "sales_90d",
-                     "markup_365d", "sales_365d"):
-            if data.get(key) != self._last_data.get(key):
+                     "markup_30d", "sales_30d", "markup_365d", "sales_365d",
+                     "markup_3650d", "sales_3650d"):
+            if data.get(key) != prev.get(key):
                 return True
         return False
 
@@ -456,77 +562,91 @@ class MarketPriceDetector:
             return f"{value:.2f} PED"
         return f"{value * 100:.2f} PEC"
 
-    # ------------------------------------------------------------------
-    # Three-tier template search
-    # ------------------------------------------------------------------
+    def _log_scan_detail(self, data: dict) -> None:
+        """Log detailed per-field data for a detected market price scan."""
+        name = data.get("item_name", "?")
+        name_conf = data.get("item_name_conf", 0.0)
+        tier = data.get("tier")
+        tmpl_conf = data.get("confidence", 0.0)
+        ocr_conf = data.get("ocr_confidence", 0.0)
 
-    def _find_template(self, image: np.ndarray, threshold: float
-                       ) -> tuple[tuple[int, int] | None, float]:
-        """Find the market price label in the game screenshot."""
-        # Tier 1: cheap pixel check
-        if self._last_pos is not None and self._last_region_pixels is not None:
-            x, y = self._last_pos
-            current = self._extract_region(
-                image, x, y, self._template_w, self._template_h
+        ocr_name = data.get("item_name_ocr", "")
+        edit_dist = data.get("item_name_edit_dist", 0)
+        match_info = ""
+        if ocr_name and ocr_name != name:
+            match_info = f", ocr='{ocr_name}', edit_dist={edit_dist}"
+
+        lines = [
+            f"Market Price Detected: '{name}' "
+            f"(tier={tier}, tmpl={tmpl_conf:.3f}, ocr={ocr_conf:.3f}, "
+            f"name_conf={name_conf:.3f}{match_info})",
+        ]
+        for period in PERIODS:
+            markup_raw = data.get(f"markup_{period}_raw", "")
+            markup_val = data.get(f"markup_{period}")
+            markup_conf = data.get(f"markup_{period}_conf", 0.0)
+            sales_raw = data.get(f"sales_{period}_raw", "")
+            sales_val = data.get(f"sales_{period}")
+            sales_conf = data.get(f"sales_{period}_conf", 0.0)
+            lines.append(
+                f"  {period:>4s}: markup={markup_raw!r:>12s} "
+                f"({markup_val}) conf={markup_conf:.3f} | "
+                f"sales={sales_raw!r:>12s} "
+                f"({sales_val}) conf={sales_conf:.3f}"
             )
-            if current is not None and current.shape == self._last_region_pixels.shape:
-                if np.array_equal(current, self._last_region_pixels):
-                    return self._last_pos, 1.0
 
-        # Tier 2: limited area search
-        if self._last_pos is not None:
-            result = self._match_in_region(image, self._last_pos, threshold)
-            if result is not None:
-                return result
+        msg = "\n".join(lines)
+        log.info("%s", msg)
 
-        # Tier 3: full game window search
-        return self._match_full(image, threshold)
+    # ------------------------------------------------------------------
+    # Template search (multi-window)
+    # ------------------------------------------------------------------
 
-    def _match_in_region(self, image: np.ndarray, center: tuple[int, int],
-                         threshold: float
-                         ) -> tuple[tuple[int, int], float] | None:
-        cx, cy = center
-        ih, iw = image.shape[:2]
-        th, tw = self._template_h, self._template_w
+    def _find_all_matches(
+        self, image: np.ndarray, threshold: float,
+    ) -> list[tuple[tuple[int, int], float]]:
+        """Find all market price labels in the screenshot.
 
-        margin = getattr(self._config, "ocr_search_margin", 80)
-        x1 = max(0, cx - margin)
-        y1 = max(0, cy - margin)
-        x2 = min(iw, cx + tw + margin)
-        y2 = min(ih, cy + th + margin)
-
-        region = image[y1:y2, x1:x2]
-        if region.shape[0] < th or region.shape[1] < tw:
-            return None
-
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        result = cv2.matchTemplate(
-            gray, self._template_gray, cv2.TM_CCOEFF_NORMED,
-        )
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-        if max_val >= threshold:
-            abs_x, abs_y = x1 + max_loc[0], y1 + max_loc[1]
-            if self._validate_match(image, abs_x, abs_y):
-                return (abs_x, abs_y), max_val
-        return None
-
-    def _match_full(self, image: np.ndarray, threshold: float
-                    ) -> tuple[tuple[int, int] | None, float]:
+        Uses non-maximum suppression to deduplicate overlapping detections.
+        Returns list of ((x, y), confidence) for each validated match.
+        """
         ih, iw = image.shape[:2]
         if ih < self._template_h or iw < self._template_w:
-            return None, 0.0
+            return []
 
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         result = cv2.matchTemplate(
             gray, self._template_gray, cv2.TM_CCOEFF_NORMED,
         )
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-        if max_val >= threshold:
-            if self._validate_match(image, max_loc[0], max_loc[1]):
-                return max_loc, max_val
-        return None, 0.0
+        # Find all positions above threshold
+        locations = np.where(result >= threshold)
+        if len(locations[0]) == 0:
+            return []
+
+        # Collect candidates: (score, x, y) sorted by score descending
+        scores = result[locations]
+        order = np.argsort(-scores)
+        candidates = [
+            ((int(locations[1][i]), int(locations[0][i])), float(scores[i]))
+            for i in order
+        ]
+
+        # Non-maximum suppression: keep highest-scoring, suppress nearby
+        tw, th = self._template_w, self._template_h
+        kept: list[tuple[tuple[int, int], float]] = []
+        for pos, score in candidates:
+            too_close = False
+            for kept_pos, _ in kept:
+                if (abs(pos[0] - kept_pos[0]) < tw
+                        and abs(pos[1] - kept_pos[1]) < th):
+                    too_close = True
+                    break
+            if not too_close:
+                if self._validate_match(image, pos[0], pos[1]):
+                    kept.append((pos, score))
+
+        return kept
 
     def _validate_match(self, image: np.ndarray, x: int, y: int) -> bool:
         """Verify a candidate match has bright pixels inside and darker outside."""
@@ -576,24 +696,53 @@ class MarketPriceDetector:
         roi_r2 = getattr(self._config, "market_price_roi_name_row2", None)
         name_parts = []
         name_confs: list[float] = []
+        name_per_char: list[float] = []
         if roi_r1:
             region = self._get_roi_region(image, tx, ty, roi_r1)
             if region is not None and region.size > 0:
-                text, conf = self._read_text(region)
+                text, conf, char_scores = self._read_text(region)
                 if text:
                     name_parts.append(text)
                     name_confs.append(conf)
+                    name_per_char.extend(char_scores)
         if roi_r2:
             region = self._get_roi_region(image, tx, ty, roi_r2)
             if region is not None and region.size > 0:
-                text, conf = self._read_text(region)
+                text, conf, char_scores = self._read_text(region)
                 if text:
+                    if name_per_char:
+                        name_per_char.append(1.0)  # joining space
                     name_parts.append(text)
                     name_confs.append(conf)
-        cell_confidences.append(min(name_confs) if name_confs else 0.0)
+                    name_per_char.extend(char_scores)
+        name_conf = min(name_confs) if name_confs else 0.0
+        cell_confidences.append(name_conf)
         raw_name = " ".join(name_parts).strip()
         normalized = self._normalize_item_name(raw_name)
-        data["item_name"] = normalized
+
+        # Match against known item database
+        if self._item_matcher:
+            match_result = self._item_matcher.match(
+                normalized, name_per_char, name_conf,
+            )
+            data["item_name"] = match_result.matched_name
+            data["item_name_ocr"] = normalized
+            data["item_name_conf"] = match_result.confidence
+            data["_match_result"] = match_result  # transient, for review check
+            if match_result.edit_distance > 0:
+                data["item_name_edit_dist"] = match_result.edit_distance
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log(
+                    "MARKET_MATCH",
+                    f"ocr='{normalized}' matched='{match_result.matched_name}' "
+                    f"dist={match_result.edit_distance} "
+                    f"conf={match_result.confidence:.3f} "
+                    f"ambiguous={match_result.ambiguous}",
+                )
+        else:
+            data["item_name"] = normalized
+            data["item_name_conf"] = name_conf
+
         # Include raw OCR name if normalization changed it (server can try both)
         if normalized != raw_name:
             data["item_name_raw"] = raw_name
@@ -622,6 +771,7 @@ class MarketPriceDetector:
                         key = f"{metric}_{period}"
                         data[key] = value
                         data[f"{key}_raw"] = raw
+                        data[f"{key}_conf"] = conf
                         cell_confidences.append(conf)
                         if self._tracer and self._tracer.enabled:
                             self._tracer.log("MARKET_CELL", f"{key}={value}")
@@ -649,11 +799,19 @@ class MarketPriceDetector:
                 if self._tracer and self._tracer.enabled:
                     self._tracer.log("MARKET_CELL", f"tier={data.get('tier')}")
 
-        # Aggregate OCR confidence (mean of name + cell confidences)
-        data["ocr_confidence"] = (
-            sum(cell_confidences) / len(cell_confidences)
-            if cell_confidences else 0.0
-        )
+        # Aggregate OCR confidence: dominated by worst fields.
+        # Even 1 unreadable field should crash confidence, while additional
+        # bad fields add asymptotic (diminishing) further penalties.
+        # Formula: product of per-field factors, where each factor is
+        # conf_i^(1/n) — so the geometric mean.  But we also penalize
+        # low-confidence fields more heavily: each field below the
+        # threshold applies a multiplicative penalty proportional to
+        # how far below threshold it is.
+        ocr_conf = self._aggregate_confidence(cell_confidences)
+        heuristic_penalty = self._heuristic_confidence_penalty(data)
+        data["ocr_confidence"] = ocr_conf * heuristic_penalty
+        if heuristic_penalty < 1.0:
+            data["heuristic_penalty"] = round(heuristic_penalty, 3)
 
         if errors:
             self._event_bus.publish(EVENT_MARKET_PRICE_ERROR, {
@@ -674,6 +832,145 @@ class MarketPriceDetector:
             return None
         return self._extract_region(image, tx + dx, ty + dy, w, h)
 
+    # Confidence below this threshold is considered "bad" (unreadable/garbage)
+    _FIELD_CONF_THRESHOLD = 0.60
+
+    @staticmethod
+    def _aggregate_confidence(confidences: list[float]) -> float:
+        """Aggregate per-field confidences with worst-field dominance.
+
+        Even 1 unreadable field crashes overall confidence, while
+        additional bad fields add asymptotic diminishing penalties.
+
+        Uses a weighted geometric mean where the worst field's exponent
+        is amplified.  For n fields, the worst field gets weight 0.5
+        and the remaining (n-1) fields share weight 0.5, giving:
+
+            overall = worst^0.5 * (product_of_rest)^(0.5/(n-1))
+
+        This ensures:
+        - All fields good (0.93): overall ~0.93
+        - 1 field bad (0.30), rest good: overall ~0.51
+        - 2 fields bad: overall ~0.36
+        - 3 fields bad: overall ~0.29  (diminishing)
+        """
+        if not confidences:
+            return 0.0
+
+        n = len(confidences)
+        if n == 1:
+            return confidences[0]
+
+        sorted_confs = sorted(confidences)
+        worst = sorted_confs[0]
+        rest = sorted_confs[1:]
+
+        # Worst field gets half the total weight
+        worst_weight = 0.5
+        rest_weight = 0.5 / (n - 1)
+
+        # Geometric weighted mean via exponentiation
+        result = worst ** worst_weight
+        for c in rest:
+            result *= c ** rest_weight
+
+        return max(0.0, min(1.0, result))
+
+    # --- Heuristic discrepancy thresholds ---
+    # Minimum sales (PED) for a period to be considered "has data"
+    _HEURISTIC_MIN_SALES = 0.1
+    # Markup ratio thresholds per period transition (index in PERIODS)
+    # More lenient for short periods (daily is volatile), stricter for long
+    _MARKUP_SUSPECT_RATIO = [20.0, 10.0, 5.0, 5.0]   # 1d→7d, 7d→30d, ...
+    _MARKUP_STRONG_RATIO = [100.0, 50.0, 20.0, 20.0]
+
+    @staticmethod
+    def _heuristic_confidence_penalty(data: dict) -> float:
+        """Compute a multiplicative penalty based on data consistency heuristics.
+
+        Returns a factor in (0, 1] to multiply with ocr_confidence.
+        1.0 = no penalty (data looks consistent), lower = suspicious.
+
+        Checks:
+        1. Sales monotonicity: longer time spans must have >= sales than
+           shorter spans.  Violations strongly indicate OCR misreads.
+        2. Markup stability: large markup swings between neighboring periods
+           are suspicious, especially when both periods have enough sales
+           to establish reliable pricing.  Daily markup can be an outlier
+           (one expensive sale), so 1d→7d is very lenient.
+        """
+        penalty = 1.0
+
+        # Collect sales and markup values
+        sales: list[float | None] = []
+        markups: list[float | None] = []
+        for period in PERIODS:
+            sales.append(data.get(f"sales_{period}"))
+            markups.append(data.get(f"markup_{period}"))
+
+        # --- Sales monotonicity ---
+        for i in range(len(sales) - 1):
+            shorter, longer = sales[i], sales[i + 1]
+            if shorter is None or longer is None:
+                continue
+            if shorter <= 0 and longer <= 0:
+                continue  # both zero is fine
+            if shorter > longer + 0.01:
+                # Violation: shorter period has more sales than longer
+                if longer <= 0:
+                    # Impossible: shorter has sales but longer doesn't
+                    penalty *= 0.3
+                else:
+                    ratio = shorter / longer
+                    if ratio > 2.0:
+                        penalty *= 0.4
+                    elif ratio > 1.1:
+                        penalty *= 0.6
+                    else:
+                        penalty *= 0.85  # slight rounding near boundary
+
+        # --- Markup magnitude stability ---
+        mode = data.get("markup_mode", "percent")
+        suspect = MarketPriceDetector._MARKUP_SUSPECT_RATIO
+        strong = MarketPriceDetector._MARKUP_STRONG_RATIO
+
+        for i in range(len(markups) - 1):
+            m_short, m_long = markups[i], markups[i + 1]
+            s_short, s_long = sales[i], sales[i + 1]
+
+            if m_short is None or m_long is None:
+                continue
+            if s_short is None or s_long is None:
+                continue
+
+            # Skip if either period has negligible sales
+            min_sales = min(s_short, s_long)
+            if min_sales < MarketPriceDetector._HEURISTIC_MIN_SALES:
+                continue
+
+            # Compute ratio of "excess" markup between periods
+            if mode == "percent":
+                # Percentage markup: 100% = TT value, excess is what matters
+                excess_short = max(m_short - 100, 0.01)
+                excess_long = max(m_long - 100, 0.01)
+            else:
+                # Absolute markup
+                excess_short = max(m_short, 0.01)
+                excess_long = max(m_long, 0.01)
+
+            ratio = max(excess_short, excess_long) / min(excess_short, excess_long)
+
+            # Scale suspicion by sales volume: higher sales = more reliable,
+            # so large swings are more meaningful.  Caps at 10 PED.
+            volume_factor = min(min_sales / 10.0, 1.0)
+
+            if ratio > strong[i]:
+                penalty *= 1.0 - 0.3 * volume_factor
+            elif ratio > suspect[i]:
+                penalty *= 1.0 - 0.15 * volume_factor
+
+        return max(0.0, min(1.0, penalty))
+
     @staticmethod
     def _normalize_item_name(raw: str) -> str:
         """Normalize an OCR'd item name from the market price window.
@@ -691,6 +988,11 @@ class MarketPriceDetector:
         # Strip trailing ellipsis (game truncates long names)
         if name.endswith("..."):
             name = name[:-3].rstrip()
+        # Normalize visually similar OCR characters:
+        # comma ↔ period (indistinguishable at small font sizes)
+        name = name.replace(",", ".")
+        # underscore → space (OCR artifact)
+        name = name.replace("_", " ")
         # Collapse multiple spaces (artifact of line-break joining)
         name = " ".join(name.split())
         # Convert all-caps to title case (game shows names in uppercase)
@@ -746,13 +1048,17 @@ class MarketPriceDetector:
                 return self._parse_cell_value(text), text, conf
         return None, "", 0.0
 
-    def _read_text(self, region: np.ndarray) -> tuple[str, float]:
+    def _read_text(
+        self, region: np.ndarray,
+    ) -> tuple[str, float, list[float]]:
         """Read text from a region (BGR) using text STPK templates.
 
-        Returns (matched_text, confidence). Empty/unreadable returns ("", 0.0).
+        Returns (matched_text, confidence, per_char_scores).
+        per_char_scores is parallel to matched_text characters (1.0 for spaces).
+        Empty/unreadable returns ("", 0.0, []).
         """
         if not self._text_entries:
-            return "", 0.0
+            return "", 0.0, []
 
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
         threshold = getattr(
@@ -760,7 +1066,7 @@ class MarketPriceDetector:
             TEXT_BRIGHTNESS_THRESHOLD,
         )
         if int(np.max(gray)) < threshold:
-            return "", 0.0
+            return "", 0.0, []
 
         return self._match_stpk_text(region)
 
@@ -788,21 +1094,25 @@ class MarketPriceDetector:
     _TEXT_ALLOWED = set(
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "0123456789"
-        "(),.-'! "
+        "(),.-'!%$/ "
     )
 
-    def _match_stpk_text(self, region: np.ndarray) -> tuple[str, float]:
+    def _match_stpk_text(
+        self, region: np.ndarray,
+    ) -> tuple[str, float, list[float]]:
         """Match text STPK entries against a BGR region.
 
         Uses blob segmentation, same as digits but with left-aligned
         text templates.  Filters entries to only item-name-plausible
         characters to prevent false matches from /, !, #, etc.
 
-        Returns (matched_text, confidence) where confidence is the minimum
-        per-character score (weakest link), or 0.0 if no match.
+        Returns (matched_text, confidence, per_char_scores) where
+        confidence is the minimum per-character score (weakest link),
+        and per_char_scores is parallel to matched_text characters
+        (spaces get score 1.0).
         """
         if not self._text_entries or self._text_grid_w == 0:
-            return "", 0.0
+            return "", 0.0, []
         # Filter to item-name-plausible characters
         filtered = [
             e for e in self._text_entries
@@ -813,7 +1123,18 @@ class MarketPriceDetector:
             self._text_grid_w, self._text_grid_h,
             right_align=False,
         )
-        return text, (min(scores) if scores else 0.0)
+        # Expand per-blob scores to per-character (spaces get 1.0)
+        per_char: list[float] = []
+        score_idx = 0
+        for ch in text:
+            if ch == " ":
+                per_char.append(1.0)
+            elif score_idx < len(scores):
+                per_char.append(scores[score_idx])
+                score_idx += 1
+            else:
+                per_char.append(0.0)
+        return text, (min(scores) if scores else 0.0), per_char
 
     def _extract_text_intensity(self, region: np.ndarray) -> np.ndarray:
         """Extract text pixel intensity from a BGR region.
@@ -1040,49 +1361,46 @@ class MarketPriceDetector:
                         f"x={x0}-{x1} NO_MATCH best_s={best_score:.3f}")
             i += 1
 
-        # Apply disambiguation tiebreakers
-        from .market_disambiguation import (
-            apply_digit_tiebreakers, apply_text_tiebreakers,
-        )
-        if right_align:
-            # Digit mode: build classified list for digit tiebreakers
-            classified = []
-            score_idx = 0
-            for ci, ch in enumerate(result_chars):
-                if ch == " ":
-                    continue
-                if score_idx >= len(all_entry_scores):
-                    break
-                scores_dict = all_entry_scores[score_idx]
-                if ch in "0123456789" and len(ch) == 1:
-                    digit_scores = [
-                        scores_dict.get(str(d), -999.0) for d in range(10)
-                    ]
-                    classified.append({
-                        "char_idx": ci, "score_idx": score_idx,
-                        "x0": blob_positions[score_idx][0],
-                        "x1": blob_positions[score_idx][1],
-                        "digit": int(ch),
-                        "score": result_scores[score_idx],
-                        "scores": digit_scores,
-                    })
-                score_idx += 1
-            if classified:
-                apply_digit_tiebreakers(
-                    classified, intensity_4bit,
-                    text_top, text_h, grid_w, grid_h,
-                )
-                # Apply overrides back
-                for c in classified:
-                    result_chars[c["char_idx"]] = str(c["digit"])
-                    result_scores[c["score_idx"]] = c["score"]
-        else:
-            # Text mode: apply text tiebreakers
-            apply_text_tiebreakers(
-                result_chars, result_scores, all_entry_scores,
-                intensity_4bit, blob_positions,
-                text_top, text_h, grid_w, grid_h,
-            )
+        # Apply disambiguation tiebreakers (disabled for diagnostics)
+        # from .market_disambiguation import (
+        #     apply_digit_tiebreakers, apply_text_tiebreakers,
+        # )
+        # if right_align:
+        #     classified = []
+        #     score_idx = 0
+        #     for ci, ch in enumerate(result_chars):
+        #         if ch == " ":
+        #             continue
+        #         if score_idx >= len(all_entry_scores):
+        #             break
+        #         scores_dict = all_entry_scores[score_idx]
+        #         if ch in "0123456789" and len(ch) == 1:
+        #             digit_scores = [
+        #                 scores_dict.get(str(d), -999.0) for d in range(10)
+        #             ]
+        #             classified.append({
+        #                 "char_idx": ci, "score_idx": score_idx,
+        #                 "x0": blob_positions[score_idx][0],
+        #                 "x1": blob_positions[score_idx][1],
+        #                 "digit": int(ch),
+        #                 "score": result_scores[score_idx],
+        #                 "scores": digit_scores,
+        #             })
+        #         score_idx += 1
+        #     if classified:
+        #         apply_digit_tiebreakers(
+        #             classified, intensity_4bit,
+        #             text_top, text_h, grid_w, grid_h,
+        #         )
+        #         for c in classified:
+        #             result_chars[c["char_idx"]] = str(c["digit"])
+        #             result_scores[c["score_idx"]] = c["score"]
+        # else:
+        #     apply_text_tiebreakers(
+        #         result_chars, result_scores, all_entry_scores,
+        #         intensity_4bit, blob_positions,
+        #         text_top, text_h, grid_w, grid_h,
+        #     )
 
         return "".join(result_chars), result_scores
 
@@ -1332,6 +1650,13 @@ class MarketPriceDetector:
         if not text or text.upper() in ("N/A", "NA", "N", "-"):
             return None
 
+        # Overflow markup: game shows ">999999%" or em dash for extreme values
+        if text.startswith(">"):
+            return MARKUP_OVERFLOW
+
+        # Normalize comma → period (OCR confusion between the two)
+        text = text.replace(",", ".")
+
         # Strip leading '+'
         text = text.lstrip("+")
 
@@ -1353,7 +1678,8 @@ class MarketPriceDetector:
         except ValueError:
             return None
 
-    def _trace_save_window(self, image: np.ndarray, tx: int, ty: int):
+    def _trace_save_window(self, image: np.ndarray, tx: int, ty: int,
+                           item_name: str = ""):
         """Save an annotated debug image of the market price window area."""
         if not self._tracer or cv2 is None:
             return
@@ -1366,4 +1692,4 @@ class MarketPriceDetector:
         y2 = min(ih, ty + 280)
         crop = image[y1:y2, x1:x2].copy()
         self._tracer.save_image("market_price", crop,
-                                suffix=str(self._last_data.get("item_name", ""))[:40])
+                                suffix=str(item_name)[:40])

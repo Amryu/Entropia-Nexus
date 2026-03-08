@@ -211,14 +211,25 @@ class IngestionUploader:
         name = data.get("item_name", "")
         if not name:
             return
+
+        # Sanitize: convert overflow sentinel (-1) to null, strip transient keys
+        clean = {k: v for k, v in data.items() if not k.startswith("_")}
+        for key in ("markup_1d", "markup_7d", "markup_30d",
+                     "markup_365d", "markup_3650d"):
+            if clean.get(key) == -1:
+                clean[key] = None
+
         now = datetime.now()
+        is_reviewed = bool(clean.get("manually_reviewed"))
         with self._lock:
-            # 1hr dedup: skip if same item was buffered within the last hour
+            # 1hr dedup: skip if same item was buffered within the last hour.
+            # Manually reviewed submissions always bypass dedup since they
+            # carry corrected values that must reach the server.
             last = self._market_price_last_seen.get(name)
-            if last and (now - last) < timedelta(hours=1):
+            if not is_reviewed and last and (now - last) < timedelta(hours=1):
                 return
             self._market_price_last_seen[name] = now
-            self._market_price_buffer.append(data)
+            self._market_price_buffer.append(clean)
         if self._live:
             self._flush_requested.set()
         self._emit_status()

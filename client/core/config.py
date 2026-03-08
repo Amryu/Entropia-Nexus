@@ -158,6 +158,8 @@ class AppConfig:
     market_price_digit_stpk: str = "market_digits.stpk"
     market_price_text_stpk: str = "market_text.stpk"
     market_price_text_threshold: int = 80  # brightness cutoff for text vs background noise
+    market_price_review_enabled: bool = True  # show review dialog for overflow/ambiguous items
+    market_price_review_tutorial_shown: bool = False  # first-time tutorial has been displayed
 
     # Player status (heart) detection
     player_status_enabled: bool = True
@@ -272,6 +274,8 @@ DEFAULTS = {
     "market_price_digit_stpk": "market_digits.stpk",
     "market_price_text_stpk": "market_text.stpk",
     "market_price_text_threshold": 80,
+    "market_price_review_enabled": True,
+    "market_price_review_tutorial_shown": False,
     "player_status_enabled": True,
     "player_status_match_threshold": 0.90,
     "player_status_roi_health": {"dx": 30, "dy": -9, "w": 315, "h": 12},

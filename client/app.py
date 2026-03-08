@@ -21,6 +21,8 @@ from .core.config import load_config
 from .core.constants import (
     EVENT_AUTH_STATE_CHANGED,
     EVENT_CONFIG_CHANGED,
+    EVENT_MARKET_PRICE_REVIEW,
+    EVENT_MARKET_PRICE_SCAN,
     EVENT_OCR_MANUAL_TRIGGER,
 )
 from .core.event_bus import EventBus
@@ -420,7 +422,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_update_checker(config, event_bus))
     workers.extend(_start_target_lock_detector(config, event_bus, frame_cache))
     workers.extend(_start_player_status_detector(config, event_bus, frame_cache))
-    workers.extend(_start_market_price_detector(config, event_bus, frame_cache))
+    workers.extend(_start_market_price_detector(config, event_bus, frame_cache, data_client))
 
     # Defer overlay wiring so the main window renders first.
     # Heavy overlay widgets are already built during the splash phase;
@@ -757,6 +759,55 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
         # Scan highlight overlay (click-through, shows scanned rows + target lock)
         _create_scan_overlays()
+
+        # Market price review dialog — queued manual review for overflow/ambiguity
+        def _wire_market_review_dialog():
+            try:
+                from .ui.dialogs.market_review_dialog import MarketReviewDialog
+                review_dialog = MarketReviewDialog(
+                    config=config, parent=main_window,
+                )
+
+                def _on_reviewed(original_data, corrections, reviewed_fields):
+                    """User submitted corrections — merge and publish."""
+                    merged = dict(original_data)
+                    merged.update(corrections)
+                    # Strip transient fields
+                    merged.pop("_match_result", None)
+                    merged["manually_reviewed"] = reviewed_fields
+                    event_bus.publish(EVENT_MARKET_PRICE_SCAN, merged)
+
+                def _on_skipped(original_data):
+                    """User skipped — publish original data as-is."""
+                    data = dict(original_data)
+                    data.pop("_match_result", None)
+                    event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
+
+                review_dialog.reviewed.connect(_on_reviewed)
+                review_dialog.skipped.connect(_on_skipped)
+
+                # Persist config when tutorial/never state changes
+                def _on_review_config_changed():
+                    save_config(config, config_path)
+                    event_bus.publish(EVENT_CONFIG_CHANGED, config)
+
+                review_dialog.config_changed.connect(_on_review_config_changed)
+
+                # Bridge event bus (background thread) → Qt main thread
+                from PyQt6.QtCore import QMetaObject, Qt as QtNamespace
+
+                def _on_review_event(review_request):
+                    QMetaObject.invokeMethod(
+                        review_dialog,
+                        lambda: review_dialog.enqueue(review_request),
+                        QtNamespace.ConnectionType.QueuedConnection,
+                    )
+
+                event_bus.subscribe(EVENT_MARKET_PRICE_REVIEW, _on_review_event)
+            except Exception as e:
+                log.warning("Market review dialog failed: %s", e)
+
+        _wire_market_review_dialog()
 
     QTimer.singleShot(0, _create_overlays)
 
@@ -1127,7 +1178,7 @@ def _start_player_status_detector(config, event_bus, frame_cache=None):
     return workers
 
 
-def _start_market_price_detector(config, event_bus, frame_cache=None):
+def _start_market_price_detector(config, event_bus, frame_cache=None, data_client=None):
     """Start the market price detector. Returns list of stoppable workers."""
     workers = []
     if not getattr(config, "market_price_enabled", True):
@@ -1137,7 +1188,7 @@ def _start_market_price_detector(config, event_bus, frame_cache=None):
         if frame_cache is None:
             from .ocr.capturer import ScreenCapturer
             frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
-        detector = MarketPriceDetector(config, event_bus, frame_cache)
+        detector = MarketPriceDetector(config, event_bus, frame_cache, data_client)
         if getattr(config, "ocr_trace_enabled", False):
             from .ocr.trace import OcrTracer
             tracer = OcrTracer()

@@ -630,6 +630,20 @@ class SettingsPage(QWidget):
         self._market_price_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._market_price_cb)
 
+        self._market_price_review_cb = QCheckBox(
+            "Ask for manual review when values can't be read"
+        )
+        self._market_price_review_cb.setToolTip(
+            "When enabled, a dialog prompts you to fill in markup values\n"
+            "that the game shows as >999999%, or to pick the correct item\n"
+            "when the name is ambiguous (e.g. ArMatrix LR-10 vs LR-15)."
+        )
+        self._market_price_review_cb.setChecked(
+            self._config.market_price_review_enabled
+        )
+        self._market_price_review_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._market_price_review_cb)
+
         mp_thresh_row = QHBoxLayout()
         mp_thresh_row.addWidget(QLabel("Match threshold:"))
         self._market_price_threshold = QDoubleSpinBox()
@@ -1052,6 +1066,7 @@ class SettingsPage(QWidget):
 
         # Market Price Detection
         self._config.market_price_enabled = self._market_price_cb.isChecked()
+        self._config.market_price_review_enabled = self._market_price_review_cb.isChecked()
         self._config.market_price_match_threshold = self._market_price_threshold.value()
         self._config.market_price_text_threshold = self._market_price_text_threshold.value()
 
