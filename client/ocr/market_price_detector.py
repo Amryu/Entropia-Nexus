@@ -1367,54 +1367,16 @@ class MarketPriceDetector:
                     self._tracer.log("MARKET_OCR",
                         f"x={x0}-{x1} '{best_text}' s={best_score:.3f}")
             else:
-                result_scores.append(0.0)
+                # Unrecognized blob — don't include its score since it
+                # doesn't contribute to result_chars.  Unknown characters
+                # (like '+') shouldn't poison confidence for text that
+                # was successfully matched.
                 all_entry_scores.append(entry_scores)
                 blob_positions.append((x0, x1))
                 if self._tracer and self._tracer.enabled:
                     self._tracer.log("MARKET_OCR",
                         f"x={x0}-{x1} NO_MATCH best_s={best_score:.3f}")
             i += 1
-
-        # Apply disambiguation tiebreakers (disabled for diagnostics)
-        # from .market_disambiguation import (
-        #     apply_digit_tiebreakers, apply_text_tiebreakers,
-        # )
-        # if right_align:
-        #     classified = []
-        #     score_idx = 0
-        #     for ci, ch in enumerate(result_chars):
-        #         if ch == " ":
-        #             continue
-        #         if score_idx >= len(all_entry_scores):
-        #             break
-        #         scores_dict = all_entry_scores[score_idx]
-        #         if ch in "0123456789" and len(ch) == 1:
-        #             digit_scores = [
-        #                 scores_dict.get(str(d), -999.0) for d in range(10)
-        #             ]
-        #             classified.append({
-        #                 "char_idx": ci, "score_idx": score_idx,
-        #                 "x0": blob_positions[score_idx][0],
-        #                 "x1": blob_positions[score_idx][1],
-        #                 "digit": int(ch),
-        #                 "score": result_scores[score_idx],
-        #                 "scores": digit_scores,
-        #             })
-        #         score_idx += 1
-        #     if classified:
-        #         apply_digit_tiebreakers(
-        #             classified, intensity_4bit,
-        #             text_top, text_h, grid_w, grid_h,
-        #         )
-        #         for c in classified:
-        #             result_chars[c["char_idx"]] = str(c["digit"])
-        #             result_scores[c["score_idx"]] = c["score"]
-        # else:
-        #     apply_text_tiebreakers(
-        #         result_chars, result_scores, all_entry_scores,
-        #         intensity_4bit, blob_positions,
-        #         text_top, text_h, grid_w, grid_h,
-        #     )
 
         return "".join(result_chars), result_scores
 
