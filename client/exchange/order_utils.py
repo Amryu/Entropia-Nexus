@@ -116,41 +116,6 @@ def get_order_value(slim: dict | None, order: dict | None = None) -> float | Non
     return get_unit_tt(slim, order.get('details') if order else None)
 
 
-def get_order_stack_value(slim: dict | None, order: dict | None = None) -> float | None:
-    """Get total stack TT value for an order."""
-    qty = (order.get('quantity') or 1) if order else 1
-
-    # Stackable items: always MaxTT × qty
-    if is_stackable(slim):
-        max_tt = get_max_tt(slim)
-        return max_tt * qty if max_tt is not None else None
-
-    # Non-stackable: use CurrentTT if available, else unit TT
-    details = (order.get('details') or {}) if order else {}
-    unit_tt = None
-    raw = details.get('CurrentTT')
-    if raw is not None:
-        try:
-            ct = float(raw)
-            if not math.isnan(ct):
-                unit_tt = ct
-        except (TypeError, ValueError):
-            pass
-
-    if unit_tt is None:
-        unit_tt = get_unit_tt(slim, details)
-
-    if unit_tt is None:
-        return None
-
-    # Armor plate sets: total value covers all 7 plates
-    t = _get_type(slim)
-    if t == 'ArmorPlating' and qty == PLATE_SET_SIZE:
-        return unit_tt * PLATE_SET_SIZE
-
-    return unit_tt
-
-
 def compute_order_unit_price(
     slim: dict | None,
     markup: float | None,
@@ -238,19 +203,6 @@ def format_age(iso_str: str | None) -> str:
         return f"{int(days / 365)}y"
     except (ValueError, TypeError):
         return ''
-
-
-def smart_decimals(value: float) -> int:
-    """Determine decimal places to show (2-4, or -1 for scientific notation)."""
-    abs_val = abs(value)
-    if abs_val > 0 and abs_val < 0.01:
-        d = 2
-        while d < 4 and abs_val * (10 ** d) < 1:
-            d += 1
-        if d >= 4 and abs_val * (10 ** 4) < 1:
-            return -1
-        return d
-    return 2
 
 
 # ---------------------------------------------------------------------------

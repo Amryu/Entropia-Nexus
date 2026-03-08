@@ -95,13 +95,6 @@ _GENDER_TAG_RE = re.compile(r'\s*\(([MF])(?:,([^)]+))?\)\s*$')
 _LINK_STYLE = f'color:{ACCENT};text-decoration:underline'
 
 
-def _elide(text: str, max_chars: int) -> str:
-    """Truncate *text* to at most *max_chars*, adding '…' if shortened."""
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 1] + "\u2026"
-
-
 def _elide_px(text: str, max_px: int, fm: QFontMetrics) -> str:
     """Truncate *text* so it fits within *max_px* pixels, adding '…'."""
     if fm.horizontalAdvance(text) <= max_px:

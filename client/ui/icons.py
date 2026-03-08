@@ -40,12 +40,6 @@ LOADOUT = (
     '"/>'
 )
 
-# Rifle silhouette
-HUNT = (
-    '<path d="M2 11 L14 7 L14 9 L20 8 L22 9 L22 11 L20 11 L20 10 L17 11 '
-    'L17 13 L15 13 L15 11 L14 11 L12 14 L10 14 L10 12 L2 13z"/>'
-)
-
 # 3D box / inventory (matches website user menu icon)
 INVENTORY = (
     # Top face

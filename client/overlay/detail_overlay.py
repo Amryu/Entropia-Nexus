@@ -2185,24 +2185,20 @@ class DetailOverlayWidget(OverlayWidget):
         # Refining Recipes
         recipes = data.get("RefiningRecipes") or []
         if recipes:
+            item_name = data.get("_item_name") or ""
             sec = QWidget()
             sec.setStyleSheet("background: transparent;")
             sl = QVBoxLayout(sec)
             sl.setContentsMargins(0, 0, 0, 0)
-            sl.setSpacing(2)
+            sl.setSpacing(6)
             sl.addWidget(_section_label("Refined From"))
             for recipe in recipes:
-                for ing in (recipe.get("Ingredients") or []):
-                    ing_name = deep_get(ing, "Item", "Name") or "?"
-                    ing_type = deep_get(
-                        ing, "Item", "Properties", "Type",
-                    ) or "Material"
-                    ing_amount = ing.get("Amount")
-                    info = f"x{ing_amount}" if ing_amount else ""
-                    sl.addWidget(_acq_row(
-                        ing_name, info,
-                        {"Name": ing_name, "Type": ing_type}, emit,
-                    ))
+                sl.addWidget(_recipe_card(
+                    recipe, emit,
+                    link_product=False,
+                    link_ingredients=True,
+                    current_name=item_name,
+                ))
             pills.append(("Refined", sec))
             layout.addWidget(sec)
 
@@ -2320,23 +2316,19 @@ class DetailOverlayWidget(OverlayWidget):
         # Refining Recipes using this item
         recipes = data.get("RefiningRecipes") or []
         if recipes:
+            item_name = data.get("_item_name") or ""
             sec = QWidget()
             sec.setStyleSheet("background: transparent;")
             sl = QVBoxLayout(sec)
             sl.setContentsMargins(0, 0, 0, 0)
-            sl.setSpacing(2)
+            sl.setSpacing(6)
             sl.addWidget(_section_label("Refining"))
             for recipe in recipes:
-                product = recipe.get("Product") or {}
-                prod_name = product.get("Name", "?")
-                prod_type = deep_get(
-                    product, "Properties", "Type",
-                ) or "Material"
-                amount = recipe.get("Amount")
-                info = f"x{amount}" if amount else ""
-                sl.addWidget(_acq_row(
-                    prod_name, info,
-                    {"Name": prod_name, "Type": prod_type}, emit,
+                sl.addWidget(_recipe_card(
+                    recipe, emit,
+                    link_product=True,
+                    link_ingredients=True,
+                    current_name=item_name,
                 ))
             pills.append(("Refined", sec))
             layout.addWidget(sec)
@@ -2639,6 +2631,101 @@ def _acq_row(
 
     hl.addStretch(1)
     return row
+
+
+def _recipe_card(
+    recipe: dict,
+    emit,
+    link_product: bool = False,
+    link_ingredients: bool = True,
+    current_name: str | None = None,
+) -> QWidget:
+    """Render a refining recipe as a styled card (matches web RefiningRecipesDisplay).
+
+    Shows output line (``5x Material``) and ingredients line
+    (``from: 10x Ore + 5x Stone``).
+    """
+    card = QWidget()
+    card.setStyleSheet(
+        f"background: {BADGE_BG};"
+        f" border-left: 3px solid {ACCENT};"
+        " border-radius: 6px;"
+        " padding: 8px 10px;"
+    )
+    vl = QVBoxLayout(card)
+    vl.setContentsMargins(0, 0, 0, 0)
+    vl.setSpacing(4)
+
+    # --- Output line: "{Amount}x {ProductName}" ---
+    product = recipe.get("Product") or {}
+    prod_name = product.get("Name") or "?"
+    prod_type = deep_get(product, "Properties", "Type") or "Material"
+    amount = recipe.get("Amount")
+    amount_str = f"{amount}x " if amount else ""
+
+    if link_product and prod_name != current_name and emit:
+        amount_color = ACCENT
+        name_html = (
+            f'<span style="color:{ACCENT}; cursor:pointer;">{prod_name}</span>'
+        )
+    else:
+        amount_color = TEXT_COLOR
+        name_html = f'<span style="color:{TEXT_COLOR};">{prod_name}</span>'
+
+    output_lbl = QLabel(
+        f'<span style="color:{amount_color}; font-weight:bold;">{amount_str}</span>'
+        f'{name_html}'
+    )
+    output_lbl.setStyleSheet(
+        "font-size: 12px; background: transparent; padding: 0;"
+    )
+    output_lbl.setTextFormat(Qt.TextFormat.RichText)
+    if link_product and prod_name != current_name and emit:
+        output_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        output_lbl.mousePressEvent = _entity_click_handler(
+            {"Name": prod_name, "Type": prod_type}, emit,
+        )
+    vl.addWidget(output_lbl)
+
+    # --- Ingredients line: "from: 10x Ore + 5x Stone" ---
+    ingredients = recipe.get("Ingredients") or []
+    if ingredients:
+        # Build a lookup for link-click resolution
+        ing_lookup: dict[str, dict] = {}
+        parts = [f'<span style="color:{TEXT_DIM};">from:</span>']
+        for i, ing in enumerate(ingredients):
+            if i > 0:
+                parts.append(f'<span style="color:{TEXT_DIM};"> + </span>')
+            ing_name = deep_get(ing, "Item", "Name") or "?"
+            ing_type = deep_get(ing, "Item", "Properties", "Type") or "Material"
+            ing_amount = ing.get("Amount")
+            ing_amount_str = f"{ing_amount}x " if ing_amount else ""
+            is_linked = (
+                link_ingredients and ing_name != current_name and emit
+            )
+            if is_linked:
+                ing_lookup[ing_name] = {"Name": ing_name, "Type": ing_type}
+                parts.append(
+                    f'<a href="{ing_name}" style="color:{ACCENT}; text-decoration:none;">'
+                    f'{ing_amount_str}{ing_name}</a>'
+                )
+            else:
+                parts.append(
+                    f'<span style="color:{TEXT_COLOR};">{ing_amount_str}{ing_name}</span>'
+                )
+        ing_lbl = QLabel(" ".join(parts))
+        ing_lbl.setStyleSheet(
+            "font-size: 11px; background: transparent; padding: 0;"
+        )
+        ing_lbl.setTextFormat(Qt.TextFormat.RichText)
+        ing_lbl.setWordWrap(True)
+        if ing_lookup and emit:
+            ing_lbl.linkActivated.connect(
+                lambda name, lu=ing_lookup, cb=emit: cb(lu[name]) if name in lu else None
+            )
+        vl.addWidget(ing_lbl)
+
+    return card
 
 
 def _overlay_waypoint_btn(planet: str, coords: dict, name: str) -> QPushButton:
