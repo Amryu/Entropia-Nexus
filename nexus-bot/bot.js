@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
@@ -1915,20 +1915,6 @@ async function runTicketExpiration() {
 }
 setInterval(() => runScheduled('runTicketExpiration', runTicketExpiration), 60 * 60 * 1000);
 runScheduled('runTicketExpiration', runTicketExpiration); // Run once on startup
-
-// Compute price summaries every 15 minutes
-async function runPriceSummaries() {
-  try {
-    const results = await computeAllPriceSummaries();
-    const totalProcessed = results.reduce((sum, r) => sum + r.processed, 0);
-    if (totalProcessed > 0) {
-      console.log(`Price summaries: ${results.map(r => `${r.period_type}=${r.processed}`).join(', ')}`);
-    }
-  } catch (e) {
-    console.error('Error computing price summaries:', e);
-  }
-}
-setInterval(() => runScheduled('runPriceSummaries', runPriceSummaries), 15 * 60 * 1000);
 
 // Resolve unresolved market price item IDs every hour
 async function runMarketPriceResolution() {
