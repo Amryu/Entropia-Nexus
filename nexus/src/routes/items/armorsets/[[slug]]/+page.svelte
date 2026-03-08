@@ -164,6 +164,24 @@
     current[keys[keys.length - 1]] = value;
   }
 
+  // Flatten Armors array-of-arrays into a flat piece list for MarketPriceSection
+  function flattenArmorPieces(armors) {
+    if (!Array.isArray(armors)) return null;
+    const flat = [];
+    for (const variants of armors) {
+      if (!Array.isArray(variants)) continue;
+      for (const armor of variants) {
+        if (!armor?.Name) continue;
+        flat.push({
+          name: armor.Name,
+          slot: armor.Properties?.Slot || '',
+          gender: armor.Properties?.Gender || 'Both',
+        });
+      }
+    }
+    return flat.length > 0 ? flat : null;
+  }
+
   // Cleanup on destroy
   onDestroy(() => {
     resetEditState();
@@ -690,6 +708,7 @@
         <MarketPriceSection
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
+          pieces={flattenArmorPieces(activeEntity?.Armors)}
           bind:expanded={panelStates.marketPrices}
           on:toggle={savePanelStates}
         />

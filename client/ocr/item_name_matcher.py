@@ -228,6 +228,14 @@ class ItemNameMatcher:
             norm = _normalize_for_matching(name)
             name_by_norm[norm] = name
 
+            # Index gender aliases (e.g. "Adjusted Pixie Pants (F)")
+            # so the OCR can resolve gendered names to the canonical item.
+            for alias in (item.get("Aliases") or []):
+                if alias:
+                    alias_norm = _normalize_for_matching(alias)
+                    if alias_norm not in name_by_norm:
+                        name_by_norm[alias_norm] = name  # map to canonical
+
             # Build skeleton groups for ambiguity detection
             skeleton = _compute_skeleton(norm)
             skeletons.setdefault(skeleton, []).append(name)

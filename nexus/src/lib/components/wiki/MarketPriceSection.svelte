@@ -3,6 +3,9 @@
   Self-contained market price display for wiki item pages.
   Fetches data client-side and shows a table of latest values
   plus historical markup/sales charts with period selection.
+
+  For armor sets, accepts a `pieces` prop to show a piece/gender
+  selector, fetching per-piece market data by name.
 -->
 <script>
   //@ts-nocheck
@@ -23,6 +26,13 @@
   /** @type {boolean} Expand/collapse state */
   export let expanded = true;
 
+  /**
+   * Armor set pieces for piece-level market price selection.
+   * When provided, a slot/gender selector is shown and prices are fetched per piece.
+   * @type {Array<{name: string, slot: string, gender: string}>|null}
+   */
+  export let pieces = null;
+
   const PERIODS = [
     { key: '1d', label: '1 Day' },
     { key: '7d', label: '7 Days' },
@@ -30,6 +40,8 @@
     { key: '365d', label: '1 Year' },
     { key: '3650d', label: '10 Years' }
   ];
+
+  const SLOT_ORDER = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
 
   let snapshot = null;
   let loading = true;
@@ -39,9 +51,73 @@
   let selectedPeriod = '30d';
   let showCharts = false;
 
+  // Piece selector state
+  let selectedSlot = null;
+  let selectedGender = 'male';
+
   function toggleSection() {
     dispatch('toggle', { expanded });
   }
+
+  // --- Piece helpers ---
+
+  /** Organize flat pieces array into { [slot]: { male, female } } */
+  function buildPiecesBySlot(pcs) {
+    const result = {};
+    for (const slot of SLOT_ORDER) result[slot] = { male: null, female: null };
+    for (const p of pcs) {
+      const slot = p.slot;
+      if (!result[slot]) continue;
+      if (p.gender === 'Both' || p.gender === 'Male') result[slot].male = p;
+      if (p.gender === 'Both' || p.gender === 'Female') result[slot].female = p;
+    }
+    // Keep only slots that have at least one piece
+    const filtered = {};
+    for (const [slot, v] of Object.entries(result)) {
+      if (v.male || v.female) filtered[slot] = v;
+    }
+    return filtered;
+  }
+
+  $: piecesBySlot = pieces ? buildPiecesBySlot(pieces) : null;
+  $: availableSlots = piecesBySlot ? SLOT_ORDER.filter(s => piecesBySlot[s]) : [];
+
+  // Auto-select first slot when pieces change
+  $: if (availableSlots.length > 0 && (!selectedSlot || !piecesBySlot?.[selectedSlot])) {
+    selectedSlot = availableSlots[0];
+  }
+
+  // Check if selected slot has distinct gender variants
+  $: slotHasGenderVariants = (() => {
+    if (!piecesBySlot || !selectedSlot) return false;
+    const entry = piecesBySlot[selectedSlot];
+    if (!entry?.male || !entry?.female) return false;
+    return entry.male.name !== entry.female.name;
+  })();
+
+  // Resolve active piece name for fetching
+  $: activePieceName = (() => {
+    if (!piecesBySlot || !selectedSlot) return null;
+    const entry = piecesBySlot[selectedSlot];
+    if (!entry) return null;
+    if (slotHasGenderVariants) {
+      const pick = selectedGender === 'female' ? entry.female : entry.male;
+      return pick?.name || entry.male?.name || entry.female?.name || null;
+    }
+    return entry.male?.name || entry.female?.name || null;
+  })();
+
+  function selectSlot(slot) {
+    selectedSlot = slot;
+    // Reset gender to male when switching slots
+    selectedGender = 'male';
+  }
+
+  function selectGender(gender) {
+    selectedGender = gender;
+  }
+
+  // --- Data fetching ---
 
   async function fetchLatest(id, name) {
     loading = true;
@@ -66,9 +142,12 @@
       if (name) {
         const res = await fetch(`/api/market/prices/snapshots/latest?name=${encodeURIComponent(name)}`);
         if (res.ok) {
-          const rows = await res.json();
-          if (rows.length > 0) {
-            snapshot = rows[0];
+          const data = await res.json();
+          // Name endpoint may return object or array
+          if (Array.isArray(data)) {
+            if (data.length > 0) snapshot = data[0];
+          } else if (data && data.item_id) {
+            snapshot = data;
           }
         }
       }
@@ -111,12 +190,12 @@
   }
 
   function formatMarkup(val) {
-    if (val == null) return '—';
+    if (val == null) return '\u2014';
     return `${Number(val).toFixed(2)}%`;
   }
 
   function formatSales(val) {
-    if (val == null) return '—';
+    if (val == null) return '\u2014';
     return Number(val).toLocaleString();
   }
 
@@ -132,14 +211,55 @@
     return `${days}d ago`;
   }
 
-  // Reactive: fetch when itemId/itemName changes (client-side only)
-  $: if (browser && (itemId || itemName)) {
+  // Reactive: fetch when piece or item changes (client-side only)
+  $: if (browser && pieces && activePieceName) {
+    fetchLatest(null, activePieceName);
+  }
+  $: if (browser && !pieces && (itemId || itemName)) {
     fetchLatest(itemId, itemName);
   }
 </script>
 
 <DataSection title="Market Prices" bind:expanded on:toggle={toggleSection}>
   <div class="mps-content">
+    {#if piecesBySlot}
+      <div class="mps-piece-selector">
+        <div class="mps-slot-buttons">
+          {#each availableSlots as slot}
+            <button
+              class="slot-btn"
+              class:active={selectedSlot === slot}
+              on:click={() => selectSlot(slot)}
+            >{slot}</button>
+          {/each}
+        </div>
+        {#if slotHasGenderVariants}
+          <div class="mps-gender-toggle">
+            <button
+              class="gender-btn"
+              class:active={selectedGender === 'male'}
+              on:click={() => selectGender('male')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="10" cy="14" r="5"/><line x1="14" y1="10" x2="21" y2="3"/><polyline points="15,3 21,3 21,9"/>
+              </svg>
+              Male
+            </button>
+            <button
+              class="gender-btn"
+              class:active={selectedGender === 'female'}
+              on:click={() => selectGender('female')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="8" r="5"/><line x1="12" y1="13" x2="12" y2="21"/><line x1="9" y1="18" x2="15" y2="18"/>
+              </svg>
+              Female
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
     {#if loading}
       <div class="mps-loading">Loading market prices...</div>
     {:else if !snapshot}
@@ -224,6 +344,71 @@
     color: var(--text-muted);
     font-size: 13px;
     padding: 8px 0;
+  }
+
+  /* Piece selector (armor sets) */
+  .mps-piece-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mps-slot-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .slot-btn {
+    background: var(--hover-color);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .slot-btn:hover {
+    color: var(--text-color);
+    background: var(--border-color);
+  }
+
+  .slot-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
+  }
+
+  .mps-gender-toggle {
+    display: flex;
+    gap: 8px;
+  }
+
+  .gender-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .gender-btn:hover {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  .gender-btn.active {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
   }
 
   /* Latest values table */
@@ -350,6 +535,15 @@
 
     .mps-table {
       font-size: 13px;
+    }
+
+    .mps-slot-buttons {
+      gap: 3px;
+    }
+
+    .slot-btn {
+      padding: 3px 8px;
+      font-size: 11px;
     }
   }
 </style>

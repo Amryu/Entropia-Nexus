@@ -4,20 +4,86 @@ from __future__ import annotations
 
 import threading
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+)
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
     DefenseBreakdownWidget, no_data_label, make_section_table,
     build_acquisition_content, build_usage_content, exchange_url,
+    build_market_prices_content,
 )
 from .fancy_table import ColumnDef
-from ..theme import TEXT_MUTED, DAMAGE_COLORS
+from ..theme import TEXT_MUTED, ACCENT, BORDER, SECONDARY, DAMAGE_COLORS
 from ...data.wiki_columns import (
     deep_get, get_item_name, armor_total_defense, _armor_total_absorption,
     _DAMAGE_TYPES, fmt_int, fmt_bool,
 )
+
+
+_SLOT_ORDER = ["Head", "Torso", "Arms", "Hands", "Legs", "Shins", "Feet"]
+
+
+def _extract_armor_pieces(item: dict) -> list[dict]:
+    """Extract a flat list of {name, slot, gender} from ArmorSet.Armors.
+
+    Handles both array-of-arrays (schema) and flat array (legacy) formats.
+    """
+    armors = item.get("Armors") or []
+    pieces: list[dict] = []
+    for entry in armors:
+        if isinstance(entry, list):
+            # Array-of-arrays: entry is [variant1, variant2]
+            for armor in entry:
+                if not isinstance(armor, dict) or not armor.get("Name"):
+                    continue
+                pieces.append({
+                    "name": armor["Name"],
+                    "slot": deep_get(armor, "Properties", "Slot") or "",
+                    "gender": deep_get(armor, "Properties", "Gender") or "Both",
+                })
+        elif isinstance(entry, dict) and entry.get("Name"):
+            # Flat array: entry is an armor piece dict
+            pieces.append({
+                "name": entry["Name"],
+                "slot": deep_get(entry, "Properties", "Slot") or "",
+                "gender": deep_get(entry, "Properties", "Gender") or "Both",
+            })
+    return pieces
+
+
+def _group_pieces_by_slot(
+    pieces: list[dict],
+) -> dict[str, dict]:
+    """Group pieces into {slot: {male: piece|None, female: piece|None}}."""
+    by_slot: dict[str, dict] = {}
+    for p in pieces:
+        slot = p.get("slot", "")
+        if slot not in by_slot:
+            by_slot[slot] = {"male": None, "female": None}
+        gender = p.get("gender", "Both")
+        if gender in ("Both", "Male"):
+            by_slot[slot]["male"] = p
+        if gender in ("Both", "Female"):
+            by_slot[slot]["female"] = p
+    return by_slot
+
+
+def _mps_btn_style(active: bool) -> str:
+    """Button style for piece/gender selector buttons."""
+    if active:
+        return (
+            f"QPushButton {{ background: {ACCENT}; color: #fff; font-size: 12px;"
+            f" border: 1px solid {ACCENT}; border-radius: 4px; padding: 2px 10px; }}"
+            f"QPushButton:hover {{ background: {ACCENT}; }}"
+        )
+    return (
+        f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; font-size: 12px;"
+        f" border: 1px solid {BORDER}; border-radius: 4px; padding: 2px 10px; }}"
+        f"QPushButton:hover {{ background: {SECONDARY}; }}"
+    )
 
 
 def _fv(value, decimals: int) -> str:
@@ -135,14 +201,20 @@ class ArmorSetDetailView(WikiDetailView):
             pieces_section = DataSection("Set Pieces", expanded=True)
             pieces_section.set_subtitle(f"{piece_count} pieces")
             flat = []
-            for armor in armors:
-                flat.append({
-                    "slot": deep_get(armor, "Properties", "Slot") or "",
-                    "name": armor.get("Name") or "",
-                    "gender": deep_get(armor, "Properties", "Gender") or "",
-                    "weight": deep_get(armor, "Properties", "Weight"),
-                    "maxtt": deep_get(armor, "Properties", "Economy", "MaxTT"),
-                })
+            for entry in armors:
+                # Armors is a list of variant groups (list-of-lists);
+                # each group holds gender variants for one slot.
+                variants = entry if isinstance(entry, list) else [entry]
+                for armor in variants:
+                    if not isinstance(armor, dict):
+                        continue
+                    flat.append({
+                        "slot": deep_get(armor, "Properties", "Slot") or "",
+                        "name": armor.get("Name") or "",
+                        "gender": deep_get(armor, "Properties", "Gender") or "",
+                        "weight": deep_get(armor, "Properties", "Weight"),
+                        "maxtt": deep_get(armor, "Properties", "Economy", "MaxTT"),
+                    })
             pieces_section.set_content(make_section_table(
                 [
                     ColumnDef("slot", "Slot"),
@@ -212,3 +284,141 @@ class ArmorSetDetailView(WikiDetailView):
         url = exchange_url(self._item, self._nexus_base_url, "Armor")
         self._usage_section.set_content(build_usage_content(
             data, exchange_link=url, on_navigate=self.entity_navigate.emit))
+
+    # ------------------------------------------------------------------
+    # Market Prices — piece/gender selector for armor sets
+    # ------------------------------------------------------------------
+
+    def _setup_market_prices_section(self):
+        """Override: market prices with piece/gender selector for armor sets."""
+        nc = getattr(self, "_nexus_client", None)
+        if not nc:
+            return
+
+        pieces = _extract_armor_pieces(self._item)
+        if not pieces:
+            # No pieces — fall back to parent (set-level lookup)
+            super()._setup_market_prices_section()
+            return
+
+        self._mps_pieces = pieces
+        self._mps_by_slot = _group_pieces_by_slot(pieces)
+        self._mps_ordered_slots = [
+            s for s in _SLOT_ORDER if s in self._mps_by_slot
+        ]
+        self._mps_selected_slot = self._mps_ordered_slots[0] if self._mps_ordered_slots else ""
+        self._mps_selected_gender = "male"
+
+        self._mps_section = DataSection("Market Prices", expanded=True)
+        self._mps_section.set_loading()
+        self._add_article_section(self._mps_section)
+        self._market_prices_loaded.connect(self._on_market_prices_loaded)
+
+        # Fetch for default piece
+        self._fetch_mps_for_current_piece()
+
+    def _fetch_mps_for_current_piece(self):
+        """Fetch market prices for the currently selected armor piece."""
+        nc = getattr(self, "_nexus_client", None)
+        if not nc:
+            return
+        entry = self._mps_by_slot.get(self._mps_selected_slot, {})
+        has_gender = (
+            entry.get("male") and entry.get("female")
+            and entry["male"]["name"] != entry["female"]["name"]
+        )
+        if has_gender:
+            pick = entry.get(self._mps_selected_gender) or entry.get("male")
+        else:
+            pick = entry.get("male") or entry.get("female")
+        piece_name = pick["name"] if pick else None
+        if not piece_name:
+            return
+
+        def fetch(name=piece_name):
+            rows = nc.get_item_market_prices_by_name(name)
+            self._market_prices_loaded.emit(rows[0] if rows else None)
+
+        threading.Thread(
+            target=fetch, daemon=True, name="wiki-detail-mps",
+        ).start()
+
+    def _on_market_prices_loaded(self, snapshot):
+        if not hasattr(self, "_mps_section"):
+            return
+        # Build combined widget: piece selector + table
+        wrapper = QWidget()
+        wrapper.setStyleSheet("background: transparent;")
+        wlayout = QVBoxLayout(wrapper)
+        wlayout.setContentsMargins(0, 0, 0, 0)
+        wlayout.setSpacing(8)
+
+        wlayout.addWidget(self._build_mps_piece_selector())
+        wlayout.addWidget(build_market_prices_content(snapshot))
+
+        self._mps_section.set_content(wrapper)
+
+    def _build_mps_piece_selector(self) -> QWidget:
+        """Build slot + gender buttons for armor set piece selection."""
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(4)
+
+        # Slot buttons
+        slot_row = QWidget()
+        slot_row.setStyleSheet("background: transparent;")
+        slot_layout = QHBoxLayout(slot_row)
+        slot_layout.setContentsMargins(0, 0, 0, 0)
+        slot_layout.setSpacing(3)
+        for slot in self._mps_ordered_slots:
+            btn = QPushButton(slot)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            active = slot == self._mps_selected_slot
+            btn.setStyleSheet(_mps_btn_style(active))
+            btn.setFixedHeight(26)
+            btn.clicked.connect(
+                lambda checked=False, s=slot: self._on_mps_slot_clicked(s)
+            )
+            slot_layout.addWidget(btn)
+        slot_layout.addStretch(1)
+        vbox.addWidget(slot_row)
+
+        # Gender toggle (only if selected slot has distinct M/F variants)
+        entry = self._mps_by_slot.get(self._mps_selected_slot, {})
+        has_gender = (
+            entry.get("male") and entry.get("female")
+            and entry["male"]["name"] != entry["female"]["name"]
+        )
+        if has_gender:
+            gender_row = QWidget()
+            gender_row.setStyleSheet("background: transparent;")
+            gender_layout = QHBoxLayout(gender_row)
+            gender_layout.setContentsMargins(0, 0, 0, 0)
+            gender_layout.setSpacing(6)
+            for g, label in [("male", "Male"), ("female", "Female")]:
+                btn = QPushButton(label)
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                active = g == self._mps_selected_gender
+                btn.setStyleSheet(_mps_btn_style(active))
+                btn.setFixedHeight(26)
+                btn.clicked.connect(
+                    lambda checked=False, gv=g: self._on_mps_gender_clicked(gv)
+                )
+                gender_layout.addWidget(btn)
+            gender_layout.addStretch(1)
+            vbox.addWidget(gender_row)
+
+        return container
+
+    def _on_mps_slot_clicked(self, slot: str):
+        self._mps_selected_slot = slot
+        self._mps_selected_gender = "male"
+        self._mps_section.set_loading()
+        self._fetch_mps_for_current_piece()
+
+    def _on_mps_gender_clicked(self, gender: str):
+        self._mps_selected_gender = gender
+        self._mps_section.set_loading()
+        self._fetch_mps_for_current_piece()

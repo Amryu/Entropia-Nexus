@@ -883,6 +883,26 @@ class NexusClient:
             self._handle_error(e, "get item market prices")
             return None
 
+    def get_item_market_prices_by_name(self, name: str) -> list[dict] | None:
+        """GET /api/market/prices/snapshots/latest?name={name} — latest snapshot by item name."""
+        try:
+            headers = self._auth_headers("get item market prices by name")
+            if headers is None:
+                return None
+            resp = self._session.get(
+                self._url("/market/prices/snapshots/latest"),
+                headers=headers,
+                params={"name": name},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # API returns a single object for name lookup; normalize to list
+            return [data] if isinstance(data, dict) else data
+        except Exception as e:
+            self._handle_error(e, "get item market prices by name")
+            return None
+
     def get_item_market_price_history(self, item_id: int, days: int = 30) -> list[dict] | None:
         """GET /api/market/prices/snapshots/{item_id} — price history for one item."""
         try:

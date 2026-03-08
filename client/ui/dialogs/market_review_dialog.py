@@ -2,11 +2,13 @@
 
 Opens when the OCR detects values it cannot resolve automatically:
 - Markup overflow (>999999%, displayed as em dash in game)
-- Ambiguous item name that couldn't be resolved by Levenshtein matching
+- Ambiguous item name with multiple candidates to choose from
 
 The user can fill in the missing values and submit, or choose to skip.
 A first-time tutorial explains the feature. Reviews queue up if multiple
 items need attention.
+
+The dialog is non-modal so it does not block the game or client UI.
 """
 
 from __future__ import annotations
@@ -45,6 +47,14 @@ PERIOD_LABELS = {
     "3650d": "Decade",
 }
 
+# Styling for disabled (read-only) spinboxes — visually grayed out
+_DISABLED_SPIN_STYLE = (
+    f"QDoubleSpinBox:disabled {{ color: {TEXT_MUTED}; "
+    f"background: transparent; border: 1px solid {BORDER}; }}"
+)
+# Styling for editable spinboxes — highlighted border
+_EDITABLE_SPIN_STYLE = f"border: 1px solid {WARNING};"
+
 
 class MarketReviewDialog(QDialog):
     """Queued manual review dialog for ambiguous/overflow market price data.
@@ -72,6 +82,7 @@ class MarketReviewDialog(QDialog):
         self.setMinimumWidth(440)
         self.setStyleSheet(f"QDialog {{ background-color: {SECONDARY}; }}")
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        self.setModal(False)
         self._enqueue_requested.connect(self.enqueue)
 
         root = QVBoxLayout(self)
@@ -106,8 +117,7 @@ class MarketReviewDialog(QDialog):
             "(a tooltip shows all digits). This dialog asks you to type in "
             "those values manually.\n\n"
             "It also appears when two items have very similar names "
-            "(e.g. ArMatrix LR-10 vs LR-15) and the OCR isn't sure "
-            "which one it is."
+            "and the OCR needs help choosing the right one."
         )
         explanation.setWordWrap(True)
         explanation.setStyleSheet(f"color: {TEXT_MUTED}; line-height: 1.4;")
@@ -131,7 +141,7 @@ class MarketReviewDialog(QDialog):
         later_btn.clicked.connect(self._on_tutorial_later)
         btn_row.addWidget(later_btn)
 
-        yes_btn = QPushButton("Yes, help me review")
+        yes_btn = QPushButton("Ok, help review")
         yes_btn.setObjectName("accentButton")
         yes_btn.clicked.connect(self._on_tutorial_yes)
         btn_row.addWidget(yes_btn)
@@ -168,7 +178,7 @@ class MarketReviewDialog(QDialog):
         )
         layout.addWidget(self._reason_label)
 
-        # Item name combo (only visible for ambiguous names)
+        # Item name combo (visible for ambiguous names)
         self._name_row = QHBoxLayout()
         self._name_row_label = QLabel("Item name:")
         self._name_row.addWidget(self._name_row_label)
@@ -394,12 +404,11 @@ class MarketReviewDialog(QDialog):
         self._reason_label.setText(reason)
         self._update_queue_label()
 
-        # Name combo
+        # Name combo (only visible when item name is ambiguous)
         has_name_edit = "item_name" in editable
         self._name_container.setVisible(has_name_edit)
         if has_name_edit:
             self._name_combo.clear()
-            # Add current name first, then candidates
             self._name_combo.addItem(name)
             for c in candidates:
                 if c != name:
@@ -418,10 +427,10 @@ class MarketReviewDialog(QDialog):
                 mk_spin.setValue(-1)  # shows em dash
             mk_spin.setEnabled(mk_editable)
             if mk_editable:
-                mk_spin.setStyleSheet(f"border: 1px solid {WARNING};")
+                mk_spin.setStyleSheet(_EDITABLE_SPIN_STYLE)
                 self._markup_labels[period].setText("needs value")
             else:
-                mk_spin.setStyleSheet("")
+                mk_spin.setStyleSheet(_DISABLED_SPIN_STYLE)
                 raw = data.get(f"{mk_key}_raw", "")
                 self._markup_labels[period].setText(raw)
 
@@ -433,10 +442,10 @@ class MarketReviewDialog(QDialog):
             sk_spin.setValue(sk_val if sk_val is not None else 0)
             sk_spin.setEnabled(sk_editable)
             if sk_editable:
-                sk_spin.setStyleSheet(f"border: 1px solid {WARNING};")
+                sk_spin.setStyleSheet(_EDITABLE_SPIN_STYLE)
                 self._sales_labels[period].setText("needs value")
             else:
-                sk_spin.setStyleSheet("")
+                sk_spin.setStyleSheet(_DISABLED_SPIN_STYLE)
                 raw = data.get(f"{sk_key}_raw", "")
                 self._sales_labels[period].setText(raw)
 

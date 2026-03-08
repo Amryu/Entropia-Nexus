@@ -443,18 +443,19 @@ class MarketPriceDetector:
                 editable.append(key)
                 reasons.append(f"{key} overflow")
 
-        # Ambiguous item name (matcher couldn't resolve confidently)
+        # Ambiguous item name — only when there are multiple candidates
+        # to choose from (single match = no actual choice to make)
         match_result = data.get("_match_result")
-        if match_result and getattr(match_result, "ambiguous", False):
+        candidates = []
+        if match_result and hasattr(match_result, "candidates"):
+            candidates = list(match_result.candidates or [])
+        if (match_result and getattr(match_result, "ambiguous", False)
+                and len(candidates) >= 2):
             editable.append("item_name")
             reasons.append("ambiguous item name")
 
         if not editable:
             return None
-
-        candidates = []
-        if match_result and hasattr(match_result, "candidates"):
-            candidates = list(match_result.candidates or [])
 
         return {
             "data": data,
@@ -1140,8 +1141,12 @@ class MarketPriceDetector:
         """Extract text pixel intensity from a BGR region.
 
         The market price window has semi-transparent dark background with
-        bright white/cyan text.  This filters out background noise by
-        zeroing pixels below the brightness threshold, keeping only text.
+        bright white/cyan text.  Pipeline mirrors the skill scanner:
+        1. Zero pixels below brightness floor (suppress background bleed)
+        2. Normalize to full 0-255 range (amplify faint text)
+        3. Re-threshold to clean up residual noise
+        Without step 2, varying window transparency causes weak text that
+        the 4-bit quantization step downstream can't distinguish from noise.
         """
         if len(region.shape) == 3:
             gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
@@ -1151,7 +1156,16 @@ class MarketPriceDetector:
             self._config, "market_price_text_threshold",
             TEXT_BRIGHTNESS_THRESHOLD,
         )
+        # 1. Background floor — zero dim bleed-through before normalization
         intensity = gray.copy()
+        intensity[intensity < threshold] = 0
+        # 2. Contrast normalization — stretch surviving pixels to 0-255
+        if intensity.max() > 0:
+            intensity = cv2.normalize(
+                intensity, None, 0, 255,
+                cv2.NORM_MINMAX, dtype=cv2.CV_8U,
+            )
+        # 3. Re-threshold — suppress noise amplified by normalization
         intensity[intensity < threshold] = 0
         return intensity
 

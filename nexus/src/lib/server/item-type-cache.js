@@ -43,6 +43,16 @@ async function rebuildCache(fetch) {
       itemIdByName.set(item.Name, itemId);
       itemIdByNameLower.set(item.Name.toLowerCase(), itemId);
     }
+    // Index gender aliases (e.g. "Adjusted Pixie Pants (F)") so market
+    // price OCR can resolve gendered item names to the canonical item.
+    if (Array.isArray(item?.Aliases)) {
+      for (const alias of item.Aliases) {
+        if (alias && !itemIdByName.has(alias)) {
+          itemIdByName.set(alias, itemId);
+          itemIdByNameLower.set(alias.toLowerCase(), itemId);
+        }
+      }
+    }
   }
 
   const materialSubTypeByItemId = new Map();

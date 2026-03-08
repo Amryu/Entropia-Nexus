@@ -66,6 +66,7 @@ BADGE_BG = "rgba(50, 50, 70, 160)"
 FOOTER_BG = "rgba(25, 25, 40, 160)"
 HIGHLIGHT_COLOR = "#4ade80"
 NAV_DISABLED = "#444444"
+BORDER = "#555555"
 
 # Stacking offset: each new overlay shifts by this many pixels
 STACK_OFFSET = 24
@@ -329,6 +330,34 @@ def _tab_btn_style(active: bool) -> str:
     )
 
 
+def _mps_seg_radius(is_first: bool, is_last: bool) -> str:
+    """Border-radius for a segmented control button (pill ends)."""
+    r = "3px"
+    if is_first and is_last:
+        return r
+    if is_first:
+        return f"{r} 0 0 {r}"
+    if is_last:
+        return f"0 {r} {r} 0"
+    return "0"
+
+
+def _mps_seg_style(active: bool, radius: str) -> str:
+    """Stylesheet for a segmented control button."""
+    if active:
+        return (
+            f"QPushButton {{ background: {ACCENT}; color: #fff; font-size: 11px;"
+            f" border: none; border-radius: {radius}; padding: 1px 2px;"
+            f" font-weight: 600; }}"
+            f"QPushButton:hover {{ background: {ACCENT}; }}"
+        )
+    return (
+        f"QPushButton {{ background: rgba(50,50,70,160); color: {TEXT_DIM}; font-size: 11px;"
+        f" border: none; border-radius: {radius}; padding: 1px 2px; }}"
+        f"QPushButton:hover {{ background: rgba(60,60,80,180); color: {TEXT_COLOR}; }}"
+    )
+
+
 class _ElidedLabel(QLabel):
     """QLabel that truncates text with an ellipsis when it doesn't fit."""
 
@@ -397,6 +426,9 @@ class DetailOverlayWidget(OverlayWidget):
         self._acq_data: dict | None = None
         self._usage_data: dict | None = None
         self._market_prices_data: dict | None = None
+        self._mps_pieces: list[dict] = []
+        self._mps_selected_slot: str = ""
+        self._mps_selected_gender: str = "male"
         self._page_type_id: str = ""
         self._pinned = False
         self._expanded = False
@@ -732,6 +764,9 @@ class DetailOverlayWidget(OverlayWidget):
         self._acq_data = None
         self._usage_data = None
         self._market_prices_data = None
+        self._mps_pieces = []
+        self._mps_selected_slot = ""
+        self._mps_selected_gender = "male"
         self._page_type_id = ""
         self._map_canvas = None
 
@@ -1020,23 +1055,54 @@ class DetailOverlayWidget(OverlayWidget):
 
     # --- Market prices ---
 
-    def _fetch_market_prices(self):
+    def _fetch_market_prices(self, piece_name: str | None = None):
         nc = self._nexus_client
-        if not nc:
-            self._market_prices_loaded.emit({"_item_name": self._item.get("Name", ""), "snapshot": None})
-            return
-        item_id = (self._full_item or self._item).get("Id")
+        item = self._full_item or self._item
         item_name = self._item.get("Name", "")
+
+        if not nc:
+            self._market_prices_loaded.emit({
+                "_item_name": item_name, "snapshot": None, "pieces": [],
+            })
+            return
+
+        # Build pieces list for armor sets
+        pieces: list[dict] = []
+        armors = item.get("Armors") or []
+        for slot_variants in armors:
+            if not isinstance(slot_variants, list):
+                continue
+            for armor in slot_variants:
+                if not isinstance(armor, dict) or not armor.get("Name"):
+                    continue
+                pieces.append({
+                    "name": armor["Name"],
+                    "slot": (armor.get("Properties") or {}).get("Slot", ""),
+                    "gender": (armor.get("Properties") or {}).get("Gender", "Both"),
+                })
+
+        # Determine what name/id to fetch
+        fetch_name = piece_name
+        fetch_id = None
+        if not fetch_name and pieces:
+            fetch_name = pieces[0]["name"]
+        elif not fetch_name:
+            fetch_id = item.get("Id")
 
         def fetch():
             snapshot = None
-            if item_id:
-                rows = nc.get_item_market_prices(item_id)
+            if fetch_name:
+                rows = nc.get_item_market_prices_by_name(fetch_name)
+                if rows:
+                    snapshot = rows[0]
+            elif fetch_id:
+                rows = nc.get_item_market_prices(fetch_id)
                 if rows:
                     snapshot = rows[0]
             self._market_prices_loaded.emit({
                 "_item_name": item_name,
                 "snapshot": snapshot,
+                "pieces": pieces,
             })
 
         threading.Thread(
@@ -1049,6 +1115,11 @@ class DetailOverlayWidget(OverlayWidget):
         if data.get("_item_name") != self._item.get("Name", ""):
             return
         self._market_prices_data = data
+        pieces = data.get("pieces", [])
+        self._mps_pieces = pieces
+        # Auto-select first slot if not already set
+        if pieces and not self._mps_selected_slot:
+            self._mps_selected_slot = pieces[0].get("slot", "")
         self._rebuild_market_prices_tab()
 
     def _rebuild_market_prices_tab(self):
@@ -1065,6 +1136,12 @@ class DetailOverlayWidget(OverlayWidget):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(2)
+
+        # Piece/gender selector for armor sets
+        pieces = data.get("pieces", [])
+        if pieces:
+            selector = self._build_mps_piece_selector(pieces)
+            layout.addWidget(selector)
 
         snapshot = data.get("snapshot")
         if not snapshot:
@@ -1085,8 +1162,8 @@ class DetailOverlayWidget(OverlayWidget):
         for key, label in periods:
             markup = snapshot.get(f"markup_{key}")
             sales = snapshot.get(f"sales_{key}")
-            markup_str = f"{float(markup):.2f}%" if markup is not None else "—"
-            sales_str = f"{int(sales):,}" if sales is not None else "—"
+            markup_str = f"{float(markup):.2f}%" if markup is not None else "\u2014"
+            sales_str = f"{int(sales):,}" if sales is not None else "\u2014"
             row = self._mps_row(label, markup_str, sales_str)
             layout.addWidget(row)
 
@@ -1126,6 +1203,123 @@ class DetailOverlayWidget(OverlayWidget):
 
         layout.addStretch(1)
         return widget
+
+    # --- Armor set piece selector for market prices ---
+
+    _SLOT_ORDER = ["Head", "Torso", "Arms", "Hands", "Legs", "Shins", "Feet"]
+
+    def _build_mps_piece_selector(self, pieces: list[dict]) -> QWidget:
+        """Build slot + gender segmented control for armor set piece selection."""
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 4)
+        vbox.setSpacing(3)
+
+        # Group pieces by slot
+        by_slot: dict[str, dict] = {}
+        for p in pieces:
+            slot = p.get("slot", "")
+            if slot not in by_slot:
+                by_slot[slot] = {"male": None, "female": None}
+            gender = p.get("gender", "Both")
+            if gender in ("Both", "Male"):
+                by_slot[slot]["male"] = p
+            if gender in ("Both", "Female"):
+                by_slot[slot]["female"] = p
+
+        # Slot segmented control — uniform width, fills available space
+        ordered_slots = [s for s in self._SLOT_ORDER if s in by_slot]
+        vbox.addWidget(self._mps_segmented_row(
+            items=[(s, s) for s in ordered_slots],
+            selected=self._mps_selected_slot,
+            on_click=self._on_mps_slot_selected,
+        ))
+
+        # Gender toggle (only if selected slot has distinct gender variants)
+        entry = by_slot.get(self._mps_selected_slot, {})
+        has_gender = (
+            entry.get("male") and entry.get("female")
+            and entry["male"].get("name") != entry["female"].get("name")
+        )
+        if has_gender:
+            vbox.addWidget(self._mps_segmented_row(
+                items=[("male", "Male"), ("female", "Female")],
+                selected=self._mps_selected_gender,
+                on_click=self._on_mps_gender_selected,
+            ))
+
+        return container
+
+    @staticmethod
+    def _mps_segmented_row(
+        items: list[tuple[str, str]],
+        selected: str,
+        on_click,
+    ) -> QWidget:
+        """Build a segmented control row — equal-width buttons filling the width."""
+        row = QWidget()
+        row.setFixedHeight(20)
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(1)
+
+        for i, (key, label) in enumerate(items):
+            btn = QPushButton(label)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            active = key == selected
+            is_first = i == 0
+            is_last = i == len(items) - 1
+            radius = _mps_seg_radius(is_first, is_last)
+            btn.setStyleSheet(_mps_seg_style(active, radius))
+            btn.setFixedHeight(20)
+            btn.clicked.connect(lambda checked=False, k=key: on_click(k))
+            layout.addWidget(btn, 1)  # stretch=1 → equal width
+
+        return row
+
+    def _on_mps_slot_selected(self, slot: str):
+        self._mps_selected_slot = slot
+        self._mps_selected_gender = "male"
+        self._refetch_mps_for_piece()
+
+    def _on_mps_gender_selected(self, gender: str):
+        self._mps_selected_gender = gender
+        self._refetch_mps_for_piece()
+
+    def _refetch_mps_for_piece(self):
+        """Re-fetch market prices for the currently selected piece."""
+        pieces = self._mps_pieces
+        if not pieces:
+            return
+
+        # Find the piece name for the selected slot/gender
+        by_slot: dict[str, dict] = {}
+        for p in pieces:
+            slot = p.get("slot", "")
+            if slot not in by_slot:
+                by_slot[slot] = {"male": None, "female": None}
+            gender = p.get("gender", "Both")
+            if gender in ("Both", "Male"):
+                by_slot[slot]["male"] = p
+            if gender in ("Both", "Female"):
+                by_slot[slot]["female"] = p
+
+        entry = by_slot.get(self._mps_selected_slot, {})
+        has_gender = (
+            entry.get("male") and entry.get("female")
+            and entry["male"].get("name") != entry["female"].get("name")
+        )
+        if has_gender:
+            pick = entry.get(self._mps_selected_gender) or entry.get("male")
+        else:
+            pick = entry.get("male") or entry.get("female")
+
+        piece_name = pick.get("name") if pick else None
+        if piece_name:
+            self._market_prices_data = None
+            self._fetch_market_prices(piece_name=piece_name)
 
     @staticmethod
     def _mps_row(period: str, markup: str, sales: str) -> QWidget:

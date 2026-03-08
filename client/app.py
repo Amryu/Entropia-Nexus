@@ -345,6 +345,16 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     except Exception as e:
         log.warning("Scan summary overlay failed: %s", e)
 
+    # Market price review dialog — construct during splash to avoid post-show freeze.
+    _review_dialog = None
+    try:
+        from .ui.dialogs.market_review_dialog import MarketReviewDialog
+        _review_dialog = MarketReviewDialog(
+            config=config, parent=main_window,
+        )
+    except Exception as e:
+        log.warning("Market review dialog construction failed: %s", e)
+
     # Close the loading splash and show the main window.
     if _splash_proc is not None:
         try:
@@ -756,19 +766,15 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         # Scan highlight overlay (click-through, shows scanned rows + target lock)
         _create_scan_overlays()
 
-        # Market price review dialog — queued manual review for overflow/ambiguity
+        # Market price review dialog — wire signals for the pre-built dialog
         def _wire_market_review_dialog():
+            if _review_dialog is None:
+                return
             try:
-                from .ui.dialogs.market_review_dialog import MarketReviewDialog
-                review_dialog = MarketReviewDialog(
-                    config=config, parent=main_window,
-                )
-
                 def _on_reviewed(original_data, corrections, reviewed_fields):
                     """User submitted corrections — merge and publish."""
                     merged = dict(original_data)
                     merged.update(corrections)
-                    # Strip transient fields
                     merged.pop("_match_result", None)
                     merged["manually_reviewed"] = reviewed_fields
                     event_bus.publish(EVENT_MARKET_PRICE_SCAN, merged)
@@ -779,23 +785,23 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     data.pop("_match_result", None)
                     event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
 
-                review_dialog.reviewed.connect(_on_reviewed)
-                review_dialog.skipped.connect(_on_skipped)
+                _review_dialog.reviewed.connect(_on_reviewed)
+                _review_dialog.skipped.connect(_on_skipped)
 
                 # Persist config when tutorial/never state changes
                 def _on_review_config_changed():
                     save_config(config, config_path)
                     event_bus.publish(EVENT_CONFIG_CHANGED, config)
 
-                review_dialog.config_changed.connect(_on_review_config_changed)
+                _review_dialog.config_changed.connect(_on_review_config_changed)
 
                 # Bridge event bus (background thread) → Qt main thread via signal
                 event_bus.subscribe(
                     EVENT_MARKET_PRICE_REVIEW,
-                    review_dialog._enqueue_requested.emit,
+                    _review_dialog._enqueue_requested.emit,
                 )
             except Exception as e:
-                log.warning("Market review dialog failed: %s", e)
+                log.warning("Market review dialog wiring failed: %s", e)
 
         _wire_market_review_dialog()
 
