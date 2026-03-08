@@ -2208,7 +2208,7 @@ class DetailOverlayWidget(OverlayWidget):
 
         # --- Sub-nav bar (only if 2+ sections) ---
         if len(pills) >= 2:
-            layout.insertWidget(0, _sub_nav_bar(pills, self._acq_scroll))
+            layout.insertWidget(0, _sub_nav_bar(pills, self._tab_scrolls.get(TAB_ACQUISITION)))
 
         if not pills:
             layout.addWidget(_make_centered_label("No acquisition data"))
@@ -2343,7 +2343,7 @@ class DetailOverlayWidget(OverlayWidget):
 
         # Sub-nav bar (only if 2+ sections)
         if len(pills) >= 2:
-            layout.insertWidget(0, _sub_nav_bar(pills, self._usage_scroll))
+            layout.insertWidget(0, _sub_nav_bar(pills, self._tab_scrolls.get(TAB_USAGE)))
 
         if not pills:
             layout.addWidget(_make_centered_label("No usage data"))
