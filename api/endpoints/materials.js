@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
+const { idOffsets } = require('./constants');
 
 const queries = {
   Materials: 'SELECT * FROM ONLY "Materials"',
@@ -9,6 +10,7 @@ const queries = {
 function formatMaterial(x, classIds){
   return {
     Id: x.Id,
+    ItemId: x.Id + idOffsets.Materials,
     ClassId: classIds[x.Id] || null,
     Name: x.Name,
     Properties: {

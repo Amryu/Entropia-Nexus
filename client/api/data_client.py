@@ -228,7 +228,7 @@ class DataClient:
         Returns a dict with keys: Blueprints, Loots, VendorOffers,
         RefiningRecipes, ShopListings, BlueprintDrops.
         """
-        result = self._get_cached(f"/acquisition?items={item_name}")
+        result = self._get_memory_cached(f"/acquisition?items={item_name}")
         return result if isinstance(result, dict) else {}
 
     def get_usage(self, item_name: str) -> dict:
@@ -236,7 +236,7 @@ class DataClient:
 
         Returns a dict with keys: Blueprints, Missions, VendorOffers, RefiningRecipes.
         """
-        result = self._get_cached(f"/usage/{item_name}")
+        result = self._get_memory_cached(f"/usage/{item_name}")
         return result if isinstance(result, dict) else {}
 
     def get_tiers(self, item_id: int, is_armor_set: bool = False) -> list[dict]:
@@ -257,6 +257,25 @@ class DataClient:
             return data if isinstance(data, list) else []
         except Exception as e:
             log.error("Search failed for '%s': %s", query, e)
+            return []
+
+    def _get_memory_cached(self, endpoint: str):
+        """Fetch data with memory-only caching (no disk persistence)."""
+        now = time.time()
+        if endpoint in self._memory_cache:
+            cached_time, cached_data = self._memory_cache[endpoint]
+            if now - cached_time < CACHE_TTL_SECONDS:
+                return cached_data
+        try:
+            resp = self._session.get(f"{self._base_url}{endpoint}", timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            self._memory_cache[endpoint] = (now, data)
+            return data
+        except Exception as e:
+            log.error("Failed to fetch %s: %s", endpoint, e)
+            if endpoint in self._memory_cache:
+                return self._memory_cache[endpoint][1]
             return []
 
     def _get_cached(self, endpoint: str) -> list[dict]:

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
+
+log = logging.getLogger(__name__)
 import webbrowser
 from typing import TYPE_CHECKING
 
@@ -1087,18 +1090,25 @@ class DetailOverlayWidget(OverlayWidget):
         if not fetch_name and pieces:
             fetch_name = pieces[0]["name"]
         elif not fetch_name:
-            fetch_id = item.get("Id")
+            fetch_id = item.get("ItemId") or item.get("Id")
+
+        log.warning("[mps] %s: fetch_name=%s, fetch_id=%s, item keys=%s",
+                    item_name, fetch_name, fetch_id, list(item.keys()))
 
         def fetch():
             snapshot = None
             if fetch_name:
                 rows = nc.get_item_market_prices_by_name(fetch_name)
+                log.warning("[mps] by_name(%s) → %s", fetch_name, rows)
                 if rows:
                     snapshot = rows[0]
             elif fetch_id:
                 rows = nc.get_item_market_prices(fetch_id)
+                log.warning("[mps] by_id(%s) → %s", fetch_id, rows)
                 if rows:
                     snapshot = rows[0]
+            else:
+                log.warning("[mps] no fetch_name or fetch_id for %s", item_name)
             self._market_prices_loaded.emit({
                 "_item_name": item_name,
                 "snapshot": snapshot,
