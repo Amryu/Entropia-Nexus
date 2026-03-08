@@ -105,9 +105,11 @@ COPY = (
 # Checkmark (confirmation feedback)
 CHECK = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
 
-# Navigation arrows (back/forward)
+# Navigation arrows (back/forward/up/down)
 ARROW_LEFT = '<path d="M15.41 7.41L10.83 12l4.58 4.59L14 18l-6-6 6-6z"/>'
 ARROW_RIGHT = '<path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>'
+ARROW_UP = '<path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>'
+ARROW_DOWN = '<path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/>'
 
 # Storefront / exchange (awning + counter)
 EXCHANGE = (

@@ -3,17 +3,27 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from ..core.logger import get_logger
-from .order_utils import enrich_orders
+from .order_utils import enrich_orders, is_absolute_markup, format_markup, format_age, get_top_category
 
 if TYPE_CHECKING:
     from ..api.nexus_client import NexusClient
 
 log = get_logger("ExchangeStore")
+
+# Sort key names used by get_sorted_items()
+SORT_NAME = "name"
+SORT_TYPE = "type"
+SORT_SELL = "sell"
+SORT_BUY = "buy"
+SORT_ORDERS = "orders"        # sell + buy combined (overlay S/B column)
+SORT_MARKUP = "markup"
+SORT_UPDATED = "updated"
 
 
 class ExchangeStore(QObject):
@@ -42,6 +52,9 @@ class ExchangeStore(QObject):
         # Data
         self._items: list[dict] = []
         self._item_lookup: dict[int, dict] = {}
+        # Pre-sorted item lists (one per sort key, built in background thread)
+        self._sorted_asc: dict[str, list[dict]] = {}
+        self._sorted_desc: dict[str, list[dict]] = {}
         self._my_orders: list[dict] = []
         self._inventory: list[dict] = []
         self._trade_requests: list[dict] = []
@@ -100,6 +113,11 @@ class ExchangeStore(QObject):
     # Loading — items (public, no auth)
     # ------------------------------------------------------------------
 
+    def get_sorted_items(self, sort_key: str, descending: bool = False) -> list[dict]:
+        """Return items pre-sorted by *sort_key*. Falls back to unsorted list."""
+        bucket = self._sorted_desc if descending else self._sorted_asc
+        return bucket.get(sort_key, self._items)
+
     def load_items(self):
         """Fetch exchange items (public, no auth). Call once on startup."""
         self._set_loading("items", True)
@@ -109,6 +127,7 @@ class ExchangeStore(QObject):
                 items = self._client.get_exchange_items()
                 self._items = items or []
                 self._item_lookup = {item['i']: item for item in self._items if 'i' in item}
+                self._enrich_and_sort()
                 self._set_loading("items", False)
                 self.items_changed.emit()
                 # Re-enrich orders that were loaded before items were available
@@ -124,7 +143,7 @@ class ExchangeStore(QObject):
                 self._set_loading("items", False)
                 self.error_occurred.emit("items", str(e))
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-load-items").start()
 
     # ------------------------------------------------------------------
     # Loading — auth-required data
@@ -151,7 +170,7 @@ class ExchangeStore(QObject):
                 self._set_loading("orders", False)
                 self.error_occurred.emit("orders", str(e))
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-load-orders").start()
 
     def load_inventory(self):
         """Fetch user's inventory (requires auth)."""
@@ -171,7 +190,7 @@ class ExchangeStore(QObject):
                 self._set_loading("inventory", False)
                 self.error_occurred.emit("inventory", str(e))
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-load-inventory").start()
 
     def load_trade_requests(self):
         """Fetch user's trade requests (requires auth)."""
@@ -200,7 +219,7 @@ class ExchangeStore(QObject):
                 self._set_loading("trades", False)
                 self.error_occurred.emit("trades", str(e))
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-load-trades").start()
 
     # ------------------------------------------------------------------
     # Loading — item order book (public)
@@ -225,7 +244,7 @@ class ExchangeStore(QObject):
                 self._set_loading(f"item_orders_{item_id}", False)
                 self.error_occurred.emit("item_orders", str(e))
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-item-orders").start()
 
     def load_exchange_prices(self, item_id: int):
         """Fetch exchange price data for an item (public, no auth)."""
@@ -238,7 +257,7 @@ class ExchangeStore(QObject):
             except Exception as e:
                 log.error("Failed to load exchange prices %s: %s", item_id, e)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-load-prices").start()
 
     # ------------------------------------------------------------------
     # Write operations (auth required)
@@ -266,7 +285,7 @@ class ExchangeStore(QObject):
                 if callback:
                     callback(False, error_msg)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-create-order").start()
 
     def edit_order(self, order_id: int, data: dict, callback=None):
         """Edit an exchange order in a background thread."""
@@ -286,7 +305,7 @@ class ExchangeStore(QObject):
                 if callback:
                     callback(False, error_msg)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-edit-order").start()
 
     def close_order(self, order_id: int, callback=None):
         """Close an exchange order in a background thread."""
@@ -303,7 +322,7 @@ class ExchangeStore(QObject):
                 if callback:
                     callback(False, error_msg)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-close-order").start()
 
     def bump_order(self, order_id: int, callback=None):
         """Bump an order by editing with same data (resets bumped_at)."""
@@ -347,7 +366,7 @@ class ExchangeStore(QObject):
                 if callback:
                     callback(False, error_msg)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-bump-all").start()
 
     def create_trade_request(self, order: dict, quantity: int, callback=None):
         """Send a trade request responding to an order.
@@ -382,7 +401,7 @@ class ExchangeStore(QObject):
                 if callback:
                     callback(False, error_msg)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-create-trade").start()
 
     def cancel_trade_request(self, request_id: int, callback=None):
         """Cancel a trade request."""
@@ -398,7 +417,7 @@ class ExchangeStore(QObject):
                 if callback:
                     callback(False, error_msg)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="exch-cancel-trade").start()
 
     # ------------------------------------------------------------------
     # Polling
@@ -439,6 +458,78 @@ class ExchangeStore(QObject):
         """Timer callback — refresh trade requests."""
         if self._client.is_authenticated():
             self.load_trade_requests()
+
+    # ------------------------------------------------------------------
+    # Pre-sorting (runs in background thread)
+    # ------------------------------------------------------------------
+
+    def _enrich_and_sort(self):
+        """Pre-compute sort keys and display values, then build sorted lists.
+
+        Called from the background fetch thread so the main thread never sorts.
+        """
+        for item in self._items:
+            name = item.get('n', '')
+            s = item.get('s', 0) or 0
+            b = item.get('b', 0) or 0
+
+            # Markup sort value
+            mu_val = item.get('m')
+            if mu_val is None:
+                mu_val = item.get('bb')
+            if mu_val is None:
+                mu_val = item.get('bs')
+            mu_sort = 0.0
+            mu_text = ''
+            if mu_val is not None:
+                try:
+                    mu_sort = float(mu_val)
+                except (TypeError, ValueError):
+                    pass
+                mu_text = format_markup(mu_val, is_absolute_markup(item))
+
+            # Updated sort value (composite: has_orders first, then timestamp)
+            u = item.get('u')
+            ts = 0.0
+            if u and isinstance(u, str):
+                try:
+                    ts = datetime.fromisoformat(
+                        u.replace('Z', '+00:00')
+                    ).timestamp()
+                except (ValueError, OSError):
+                    pass
+            has_orders = 1 if (s + b) > 0 else 0
+
+            # Store pre-computed values
+            item['_sk_name'] = name.lower()
+            item['_sk_sell'] = s
+            item['_sk_buy'] = b
+            item['_sk_orders'] = s + b
+            item['_sk_mu'] = mu_sort
+            item['_sk_mu_text'] = mu_text
+            item['_sk_updated'] = (has_orders, ts)
+            item['_sk_updated_text'] = format_age(u)
+            item['_sk_category'] = get_top_category(item.get('t', ''))
+
+        # Build one sorted list per key (ascending). Descending is reversed copy.
+        keys = {
+            SORT_NAME:    lambda it: it['_sk_name'],
+            SORT_TYPE:    lambda it: (it.get('t', ''), it['_sk_name']),
+            SORT_SELL:    lambda it: it['_sk_sell'],
+            SORT_BUY:     lambda it: it['_sk_buy'],
+            SORT_ORDERS:  lambda it: it['_sk_orders'],
+            SORT_MARKUP:  lambda it: it['_sk_mu'],
+            SORT_UPDATED: lambda it: it['_sk_updated'],
+        }
+        sorted_asc = {}
+        sorted_desc = {}
+        for key_name, key_fn in keys.items():
+            asc = sorted(self._items, key=key_fn)
+            sorted_asc[key_name] = asc
+            sorted_desc[key_name] = asc[::-1]
+
+        self._sorted_asc = sorted_asc
+        self._sorted_desc = sorted_desc
 
     # ------------------------------------------------------------------
     # Helpers

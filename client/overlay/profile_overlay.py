@@ -676,7 +676,7 @@ class ProfileOverlayWidget(OverlayWidget):
             if gen == self._load_gen:
                 self._profile_loaded.emit(data)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="profile-load").start()
 
     def _on_profile_loaded(self, data):
         if data is None:
@@ -792,7 +792,7 @@ class ProfileOverlayWidget(OverlayWidget):
                 if gen == self._load_gen:
                     self._avatar_loaded.emit(None)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="profile-load-avatar").start()
 
     def _on_avatar_loaded(self, pixmap):
         if pixmap is None or self._avatar_label is None:
@@ -1185,7 +1185,7 @@ class ProfileOverlayWidget(OverlayWidget):
             data = self._nexus_client.get_player_globals(eu_name)
             self._globals_loaded.emit(data)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="profile-fetch-globals").start()
 
     def _on_globals_loaded(self, data):
         """Replace the globals placeholder with actual content."""
@@ -1239,7 +1239,7 @@ class ProfileOverlayWidget(OverlayWidget):
             data = self._nexus_client.get_player_globals(eu_name)
             self._globals_recent_loaded.emit(data)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="profile-poll-globals").start()
 
     def _poll_globals_full(self):
         """Full poll: fetch and rebuild everything."""
@@ -1854,7 +1854,7 @@ class ProfileOverlayWidget(OverlayWidget):
             result = nc.upload_profile_image(user_id, data, ct)
             self._upload_result.emit(result is not None, "" if result else "Upload failed")
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="profile-upload-img").start()
 
     def _on_upload_result(self, success: bool, error: str):
         if success:
@@ -1892,7 +1892,7 @@ class ProfileOverlayWidget(OverlayWidget):
             ok = nc.delete_profile_image(user_id)
             self._upload_result.emit(ok, "" if ok else "Failed to remove image")
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="profile-delete-img").start()
 
         # Clear avatar immediately
         if self._avatar_label:
@@ -1930,7 +1930,7 @@ class ProfileOverlayWidget(OverlayWidget):
             result = nc.update_profile(name, payload)
             self._save_result.emit(result is not None, "" if result else "Save failed")
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="profile-save").start()
 
     def _on_save_result(self, success: bool, error: str):
         save_btn = self._settings_widgets.get("save_btn")

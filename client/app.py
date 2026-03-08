@@ -237,6 +237,27 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     signals = AppSignals()
     wire_signals(event_bus, signals)
 
+    # Launch loading splash in a separate process so it keeps animating
+    # smoothly while the main process is blocked on heavy widget construction.
+    import subprocess
+    _splash_proc = None
+    try:
+        splash_cmd = [sys.executable, "-m", "client.splash_loader"]
+        # Pass saved screen center so the splash appears on the same monitor
+        # the main window will use.
+        sc = config.main_window_screen_center
+        if sc and len(sc) >= 2:
+            splash_cmd += ["--screen-center", str(int(sc[0])), str(int(sc[1]))]
+        _splash_proc = subprocess.Popen(
+            splash_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+        )
+    except Exception as e:
+        log.warning("Loading splash failed to start: %s", e)
+
     # Create main window FIRST — before any background workers, because
     # worker threads (OCR, etc.) access Win32 display APIs that can race
     # with Qt's native window initialization and cause segfaults.
@@ -250,9 +271,23 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         nexus_client=nexus_client,
         data_client=data_client,
     )
+
+    # Build all pages synchronously while the loading splash covers the screen.
+    main_window.prewarm_all_pages()
+
+    # Close the loading splash and show the main window.
+    if _splash_proc is not None:
+        try:
+            _splash_proc.stdin.write(b"close\n")
+            _splash_proc.stdin.flush()
+            _splash_proc.wait(timeout=3)
+        except Exception:
+            _splash_proc.kill()
+        _splash_proc = None
+
     main_window.show()
 
-    # If we came from the splash, show the main window on the same monitor
+    # If we came from the login splash, show the main window on the same monitor
     if splash_screen is not None:
         main_window.bring_to_front_on_screen(splash_screen)
 
@@ -317,8 +352,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_update_checker(config, event_bus))
     workers.extend(_start_target_lock_detector(config, event_bus, frame_cache))
     workers.extend(_start_player_status_detector(config, event_bus, frame_cache))
-    # Market price detector disabled — OCR not ready yet
-    # workers.extend(_start_market_price_detector(config, event_bus, frame_cache))
+    workers.extend(_start_market_price_detector(config, event_bus, frame_cache))
 
     # Overlay manager (focus detection, widget registry, snap)
     from .overlay.overlay_manager import OverlayManager
@@ -721,11 +755,12 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                         dialog.confirmed.connect(
                             lambda: threading.Thread(
                                 target=do_sync, daemon=True,
+                                name="skill-sync",
                             ).start()
                         )
                         dialog.set_wants_visible(True)
                     else:
-                        threading.Thread(target=do_sync, daemon=True).start()
+                        threading.Thread(target=do_sync, daemon=True, name="skill-sync").start()
 
                 overlay_manager._scan_summary.scan_marked_complete.connect(
                     _on_scan_marked_complete
@@ -738,10 +773,12 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     QTimer.singleShot(0, _create_overlays)
 
-    # Dismiss the loading overlay after heavy init work is queued.
-    # Overlay creation is staggered up to 150ms inside _create_overlays,
-    # so 300ms gives enough headroom for the event loop to settle.
-    QTimer.singleShot(300, main_window.dismiss_loading_overlay)
+    # Freeze detector — monitors main thread responsiveness.
+    # Pages are already prewarmed before show(), so arm immediately.
+    from .core.freeze_detector import FreezeDetector
+    freeze_detector = FreezeDetector()
+    freeze_detector.start()
+    freeze_detector.arm()
 
     exit_code = app.exec()
 
@@ -755,6 +792,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     kill_timer.daemon = True
     kill_timer.start()
 
+    freeze_detector.stop()
     local_server.close()
     main_window.cleanup()
     overlay_manager.stop()
@@ -791,7 +829,7 @@ def _show_splash(app, oauth, event_bus):
             except Exception as e:
                 splash._login_error.emit(str(e) or e.__class__.__name__)
 
-        threading.Thread(target=do_login, daemon=True).start()
+        threading.Thread(target=do_login, daemon=True, name="oauth-login").start()
 
     def on_auth_changed(data):
         """Close splash when OAuth succeeds (called from background thread)."""
@@ -858,7 +896,7 @@ def _show_splash_over_main(main_window, oauth, event_bus):
             except Exception as e:
                 splash._login_error.emit(str(e) or e.__class__.__name__)
 
-        threading.Thread(target=do_login, daemon=True).start()
+        threading.Thread(target=do_login, daemon=True, name="oauth-relogin").start()
 
     def on_auth_changed(data):
         if not getattr(data, "authenticated", False):
@@ -1108,6 +1146,11 @@ def _start_market_price_detector(config, event_bus, frame_cache=None):
             from .ocr.capturer import ScreenCapturer
             frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         detector = MarketPriceDetector(config, event_bus, frame_cache)
+        if getattr(config, "ocr_trace_enabled", False):
+            from .ocr.trace import OcrTracer
+            tracer = OcrTracer()
+            tracer.set_enabled(True)
+            detector.set_tracer(tracer)
         detector.start()
         workers.append(detector)
         log.info("Market price detector started")
@@ -1151,7 +1194,7 @@ def _cleanup_workers(workers):
                 w.stop()
             except Exception as e:
                 log.error("Error stopping %s: %s", w.__class__.__name__, e)
-        t = threading.Thread(target=_stop, daemon=True)
+        t = threading.Thread(target=_stop, daemon=True, name="stop-worker")
         t.start()
         threads.append(t)
     # Wait for all stop() calls, with a shared 4s budget (leaves 1s

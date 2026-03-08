@@ -23,6 +23,11 @@ class ProgressBarReader:
     def __init__(self):
         if cv2 is None:
             raise ImportError("opencv-python is required. Install with: pip install opencv-python")
+        self._tracer = None
+
+    def set_tracer(self, tracer) -> None:
+        """Set the OcrTracer for detailed trace output."""
+        self._tracer = tracer
 
     def read_progress(self, bar_image: np.ndarray) -> float:
         """Read the fill percentage of a progress bar image.
@@ -53,7 +58,12 @@ class ProgressBarReader:
 
         # Calculate percentage
         percent = (fill_width / w) * 100.0
-        return round(max(0.0, min(100.0, percent)), 2)
+        result = round(max(0.0, min(100.0, percent)), 2)
+
+        if self._tracer and self._tracer.enabled:
+            self._tracer.log("BAR", f"fill={result:.2f}% boundary={fill_width:.1f}/{w}")
+
+        return result
 
     def _create_fill_mask(self, hsv: np.ndarray) -> np.ndarray:
         """Create a binary mask of the filled region based on HSV color."""

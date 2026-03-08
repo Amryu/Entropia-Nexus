@@ -4,22 +4,27 @@ from __future__ import annotations
 
 import copy
 import itertools
+import queue
 import re
+import threading
 from collections import Counter
 from dataclasses import dataclass, field
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
-    QCheckBox, QAbstractItemView, QMenu, QWidgetAction,
+    QCheckBox, QAbstractItemView, QMenu,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QMetaObject
 from PyQt6.QtGui import QColor, QAction
 
+from ...core.logger import get_logger
 from ..theme import (
-    ACCENT, BORDER, ERROR, HOVER, MAIN_DARK, SECONDARY, SUCCESS,
-    TEXT, TEXT_MUTED,
+    ACCENT, ACCENT_LIGHT, BORDER, ERROR, HOVER, MAIN_DARK, PRIMARY,
+    SECONDARY, SUCCESS, TEXT, TEXT_MUTED,
 )
+
+log = get_logger("Compare")
 
 # ── Constants ────────────────────────────────────────────────────────
 
@@ -90,9 +95,12 @@ class LoadoutCompareWidget(QWidget):
         self._anchor_stats = None
         self._set_mode = False
         self._set_sections: set[str] = set()
-        self._calculator = None
+        self._js_path: str | None = None
         self._entity_data: dict = {}
         self._truncated = False
+        self._pending_result = None
+        self._work_queue: queue.Queue = queue.Queue()
+        self._worker_thread: threading.Thread | None = None
         self._visible_weapon_cols: set[str] = set(DEFAULT_WEAPON_VISIBLE)
         self._visible_armor_cols: set[str] = set(DEFAULT_ARMOR_VISIBLE)
         self._eval_generation = 0  # Incremented to cancel stale batches
@@ -170,6 +178,7 @@ class LoadoutCompareWidget(QWidget):
         self._table.setStyleSheet(f"""
             QTableWidget {{
                 background-color: {MAIN_DARK};
+                alternate-background-color: {PRIMARY};
                 gridline-color: {BORDER};
                 border: 1px solid {BORDER};
                 border-radius: 4px;
@@ -194,13 +203,89 @@ class LoadoutCompareWidget(QWidget):
         self._table.cellClicked.connect(self._on_row_clicked)
         layout.addWidget(self._table, 1)
 
+        # Loading overlay (centered on table)
+        self._loading_label = QLabel("Evaluating\u2026", self._table)
+        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading_label.setStyleSheet(
+            f"background: transparent; color: {TEXT_MUTED}; font-size: 13px;"
+        )
+        self._loading_label.hide()
+
     # ── Public API ────────────────────────────────────────────────────
 
-    def set_calculator(self, calculator):
-        self._calculator = calculator
+    def set_js_path(self, js_path: str | None):
+        self._js_path = js_path
 
     def set_entity_data(self, entity_data: dict):
         self._entity_data = entity_data
+
+    def cleanup(self):
+        """Cancel any running evaluation and stop the worker thread."""
+        self._eval_generation += 1
+        if self._worker_thread is not None:
+            self._work_queue.put(None)  # Sentinel to stop thread
+
+    def _ensure_worker(self):
+        """Start the persistent evaluation worker thread if not already running."""
+        if self._worker_thread is not None and self._worker_thread.is_alive():
+            return
+        self._worker_thread = threading.Thread(
+            target=self._eval_worker, daemon=True, name="compare-eval",
+        )
+        self._worker_thread.start()
+
+    def _eval_worker(self):
+        """Persistent worker: waits for jobs, evaluates, pushes results."""
+        from ...loadout.calculator import LoadoutCalculator
+        calc = None
+        calc_js_path = None
+
+        while True:
+            job = self._work_queue.get()
+            if job is None:
+                break  # Shutdown sentinel
+
+            gen, work, entity_data, js_path, truncated = job
+
+            # (Re)create calculator if js_path changed
+            if calc is None or js_path != calc_js_path:
+                try:
+                    calc = LoadoutCalculator(js_path)
+                    calc_js_path = js_path
+                except Exception:
+                    log.exception("Failed to create LoadoutCalculator in worker")
+                    continue
+
+            rows = []
+            anchor_stats = None
+            cancelled = False
+            for lo, name, is_anchor, set_indices in work:
+                if self._eval_generation != gen:
+                    cancelled = True
+                    break
+                try:
+                    stats = calc.evaluate(lo, entity_data)
+                except Exception:
+                    stats = None
+                row = CompareRow(
+                    name=name,
+                    loadout_id=lo.get("Id", ""),
+                    is_anchor=is_anchor,
+                    set_indices=set_indices,
+                    stats=stats,
+                )
+                if is_anchor:
+                    anchor_stats = stats
+                rows.append(row)
+
+            if cancelled or self._eval_generation != gen:
+                continue
+
+            self._pending_result = (gen, rows, anchor_stats, truncated)
+            QMetaObject.invokeMethod(
+                self, "_on_eval_complete",
+                Qt.ConnectionType.QueuedConnection,
+            )
 
     def update_comparison(
         self,
@@ -208,24 +293,26 @@ class LoadoutCompareWidget(QWidget):
         current_loadout: dict | None,
         active_set_indices: dict | None = None,
     ):
-        """Rebuild comparison table from loadout list (chunked to avoid UI freeze)."""
+        """Rebuild comparison table from loadout list (threaded to avoid UI freeze)."""
         self._rows.clear()
         self._anchor_stats = None
         self._truncated = False
         self._eval_generation += 1
         gen = self._eval_generation
 
-        if not self._calculator or not loadouts:
+        if not loadouts:
+            self._loading_label.hide()
             self._refresh_table()
             return
 
         # Build the work items (lightweight — no evaluation yet)
         work: list[tuple] = []  # (loadout_dict, name, is_anchor, set_indices)
+        truncated = False
         if self._set_mode and current_loadout and self._set_sections:
             count = 0
             for perm_lo, set_indices, label in self._iter_permutations(current_loadout):
                 if count >= MAX_PERMUTATIONS:
-                    self._truncated = True
+                    truncated = True
                     break
                 is_anchor = False
                 if active_set_indices:
@@ -244,38 +331,21 @@ class LoadoutCompareWidget(QWidget):
                 )
                 work.append((lo, self._get_loadout_label(lo), is_anchor, {}))
 
-        # Show placeholder while evaluating
-        self._perm_label.setText(f"Evaluating {len(work)} loadouts...")
+        # Show loading state
+        self._perm_label.setText(f"Evaluating {len(work)} loadouts\u2026")
         self._table.setRowCount(0)
+        self._loading_label.setText(f"Evaluating {len(work)} loadouts\u2026")
+        self._loading_label.resize(self._table.viewport().size())
+        self._loading_label.show()
 
-        # Process in chunks via timer to keep UI responsive
-        CHUNK_SIZE = 8
-        idx = [0]
-
-        def process_chunk():
-            if self._eval_generation != gen:
-                return  # Cancelled by a newer update
-            end = min(idx[0] + CHUNK_SIZE, len(work))
-            for i in range(idx[0], end):
-                lo, name, is_anchor, set_indices = work[i]
-                stats = self._evaluate(lo)
-                row = CompareRow(
-                    name=name,
-                    loadout_id=lo.get("Id", ""),
-                    is_anchor=is_anchor,
-                    set_indices=set_indices,
-                    stats=stats,
-                )
-                if is_anchor:
-                    self._anchor_stats = stats
-                self._rows.append(row)
-            idx[0] = end
-            if idx[0] < len(work):
-                QTimer.singleShot(0, process_chunk)
-            else:
-                self._refresh_table()
-
-        process_chunk()
+        # Drain any stale jobs and submit new work
+        while not self._work_queue.empty():
+            try:
+                self._work_queue.get_nowait()
+            except queue.Empty:
+                break
+        self._ensure_worker()
+        self._work_queue.put((gen, work, self._entity_data, self._js_path, truncated))
 
     def update_set_options(self, loadout: dict | None):
         """Update the set section checkboxes based on current loadout."""
@@ -311,11 +381,21 @@ class LoadoutCompareWidget(QWidget):
 
     # ── Internal ──────────────────────────────────────────────────────
 
-    def _evaluate(self, loadout: dict):
-        try:
-            return self._calculator.evaluate(loadout, self._entity_data)
-        except Exception:
-            return None
+    @pyqtSlot()
+    def _on_eval_complete(self):
+        """Receive evaluation results from the worker thread."""
+        result = self._pending_result
+        if result is None:
+            return
+        self._pending_result = None
+        gen, rows, anchor_stats, truncated = result
+        if gen != self._eval_generation:
+            return
+        self._rows = rows
+        self._anchor_stats = anchor_stats
+        self._truncated = truncated
+        self._loading_label.hide()
+        self._refresh_table()
 
     def _get_loadout_label(self, lo: dict) -> str:
         name = lo.get("Name")
@@ -472,6 +552,9 @@ class LoadoutCompareWidget(QWidget):
                             item.setData(Qt.ItemDataRole.UserRole, value)
 
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                if row.is_anchor:
+                    item.setBackground(QColor(ACCENT_LIGHT))
 
                 self._table.setItem(row_idx, col_idx, item)
 

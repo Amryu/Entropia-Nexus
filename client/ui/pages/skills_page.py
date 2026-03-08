@@ -19,20 +19,57 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
+from ...core.thread_utils import invoke_on_main
+
 from ...skills.calculations import (
-    calculate_all_profession_levels, build_attribute_skill_set,
+    calculate_all_profession_levels, calculate_profession_level,
+    build_attribute_skill_set,
 )
 from ...skills.badges import get_skill_badges, Badge
+from ...skills.skill_ids import id_to_name_map, name_to_id_map
 from ...core.logger import get_logger
 from ...skills.sync import SkillDataManager
 from ..theme import (
     SECONDARY, BORDER, BORDER_HOVER, TEXT_MUTED,
     SUCCESS, SUCCESS_BG, WARNING, WARNING_BG,
-    ACCENT, ACCENT_LIGHT,
+    ACCENT, ACCENT_LIGHT, PRIMARY,
 )
+from ..widgets.multi_line_chart import MultiLineChart, ChartSeries, CHART_COLORS
 
 
 log = get_logger("SkillsPage")
+
+
+RANKLESS_CATEGORIES = {"Attributes", "Social"}
+
+
+def _rank_from_thresholds(points: float, thresholds: list[dict],
+                          category: str | None = None) -> tuple[str, float]:
+    """Thread-safe rank calculation (no self access)."""
+    if category and category in RANKLESS_CATEGORIES:
+        return ("", 0.0)
+    if not thresholds or points <= 0:
+        return ("Inexperienced", 0.0)
+    rank_name = thresholds[0]["name"]
+    current_threshold = 0
+    next_threshold = thresholds[0]["threshold"] if thresholds else 0
+    for i, rank in enumerate(thresholds):
+        if points >= rank["threshold"]:
+            rank_name = rank["name"]
+            current_threshold = rank["threshold"]
+            next_threshold = (
+                thresholds[i + 1]["threshold"]
+                if i + 1 < len(thresholds)
+                else current_threshold
+            )
+        else:
+            break
+    if next_threshold > current_threshold:
+        progress = (points - current_threshold) / (next_threshold - current_threshold) * 100
+    else:
+        progress = 100.0
+    return (rank_name, min(progress, 100.0))
+
 
 # ── Constants ──────────────────────────────────────────────────────────────
 CARD_MIN_WIDTH = 180
@@ -63,13 +100,23 @@ BADGE_STYLES = {
 }
 
 TIME_PERIODS = [
-    ("1w", 7),
-    ("1m", 30),
-    ("3m", 90),
-    ("6m", 180),
-    ("1y", 365),
+    ("1 hour", 1 / 24),
+    ("24 hours", 1),
+    ("1 week", 7),
+    ("1 month", 30),
+    ("3 months", 90),
+    ("6 months", 180),
+    ("1 year", 365),
     ("All", 0),
 ]
+
+# Tab indices
+TAB_DASHBOARD = 0
+TAB_SKILLS = 1
+TAB_PROFESSIONS = 2
+TAB_ANALYTICS = 3
+TAB_OPTIMIZER = 4
+TAB_SCANNING = 5
 
 # Pre-computed card styles (avoid per-widget setStyleSheet f-string overhead)
 _SKILL_CARD_STYLE = f"""
@@ -340,6 +387,109 @@ class ProfessionCard(QFrame):
         super().mousePressEvent(event)
 
 
+class _GoalProgressCard(QFrame):
+    """Compact card showing goal progress with bar and stats."""
+
+    edit_clicked = pyqtSignal(int)
+    delete_clicked = pyqtSignal(int)
+
+    def __init__(self, goal: dict, skill_values: dict[str, float],
+                 profession_levels: dict[str, float], parent=None):
+        super().__init__(parent)
+        self._goal_id = goal["id"]
+        self._goal = goal
+        self.setStyleSheet(
+            f"_GoalProgressCard {{ background-color: {SECONDARY}; "
+            f"border: 1px solid {BORDER}; border-radius: 6px; }}"
+        )
+        self.setFixedHeight(64)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(2)
+
+        # Row 1: title + buttons
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        is_prof = goal["goal_type"] == "profession_level"
+        prefix = "Level" if is_prof else "Points"
+        title = QLabel(f"{goal['target_name']} — {prefix} {goal['target_value']:.1f}")
+        title.setStyleSheet("font-weight: bold; font-size: 12px; background: transparent; border: none;")
+        top.addWidget(title, 1)
+
+        edit_btn = QPushButton("Edit")
+        edit_btn.setFixedSize(40, 20)
+        edit_btn.setStyleSheet("font-size: 10px; padding: 0; border: none; background: transparent;")
+        edit_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self._goal_id))
+        top.addWidget(edit_btn)
+
+        del_btn = QPushButton("X")
+        del_btn.setFixedSize(20, 20)
+        del_btn.setStyleSheet("font-size: 10px; padding: 0; border: none; background: transparent;")
+        del_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        del_btn.clicked.connect(lambda: self.delete_clicked.emit(self._goal_id))
+        top.addWidget(del_btn)
+        layout.addLayout(top)
+
+        # Compute progress
+        current, pct = self._compute_progress(skill_values, profession_levels)
+
+        # Row 2: progress bar + percentage
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        self._bar = QProgressBar()
+        self._bar.setMaximum(1000)
+        self._bar.setValue(int(pct * 10))
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(10)
+        bottom.addWidget(self._bar, 1)
+
+        is_prof = goal["goal_type"] == "profession_level"
+        target = goal["target_value"]
+        if is_prof:
+            val_text = f"{current:.1f} / {target:.1f}"
+        else:
+            val_text = f"{current:,.0f} / {target:,.0f}"
+        self._pct_label = QLabel(f"{val_text}  ({pct:.0f}%)")
+        self._pct_label.setStyleSheet(
+            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
+        )
+        bottom.addWidget(self._pct_label)
+        layout.addLayout(bottom)
+
+    def _compute_progress(self, skill_values, profession_levels):
+        """Compute current value and progress percentage."""
+        goal = self._goal
+        is_prof = goal["goal_type"] == "profession_level"
+        if is_prof:
+            current = profession_levels.get(goal["target_name"], 0)
+        else:
+            current = skill_values.get(goal["target_name"], 0)
+        start = goal.get("start_value") or 0
+        target = goal["target_value"]
+        progress_range = target - start
+        if progress_range > 0:
+            pct = min(100, max(0, (current - start) / progress_range * 100))
+        else:
+            pct = 100 if current >= target else 0
+        return current, pct
+
+    def update_progress(self, skill_values: dict[str, float],
+                        profession_levels: dict[str, float]):
+        """Update progress bar and label in-place (no widget rebuild)."""
+        goal = self._goal
+        current, pct = self._compute_progress(skill_values, profession_levels)
+        self._bar.setValue(int(pct * 10))
+        is_prof = goal["goal_type"] == "profession_level"
+        target = goal["target_value"]
+        if is_prof:
+            val_text = f"{current:.1f} / {target:.1f}"
+        else:
+            val_text = f"{current:,.0f} / {target:,.0f}"
+        self._pct_label.setText(f"{val_text}  ({pct:.0f}%)")
+
+
 class SkillsPage(QWidget):
     """Skills management page with 6 tabs."""
 
@@ -380,6 +530,18 @@ class SkillsPage(QWidget):
         # Rank lookup (loaded lazily)
         self._rank_thresholds: list[dict] = []
 
+        # Dashboard state
+        self._active_goals: list[dict] = []
+        self._dash_period_idx = 3  # default "1 month" (index into TIME_PERIODS)
+        self._dash_loaded = False
+        self._dash_view_mode = "goals"  # "goals", "top_gains", or "custom"
+        self._dash_last_top_gains: list[dict] = []
+        self._dash_last_top_timeseries: list[dict] = []
+        self._dash_last_goal_timeseries: list[dict] = []
+        self._dash_last_custom_timeseries: list[dict] = []
+        self._dash_custom_skill_ids: list[int] = []
+        self._dash_last_baselines: dict[int, float] = {}
+
         # Guard: suppress navigation_changed during set_sub_state restore
         self._applying_sub_state: bool = False
 
@@ -394,9 +556,9 @@ class SkillsPage(QWidget):
                 border-top: 1px solid {BORDER};
             }}
         """)
+        self._build_dashboard_tab()
         self._build_skills_tab()
         self._build_professions_tab()
-        self._build_progression_tab()
         self._build_analytics_tab()
         self._build_optimizer_tab()
         self._build_scanning_tab()
@@ -412,6 +574,18 @@ class SkillsPage(QWidget):
         if event_bus:
             signals.config_changed.connect(self._on_config_changed)
         signals.skill_gain.connect(self._on_skill_gain)
+
+        # Debounce resize → avoids rebuilding grid on every pixel
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(80)
+        self._resize_timer.timeout.connect(self._on_resize_settled)
+
+        # Periodic rollup refresh (every 5 minutes)
+        self._rollup_timer = QTimer(self)
+        self._rollup_timer.setInterval(5 * 60 * 1000)
+        self._rollup_timer.timeout.connect(self._refresh_rollups_bg)
+        self._rollup_timer.start()
 
         # Initial data load (deferred)
         QTimer.singleShot(200, self._initial_load)
@@ -468,6 +642,7 @@ class SkillsPage(QWidget):
         self._skills_vgrid_rows: list[tuple] = []
         self._skills_vgrid_widgets: dict[int, list[QWidget]] = {}
         self._skills_vgrid_card_w = CARD_MIN_WIDTH
+        self._skills_version = 0
         layout.addWidget(self._skills_scroll)
 
         # List view (table, hidden by default)
@@ -534,6 +709,7 @@ class SkillsPage(QWidget):
         self._prof_vgrid_rows: list[tuple] = []
         self._prof_vgrid_widgets: dict[int, list[QWidget]] = {}
         self._prof_vgrid_card_w = CARD_MIN_WIDTH
+        self._prof_version = 0
         layout.addWidget(self._prof_scroll)
 
         # List view (hidden)
@@ -552,50 +728,117 @@ class SkillsPage(QWidget):
 
         self._tabs.addTab(tab, "Professions")
 
-    def _build_progression_tab(self):
+    def _build_dashboard_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        # Controls
+        # Controls row: time period buttons + Add Goal
         controls = QHBoxLayout()
-
-        controls.addWidget(QLabel("Period:"))
-        self._prog_period = QComboBox()
-        for label, _ in TIME_PERIODS:
-            self._prog_period.addItem(label)
-        self._prog_period.setCurrentText("3m")
-        controls.addWidget(self._prog_period)
-
-        controls.addWidget(QLabel("Skill:"))
-        self._prog_skill_picker = QComboBox()
-        self._prog_skill_picker.setEditable(True)
-        self._prog_skill_picker.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._prog_skill_picker.addItem("All")
-        controls.addWidget(self._prog_skill_picker)
-
-        self._prog_fetch_btn = QPushButton("Load History")
-        self._prog_fetch_btn.clicked.connect(self._load_progression)
-        controls.addWidget(self._prog_fetch_btn)
-
+        controls.setSpacing(4)
+        self._dash_period_btns: list[QPushButton] = []
+        for idx, (label, _days) in enumerate(TIME_PERIODS):
+            btn = QPushButton(label)
+            btn.setFixedHeight(26)
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn.clicked.connect(partial(self._on_dash_period_changed, idx))
+            self._dash_period_btns.append(btn)
+            controls.addWidget(btn)
         controls.addStretch()
+        # Toggle between goals and top gains views
+        self._dash_view_toggle = QPushButton("Show Top Gains")
+        self._dash_view_toggle.setFixedHeight(26)
+        self._dash_view_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._dash_view_toggle.clicked.connect(self._on_dash_view_toggle)
+        self._dash_view_toggle.hide()  # shown only when goals exist
+        controls.addWidget(self._dash_view_toggle)
+        self._dash_pick_skills_btn = QPushButton("Pick Skills")
+        self._dash_pick_skills_btn.setFixedHeight(26)
+        self._dash_pick_skills_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._dash_pick_skills_btn.clicked.connect(self._on_pick_skills)
+        controls.addWidget(self._dash_pick_skills_btn)
+        self._dash_add_goal_btn = QPushButton("+ Add Goal")
+        self._dash_add_goal_btn.setFixedHeight(26)
+        self._dash_add_goal_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._dash_add_goal_btn.clicked.connect(self._on_add_goal)
+        controls.addWidget(self._dash_add_goal_btn)
         layout.addLayout(controls)
 
-        # Stats summary
-        self._prog_stats_label = QLabel("Select a skill and time period, then click Load History.")
-        layout.addWidget(self._prog_stats_label)
+        # Scroll area for dashboard content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self._dash_content = QWidget()
+        self._dash_content_layout = QVBoxLayout(self._dash_content)
+        self._dash_content_layout.setContentsMargins(0, 4, 0, 0)
+        scroll.setWidget(self._dash_content)
+        layout.addWidget(scroll)
 
-        # History table (simple table view since we don't have pyqtgraph guaranteed)
-        self._prog_table = QTableWidget()
-        self._prog_table.setColumnCount(3)
-        self._prog_table.setHorizontalHeaderLabels(["Date", "Skill", "Value"])
-        self._prog_table.horizontalHeader().setSectionResizeMode(
+        # Goals container
+        self._dash_goals_container = QWidget()
+        self._dash_goals_layout = QVBoxLayout(self._dash_goals_container)
+        self._dash_goals_layout.setContentsMargins(0, 0, 0, 0)
+        self._dash_goals_layout.setSpacing(4)
+        self._dash_goals_container.hide()
+        self._dash_content_layout.addWidget(self._dash_goals_container)
+
+        # Chart
+        self._dash_chart = MultiLineChart()
+        self._dash_chart.setMinimumHeight(200)
+        self._dash_chart.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._dash_chart.hide()
+        self._dash_content_layout.addWidget(self._dash_chart, 1)
+
+        # Top gains table
+        self._dash_gains_label = QLabel()
+        self._dash_gains_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self._dash_gains_label.hide()
+        self._dash_content_layout.addWidget(self._dash_gains_label)
+
+        self._dash_gains_table = QTableWidget()
+        self._dash_gains_table.setColumnCount(4)
+        self._dash_gains_table.setHorizontalHeaderLabels(
+            ["Skill", "Gained", "Current", "Rank"]
+        )
+        self._dash_gains_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
-        self._prog_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self._prog_table)
+        self._dash_gains_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+        self._dash_gains_table.hide()
+        self._dash_content_layout.addWidget(self._dash_gains_table)
 
-        self._tabs.addTab(tab, "Progression")
+        # Onboarding / empty state
+        self._dash_onboarding = QLabel()
+        self._dash_onboarding.setWordWrap(True)
+        self._dash_onboarding.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._dash_onboarding.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 14px; padding: 40px 20px;"
+        )
+        self._dash_onboarding.setText(
+            "No skill data yet.\n\n"
+            "To start tracking your progression:\n"
+            "1. Go to the Scanning tab to scan your skills from the game\n"
+            "2. Or import skills from a file in the Scanning tab\n"
+            "3. Skill gains from the chat log are tracked automatically\n\n"
+            "Once you have data, this dashboard will show your progress."
+        )
+        self._dash_onboarding.hide()
+        self._dash_content_layout.addWidget(self._dash_onboarding)
+
+        # Loading label
+        self._dash_loading = QLabel("Loading...")
+        self._dash_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._dash_loading.setStyleSheet(f"color: {TEXT_MUTED}; padding: 20px;")
+        self._dash_loading.hide()
+        self._dash_content_layout.addWidget(self._dash_loading)
+
+        # Style active period button
+        self._update_dash_period_buttons()
+
+        self._tabs.addTab(tab, "Dashboard")
 
     def _build_analytics_tab(self):
         """Analytics tab — Coming Soon.
@@ -722,7 +965,7 @@ class SkillsPage(QWidget):
 
     def _initial_load(self):
         """Load metadata and sync skills on startup."""
-        threading.Thread(target=self._load_data_bg, daemon=True).start()
+        threading.Thread(target=self._load_data_bg, daemon=True, name="skills-load").start()
 
     def _load_data_bg(self):
         self._manager.refresh_metadata()
@@ -740,10 +983,11 @@ class SkillsPage(QWidget):
         QTimer.singleShot(0, self._on_data_loaded)
 
     def _ensure_gains_loaded(self):
-        """Load gains from DB on first access (lazy)."""
-        if self._gains_loaded:
-            return
-        self._load_gains_from_db()
+        """Load gains from DB on first access (lazy). Currently disabled."""
+        # Disabled — skill_gains table can have millions of rows and the
+        # aggregation query is expensive.  Live gains from the chat parser
+        # still accumulate in self._skill_gains via _on_skill_gain().
+        return
 
     def _load_gains_from_db(self):
         """Load accumulated gains since last scan baseline from the local DB."""
@@ -781,8 +1025,11 @@ class SkillsPage(QWidget):
         except Exception:
             self._rank_thresholds = []
 
-    def _get_rank_and_progress(self, points: float) -> tuple[str, float]:
+    def _get_rank_and_progress(self, points: float,
+                               category: str | None = None) -> tuple[str, float]:
         """Get rank name and progress % for a given skill point value."""
+        if category and category in RANKLESS_CATEGORIES:
+            return ("", 0.0)
         if not self._rank_thresholds or points <= 0:
             return ("Inexperienced", 0.0)
 
@@ -830,18 +1077,16 @@ class SkillsPage(QWidget):
                 self._prof_skill_filter.addItem(s["Name"])
         self._prof_skill_filter.blockSignals(False)
 
-        # Populate progression skill picker
-        self._prog_skill_picker.blockSignals(True)
-        self._prog_skill_picker.clear()
-        self._prog_skill_picker.addItem("All")
-        for s in sorted(meta, key=lambda x: x.get("Name", "")):
-            if not s.get("IsHidden"):
-                self._prog_skill_picker.addItem(s["Name"])
-        self._prog_skill_picker.blockSignals(False)
-
         # Refresh displays
         self._refresh_skills_display()
         self._refresh_prof_display()
+
+        # Refresh dashboard if it's the active tab
+        if self._tabs.currentIndex() == TAB_DASHBOARD:
+            self._refresh_dashboard()
+
+        # Check goal completion
+        self._check_goal_completion()
 
     # ── Skills Tab ────────────────────────────────────────────────────────
 
@@ -872,91 +1117,130 @@ class SkillsPage(QWidget):
         self._skills_sort.setCurrentIndex(0)
         self._refresh_skills_display()
 
-    def _get_filtered_skills(self) -> list[dict]:
-        """Get skill metadata filtered and sorted for display."""
-        meta = self._manager.skill_metadata
-        values = self._manager.skill_values
-        attr_skills = build_attribute_skill_set(meta)
-
-        # Filter by profession: include any skill that lists the profession
-        # (hidden skills are kept — they render dimmed when 0 points)
-        if self._skill_filter_profession:
-            pname = self._skill_filter_profession
-            meta = [
-                s for s in meta
-                if any(p.get("Name") == pname
-                       for p in s.get("Professions", []))
-            ]
-        else:
-            meta = [s for s in meta if not s.get("IsHidden")]
-
-        # Sort
-        sort_idx = self._skills_sort.currentIndex()
-        if sort_idx == 0:  # Category
-            meta.sort(key=lambda s: (s.get("Category") or "", s["Name"]))
-        elif sort_idx == 1:  # Level
-            meta.sort(key=lambda s: values.get(s["Name"], 0), reverse=True)
-        elif sort_idx == 2:  # HP Contribution
-            meta.sort(key=lambda s: s.get("HPIncrease") or 9999)
-        elif sort_idx == 3:  # Eva/Dod/Jam
-            def defense_sort(s):
-                for p in s.get("Professions", []):
-                    if p.get("Name") in ("Evader", "Dodger", "Jammer"):
-                        return -(p.get("Weight") or 0)
-                return 0
-            meta.sort(key=defense_sort)
-        elif sort_idx == 4:  # Looter
-            def looter_sort(s):
-                for p in s.get("Professions", []):
-                    if p.get("Name", "").endswith("Looter"):
-                        return -(p.get("Weight") or 0)
-                return 0
-            meta.sort(key=looter_sort)
-        elif sort_idx == 5:  # Gain
-            meta.sort(key=lambda s: self._skill_gains.get(s["Name"], 0), reverse=True)
-
-        return meta
-
     def _refresh_skills_display(self):
         self._ensure_gains_loaded()
-        meta = self._get_filtered_skills()
-        values = self._manager.skill_values
-        all_meta = self._manager.skill_metadata
+        view_mode = self._skills_view_mode
+        self._skills_version += 1
+        version = self._skills_version
 
-        if self._skills_view_mode == "grid":
-            self._populate_skills_grid(meta, values, all_meta)
-        else:
-            self._populate_skills_table(meta, values, all_meta)
+        # Capture state for background thread
+        skill_filter_prof = self._skill_filter_profession
+        sort_idx = self._skills_sort.currentIndex()
+        gains = dict(self._skill_gains)
+        rank_thresholds = self._rank_thresholds
 
-    def _populate_skills_grid(self, skills: list[dict], values: dict,
-                              all_meta: list[dict]):
-        """Build virtual row model and render visible cards."""
-        # Clear previous virtual state
-        self._clear_skills_vgrid()
+        # Capture viewport width on main thread (Qt widget access)
+        skills_viewport_w = self._skills_scroll.viewport().width() - 20
 
-        self._skills_loading_label.setVisible(False)
-
-        if not skills:
-            self._skills_loading_label.setText(
-                "No skills to display. Scan, import, or login to sync."
-            )
-            self._skills_loading_label.setVisible(True)
-            self._skills_grid_container.setMinimumHeight(30)
-            return
-
-        available = self._skills_scroll.viewport().width() - 20
-        if available <= 0:
+        # Grid deferred check — must happen on main thread before spawning
+        if view_mode == "grid" and skills_viewport_w <= 0:
             self._skills_grid_deferred = True
+            QTimer.singleShot(50, self._flush_deferred_grids)
             return
-        self._skills_grid_deferred = False
-        cols = max(1, available // (CARD_MIN_WIDTH + 6))
-        self._skills_grid_cols = cols
-        card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, (available - (cols - 1) * 6) // cols))
-        self._skills_vgrid_card_w = card_w
 
-        # Build row model: list of (kind, y, height, data)
+        # Show loading state
+        if view_mode == "grid":
+            self._skills_loading_label.setText("Loading\u2026")
+            self._skills_loading_label.setVisible(True)
+
+        def compute():
+            meta = self._manager.skill_metadata
+            values = self._manager.skill_values
+            attr_skills = build_attribute_skill_set(meta)
+
+            # Filter (mirrors _get_filtered_skills but with captured state)
+            if skill_filter_prof:
+                filtered = [
+                    s for s in meta
+                    if any(p.get("Name") == skill_filter_prof
+                           for p in s.get("Professions", []))
+                ]
+            else:
+                filtered = [s for s in meta if not s.get("IsHidden")]
+
+            # Sort
+            if sort_idx == 0:
+                filtered.sort(key=lambda s: (s.get("Category") or "", s["Name"]))
+            elif sort_idx == 1:
+                filtered.sort(key=lambda s: values.get(s["Name"], 0), reverse=True)
+            elif sort_idx == 2:
+                filtered.sort(key=lambda s: s.get("HPIncrease") or 9999)
+            elif sort_idx == 3:
+                def defense_sort(s):
+                    for p in s.get("Professions", []):
+                        if p.get("Name") in ("Evader", "Dodger", "Jammer"):
+                            return -(p.get("Weight") or 0)
+                    return 0
+                filtered.sort(key=defense_sort)
+            elif sort_idx == 4:
+                def looter_sort(s):
+                    for p in s.get("Professions", []):
+                        if p.get("Name", "").endswith("Looter"):
+                            return -(p.get("Weight") or 0)
+                    return 0
+                filtered.sort(key=looter_sort)
+            elif sort_idx == 5:
+                filtered.sort(key=lambda s: gains.get(s["Name"], 0), reverse=True)
+
+            if view_mode == "grid":
+                # Build row model for virtual grid
+                return ("grid", self._build_skills_row_model(
+                    filtered, values, meta, gains, rank_thresholds,
+                    skill_filter_prof, sort_idx, skills_viewport_w,
+                ))
+            else:
+                # Build table row data
+                rows = []
+                for skill in filtered:
+                    name = skill["Name"]
+                    points = values.get(name, 0)
+                    rank, _ = _rank_from_thresholds(points, rank_thresholds, skill.get("Category"))
+                    badges = get_skill_badges(name, meta)
+                    hp_inc = skill.get("HPIncrease") or 0
+                    gain = gains.get(name, 0.0)
+                    dimmed = points == 0 and gain < 0.001
+                    rows.append((name, skill.get("Category") or "", rank,
+                                 points, gain, hp_inc, badges, dimmed))
+                return ("table", rows)
+
+        def apply(result):
+            if self._skills_version != version:
+                return
+            kind, data = result
+            try:
+                if kind == "grid":
+                    self._apply_skills_grid(data)
+                else:
+                    self._apply_skills_table(data)
+            except RuntimeError:
+                pass
+
+        def worker():
+            try:
+                result = compute()
+            except Exception:
+                log.exception("skills compute error")
+                result = ("grid" if view_mode == "grid" else "table",
+                          ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [])
+            invoke_on_main(lambda: apply(result))
+
+        threading.Thread(target=worker, daemon=True, name="skills-grid").start()
+
+    @staticmethod
+    def _build_skills_row_model(skills, values, all_meta, gains,
+                                rank_thresholds, skill_filter_prof, sort_idx,
+                                available):
+        """Build virtual grid row model (safe for background thread).
+
+        Returns (rows, total_height, card_w, deferred).
+        """
+        if available <= 0:
+            return ([], 0, CARD_MIN_WIDTH, True)
+        cols = max(1, available // (CARD_MIN_WIDTH + 6))
+        card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, (available - (cols - 1) * 6) // cols))
+
         rows: list[tuple] = []
-        sort_by_category = self._skills_sort.currentIndex() == 0
+        sort_by_category = sort_idx == 0
         current_category = None
         pending: list[tuple] = []
         y = 0
@@ -979,25 +1263,88 @@ class SkillsPage(QWidget):
 
             name = skill["Name"]
             points = values.get(name, 0)
-            rank, progress = self._get_rank_and_progress(points)
+            rank, progress = _rank_from_thresholds(points, rank_thresholds, skill.get("Category"))
             badges = get_skill_badges(name, all_meta)
             weight = None
-            if self._skill_filter_profession:
+            if skill_filter_prof:
                 for p in skill.get("Professions", []):
-                    if p.get("Name") == self._skill_filter_profession:
+                    if p.get("Name") == skill_filter_prof:
                         weight = p.get("Weight", 0)
                         break
-            gain = self._skill_gains.get(name, 0.0)
+            gain = gains.get(name, 0.0)
             dimmed = points == 0 and gain < 0.001
             pending.append((name, points, rank, progress, badges, dimmed, weight, gain))
             if len(pending) >= cols:
                 flush_pending()
 
         flush_pending()
+        return (rows, y, card_w, False)
 
+    def _apply_skills_grid(self, data):
+        """Apply pre-computed grid row model on main thread."""
+        self._clear_skills_vgrid()
+        rows, total_height, card_w, deferred = data
+
+        if deferred:
+            self._skills_grid_deferred = True
+            return
+
+        self._skills_grid_deferred = False
+        self._skills_loading_label.setVisible(False)
+
+        if not rows:
+            self._skills_loading_label.setText(
+                "No skills to display. Scan, import, or login to sync."
+            )
+            self._skills_loading_label.setVisible(True)
+            self._skills_grid_container.setMinimumHeight(30)
+            return
+
+        available = self._skills_scroll.viewport().width() - 20
+        cols = max(1, available // (CARD_MIN_WIDTH + 6))
+        self._skills_grid_cols = cols
+        self._skills_vgrid_card_w = card_w
         self._skills_vgrid_rows = rows
-        self._skills_grid_container.setMinimumHeight(y + 12)
+        self._skills_grid_container.setMinimumHeight(total_height + 12)
         self._render_visible_skill_cards()
+
+    def _apply_skills_table(self, rows):
+        """Apply pre-computed table data on main thread."""
+        self._skills_table.setUpdatesEnabled(False)
+        try:
+            self._skills_table.setRowCount(len(rows))
+            for i, (name, category, rank, points, gain, hp_inc,
+                    badges, dimmed) in enumerate(rows):
+                fg = Qt.GlobalColor.gray if dimmed else None
+
+                items = []
+                items.append(QTableWidgetItem(name))
+                items.append(QTableWidgetItem(category))
+                items.append(QTableWidgetItem(rank))
+
+                pts_item = QTableWidgetItem(f"{points:.2f}")
+                pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                items.append(pts_item)
+
+                gain_text = f"+{gain:.4f}" if gain > 0.001 else ""
+                gain_item = QTableWidgetItem(gain_text)
+                gain_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if gain > 0.001:
+                    gain_item.setForeground(QColor(SUCCESS))
+                items.append(gain_item)
+
+                hp_text = str(hp_inc) if hp_inc > 0 else ""
+                items.append(QTableWidgetItem(hp_text))
+
+                badge_text = " ".join(b.label for b in badges)
+                items.append(QTableWidgetItem(badge_text))
+
+                for col, item in enumerate(items):
+                    if fg:
+                        item.setForeground(fg)
+                    self._skills_table.setItem(i, col, item)
+        finally:
+            self._skills_table.setUpdatesEnabled(True)
 
     def _clear_skills_vgrid(self):
         """Remove all visible card widgets from the virtual grid."""
@@ -1059,51 +1406,6 @@ class SkillsPage(QWidget):
                     widgets.append(card)
             self._skills_vgrid_widgets[idx] = widgets
 
-    def _populate_skills_table(self, skills: list[dict], values: dict,
-                               all_meta: list[dict]):
-        self._skills_table.setUpdatesEnabled(False)
-        try:
-            self._skills_table.setRowCount(len(skills))
-            for i, skill in enumerate(skills):
-                name = skill["Name"]
-                points = values.get(name, 0)
-                rank, progress = self._get_rank_and_progress(points)
-                badges = get_skill_badges(name, all_meta)
-                hp_inc = skill.get("HPIncrease") or 0
-
-                gain = self._skill_gains.get(name, 0.0)
-                dimmed = points == 0 and gain < 0.001
-                fg = Qt.GlobalColor.gray if dimmed else None
-
-                items = []
-                items.append(QTableWidgetItem(name))
-                items.append(QTableWidgetItem(skill.get("Category") or ""))
-                items.append(QTableWidgetItem(rank))
-
-                pts_item = QTableWidgetItem(f"{points:.2f}")
-                pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                items.append(pts_item)
-
-                gain_text = f"+{gain:.4f}" if gain > 0.001 else ""
-                gain_item = QTableWidgetItem(gain_text)
-                gain_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if gain > 0.001:
-                    gain_item.setForeground(QColor(SUCCESS))
-                items.append(gain_item)
-
-                hp_text = str(hp_inc) if hp_inc > 0 else ""
-                items.append(QTableWidgetItem(hp_text))
-
-                badge_text = " ".join(b.label for b in badges)
-                items.append(QTableWidgetItem(badge_text))
-
-                for col, item in enumerate(items):
-                    if fg:
-                        item.setForeground(fg)
-                    self._skills_table.setItem(i, col, item)
-        finally:
-            self._skills_table.setUpdatesEnabled(True)
-
     def _on_skills_table_click(self, row, col):
         item = self._skills_table.item(row, 0)
         if item:
@@ -1133,7 +1435,7 @@ class SkillsPage(QWidget):
         threading.Thread(
             target=self._manager.apply_correction,
             args=(skill_name, new_value),
-            daemon=True,
+            daemon=True, name="skill-correct",
         ).start()
 
     # ── Navigation (integrates with MainWindow title bar back/forward) ──
@@ -1176,7 +1478,7 @@ class SkillsPage(QWidget):
         try:
             self._prof_filter_skill = skill_name
             self._prof_skill_filter.setCurrentText(skill_name)
-            self._tabs.setCurrentIndex(1)  # Professions tab
+            self._tabs.setCurrentIndex(TAB_PROFESSIONS)
         finally:
             self._applying_sub_state = False
         self._emit_nav()
@@ -1210,70 +1512,103 @@ class SkillsPage(QWidget):
         self._prof_sort.setCurrentIndex(0)
         self._refresh_prof_display()
 
-    def _get_filtered_professions(self) -> list[dict]:
-        profs = self._manager.professions
-        values = self._manager.skill_values
-        meta = self._manager.skill_metadata
-        levels = calculate_all_profession_levels(values, profs, meta)
-
-        # Filter by skill
-        if self._prof_filter_skill:
-            profs = [
-                p for p in profs
-                if any(
-                    s.get("Name") == self._prof_filter_skill
-                    for s in p.get("Skills", [])
-                )
-            ]
-
-        # Annotate with level
-        result = []
-        for p in profs:
-            level = levels.get(p["Name"], 0)
-            result.append({**p, "_level": level})
-
-        # Sort
-        sort_idx = self._prof_sort.currentIndex()
-        if sort_idx == 0:  # Category
-            result.sort(key=lambda p: (p.get("Category") or "", p["Name"]))
-        elif sort_idx == 1:  # Level
-            result.sort(key=lambda p: p["_level"], reverse=True)
-        elif sort_idx == 2:  # Skill Count
-            result.sort(key=lambda p: len(p.get("Skills", [])), reverse=True)
-
-        return result
-
     def _refresh_prof_display(self):
-        profs = self._get_filtered_professions()
-        if self._prof_view_mode == "grid":
-            self._populate_prof_grid(profs)
-        else:
-            self._populate_prof_table(profs)
+        view_mode = self._prof_view_mode
+        self._prof_version += 1
+        version = self._prof_version
 
-    def _populate_prof_grid(self, profs: list[dict]):
-        """Build virtual row model for professions and render visible cards."""
-        self._clear_prof_vgrid()
+        # Capture state for background thread
+        prof_filter_skill = self._prof_filter_skill
+        sort_idx = self._prof_sort.currentIndex()
+        prof_viewport_w = self._prof_scroll.viewport().width() - 20
 
-        self._prof_loading_label.setVisible(False)
-
-        if not profs:
-            self._prof_loading_label.setText("No professions to display.")
-            self._prof_loading_label.setVisible(True)
-            self._prof_grid_container.setMinimumHeight(30)
-            return
-
-        available = self._prof_scroll.viewport().width() - 20
-        if available <= 0:
+        # Grid deferred check — must happen on main thread before spawning
+        if view_mode == "grid" and prof_viewport_w <= 0:
             self._prof_grid_deferred = True
+            QTimer.singleShot(50, self._flush_deferred_grids)
             return
-        self._prof_grid_deferred = False
+
+        # Show loading state
+        if view_mode == "grid":
+            self._prof_loading_label.setText("Loading\u2026")
+            self._prof_loading_label.setVisible(True)
+
+        def compute():
+            profs = self._manager.professions
+            values = self._manager.skill_values
+            meta = self._manager.skill_metadata
+            levels = calculate_all_profession_levels(values, profs, meta)
+
+            # Filter by skill
+            if prof_filter_skill:
+                profs = [
+                    p for p in profs
+                    if any(
+                        s.get("Name") == prof_filter_skill
+                        for s in p.get("Skills", [])
+                    )
+                ]
+
+            # Annotate with level
+            result = []
+            for p in profs:
+                level = levels.get(p["Name"], 0)
+                result.append({**p, "_level": level})
+
+            # Sort
+            if sort_idx == 0:
+                result.sort(key=lambda p: (p.get("Category") or "", p["Name"]))
+            elif sort_idx == 1:
+                result.sort(key=lambda p: p["_level"], reverse=True)
+            elif sort_idx == 2:
+                result.sort(key=lambda p: len(p.get("Skills", [])), reverse=True)
+
+            if view_mode == "grid":
+                return ("grid", self._build_prof_row_model(
+                    result, prof_filter_skill, sort_idx, prof_viewport_w))
+            else:
+                rows = []
+                for prof in result:
+                    rows.append((prof["Name"], prof.get("Category") or "",
+                                 prof["_level"], len(prof.get("Skills", []))))
+                return ("table", rows)
+
+        def apply(data):
+            if self._prof_version != version:
+                return
+            kind, payload = data
+            try:
+                if kind == "grid":
+                    self._apply_prof_grid(payload)
+                else:
+                    self._apply_prof_table(payload)
+            except RuntimeError:
+                pass
+
+        def worker():
+            try:
+                data = compute()
+            except Exception:
+                log.exception("prof compute error")
+                data = ("grid" if view_mode == "grid" else "table",
+                        ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [])
+            invoke_on_main(lambda: apply(data))
+
+        threading.Thread(target=worker, daemon=True, name="prof-grid").start()
+
+    @staticmethod
+    def _build_prof_row_model(profs, prof_filter_skill, sort_idx, available):
+        """Build virtual grid row model for professions (safe for background thread).
+
+        Returns (rows, total_height, card_w, deferred).
+        """
+        if available <= 0:
+            return ([], 0, CARD_MIN_WIDTH, True)
         cols = max(1, available // (CARD_MIN_WIDTH + 6))
-        self._prof_grid_cols = cols
         card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, (available - (cols - 1) * 6) // cols))
-        self._prof_vgrid_card_w = card_w
 
         rows: list[tuple] = []
-        sort_by_category = self._prof_sort.currentIndex() == 0
+        sort_by_category = sort_idx == 0
         current_category = None
         pending: list[tuple] = []
         y = 0
@@ -1295,9 +1630,9 @@ class SkillsPage(QWidget):
                     y += HEADER_ROW_HEIGHT
 
             weight = None
-            if self._prof_filter_skill:
+            if prof_filter_skill:
                 for s in prof.get("Skills", []):
-                    if s.get("Name") == self._prof_filter_skill:
+                    if s.get("Name") == prof_filter_skill:
                         weight = s.get("Weight", 0)
                         break
 
@@ -1307,10 +1642,52 @@ class SkillsPage(QWidget):
                 flush_pending()
 
         flush_pending()
+        return (rows, y, card_w, False)
 
+    def _apply_prof_grid(self, data):
+        """Apply pre-computed prof grid row model on main thread."""
+        self._clear_prof_vgrid()
+        rows, total_height, card_w, deferred = data
+
+        if deferred:
+            self._prof_grid_deferred = True
+            return
+
+        self._prof_grid_deferred = False
+        self._prof_loading_label.setVisible(False)
+
+        if not rows:
+            self._prof_loading_label.setText("No professions to display.")
+            self._prof_loading_label.setVisible(True)
+            self._prof_grid_container.setMinimumHeight(30)
+            return
+
+        available = self._prof_scroll.viewport().width() - 20
+        cols = max(1, available // (CARD_MIN_WIDTH + 6))
+        self._prof_grid_cols = cols
+        self._prof_vgrid_card_w = card_w
         self._prof_vgrid_rows = rows
-        self._prof_grid_container.setMinimumHeight(y + 12)
+        self._prof_grid_container.setMinimumHeight(total_height + 12)
         self._render_visible_prof_cards()
+
+    def _apply_prof_table(self, rows):
+        """Apply pre-computed prof table data on main thread."""
+        self._prof_table.setUpdatesEnabled(False)
+        try:
+            self._prof_table.setRowCount(len(rows))
+            for i, (name, category, level, skill_count) in enumerate(rows):
+                self._prof_table.setItem(i, 0, QTableWidgetItem(name))
+                self._prof_table.setItem(i, 1, QTableWidgetItem(category))
+
+                level_item = QTableWidgetItem(f"{level:.2f}")
+                level_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self._prof_table.setItem(i, 2, level_item)
+
+                count_item = QTableWidgetItem(str(skill_count))
+                count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self._prof_table.setItem(i, 3, count_item)
+        finally:
+            self._prof_table.setUpdatesEnabled(True)
 
     def _clear_prof_vgrid(self):
         for widgets in self._prof_vgrid_widgets.values():
@@ -1365,24 +1742,6 @@ class SkillsPage(QWidget):
                     widgets.append(card)
             self._prof_vgrid_widgets[idx] = widgets
 
-    def _populate_prof_table(self, profs: list[dict]):
-        self._prof_table.setUpdatesEnabled(False)
-        try:
-            self._prof_table.setRowCount(len(profs))
-            for i, prof in enumerate(profs):
-                self._prof_table.setItem(i, 0, QTableWidgetItem(prof["Name"]))
-                self._prof_table.setItem(i, 1, QTableWidgetItem(prof.get("Category") or ""))
-
-                level_item = QTableWidgetItem(f"{prof['_level']:.2f}")
-                level_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self._prof_table.setItem(i, 2, level_item)
-
-                count_item = QTableWidgetItem(str(len(prof.get("Skills", []))))
-                count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self._prof_table.setItem(i, 3, count_item)
-        finally:
-            self._prof_table.setUpdatesEnabled(True)
-
     def _on_prof_table_click(self, row, col):
         item = self._prof_table.item(row, 0)
         if item:
@@ -1397,72 +1756,638 @@ class SkillsPage(QWidget):
         try:
             self._skill_filter_profession = prof_name
             self._skills_prof_filter.setCurrentText(prof_name)
-            self._tabs.setCurrentIndex(0)  # Skills tab
+            self._tabs.setCurrentIndex(TAB_SKILLS)
         finally:
             self._applying_sub_state = False
         self._emit_nav()
 
-    # ── Progression Tab ───────────────────────────────────────────────────
+    # ── Dashboard Tab ────────────────────────────────────────────────────
 
-    def _load_progression(self):
-        skill_name = self._prog_skill_picker.currentText()
-        if skill_name == "All":
-            skill_names = None
-        else:
-            skill_names = [skill_name]
+    def _update_dash_period_buttons(self):
+        """Style period buttons, highlighting the active one."""
+        for i, btn in enumerate(self._dash_period_btns):
+            if i == self._dash_period_idx:
+                btn.setStyleSheet(
+                    f"padding: 2px 8px; background-color: {ACCENT}; color: {PRIMARY}; "
+                    f"font-weight: bold; border: none; border-radius: 3px;"
+                )
+            else:
+                btn.setStyleSheet(
+                    f"padding: 2px 8px; background-color: {SECONDARY}; "
+                    f"border: 1px solid {BORDER}; border-radius: 3px;"
+                )
 
-        # Determine date range
-        period_text = self._prog_period.currentText()
-        days = dict(TIME_PERIODS).get(period_text, 0)
-        from_date = None
-        if days > 0:
-            from_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    def _on_dash_period_changed(self, idx: int):
+        self._dash_period_idx = idx
+        self._update_dash_period_buttons()
+        self._refresh_dashboard()
 
-        self._prog_fetch_btn.setEnabled(False)
-        self._prog_stats_label.setText("Loading...")
+    def _on_add_goal(self):
+        from ..dialogs.goal_dialog import GoalDialog
 
-        threading.Thread(
-            target=self._fetch_progression_bg,
-            args=(skill_names, from_date),
-            daemon=True,
-        ).start()
+        prof_levels = {}
+        if self._manager.skill_values and self._manager.professions:
+            prof_levels = calculate_all_profession_levels(
+                self._manager.skill_values,
+                self._manager.professions,
+                self._manager.skill_metadata,
+            )
 
-    def _fetch_progression_bg(self, skill_names, from_date):
-        history = self._manager.get_skill_history(
-            skill_names=skill_names, from_date=from_date
+        dlg = GoalDialog(
+            skill_metadata=self._manager.skill_metadata,
+            professions=self._manager.professions,
+            skill_values=self._manager.skill_values,
+            profession_levels=prof_levels,
+            rank_thresholds=self._rank_thresholds,
+            parent=self,
         )
-        QTimer.singleShot(0, partial(self._on_progression_loaded, history))
+        if dlg.exec() and self._db:
+            goal = dlg.get_goal()
+            if goal:
+                self._db.add_goal(**goal)
+                self._refresh_dashboard()
 
-    def _on_progression_loaded(self, history):
-        self._prog_fetch_btn.setEnabled(True)
+    def _on_edit_goal(self, goal_id: int):
+        from ..dialogs.goal_dialog import GoalDialog
 
-        if not history:
-            self._prog_stats_label.setText("No history data found.")
-            self._prog_table.setRowCount(0)
+        goal = next((g for g in self._active_goals if g["id"] == goal_id), None)
+        if not goal:
             return
 
-        # Populate table
-        self._prog_table.setUpdatesEnabled(False)
-        try:
-            self._prog_table.setRowCount(len(history))
-            for i, entry in enumerate(history):
-                date_str = entry.get("imported_at", "")
-                if "T" in date_str:
-                    date_str = date_str[:19].replace("T", " ")
-                self._prog_table.setItem(i, 0, QTableWidgetItem(date_str))
-                self._prog_table.setItem(i, 1, QTableWidgetItem(entry.get("skill_name", "")))
-                val = float(entry.get("new_value", 0))
-                val_item = QTableWidgetItem(f"{val:.2f}")
-                val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self._prog_table.setItem(i, 2, val_item)
-        finally:
-            self._prog_table.setUpdatesEnabled(True)
+        prof_levels = {}
+        if self._manager.skill_values and self._manager.professions:
+            prof_levels = calculate_all_profession_levels(
+                self._manager.skill_values,
+                self._manager.professions,
+                self._manager.skill_metadata,
+            )
 
-        # Stats
-        skills_in_data = set(e.get("skill_name") for e in history)
-        self._prog_stats_label.setText(
-            f"Loaded {len(history)} records across {len(skills_in_data)} skills."
+        dlg = GoalDialog(
+            skill_metadata=self._manager.skill_metadata,
+            professions=self._manager.professions,
+            skill_values=self._manager.skill_values,
+            profession_levels=prof_levels,
+            rank_thresholds=self._rank_thresholds,
+            existing_goal=goal,
+            parent=self,
         )
+        if dlg.exec() and self._db:
+            updated = dlg.get_goal()
+            if updated:
+                self._db.update_goal(
+                    goal_id,
+                    target_value=updated["target_value"],
+                )
+                self._refresh_dashboard()
+
+    def _on_delete_goal(self, goal_id: int):
+        if self._db:
+            self._db.delete_goal(goal_id)
+            self._refresh_dashboard()
+
+    def _refresh_rollups_bg(self):
+        """Refresh rollup tables in background thread, then refresh dashboard if active."""
+        if not self._db:
+            return
+
+        def _do_rollup():
+            self._db.refresh_skill_rollups()
+            if self._tabs.currentIndex() == TAB_DASHBOARD:
+                QTimer.singleShot(0, self._refresh_dashboard)
+
+        threading.Thread(
+            target=_do_rollup, daemon=True, name="skills-rollup",
+        ).start()
+
+    def _refresh_dashboard(self):
+        """Kick off background data load for the dashboard."""
+        if not self._db:
+            self._dash_onboarding.show()
+            return
+        self._dash_loading.show()
+        threading.Thread(
+            target=self._load_dashboard_bg, daemon=True,
+            name="skills-dashboard",
+        ).start()
+
+    def _load_dashboard_bg(self):
+        """Background: refresh rollups, load goals, load top gains + timeseries."""
+        import time as _time
+
+        self._db.refresh_skill_rollups()
+        goals = self._db.get_active_goals()
+
+        days = TIME_PERIODS[self._dash_period_idx][1]
+        now_ts = int(_time.time())
+        from_ts = now_ts - int(days * 86400) if days > 0 else 0
+
+        top_gains = self._db.get_top_gaining_skills(from_ts, now_ts, limit=10)
+
+        # Always load top-gains timeseries (for toggle)
+        top_timeseries = []
+        if top_gains:
+            top_ids = [g["skill_id"] for g in top_gains[:5]]
+            top_timeseries = self._db.get_skill_gains_timeseries(
+                top_ids, from_ts, now_ts,
+            )
+
+        # Load goal-specific timeseries if goals exist
+        goal_timeseries = []
+        if goals:
+            nm = name_to_id_map()
+            goal_skill_ids = set()
+            for g in goals:
+                if g["goal_type"] == "skill_points":
+                    sid = nm.get(g["target_name"])
+                    if sid is not None:
+                        goal_skill_ids.add(sid)
+                elif g["goal_type"] == "profession_level":
+                    prof = next(
+                        (p for p in self._manager.professions
+                         if p["Name"] == g["target_name"]), None
+                    )
+                    if prof:
+                        for sk in prof.get("Skills", []):
+                            sid = nm.get(sk["Name"])
+                            if sid is not None:
+                                goal_skill_ids.add(sid)
+            if goal_skill_ids:
+                goal_timeseries = self._db.get_skill_gains_timeseries(
+                    list(goal_skill_ids), from_ts, now_ts,
+                )
+
+        # Load custom timeseries if user has picked skills
+        custom_timeseries = []
+        if self._dash_custom_skill_ids:
+            custom_timeseries = self._db.get_skill_gains_timeseries(
+                list(self._dash_custom_skill_ids), from_ts, now_ts,
+            )
+
+        # Collect baseline skill values (current scan values by skill_id)
+        nm = name_to_id_map()
+        skill_values = self._manager.skill_values or {}
+        baselines: dict[int, float] = {}
+        for name, val in skill_values.items():
+            sid = nm.get(name)
+            if sid is not None:
+                baselines[sid] = val
+
+        QTimer.singleShot(
+            0, partial(
+                self._on_dashboard_loaded,
+                goals, top_gains, goal_timeseries, top_timeseries,
+                custom_timeseries, baselines,
+            )
+        )
+
+    def _on_dashboard_loaded(self, goals, top_gains,
+                             goal_timeseries, top_timeseries,
+                             custom_timeseries, baselines):
+        """Main thread: populate dashboard widgets."""
+        self._dash_loading.hide()
+        self._active_goals = goals
+        self._dash_loaded = True
+        self._dash_last_top_gains = top_gains
+        self._dash_last_top_timeseries = top_timeseries
+        self._dash_last_goal_timeseries = goal_timeseries
+        self._dash_last_custom_timeseries = custom_timeseries
+        self._dash_last_baselines = baselines
+
+        has_goals = bool(goals)
+        has_data = bool(self._manager.skill_values) or bool(top_gains)
+
+        # Show/hide view toggle — visible when more than one view is available
+        has_custom = bool(self._dash_custom_skill_ids)
+        modes_available = sum([has_goals, True, has_custom])  # top_gains always available
+        if modes_available > 1 and has_data:
+            self._dash_view_toggle.show()
+        else:
+            self._dash_view_toggle.hide()
+            if has_goals:
+                self._dash_view_mode = "goals"
+            elif not has_data:
+                self._dash_view_mode = "top_gains"
+        self._update_toggle_text()
+
+        self._apply_dashboard_view()
+
+    def _apply_dashboard_view(self):
+        """Show goals, top-gains, or custom view based on current mode."""
+        # Hide everything first
+        self._dash_goals_container.hide()
+        self._dash_chart.hide()
+        self._dash_gains_label.hide()
+        self._dash_gains_table.hide()
+        self._dash_onboarding.hide()
+
+        has_goals = bool(self._active_goals)
+        has_data = bool(self._manager.skill_values) or bool(self._dash_last_top_gains)
+
+        if self._dash_view_mode == "goals" and has_goals:
+            self._show_dashboard_goals(
+                self._active_goals, self._dash_last_goal_timeseries,
+            )
+        elif self._dash_view_mode == "custom" and self._dash_custom_skill_ids:
+            self._show_dashboard_custom(self._dash_last_custom_timeseries)
+        elif has_data:
+            self._show_dashboard_top_gains(
+                self._dash_last_top_gains, self._dash_last_top_timeseries,
+            )
+        else:
+            self._dash_onboarding.show()
+
+    def _on_dash_view_toggle(self):
+        """Cycle through available views: goals → top_gains → custom → goals."""
+        has_goals = bool(self._active_goals)
+        has_custom = bool(self._dash_custom_skill_ids)
+        # Build ordered list of available modes
+        modes = []
+        if has_goals:
+            modes.append("goals")
+        modes.append("top_gains")
+        if has_custom:
+            modes.append("custom")
+
+        if not modes:
+            return
+        try:
+            idx = modes.index(self._dash_view_mode)
+            self._dash_view_mode = modes[(idx + 1) % len(modes)]
+        except ValueError:
+            self._dash_view_mode = modes[0]
+        self._update_toggle_text()
+        self._apply_dashboard_view()
+
+    def _update_toggle_text(self):
+        """Set toggle button text based on what the next click would show."""
+        has_goals = bool(self._active_goals)
+        has_custom = bool(self._dash_custom_skill_ids)
+        modes = []
+        if has_goals:
+            modes.append("goals")
+        modes.append("top_gains")
+        if has_custom:
+            modes.append("custom")
+        if len(modes) <= 1:
+            return
+        try:
+            idx = modes.index(self._dash_view_mode)
+            next_mode = modes[(idx + 1) % len(modes)]
+        except ValueError:
+            next_mode = modes[0]
+        labels = {"goals": "Show Goals", "top_gains": "Show Top Gains", "custom": "Show Custom"}
+        self._dash_view_toggle.setText(labels.get(next_mode, "Toggle View"))
+
+    def _show_dashboard_goals(self, goals, timeseries):
+        """Show goal progress cards and chart."""
+        # Clear old goal cards
+        while self._dash_goals_layout.count():
+            item = self._dash_goals_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        prof_levels = {}
+        if self._manager.skill_values and self._manager.professions:
+            prof_levels = calculate_all_profession_levels(
+                self._manager.skill_values,
+                self._manager.professions,
+                self._manager.skill_metadata,
+            )
+
+        for goal in goals:
+            card = _GoalProgressCard(
+                goal,
+                self._manager.skill_values,
+                prof_levels,
+                parent=self._dash_goals_container,
+            )
+            card.edit_clicked.connect(self._on_edit_goal)
+            card.delete_clicked.connect(self._on_delete_goal)
+            self._dash_goals_layout.addWidget(card)
+
+        self._dash_goals_container.show()
+
+        # Build chart from timeseries
+        self._populate_chart(timeseries)
+
+    def _show_dashboard_top_gains(self, top_gains, timeseries):
+        """Show top gaining skills table and chart."""
+        id_names = id_to_name_map()
+        period_label = TIME_PERIODS[self._dash_period_idx][0]
+        self._dash_gains_label.setText(f"Top Gaining Skills ({period_label})")
+        self._dash_gains_label.show()
+
+        # Build name → category lookup for rank exclusion
+        name_to_cat = {s["Name"]: s.get("Category", "") for s in (self._manager.skill_metadata or [])}
+
+        # Populate table
+        self._dash_gains_table.setUpdatesEnabled(False)
+        try:
+            self._dash_gains_table.setRowCount(len(top_gains))
+            for i, entry in enumerate(top_gains):
+                name = id_names.get(entry["skill_id"], f"ID {entry['skill_id']}")
+                current = self._manager.skill_values.get(name, 0)
+                rank, _ = self._get_rank_and_progress(current, name_to_cat.get(name))
+
+                self._dash_gains_table.setItem(i, 0, QTableWidgetItem(name))
+                gain_item = NumericTableWidgetItem(
+                    f"+{entry['total_amount']:.2f}", entry["total_amount"]
+                )
+                gain_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+                gain_item.setForeground(QColor(SUCCESS))
+                self._dash_gains_table.setItem(i, 1, gain_item)
+                cur_item = NumericTableWidgetItem(f"{current:,.2f}", current)
+                cur_item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+                self._dash_gains_table.setItem(i, 2, cur_item)
+                self._dash_gains_table.setItem(i, 3, QTableWidgetItem(rank))
+        finally:
+            self._dash_gains_table.setUpdatesEnabled(True)
+
+        self._dash_gains_table.show()
+
+        # Build chart from timeseries
+        self._populate_chart(timeseries)
+
+    def _show_dashboard_custom(self, timeseries):
+        """Show chart with user-picked custom skills."""
+        self._populate_chart(timeseries)
+
+    def _on_pick_skills(self):
+        """Open skill picker dialog and switch to custom view."""
+        from ..dialogs.skill_picker_dialog import SkillPickerDialog
+
+        top_ids = [g["skill_id"] for g in self._dash_last_top_gains[:10]]
+
+        dlg = SkillPickerDialog(
+            skill_metadata=self._manager.skill_metadata or [],
+            professions=self._manager.professions or [],
+            skill_values=self._manager.skill_values or {},
+            top_gaining_skill_ids=top_ids,
+            preselected_ids=self._dash_custom_skill_ids or None,
+            parent=self,
+        )
+        if dlg.exec():
+            selected = dlg.get_selected_skill_ids()
+            if selected:
+                self._dash_custom_skill_ids = selected
+                self._dash_view_mode = "custom"
+                self._load_custom_timeseries()
+            else:
+                # Cleared selection — go back to top_gains
+                self._dash_custom_skill_ids = []
+                if self._dash_view_mode == "custom":
+                    self._dash_view_mode = "top_gains"
+                self._update_toggle_text()
+                self._apply_dashboard_view()
+
+    def _load_custom_timeseries(self):
+        """Load timeseries for custom-picked skills in background."""
+        import time as _time
+
+        if not self._db or not self._dash_custom_skill_ids:
+            return
+
+        skill_ids = list(self._dash_custom_skill_ids)
+        days = TIME_PERIODS[self._dash_period_idx][1]
+        now_ts = int(_time.time())
+        from_ts = now_ts - int(days * 86400) if days > 0 else 0
+
+        def _load():
+            self._db.refresh_skill_rollups()
+            ts_data = self._db.get_skill_gains_timeseries(skill_ids, from_ts, now_ts)
+            QTimer.singleShot(0, partial(self._on_custom_timeseries_loaded, ts_data))
+
+        threading.Thread(target=_load, daemon=True, name="custom-chart").start()
+
+    def _on_custom_timeseries_loaded(self, timeseries):
+        """Handle loaded custom timeseries data."""
+        self._dash_last_custom_timeseries = timeseries
+        self._update_toggle_text()
+        # Update toggle visibility
+        has_goals = bool(self._active_goals)
+        has_custom = bool(self._dash_custom_skill_ids)
+        modes_available = sum([has_goals, True, has_custom])
+        if modes_available > 1:
+            self._dash_view_toggle.show()
+        self._apply_dashboard_view()
+
+    def _populate_chart(self, timeseries):
+        """Build ChartSeries from timeseries data with absolute skill values.
+
+        Uses baselines (current skill values) to compute the correct Y-axis:
+        baseline_at_start = current_value - total_gains_in_period, then
+        each point = baseline_at_start + cumulative_gains_up_to_that_point.
+        """
+        if not timeseries:
+            self._dash_chart.clear()
+            return
+
+        import time as _time
+        id_names = id_to_name_map()
+        baselines = self._dash_last_baselines
+        now_ts = int(_time.time())
+
+        # Group by skill_id and sort by timestamp
+        by_skill: dict[int, list[tuple[int, float]]] = {}
+        for row in timeseries:
+            sid = row["skill_id"]
+            by_skill.setdefault(sid, []).append((row["ts"], row["amount"]))
+
+        series_list = []
+        for i, (sid, data) in enumerate(by_skill.items()):
+            data.sort(key=lambda p: p[0])
+
+            # Total gain in this period
+            total_gain = sum(amt for _, amt in data)
+
+            # Current value is the most recent known value
+            current_value = baselines.get(sid, 0)
+
+            # Value at start of chart = current - total gain in period
+            start_value = current_value - total_gain
+
+            # Build absolute value series (cumulative sum + start_value)
+            abs_data = []
+            running = start_value
+            for ts, amt in data:
+                running += amt
+                abs_data.append((ts, running))
+
+            # Extend to current time (hold last value)
+            if abs_data and abs_data[-1][0] < now_ts:
+                abs_data.append((now_ts, abs_data[-1][1]))
+
+            name = id_names.get(sid, f"Skill {sid}")
+            color = CHART_COLORS[i % len(CHART_COLORS)]
+            series_list.append(ChartSeries(name=name, color=color, data=abs_data))
+
+        self._dash_chart.set_smooth(True)
+        self._dash_chart.set_cumulative(False)  # Already absolute values
+        self._dash_chart.set_data(series_list)
+        self._dash_chart.show()
+
+    def _check_goal_completion(self):
+        """Check if any active goals have been reached and mark them complete."""
+        if not self._db:
+            return
+        goals = self._db.get_active_goals()
+        if not goals:
+            return
+
+        prof_levels = {}
+        if self._manager.skill_values and self._manager.professions:
+            prof_levels = calculate_all_profession_levels(
+                self._manager.skill_values,
+                self._manager.professions,
+                self._manager.skill_metadata,
+            )
+
+        for goal in goals:
+            if goal["goal_type"] == "skill_points":
+                current = self._manager.skill_values.get(goal["target_name"], 0)
+            else:
+                current = prof_levels.get(goal["target_name"], 0)
+            if current >= goal["target_value"]:
+                self._db.complete_goal(goal["id"])
+
+    def show_profession_chart(self, profession_name: str):
+        """Switch to dashboard and show a chart for a specific profession's skills."""
+        prof = next(
+            (p for p in self._manager.professions if p["Name"] == profession_name),
+            None,
+        )
+        if not prof or not self._db:
+            return
+
+        # Switch to dashboard
+        self._tabs.setCurrentIndex(TAB_DASHBOARD)
+
+        # Load timeseries for the profession's skills
+        import time as _time
+        nm = name_to_id_map()
+        skill_ids = []
+        for sk in prof.get("Skills", []):
+            sid = nm.get(sk["Name"])
+            if sid is not None:
+                skill_ids.append(sid)
+
+        if not skill_ids:
+            return
+
+        days = TIME_PERIODS[self._dash_period_idx][1]
+        now_ts = int(_time.time())
+        from_ts = now_ts - (days * 86400) if days > 0 else 0
+
+        def _load():
+            self._db.refresh_skill_rollups()
+            ts_data = self._db.get_skill_gains_timeseries(skill_ids, from_ts, now_ts)
+            QTimer.singleShot(0, partial(self._on_profession_chart_loaded, ts_data, profession_name))
+
+        threading.Thread(target=_load, daemon=True, name="prof-chart").start()
+
+    def _on_profession_chart_loaded(self, timeseries, profession_name):
+        """Populate chart with profession skill data using absolute values."""
+        # Hide non-chart dashboard widgets
+        self._dash_goals_container.hide()
+        self._dash_gains_label.hide()
+        self._dash_gains_table.hide()
+        self._dash_onboarding.hide()
+
+        if not timeseries:
+            self._dash_chart.clear()
+            return
+
+        import time as _time
+        id_names = id_to_name_map()
+        nm = name_to_id_map()
+        now_ts = int(_time.time())
+        skill_values = self._manager.skill_values or {}
+
+        # Group by skill_id
+        by_skill: dict[int, list[tuple[int, float]]] = {}
+        for row in timeseries:
+            sid = row["skill_id"]
+            by_skill.setdefault(sid, []).append((row["ts"], row["amount"]))
+
+        # Build absolute-value series for each skill
+        series_list = []
+        for i, (sid, data) in enumerate(by_skill.items()):
+            data.sort(key=lambda p: p[0])
+            total_gain = sum(amt for _, amt in data)
+            sk_name = id_names.get(sid, "")
+            current_value = skill_values.get(sk_name, 0)
+            start_value = current_value - total_gain
+
+            abs_data = []
+            running = start_value
+            for ts, amt in data:
+                running += amt
+                abs_data.append((ts, running))
+            if abs_data and abs_data[-1][0] < now_ts:
+                abs_data.append((now_ts, abs_data[-1][1]))
+
+            name = id_names.get(sid, f"Skill {sid}")
+            color = CHART_COLORS[i % len(CHART_COLORS)]
+            series_list.append(ChartSeries(name=name, color=color, data=abs_data))
+
+        # Add a profession level series
+        prof = next(
+            (p for p in self._manager.professions if p["Name"] == profession_name),
+            None,
+        )
+        if prof and skill_values:
+            attr_skills = build_attribute_skill_set(self._manager.skill_metadata)
+
+            # Collect all unique timestamps, sorted
+            all_ts = sorted({ts for s_data in by_skill.values() for ts, _ in s_data})
+
+            # Build cumulative gains per skill_id
+            cumulative_gains: dict[int, float] = {}
+            total_gains: dict[int, float] = {
+                sid: sum(amt for _, amt in s_data)
+                for sid, s_data in by_skill.items()
+            }
+            # Start values: current - total gain
+            base_values = dict(skill_values)
+            for sid, tg in total_gains.items():
+                sk_name = id_names.get(sid)
+                if sk_name:
+                    base_values[sk_name] = skill_values.get(sk_name, 0) - tg
+
+            prof_points = []
+            for ts in all_ts:
+                for sid, s_data in by_skill.items():
+                    for t, amt in s_data:
+                        if t == ts:
+                            cumulative_gains[sid] = cumulative_gains.get(sid, 0) + amt
+
+                current_values = dict(base_values)
+                for sid, cum_amt in cumulative_gains.items():
+                    sk_name = id_names.get(sid)
+                    if sk_name:
+                        current_values[sk_name] = base_values.get(sk_name, 0) + cum_amt
+
+                level = calculate_profession_level(
+                    current_values, prof.get("Skills", []), attr_skills
+                )
+                prof_points.append((ts, level))
+
+            if prof_points:
+                if prof_points[-1][0] < now_ts:
+                    prof_points.append((now_ts, prof_points[-1][1]))
+                series_list.append(ChartSeries(
+                    name=profession_name,
+                    color=ACCENT,
+                    data=prof_points,
+                ))
+
+        self._dash_chart.set_cumulative(False)
+        self._dash_chart.set_data(series_list)
+        self._dash_chart.show()
 
     # ── Scanning Tab ──────────────────────────────────────────────────────
 
@@ -1744,7 +2669,7 @@ class SkillsPage(QWidget):
     def _on_auth_changed(self, state):
         if state.authenticated and not self._synced:
             # Sync skills on first auth
-            threading.Thread(target=self._sync_on_auth, daemon=True).start()
+            threading.Thread(target=self._sync_on_auth, daemon=True, name="skills-sync").start()
 
     def _sync_on_auth(self):
         self._synced = self._manager.sync_from_nexus()
@@ -1756,34 +2681,132 @@ class SkillsPage(QWidget):
 
     def _on_skill_gain(self, event):
         """Handle a live skill gain event — update the accumulated gains dict."""
+        import time as _time
         name = event.skill_name
         self._skill_gains[name] = self._skill_gains.get(name, 0) + event.amount
+
+        # Append to in-memory dashboard timeseries for live chart updates
+        nm = name_to_id_map()
+        sid = nm.get(name)
+        if sid is not None and self._dash_loaded:
+            now_ts = int(_time.time())
+            entry = {"ts": now_ts, "skill_id": sid, "amount": event.amount}
+            self._dash_last_goal_timeseries.append(entry)
+            self._dash_last_top_timeseries.append(entry)
+            self._dash_last_custom_timeseries.append(entry)
+            # Update baseline (current scan value)
+            self._dash_last_baselines[sid] = self._dash_last_baselines.get(sid, 0) + event.amount
+
         if not self._gain_refresh_pending:
             self._gain_refresh_pending = True
             QTimer.singleShot(500, self._flush_gain_refresh)
 
     def _flush_gain_refresh(self):
         self._gain_refresh_pending = False
-        if self._tabs.currentIndex() == 0:
+        current_tab = self._tabs.currentIndex()
+        if current_tab == TAB_SKILLS:
             self._refresh_skills_display()
+        if current_tab == TAB_DASHBOARD and self._dash_loaded:
+            self._refresh_dashboard_live()
+
+    def _refresh_dashboard_live(self):
+        """Lightweight dashboard update — no DB queries, just UI refresh."""
+        # Update goal progress cards in-place
+        skill_values = self._manager.skill_values or {}
+        # Merge live gains into a working copy
+        live_values = dict(skill_values)
+        for name, gain in self._skill_gains.items():
+            live_values[name] = live_values.get(name, 0) + gain
+
+        prof_levels = {}
+        if live_values and self._manager.professions:
+            prof_levels = calculate_all_profession_levels(
+                live_values,
+                self._manager.professions,
+                self._manager.skill_metadata,
+            )
+
+        for i in range(self._dash_goals_layout.count()):
+            item = self._dash_goals_layout.itemAt(i)
+            widget = item.widget() if item else None
+            if isinstance(widget, _GoalProgressCard):
+                widget.update_progress(live_values, prof_levels)
+
+        # Refresh chart with updated timeseries
+        if self._dash_view_mode == "goals":
+            timeseries = self._dash_last_goal_timeseries
+        elif self._dash_view_mode == "custom":
+            timeseries = self._dash_last_custom_timeseries
+        else:
+            timeseries = self._dash_last_top_timeseries
+        self._populate_chart(timeseries)
+
+        # Update top gains table current values if visible
+        if self._dash_gains_table.isVisible():
+            id_names = id_to_name_map()
+            name_to_cat = {s["Name"]: s.get("Category", "") for s in (self._manager.skill_metadata or [])}
+            for i in range(self._dash_gains_table.rowCount()):
+                name_item = self._dash_gains_table.item(i, 0)
+                if not name_item:
+                    continue
+                name = name_item.text()
+                current = live_values.get(name, 0)
+                cur_item = self._dash_gains_table.item(i, 2)
+                if cur_item:
+                    cur_item.setText(f"{current:,.2f}")
 
     # ── Resize ────────────────────────────────────────────────────────────
 
-    def _on_tab_changed(self, index):
-        """Re-flow grid when switching tabs (viewport width may differ)."""
-        if index == 0 and self._skills_view_mode == "grid":
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Deferred grids couldn't lay out while the page was hidden in the
+        # stacked widget (viewport width was 0).  Flush them now with a
+        # single-shot so Qt finishes geometry first.
+        if self._skills_grid_deferred or self._prof_grid_deferred:
+            QTimer.singleShot(0, self._flush_deferred_grids)
+
+    def _flush_deferred_grids(self):
+        if self._skills_grid_deferred:
             self._refresh_skills_display()
-        elif index == 1 and self._prof_view_mode == "grid":
+        if self._prof_grid_deferred:
             self._refresh_prof_display()
+
+    def _on_tab_changed(self, index):
+        """Re-flow grid when switching tabs only if column count changed."""
+        if index == TAB_DASHBOARD and not self._dash_loaded:
+            self._refresh_dashboard()
+        elif index == TAB_SKILLS and self._skills_view_mode == "grid":
+            # Defer so Qt finishes layout and the viewport has real dimensions
+            QTimer.singleShot(0, self._check_skills_grid_refresh)
+        elif index == TAB_PROFESSIONS and self._prof_view_mode == "grid":
+            QTimer.singleShot(0, self._check_prof_grid_refresh)
         self._emit_nav()
+
+    def _check_skills_grid_refresh(self):
+        if self._tabs.currentIndex() != TAB_SKILLS:
+            return
+        available = self._skills_scroll.viewport().width() - 20
+        if available > 0:
+            cols = max(1, available // (CARD_MIN_WIDTH + 6))
+            if self._skills_grid_deferred or cols != self._skills_grid_cols:
+                self._refresh_skills_display()
+
+    def _check_prof_grid_refresh(self):
+        if self._tabs.currentIndex() != TAB_PROFESSIONS:
+            return
+        available = self._prof_scroll.viewport().width() - 20
+        if available > 0:
+            cols = max(1, available // (CARD_MIN_WIDTH + 6))
+            if self._prof_grid_deferred or cols != self._prof_grid_cols:
+                self._refresh_prof_display()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Rebuild model when column count changes; re-render on height change.
-        # Also handles first-visit deferred grids — on lazy page creation the
-        # viewport has no width yet, so _populate_*_grid sets *_deferred=True.
-        # The first resizeEvent with real dimensions flushes them.
-        if self._skills_view_mode == "grid" and self._tabs.currentIndex() == 0:
+        self._resize_timer.start()
+
+    def _on_resize_settled(self):
+        """Handle resize after debounce — rebuild grid if layout changed."""
+        if self._skills_view_mode == "grid" and self._tabs.currentIndex() == TAB_SKILLS:
             available = self._skills_scroll.viewport().width() - 20
             if available <= 0:
                 return
@@ -1791,12 +2814,13 @@ class SkillsPage(QWidget):
                 self._refresh_skills_display()
             else:
                 cols = max(1, available // (CARD_MIN_WIDTH + 6))
-                if cols != self._skills_grid_cols:
-                    self._skills_grid_cols = cols
+                card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH,
+                             (available - (cols - 1) * 6) // cols))
+                if cols != self._skills_grid_cols or card_w != self._skills_vgrid_card_w:
                     self._refresh_skills_display()
                 elif self._skills_vgrid_rows:
                     self._render_visible_skill_cards()
-        elif self._prof_view_mode == "grid" and self._tabs.currentIndex() == 1:
+        elif self._prof_view_mode == "grid" and self._tabs.currentIndex() == TAB_PROFESSIONS:
             available = self._prof_scroll.viewport().width() - 20
             if available <= 0:
                 return
@@ -1804,8 +2828,9 @@ class SkillsPage(QWidget):
                 self._refresh_prof_display()
             else:
                 cols = max(1, available // (CARD_MIN_WIDTH + 6))
-                if cols != self._prof_grid_cols:
-                    self._prof_grid_cols = cols
+                card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH,
+                             (available - (cols - 1) * 6) // cols))
+                if cols != self._prof_grid_cols or card_w != self._prof_vgrid_card_w:
                     self._refresh_prof_display()
                 elif self._prof_vgrid_rows:
                     self._render_visible_prof_cards()

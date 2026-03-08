@@ -236,6 +236,57 @@ CREATE TABLE IF NOT EXISTS pending_inventory_import (
     imported_at TEXT NOT NULL,
     synced INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS skill_gains_hourly (
+    hour_ts INTEGER NOT NULL,
+    skill_id INTEGER NOT NULL,
+    total_amount REAL NOT NULL,
+    event_count INTEGER NOT NULL,
+    PRIMARY KEY (hour_ts, skill_id)
+);
+
+CREATE TABLE IF NOT EXISTS skill_gains_daily (
+    day_ts INTEGER NOT NULL,
+    skill_id INTEGER NOT NULL,
+    total_amount REAL NOT NULL,
+    event_count INTEGER NOT NULL,
+    PRIMARY KEY (day_ts, skill_id)
+);
+
+CREATE TABLE IF NOT EXISTS skill_gains_rollup_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_hourly_id INTEGER NOT NULL DEFAULT 0,
+    last_daily_hour_ts INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS skill_goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_type TEXT NOT NULL,
+    target_name TEXT NOT NULL,
+    target_value REAL NOT NULL,
+    start_value REAL,
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tracker_missions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mission_id INTEGER NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    planet TEXT,
+    cooldown_duration TEXT,
+    cooldown_starts_on TEXT DEFAULT 'Completion',
+    cooldown_ms INTEGER NOT NULL DEFAULT 86400000,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    cooldown_started_at TEXT,
+    notify INTEGER NOT NULL DEFAULT 1,
+    notify_minutes_before INTEGER NOT NULL DEFAULT 5,
+    start_location TEXT,
+    has_expiry INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
 """
 
 # Indexes that depend on columns added by _migrate()
@@ -509,20 +560,13 @@ class Database:
             return {row[0]: row[1] for row in cur.fetchall()}
 
     def get_last_scan_timestamp(self) -> int | None:
-        """Get the Unix timestamp of the most recent skill snapshot scan."""
+        """Get the Unix timestamp of the most recent local skill value update."""
         with self._lock:
             cur = self._conn.execute(
-                "SELECT MAX(scan_timestamp) FROM skill_snapshots"
+                "SELECT MAX(strftime('%s', updated_at)) FROM local_skill_values"
             )
             row = cur.fetchone()
-            if row and row[0]:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(row[0])
-                    return int(dt.timestamp())
-                except (ValueError, TypeError):
-                    return None
-            return None
+            return int(row[0]) if row and row[0] else None
 
     def get_last_sync_timestamp(self) -> int | None:
         """Get Unix timestamp of the most recent local skill value update."""
@@ -532,6 +576,349 @@ class Database:
             )
             row = cur.fetchone()
             return int(row[0]) if row and row[0] else None
+
+    # Skill gains rollup
+    def refresh_skill_rollups(self) -> None:
+        """Incrementally refresh hourly and daily rollup tables.
+
+        Processes only new skill_gains rows since last rollup.
+        Safe to call frequently — no-ops when there is nothing new.
+        """
+        with self._lock:
+            # Ensure state row exists
+            self._conn.execute(
+                "INSERT OR IGNORE INTO skill_gains_rollup_state (id, last_hourly_id, last_daily_hour_ts) "
+                "VALUES (1, 0, 0)"
+            )
+            row = self._conn.execute(
+                "SELECT last_hourly_id, last_daily_hour_ts FROM skill_gains_rollup_state WHERE id = 1"
+            ).fetchone()
+            last_hourly_id = row[0]
+            last_daily_hour_ts = row[1]
+
+            # Aggregate new skill_gains rows into hourly buckets
+            new_rows = self._conn.execute(
+                "SELECT MAX(id), skill_id, (ts / 3600) * 3600 AS hour_ts, "
+                "SUM(amount), COUNT(*) "
+                "FROM skill_gains WHERE id > ? "
+                "GROUP BY skill_id, hour_ts",
+                (last_hourly_id,),
+            ).fetchall()
+
+            if new_rows:
+                self._conn.executemany(
+                    "INSERT INTO skill_gains_hourly (hour_ts, skill_id, total_amount, event_count) "
+                    "VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(hour_ts, skill_id) DO UPDATE SET "
+                    "total_amount = total_amount + excluded.total_amount, "
+                    "event_count = event_count + excluded.event_count",
+                    [(r[2], r[1], r[3], r[4]) for r in new_rows],
+                )
+                new_last_id = max(r[0] for r in new_rows)
+                self._conn.execute(
+                    "UPDATE skill_gains_rollup_state SET last_hourly_id = ? WHERE id = 1",
+                    (new_last_id,),
+                )
+
+            # Roll hourly into daily
+            daily_rows = self._conn.execute(
+                "SELECT skill_id, (hour_ts / 86400) * 86400 AS day_ts, "
+                "SUM(total_amount), SUM(event_count) "
+                "FROM skill_gains_hourly WHERE hour_ts > ? "
+                "GROUP BY skill_id, day_ts",
+                (last_daily_hour_ts,),
+            ).fetchall()
+
+            if daily_rows:
+                self._conn.executemany(
+                    "INSERT INTO skill_gains_daily (day_ts, skill_id, total_amount, event_count) "
+                    "VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(day_ts, skill_id) DO UPDATE SET "
+                    "total_amount = excluded.total_amount, "
+                    "event_count = excluded.event_count",
+                    [(r[1], r[0], r[2], r[3]) for r in daily_rows],
+                )
+                max_hour_ts = self._conn.execute(
+                    "SELECT MAX(hour_ts) FROM skill_gains_hourly"
+                ).fetchone()[0] or 0
+                self._conn.execute(
+                    "UPDATE skill_gains_rollup_state SET last_daily_hour_ts = ? WHERE id = 1",
+                    (max_hour_ts,),
+                )
+
+            self._conn.commit()
+
+    def get_skill_gains_timeseries(
+        self,
+        skill_ids: list[int] | None,
+        from_ts: int,
+        to_ts: int | None = None,
+    ) -> list[dict]:
+        """Get time-series skill gains for charting.
+
+        Automatically selects raw events (<24h), hourly (<7d), or daily rollup.
+        Returns [{ts, skill_id, amount}, ...] ordered by ts.
+        """
+        if to_ts is None:
+            import time
+            to_ts = int(time.time())
+
+        span = to_ts - from_ts
+
+        if span < 86400:
+            # Raw individual events for sub-day granularity
+            sql = "SELECT ts, skill_id, amount FROM skill_gains WHERE ts >= ? AND ts <= ?"
+            params: list = [from_ts, to_ts]
+            if skill_ids:
+                placeholders = ",".join("?" for _ in skill_ids)
+                sql += f" AND skill_id IN ({placeholders})"
+                params.extend(skill_ids)
+            sql += " ORDER BY ts"
+        elif span < 7 * 86400:
+            table = "skill_gains_hourly"
+            ts_col = "hour_ts"
+            bucket_from = (from_ts // 3600) * 3600
+            sql = (
+                f"SELECT {ts_col}, skill_id, total_amount "
+                f"FROM {table} WHERE {ts_col} >= ? AND {ts_col} <= ?"
+            )
+            params = [bucket_from, to_ts]
+            if skill_ids:
+                placeholders = ",".join("?" for _ in skill_ids)
+                sql += f" AND skill_id IN ({placeholders})"
+                params.extend(skill_ids)
+            sql += f" ORDER BY {ts_col}"
+        else:
+            table = "skill_gains_daily"
+            ts_col = "day_ts"
+            bucket_from = (from_ts // 86400) * 86400
+            sql = (
+                f"SELECT {ts_col}, skill_id, total_amount "
+                f"FROM {table} WHERE {ts_col} >= ? AND {ts_col} <= ?"
+            )
+            params = [bucket_from, to_ts]
+            if skill_ids:
+                placeholders = ",".join("?" for _ in skill_ids)
+                sql += f" AND skill_id IN ({placeholders})"
+                params.extend(skill_ids)
+            sql += f" ORDER BY {ts_col}"
+
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            return [
+                {"ts": row[0], "skill_id": row[1], "amount": row[2]}
+                for row in cur.fetchall()
+            ]
+
+    def get_top_gaining_skills(
+        self,
+        from_ts: int,
+        to_ts: int | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Get top N skills by total gain in a time period.
+
+        Automatically selects raw events, hourly, or daily table.
+        Returns [{skill_id, total_amount}, ...] sorted desc.
+        """
+        if to_ts is None:
+            import time
+            to_ts = int(time.time())
+
+        span = to_ts - from_ts
+        if span < 86400:
+            sql = (
+                "SELECT skill_id, SUM(amount) AS total "
+                "FROM skill_gains "
+                "WHERE ts >= ? AND ts <= ? "
+                "GROUP BY skill_id ORDER BY total DESC LIMIT ?"
+            )
+            params = (from_ts, to_ts, limit)
+        elif span < 7 * 86400:
+            bucket_from = (from_ts // 3600) * 3600
+            sql = (
+                "SELECT skill_id, SUM(total_amount) AS total "
+                "FROM skill_gains_hourly "
+                "WHERE hour_ts >= ? AND hour_ts <= ? "
+                "GROUP BY skill_id ORDER BY total DESC LIMIT ?"
+            )
+            params = (bucket_from, to_ts, limit)
+        else:
+            day_from = (from_ts // 86400) * 86400
+            sql = (
+                "SELECT skill_id, SUM(total_amount) AS total "
+                "FROM skill_gains_daily "
+                "WHERE day_ts >= ? AND day_ts <= ? "
+                "GROUP BY skill_id ORDER BY total DESC LIMIT ?"
+            )
+            params = (day_from, to_ts, limit)
+
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            return [
+                {"skill_id": row[0], "total_amount": row[1]}
+                for row in cur.fetchall()
+            ]
+
+    # Skill goals
+    def get_active_goals(self) -> list[dict]:
+        """Get all active goals, ordered by sort_order."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT id, goal_type, target_name, target_value, start_value, "
+                "created_at, completed_at, sort_order "
+                "FROM skill_goals WHERE is_active = 1 ORDER BY sort_order, id"
+            )
+            return [
+                {
+                    "id": r[0], "goal_type": r[1], "target_name": r[2],
+                    "target_value": r[3], "start_value": r[4],
+                    "created_at": r[5], "completed_at": r[6],
+                    "sort_order": r[7],
+                }
+                for r in cur.fetchall()
+            ]
+
+    def add_goal(
+        self, goal_type: str, target_name: str, target_value: float,
+        start_value: float | None = None,
+    ) -> int:
+        """Add a new goal. Returns the goal ID."""
+        from datetime import datetime, timezone
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO skill_goals "
+                "(goal_type, target_name, target_value, start_value, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (goal_type, target_name, target_value, start_value,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+    def update_goal(self, goal_id: int, **kwargs) -> None:
+        """Update goal fields (target_value, is_active, sort_order, etc.)."""
+        allowed = {"target_value", "is_active", "sort_order", "completed_at"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE skill_goals SET {set_clause} WHERE id = ?",
+                (*updates.values(), goal_id),
+            )
+            self._conn.commit()
+
+    def delete_goal(self, goal_id: int) -> None:
+        """Delete a goal permanently."""
+        with self._lock:
+            self._conn.execute("DELETE FROM skill_goals WHERE id = ?", (goal_id,))
+            self._conn.commit()
+
+    def complete_goal(self, goal_id: int) -> None:
+        """Mark a goal as completed with current timestamp."""
+        from datetime import datetime, timezone
+        with self._lock:
+            self._conn.execute(
+                "UPDATE skill_goals SET completed_at = ?, is_active = 0 WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), goal_id),
+            )
+            self._conn.commit()
+
+    # Tracker missions
+    def get_tracked_missions(self) -> list[dict]:
+        """Get all tracked missions ordered by sort_order."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT mission_id, name, planet, cooldown_duration, "
+                "cooldown_starts_on, cooldown_ms, sort_order, cooldown_started_at, "
+                "notify, notify_minutes_before, start_location, has_expiry "
+                "FROM tracker_missions ORDER BY sort_order, id"
+            )
+            import json
+            results = []
+            for r in cur.fetchall():
+                loc = None
+                if r[10]:
+                    try:
+                        loc = json.loads(r[10])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                results.append({
+                    "id": r[0], "name": r[1], "planet": r[2],
+                    "cooldown_duration": r[3], "cooldown_starts_on": r[4],
+                    "cooldown_ms": r[5], "order": r[6],
+                    "cooldown_started_at": r[7],
+                    "notify": bool(r[8]), "notify_minutes_before": r[9],
+                    "start_location": loc, "has_expiry": bool(r[11]),
+                })
+            return results
+
+    def upsert_tracked_mission(self, m: dict) -> None:
+        """Insert or update a tracked mission."""
+        import json
+        loc_json = json.dumps(m.get("start_location")) if m.get("start_location") else None
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO tracker_missions "
+                "(mission_id, name, planet, cooldown_duration, cooldown_starts_on, "
+                "cooldown_ms, sort_order, cooldown_started_at, notify, "
+                "notify_minutes_before, start_location, has_expiry, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mission_id) DO UPDATE SET "
+                "name=excluded.name, planet=excluded.planet, "
+                "cooldown_duration=excluded.cooldown_duration, "
+                "cooldown_starts_on=excluded.cooldown_starts_on, "
+                "cooldown_ms=excluded.cooldown_ms, sort_order=excluded.sort_order, "
+                "cooldown_started_at=excluded.cooldown_started_at, "
+                "notify=excluded.notify, notify_minutes_before=excluded.notify_minutes_before, "
+                "start_location=excluded.start_location, has_expiry=excluded.has_expiry",
+                (
+                    m["id"], m.get("name", "?"), m.get("planet"),
+                    m.get("cooldown_duration"), m.get("cooldown_starts_on", "Completion"),
+                    m.get("cooldown_ms", 86_400_000), m.get("order", 0),
+                    m.get("cooldown_started_at"), int(m.get("notify", True)),
+                    m.get("notify_minutes_before", 5), loc_json,
+                    int(m.get("has_expiry", False)),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            self._conn.commit()
+
+    def save_tracked_missions(self, missions: list[dict]) -> None:
+        """Replace all tracked missions atomically."""
+        import json
+        with self._lock:
+            self._conn.execute("DELETE FROM tracker_missions")
+            for m in missions:
+                loc_json = json.dumps(m.get("start_location")) if m.get("start_location") else None
+                self._conn.execute(
+                    "INSERT INTO tracker_missions "
+                    "(mission_id, name, planet, cooldown_duration, cooldown_starts_on, "
+                    "cooldown_ms, sort_order, cooldown_started_at, notify, "
+                    "notify_minutes_before, start_location, has_expiry, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        m["id"], m.get("name", "?"), m.get("planet"),
+                        m.get("cooldown_duration"),
+                        m.get("cooldown_starts_on", "Completion"),
+                        m.get("cooldown_ms", 86_400_000), m.get("order", 0),
+                        m.get("cooldown_started_at"), int(m.get("notify", True)),
+                        m.get("notify_minutes_before", 5), loc_json,
+                        int(m.get("has_expiry", False)),
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+            self._conn.commit()
+
+    def delete_tracked_mission(self, mission_id: int) -> None:
+        """Remove a tracked mission by its API mission_id."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM tracker_missions WHERE mission_id = ?", (mission_id,)
+            )
+            self._conn.commit()
 
     # Combat events
     def insert_combat_event(self, timestamp: str, event_type: str, amount: float = None, session_id: str = None):
@@ -698,16 +1085,6 @@ class Database:
             )
             self._auto_commit()
 
-    # Skill snapshots
-    def insert_skill_snapshot(self, scan_timestamp: str, skill_name: str, rank: str,
-                              current_points: float, progress_percent: float, category: str):
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO skill_snapshots (scan_timestamp, skill_name, rank, current_points, progress_percent, category) VALUES (?, ?, ?, ?, ?, ?)",
-                (scan_timestamp, skill_name, rank, current_points, progress_percent, category)
-            )
-            self._auto_commit()
-
     def upsert_local_skill_values(
         self,
         skill_values: dict[str, float],
@@ -814,27 +1191,8 @@ class Database:
             self._auto_commit()
 
     def get_latest_skill_values(self) -> dict[str, float]:
-        """Get latest known value per skill from local storage.
-
-        Combines local sync state with OCR snapshots.
-        Local sync values override snapshots for overlapping skills.
-        """
-        values = self.get_local_skill_values()
-
-        with self._lock:
-            cur = self._conn.execute(
-                "SELECT s.skill_name, s.current_points "
-                "FROM skill_snapshots s "
-                "INNER JOIN ("
-                "  SELECT skill_name, MAX(id) AS max_id "
-                "  FROM skill_snapshots GROUP BY skill_name"
-                ") latest ON latest.max_id = s.id "
-                "ORDER BY s.skill_name"
-            )
-            for row in cur.fetchall():
-                values.setdefault(row[0], float(row[1]))
-
-        return values
+        """Get latest known value per skill from local storage."""
+        return self.get_local_skill_values()
 
     def get_local_skill_history(
         self,
@@ -867,49 +1225,6 @@ class Database:
             params.append(to_date)
 
         sql += " ORDER BY datetime(imported_at) DESC, id DESC"
-
-        with self._lock:
-            cur = self._conn.execute(sql, tuple(params))
-            return [
-                {
-                    "imported_at": row[0],
-                    "skill_name": row[1],
-                    "new_value": float(row[2]),
-                }
-                for row in cur.fetchall()
-            ]
-
-    def get_skill_snapshot_history(
-        self,
-        skill_names: list[str] | None = None,
-        from_date: str | None = None,
-        to_date: str | None = None,
-    ) -> list[dict]:
-        """Get local skill history from snapshots.
-
-        Returns list of dicts matching server history shape:
-        {imported_at, skill_name, new_value}
-        """
-        sql = (
-            "SELECT scan_timestamp, skill_name, current_points "
-            "FROM skill_snapshots WHERE 1=1"
-        )
-        params: list = []
-
-        if skill_names:
-            placeholders = ",".join("?" for _ in skill_names)
-            sql += f" AND skill_name IN ({placeholders})"
-            params.extend(skill_names)
-
-        if from_date:
-            sql += " AND datetime(scan_timestamp) >= datetime(?)"
-            params.append(from_date)
-
-        if to_date:
-            sql += " AND datetime(scan_timestamp) <= datetime(?)"
-            params.append(to_date)
-
-        sql += " ORDER BY datetime(scan_timestamp) DESC, id DESC"
 
         with self._lock:
             cur = self._conn.execute(sql, tuple(params))

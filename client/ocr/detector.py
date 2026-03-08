@@ -276,6 +276,11 @@ class SkillsWindowDetector:
         # DPI scale: ratio of actual panel size to expected 100% DPI size.
         # Derived from cached_bounds vs template-predicted panel dims.
         self._dpi_scale: float = 1.0
+        self._tracer = None  # OcrTracer, set via set_tracer()
+
+    def set_tracer(self, tracer) -> None:
+        """Set the OcrTracer for detailed trace output."""
+        self._tracer = tracer
 
     @property
     def game_hwnd(self) -> Optional[int]:
@@ -348,10 +353,15 @@ class SkillsWindowDetector:
         if bounds:
             self.save_debug_image(game_image, gx, gy, bounds)
             self._cached_bounds = bounds
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log("DETECT", f"panel_found={bounds}")
+                self._trace_detect_image(game_image, gx, gy, bounds)
             return bounds
 
         # Save debug image on failure too for diagnostics
         self.save_debug_image(game_image, gx, gy, None)
+        if self._tracer and self._tracer.enabled:
+            self._tracer.log("DETECT", "no_panel")
         return self._cached_bounds
 
     def capture_game(self) -> np.ndarray | None:
@@ -977,6 +987,8 @@ class SkillsWindowDetector:
 
         log.info("quick_adjust: panel shifted by (%+d,%+d) → (%d,%d) %dx%d (score=%.3f)",
                  dx, dy, sx, sy, panel_w, panel_h, max_val)
+        if self._tracer and self._tracer.enabled:
+            self._tracer.log("ADJUST", f"({old_sx},{old_sy})->({sx},{sy}) score={max_val:.2f}")
         return (sx, sy, panel_w, panel_h)
 
     def quick_relocate(self, game_image: np.ndarray,
@@ -1118,3 +1130,15 @@ class SkillsWindowDetector:
             log.info("Debug image saved: %s", path)
         except Exception as e:
             log.error("Failed to save debug image: %s", e)
+
+    def _trace_detect_image(self, game_image: np.ndarray,
+                            gx: int, gy: int,
+                            bounds: tuple[int, int, int, int]) -> None:
+        """Save annotated detection image for trace."""
+        if not self._tracer:
+            return
+        annotated = game_image.copy()
+        px, py, pw, ph = bounds
+        lx, ly = px - gx, py - gy
+        cv2.rectangle(annotated, (lx, ly), (lx + pw, ly + ph), (0, 255, 0), 2)
+        self._tracer.save_image("detect", annotated)

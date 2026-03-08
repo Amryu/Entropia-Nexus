@@ -60,6 +60,9 @@ PERIODS = ["1d", "7d", "30d", "90d", "365d"]
 # --- STPK assets directory ---
 STPK_DIR = Path(__file__).parent.parent / "assets" / "stpk"
 
+# --- Log directory (shared with core/logger.py) ---
+_LOG_DIR = Path(os.path.expanduser("~")) / ".entropia-nexus"
+
 
 class MarketPriceDetector:
     """Detects the MARKET PRICE window and reads price data from it.
@@ -84,6 +87,7 @@ class MarketPriceDetector:
 
         self._running = False
         self._thread = None
+        self._tracer = None  # OcrTracer, set via set_tracer()
 
         # Game window
         self._game_hwnd = None
@@ -110,6 +114,10 @@ class MarketPriceDetector:
         self._digit_grid_h = 0
         self._text_grid_w = 0
         self._text_grid_h = 0
+
+        # Print dedup: {item_name: (monotonic_time, values_tuple)}
+        self._print_seen: dict[str, tuple[float, tuple]] = {}
+        self._mp_logger = self._setup_mp_logger()
 
         self._load_template()
         self._load_stpk()
@@ -183,6 +191,10 @@ class MarketPriceDetector:
                 log.warning("Failed to load text STPK %s: %s", text_path, e)
         else:
             log.info("Text STPK not found: %s (name reading disabled)", text_path)
+
+    def set_tracer(self, tracer):
+        """Attach an OcrTracer for debug logging and image output."""
+        self._tracer = tracer
 
     def set_game_hwnd(self, hwnd: int,
                       geometry: tuple[int, int, int, int] | None = None):
@@ -266,9 +278,16 @@ class MarketPriceDetector:
                 image, x, y, self._template_w, self._template_h
             )
 
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log("MARKET", f"template pos=({x},{y}) conf={confidence:.3f}")
+
             # Read all ROIs
             data = self._read_all_rois(image, x, y)
-            data["confidence"] = confidence
+            # Combined confidence: weighted geometric mean of template match
+            # and OCR quality. Template is already gated by threshold (~0.85+),
+            # so OCR quality gets more weight.
+            ocr_conf = data.pop("ocr_confidence", 1.0)
+            data["confidence"] = (confidence ** 0.3) * (ocr_conf ** 0.7)
             data["timestamp"] = datetime.now(timezone.utc).isoformat()
 
             # Publish debug data every tick (screen-absolute coordinates)
@@ -276,7 +295,7 @@ class MarketPriceDetector:
             self._event_bus.publish(EVENT_MARKET_PRICE_DEBUG, {
                 "x": gx + x, "y": gy + y,
                 "w": self._template_w, "h": self._template_h,
-                "confidence": confidence,
+                "confidence": data["confidence"],
                 "data": data,
                 "game_origin": self._game_origin,
             })
@@ -285,12 +304,20 @@ class MarketPriceDetector:
             if self._data_changed(data):
                 self._last_data = data
                 self._event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
+                self._print_scan(data)
                 log.info("Scan: '%s' tier=%s conf=%.2f",
                          data.get("item_name", "?"),
-                         data.get("tier"), confidence)
+                         data.get("tier"), data["confidence"])
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET_SCAN",
+                        f"'{data.get('item_name', '?')}' tier={data.get('tier')}")
+                    # Save annotated debug image of the market price window area
+                    self._trace_save_window(image, x, y)
         else:
             # Window not detected — clear tracking
             if self._last_pos is not None:
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET", "template lost")
                 self._last_pos = None
                 self._last_region_pixels = None
                 self._event_bus.publish(EVENT_MARKET_PRICE_LOST, {})
@@ -307,6 +334,94 @@ class MarketPriceDetector:
             if data.get(key) != self._last_data.get(key):
                 return True
         return False
+
+    # ------------------------------------------------------------------
+    # Formatted scan output
+    # ------------------------------------------------------------------
+
+    PRINT_DEDUP_SECONDS = 3600  # 1 hour
+
+    @staticmethod
+    def _setup_mp_logger():
+        """Create a dedicated logger writing to market-price-detection.log."""
+        import logging
+        import logging.handlers
+        mp = logging.getLogger("Nexus.MarketPriceDetection")
+        mp.propagate = False
+        if mp.handlers:
+            return mp
+        try:
+            _LOG_DIR.mkdir(parents=True, exist_ok=True)
+            fh = logging.handlers.RotatingFileHandler(
+                _LOG_DIR / "market-price-detection.log",
+                maxBytes=256 * 1024, backupCount=1, encoding="utf-8",
+            )
+            fh.setFormatter(logging.Formatter(
+                "%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S",
+            ))
+            mp.addHandler(fh)
+            mp.setLevel(logging.INFO)
+        except Exception:
+            pass
+        return mp
+
+    def _print_scan(self, data: dict) -> None:
+        """Print a validated, formatted scan to console and dedicated log."""
+        name = data.get("item_name", "")
+        if not name:
+            return
+
+        # Validate: all 10 cells must be present
+        for period in PERIODS:
+            if data.get(f"markup_{period}") is None:
+                return
+            if data.get(f"sales_{period}") is None:
+                return
+
+        # Validate markup ranges
+        mode = data.get("markup_mode")
+        for period in PERIODS:
+            val = data[f"markup_{period}"]
+            if mode == "percent" and val < 100:
+                return
+            elif mode == "absolute" and val < 0:
+                return
+
+        # Build values tuple for dedup comparison
+        values = tuple(
+            (data.get(f"markup_{p}"), data.get(f"sales_{p}")) for p in PERIODS
+        )
+
+        # Dedup: same item + same values within 1 hour → skip
+        now = time.monotonic()
+        last = self._print_seen.get(name)
+        if last:
+            last_time, last_values = last
+            if last_values == values and (now - last_time) < self.PRINT_DEDUP_SECONDS:
+                return
+
+        self._print_seen[name] = (now, values)
+
+        # Format output
+        parts = []
+        for period in PERIODS:
+            markup_raw = data.get(f"markup_{period}_raw", "")
+            sales_val = data[f"sales_{period}"]
+            parts.append(f"{period}: {markup_raw} / {self._format_sales(sales_val)}")
+        line = f"[Market Price] {name} — " + " | ".join(parts)
+
+        print(line)
+        self._mp_logger.info(line)
+
+    @staticmethod
+    def _format_sales(value: float) -> str:
+        if value >= 1_000_000:
+            return f"{value / 1_000_000:.2f} MPED"
+        if value >= 1_000:
+            return f"{value / 1_000:.2f} kPED"
+        if value >= 0.01:
+            return f"{value:.2f} PED"
+        return f"{value * 100:.2f} PEC"
 
     # ------------------------------------------------------------------
     # Three-tier template search
@@ -421,29 +536,36 @@ class MarketPriceDetector:
             data[f"sales_{period}"] = None
 
         errors = []
+        cell_confidences: list[float] = []
 
         # Item name (row 1 + optional row 2)
         roi_r1 = getattr(self._config, "market_price_roi_name_row1", None)
         roi_r2 = getattr(self._config, "market_price_roi_name_row2", None)
         name_parts = []
+        name_confs: list[float] = []
         if roi_r1:
             region = self._get_roi_region(image, tx, ty, roi_r1)
             if region is not None and region.size > 0:
-                text = self._read_text(region)
+                text, conf = self._read_text(region)
                 if text:
                     name_parts.append(text)
+                    name_confs.append(conf)
         if roi_r2:
             region = self._get_roi_region(image, tx, ty, roi_r2)
             if region is not None and region.size > 0:
-                text = self._read_text(region)
+                text, conf = self._read_text(region)
                 if text:
                     name_parts.append(text)
+                    name_confs.append(conf)
+        cell_confidences.append(min(name_confs) if name_confs else 0.0)
         raw_name = " ".join(name_parts).strip()
         normalized = self._normalize_item_name(raw_name)
         data["item_name"] = normalized
         # Include raw OCR name if normalization changed it (server can try both)
         if normalized != raw_name:
             data["item_name_raw"] = raw_name
+        if self._tracer and self._tracer.enabled:
+            self._tracer.log("MARKET_NAME", f"raw='{raw_name}' norm='{normalized}'")
 
         # Data cells (5 periods × 2 columns: markup, sales)
         roi_first = getattr(self._config, "market_price_roi_first_cell", None)
@@ -463,23 +585,42 @@ class MarketPriceDetector:
                     roi = {"dx": cell_dx, "dy": cell_dy, "w": cell_w, "h": cell_h}
                     region = self._get_roi_region(image, tx, ty, roi)
                     if region is not None and region.size > 0:
-                        value = self._read_cell_number(region)
+                        value, raw, conf = self._read_cell(region)
                         key = f"{metric}_{period}"
                         data[key] = value
+                        data[f"{key}_raw"] = raw
+                        cell_confidences.append(conf)
+                        if self._tracer and self._tracer.enabled:
+                            self._tracer.log("MARKET_CELL", f"{key}={value}")
                     else:
                         errors.append(f"{metric}_{period}: out of bounds")
 
-        # Tier (optional)
+            # Detect markup mode from first non-empty markup raw text
+            for period in PERIODS:
+                raw = data.get(f"markup_{period}_raw", "")
+                if raw:
+                    data["markup_mode"] = "percent" if "%" in raw else "absolute"
+                    break
+
+        # Tier (optional — does not contribute to combined confidence)
         roi_tier = getattr(self._config, "market_price_roi_tier", None)
         if roi_tier:
             region = self._get_roi_region(image, tx, ty, roi_tier)
             if region is not None and region.size > 0:
-                tier_val = self._read_cell_number(region)
+                tier_val, _tier_conf = self._read_cell_number(region)
                 if tier_val is not None:
                     try:
                         data["tier"] = int(tier_val)
                     except (ValueError, TypeError):
                         pass
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET_CELL", f"tier={data.get('tier')}")
+
+        # Aggregate OCR confidence (mean of name + cell confidences)
+        data["ocr_confidence"] = (
+            sum(cell_confidences) / len(cell_confidences)
+            if cell_confidences else 0.0
+        )
 
         if errors:
             self._event_bus.publish(EVENT_MARKET_PRICE_ERROR, {
@@ -505,15 +646,13 @@ class MarketPriceDetector:
         """Normalize an OCR'd item name from the market price window.
 
         Handles:
+        - Uppercase → Title Case (the game displays item names in all-caps)
         - Trailing "..." from the game's text truncation
         - Multiple spaces from line-break joining
         - Leading/trailing whitespace
 
-        Does NOT attempt to fix punctuation spacing (e.g. missing space
-        after comma) because item names in the game are inconsistent and
-        any specific rule would be too narrow.  Both the raw and normalized
-        names are sent to the server, which resolves via case-insensitive
-        and prefix matching.
+        Both the raw and normalized names are sent to the server, which
+        resolves via case-insensitive and prefix matching.
         """
         name = raw.strip()
         # Strip trailing ellipsis (game truncates long names)
@@ -521,48 +660,78 @@ class MarketPriceDetector:
             name = name[:-3].rstrip()
         # Collapse multiple spaces (artifact of line-break joining)
         name = " ".join(name.split())
+        # Convert all-caps to title case (game shows names in uppercase)
+        if name == name.upper():
+            name = name.title()
         return name
 
     # ------------------------------------------------------------------
     # OCR reading (STPK-based)
     # ------------------------------------------------------------------
 
-    def _read_cell_number(self, region: np.ndarray) -> float | None:
+    def _read_cell_number(self, region: np.ndarray) -> tuple[float | None, float]:
         """Read a numeric value from a cell region (BGR).
 
         Handles formats: "123.45%", "+123.45", "N/A", plain "12.34".
-        Returns the numeric value (stripped of % and +), or None for N/A / empty.
+        Returns (numeric_value, confidence). Empty cells get confidence 1.0
+        (empty is a valid state). Unreadable cells get 0.0.
         """
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
 
-        # Check if cell is empty / N/A
-        if float(np.mean(gray)) < EMPTY_CELL_BRIGHTNESS:
-            return None
+        # Check if cell is truly empty: no pixels bright enough to be text
+        threshold = getattr(
+            self._config, "market_price_text_threshold",
+            TEXT_BRIGHTNESS_THRESHOLD,
+        )
+        if int(np.max(gray)) < threshold:
+            return None, 1.0
 
         # If STPK digit entries are available, use grid-based matching
         if self._digit_entries:
-            text = self._match_stpk_digits(region)
+            text, conf = self._match_stpk_digits(region)
             if text:
-                return self._parse_cell_value(text)
+                return self._parse_cell_value(text), conf
 
-        # Fallback: no STPK available, return None
-        return None
+        # Fallback: no STPK available
+        return None, 0.0
 
-    def _read_text(self, region: np.ndarray) -> str:
+    def _read_cell(self, region: np.ndarray) -> tuple[float | None, str, float]:
+        """Read a cell and return (parsed_value, raw_ocr_text, confidence).
+
+        Empty cells get confidence 1.0 (valid state). Unreadable cells get 0.0.
+        """
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        threshold = getattr(
+            self._config, "market_price_text_threshold",
+            TEXT_BRIGHTNESS_THRESHOLD,
+        )
+        if int(np.max(gray)) < threshold:
+            return None, "", 1.0
+        if self._digit_entries:
+            text, conf = self._match_stpk_digits(region)
+            if text:
+                return self._parse_cell_value(text), text, conf
+        return None, "", 0.0
+
+    def _read_text(self, region: np.ndarray) -> tuple[str, float]:
         """Read text from a region (BGR) using text STPK templates.
 
-        Returns the matched text string, or empty string if STPK unavailable.
+        Returns (matched_text, confidence). Empty/unreadable returns ("", 0.0).
         """
         if not self._text_entries:
-            return ""
+            return "", 0.0
 
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        if float(np.mean(gray)) < EMPTY_CELL_BRIGHTNESS:
-            return ""
+        threshold = getattr(
+            self._config, "market_price_text_threshold",
+            TEXT_BRIGHTNESS_THRESHOLD,
+        )
+        if int(np.max(gray)) < threshold:
+            return "", 0.0
 
         return self._match_stpk_text(region)
 
-    def _match_stpk_digits(self, region: np.ndarray) -> str:
+    def _match_stpk_digits(self, region: np.ndarray) -> tuple[str, float]:
         """Match digit STPK entries against a BGR cell image.
 
         Uses blob segmentation to find contiguous character groups, then
@@ -570,29 +739,48 @@ class MarketPriceDetector:
         tested against multi-character entries (N/A, kPED, etc.) before
         being scored as single characters.
 
-        Returns the matched text string (e.g. "123.45%"), or empty string.
+        Returns (matched_text, confidence) where confidence is the minimum
+        per-character score (weakest link), or 0.0 if no match.
         """
         if not self._digit_entries or self._digit_grid_w == 0:
-            return ""
-        return self._match_stpk_blobs(
+            return "", 0.0
+        text, scores = self._match_stpk_blobs(
             region, self._digit_entries,
             self._digit_grid_w, self._digit_grid_h,
             right_align=True,
         )
+        return text, (min(scores) if scores else 0.0)
 
-    def _match_stpk_text(self, region: np.ndarray) -> str:
+    # Characters likely to appear in item names
+    _TEXT_ALLOWED = set(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789"
+        "(),.-' "
+    )
+
+    def _match_stpk_text(self, region: np.ndarray) -> tuple[str, float]:
         """Match text STPK entries against a BGR region.
 
         Uses blob segmentation, same as digits but with left-aligned
-        text templates.
+        text templates.  Filters entries to only item-name-plausible
+        characters to prevent false matches from /, !, #, etc.
+
+        Returns (matched_text, confidence) where confidence is the minimum
+        per-character score (weakest link), or 0.0 if no match.
         """
         if not self._text_entries or self._text_grid_w == 0:
-            return ""
-        return self._match_stpk_blobs(
-            region, self._text_entries,
+            return "", 0.0
+        # Filter to item-name-plausible characters
+        filtered = [
+            e for e in self._text_entries
+            if e.get("text", "") in self._TEXT_ALLOWED
+        ]
+        text, scores = self._match_stpk_blobs(
+            region, filtered,
             self._text_grid_w, self._text_grid_h,
             right_align=False,
         )
+        return text, (min(scores) if scores else 0.0)
 
     def _extract_text_intensity(self, region: np.ndarray) -> np.ndarray:
         """Extract text pixel intensity from a BGR region.
@@ -620,7 +808,7 @@ class MarketPriceDetector:
         grid_w: int,
         grid_h: int,
         right_align: bool,
-    ) -> str:
+    ) -> tuple[str, list[float]]:
         """Blob-based STPK matching.
 
         1. Extract text intensity (threshold out background noise)
@@ -639,13 +827,13 @@ class MarketPriceDetector:
         # Find text vertical bounds
         rows_with_content = np.any(intensity_4bit > 0, axis=1)
         if not rows_with_content.any():
-            return ""
+            return "", []
 
         text_top = int(np.argmax(rows_with_content))
         text_bot = int(len(rows_with_content) - 1 - np.argmax(rows_with_content[::-1]))
         text_h = text_bot - text_top + 1
         if text_h < 3:
-            return ""
+            return "", []
 
         # Find blobs: contiguous column ranges with content
         col_has = np.any(
@@ -662,7 +850,26 @@ class MarketPriceDetector:
                 start = -1
 
         if not blobs:
-            return ""
+            return "", []
+
+        # Split wide blobs that likely contain multiple characters
+        blobs = self._split_wide_blobs(
+            intensity_4bit, blobs, text_top, text_h, grid_w,
+        )
+
+        # Compute median inter-blob gap to detect word spaces
+        gaps = []
+        for j in range(1, len(blobs)):
+            gap = blobs[j][0] - blobs[j - 1][1] - 1
+            if gap > 0:
+                gaps.append(gap)
+        # Word space threshold: midpoint between char gaps and word gaps.
+        # Typical char gap = 1-2px, word gap = 5-7px.
+        if gaps:
+            median_gap = float(sorted(gaps)[len(gaps) // 2])
+            space_threshold = max(median_gap * 2, 4)
+        else:
+            space_threshold = 4
 
         # Index entries by content_w for faster lookup
         single_entries = [e for e in entries if e.get("content_w", 0) <= grid_w]
@@ -672,19 +879,25 @@ class MarketPriceDetector:
         ]
 
         result_chars = []
+        result_scores: list[float] = []
         i = 0
         while i < len(blobs):
             x0, x1 = blobs[i]
             blob_w = x1 - x0 + 1
+
+            # Insert space if gap from previous blob is large enough
+            if i > 0:
+                gap = x0 - blobs[i - 1][1] - 1
+                if gap >= space_threshold:
+                    result_chars.append(" ")
 
             # Try multi-character entries that span consecutive blobs
             best_multi_score = -1.0
             best_multi_text = None
             best_multi_span = 0
             for entry in multi_entries:
-                entry_grid = entry.get("grid")
                 cw = entry.get("content_w", 0)
-                if entry_grid is None or cw == 0:
+                if cw == 0:
                     continue
                 # Find how many blobs this entry might span
                 span_x1 = x0 + cw - 1
@@ -699,44 +912,195 @@ class MarketPriceDetector:
                 # Check if the actual content width is close enough
                 actual_x1 = blobs[i + span_count - 1][1]
                 actual_w = actual_x1 - x0 + 1
-                if abs(actual_w - cw) > 3:
+                if abs(actual_w - cw) > 5:
                     continue
-                candidate = self._normalize_blob(
-                    intensity_4bit, x0, actual_x1,
-                    text_top, text_h, grid_w, grid_h, right_align,
-                )
-                score = self._score_grid(candidate, entry_grid)
-                if score > best_multi_score:
-                    best_multi_score = score
-                    best_multi_text = entry.get("text", "")
-                    best_multi_span = span_count
+                # Try bitmap matching first (handles size differences)
+                entry_bmp = entry.get("bitmap")
+                if entry_bmp is not None:
+                    span_gray = self._extract_blob_gray(
+                        intensity, x0, actual_x1, text_top, text_h,
+                    )
+                    if span_gray is not None:
+                        score = self._score_bitmap(span_gray, entry_bmp)
+                        if score > best_multi_score:
+                            best_multi_score = score
+                            best_multi_text = entry.get("text", "")
+                            best_multi_span = span_count
+                            continue
+                # Fall back to grid matching
+                entry_grid = entry.get("grid")
+                if entry_grid is not None:
+                    candidate = self._normalize_blob(
+                        intensity_4bit, x0, actual_x1,
+                        text_top, text_h, grid_w, grid_h, right_align,
+                    )
+                    score = self._score_grid(candidate, entry_grid)
+                    if score > best_multi_score:
+                        best_multi_score = score
+                        best_multi_text = entry.get("text", "")
+                        best_multi_span = span_count
 
-            if best_multi_score > 0.6 and best_multi_text:
+            if best_multi_score > 0.4 and best_multi_text:
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET_OCR",
+                        f"multi x={x0}-{blobs[i + best_multi_span - 1][1]} "
+                        f"'{best_multi_text}' s={best_multi_score:.3f}")
                 result_chars.append(best_multi_text)
+                result_scores.append(best_multi_score)
                 i += best_multi_span
                 continue
 
-            # Single-blob matching
-            candidate = self._normalize_blob(
-                intensity_4bit, x0, x1,
-                text_top, text_h, grid_w, grid_h, right_align,
-            )
+            # Single-blob matching: try bitmap matching first (more robust
+            # against anti-aliasing), fall back to grid matching.
             best_score = -1.0
             best_text = None
-            for entry in single_entries:
-                entry_grid = entry.get("grid")
-                if entry_grid is None:
-                    continue
-                score = self._score_grid(candidate, entry_grid)
-                if score > best_score:
-                    best_score = score
-                    best_text = entry.get("text", "")
+
+            blob_region = self._extract_blob_gray(
+                intensity, x0, x1, text_top, text_h,
+            )
+            if blob_region is not None and blob_region.size > 0:
+                for entry in single_entries:
+                    bmp = entry.get("bitmap")
+                    if bmp is None:
+                        continue
+                    score = self._score_bitmap(blob_region, bmp)
+                    if score > best_score:
+                        best_score = score
+                        best_text = entry.get("text", "")
+
+            # Fall back to grid matching if bitmap matching is weak
+            if best_score < 0.6:
+                candidate = self._normalize_blob(
+                    intensity_4bit, x0, x1,
+                    text_top, text_h, grid_w, grid_h, right_align,
+                )
+                for entry in single_entries:
+                    entry_grid = entry.get("grid")
+                    if entry_grid is None:
+                        continue
+                    score = self._score_grid(candidate, entry_grid)
+                    if score > best_score:
+                        best_score = score
+                        best_text = entry.get("text", "")
 
             if best_score > 0.4 and best_text:
                 result_chars.append(best_text)
+                result_scores.append(best_score)
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET_OCR",
+                        f"x={x0}-{x1} '{best_text}' s={best_score:.3f}")
+            else:
+                result_scores.append(0.0)
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET_OCR",
+                        f"x={x0}-{x1} NO_MATCH best_s={best_score:.3f}")
             i += 1
 
-        return "".join(result_chars)
+        return "".join(result_chars), result_scores
+
+    @staticmethod
+    def _split_wide_blobs(
+        intensity_4bit: np.ndarray,
+        blobs: list[tuple[int, int]],
+        text_top: int,
+        text_h: int,
+        grid_w: int,
+    ) -> list[tuple[int, int]]:
+        """Split blobs wider than the grid into individual character blobs.
+
+        Uses vertical projection (column sums) within each blob to find
+        local minima that indicate character boundaries.  Blobs narrower
+        than grid_w * 1.3 are left as-is.
+        """
+        max_single_w = int(grid_w * 1.3)
+        # Minimum character width for splitting (narrowest chars: I=2, comma=3)
+        min_char_w = 4
+        result: list[tuple[int, int]] = []
+
+        for x0, x1 in blobs:
+            blob_w = x1 - x0 + 1
+            if blob_w <= max_single_w:
+                result.append((x0, x1))
+                continue
+
+            # Vertical projection: sum of pixel intensities per column
+            rows = min(text_h, intensity_4bit.shape[0] - text_top)
+            region = intensity_4bit[text_top:text_top + rows, x0:x1 + 1]
+            col_sums = region.sum(axis=0).astype(np.float32)
+
+            # Find ALL local minima in the column projection
+            minima: list[tuple[int, float]] = []  # (column, value)
+            for c in range(1, len(col_sums) - 1):
+                if col_sums[c] <= col_sums[c - 1] and col_sums[c] <= col_sums[c + 1]:
+                    minima.append((c, float(col_sums[c])))
+
+            # Sort minima by intensity (best split points first)
+            minima.sort(key=lambda m: m[1])
+
+            # Greedily pick split points that create valid-width segments
+            split_cols: list[int] = []
+            for col, val in minima:
+                # Check this split wouldn't create a too-narrow segment
+                points = sorted(split_cols + [col])
+                boundaries = [0] + points + [len(col_sums)]
+                valid = True
+                for j in range(len(boundaries) - 1):
+                    seg_w = boundaries[j + 1] - boundaries[j]
+                    if seg_w < min_char_w:
+                        valid = False
+                        break
+                # Also check: all segments should fit in the grid
+                all_fit = all(
+                    (boundaries[j + 1] - boundaries[j]) <= max_single_w
+                    for j in range(len(boundaries) - 1)
+                )
+                if valid and not all_fit:
+                    # Still has segments too wide — keep adding splits
+                    split_cols.append(col)
+                elif valid and all_fit:
+                    split_cols.append(col)
+                    break  # All segments fit now
+
+            # If we didn't get all segments to fit, keep adding splits
+            if split_cols:
+                split_cols_sorted = sorted(split_cols)
+            else:
+                # Fallback: split at regular intervals
+                n_chars = max(2, round(blob_w / (grid_w * 0.7)))
+                step = blob_w / n_chars
+                split_cols_sorted = [int((i + 1) * step)
+                                     for i in range(n_chars - 1)]
+
+            # If still have oversized segments, continue adding minima
+            boundaries = [0] + sorted(split_cols) + [len(col_sums)]
+            remaining_minima = [m for m in minima if m[0] not in split_cols]
+            for col, val in remaining_minima:
+                # Find which segment this minimum falls in
+                for j in range(len(boundaries) - 1):
+                    if boundaries[j] < col < boundaries[j + 1]:
+                        seg_w = boundaries[j + 1] - boundaries[j]
+                        if seg_w > max_single_w:
+                            left_w = col - boundaries[j]
+                            right_w = boundaries[j + 1] - col
+                            if left_w >= min_char_w and right_w >= min_char_w:
+                                split_cols.append(col)
+                                boundaries = [0] + sorted(split_cols) + [len(col_sums)]
+                        break
+
+            split_cols_sorted = sorted(split_cols)
+
+            # Build sub-blobs from split points
+            sub_blobs: list[tuple[int, int]] = []
+            prev = 0
+            for sc in split_cols_sorted:
+                if sc - prev >= min_char_w:
+                    sub_blobs.append((x0 + prev, x0 + sc - 1))
+                    prev = sc
+            sub_blobs.append((x0 + prev, x1))
+
+            result.extend(sub_blobs)
+
+        return result
 
     @staticmethod
     def _normalize_blob(
@@ -810,6 +1174,82 @@ class MarketPriceDetector:
             return 0.0
         return float(raw) / float(max_possible)
 
+    @staticmethod
+    def _extract_blob_gray(
+        intensity: np.ndarray,
+        x0: int, x1: int,
+        text_top: int, text_h: int,
+    ) -> np.ndarray | None:
+        """Extract a blob's tight bounding box from the 8-bit intensity image."""
+        rows = min(text_h, intensity.shape[0] - text_top)
+        cols_end = min(x1 + 1, intensity.shape[1])
+        region = intensity[text_top:text_top + rows, x0:cols_end]
+
+        mask = region > 0
+        if not mask.any():
+            return None
+
+        row_has = np.any(mask, axis=1)
+        col_has = np.any(mask, axis=0)
+        ct = int(np.argmax(row_has))
+        cb = int(len(row_has) - 1 - np.argmax(row_has[::-1]))
+        cl = int(np.argmax(col_has))
+        cr = int(len(col_has) - 1 - np.argmax(col_has[::-1]))
+
+        return region[ct:cb + 1, cl:cr + 1].copy()
+
+    @staticmethod
+    def _score_bitmap(blob_gray: np.ndarray, template_bmp: np.ndarray) -> float:
+        """Score a blob against a template bitmap using normalized correlation.
+
+        Resizes the template to match the blob's height, then uses
+        cv2.matchTemplate with TM_CCOEFF_NORMED for robust matching
+        that tolerates anti-aliasing differences.  Applies a width
+        similarity penalty to prevent wider templates from getting
+        artificially high scores by sliding a narrow blob inside them.
+        """
+        bh, bw = blob_gray.shape
+        th, tw = template_bmp.shape
+        if bh < 3 or bw < 2 or th < 3 or tw < 2:
+            return -1.0
+
+        # Resize template to match blob height, preserving aspect ratio
+        scale = bh / th
+        new_tw = max(1, int(round(tw * scale)))
+        new_th = bh
+        resized = cv2.resize(
+            template_bmp, (new_tw, new_th),
+            interpolation=cv2.INTER_LINEAR,
+        )
+
+        # Width tolerance: if template is much wider/narrower, reject
+        w_ratio = bw / new_tw if new_tw > 0 else 0
+        if w_ratio < 0.5 or w_ratio > 2.0:
+            return -1.0
+
+        # Pad the smaller of the two to make matchTemplate work
+        if new_tw <= bw:
+            result = cv2.matchTemplate(
+                blob_gray, resized, cv2.TM_CCOEFF_NORMED,
+            )
+        else:
+            result = cv2.matchTemplate(
+                resized, blob_gray, cv2.TM_CCOEFF_NORMED,
+            )
+
+        raw_score = float(result.max())
+
+        # Apply width similarity penalty: templates whose width doesn't
+        # closely match the blob width get penalized.  This prevents
+        # wider templates (e.g. O=10px) from outscoring narrower ones
+        # (e.g. C=9px) when the blob is 8px wide.
+        w_diff = abs(bw - new_tw)
+        if w_diff > 0:
+            penalty = 1.0 - 0.05 * w_diff
+            raw_score *= max(penalty, 0.5)
+
+        return raw_score
+
     # Sales column unit suffixes → multiplier to normalize to PED
     # Ordered longest-first so "mPEC" matches before "PEC", "MPED" before "PED"
     _SALES_SUFFIXES = [
@@ -854,3 +1294,18 @@ class MarketPriceDetector:
             return float(text)
         except ValueError:
             return None
+
+    def _trace_save_window(self, image: np.ndarray, tx: int, ty: int):
+        """Save an annotated debug image of the market price window area."""
+        if not self._tracer or cv2 is None:
+            return
+        # Crop a generous area around the detected window
+        ih, iw = image.shape[:2]
+        margin = 10
+        x1 = max(0, tx - 100)
+        y1 = max(0, ty - margin)
+        x2 = min(iw, tx + self._template_w + 200)
+        y2 = min(ih, ty + 280)
+        crop = image[y1:y2, x1:x2].copy()
+        self._tracer.save_image("market_price", crop,
+                                suffix=str(self._last_data.get("item_name", ""))[:40])

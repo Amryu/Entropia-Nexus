@@ -540,7 +540,7 @@ class SocietyOverlayWidget(OverlayWidget):
             if gen == self._load_gen:
                 self._society_loaded.emit(data)
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="society-load").start()
 
     def _on_society_loaded(self, data):
         if data is None:
@@ -841,7 +841,7 @@ class SocietyOverlayWidget(OverlayWidget):
                 "" if result else f"Failed to {action}",
             )
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="society-join-req").start()
 
     def _on_request_result(self, request_id: int, success: bool, error: str):
         row = self._request_rows.get(request_id)
@@ -965,7 +965,7 @@ class SocietyOverlayWidget(OverlayWidget):
             result = nc.update_society(name, payload)
             self._save_result.emit(result is not None, "" if result else "Save failed")
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True, name="society-save").start()
 
     def _on_save_result(self, success: bool, error: str):
         save_btn = self._settings_widgets.get("save_btn")

@@ -36,6 +36,11 @@ SUCCESS_BG = "#1a3a2a"
 WARNING = "#fbbf24"
 WARNING_BG = "#3a3020"
 
+# Diff badges (inventory import, history)
+DIFF_ADDED = "#48b868"
+DIFF_CHANGED = "#d4a030"
+DIFF_REMOVED = "#e06060"
+
 # Tables
 TABLE_HEADER = "#222222"
 TABLE_ROW = "#444444"

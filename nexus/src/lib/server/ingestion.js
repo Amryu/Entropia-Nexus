@@ -1251,6 +1251,12 @@ export function validateMarketPrice(entry) {
   if (ts.getTime() > now + 60_000) return 'Timestamp in the future';
   if (now - ts.getTime() > MAX_EVENT_AGE_MS) return 'Timestamp too old';
 
+  // confidence: optional, number 0.0-1.0
+  if (entry.confidence != null) {
+    if (typeof entry.confidence !== 'number' || !Number.isFinite(entry.confidence)) return 'Invalid confidence';
+    if (entry.confidence < 0 || entry.confidence > 1) return 'confidence out of range';
+  }
+
   return null;
 }
 
@@ -1302,8 +1308,8 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
       `INSERT INTO market_price_snapshots
        (item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
         markup_30d, sales_30d, markup_90d, sales_90d, markup_365d, sales_365d,
-        recorded_at, submitted_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        recorded_at, submitted_by, confidence)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
         itemId,
         entry.tier ?? null,
@@ -1314,6 +1320,7 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
         entry.markup_365d ?? null, entry.sales_365d ?? null,
         new Date(entry.timestamp).toISOString(),
         userId,
+        entry.confidence ?? null,
       ]
     );
     accepted++;

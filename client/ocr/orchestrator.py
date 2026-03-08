@@ -644,7 +644,7 @@ class ScanOrchestrator:
                 first_gray = (cv2.cvtColor(first_cell, cv2.COLOR_BGR2GRAY)
                               if len(first_cell.shape) == 3 else first_cell)
                 first_row_key = self._font_matcher._to_lookup_key(first_gray)
-                match = self._font_matcher.match_skill_name(first_gray)
+                match = self._font_matcher.match_skill_name(first_gray, trace=False)
                 current_name = match[0] if match else None
 
                 same_by_name = (
@@ -689,7 +689,12 @@ class ScanOrchestrator:
             self._event_bus.publish(EVENT_OCR_PAGE_CHANGED, None)
             if self._tracer.enabled:
                 self._tracer.log("PAGE", f"anchor={anchor_skill}->{current_name} scan=#{scan_count + 1}")
-                self._tracer.save_image("page", table_image)
+                page_annotated = table_image.copy()
+                if len(page_annotated.shape) == 2:
+                    page_annotated = cv2.cvtColor(page_annotated, cv2.COLOR_GRAY2BGR)
+                cv2.putText(page_annotated, f"Scan #{scan_count + 1}", (4, 14),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+                self._tracer.save_image("page", page_annotated)
 
             scan_count += 1
 
@@ -861,14 +866,6 @@ class ScanOrchestrator:
             self._last_skill_readings[skill.skill_name] = skill
 
             self._found_skill_names.add(skill.skill_name)
-            self._db.insert_skill_snapshot(
-                scan_timestamp=skill.scan_timestamp.isoformat(),
-                skill_name=skill.skill_name,
-                rank=skill.rank,
-                current_points=skill.current_points,
-                progress_percent=skill.progress_percent,
-                category=skill.category,
-            )
             self._event_bus.publish(EVENT_SKILL_SCANNED, skill)
 
         for cap in self._pending_captures:
@@ -1155,9 +1152,19 @@ class ScanOrchestrator:
                     tpl = self._font_matcher.get_skill_template(best[0])
                     font_attempt = {"name": best[0], "score": best[1],
                                     "template": tpl}
+                    if self._tracer.enabled:
+                        self._tracer.log(
+                            "FALLBACK",
+                            f"[{row_idx:02d}] below_threshold best='{best[0]}'({best[1]:.3f})",
+                        )
                 else:
                     log.debug("Row %d: no font match at all (cell %dx%d)",
                               row_idx, name_gray.shape[1], name_gray.shape[0])
+                    if self._tracer.enabled:
+                        self._tracer.log(
+                            "FALLBACK",
+                            f"[{row_idx:02d}] no_match cell={name_gray.shape[1]}x{name_gray.shape[0]}",
+                        )
 
         # Last resort: use best font template match (below threshold)
         if not matched_name and font_attempt:
@@ -1169,6 +1176,12 @@ class ScanOrchestrator:
                     row_idx, font_attempt["name"], fallback_score,
                     FALLBACK_FAILURE_CONFIDENCE,
                 )
+                if self._tracer.enabled:
+                    self._tracer.log(
+                        "FALLBACK",
+                        f"[{row_idx:02d}] REJECTED '{font_attempt['name']}'({fallback_score:.3f}) < {FALLBACK_FAILURE_CONFIDENCE:.2f}",
+                    )
+                    self._tracer.save_image("fallback_reject", name_gray, suffix=f"{row_idx:02d}_{font_attempt['name']}")
                 return None
 
             matched_name = font_attempt["name"]
@@ -1185,6 +1198,11 @@ class ScanOrchestrator:
                     row_idx, matched_name, fallback_score,
                     fallback_warn_threshold,
                 )
+                if self._tracer.enabled:
+                    self._tracer.log(
+                        "FALLBACK",
+                        f"[{row_idx:02d}] LOW_CONF '{matched_name}'({fallback_score:.3f}) < {fallback_warn_threshold:.2f}",
+                    )
 
         if not matched_name:
             return None
@@ -1282,7 +1300,13 @@ class ScanOrchestrator:
                 f"rank={rank_text or '?'}({rank_score:.2f}) "
                 f"pts={points_text or '?'} bar={progress:.1f}%",
             )
-            self._tracer.save_image("row", row_image, suffix=f"{row_idx:02d}_{matched_name}")
+            row_annotated = row_image.copy()
+            if len(row_annotated.shape) == 2:
+                row_annotated = cv2.cvtColor(row_annotated, cv2.COLOR_GRAY2BGR)
+            label = f"{matched_name}({ns:.2f}{fb}) rank={rank_text or '?'} pts={points_text or '?'}"
+            cv2.putText(row_annotated, label, (2, row_annotated.shape[0] - 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+            self._tracer.save_image("row", row_annotated, suffix=f"{row_idx:02d}_{matched_name}")
 
         # Cross-verify rank + points against known rank thresholds
         verification = self._rank_verifier.verify(
@@ -1290,6 +1314,12 @@ class ScanOrchestrator:
         if not verification["rank_matches"] and rank_text and points_value > 0:
             log.warning("Rank mismatch: '%s' vs expected '%s' for %s pts",
                         rank_text, verification['expected_rank'], points_value)
+            if self._tracer.enabled:
+                self._tracer.log(
+                    "VERIFY",
+                    f"[{row_idx:02d}] rank_mismatch actual='{rank_text}' "
+                    f"expected='{verification['expected_rank']}' pts={points_value}",
+                )
 
         self._event_bus.publish(EVENT_DEBUG_ROW, {
             "type": "matched",

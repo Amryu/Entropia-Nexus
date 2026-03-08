@@ -11,11 +11,12 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QStackedWidget,
     QPushButton, QTableWidget, QTableWidgetItem,
     QHeaderView, QDialog, QLineEdit, QComboBox, QCheckBox,
-    QAbstractItemView, QSpinBox,
+    QAbstractItemView, QSpinBox, QApplication,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 from PyQt6.QtGui import QColor
 
+from ..icons import svg_icon, BELL, COPY, ARROW_UP, ARROW_DOWN
 from ..theme import (
     PRIMARY, SECONDARY, HOVER, TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER,
     BORDER, SUCCESS, ERROR, WARNING,
@@ -187,23 +188,30 @@ _MISSION_HEADERS = ["Mission", "Planet", "Cooldown", "Starts On", "Status", ""]
 class TrackerPage(QWidget):
     navigation_changed = pyqtSignal(object)
 
-    def __init__(self, *, signals, config, config_path, data_client, event_bus, oauth):
+    def __init__(self, *, signals, config, config_path, data_client, event_bus, oauth, db):
         super().__init__()
         self._signals = signals
         self._config = config
         self._config_path = config_path
         self._data_client = data_client
         self._event_bus = event_bus
+        self._db = db
         self._authenticated = oauth.auth_state.authenticated
+
+        # One-time migration: config → database
+        self._migrate_config_to_db()
+
+        # In-memory mission list (loaded from DB)
+        self._tracked_missions: list[dict] = self._db.get_tracked_missions()
 
         # Track auth state for submit button
         signals.auth_state_changed.connect(self._on_auth_changed)
 
-        # Debounced config save
+        # Debounced DB save
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
-        self._save_timer.timeout.connect(self._persist_config)
+        self._save_timer.timeout.connect(self._persist)
 
         # Cooldown tick (1 second)
         self._tick_timer = QTimer(self)
@@ -315,11 +323,17 @@ class TrackerPage(QWidget):
         self._missions_table.setStyleSheet(_TABLE_STYLE)
         hdr = self._missions_table.horizontalHeader()
         hdr.setStretchLastSection(False)
+        hdr.setMinimumSectionSize(100)
         hdr.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
-        for c in (COL_PLANET, COL_COOLDOWN, COL_STARTS_ON, COL_STATUS):
-            hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(COL_ACTIONS, QHeaderView.ResizeMode.Fixed)
-        hdr.resizeSection(COL_ACTIONS, 180)
+        for col, width in (
+            (COL_PLANET, 100),
+            (COL_COOLDOWN, 80),
+            (COL_STARTS_ON, 100),
+            (COL_STATUS, 80),
+            (COL_ACTIONS, 220),
+        ):
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            hdr.resizeSection(col, width)
         layout.addWidget(self._missions_table)
 
         self._refresh_missions_table()
@@ -414,7 +428,7 @@ class TrackerPage(QWidget):
     # ------------------------------------------------------------------
 
     def _load_data_async(self):
-        threading.Thread(target=self._fetch_data, daemon=True).start()
+        threading.Thread(target=self._fetch_data, daemon=True, name="tracker-fetch").start()
 
     def _fetch_data(self):
         try:
@@ -456,7 +470,7 @@ class TrackerPage(QWidget):
     # ------------------------------------------------------------------
 
     def _refresh_missions_table(self):
-        tracked = self._config.tracker_missions or []
+        tracked = self._tracked_missions or []
         now_ms = int(time.time() * 1000)
 
         # Compute remaining time for each
@@ -492,14 +506,43 @@ class TrackerPage(QWidget):
             self._missions_table.setUpdatesEnabled(True)
 
     def __populate_missions_rows(self, entries):
-        self._missions_table.setRowCount(len(entries))
+        num_entries = len(entries)
+        self._missions_table.setRowCount(num_entries)
+        icon_size = QSize(14, 14)
         for row, (m, remaining) in enumerate(entries):
             mid = m.get("id")
+            name = m.get("name", "?")
 
-            # Name
-            name_item = QTableWidgetItem(m.get("name", "?"))
-            name_item.setData(Qt.ItemDataRole.UserRole, mid)
-            self._missions_table.setItem(row, COL_NAME, name_item)
+            # Name — cell widget with optional 24h expiry badge
+            if m.get("has_expiry"):
+                name_w = QWidget()
+                name_w.setStyleSheet("background: transparent;")
+                nl = QHBoxLayout(name_w)
+                nl.setContentsMargins(4, 0, 0, 0)
+                nl.setSpacing(6)
+                name_lbl = QLabel(name)
+                name_lbl.setStyleSheet(f"color: {TEXT}; font-size: 12px; background: transparent;")
+                nl.addWidget(name_lbl)
+                badge = QLabel("24h")
+                badge.setToolTip("Expires 24h after accept")
+                badge.setStyleSheet(
+                    f"color: {WARNING}; font-size: 9px; font-weight: bold;"
+                    f" border: 1px solid {WARNING}; border-radius: 3px;"
+                    " padding: 1px 3px; background: transparent;"
+                )
+                nl.addWidget(badge)
+                nl.addStretch()
+                # Store mission id on the widget for tick lookups
+                name_w.setProperty("mission_id", mid)
+                self._missions_table.setCellWidget(row, COL_NAME, name_w)
+                # Still need a hidden item for UserRole data
+                name_item = QTableWidgetItem()
+                name_item.setData(Qt.ItemDataRole.UserRole, mid)
+                self._missions_table.setItem(row, COL_NAME, name_item)
+            else:
+                name_item = QTableWidgetItem(name)
+                name_item.setData(Qt.ItemDataRole.UserRole, mid)
+                self._missions_table.setItem(row, COL_NAME, name_item)
 
             # Planet
             self._missions_table.setItem(row, COL_PLANET, QTableWidgetItem(m.get("planet", "?")))
@@ -531,7 +574,7 @@ class TrackerPage(QWidget):
             actions = QWidget()
             actions_layout = QHBoxLayout(actions)
             actions_layout.setContentsMargins(2, 2, 2, 2)
-            actions_layout.setSpacing(4)
+            actions_layout.setSpacing(2)
 
             if remaining > 0:
                 reset_btn = QPushButton("Reset")
@@ -553,15 +596,65 @@ class TrackerPage(QWidget):
                 start_btn.clicked.connect(lambda _, i=mid: self._start_cooldown(i))
                 actions_layout.addWidget(start_btn)
 
-            settings_btn = QPushButton("...")
-            settings_btn.setFixedSize(24, 22)
-            settings_btn.setToolTip("Settings")
-            settings_btn.setStyleSheet(self._small_btn_style())
-            settings_btn.clicked.connect(lambda _, i=mid: self._open_mission_settings(i))
-            actions_layout.addWidget(settings_btn)
+            # Up arrow — swap with the previous row's mission
+            prev_mid = entries[row - 1][0].get("id") if row > 0 else None
+            up_btn = QPushButton()
+            up_btn.setFixedSize(22, 22)
+            up_btn.setIconSize(icon_size)
+            up_btn.setIcon(svg_icon(ARROW_UP, TEXT_MUTED, 14))
+            up_btn.setToolTip("Move up")
+            up_btn.setStyleSheet(self._small_btn_style())
+            up_btn.setEnabled(prev_mid is not None)
+            up_btn.clicked.connect(lambda _, a=mid, b=prev_mid: self._swap_mission_order(a, b))
+            actions_layout.addWidget(up_btn)
 
+            # Down arrow — swap with the next row's mission
+            next_mid = entries[row + 1][0].get("id") if row < num_entries - 1 else None
+            down_btn = QPushButton()
+            down_btn.setFixedSize(22, 22)
+            down_btn.setIconSize(icon_size)
+            down_btn.setIcon(svg_icon(ARROW_DOWN, TEXT_MUTED, 14))
+            down_btn.setToolTip("Move down")
+            down_btn.setStyleSheet(self._small_btn_style())
+            down_btn.setEnabled(next_mid is not None)
+            down_btn.clicked.connect(lambda _, a=mid, b=next_mid: self._swap_mission_order(a, b))
+            actions_layout.addWidget(down_btn)
+
+            # Bell — notification settings
+            bell_btn = QPushButton()
+            bell_btn.setFixedSize(22, 22)
+            bell_btn.setIconSize(icon_size)
+            bell_btn.setIcon(svg_icon(BELL, TEXT_MUTED, 14))
+            bell_btn.setToolTip("Notification settings")
+            bell_btn.setStyleSheet(self._small_btn_style())
+            bell_btn.clicked.connect(lambda _, i=mid: self._open_mission_settings(i))
+            actions_layout.addWidget(bell_btn)
+
+            # Copy waypoint
+            wp_btn = QPushButton()
+            wp_btn.setFixedSize(22, 22)
+            wp_btn.setIconSize(icon_size)
+            loc = m.get("start_location")
+            if loc and loc.get("longitude") is not None:
+                planet = m.get("planet", "?")
+                wp_str = (
+                    f"/wp [{planet}, {loc['longitude']:.0f}, {loc['latitude']:.0f},"
+                    f" {loc.get('altitude', 100):.0f}, {loc.get('name') or name}]"
+                )
+                wp_btn.setIcon(svg_icon(COPY, TEXT_MUTED, 14))
+                wp_btn.setToolTip(wp_str)
+                wp_btn.setStyleSheet(self._small_btn_style())
+                wp_btn.clicked.connect(lambda _, s=wp_str: self._copy_waypoint(s))
+            else:
+                wp_btn.setIcon(svg_icon(COPY, TEXT_MUTED, 14))
+                wp_btn.setToolTip("No start location coordinates")
+                wp_btn.setStyleSheet(self._small_btn_style())
+                wp_btn.setEnabled(False)
+            actions_layout.addWidget(wp_btn)
+
+            # Remove
             rm_btn = QPushButton("x")
-            rm_btn.setFixedSize(24, 22)
+            rm_btn.setFixedSize(22, 22)
             rm_btn.setToolTip("Remove")
             rm_btn.setStyleSheet(self._small_btn_style(danger=True))
             rm_btn.clicked.connect(lambda _, i=mid: self._remove_mission(i))
@@ -570,6 +663,9 @@ class TrackerPage(QWidget):
             actions_layout.addStretch()
             self._missions_table.setCellWidget(row, COL_ACTIONS, actions)
             self._missions_table.setRowHeight(row, 36)
+
+    def _copy_waypoint(self, wp_str: str):
+        QApplication.clipboard().setText(wp_str)
 
     def _small_btn_style(self, *, accent=False, danger=False):
         bg = "transparent"
@@ -760,7 +856,7 @@ class TrackerPage(QWidget):
     # ------------------------------------------------------------------
 
     def _start_cooldown(self, mission_id: int):
-        for m in self._config.tracker_missions:
+        for m in self._tracked_missions:
             if m["id"] == mission_id:
                 m["cooldown_started_at"] = datetime.now(timezone.utc).isoformat()
                 break
@@ -771,7 +867,7 @@ class TrackerPage(QWidget):
         self._refresh_missions_table()
 
     def _reset_cooldown(self, mission_id: int):
-        for m in self._config.tracker_missions:
+        for m in self._tracked_missions:
             if m["id"] == mission_id:
                 m["cooldown_started_at"] = None
                 break
@@ -781,9 +877,29 @@ class TrackerPage(QWidget):
         self._refresh_missions_table()
 
     def _remove_mission(self, mission_id: int):
-        self._config.tracker_missions = [
-            m for m in self._config.tracker_missions if m["id"] != mission_id
+        self._tracked_missions = [
+            m for m in self._tracked_missions if m["id"] != mission_id
         ]
+        self._schedule_save()
+        self._refresh_missions_table()
+
+    def _swap_mission_order(self, id_a: int, id_b: int | None):
+        """Swap the order fields of two missions (by displayed neighbor IDs)."""
+        if id_b is None:
+            return
+        missions = self._tracked_missions or []
+        m_a = m_b = None
+        idx_a = idx_b = -1
+        for i, m in enumerate(missions):
+            if m["id"] == id_a:
+                m_a, idx_a = m, i
+            elif m["id"] == id_b:
+                m_b, idx_b = m, i
+        if m_a is None or m_b is None:
+            return
+        m_a["order"], m_b["order"] = m_b["order"], m_a["order"]
+        # Also swap list positions so order is stable
+        missions[idx_a], missions[idx_b] = missions[idx_b], missions[idx_a]
         self._schedule_save()
         self._refresh_missions_table()
 
@@ -800,7 +916,7 @@ class TrackerPage(QWidget):
 
     def _open_mission_settings(self, mission_id: int):
         mission = None
-        for m in self._config.tracker_missions:
+        for m in self._tracked_missions:
             if m["id"] == mission_id:
                 mission = m
                 break
@@ -829,16 +945,6 @@ class TrackerPage(QWidget):
         pre_row.addWidget(pre_spin)
         layout.addLayout(pre_row)
 
-        # Order
-        order_row = QHBoxLayout()
-        order_row.addWidget(QLabel("Sort order:"))
-        order_spin = QSpinBox()
-        order_spin.setRange(0, 999)
-        order_spin.setValue(mission.get("order", 0))
-        order_spin.setStyleSheet(pre_spin.styleSheet())
-        order_row.addWidget(order_spin)
-        layout.addLayout(order_row)
-
         # Save button
         save_btn = QPushButton("Save")
         save_btn.setStyleSheet(f"""
@@ -852,7 +958,6 @@ class TrackerPage(QWidget):
         def on_save():
             mission["notify"] = notify_cb.isChecked()
             mission["notify_minutes_before"] = pre_spin.value()
-            mission["order"] = order_spin.value()
             self._schedule_save()
             self._refresh_missions_table()
             dlg.accept()
@@ -870,11 +975,37 @@ class TrackerPage(QWidget):
             parent=self,
             missions=self._all_missions,
             planets=self._planets,
-            tracked_ids={m["id"] for m in (self._config.tracker_missions or [])},
+            tracked_ids={m["id"] for m in (self._tracked_missions or [])},
         )
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected:
             for mission in dlg.selected:
-                order = len(self._config.tracker_missions)
+                order = len(self._tracked_missions)
+                # Extract start location coordinates
+                start_loc = mission.get("StartLocation") or {}
+                start_coords = (
+                    start_loc.get("Coordinates")
+                    or (start_loc.get("Properties") or {}).get("Coordinates")
+                    or {}
+                )
+                start_location = None
+                if start_coords.get("Longitude") is not None and start_coords.get("Latitude") is not None:
+                    start_location = {
+                        "longitude": start_coords["Longitude"],
+                        "latitude": start_coords["Latitude"],
+                        "altitude": start_coords.get("Altitude", 100),
+                        "name": start_loc.get("Name") or "",
+                    }
+
+                # Check for AIKillCycle/AIHandIn objectives → 24h expiry
+                has_expiry = False
+                for step in (mission.get("Steps") or []):
+                    for obj in (step.get("Objectives") or []):
+                        if obj.get("Type") in ("AIKillCycle", "AIHandIn"):
+                            has_expiry = True
+                            break
+                    if has_expiry:
+                        break
+
                 entry = {
                     "id": mission["Id"],
                     "name": mission.get("Name", "?"),
@@ -890,8 +1021,10 @@ class TrackerPage(QWidget):
                     "cooldown_started_at": None,
                     "notify": True,
                     "notify_minutes_before": 5,
+                    "start_location": start_location,
+                    "has_expiry": has_expiry,
                 }
-                self._config.tracker_missions.append(entry)
+                self._tracked_missions.append(entry)
             self._schedule_save()
             self._refresh_missions_table()
 
@@ -923,7 +1056,7 @@ class TrackerPage(QWidget):
 
     def _on_tick(self):
         now_ms = int(time.time() * 1000)
-        tracked = self._config.tracker_missions or []
+        tracked = self._tracked_missions or []
         table = self._missions_table
 
         # Quick-update status cells without rebuilding the table
@@ -1068,7 +1201,20 @@ class TrackerPage(QWidget):
     def _schedule_save(self):
         self._save_timer.start()
 
-    def _persist_config(self):
+    def _persist(self):
+        """Save tracked missions to DB and event reminders to config."""
+        self._db.save_tracked_missions(self._tracked_missions)
+        from ...core.config import save_config
+        save_config(self._config, self._config_path)
+
+    def _migrate_config_to_db(self):
+        """One-time migration of tracker_missions from config to database."""
+        legacy = self._config.tracker_missions
+        if not legacy:
+            return
+        log.info("Migrating %d tracked missions from config to database", len(legacy))
+        self._db.save_tracked_missions(legacy)
+        self._config.tracker_missions = []
         from ...core.config import save_config
         save_config(self._config, self._config_path)
 
@@ -1077,7 +1223,7 @@ class TrackerPage(QWidget):
         self._group_timer.stop()
         if self._save_timer.isActive():
             self._save_timer.stop()
-            self._persist_config()
+            self._persist()
 
 
 # ---------------------------------------------------------------------------

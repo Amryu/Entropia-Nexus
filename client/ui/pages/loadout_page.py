@@ -18,9 +18,11 @@ from PyQt6.QtCore import Qt, pyqtSlot, QTimer
 from PyQt6.QtGui import QColor, QBrush
 
 from ...core.logger import get_logger
+from ...core.thread_utils import invoke_on_main
 from ..widgets.fuzzy_line_edit import FuzzyLineEdit
+from ..widgets.gear_picker_dialog import GearPickerDialog
 from ..widgets.loadout_compare import LoadoutCompareWidget
-from ..theme import ACCENT, ERROR, MAIN_DARK, SECONDARY, TEXT, TEXT_MUTED
+from ..theme import ACCENT, ERROR, MAIN_DARK, SECONDARY, TEXT, TEXT_MUTED, WARNING
 from ..icons import svg_icon
 
 log = get_logger("Loadout")
@@ -161,6 +163,9 @@ class LoadoutPage(QWidget):
         self._consumable_items: list[dict] = []  # [{Name}]
         self._pet_effect_value: str | None = None
 
+        # Overamp display mode preference (persisted in config)
+        self._overamp_mode = getattr(self._config, "overamp_mode", "percent")
+
         # Recalculation debounce timer
         self._recalc_timer = QTimer()
         self._recalc_timer.setSingleShot(True)
@@ -199,6 +204,13 @@ class LoadoutPage(QWidget):
         self._loadout_combo.setMinimumWidth(250)
         self._loadout_combo.currentIndexChanged.connect(self._on_loadout_selected)
         toolbar.addWidget(self._loadout_combo)
+
+        self._name_input = QLineEdit()
+        self._name_input.setPlaceholderText("Loadout name")
+        self._name_input.setMinimumWidth(180)
+        self._name_input.setMaxLength(120)
+        self._name_input.textChanged.connect(self._on_name_changed)
+        toolbar.addWidget(self._name_input)
 
         for label, handler in [
             ("New", self._on_new_loadout),
@@ -245,11 +257,13 @@ class LoadoutPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self._editor_tabs = QTabWidget()
+        self._pending_apply = None
         self._build_weapon_tab()
         self._build_armor_tab()
         self._build_healing_tab()
         self._build_accessories_tab()
         self._build_settings_tab()
+        self._tabs_built = True
 
         editor_wrapper = QWidget()
         ew_layout = QHBoxLayout(editor_wrapper)
@@ -263,8 +277,9 @@ class LoadoutPage(QWidget):
         stats_scroll.setMinimumWidth(300)
         self._stats_widget = QWidget()
         self._stats_layout = QVBoxLayout(self._stats_widget)
-        self._build_stats_display()
         stats_scroll.setWidget(self._stats_widget)
+
+        self._build_stats_display()
 
         splitter.addWidget(stats_scroll)
         splitter.setSizes([600, 350])
@@ -292,8 +307,9 @@ class LoadoutPage(QWidget):
     # ------------------------------------------------------------------
 
     def _make_gear_row(self, label_text: str, field: FuzzyLineEdit,
-                       markup_key: str, indent=False) -> QWidget:
-        """Row: [Label] [FuzzyLineEdit stretch] [MU% container (hidden)]."""
+                       markup_key: str, indent=False,
+                       picker_kind: str | None = None) -> QWidget:
+        """Row: [Label] [FuzzyLineEdit stretch] [Browse btn] [MU% container]."""
         row = QWidget()
         hl = QHBoxLayout(row)
         hl.setContentsMargins(0, 0, 0, 0)
@@ -306,6 +322,16 @@ class LoadoutPage(QWidget):
             lbl.setStyleSheet(f"color: {TEXT_MUTED};")
         hl.addWidget(lbl)
         hl.addWidget(field, 1)
+
+        if picker_kind:
+            browse_btn = QPushButton("⋯")
+            browse_btn.setFixedSize(24, 24)
+            browse_btn.setToolTip(f"Browse {label_text.lower()}…")
+            browse_btn.setStyleSheet("padding: 0; margin: 0;")
+            browse_btn.clicked.connect(
+                lambda _=False, k=picker_kind, f=field: self._open_picker(k, f)
+            )
+            hl.addWidget(browse_btn)
 
         # Inline markup
         mu_container = QWidget()
@@ -391,7 +417,8 @@ class LoadoutPage(QWidget):
         self._weapon_field = FuzzyLineEdit("Select weapon...")
         self._weapon_field.textChanged.connect(self._schedule_recalc)
         self._weapon_field.textChanged.connect(self._on_weapon_changed)
-        vbox.addWidget(self._make_gear_row("Weapon", self._weapon_field, "Weapon"))
+        vbox.addWidget(self._make_gear_row("Weapon", self._weapon_field, "Weapon",
+                                              picker_kind="weapon"))
 
         # Ammo MU% row
         vbox.addWidget(self._make_ammo_mu_row())
@@ -399,12 +426,14 @@ class LoadoutPage(QWidget):
         # Amplifier (always visible)
         self._amp_field = FuzzyLineEdit("Select amplifier...")
         self._amp_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Amplifier", self._amp_field, "Amplifier"))
+        vbox.addWidget(self._make_gear_row("Amplifier", self._amp_field, "Amplifier",
+                                              picker_kind="amplifier"))
 
         # Absorber (Ranged)
         self._absorber_field = FuzzyLineEdit("Select absorber...")
         self._absorber_field.textChanged.connect(self._schedule_recalc)
-        absorber_row = self._make_gear_row("Absorber", self._absorber_field, "Absorber")
+        absorber_row = self._make_gear_row("Absorber", self._absorber_field, "Absorber",
+                                              picker_kind="absorber")
         self._weapon_field_rows["Absorber"] = absorber_row
         absorber_row.hide()
         vbox.addWidget(absorber_row)
@@ -413,7 +442,8 @@ class LoadoutPage(QWidget):
         self._scope_field = FuzzyLineEdit("Select scope...")
         self._scope_field.textChanged.connect(self._schedule_recalc)
         self._scope_field.textChanged.connect(self._on_scope_changed)
-        scope_row = self._make_gear_row("Scope", self._scope_field, "Scope")
+        scope_row = self._make_gear_row("Scope", self._scope_field, "Scope",
+                                              picker_kind="scope")
         self._weapon_field_rows["Scope"] = scope_row
         scope_row.hide()
         vbox.addWidget(scope_row)
@@ -422,7 +452,8 @@ class LoadoutPage(QWidget):
         self._scope_sight_field = FuzzyLineEdit("Select sight for scope...")
         self._scope_sight_field.setEnabled(False)
         self._scope_sight_field.textChanged.connect(self._schedule_recalc)
-        ss_row = self._make_gear_row("Scope Sight", self._scope_sight_field, "ScopeSight", indent=True)
+        ss_row = self._make_gear_row("Scope Sight", self._scope_sight_field, "ScopeSight",
+                                              indent=True, picker_kind="scope_sight")
         self._weapon_field_rows["ScopeSight"] = ss_row
         ss_row.hide()
         vbox.addWidget(ss_row)
@@ -430,7 +461,8 @@ class LoadoutPage(QWidget):
         # Sight (Ranged)
         self._sight_field = FuzzyLineEdit("Select sight...")
         self._sight_field.textChanged.connect(self._schedule_recalc)
-        sight_row = self._make_gear_row("Sight", self._sight_field, "Sight")
+        sight_row = self._make_gear_row("Sight", self._sight_field, "Sight",
+                                              picker_kind="sight")
         self._weapon_field_rows["Sight"] = sight_row
         sight_row.hide()
         vbox.addWidget(sight_row)
@@ -438,7 +470,8 @@ class LoadoutPage(QWidget):
         # Matrix (Melee)
         self._matrix_field = FuzzyLineEdit("Select matrix (melee)...")
         self._matrix_field.textChanged.connect(self._schedule_recalc)
-        matrix_row = self._make_gear_row("Matrix", self._matrix_field, "Matrix")
+        matrix_row = self._make_gear_row("Matrix", self._matrix_field, "Matrix",
+                                              picker_kind="matrix")
         self._weapon_field_rows["Matrix"] = matrix_row
         matrix_row.hide()
         vbox.addWidget(matrix_row)
@@ -446,7 +479,8 @@ class LoadoutPage(QWidget):
         # Implant — effects apply to all weapons; absorption is Mindforce-only
         self._implant_field = FuzzyLineEdit("Select implant...")
         self._implant_field.textChanged.connect(self._schedule_recalc)
-        implant_row = self._make_gear_row("Implant", self._implant_field, "Implant")
+        implant_row = self._make_gear_row("Implant", self._implant_field, "Implant",
+                                              picker_kind="implant")
         self._weapon_field_rows["Implant"] = implant_row
         vbox.addWidget(implant_row)
 
@@ -474,11 +508,13 @@ class LoadoutPage(QWidget):
 
         self._armor_set_field = FuzzyLineEdit("Select armor set...")
         self._armor_set_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Armor Set", self._armor_set_field, "ArmorSet"))
+        vbox.addWidget(self._make_gear_row("Armor Set", self._armor_set_field, "ArmorSet",
+                                              picker_kind="armor_set"))
 
         self._plate_field = FuzzyLineEdit("Select plating...")
         self._plate_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Plating", self._plate_field, "PlateSet"))
+        vbox.addWidget(self._make_gear_row("Plating", self._plate_field, "PlateSet",
+                                              picker_kind="plating"))
 
         outer.addLayout(vbox)
 
@@ -503,7 +539,8 @@ class LoadoutPage(QWidget):
 
         self._heal_field = FuzzyLineEdit("Select healing tool...")
         self._heal_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Healing Tool", self._heal_field, "HealingTool"))
+        vbox.addWidget(self._make_gear_row("Healing Tool", self._heal_field, "HealingTool",
+                                              picker_kind="healing"))
 
         outer.addLayout(vbox)
 
@@ -532,16 +569,34 @@ class LoadoutPage(QWidget):
         self._left_ring_field.item_selected.connect(lambda name: self._set_ring("Left", name))
         rp_layout.addWidget(QLabel("Left Ring:"), 0, 0, Qt.AlignmentFlag.AlignRight)
         rp_layout.addWidget(self._left_ring_field, 0, 1)
+        lr_btn = QPushButton("⋯")
+        lr_btn.setFixedSize(24, 24)
+        lr_btn.setToolTip("Browse left rings…")
+        lr_btn.setStyleSheet("padding: 0; margin: 0;")
+        lr_btn.clicked.connect(lambda: self._open_picker("ring_left", self._left_ring_field))
+        rp_layout.addWidget(lr_btn, 0, 2)
 
         self._right_ring_field = FuzzyLineEdit("Select right ring...")
         self._right_ring_field.item_selected.connect(lambda name: self._set_ring("Right", name))
         rp_layout.addWidget(QLabel("Right Ring:"), 1, 0, Qt.AlignmentFlag.AlignRight)
         rp_layout.addWidget(self._right_ring_field, 1, 1)
+        rr_btn = QPushButton("⋯")
+        rr_btn.setFixedSize(24, 24)
+        rr_btn.setToolTip("Browse right rings…")
+        rr_btn.setStyleSheet("padding: 0; margin: 0;")
+        rr_btn.clicked.connect(lambda: self._open_picker("ring_right", self._right_ring_field))
+        rp_layout.addWidget(rr_btn, 1, 2)
 
         self._pet_field = FuzzyLineEdit("Select pet...")
         self._pet_field.textChanged.connect(self._on_pet_changed)
         rp_layout.addWidget(QLabel("Pet:"), 2, 0, Qt.AlignmentFlag.AlignRight)
         rp_layout.addWidget(self._pet_field, 2, 1)
+        pet_btn = QPushButton("⋯")
+        pet_btn.setFixedSize(24, 24)
+        pet_btn.setToolTip("Browse pets…")
+        pet_btn.setStyleSheet("padding: 0; margin: 0;")
+        pet_btn.clicked.connect(lambda: self._open_picker("pet", self._pet_field))
+        rp_layout.addWidget(pet_btn, 2, 2)
 
         outer.addWidget(rp_group)
 
@@ -644,7 +699,7 @@ class LoadoutPage(QWidget):
     # ------------------------------------------------------------------
 
     def _build_stats_display(self):
-        def _add_group(title, stat_names):
+        def _make_group(title, stat_names):
             group = QGroupBox(title)
             glayout = QVBoxLayout(group)
             labels = {}
@@ -658,63 +713,98 @@ class LoadoutPage(QWidget):
                 row.addWidget(vlbl)
                 glayout.addLayout(row)
                 labels[name] = vlbl
-            self._stats_layout.addWidget(group)
-            return labels
+            return group, labels
 
-        def _add_tier1(stat_names):
-            """Add highlighted primary stats (Efficiency, DPS, DPP)."""
-            container = QWidget()
-            container.setStyleSheet(
-                f"border: 1px solid {ACCENT}; border-radius: 6px; padding: 4px;"
+        # Tier-1 highlighted stats (full width)
+        tier1 = QWidget()
+        tier1.setStyleSheet(
+            f"border: 1px solid {ACCENT}; border-radius: 6px; padding: 4px;"
+        )
+        hlayout = QHBoxLayout(tier1)
+        hlayout.setContentsMargins(4, 4, 4, 4)
+        hlayout.setSpacing(8)
+        self._tier1_stats = {}
+        for name in ["Efficiency", "DPS", "DPP"]:
+            cell = QVBoxLayout()
+            cell.setSpacing(2)
+            nlbl = QLabel(name.upper())
+            nlbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600; "
+                f"border: none; letter-spacing: 1px;"
             )
-            hlayout = QHBoxLayout(container)
-            hlayout.setContentsMargins(4, 4, 4, 4)
-            hlayout.setSpacing(8)
-            labels = {}
-            for name in stat_names:
-                cell = QVBoxLayout()
-                cell.setSpacing(2)
-                nlbl = QLabel(name.upper())
-                nlbl.setStyleSheet(
-                    f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600; "
-                    f"border: none; letter-spacing: 1px;"
-                )
-                nlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                cell.addWidget(nlbl)
-                vlbl = QLabel("-")
-                vlbl.setStyleSheet(
-                    f"font-size: 16px; font-weight: bold; color: {ACCENT}; border: none;"
-                )
-                vlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                cell.addWidget(vlbl)
-                hlayout.addLayout(cell)
-                labels[name] = vlbl
-            self._stats_layout.addWidget(container)
-            return labels
+            nlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell.addWidget(nlbl)
+            vlbl = QLabel("-")
+            vlbl.setStyleSheet(
+                f"font-size: 16px; font-weight: bold; color: {ACCENT}; border: none;"
+            )
+            vlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell.addWidget(vlbl)
+            hlayout.addLayout(cell)
+            self._tier1_stats[name] = vlbl
+        self._stats_layout.addWidget(tier1)
 
-        # Tier-1 highlighted stats
-        self._tier1_stats = _add_tier1(["Efficiency", "DPS", "DPP"])
+        # Active Effects section (full width, right below tier-1)
+        effects_group = QGroupBox("Active Effects")
+        self._effects_group_layout = QVBoxLayout(effects_group)
+        self._effects_group_layout.setContentsMargins(6, 6, 6, 6)
+        self._effects_group_layout.setSpacing(2)
+        empty = QLabel("No effects are active")
+        empty.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-style: italic; padding: 4px 0;"
+        )
+        self._effects_group_layout.addWidget(empty)
+        self._stats_layout.addWidget(effects_group)
 
-        # Sections in website order
-        self._off_stats = _add_group("Offense", [
+        # Stat groups — arranged in responsive 2-column grid
+        off_grp, self._off_stats = _make_group("Offense", [
             "Total Damage", "Range", "Crit Chance", "Crit Damage",
             "Effective Damage", "Reload", "Cost",
         ])
-        self._econ_stats = _add_group("Economy", [
+        econ_grp, self._econ_stats = _make_group("Economy", [
             "Decay", "Ammo Burn", "Weapon Cost", "Total Uses",
         ])
-        self._heal_stats = _add_group("Healing", [
+        heal_grp, self._heal_stats = _make_group("Healing", [
             "Total Heal", "Effective Heal", "Heal Reload",
             "HPS", "HPP", "Heal Total Uses",
         ])
-        self._def_stats = _add_group("Defense", [
+        def_grp, self._def_stats = _make_group("Defense", [
             "Armor Defense", "Plate Defense", "Total Defense",
             "Block Chance", "Total Absorption", "Top Types",
         ])
-        self._skill_stats = _add_group("Skill", [
+        skill_grp, self._skill_stats = _make_group("Skill", [
             "Hit Ability", "Crit Ability",
         ])
+
+        self._stat_groups = [off_grp, econ_grp, heal_grp, def_grp, skill_grp]
+        self._stats_grid = QGridLayout()
+        self._stats_grid.setSpacing(4)
+        self._stats_grid_cols = 0
+        self._stats_layout.addLayout(self._stats_grid)
+        self._arrange_stat_groups()
+
         self._stats_layout.addStretch()
+
+    def _arrange_stat_groups(self):
+        """Arrange stat group boxes in 1 or 2 columns based on panel width."""
+        width = self._stats_widget.width()
+        cols = 2 if width >= 500 else 1
+        if cols == self._stats_grid_cols:
+            return
+        self._stats_grid_cols = cols
+
+        # Remove all items without deleting widgets
+        while self._stats_grid.count():
+            self._stats_grid.takeAt(0)
+
+        for i, group in enumerate(self._stat_groups):
+            row, col = divmod(i, cols)
+            self._stats_grid.addWidget(group, row, col)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_stat_groups'):
+            self._arrange_stat_groups()
 
     # ------------------------------------------------------------------
     # Set tab bar
@@ -1115,6 +1205,578 @@ class LoadoutPage(QWidget):
             self._scope_sight_field.clear_selection()
 
     # ------------------------------------------------------------------
+    # Gear picker dialogs
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _total_damage(item) -> float:
+        """Sum all damage types for a weapon or amplifier."""
+        dmg = item.get("Properties", {}).get("Damage", {})
+        if not dmg:
+            return 0.0
+        return sum(dmg.get(t, 0) or 0 for t in (
+            "Impact", "Cut", "Stab", "Penetration", "Shrapnel",
+            "Burn", "Cold", "Acid", "Electric",
+        ))
+
+    @staticmethod
+    def _item_dps_preview(item) -> float | None:
+        """DPS preview: effectiveDamage / reloadSeconds (matches web calc)."""
+        props = item.get("Properties", {})
+        upm = props.get("UsesPerMinute")
+        if upm is None or upm <= 0:
+            return None
+        dmg = LoadoutPage._total_damage(item)
+        if not dmg:
+            return None
+        # effective damage = totalDamage * (0.88 * 0.75 + 0.02 * 1.75)
+        effective = dmg * (0.88 * 0.75 + 0.02 * 1.75)
+        return effective / (60 / upm)
+
+    @staticmethod
+    def _item_dpp_preview(item) -> float | None:
+        """DPP preview: effectiveDamage / costPerUse (matches web calc)."""
+        props = item.get("Properties", {})
+        eco = props.get("Economy", {})
+        decay = eco.get("Decay")
+        ammo_burn = eco.get("AmmoBurn")
+        if decay is None or ammo_burn is None:
+            return None
+        cost = decay / 100 + ammo_burn / 10000
+        if cost <= 0:
+            return None
+        dmg = LoadoutPage._total_damage(item)
+        if not dmg:
+            return None
+        effective = dmg * (0.88 * 0.75 + 0.02 * 1.75)
+        return effective / cost
+
+    def _save_overamp_mode(self):
+        """Persist overamp display mode to config."""
+        self._config.overamp_mode = self._overamp_mode
+        from ...core.config import save_config
+        save_config(self._config, self._config_path)
+
+    def _find_item(self, name: str, collection_key: str):
+        """Find an item by name in entity data."""
+        for item in self._entity_data.get(collection_key, []):
+            if item.get("Name") == name:
+                return item
+        return None
+
+    def _get_weapon_item(self):
+        """Get the currently selected weapon item dict."""
+        name = self._weapon_field.current_value().strip()
+        return self._find_item(name, "weapons") if name else None
+
+    def _open_picker(self, kind: str, field: FuzzyLineEdit):
+        """Open a GearPickerDialog for *kind* and set *field* on selection."""
+        if not self._entity_data:
+            return
+        config = self._build_picker_config(kind)
+        if not config:
+            return
+
+        header_widget = config.pop("header_widget", None)
+        row_class = config.pop("row_class", None)
+
+        dlg = GearPickerDialog(
+            config["title"], config["columns"], config["rows"],
+            parent=self, row_class=row_class, header_widget=header_widget,
+        )
+
+        # For amplifier: wire up the hide-overcapped checkbox to refresh
+        rebuild_cb = config.get("_rebuild")
+        if rebuild_cb:
+            rebuild_cb(dlg)
+
+        def on_selected(name):
+            field.set_value(name)
+
+        dlg.item_selected.connect(on_selected)
+        dlg.exec()
+
+    def _build_picker_config(self, kind: str) -> dict | None:
+        """Build title, columns, rows (and optional extras) for a picker."""
+        P = "Properties"
+
+        def _prop(item, *keys):
+            v = item.get(P, {})
+            for k in keys:
+                if isinstance(v, dict):
+                    v = v.get(k)
+                else:
+                    return None
+            return v
+
+        def _fmt(v, decimals=2):
+            if v is None:
+                return ""
+            if isinstance(v, float):
+                return f"{v:.{decimals}f}"
+            return str(v)
+
+        def _name_rows(items):
+            return [{"_name": it.get("Name", ""), "Name": it.get("Name", "")}
+                    for it in items if it.get("Name")]
+
+        # === Weapon ===
+        if kind == "weapon":
+            items = self._entity_data.get("weapons", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                dps = self._item_dps_preview(it)
+                dpp = self._item_dpp_preview(it)
+                eff = _prop(it, "Economy", "Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Class": _prop(it, "Class") or "",
+                    "Type": _prop(it, "Type") or "",
+                    "DPS": _fmt(dps) if dps is not None else "",
+                    "DPP": _fmt(dpp) if dpp is not None else "",
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                })
+            return {
+                "title": "Select Weapon",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Class", "header": "Class", "width": 80},
+                    {"key": "Type", "header": "Type", "width": 80},
+                    {"key": "DPS", "header": "DPS", "width": 70},
+                    {"key": "DPP", "header": "DPP", "width": 70},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Amplifier ===
+        if kind == "amplifier":
+            weapon = self._get_weapon_item()
+            weapon_dmg = self._total_damage(weapon) if weapon else 0
+            cap = weapon_dmg / 2
+
+            hide_overcapped = [True]  # mutable for closure
+            overamp_mode = [self._overamp_mode]  # 'percent' or 'delta'
+
+            def build_amp_rows():
+                all_amps = self._entity_data.get("amplifiers", [])
+                w = weapon
+                mode = overamp_mode[0]
+                rows = []
+                for it in all_amps:
+                    if _prop(it, "Type") == "Matrix":
+                        continue
+                    name = it.get("Name", "")
+                    if not name:
+                        continue
+                    amp_dmg = self._total_damage(it)
+                    if not amp_dmg:
+                        continue
+                    # Class matching
+                    if w:
+                        wcls = _prop(w, "Class")
+                        wtype = _prop(w, "Type")
+                        atype = _prop(it, "Type")
+                        if wcls == "Ranged":
+                            if wtype == "BLP" and atype != "BLP":
+                                continue
+                            if wtype != "BLP" and atype != "Energy":
+                                continue
+                        elif wcls == "Melee" and atype != "Melee":
+                            continue
+                        elif wcls == "Mindforce" and atype != "Mindforce":
+                            continue
+                    # Overamp check
+                    if hide_overcapped[0] and cap > 0 and 2 * amp_dmg > weapon_dmg:
+                        continue
+                    effective_dmg = min(amp_dmg, cap) if cap > 0 else amp_dmg
+                    overamp_raw = max(0, amp_dmg - cap) if cap > 0 else 0
+                    overamp_pct = (overamp_raw / cap * 100) if cap > 0 and overamp_raw > 0 else 0
+                    if overamp_raw > 0:
+                        if mode == "delta":
+                            over_text = f"+{overamp_raw:.1f}"
+                        else:
+                            over_text = f"+{overamp_pct:.0f}%"
+                    else:
+                        over_text = "—"
+                    # DPP for amplifier
+                    eco = _prop(it, "Economy") or {}
+                    decay = eco.get("Decay")
+                    dpp_val = None
+                    if decay is not None and effective_dmg > 0:
+                        cost = decay / 100
+                        if cost > 0:
+                            eff_dmg = effective_dmg * (0.88 * 0.75 + 0.02 * 1.75)
+                            dpp_val = eff_dmg / cost
+                    eff = eco.get("Efficiency")
+                    rows.append({
+                        "_name": name,
+                        "Name": name,
+                        "Damage": _fmt(effective_dmg),
+                        "Overamp": over_text,
+                        "DPP": _fmt(dpp_val) if dpp_val is not None else "",
+                        "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                        "_overamp_pct": overamp_pct,
+                    })
+                return rows
+
+            def amp_row_class(row):
+                pct = row.get("_overamp_pct", 0)
+                if pct <= 0:
+                    return ""
+                return "overamp-warn" if pct <= 20 else "overamp-danger"
+
+            def build_amp_columns():
+                mode = overamp_mode[0]
+                header = "Over Δ" if mode == "delta" else "Over %"
+                return [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Damage", "header": "Damage", "width": 90},
+                    {"key": "Overamp", "header": header, "width": 80},
+                    {"key": "DPP", "header": "DPP", "width": 70},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                ]
+
+            def wire_controls(dlg):
+                cb = dlg.findChild(QCheckBox, "hideOvercapped")
+                toggle_btn = dlg.findChild(QPushButton, "overampToggle")
+                if cb:
+                    def on_check(checked):
+                        hide_overcapped[0] = checked
+                        dlg.refresh_rows(build_amp_rows())
+                    cb.toggled.connect(on_check)
+                if toggle_btn:
+                    def on_toggle():
+                        overamp_mode[0] = "delta" if overamp_mode[0] == "percent" else "percent"
+                        self._overamp_mode = overamp_mode[0]
+                        self._save_overamp_mode()
+                        dlg.update_columns(build_amp_columns())
+                        dlg.refresh_rows(build_amp_rows())
+                    toggle_btn.clicked.connect(on_toggle)
+
+            # Build header widget with checkbox + toggle button
+            header_container = QWidget()
+            header_layout = QHBoxLayout(header_container)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(8)
+            cb_widget = QCheckBox("Hide overcapped")
+            cb_widget.setObjectName("hideOvercapped")
+            cb_widget.setChecked(True)
+            header_layout.addWidget(cb_widget)
+            toggle_btn = QPushButton("Δ / %" if overamp_mode[0] == "percent" else "% / Δ")
+            toggle_btn.setObjectName("overampToggle")
+            toggle_btn.setFixedHeight(22)
+            toggle_btn.setToolTip("Toggle between % and Δ overamp display")
+            toggle_btn.setStyleSheet("padding: 0 8px; margin: 0;")
+            header_layout.addWidget(toggle_btn)
+
+            return {
+                "title": "Select Amplifier",
+                "columns": build_amp_columns(),
+                "rows": build_amp_rows(),
+                "row_class": amp_row_class,
+                "header_widget": header_container,
+                "_rebuild": wire_controls,
+            }
+
+        # === Absorber ===
+        if kind == "absorber":
+            weapon = self._get_weapon_item()
+            items = self._entity_data.get("absorbers", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                eco = _prop(it, "Economy") or {}
+                absorption = eco.get("Absorption")
+                decay = eco.get("Decay")
+                w_decay = _prop(weapon, "Economy", "Decay") if weapon else None
+                abs_decay = ""
+                if absorption is not None and w_decay is not None:
+                    abs_decay = f"{(w_decay * absorption):.4f}"
+                uses = ""
+                if decay and weapon:
+                    w_maxtt = _prop(weapon, "Economy", "MaxTT")
+                    w_mintt = _prop(weapon, "Economy", "MinTT") or 0
+                    if w_maxtt is not None and decay:
+                        uses = str(int((w_maxtt - w_mintt) / (decay / 100)))
+                eff = eco.get("Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                    "Decay": abs_decay,
+                    "Uses": uses,
+                })
+            return {
+                "title": "Select Absorber",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                    {"key": "Decay", "header": "Decay", "width": 80},
+                    {"key": "Uses", "header": "Uses", "width": 70},
+                ],
+                "rows": rows,
+            }
+
+        # === Scope ===
+        if kind == "scope":
+            sv = self._entity_data.get("scopes_sights", [])
+            items = [it for it in sv if _prop(it, "Type") == "Scope"]
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                eff = _prop(it, "Economy", "Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                })
+            return {
+                "title": "Select Scope",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Scope Sight / Sight ===
+        if kind in ("scope_sight", "sight"):
+            sv = self._entity_data.get("scopes_sights", [])
+            items = [it for it in sv if _prop(it, "Type") == "Sight"]
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                eff = _prop(it, "Economy", "Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                })
+            return {
+                "title": "Select Sight" if kind == "sight" else "Select Scope Sight",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Matrix ===
+        if kind == "matrix":
+            all_amps = self._entity_data.get("amplifiers", [])
+            items = [it for it in all_amps if _prop(it, "Type") == "Matrix"]
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                dmg = self._total_damage(it)
+                dps = self._item_dps_preview(it)
+                dpp = self._item_dpp_preview(it)
+                eff = _prop(it, "Economy", "Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Damage": _fmt(dmg) if dmg else "",
+                    "DPS": _fmt(dps) if dps is not None else "",
+                    "DPP": _fmt(dpp) if dpp is not None else "",
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                })
+            return {
+                "title": "Select Matrix",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Damage", "header": "Damage", "width": 80},
+                    {"key": "DPS", "header": "DPS", "width": 70},
+                    {"key": "DPP", "header": "DPP", "width": 70},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Implant ===
+        if kind == "implant":
+            weapon = self._get_weapon_item()
+            items = self._entity_data.get("implants", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                eco = _prop(it, "Economy") or {}
+                absorption = eco.get("Absorption")
+                decay = eco.get("Decay")
+                w_decay = _prop(weapon, "Economy", "Decay") if weapon else None
+                abs_decay = ""
+                if absorption is not None and w_decay is not None:
+                    abs_decay = f"{(w_decay * absorption):.4f}"
+                eff = eco.get("Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                    "Decay": abs_decay,
+                })
+            return {
+                "title": "Select Implant",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                    {"key": "Decay", "header": "Decay", "width": 80},
+                ],
+                "rows": rows,
+            }
+
+        # === Armor Set ===
+        if kind == "armor_set":
+            items = self._entity_data.get("armor_sets", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                durability = _prop(it, "Economy", "Durability")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Durability": _fmt(durability) if durability is not None else "",
+                })
+            return {
+                "title": "Select Armor Set",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Durability", "header": "Durability", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Plating ===
+        if kind == "plating":
+            items = self._entity_data.get("armor_platings", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                durability = _prop(it, "Economy", "Durability")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Durability": _fmt(durability) if durability is not None else "",
+                })
+            return {
+                "title": "Select Plating",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Durability", "header": "Durability", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Healing ===
+        if kind == "healing":
+            items = self._entity_data.get("medical_tools", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                max_heal = _prop(it, "MaxHeal")
+                min_heal = _prop(it, "MinHeal")
+                upm = _prop(it, "UsesPerMinute")
+                decay = _prop(it, "Economy", "Decay")
+                eff = _prop(it, "Economy", "Efficiency")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Max Heal": _fmt(max_heal, 1) if max_heal is not None else "",
+                    "Min Heal": _fmt(min_heal, 1) if min_heal is not None else "",
+                    "Uses/min": _fmt(upm, 1) if upm is not None else "",
+                    "Decay": _fmt(decay, 4) if decay is not None else "",
+                    "Efficiency": f"{eff:.1f}%" if eff is not None else "",
+                })
+            return {
+                "title": "Select Healing Tool",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Max Heal", "header": "Max Heal", "width": 80},
+                    {"key": "Min Heal", "header": "Min Heal", "width": 80},
+                    {"key": "Uses/min", "header": "Uses/min", "width": 80},
+                    {"key": "Decay", "header": "Decay", "width": 80},
+                    {"key": "Efficiency", "header": "Efficiency", "width": 90},
+                ],
+                "rows": rows,
+            }
+
+        # === Rings ===
+        if kind in ("ring_left", "ring_right"):
+            side_word = "left" if kind == "ring_left" else "right"
+            all_clothing = self._entity_data.get("clothing", [])
+            items = [
+                it for it in all_clothing
+                if _is_ring_slot(_prop(it, "Slot") or "")
+                and side_word in (_prop(it, "Slot") or "").lower()
+            ]
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Slot": _prop(it, "Slot") or "",
+                    "Type": _prop(it, "Type") or "",
+                })
+            return {
+                "title": f"Select {'Left' if kind == 'ring_left' else 'Right'} Ring",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Slot", "header": "Slot", "width": 110},
+                    {"key": "Type", "header": "Type", "width": 110},
+                ],
+                "rows": rows,
+            }
+
+        # === Pet ===
+        if kind == "pet":
+            items = self._entity_data.get("pets", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                level = _prop(it, "Level")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Type": _prop(it, "Type") or "",
+                    "Level": str(level) if level is not None else "",
+                })
+            return {
+                "title": "Select Pet",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Type", "header": "Type", "width": 110},
+                    {"key": "Level", "header": "Level", "width": 60},
+                ],
+                "rows": rows,
+            }
+
+        return None
+
+    # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
 
@@ -1136,72 +1798,79 @@ class LoadoutPage(QWidget):
                 "stimulants": self._data_client.get_stimulants(),
                 "effects": self._data_client.get_effects(),
             }
+
+            # Pre-compute sorted name lists in background thread
+            amps = self._entity_data.get("amplifiers", [])
+            sv = self._entity_data.get("scopes_sights", [])
+            all_clothing = self._entity_data.get("clothing", [])
+
+            self._prepared_names = {
+                "weapons": _entity_names(self._entity_data.get("weapons", [])),
+                "amplifiers": sorted({
+                    item.get("Name", "") for item in amps
+                    if item and item.get("Properties", {}).get("Type") != "Matrix"
+                } - {""}),
+                "matrices": sorted({
+                    item.get("Name", "") for item in amps
+                    if item and item.get("Properties", {}).get("Type") == "Matrix"
+                } - {""}),
+                "scopes": sorted({
+                    item.get("Name", "") for item in sv
+                    if item.get("Properties", {}).get("Type") == "Scope"
+                } - {""}),
+                "sights": sorted({
+                    item.get("Name", "") for item in sv
+                    if item.get("Properties", {}).get("Type") == "Sight"
+                } - {""}),
+                "absorbers": _entity_names(self._entity_data.get("absorbers", [])),
+                "implants": _entity_names(self._entity_data.get("implants", [])),
+                "armor_sets": _entity_names(self._entity_data.get("armor_sets", [])),
+                "plates": _entity_names(self._entity_data.get("armor_platings", [])),
+                "heals": _entity_names(self._entity_data.get("medical_tools", [])),
+                "pets": _entity_names(self._entity_data.get("pets", [])),
+                "rings_left": sorted({
+                    item.get("Name", "") for item in all_clothing
+                    if _is_ring_slot(item.get("Properties", {}).get("Slot", ""))
+                    and "left" in (item.get("Properties", {}).get("Slot", "")).lower()
+                } - {""}),
+                "rings_right": sorted({
+                    item.get("Name", "") for item in all_clothing
+                    if _is_ring_slot(item.get("Properties", {}).get("Slot", ""))
+                    and "right" in (item.get("Properties", {}).get("Slot", "")).lower()
+                } - {""}),
+                "clothing": sorted({
+                    item.get("Name", "") for item in all_clothing
+                    if not _is_ring_slot(item.get("Properties", {}).get("Slot", ""))
+                } - {""}),
+                "consumables": _entity_names(self._entity_data.get("stimulants", [])),
+            }
+
             from PyQt6.QtCore import QMetaObject, Qt as QtConst
             QMetaObject.invokeMethod(self, "_populate_fields",
                                      QtConst.ConnectionType.QueuedConnection)
 
-        threading.Thread(target=fetch, daemon=True).start()
+        threading.Thread(target=fetch, daemon=True, name="loadout-fetch").start()
 
     @pyqtSlot()
     def _populate_fields(self):
-        """Populate FuzzyLineEdit items from entity data (main thread)."""
-        weapons = self._entity_data.get("weapons", [])
-        self._weapon_field.set_items(_entity_names(weapons))
-
-        amps = self._entity_data.get("amplifiers", [])
-        # Separate amplifiers from matrices
-        amp_names = sorted({
-            item.get("Name", "") for item in amps
-            if item and item.get("Properties", {}).get("Type") != "Matrix"
-        } - {""})
-        matrix_names = sorted({
-            item.get("Name", "") for item in amps
-            if item and item.get("Properties", {}).get("Type") == "Matrix"
-        } - {""})
-        self._amp_field.set_items(amp_names)
-        self._matrix_field.set_items(matrix_names)
-
-        sv = self._entity_data.get("scopes_sights", [])
-        scope_names = sorted({
-            item.get("Name", "") for item in sv
-            if item.get("Properties", {}).get("Type") == "Scope"
-        } - {""})
-        sight_names = sorted({
-            item.get("Name", "") for item in sv
-            if item.get("Properties", {}).get("Type") == "Sight"
-        } - {""})
-        self._scope_field.set_items(scope_names)
-        self._scope_sight_field.set_items(sight_names)
-        self._sight_field.set_items(sight_names)
-
-        self._absorber_field.set_items(_entity_names(self._entity_data.get("absorbers", [])))
-        self._implant_field.set_items(_entity_names(self._entity_data.get("implants", [])))
-        self._armor_set_field.set_items(_entity_names(self._entity_data.get("armor_sets", [])))
-        self._plate_field.set_items(_entity_names(self._entity_data.get("armor_platings", [])))
-        self._heal_field.set_items(_entity_names(self._entity_data.get("medical_tools", [])))
-        self._pet_field.set_items(_entity_names(self._entity_data.get("pets", [])))
-
-        # Clothing: split rings from general clothing
-        all_clothing = self._entity_data.get("clothing", [])
-        ring_names_left = sorted({
-            item.get("Name", "") for item in all_clothing
-            if _is_ring_slot(item.get("Properties", {}).get("Slot", ""))
-            and "left" in (item.get("Properties", {}).get("Slot", "")).lower()
-        } - {""})
-        ring_names_right = sorted({
-            item.get("Name", "") for item in all_clothing
-            if _is_ring_slot(item.get("Properties", {}).get("Slot", ""))
-            and "right" in (item.get("Properties", {}).get("Slot", "")).lower()
-        } - {""})
-        non_ring_clothing = sorted({
-            item.get("Name", "") for item in all_clothing
-            if not _is_ring_slot(item.get("Properties", {}).get("Slot", ""))
-        } - {""})
-        self._left_ring_field.set_items(ring_names_left)
-        self._right_ring_field.set_items(ring_names_right)
-        self._clothing_search.set_items(non_ring_clothing)
-
-        self._consumable_search.set_items(_entity_names(self._entity_data.get("stimulants", [])))
+        """Populate FuzzyLineEdit items from pre-computed name lists (main thread)."""
+        n = self._prepared_names
+        self._weapon_field.set_items(n["weapons"])
+        self._amp_field.set_items(n["amplifiers"])
+        self._matrix_field.set_items(n["matrices"])
+        self._scope_field.set_items(n["scopes"])
+        self._scope_sight_field.set_items(n["sights"])
+        self._sight_field.set_items(n["sights"])
+        self._absorber_field.set_items(n["absorbers"])
+        self._implant_field.set_items(n["implants"])
+        self._armor_set_field.set_items(n["armor_sets"])
+        self._plate_field.set_items(n["plates"])
+        self._heal_field.set_items(n["heals"])
+        self._pet_field.set_items(n["pets"])
+        self._left_ring_field.set_items(n["rings_left"])
+        self._right_ring_field.set_items(n["rings_right"])
+        self._clothing_search.set_items(n["clothing"])
+        self._consumable_search.set_items(n["consumables"])
 
         # Load cached loadouts first (instant), then sync from server
         cached = self._load_from_cache()
@@ -1234,19 +1903,39 @@ class LoadoutPage(QWidget):
                 return
 
         loadout = self._build_loadout_from_ui()
-        try:
-            stats = self._calculator.evaluate(loadout, self._entity_data)
-            self._update_stats_display(stats)
-        except Exception as e:
-            log.error("Calculation error: %s", e)
-            return
+        calculator = self._calculator
+        entity_data = self._entity_data
+        self._calc_version = getattr(self, '_calc_version', 0) + 1
+        version = self._calc_version
 
-        # Publish if this is the active loadout (for hunt tracker cost tracking)
-        if (self._current_loadout
-                and self._current_loadout.get("Id") == self._config.active_loadout_id):
-            self._publish_active_loadout()
+        def _bg():
+            try:
+                return calculator.evaluate(loadout, entity_data)
+            except Exception as e:
+                log.error("Calculation error: %s", e)
+                return None
 
-        self._schedule_compare()
+        def _done(stats):
+            if getattr(self, '_calc_version', 0) != version:
+                return
+            if stats is None:
+                return
+            try:
+                self._update_stats_display(stats)
+            except RuntimeError:
+                return
+
+            if (self._current_loadout
+                    and self._current_loadout.get("Id") == self._config.active_loadout_id):
+                self._publish_active_loadout(stats=stats)
+
+            self._schedule_compare()
+
+        def _worker():
+            stats = _bg()
+            invoke_on_main(lambda: _done(stats))
+
+        threading.Thread(target=_worker, daemon=True, name="loadout-eval").start()
 
     # ------------------------------------------------------------------
     # Compare mode
@@ -1266,13 +1955,7 @@ class LoadoutPage(QWidget):
     def _update_compare(self):
         if not self._compare_btn.isChecked():
             return
-        if not self._calculator:
-            try:
-                from ...loadout.calculator import LoadoutCalculator
-                self._calculator = LoadoutCalculator(self._config.js_utils_path or None)
-            except Exception:
-                return
-        self._compare_widget.set_calculator(self._calculator)
+        self._compare_widget.set_js_path(self._config.js_utils_path or None)
         self._compare_widget.set_entity_data(self._entity_data)
         self._compare_widget.update_set_options(self._current_loadout)
         self._compare_widget.update_comparison(
@@ -1295,7 +1978,7 @@ class LoadoutPage(QWidget):
         scope_name = self._scope_field.current_value() or None
         return {
             "Id": self._current_loadout.get("Id") if self._current_loadout else None,
-            "Name": self._current_loadout.get("Name", "New Loadout") if self._current_loadout else "New Loadout",
+            "Name": self._name_input.text().strip() or "New Loadout",
             "Properties": {
                 k: spin.value() for k, spin in self._bonus_inputs.items()
             },
@@ -1366,6 +2049,9 @@ class LoadoutPage(QWidget):
         self._pet_effect_value = value
 
     def _apply_loadout_to_ui(self, loadout: dict):
+        if not self._tabs_built:
+            self._pending_apply = loadout
+            return
         self._applying = True
 
         gear = loadout.get("Gear", {})
@@ -1375,6 +2061,12 @@ class LoadoutPage(QWidget):
         skill = loadout.get("Skill", {})
         markup = loadout.get("Markup", {})
         props = loadout.get("Properties", {})
+
+        # Name
+        name = loadout.get("Name") or ""
+        if name == "New Loadout":
+            name = ""
+        self._name_input.setText(name)
 
         # Weapon
         self._weapon_field.set_value(weapon.get("Name") or "")
@@ -1669,6 +2361,14 @@ class LoadoutPage(QWidget):
         self._refresh_pet_effects()
         self._schedule_recalc()
 
+    def _on_name_changed(self, _text: str):
+        if self._applying:
+            return
+        if self._current_loadout:
+            self._current_loadout["Name"] = self._name_input.text().strip() or "New Loadout"
+        self._update_loadout_combo_label()
+        self._schedule_recalc()
+
     # ------------------------------------------------------------------
     # Stats display
     # ------------------------------------------------------------------
@@ -1748,6 +2448,160 @@ class LoadoutPage(QWidget):
                 attr, suffix, fmt = defn
                 val = getattr(stats, attr, None)
                 vlbl.setText(_fmt(val, suffix, fmt))
+
+        try:
+            self._update_effects_display(stats)
+        except Exception as e:
+            log.error("Effects display update failed: %s", e)
+
+    def _update_effects_display(self, stats):
+        """Rebuild the Active Effects section from computed effects."""
+        layout = self._effects_group_layout
+
+        # Clear previous content (keep layout itself)
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        categories = [
+            ("Offensive Effects", stats.offensive_effects),
+            ("Defensive Effects", stats.defensive_effects),
+            ("Utility Effects", stats.utility_effects),
+        ]
+        has_any = any(effects for _, effects in categories)
+
+        if not has_any:
+            empty = QLabel("No effects are active")
+            empty.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-style: italic; padding: 4px 0;"
+            )
+            layout.addWidget(empty)
+            return
+
+        for cat_name, effects in categories:
+            if not effects:
+                continue
+
+            title = QLabel(cat_name)
+            title.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px; "
+                f"padding: 4px 0 2px 0;"
+            )
+            layout.addWidget(title)
+
+            for effect in effects:
+                self._add_effect_row(layout, effect)
+
+    def _add_effect_row(self, layout, effect):
+        """Add a single effect row with optional cap breakdown toggle."""
+        name = effect.get("name", "")
+        unit = effect.get("unit", "")
+        total = effect.get("signedTotal", 0)
+        polarity = effect.get("polarity")
+        capped_any = effect.get("cappedAny", False)
+        caps = effect.get("caps") or {}
+
+        value_text = f"{abs(total):.2f}{unit}"
+        if capped_any:
+            value_text = f"[{value_text}]"
+
+        if polarity == "positive":
+            color = ACCENT
+        elif polarity == "negative":
+            color = ERROR
+        else:
+            color = TEXT
+
+        # Container for the row + optional breakdown
+        container = QWidget()
+        container.setStyleSheet("padding: 0; margin: 0;")
+        clayout = QVBoxLayout(container)
+        clayout.setContentsMargins(0, 0, 0, 0)
+        clayout.setSpacing(0)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(4, 1, 4, 1)
+
+        name_lbl = QLabel(name)
+        name_lbl.setStyleSheet("font-size: 12px;")
+        row.addWidget(name_lbl, 1)
+
+        val_lbl = QLabel(value_text)
+        val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        val_lbl.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
+        row.addWidget(val_lbl)
+
+        has_caps = bool(caps.get("item") or caps.get("action") or caps.get("total"))
+
+        if has_caps:
+            # Make the row clickable to toggle cap breakdown
+            row_widget = QPushButton()
+            row_widget.setFlat(True)
+            row_widget.setStyleSheet(
+                "QPushButton { text-align: left; padding: 2px 0; border: none; }"
+                "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+            )
+            row_widget.setLayout(row)
+
+            breakdown = self._build_cap_breakdown(effect)
+            breakdown.hide()
+
+            row_widget.clicked.connect(
+                lambda checked, bd=breakdown: bd.setVisible(not bd.isVisible())
+            )
+            clayout.addWidget(row_widget)
+            clayout.addWidget(breakdown)
+        else:
+            row_wrapper = QWidget()
+            row_wrapper.setLayout(row)
+            clayout.addWidget(row_wrapper)
+
+        layout.addWidget(container)
+
+    def _build_cap_breakdown(self, effect):
+        """Build the expandable cap detail widget for a capped effect."""
+        unit = effect.get("unit", "")
+        caps = effect.get("caps") or {}
+        raw_item = effect.get("rawItem", 0)
+        raw_action = effect.get("rawAction", 0)
+        raw_bonus = effect.get("rawBonus", 0)
+        capped_item = effect.get("cappedItem", 0)
+        capped_action = effect.get("cappedAction", 0)
+
+        widget = QWidget()
+        widget.setStyleSheet(
+            f"background: rgba(0,0,0,0.15); border-radius: 3px; margin: 0 4px;"
+        )
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(2)
+
+        def _add_cap_row(label_text, raw_val, cap_val):
+            row = QHBoxLayout()
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+            lbl.setMinimumWidth(50)
+            row.addWidget(lbl)
+
+            is_over = abs(raw_val) > cap_val + 0.0001
+            val_color = WARNING if is_over else TEXT
+            metric = QLabel(f"{raw_val:.2f}{unit} / {cap_val:.2f}{unit}")
+            metric.setAlignment(Qt.AlignmentFlag.AlignRight)
+            metric.setStyleSheet(f"color: {val_color}; font-size: 11px;")
+            row.addWidget(metric)
+            layout.addLayout(row)
+
+        if caps.get("item"):
+            _add_cap_row("Item", raw_item, caps["item"])
+        if caps.get("action"):
+            _add_cap_row("Action", raw_action, caps["action"])
+        if caps.get("total"):
+            total_base = capped_item + capped_action + raw_bonus
+            _add_cap_row("Total", total_base, caps["total"])
+
+        return widget
 
     # ------------------------------------------------------------------
     # Loadout management
@@ -1919,7 +2773,7 @@ class LoadoutPage(QWidget):
                     self._pending_shared_code = code
                 QTimer.singleShot(0, on_done)
 
-            threading.Thread(target=fetch, daemon=True).start()
+            threading.Thread(target=fetch, daemon=True, name="loadout-import").start()
 
         fetch_btn.clicked.connect(on_fetch_code)
         file_btn.clicked.connect(on_import_file)
@@ -1952,7 +2806,7 @@ class LoadoutPage(QWidget):
                             data["Id"] = new_id
                 except Exception as e:
                     log.error("Import push failed: %s", e)
-            threading.Thread(target=push, daemon=True).start()
+            threading.Thread(target=push, daemon=True, name="loadout-push").start()
 
     def _on_clone(self):
         """Clone the current loadout (deep copy with new ID)."""
@@ -1985,7 +2839,7 @@ class LoadoutPage(QWidget):
                             clone["Id"] = new_id
                 except Exception as e:
                     log.error("Clone push failed: %s", e)
-            threading.Thread(target=push, daemon=True).start()
+            threading.Thread(target=push, daemon=True, name="loadout-clone").start()
 
         self._loadouts.append(clone)
         self._loadout_combo.addItem(_get_loadout_label(clone))
@@ -2017,7 +2871,7 @@ class LoadoutPage(QWidget):
                     self._nexus_client.delete_loadout(loadout_id)
                 except Exception as e:
                     log.error("Delete from server failed: %s", e)
-            threading.Thread(target=delete_remote, daemon=True).start()
+            threading.Thread(target=delete_remote, daemon=True, name="loadout-delete").start()
 
         # Remove from local list
         self._dirty = False
@@ -2132,7 +2986,7 @@ class LoadoutPage(QWidget):
                 else:
                     status_label.setText("Failed to enable sharing.")
 
-            threading.Thread(target=push, daemon=True).start()
+            threading.Thread(target=push, daemon=True, name="loadout-share").start()
 
         def on_copy():
             text = url_label.text()
@@ -2187,7 +3041,7 @@ class LoadoutPage(QWidget):
                     log.error("Auto-save push failed: %s", e)
                 finally:
                     self._save_in_flight = False
-            threading.Thread(target=push, daemon=True).start()
+            threading.Thread(target=push, daemon=True, name="loadout-save").start()
 
     def _save_to_cache(self):
         """Persist all loadouts to local JSON cache."""
@@ -2228,7 +3082,7 @@ class LoadoutPage(QWidget):
                     from PyQt6.QtCore import QMetaObject, Qt as QtConst
                     QMetaObject.invokeMethod(self, "_update_loadout_list",
                                              QtConst.ConnectionType.QueuedConnection)
-            threading.Thread(target=fetch, daemon=True).start()
+            threading.Thread(target=fetch, daemon=True, name="loadout-refresh").start()
         else:
             # Offline: load from local cache
             cached = self._load_from_cache()
@@ -2291,7 +3145,7 @@ class LoadoutPage(QWidget):
             self._refresh_loadout_combo_styling()
             self._publish_active_loadout()
 
-    def _publish_active_loadout(self):
+    def _publish_active_loadout(self, *, stats=None):
         """Publish active loadout change event for the hunt tracker."""
         if not self._event_bus:
             return
@@ -2299,18 +3153,31 @@ class LoadoutPage(QWidget):
         if not loadout:
             return
         weapon_name = (loadout.get("Gear", {}).get("Weapon", {}).get("Name") or "").strip()
-        stats = None
-        if self._calculator and self._entity_data:
-            try:
-                stats = self._calculator.evaluate(loadout, self._entity_data)
-            except Exception:
-                pass
-        from ...core.constants import EVENT_ACTIVE_LOADOUT_CHANGED
-        self._event_bus.publish(EVENT_ACTIVE_LOADOUT_CHANGED, {
-            "loadout": loadout,
-            "weapon_name": weapon_name,
-            "stats": stats,
-        })
+
+        def _emit(s):
+            from ...core.constants import EVENT_ACTIVE_LOADOUT_CHANGED
+            self._event_bus.publish(EVENT_ACTIVE_LOADOUT_CHANGED, {
+                "loadout": loadout,
+                "weapon_name": weapon_name,
+                "stats": s,
+            })
+
+        if stats is not None:
+            _emit(stats)
+        elif self._calculator and self._entity_data:
+            calculator = self._calculator
+            entity_data = self._entity_data
+
+            def _bg():
+                try:
+                    result = calculator.evaluate(loadout, entity_data)
+                except Exception:
+                    result = None
+                invoke_on_main(lambda: _emit(result))
+
+            threading.Thread(target=_bg, daemon=True, name="loadout-calc").start()
+        else:
+            _emit(None)
 
     def _on_auth_changed(self, state):
         if state.authenticated:
@@ -2349,7 +3216,7 @@ class LoadoutPage(QWidget):
                 log.error("Poll fetch failed: %s", e)
                 self._poll_timer.start()
 
-        threading.Thread(target=fetch, daemon=True).start()
+        threading.Thread(target=fetch, daemon=True, name="loadout-poll").start()
 
     @pyqtSlot()
     def _merge_remote_loadouts(self):
@@ -2426,14 +3293,18 @@ class LoadoutPage(QWidget):
         if current_id:
             for i, lo in enumerate(self._loadouts):
                 if lo.get("Id") == current_id:
+                    self._loadout_combo.blockSignals(True)
                     self._loadout_combo.setCurrentIndex(i)
+                    self._loadout_combo.blockSignals(False)
                     self._current_loadout = lo
                     if conflict_resolved_use_remote:
                         self._apply_loadout_to_ui(lo)
                     restored = True
                     break
         if not restored and self._loadouts:
+            self._loadout_combo.blockSignals(True)
             self._loadout_combo.setCurrentIndex(0)
+            self._loadout_combo.blockSignals(False)
             self._on_loadout_selected(0, _prompt=False)
 
         self._poll_timer.start()  # Resume polling
@@ -2443,6 +3314,7 @@ class LoadoutPage(QWidget):
         self._poll_timer.stop()
         self._recalc_timer.stop()
         self._compare_timer.stop()
+        self._compare_widget.cleanup()
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._auto_save()  # Flush immediately

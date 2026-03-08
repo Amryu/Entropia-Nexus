@@ -23,6 +23,7 @@ from ...core.inventory_utils import (
     is_absolute_markup, ALL_CATEGORIES, PLANETS,
 )
 from ...core.logger import get_logger
+from ...exchange.bg_populate import populate_in_background
 
 log = get_logger("Inventory")
 
@@ -307,8 +308,8 @@ class InventoryPage(QWidget):
         self._markup_save_timer.timeout.connect(self._save_pending_markup)
         self._pending_markup_value: str = ''
 
-        # Load saved preferences
-        prefs = self._load_prefs()
+        # Load saved preferences (local only — server sync is async)
+        prefs = self._load_local_prefs()
         self._view_mode = prefs.get("view_mode", _VIEW_LIST)
         self._saved_planet = prefs.get("planet", "all")
         self._saved_category = prefs.get("category", "all")
@@ -327,6 +328,9 @@ class InventoryPage(QWidget):
         self._connect_signals()
         self._apply_saved_filters()
         self._suppress_pref_save = False
+
+        # Fetch server prefs in background and reconcile
+        self._sync_server_prefs()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -463,7 +467,11 @@ class InventoryPage(QWidget):
         self._search = QLineEdit()
         self._search.setPlaceholderText("Search items...")
         self._search.setClearButtonEnabled(True)
-        self._search.textChanged.connect(self._on_filter_changed)
+        self._search_timer = QTimer()
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(200)
+        self._search_timer.timeout.connect(self._on_filter_changed)
+        self._search.textChanged.connect(lambda: self._search_timer.start())
         filter_row.addWidget(self._search, 1)
 
         layout.addLayout(filter_row)
@@ -547,6 +555,14 @@ class InventoryPage(QWidget):
         self._stack.addWidget(self._tree)
 
         layout.addWidget(self._stack, 1)
+
+        self._loading_label = QLabel("Loading\u2026")
+        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        self._loading_label.hide()
+        layout.addWidget(self._loading_label, 1)
+
+        self._filter_version = 0
 
         # --- Status / auth prompt ---
         self._status = QLabel()
@@ -788,28 +804,70 @@ class InventoryPage(QWidget):
         category = self._category_combo.currentData() or 'all'
         markup_filter = self._markup_combo.currentData() or 'all'
         search = self._search.text().strip().lower()
+        enriched = self._enriched
+        view_mode = self._view_mode
 
-        filtered = []
-        for item in self._enriched:
-            if planet != 'all' and item.get('container') != planet:
-                continue
-            if category != 'all' and item.get('_category') != category:
-                continue
-            if markup_filter == 'has-markup' and item.get('_markup') is None:
-                continue
-            if markup_filter == 'no-markup' and item.get('_markup') is not None:
-                continue
-            if search and search not in (item.get('item_name') or '').lower():
-                continue
-            filtered.append(item)
+        def compute():
+            filtered = []
+            for item in enriched:
+                if planet != 'all' and item.get('container') != planet:
+                    continue
+                if category != 'all' and item.get('_category') != category:
+                    continue
+                if markup_filter == 'has-markup' and item.get('_markup') is None:
+                    continue
+                if markup_filter == 'no-markup' and item.get('_markup') is not None:
+                    continue
+                if search and search not in (item.get('item_name') or '').lower():
+                    continue
+                filtered.append(item)
 
-        self._filtered = filtered
-        self._update_summary()
-        self._refresh_display()
-        # Save filter prefs (but not the search text — that's ephemeral)
+            # Summary
+            count = len(filtered)
+            tt_total = sum(i.get('_tt_value') or 0 for i in filtered)
+            est_total = sum(i.get('_total_value') or 0 for i in filtered)
+            unknown_total = sum(
+                (i.get('_tt_value') or 0) for i in filtered if i.get('item_id', 0) == 0
+            )
+            parts = [f"{count:,} items"]
+            parts.append(f"TT: {format_ped(tt_total)} PED")
+            parts.append(f"Est: {format_ped(est_total)} PED")
+            if unknown_total > 0:
+                parts.append(f"Unknown: {format_ped(unknown_total)} PED")
+            summary = "  |  ".join(parts)
+
+            if view_mode == _VIEW_LIST:
+                rows = self._prepare_table_rows(filtered)
+                return (summary, filtered, 'list', rows)
+            else:
+                tree_data = self._prepare_tree_data(filtered)
+                return (summary, filtered, 'tree', tree_data)
+
+        def apply(result):
+            summary, filtered, mode, data = result
+            self._filtered = filtered
+            self._summary.setText(summary)
+            if mode == 'list':
+                self._apply_table_rows(data)
+            else:
+                self._apply_tree_data(data)
+
+        populate_in_background(
+            self, '_filter_version', compute, apply,
+            loading_label=self._loading_label,
+            tree=self._stack,
+        )
         self._schedule_pref_save()
 
+    # ------------------------------------------------------------------
+    # Display refresh
+    # ------------------------------------------------------------------
+
+    def _refresh_display(self):
+        self._on_filter_changed()
+
     def _update_summary(self):
+        """Quick summary update from current _filtered (for logout/reset)."""
         items = self._filtered
         count = len(items)
         tt_total = sum(i.get('_tt_value') or 0 for i in items)
@@ -817,7 +875,6 @@ class InventoryPage(QWidget):
         unknown_total = sum(
             (i.get('_tt_value') or 0) for i in items if i.get('item_id', 0) == 0
         )
-
         parts = [f"{count:,} items"]
         parts.append(f"TT: {format_ped(tt_total)} PED")
         parts.append(f"Est: {format_ped(est_total)} PED")
@@ -825,142 +882,158 @@ class InventoryPage(QWidget):
             parts.append(f"Unknown: {format_ped(unknown_total)} PED")
         self._summary.setText("  |  ".join(parts))
 
-    # ------------------------------------------------------------------
-    # Display refresh
-    # ------------------------------------------------------------------
+    def _prepare_table_rows(self, filtered):
+        """Prepare list table row data (background-safe)."""
+        rows = []
+        for item in filtered:
+            name = item.get('item_name', '')
+            qty = item.get('quantity', 1) or 1
+            tt = item.get('_tt_value')
+            markup = item.get('_markup')
+            total = item.get('_total_value')
+            container = item.get('container', 'Carried')
+            item_type = item.get('_type') or ''
+            abs_mu = item.get('_is_absolute', True)
+            source = item.get('_value_source', 'default')
 
-    def _refresh_display(self):
-        if self._view_mode == _VIEW_LIST:
-            self._populate_table()
-        else:
-            self._populate_tree()
+            tt_text = format_ped(tt) if tt is not None else ""
+            tt_sort = tt if tt is not None else -1
 
-    def _populate_table(self):
+            if markup is not None:
+                mu_text = format_markup(markup, abs_mu)
+                mu_fg = ACCENT
+            else:
+                market = item.get('_market_price')
+                if market is not None:
+                    mu_text = format_markup(market, abs_mu)
+                    mu_fg = TEXT_MUTED
+                else:
+                    mu_text = "\u2014"
+                    mu_fg = TEXT_MUTED
+            mu_sort = markup if markup is not None else (item.get('_market_price') or -1)
+
+            total_text = format_ped(total) if total is not None else ""
+            total_sort = total if total is not None else -1
+            total_fg = ACCENT if (total is not None and source == 'custom') else None
+
+            rows.append((
+                name, qty, tt_text, tt_sort,
+                mu_text, mu_fg, mu_sort,
+                total_text, total_fg, total_sort,
+                container, get_top_category(item_type), item,
+            ))
+        return rows
+
+    def _apply_table_rows(self, rows):
+        """Apply prepared list table data (main thread)."""
         self._table.setUpdatesEnabled(False)
         try:
             self._table.setSortingEnabled(False)
             self._table.clear()
             self._table.setHeaderLabels(_COL_HEADERS)
 
-            for item in self._filtered:
+            items = []
+            for (name, qty, tt_text, tt_sort,
+                 mu_text, mu_fg, mu_sort,
+                 total_text, total_fg, total_sort,
+                 container, cat, item) in rows:
                 row = _NumericItem()
-                name = item.get('item_name', '')
-                qty = item.get('quantity', 1) or 1
-                tt = item.get('_tt_value')
-                markup = item.get('_markup')
-                total = item.get('_total_value')
-                container = item.get('container', 'Carried')
-                item_type = item.get('_type') or ''
-                abs_mu = item.get('_is_absolute', True)
-                source = item.get('_value_source', 'default')
-
                 row.setText(COL_NAME, name)
                 row.setData(COL_NAME, Qt.ItemDataRole.UserRole, name.lower())
-
                 row.setText(COL_QTY, f"{qty:,}")
                 row.setData(COL_QTY, Qt.ItemDataRole.UserRole, qty)
-
-                row.setText(COL_TT, f"{format_ped(tt)}" if tt is not None else "")
-                row.setData(COL_TT, Qt.ItemDataRole.UserRole, tt if tt is not None else -1)
-
-                if markup is not None:
-                    row.setText(COL_MARKUP, format_markup(markup, abs_mu))
-                    row.setForeground(COL_MARKUP, QColor(ACCENT))
-                else:
-                    market = item.get('_market_price')
-                    if market is not None:
-                        row.setText(COL_MARKUP, format_markup(market, abs_mu))
-                        row.setForeground(COL_MARKUP, QColor(TEXT_MUTED))
-                    else:
-                        row.setText(COL_MARKUP, "—")
-                        row.setForeground(COL_MARKUP, QColor(TEXT_MUTED))
-                row.setData(COL_MARKUP, Qt.ItemDataRole.UserRole,
-                            markup if markup is not None else (item.get('_market_price') or -1))
-
-                if total is not None:
-                    row.setText(COL_TOTAL, format_ped(total))
-                    if source == 'custom':
-                        row.setForeground(COL_TOTAL, QColor(ACCENT))
-                else:
-                    row.setText(COL_TOTAL, "")
-                row.setData(COL_TOTAL, Qt.ItemDataRole.UserRole, total if total is not None else -1)
-
+                row.setText(COL_TT, tt_text)
+                row.setData(COL_TT, Qt.ItemDataRole.UserRole, tt_sort)
+                row.setText(COL_MARKUP, mu_text)
+                row.setForeground(COL_MARKUP, QColor(mu_fg))
+                row.setData(COL_MARKUP, Qt.ItemDataRole.UserRole, mu_sort)
+                row.setText(COL_TOTAL, total_text)
+                if total_fg:
+                    row.setForeground(COL_TOTAL, QColor(total_fg))
+                row.setData(COL_TOTAL, Qt.ItemDataRole.UserRole, total_sort)
                 row.setText(COL_CONTAINER, container)
-                row.setText(COL_TYPE, get_top_category(item_type))
-
-                # Store enriched item reference
+                row.setText(COL_TYPE, cat)
                 row.setData(COL_NAME, Qt.ItemDataRole.UserRole + 1, item)
-
-                self._table.addTopLevelItem(row)
+                items.append(row)
+            self._table.addTopLevelItems(items)
 
             self._table.setSortingEnabled(True)
         finally:
             self._table.setUpdatesEnabled(True)
 
-    def _populate_tree(self):
+    def _prepare_tree_data(self, filtered):
+        """Build tree structure from filtered items (background-safe).
+
+        Returns list of root node dicts with nested children.
+        """
+        path_groups: dict[str, list[dict]] = {}
+        for item in filtered:
+            path = item.get('container_path')
+            if not path and item.get('container'):
+                path = f"STORAGE ({item['container']})"
+            if not path:
+                path = "Unknown"
+            path_groups.setdefault(path, []).append(item)
+
+        roots: dict[str, dict] = {}
+        for path, items in sorted(path_groups.items()):
+            segments = [s.strip() for s in path.split(" > ")]
+            root = segments[0]
+            if root not in roots:
+                roots[root] = {'children': {}, 'direct_items': []}
+            if len(segments) > 1:
+                sub = " > ".join(segments[1:])
+                roots[root]['children'].setdefault(sub, []).extend(items)
+            else:
+                roots[root]['direct_items'].extend(items)
+
+        tree_nodes = []
+        for root_name in sorted(roots.keys()):
+            root_info = roots[root_name]
+            all_items = root_info['direct_items'][:]
+            for child_items in root_info['children'].values():
+                all_items.extend(child_items)
+
+            tree_nodes.append({
+                'name': root_name,
+                'count': len(all_items),
+                'tt': sum(i.get('_tt_value') or 0 for i in all_items),
+                'est': sum(i.get('_total_value') or 0 for i in all_items),
+                'bold': True,
+                'children_map': root_info['children'],
+                'direct_items': root_info['direct_items'],
+            })
+        return tree_nodes
+
+    def _apply_tree_data(self, tree_nodes):
+        """Apply prepared tree data to QTreeWidget (main thread)."""
         self._tree.setUpdatesEnabled(False)
         try:
             self._tree.setSortingEnabled(False)
             self._tree.clear()
 
-            # Resolve each item's full container path (matches web buildTree):
-            #   container_path > STORAGE ({container}) > Unknown
-            path_groups: dict[str, list[dict]] = {}
-            for item in self._filtered:
-                path = item.get('container_path')
-                if not path and item.get('container'):
-                    path = f"STORAGE ({item['container']})"
-                if not path:
-                    path = "Unknown"
-                path_groups.setdefault(path, []).append(item)
-
-            # Split each path on " > " and build a shared tree via _build_sub_tree.
-            # First pass: group by root segment to create top-level nodes.
-            roots: dict[str, dict] = {}  # root_seg → {children: {sub: items}, direct: []}
-            for path, items in sorted(path_groups.items()):
-                segments = [s.strip() for s in path.split(" > ")]
-                root = segments[0]
-                if root not in roots:
-                    roots[root] = {'children': {}, 'direct_items': []}
-                if len(segments) > 1:
-                    sub = " > ".join(segments[1:])
-                    roots[root]['children'].setdefault(sub, []).extend(items)
-                else:
-                    roots[root]['direct_items'].extend(items)
-
-            # Create tree nodes
-            for root_name in sorted(roots.keys()):
-                root_info = roots[root_name]
-                all_items = root_info['direct_items'][:]
-                for child_items in root_info['children'].values():
-                    all_items.extend(child_items)
-
-                root_count = len(all_items)
-                root_tt = sum(i.get('_tt_value') or 0 for i in all_items)
-                root_est = sum(i.get('_total_value') or 0 for i in all_items)
-
+            for node in tree_nodes:
                 root_node = _NumericItem()
-                root_node.setText(0, _display_name(root_name))
-                root_node.setData(0, Qt.ItemDataRole.UserRole, f"0:{root_name.lower()}")
-                root_node.setText(1, str(root_count))
-                root_node.setData(1, Qt.ItemDataRole.UserRole, root_count)
-                root_node.setText(2, f"{format_ped(root_tt)} PED")
-                root_node.setData(2, Qt.ItemDataRole.UserRole, root_tt)
-                root_node.setText(3, f"{format_ped(root_est)} PED")
-                root_node.setData(3, Qt.ItemDataRole.UserRole, root_est)
+                root_node.setText(0, _display_name(node['name']))
+                root_node.setData(0, Qt.ItemDataRole.UserRole, f"0:{node['name'].lower()}")
+                root_node.setText(1, str(node['count']))
+                root_node.setData(1, Qt.ItemDataRole.UserRole, node['count'])
+                root_node.setText(2, f"{format_ped(node['tt'])} PED")
+                root_node.setData(2, Qt.ItemDataRole.UserRole, node['tt'])
+                root_node.setText(3, f"{format_ped(node['est'])} PED")
+                root_node.setData(3, Qt.ItemDataRole.UserRole, node['est'])
                 root_node.setForeground(0, QColor(TEXT))
                 font = root_node.font(0)
                 font.setBold(True)
                 root_node.setFont(0, font)
 
-                # Sub-containers
-                for sub_path in sorted(root_info['children'].keys()):
-                    child_items = root_info['children'][sub_path]
+                for sub_path in sorted(node['children_map'].keys()):
+                    child_items = node['children_map'][sub_path]
                     sub_segments = [s.strip() for s in sub_path.split(" > ")]
                     self._build_sub_tree(root_node, sub_segments, child_items)
 
                 # Direct items at root level
-                for item in sorted(root_info['direct_items'],
+                for item in sorted(node['direct_items'],
                                    key=lambda i: (i.get('item_name') or '').lower()):
                     self._add_tree_leaf(root_node, item)
 
@@ -1271,28 +1344,73 @@ class InventoryPage(QWidget):
     # Preference persistence
     # ------------------------------------------------------------------
 
-    def _load_prefs(self) -> dict:
-        """Load inventory view preferences from server or local config."""
-        # Try server first
-        if (self._nexus_client
+    def _load_local_prefs(self) -> dict:
+        """Load inventory view preferences from local config (no network)."""
+        if self._config:
+            return self._config.inventory_prefs or {}
+        return {}
+
+    def _sync_server_prefs(self):
+        """Fetch server preferences in background, reconcile with UI."""
+        if not (self._nexus_client
                 and self._oauth and self._oauth.is_authenticated()):
+            return
+
+        def _fetch():
             try:
                 prefs = self._nexus_client.get_preferences()
                 if prefs and _INV_PREF_KEY in prefs:
                     server_data = prefs[_INV_PREF_KEY]
                     if isinstance(server_data, dict):
-                        # Server wins — update local
-                        if self._config:
-                            self._config.inventory_prefs = server_data
-                            if self._config_path:
-                                save_config(self._config, self._config_path)
-                        return server_data
+                        QTimer.singleShot(
+                            0, lambda d=server_data: self._apply_server_prefs(d)
+                        )
             except Exception:
                 pass
-        # Fall back to local config
+
+        threading.Thread(
+            target=_fetch, daemon=True, name="inv-pref-sync"
+        ).start()
+
+    def _apply_server_prefs(self, server_data: dict):
+        """Apply server preferences to UI if they differ from local."""
+        # Update local config
         if self._config:
-            return self._config.inventory_prefs or {}
-        return {}
+            self._config.inventory_prefs = server_data
+            if self._config_path:
+                try:
+                    save_config(self._config, self._config_path)
+                except Exception:
+                    pass
+
+        self._suppress_pref_save = True
+
+        # View mode
+        vm = server_data.get("view_mode", _VIEW_LIST)
+        if vm != self._view_mode:
+            self._view_mode = vm
+            self._set_view(vm)
+
+        # Category
+        cat = server_data.get("category", "all")
+        if cat != self._saved_category:
+            self._saved_category = cat
+            idx = self._category_combo.findData(cat)
+            if idx >= 0:
+                self._category_combo.setCurrentIndex(idx)
+
+        # Markup filter
+        mf = server_data.get("markup_filter", "all")
+        if mf != self._saved_markup_filter:
+            self._saved_markup_filter = mf
+            idx = self._markup_combo.findData(mf)
+            if idx >= 0:
+                self._markup_combo.setCurrentIndex(idx)
+
+        # Planet (applied after data loads, just save value)
+        self._saved_planet = server_data.get("planet", "all")
+
+        self._suppress_pref_save = False
 
     def _apply_saved_filters(self):
         """Apply saved filter preferences to combo boxes after UI is built."""

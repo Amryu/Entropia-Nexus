@@ -14,7 +14,8 @@ from ...ocr.detector import (
     DEFAULT_ROI_PIXELS, ROI_NAMES, NATIVE_TEMPLATE_W, NATIVE_TEMPLATE_H,
 )
 from ..theme import (
-    SECONDARY, TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER, PRIMARY,
+    SECONDARY, TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, MAIN_DARK,
+    BORDER, HOVER, PRIMARY,
 )
 
 log = get_logger("ScanROI")
@@ -73,10 +74,10 @@ class ScanRoiDialog(QDialog):
         save_btn = QPushButton("Save")
         save_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {ACCENT}; color: #1a1a1a;
+                background-color: {ACCENT}; color: {MAIN_DARK};
                 border: none; padding: 6px 16px; font-weight: bold;
             }}
-            QPushButton:hover {{ background-color: #4a9eff; }}
+            QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}
         """)
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)

@@ -364,14 +364,9 @@ class SkillDataManager:
 
         if self._db:
             try:
-                local_history = self._db.get_local_skill_history(
+                return self._db.get_local_skill_history(
                     skill_names=skill_names, from_date=from_date, to_date=to_date
-                )
-                if local_history:
-                    return local_history
-                return self._db.get_skill_snapshot_history(
-                    skill_names=skill_names, from_date=from_date, to_date=to_date
-                )
+                ) or None
             except Exception as e:
                 log.error("Failed to fetch skill history from local DB: %s", e)
 

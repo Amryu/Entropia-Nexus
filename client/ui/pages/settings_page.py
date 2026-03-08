@@ -162,7 +162,7 @@ class SettingsPage(QWidget):
         self._login_btn.setEnabled(False)
         self._login_btn.setText("Waiting for browser...")
         import threading
-        threading.Thread(target=self._do_login, daemon=True).start()
+        threading.Thread(target=self._do_login, daemon=True, name="oauth-login").start()
 
     def _do_login(self):
         try:

@@ -17,6 +17,7 @@ from PyQt6.QtGui import (
 from ..theme import (
     PRIMARY, SECONDARY, HOVER, BORDER, ACCENT,
     TEXT, TEXT_MUTED, ERROR, TABLE_ROW_ALT,
+    DIFF_ADDED, DIFF_CHANGED, DIFF_REMOVED,
 )
 from ...core.inventory_utils import format_ped
 from ...core.logger import get_logger
@@ -26,9 +27,9 @@ log = get_logger("InventoryHistory")
 PAGE_SIZE = 20
 
 # Badge colors
-_CLR_ADDED = "#48b868"
-_CLR_CHANGED = "#d4a030"
-_CLR_REMOVED = "#e06060"
+_CLR_ADDED = DIFF_ADDED
+_CLR_CHANGED = DIFF_CHANGED
+_CLR_REMOVED = DIFF_REMOVED
 
 # Time span filters: (label, timedelta or None for "all time")
 _TIME_FILTERS: list[tuple[str, timedelta | None]] = [

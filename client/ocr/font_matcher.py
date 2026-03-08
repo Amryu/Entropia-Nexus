@@ -57,15 +57,26 @@ WHITE_MIN_BRIGHTNESS = 100
 MAX_BLOB_WIDTH = 8       # blobs wider than this get split
 MAX_SPLIT_DEPTH = 3
 MIN_SPLIT_MARGIN = 3     # minimum pixels on left side of split
+# Minimum unsplit score to keep a wide blob as a single digit.
+# HDR glow can widen single digits past MAX_BLOB_WIDTH; if the blob
+# already matches a digit well (>= this threshold), skip splitting.
+MIN_UNSPLIT_SCORE = 500
 
-# 0-vs-9 tiebreaker: max score margin to apply bridge-row heuristic
-ZERO_NINE_MAX_MARGIN = 30
+# 0-vs-9 tiebreaker: max score margin to apply bridge-row heuristic.
+# Use asymmetric margins: wider for 0→9 (HDR glow shifts scores a lot)
+# but tighter for 9→0 (avoid overriding real 9s in non-HDR).
+ZERO_NINE_MAX_MARGIN_0TO9 = 100
+ZERO_NINE_MAX_MARGIN_9TO0 = 30
 # 5-vs-6 tiebreaker: max score margin to apply top-bar heuristic
 FIVE_SIX_MAX_MARGIN = 30
 # 0-vs-6 tiebreaker: only apply when scores are close
 ZERO_SIX_MAX_MARGIN = 30
 # 0-vs-6 tiebreaker: minimum middle-core intensity sum for digit '6'
 ZERO_SIX_CENTER_SUM_MIN = 80
+# 3-vs-8 tiebreaker: max score margin to apply left-side heuristic.
+# HDR glow fills left-side gaps of '3', making it match '8' closely;
+# use a wider margin than other tiebreakers to catch these cases.
+THREE_EIGHT_MAX_MARGIN = 100
 
 
 class DigitMatcher:
@@ -302,6 +313,18 @@ def _split_blobs(
         if bw <= MAX_BLOB_WIDTH or depth >= MAX_SPLIT_DEPTH:
             out.append((x0, x1))
             return
+
+        # HDR glow can widen a single digit to 9-10px, just past
+        # MAX_BLOB_WIDTH.  If the blob is only slightly over the limit
+        # and already scores well as a single digit, skip splitting.
+        # Truly merged pairs (12+ px) are always split.
+        if bw <= MAX_BLOB_WIDTH + 2:
+            unsplit_score = _best_norm_score(
+                intensity_4bit, x0, x1, text_top, text_h,
+                matcher, grid_w, grid_h)
+            if unsplit_score >= MIN_UNSPLIT_SCORE:
+                out.append((x0, x1))
+                return
 
         best_score = 0.0
         best_col = -1
@@ -833,7 +856,7 @@ class FontMatcher:
 
         return image[rmin:rmax + 1, cmin:cmax + 1]
 
-    def match_skill_name(self, cell_gray: np.ndarray) -> Optional[tuple[str, float]]:
+    def match_skill_name(self, cell_gray: np.ndarray, *, trace: bool = True) -> Optional[tuple[str, float]]:
         """Match a cell image against skill name templates.
 
         Tries exact pixel-match against captured game templates first (O(1)
@@ -853,9 +876,9 @@ class FontMatcher:
                 name = self._captured_skill_lookup.get(key)
                 if name:
                     log.debug("match_skill: exact lookup → '%s'", name)
-                    if self._tracer and self._tracer.enabled:
+                    if trace and self._tracer and self._tracer.enabled:
                         self._tracer.log("SKILL", f"exact={name}")
-                        self._trace_match_image("skill", cell_gray, name)
+                        self._trace_match_image("skill", cell_gray, name, 1.0)
                     return (name, 1.0)
 
         # Fall back to fuzzy template matching
@@ -865,12 +888,12 @@ class FontMatcher:
             cell_gray, self._skill_width_index, SKILL_THRESHOLD)
         if result:
             log.debug("match_skill: fuzzy → '%s' (score=%.3f)", result[0], result[1])
-            if self._tracer and self._tracer.enabled:
+            if trace and self._tracer and self._tracer.enabled:
                 self._tracer.log("SKILL", f"fuzzy={result[0]}({result[1]:.2f})")
-                self._trace_match_image("skill", cell_gray, result[0])
+                self._trace_match_image("skill", cell_gray, result[0], result[1])
         else:
             log.debug("match_skill: no match")
-            if self._tracer and self._tracer.enabled:
+            if trace and self._tracer and self._tracer.enabled:
                 self._tracer.log("SKILL", "no_match")
                 self._tracer.save_image("skill_miss", cell_gray)
         return result
@@ -994,11 +1017,14 @@ class FontMatcher:
 
         # 0-vs-9 tiebreaker: '9' has a solid bridge row in its middle
         # (where the loop closes into the tail) while '0' has a hollow center.
+        # Asymmetric margins: aggressive 0→9 (HDR), conservative 9→0.
         for c in classified:
-            if c["digit"] != 0:
+            if c["digit"] not in (0, 9):
                 continue
-            margin = c["scores"][0] - c["scores"][9]
-            if margin > ZERO_NINE_MAX_MARGIN:
+            margin = abs(c["scores"][0] - c["scores"][9])
+            max_margin = (ZERO_NINE_MAX_MARGIN_0TO9 if c["digit"] == 0
+                          else ZERO_NINE_MAX_MARGIN_9TO0)
+            if margin > max_margin:
                 continue
 
             grid = _normalize_blob(
@@ -1025,23 +1051,31 @@ class FontMatcher:
             mid_end = row_t + 2 * ch // 3
             has_bridge = False
             for r in range(mid_start, mid_end + 1):
-                if np.all(grid[r, col_l:col_r + 1] > 0):
+                # Lenient check: >= 75% of row pixels non-zero (anti-aliasing
+                # can leave some zero pixels in non-HDR rendering).
+                row_pixels = grid[r, col_l:col_r + 1]
+                if np.count_nonzero(row_pixels) >= 0.75 * len(row_pixels):
                     has_bridge = True
                     break
 
-            if has_bridge:
+            if has_bridge and c["digit"] == 0:
                 log.debug("0→9 override: x%d-%d margin=%.1f bridge at row %d",
                           c["x0"], c["x1"], margin, r)
                 c["digit"] = 9
                 c["score"] = c["scores"][9]
+            elif not has_bridge and c["digit"] == 9:
+                log.debug("9→0 override: x%d-%d margin=%.1f no bridge",
+                          c["x0"], c["x1"], margin)
+                c["digit"] = 0
+                c["score"] = c["scores"][0]
 
         # 5-vs-6 tiebreaker: '5' has a flat top bar filling the top row(s)
         # of the grid, while '6' has a curved top leaving the top row empty
         # (content_h=9 vs 10, bottom-aligned → empty first row for 6).
         for c in classified:
-            if c["digit"] != 5:
+            if c["digit"] not in (5, 6):
                 continue
-            margin = c["scores"][5] - c["scores"][6]
+            margin = abs(c["scores"][5] - c["scores"][6])
             if margin > FIVE_SIX_MAX_MARGIN:
                 continue
 
@@ -1050,11 +1084,56 @@ class FontMatcher:
                 text_top, text_h, grid_w, grid_h)
 
             top_sum = int(np.sum(grid[0, :]))
-            if top_sum == 0:
+            if top_sum == 0 and c["digit"] == 5:
                 log.debug("5→6 override: x%d-%d margin=%.1f top_sum=%d",
                           c["x0"], c["x1"], margin, top_sum)
                 c["digit"] = 6
                 c["score"] = c["scores"][6]
+            elif top_sum > 0 and c["digit"] == 6:
+                log.debug("6→5 override: x%d-%d margin=%.1f top_sum=%d",
+                          c["x0"], c["x1"], margin, top_sum)
+                c["digit"] = 5
+                c["score"] = c["scores"][5]
+
+        # 3-vs-8 tiebreaker: '8' has content on the left side of its upper
+        # half (closed loop), while '3' is open on the left throughout.
+        for c in classified:
+            if c["digit"] not in (3, 8):
+                continue
+            margin = abs(c["scores"][3] - c["scores"][8])
+            if margin > THREE_EIGHT_MAX_MARGIN:
+                continue
+
+            grid = _normalize_blob(
+                intensity_4bit, c["x0"], c["x1"],
+                text_top, text_h, grid_w, grid_h)
+
+            content_cols = np.any(grid > 0, axis=0)
+            content_rows = np.any(grid > 0, axis=1)
+            if not content_cols.any() or not content_rows.any():
+                continue
+            col_l = int(np.argmax(content_cols))
+            row_t = int(np.argmax(content_rows))
+            row_b = int(len(content_rows) - 1 - np.argmax(content_rows[::-1]))
+            ch = row_b - row_t + 1
+            if ch < 5:
+                continue
+
+            # Check left column(s) in the upper third for content
+            upper_end = row_t + ch // 3
+            left_zone = grid[row_t:upper_end + 1, col_l:col_l + 2]
+            left_sum = int(np.sum(left_zone))
+
+            if left_sum > 0 and c["digit"] == 3:
+                log.debug("3→8 override: x%d-%d margin=%.1f left_sum=%d",
+                          c["x0"], c["x1"], margin, left_sum)
+                c["digit"] = 8
+                c["score"] = c["scores"][8]
+            elif left_sum == 0 and c["digit"] == 8:
+                log.debug("8→3 override: x%d-%d margin=%.1f left_sum=%d",
+                          c["x0"], c["x1"], margin, left_sum)
+                c["digit"] = 3
+                c["score"] = c["scores"][3]
 
         # 0-vs-6 tiebreaker: use center-core density when scores are close.
         for c in classified:
@@ -1274,8 +1353,8 @@ class FontMatcher:
     # ── Trace helpers ──────────────────────────────────────────────────
 
     def _trace_match_image(self, step: str, cell_gray: np.ndarray,
-                           matched_name: str) -> None:
-        """Save side-by-side cell + matched template for trace."""
+                           matched_name: str, score: float = 1.0) -> None:
+        """Save side-by-side cell + matched template for trace, with label."""
         if not self._tracer or cv2 is None:
             return
         tpl = self._skill_templates.get(matched_name) if step == "skill" \
@@ -1284,16 +1363,22 @@ class FontMatcher:
             self._tracer.save_image(step, cell_gray, suffix=matched_name)
             return
 
-        # Build side-by-side: cell on left, template on right
+        # Build side-by-side: cell on left, template on right, label on top
         ch, cw = cell_gray.shape[:2]
         th, tw = tpl.shape[:2]
-        out_h = max(ch, th)
+        label_h = 16
+        out_h = max(ch, th) + label_h
         gap = 4
         out_w = cw + gap + tw
         canvas = np.zeros((out_h, out_w), dtype=np.uint8)
-        canvas[:ch, :cw] = cell_gray
-        canvas[:th, cw + gap:cw + gap + tw] = tpl
-        self._tracer.save_image(step, canvas, suffix=matched_name)
+        canvas[label_h:label_h + ch, :cw] = cell_gray
+        canvas[label_h:label_h + th, cw + gap:cw + gap + tw] = tpl
+        # Add text label
+        canvas_bgr = cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
+        label = f"{matched_name} ({score:.2f})"
+        cv2.putText(canvas_bgr, label, (2, 11),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+        self._tracer.save_image(step, canvas_bgr, suffix=matched_name)
 
     def _trace_points_image(self, cell_gray: np.ndarray,
                             classified: list[dict],

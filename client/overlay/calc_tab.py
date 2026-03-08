@@ -303,7 +303,7 @@ class CalcTab(QScrollArea):
         self._stats_ready.connect(self._on_stats_ready)
 
         # Fetch data in background
-        threading.Thread(target=self._fetch_data, daemon=True).start()
+        threading.Thread(target=self._fetch_data, daemon=True, name="calc-fetch-data").start()
 
     # --- Data fetching ---
 
@@ -746,7 +746,8 @@ class CalcTab(QScrollArea):
             return
         loadout = self._build_loadout()
         threading.Thread(
-            target=self._run_calc, args=(loadout,), daemon=True
+            target=self._run_calc, args=(loadout,), daemon=True,
+            name="calc-run",
         ).start()
 
     def _run_calc(self, loadout: dict):

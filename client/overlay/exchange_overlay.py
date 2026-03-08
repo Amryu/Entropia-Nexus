@@ -19,10 +19,14 @@ from PyQt6.QtGui import QColor, QFont, QCursor, QPainter, QFontMetrics
 from .overlay_widget import OverlayWidget
 from ..ui.icons import svg_icon, svg_pixmap
 from ..core.config import save_config
+from ..exchange.bg_populate import populate_in_background
 from ..exchange.constants import (
     PLANETS, STATUS_COLORS, DEFAULT_PARTIAL_RATIO,
     MAX_ORDERS_PER_ITEM, compute_state,
     get_percent_undercut, get_absolute_undercut,
+)
+from ..exchange.exchange_store import (
+    SORT_NAME, SORT_TYPE, SORT_ORDERS, SORT_MARKUP, SORT_UPDATED,
 )
 from ..exchange.order_utils import (
     is_stackable, is_percent_markup, is_absolute_markup, is_blueprint_non_l,
@@ -404,6 +408,7 @@ class ExchangeOverlay(OverlayWidget):
         self._favourites = favourites
         self._active_tab = 0
         self._current_item_id: int | None = None  # for order book view
+        self._orderbook_version = 0
         self._order_dialog: _OrderDialog | None = None
         self._quick_trade_dialog: _QuickTradeDialog | None = None
 
@@ -622,7 +627,11 @@ class ExchangeOverlay(OverlayWidget):
         self._browse_search = QLineEdit()
         self._browse_search.setPlaceholderText("Search items...")
         self._browse_search.setStyleSheet(_INPUT_STYLE)
-        self._browse_search.textChanged.connect(self._filter_items)
+        self._browse_search_timer = QTimer()
+        self._browse_search_timer.setSingleShot(True)
+        self._browse_search_timer.setInterval(200)
+        self._browse_search_timer.timeout.connect(self._filter_items)
+        self._browse_search.textChanged.connect(lambda: self._browse_search_timer.start())
         fr_layout.addWidget(self._browse_search, 1)
 
         self._browse_category = QComboBox()
@@ -637,18 +646,20 @@ class ExchangeOverlay(OverlayWidget):
 
         layout.addWidget(filter_row)
 
-        # Item tree
+        # Item tree — sorting handled via pre-sorted lists from ExchangeStore
         self._item_tree = QTreeWidget()
         self._item_tree.setHeaderLabels(["Name", "Type", "S/B", "Markup", "Updated"])
         self._item_tree.setColumnCount(5)
         self._item_tree.setRootIsDecorated(False)
         self._item_tree.setStyleSheet(_make_tree_style())
         self._item_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
-        self._item_tree.setSortingEnabled(True)
-        self._item_tree.sortByColumn(4, Qt.SortOrder.DescendingOrder)
+        self._item_tree.setSortingEnabled(False)
         self._item_tree.setItemDelegateForColumn(2, _SellBuyDelegate(self._item_tree))
         header = self._item_tree.header()
         header.setStretchLastSection(False)
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(4, Qt.SortOrder.DescendingOrder)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -657,9 +668,25 @@ class ExchangeOverlay(OverlayWidget):
         header.resizeSection(1, 120)
         header.resizeSection(2, 70)
         header.resizeSection(3, 105)
-        header.resizeSection(4, 60)
+        header.resizeSection(4, 75)
+        header.sectionClicked.connect(self._on_browse_header_clicked)
         self._item_tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self._item_tree, 1)
+
+        self._browse_loading = QLabel("Loading\u2026")
+        self._browse_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._browse_loading.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; background: transparent;")
+        self._browse_loading.hide()
+        layout.addWidget(self._browse_loading, 1)
+
+        # Column index → store sort key
+        self._browse_sort_keys = {
+            0: SORT_NAME, 1: SORT_TYPE, 2: SORT_ORDERS,
+            3: SORT_MARKUP, 4: SORT_UPDATED,
+        }
+        self._browse_sort_col = 4
+        self._browse_sort_desc = True
+        self._browse_version = 0
 
         return w
 
@@ -1036,6 +1063,14 @@ class ExchangeOverlay(OverlayWidget):
         self._orders_tree.customContextMenuRequested.connect(self._on_orders_context_menu)
         layout.addWidget(self._orders_tree, 1)
 
+        self._orders_loading = QLabel("Loading\u2026")
+        self._orders_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._orders_loading.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; background: transparent;")
+        self._orders_loading.hide()
+        layout.addWidget(self._orders_loading, 1)
+
+        self._orders_version = 0
+
         # Auth message
         self._orders_auth_label = QLabel("Log in to view your orders")
         self._orders_auth_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1084,6 +1119,14 @@ class ExchangeOverlay(OverlayWidget):
         header.resizeSection(4, 70)
         self._inv_tree.itemDoubleClicked.connect(self._on_inv_double_clicked)
         layout.addWidget(self._inv_tree, 1)
+
+        self._inv_loading = QLabel("Loading\u2026")
+        self._inv_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._inv_loading.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; background: transparent;")
+        self._inv_loading.hide()
+        layout.addWidget(self._inv_loading, 1)
+
+        self._inv_version = 0
 
         # Auth message
         self._inv_auth_label = QLabel("Log in to view your inventory")
@@ -1216,72 +1259,66 @@ class ExchangeOverlay(OverlayWidget):
     def _populate_item_tree(self):
         self._filter_items()
 
+    def _on_browse_header_clicked(self, col: int):
+        """Handle header click — toggle sort direction or switch column."""
+        if col == self._browse_sort_col:
+            self._browse_sort_desc = not self._browse_sort_desc
+        else:
+            self._browse_sort_col = col
+            self._browse_sort_desc = col >= 2
+        order = Qt.SortOrder.DescendingOrder if self._browse_sort_desc else Qt.SortOrder.AscendingOrder
+        self._item_tree.header().setSortIndicator(col, order)
+        self._filter_items()
+
     def _filter_items(self):
         search = self._browse_search.text().strip().lower()
         cat_idx = self._browse_category.currentIndex()
         selected_cat = CATEGORY_ORDER[cat_idx - 1] if cat_idx > 0 else None
 
-        self._item_tree.setSortingEnabled(False)
-        self._item_tree.setUpdatesEnabled(False)
-        self._item_tree.clear()
-        for item in self._store.items:
-            name = item.get('n', '')
-            item_type = item.get('t', '')
-            category = get_top_category(item_type)
+        sort_key = self._browse_sort_keys.get(self._browse_sort_col, SORT_UPDATED)
+        items = self._store.get_sorted_items(sort_key, self._browse_sort_desc)
 
-            if search and search not in name.lower():
-                continue
-            if selected_cat and category != selected_cat:
-                continue
+        def compute():
+            rows = []
+            for item in items:
+                if search and search not in item.get('_sk_name', ''):
+                    continue
+                if selected_cat and item.get('_sk_category') != selected_cat:
+                    continue
+                rows.append((
+                    item.get('n', ''),
+                    item.get('t', ''),
+                    item.get('_sk_sell', 0),
+                    item.get('_sk_buy', 0),
+                    item.get('_sk_mu_text', ''),
+                    item.get('_sk_updated_text', ''),
+                    item.get('i'),
+                ))
+            return rows
 
-            row = _SortableItem()
-            row.setText(0, name)
-            row.setText(1, item_type)
+        def apply(rows):
+            self._item_tree.setUpdatesEnabled(False)
+            self._item_tree.clear()
+            items = []
+            for name, itype, s_count, b_count, mu_text, updated, item_id in rows:
+                row = QTreeWidgetItem()
+                row.setText(0, name)
+                row.setText(1, itype)
+                row.setText(2, f"{s_count}/{b_count}")
+                row.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
+                row.setText(3, mu_text)
+                row.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                row.setText(4, updated)
+                row.setData(0, Qt.ItemDataRole.UserRole, item_id)
+                items.append(row)
+            self._item_tree.addTopLevelItems(items)
+            self._item_tree.setUpdatesEnabled(True)
 
-            # Sell/Buy counts (display text for delegate, sort key for sorting)
-            s_count = item.get('s', 0) or 0
-            b_count = item.get('b', 0) or 0
-            row.setText(2, f"{s_count}/{b_count}")
-            row.setData(2, Qt.ItemDataRole.UserRole + 10, s_count + b_count)
-            row.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
-
-            # Markup fallback: median → best buy → best sell
-            mu_val = item.get('m')  # median from price snapshots
-            if mu_val is None:
-                mu_val = item.get('bb')  # best buy markup
-            if mu_val is None:
-                mu_val = item.get('bs')  # best sell markup
-            mu_text = ''
-            mu_sort = 0.0
-            if mu_val is not None:
-                mu_text = format_markup(mu_val, is_absolute_markup(item))
-                try:
-                    mu_sort = float(mu_val)
-                except (TypeError, ValueError):
-                    pass
-            row.setText(3, mu_text)
-            row.setData(3, Qt.ItemDataRole.UserRole + 10, mu_sort)
-            row.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-            # Updated — composite sort key: items with orders first, then by recency
-            u = item.get('u')
-            row.setText(4, format_age(u))
-            ts = 0.0
-            if u and isinstance(u, str):
-                try:
-                    ts = datetime.fromisoformat(
-                        u.replace('Z', '+00:00')
-                    ).timestamp()
-                except (ValueError, OSError):
-                    pass
-            has_orders = 1 if (s_count + b_count) > 0 else 0
-            row.setData(4, Qt.ItemDataRole.UserRole + 10, (has_orders, ts))
-
-            row.setData(0, Qt.ItemDataRole.UserRole, item.get('i'))
-            self._item_tree.addTopLevelItem(row)
-
-        self._item_tree.setUpdatesEnabled(True)
-        self._item_tree.setSortingEnabled(True)
+        populate_in_background(
+            self, '_browse_version', compute, apply,
+            loading_label=self._browse_loading,
+            tree=self._item_tree,
+        )
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int):
         item_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -1398,8 +1435,24 @@ class ExchangeOverlay(OverlayWidget):
             return
 
         slim = self._store.item_lookup.get(self._current_item_id)
-        self._populate_order_table(self._sell_tree, data.get('sell', []), slim, 'sell')
-        self._populate_order_table(self._buy_tree, data.get('buy', []), slim, 'buy')
+        sell_orders = data.get('sell', [])
+        buy_orders = data.get('buy', [])
+
+        def compute():
+            sell_cols = self._get_order_columns(slim, 'sell')
+            buy_cols = self._get_order_columns(slim, 'buy')
+            sell_rows = self._prepare_order_rows(sell_orders, sell_cols, slim)
+            buy_rows = self._prepare_order_rows(buy_orders, buy_cols, slim)
+            return (sell_cols, sell_rows, buy_cols, buy_rows)
+
+        def apply(result):
+            sell_cols, sell_rows, buy_cols, buy_rows = result
+            self._apply_order_table(self._sell_tree, sell_cols, sell_rows)
+            self._apply_order_table(self._buy_tree, buy_cols, buy_rows)
+
+        populate_in_background(
+            self, '_orderbook_version', compute, apply,
+        )
 
     def _on_order_tree_clicked(self, item: QTreeWidgetItem, column: int):
         tree = item.treeWidget()
@@ -1408,33 +1461,6 @@ class ExchangeOverlay(OverlayWidget):
             seller_name = item.data(column, Qt.ItemDataRole.UserRole)
             if seller_name and seller_name != 'Unknown':
                 self.open_entity.emit({"Type": "User", "Name": seller_name})
-
-    def _populate_order_table(self, tree: QTreeWidget, orders: list[dict],
-                              slim: dict | None, side: str = 'sell'):
-        tree.clear()
-
-        # Build dynamic column list
-        columns = self._get_order_columns(slim, side)
-        tree.setHeaderLabels([c[0] for c in columns])
-        tree.setColumnCount(len(columns))
-
-        # Find seller column index for click handling
-        seller_col = next((i for i, (n, _) in enumerate(columns) if n == 'Seller'), -1)
-        tree.setProperty('_seller_col', seller_col)
-
-        header = tree.header()
-        header.setStretchLastSection(False)
-        for i, (_, width) in enumerate(columns):
-            if width == 0:
-                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-            else:
-                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
-                header.resizeSection(i, width)
-
-        for order in orders:
-            row = QTreeWidgetItem()
-            self._fill_order_row(row, order, columns, slim)
-            tree.addTopLevelItem(row)
 
     def _get_order_columns(self, slim: dict | None, side: str = 'sell') -> list[tuple[str, int]]:
         """Build column list based on item type. Returns [(name, width)]. width=0 means stretch."""
@@ -1470,56 +1496,87 @@ class ExchangeOverlay(OverlayWidget):
         cols.append(("Updated", 50))
         return cols
 
-    def _fill_order_row(self, row: QTreeWidgetItem, order: dict,
-                        columns: list[tuple[str, int]], slim: dict | None):
-        details = order.get('details') or {}
-        col = 0
-        for name, _ in columns:
-            text = ''
-            if name == 'Qty':
-                text = str(order.get('quantity', 1))
-            elif name == 'Tier':
-                text = str(details.get('Tier', ''))
-            elif name == 'TiR':
-                text = str(details.get('TierIncreaseRate', ''))
-            elif name == 'Gender':
-                text = details.get('Gender', '')
-            elif name == 'Set':
-                text = "Yes" if details.get('is_set') else ""
-            elif name == 'Lvl':
-                pet = details.get('Pet') or {}
-                text = str(pet.get('Level', ''))
-            elif name == 'QR':
-                text = str(details.get('QualityRating', ''))
-            elif name == 'Value':
-                v = order.get('_value')
-                text = format_ped(v) if v is not None else ''
-            elif name.startswith('MU'):
-                mu = order.get('markup')
-                if mu is not None:
-                    text = format_markup(mu, order.get('_is_absolute', True))
-            elif name == 'Total':
-                t = order.get('_total')
-                text = format_ped(t) if t is not None else ''
-            elif name == 'Planet':
-                text = order.get('planet') or 'Any'
-            elif name in ('Seller', 'Buyer'):
-                text = order.get('seller_name') or str(order.get('user_id', 'Unknown'))
-                row.setData(col, Qt.ItemDataRole.UserRole, text)  # store for click
-                row.setForeground(col, QColor(ACCENT))
-            elif name == 'Status':
-                text = (order.get('_state') or '').capitalize()
-            elif name == 'Updated':
-                text = format_age(order.get('bumped_at') or order.get('updated'))
-            row.setText(col, text)
+    def _prepare_order_rows(self, orders, columns, slim):
+        """Prepare order row data (background-safe). Returns list of (col_data, order)."""
+        result = []
+        for order in orders:
+            details = order.get('details') or {}
+            col_data = []
+            for name, _ in columns:
+                text = ''
+                fg = None
+                user_data = None
+                if name == 'Qty':
+                    text = str(order.get('quantity', 1))
+                elif name == 'Tier':
+                    text = str(details.get('Tier', ''))
+                elif name == 'TiR':
+                    text = str(details.get('TierIncreaseRate', ''))
+                elif name == 'Gender':
+                    text = details.get('Gender', '')
+                elif name == 'Set':
+                    text = "Yes" if details.get('is_set') else ""
+                elif name == 'Lvl':
+                    pet = details.get('Pet') or {}
+                    text = str(pet.get('Level', ''))
+                elif name == 'QR':
+                    text = str(details.get('QualityRating', ''))
+                elif name == 'Value':
+                    v = order.get('_value')
+                    text = format_ped(v) if v is not None else ''
+                elif name.startswith('MU'):
+                    mu = order.get('markup')
+                    if mu is not None:
+                        text = format_markup(mu, order.get('_is_absolute', True))
+                elif name == 'Total':
+                    t = order.get('_total')
+                    text = format_ped(t) if t is not None else ''
+                elif name == 'Planet':
+                    text = order.get('planet') or 'Any'
+                elif name in ('Seller', 'Buyer'):
+                    text = order.get('seller_name') or str(order.get('user_id', 'Unknown'))
+                    fg = ACCENT
+                    user_data = text
+                elif name == 'Status':
+                    text = (order.get('_state') or '').capitalize()
+                    state = order.get('_state', '')
+                    fg = STATUS_COLORS.get(state, '#666')
+                elif name == 'Updated':
+                    text = format_age(order.get('bumped_at') or order.get('updated'))
+                col_data.append((text, fg, user_data))
+            result.append((col_data, order))
+        return result
 
-            # Color status column
-            if name == 'Status':
-                state = order.get('_state', '')
-                color = STATUS_COLORS.get(state, '#666')
-                row.setForeground(col, QColor(color))
+    def _apply_order_table(self, tree, columns, rows):
+        """Apply prepared order data to a QTreeWidget (main thread)."""
+        tree.clear()
+        tree.setHeaderLabels([c[0] for c in columns])
+        tree.setColumnCount(len(columns))
 
-            col += 1
+        seller_col = next((i for i, (n, _) in enumerate(columns) if n in ('Seller', 'Buyer')), -1)
+        tree.setProperty('_seller_col', seller_col)
+
+        header = tree.header()
+        header.setStretchLastSection(False)
+        for i, (_, width) in enumerate(columns):
+            if width == 0:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+            else:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                header.resizeSection(i, width)
+
+        items = []
+        for col_data, order in rows:
+            row = QTreeWidgetItem()
+            for col_idx, (text, fg, user_data) in enumerate(col_data):
+                row.setText(col_idx, text)
+                if fg:
+                    row.setForeground(col_idx, QColor(fg))
+                if user_data is not None:
+                    row.setData(col_idx, Qt.ItemDataRole.UserRole, user_data)
+            row.setData(0, Qt.ItemDataRole.UserRole + 1, order)
+            items.append(row)
+        tree.addTopLevelItems(items)
 
     # ------------------------------------------------------------------
     # Populate: My Orders
@@ -1534,62 +1591,89 @@ class ExchangeOverlay(OverlayWidget):
         if not self._store._client.is_authenticated():
             return
 
-        self._orders_tree.clear()
-        orders = self._store.my_orders
+        all_orders = self._store.my_orders
+        orders_filter = self._orders_filter
 
-        # Filter
-        if self._orders_filter == "BUY":
-            orders = [o for o in orders if o.get('type') == 'BUY']
-        elif self._orders_filter == "SELL":
-            orders = [o for o in orders if o.get('type') == 'SELL']
+        def compute():
+            orders = all_orders
+            if orders_filter == "BUY":
+                orders = [o for o in orders if o.get('type') == 'BUY']
+            elif orders_filter == "SELL":
+                orders = [o for o in orders if o.get('type') == 'SELL']
 
-        # Initial sort handled by tree widget (default: Updated descending)
+            sell_count = sum(1 for o in all_orders if o.get('type') == 'SELL' and o.get('_state') != 'closed')
+            buy_count = sum(1 for o in all_orders if o.get('type') == 'BUY' and o.get('_state') != 'closed')
+            summary = f"{sell_count} sell \u00b7 {buy_count} buy orders"
 
-        # Summary
-        sell_count = sum(1 for o in self._store.my_orders if o.get('type') == 'SELL' and o.get('_state') != 'closed')
-        buy_count = sum(1 for o in self._store.my_orders if o.get('type') == 'BUY' and o.get('_state') != 'closed')
-        self._orders_summary.setText(f"{sell_count} sell · {buy_count} buy orders")
-
-        self._orders_tree.setSortingEnabled(False)
-        for order in orders:
-            row = _SortableItem()
-            row.setText(0, order.get('_item_name', ''))
-            row.setText(1, order.get('type', ''))
-            qty = order.get('quantity', 1)
-            row.setText(2, str(qty))
-            row.setData(2, Qt.ItemDataRole.UserRole + 10, qty)
-            mu = order.get('markup')
-            if mu is not None:
-                row.setText(3, format_markup(mu, order.get('_is_absolute', True)))
-                try:
-                    row.setData(3, Qt.ItemDataRole.UserRole + 10, float(mu))
-                except (TypeError, ValueError):
-                    pass
-            row.setText(4, order.get('planet') or 'Any')
-
-            state = order.get('_state', '')
-            row.setText(5, state.capitalize())
             state_priority = {'active': 0, 'stale': 1, 'expired': 2, 'terminated': 3, 'closed': 4}
-            row.setData(5, Qt.ItemDataRole.UserRole + 10, state_priority.get(state, 5))
-            color = STATUS_COLORS.get(state, '#666')
-            row.setForeground(5, QColor(color))
-
-            updated_str = order.get('bumped_at') or order.get('updated')
-            row.setText(6, format_age(updated_str))
-            ts = 0.0
-            if updated_str and isinstance(updated_str, str):
+            rows = []
+            for order in orders:
+                mu = order.get('markup')
+                mu_text = format_markup(mu, order.get('_is_absolute', True)) if mu is not None else ''
                 try:
-                    ts = datetime.fromisoformat(
-                        updated_str.replace('Z', '+00:00')
-                    ).timestamp()
-                except (ValueError, OSError):
-                    pass
-            row.setData(6, Qt.ItemDataRole.UserRole + 10, ts)
+                    mu_sort = float(mu) if mu is not None else None
+                except (TypeError, ValueError):
+                    mu_sort = None
 
-            row.setData(0, Qt.ItemDataRole.UserRole, order.get('id'))
-            row.setData(0, Qt.ItemDataRole.UserRole + 1, order)
-            self._orders_tree.addTopLevelItem(row)
-        self._orders_tree.setSortingEnabled(True)
+                state = order.get('_state', '')
+                updated_str = order.get('bumped_at') or order.get('updated')
+                ts = 0.0
+                if updated_str and isinstance(updated_str, str):
+                    try:
+                        ts = datetime.fromisoformat(
+                            updated_str.replace('Z', '+00:00')
+                        ).timestamp()
+                    except (ValueError, OSError):
+                        pass
+
+                qty = order.get('quantity', 1)
+                rows.append((
+                    order.get('_item_name', ''),
+                    order.get('type', ''),
+                    qty, mu_text, mu_sort,
+                    order.get('planet') or 'Any',
+                    state, state_priority.get(state, 5),
+                    STATUS_COLORS.get(state, '#666'),
+                    format_age(updated_str), ts,
+                    order.get('id'), order,
+                ))
+            return (summary, rows)
+
+        def apply(result):
+            summary, rows = result
+            self._orders_summary.setText(summary)
+            self._orders_tree.setSortingEnabled(False)
+            self._orders_tree.clear()
+            items = []
+            for (item_name, side, qty, mu_text, mu_sort,
+                 planet, state, state_pri, state_color,
+                 age_text, ts, order_id, order) in rows:
+                row = _SortableItem()
+                row.setText(0, item_name)
+                row.setText(1, side)
+                row.setText(2, str(qty))
+                row.setData(2, Qt.ItemDataRole.UserRole + 10, qty)
+                if mu_text:
+                    row.setText(3, mu_text)
+                    if mu_sort is not None:
+                        row.setData(3, Qt.ItemDataRole.UserRole + 10, mu_sort)
+                row.setText(4, planet)
+                row.setText(5, state.capitalize())
+                row.setData(5, Qt.ItemDataRole.UserRole + 10, state_pri)
+                row.setForeground(5, QColor(state_color))
+                row.setText(6, age_text)
+                row.setData(6, Qt.ItemDataRole.UserRole + 10, ts)
+                row.setData(0, Qt.ItemDataRole.UserRole, order_id)
+                row.setData(0, Qt.ItemDataRole.UserRole + 1, order)
+                items.append(row)
+            self._orders_tree.addTopLevelItems(items)
+            self._orders_tree.setSortingEnabled(True)
+
+        populate_in_background(
+            self, '_orders_version', compute, apply,
+            loading_label=self._orders_loading,
+            tree=self._orders_tree,
+        )
 
     def _on_bump_all(self):
         self._bump_all_btn.setEnabled(False)
@@ -1671,45 +1755,68 @@ class ExchangeOverlay(OverlayWidget):
             return
 
         search = self._inv_search.text().strip().lower()
-        self._inv_tree.setUpdatesEnabled(False)
-        self._inv_tree.clear()
+        inventory = self._store.inventory
+        item_lookup = self._store.item_lookup
 
-        for inv_item in self._store.inventory:
-            item_id = inv_item.get('item_id', 0)
-            slim = self._store.item_lookup.get(item_id)
-            name = slim.get('n', f'#{item_id}') if slim else f'#{item_id}'
-            item_type = slim.get('t', '') if slim else ''
+        def compute():
+            rows = []
+            for inv_item in inventory:
+                item_id = inv_item.get('item_id', 0)
+                slim = item_lookup.get(item_id)
+                name = slim.get('n', f'#{item_id}') if slim else f'#{item_id}'
+                item_type = slim.get('t', '') if slim else ''
 
-            if search and search not in name.lower():
-                continue
+                if search and search not in name.lower():
+                    continue
 
-            row = QTreeWidgetItem()
-            row.setText(0, name)
-            row.setText(1, item_type)
-            row.setText(2, str(inv_item.get('quantity', 1)))
-            value = inv_item.get('value')
-            try:
-                value = float(value) if value is not None else None
-            except (TypeError, ValueError):
-                value = None
-            row.setText(3, format_ped(value) if value is not None else '')
+                value = inv_item.get('value')
+                try:
+                    value = float(value) if value is not None else None
+                except (TypeError, ValueError):
+                    value = None
+                value_text = format_ped(value) if value is not None else ''
 
-            # Buy demand: best buy markup + count
-            buy_count = slim.get('b', 0) if slim else 0
-            if buy_count:
-                best_buy = slim.get('bb')
-                if best_buy is not None:
-                    demand_text = f"{format_markup(best_buy, is_absolute_markup(slim))} ({buy_count})"
-                else:
-                    demand_text = str(buy_count)
-                row.setText(4, demand_text)
-                row.setForeground(4, QColor("#4ade80"))
+                buy_count = (slim.get('b') or 0) if slim else 0
+                demand_text = ''
+                if buy_count:
+                    best_buy = slim.get('bb')
+                    if best_buy is not None:
+                        demand_text = f"{format_markup(best_buy, is_absolute_markup(slim))} ({buy_count})"
+                    else:
+                        demand_text = str(buy_count)
 
-            row.setData(0, Qt.ItemDataRole.UserRole, item_id)
-            row.setData(0, Qt.ItemDataRole.UserRole + 1, inv_item)
-            self._inv_tree.addTopLevelItem(row)
+                rows.append((
+                    name, item_type,
+                    str(inv_item.get('quantity', 1)),
+                    value_text, demand_text, buy_count > 0,
+                    item_id, inv_item,
+                ))
+            return rows
 
-        self._inv_tree.setUpdatesEnabled(True)
+        def apply(rows):
+            self._inv_tree.setUpdatesEnabled(False)
+            self._inv_tree.clear()
+            items = []
+            for name, itype, qty, value_text, demand_text, has_demand, item_id, inv_item in rows:
+                row = QTreeWidgetItem()
+                row.setText(0, name)
+                row.setText(1, itype)
+                row.setText(2, qty)
+                row.setText(3, value_text)
+                if has_demand:
+                    row.setText(4, demand_text)
+                    row.setForeground(4, QColor("#4ade80"))
+                row.setData(0, Qt.ItemDataRole.UserRole, item_id)
+                row.setData(0, Qt.ItemDataRole.UserRole + 1, inv_item)
+                items.append(row)
+            self._inv_tree.addTopLevelItems(items)
+            self._inv_tree.setUpdatesEnabled(True)
+
+        populate_in_background(
+            self, '_inv_version', compute, apply,
+            loading_label=self._inv_loading,
+            tree=self._inv_tree,
+        )
 
     def _on_inv_double_clicked(self, item: QTreeWidgetItem, column: int):
         """Navigate to order book for the inventory item."""

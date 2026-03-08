@@ -91,7 +91,7 @@ class FavouritesStore(QObject):
                 log.warning("Failed to load favourites from server: %s", e)
                 self._loaded = True
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="fav-load").start()
 
     @property
     def loaded(self) -> bool:
@@ -276,4 +276,4 @@ class FavouritesStore(QObject):
             except Exception as e:
                 log.debug("Failed to sync favourites to server: %s", e)
 
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(target=_do, daemon=True, name="fav-sync").start()

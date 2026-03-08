@@ -4080,9 +4080,9 @@ class _OverlayTiersWidget(QWidget):
             except Exception:
                 pass
 
-        threading.Thread(target=_fetch_market, daemon=True).start()
-        threading.Thread(target=_fetch_inventory, daemon=True).start()
-        threading.Thread(target=_fetch_ingame, daemon=True).start()
+        threading.Thread(target=_fetch_market, daemon=True, name="detail-fetch-market").start()
+        threading.Thread(target=_fetch_inventory, daemon=True, name="detail-fetch-inv").start()
+        threading.Thread(target=_fetch_ingame, daemon=True, name="detail-fetch-ingame").start()
 
     def _on_market_data_ready(self):
         self._btn_exchange.setEnabled(bool(self._name_to_wap))
@@ -4178,7 +4178,7 @@ class _OverlayTiersWidget(QWidget):
                     self._nexus_client.save_preference(self._pref_key, data)
                 except Exception:
                     pass
-            threading.Thread(target=_push, daemon=True).start()
+            threading.Thread(target=_push, daemon=True, name="detail-save-markups").start()
 
     # --- Materials display ---
 
@@ -4622,7 +4622,7 @@ class _OverlayConstructionWidget(QWidget):
                     self._nexus_client.save_preference(self._pref_key, d)
                 except Exception:
                     pass
-            threading.Thread(target=_push, daemon=True).start()
+            threading.Thread(target=_push, daemon=True, name="detail-persist-mu").start()
 
     def _recalculate(self):
         if not hasattr(self, "_entries") or not self._entries:

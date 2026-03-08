@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from ..theme import (
-    PRIMARY, SECONDARY, MAIN_DARK, TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER,
-    ERROR,
+    PRIMARY, SECONDARY, MAIN_DARK, TEXT, TEXT_MUTED,
+    ACCENT, ACCENT_HOVER, BORDER, HOVER, ERROR, SUCCESS,
 )
 from ..icons import svg_icon, UPDATE
 from ...updater import (
@@ -20,12 +20,12 @@ from ...core.logger import get_logger
 
 log = get_logger("UpdateDialog")
 
-# Change type → (label, color)
+# Change type → (color, label)
 _CHANGE_COLORS = {
-    "feat": ("#60b0ff", "NEW"),
-    "fix": ("#e8a838", "FIX"),
-    "improve": ("#16a34a", "IMPROVED"),
-    "remove": ("#ff6b6b", "REMOVED"),
+    "feat": (ACCENT, "NEW"),
+    "fix": ("#e8a838", "FIX"),       # darker amber — WARNING is too bright for badges
+    "improve": (SUCCESS, "IMPROVED"),
+    "remove": (ERROR, "REMOVED"),
 }
 
 # Page indices in the stacked widget
@@ -560,7 +560,7 @@ class UpdateDialog(QDialog):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: #4a9ae8;
+                background-color: {ACCENT_HOVER};
             }}
             QPushButton:disabled {{
                 background-color: {BORDER};

@@ -120,6 +120,10 @@ class LoadoutCalculator:
 
         # Effects data (for calculator overlay)
         stats.offensive_totals = result.get("offensiveTotals") or {}
-        stats.active_effects = (result.get("effects", {}).get("all")) or []
+        effects = result.get("effects", {})
+        stats.active_effects = effects.get("all") or []
+        stats.offensive_effects = effects.get("offensive") or []
+        stats.defensive_effects = effects.get("defensive") or []
+        stats.utility_effects = effects.get("utility") or []
 
         return stats

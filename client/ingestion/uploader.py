@@ -101,8 +101,7 @@ class IngestionUploader:
 
         self._event_bus.subscribe(EVENT_GLOBAL, self._on_global)
         self._event_bus.subscribe(EVENT_TRADE_CHAT, self._on_trade)
-        # Market price ingestion disabled — OCR not ready yet
-        # self._event_bus.subscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
+        self._event_bus.subscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
         self._event_bus.subscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
         self._event_bus.subscribe(EVENT_REPARSE_COMPLETE, self._on_reparse_complete)
         self._event_bus.subscribe(EVENT_HISTORICAL_IMPORT_COMPLETE, self._on_historical_import_complete)
@@ -436,13 +435,12 @@ class IngestionUploader:
 
         g_sent, g_processed = self._flush_type(self._global_buffer, "global", self._nexus_client.ingest_globals)
         t_sent, t_processed = self._flush_type(self._trade_buffer, "trade", self._nexus_client.ingest_trades)
-        # Market price ingestion disabled — OCR not ready yet
-        mp_sent, mp_processed = 0, []
+        mp_sent, mp_processed = self._flush_type(self._market_price_buffer, "market_price", self._nexus_client.ingest_market_prices)
 
         # Delete only the specific items confirmed processed by the server.
         # Items still in the buffer (re-queued from rate limiting) stay in the DB
         # so they survive a restart via _rebuffer_from_db().
-        changed = g_processed or t_processed
+        changed = g_processed or t_processed or mp_processed
         if self._db and changed:
             try:
                 g_del = self._db.delete_ingested_globals(g_processed) if g_processed else 0

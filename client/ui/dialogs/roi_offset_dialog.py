@@ -10,7 +10,8 @@ from PyQt6.QtCore import Qt
 
 from ...core.config import save_config
 from ..theme import (
-    SECONDARY, PRIMARY, TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER,
+    SECONDARY, PRIMARY, TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, MAIN_DARK,
+    BORDER, HOVER,
 )
 
 # Field definitions: (field_name, min, max)
@@ -85,9 +86,9 @@ class RoiOffsetDialog(QDialog):
 
         save_btn = QPushButton("Save")
         save_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {ACCENT}; color: #1a1a1a;"
+            f"QPushButton {{ background-color: {ACCENT}; color: {MAIN_DARK};"
             f" border: none; padding: 6px 16px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background-color: #4a9eff; }}"
+            f"QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}"
         )
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)

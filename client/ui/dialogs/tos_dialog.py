@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from ..theme import PRIMARY, SECONDARY, TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER
+from ..theme import PRIMARY, SECONDARY, TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, BORDER, HOVER
 from ..icons import svg_icon
 
 # Bump this when the terms change — triggers re-acceptance.
@@ -258,7 +258,7 @@ class TosDialog(QDialog):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: #4a9ae8;
+                background-color: {ACCENT_HOVER};
             }}
         """
 

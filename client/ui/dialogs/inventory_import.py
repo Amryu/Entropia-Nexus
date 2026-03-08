@@ -14,8 +14,9 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 
 from ..theme import (
-    PRIMARY, SECONDARY, HOVER, BORDER, ACCENT,
+    PRIMARY, SECONDARY, HOVER, BORDER, ACCENT, MAIN_DARK,
     TEXT, TEXT_MUTED, ERROR, TABLE_ROW_ALT,
+    DIFF_ADDED, DIFF_CHANGED, DIFF_REMOVED,
 )
 from ...core.inventory_utils import format_ped
 from ...core.logger import get_logger
@@ -33,9 +34,9 @@ _CONSUMABLE_MIN = 10_000_000
 _CONSUMABLE_MAX = 10_200_000
 
 # Colours for diff status badges
-_CLR_ADDED = "#48b868"
-_CLR_CHANGED = "#d4a030"
-_CLR_REMOVED = "#e06060"
+_CLR_ADDED = DIFF_ADDED
+_CLR_CHANGED = DIFF_CHANGED
+_CLR_REMOVED = DIFF_REMOVED
 _CLR_SAME = TEXT_MUTED
 
 
@@ -1008,7 +1009,7 @@ def _page_widget(layout) -> QLabel:
 def _active_btn_css() -> str:
     return f"""
         QPushButton {{
-            background-color: {ACCENT}; color: #1a1a1a;
+            background-color: {ACCENT}; color: {MAIN_DARK};
             border: 1px solid {ACCENT}; padding: 4px 12px;
             font-size: 12px; font-weight: bold; min-height: 18px;
         }}

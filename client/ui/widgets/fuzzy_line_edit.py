@@ -186,26 +186,32 @@ class FuzzyLineEdit(QLineEdit):
         self._items: list[str] = []
         self._block_filter = False
 
-        # Popup
-        self._popup = QListWidget()
-        self._popup.setWindowFlags(
-            Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
-        )
-        self._popup.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._popup.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._popup.setStyleSheet(_POPUP_STYLE)
-        self._popup.itemClicked.connect(self._on_item_clicked)
-        self._popup.hide()
+        # Popup created lazily on first use to avoid expensive QListWidget
+        # construction for all ~15 FuzzyLineEdits during page init.
+        self._popup: QListWidget | None = None
 
         self.textChanged.connect(self._on_text_changed)
         self._watched_window = None
 
+    def _ensure_popup(self) -> QListWidget:
+        if self._popup is None:
+            self._popup = QListWidget()
+            self._popup.setWindowFlags(
+                Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
+            )
+            self._popup.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self._popup.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self._popup.setStyleSheet(_POPUP_STYLE)
+            self._popup.itemClicked.connect(self._on_item_clicked)
+            self._popup.hide()
+        return self._popup
+
     # --- public API ---
 
     def set_items(self, items: list[str]) -> None:
-        self._items = sorted(set(items))
+        self._items = items
 
     def set_value(self, value: str) -> None:
         """Set text without triggering the filter popup."""
@@ -217,7 +223,8 @@ class FuzzyLineEdit(QLineEdit):
         self._block_filter = True
         self.clear()
         self._block_filter = False
-        self._popup.hide()
+        if self._popup is not None:
+            self._popup.hide()
 
     def current_value(self) -> str:
         return self.text().strip()
@@ -229,7 +236,8 @@ class FuzzyLineEdit(QLineEdit):
             return
         query = text.strip()
         if not query:
-            self._popup.hide()
+            if self._popup is not None:
+                self._popup.hide()
             return
         self._show_suggestions(query)
 
@@ -243,24 +251,26 @@ class FuzzyLineEdit(QLineEdit):
         scored = scored[:MAX_SUGGESTIONS]
 
         if not scored:
-            self._popup.hide()
+            if self._popup is not None:
+                self._popup.hide()
             return
 
-        self._popup.blockSignals(True)
-        self._popup.clear()
+        popup = self._ensure_popup()
+        popup.blockSignals(True)
+        popup.clear()
         for _, name in scored:
-            self._popup.addItem(name)
-        self._popup.blockSignals(False)
+            popup.addItem(name)
+        popup.blockSignals(False)
 
         # Position below the line edit
         pos = self.mapToGlobal(QPoint(0, self.height()))
-        self._popup.setFixedWidth(max(self.width(), 300))
+        popup.setFixedWidth(max(self.width(), 300))
         row_h = 28
         h = min(len(scored) * row_h + 6, 400)
-        self._popup.setFixedHeight(h)
-        self._popup.move(pos)
-        self._popup.show()
-        self._popup.raise_()
+        popup.setFixedHeight(h)
+        popup.move(pos)
+        popup.show()
+        popup.raise_()
 
         # Watch top-level window for move/resize to dismiss popup
         win = self.window()
@@ -280,7 +290,7 @@ class FuzzyLineEdit(QLineEdit):
 
     def keyPressEvent(self, event):
         key = event.key()
-        if self._popup.isVisible():
+        if self._popup is not None and self._popup.isVisible():
             if key == Qt.Key.Key_Down:
                 row = self._popup.currentRow()
                 if row < self._popup.count() - 1:
@@ -315,16 +325,18 @@ class FuzzyLineEdit(QLineEdit):
         super().focusOutEvent(event)
 
     def _maybe_hide_popup(self) -> None:
-        if not self._popup.underMouse():
+        if self._popup is not None and not self._popup.underMouse():
             self._popup.hide()
 
     def hideEvent(self, event):
-        self._popup.hide()
+        if self._popup is not None:
+            self._popup.hide()
         super().hideEvent(event)
 
     def eventFilter(self, obj, event):
         """Close popup when the top-level window moves or resizes."""
         etype = event.type()
         if etype in (QEvent.Type.Move, QEvent.Type.Resize, QEvent.Type.WindowStateChange):
-            self._popup.hide()
+            if self._popup is not None:
+                self._popup.hide()
         return super().eventFilter(obj, event)

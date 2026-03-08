@@ -203,15 +203,14 @@ class MainWindow(QWidget):
 
         self._create_resize_grips()
 
-        # Loading overlay — blocks interaction until app.py dismisses it
-        from .widgets.loading_overlay import LoadingOverlay
-        self._loading_overlay = LoadingOverlay(self)
+    def prewarm_all_pages(self):
+        """Build every lazy page synchronously.
 
-    def dismiss_loading_overlay(self):
-        """Fade out the startup loading overlay."""
-        if self._loading_overlay is not None:
-            self._loading_overlay.dismiss()
-            self._loading_overlay = None
+        Called from app.py while the loading splash (separate process)
+        covers the screen, so the user never sees an unfinished window.
+        """
+        for idx in list(self._page_factories):
+            self._ensure_page(idx)
 
     def _refresh_markup_caches(self):
         """Refresh exchange and inventory markup caches (runs in background)."""
@@ -287,6 +286,7 @@ class MainWindow(QWidget):
         import threading
         threading.Thread(
             target=self._refresh_markup_caches, daemon=True,
+            name="markup-cache",
         ).start()
         return page
 
@@ -312,7 +312,8 @@ class MainWindow(QWidget):
                            config_path=self._config_path,
                            data_client=self._data_client,
                            event_bus=self._event_bus,
-                           oauth=self._oauth)
+                           oauth=self._oauth,
+                           db=self._db)
 
     def _create_settings_page(self):
         from .pages.settings_page import SettingsPage
@@ -511,14 +512,14 @@ class MainWindow(QWidget):
         import threading
         threading.Thread(
             target=self._notif_manager.poll_server_notifications,
-            daemon=True,
+            daemon=True, name="poll-notifs",
         ).start()
 
     def _poll_streams(self):
         import threading
         threading.Thread(
             target=self._notif_manager.poll_streams,
-            daemon=True,
+            daemon=True, name="poll-streams",
         ).start()
 
     def _on_inventory_open_wiki(self, item_id: int, item_type: str,
@@ -981,22 +982,6 @@ class MainWindow(QWidget):
             self._setup_tray()
             self._enable_shadow()
             QApplication.instance().installEventFilter(self)
-            self._prewarm_pages()
-
-    def _prewarm_pages(self):
-        """Pre-create all pages via staggered timers so first tab click is instant."""
-        prewarm_order = [
-            (PAGE_SETTINGS, 100),
-            (PAGE_SKILLS, 300),
-            (PAGE_TRACKER, 500),
-            (PAGE_WIKI, 800),
-            (PAGE_MAPS, 1100),
-            (PAGE_LOADOUT, 1400),
-            (PAGE_INVENTORY, 1700),
-            (PAGE_EXCHANGE, 2000),
-        ]
-        for page_idx, delay_ms in prewarm_order:
-            QTimer.singleShot(delay_ms, lambda idx=page_idx: self._ensure_page(idx))
 
     def changeEvent(self, event):
         """Sync title bar maximize icon and resize grips when window state changes."""

@@ -1404,12 +1404,21 @@ class NotificationCenter(QWidget):
         self._tabs.setStyleSheet(
             f"QTabWidget::pane {{ border: none; border-top: 1px solid {BORDER};"
             f" border-right: 1px solid {BORDER}; background: {PRIMARY}; }}"
-            f"QTabBar::tab {{ background: transparent; color: {TEXT_MUTED};"
+            f"QTabBar {{ background: {SECONDARY}; }}"
+            f"QTabBar::tab {{ background: {SECONDARY}; color: {TEXT_MUTED};"
             f" padding: 6px 16px; border: none;"
             f" border-bottom: 2px solid transparent; font-size: 12px; }}"
             f"QTabBar::tab:selected {{ color: {TEXT};"
             f" border-bottom: 2px solid {ACCENT}; }}"
             f"QTabBar::tab:hover {{ background: {HOVER}; }}"
+        )
+
+        # Grace period: remember Rules tab for 30s before resetting to Notifications
+        self._tab_grace_timer = QTimer(self)
+        self._tab_grace_timer.setSingleShot(True)
+        self._tab_grace_timer.setInterval(30_000)
+        self._tab_grace_timer.timeout.connect(
+            lambda: self._tabs.setCurrentIndex(0)
         )
 
         self._notif_tab = _NotificationsTab(
@@ -1432,6 +1441,9 @@ class NotificationCenter(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # Default to Notifications tab unless the user recently switched to Rules
+        if not self._tab_grace_timer.isActive():
+            self._tabs.setCurrentIndex(0)
         self._notif_tab.refresh()
 
     def set_exchange_items(self, items: list[dict]):
@@ -1439,8 +1451,9 @@ class NotificationCenter(QWidget):
         self._rules_tab.set_exchange_items(items)
 
     def show_rules_tab(self):
-        """Switch to the Rules tab."""
+        """Switch to the Rules tab with a 30s grace period before auto-reset."""
         self._tabs.setCurrentIndex(1)
+        self._tab_grace_timer.start()
 
     def refresh(self):
         """Refresh the notifications list (called when new notifications arrive)."""

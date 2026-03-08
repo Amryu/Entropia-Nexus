@@ -1,5 +1,39 @@
 [
   {
+    "version": "0.2.0",
+    "date": "2026-03-08",
+    "changes": [
+      {"type": "feat", "text": "Skill goals: set point or profession-level targets with progress bars and rank shortcuts"},
+      {"type": "feat", "text": "Skill picker dialog: choose skills by category, profession preset, or top-gaining for custom charts"},
+      {"type": "feat", "text": "Multi-line skill charts: interactive timeseries with hover crosshair, legend, and cumulative mode"},
+      {"type": "feat", "text": "Goal dialog for creating, editing, and tracking skill and profession targets"},
+      {"type": "feat", "text": "Market price OCR: detect and scan in-game market price windows for item name, tier, markup, and sales data"},
+      {"type": "feat", "text": "Market price confidence scoring for OCR quality filtering"},
+      {"type": "feat", "text": "Gear picker dialog: searchable, sortable table for browsing weapons, armor, healing tools, and accessories"},
+      {"type": "feat", "text": "Loadout sets: manage multiple weapon, armor, healing, and accessory sets within a single loadout"},
+      {"type": "feat", "text": "Loadout comparison widget: side-by-side stat comparison with set permutations and delta mode"},
+      {"type": "feat", "text": "Loadout sharing and import/export with share codes"},
+      {"type": "feat", "text": "Exchange overlay redesigned with tabbed layout (browse, favorites, orders, inventory, trades)"},
+      {"type": "feat", "text": "Background exchange cache population for faster startup without blocking the UI"},
+      {"type": "feat", "text": "Inventory history dialog: view past imports and track portfolio value over time"},
+      {"type": "feat", "text": "Inventory import improvements: TSV/JSON parsing, gender alias generation, diff preview"},
+      {"type": "feat", "text": "Tracker page charts: multi-line timeseries visualization for tracked statistics"},
+      {"type": "feat", "text": "Subprocess-based loading splash: smooth animation that never freezes during heavy page construction"},
+      {"type": "feat", "text": "Freeze detector: watchdog that logs main-thread stalls >0.5s with stack traces for diagnostics"},
+      {"type": "feat", "text": "OCR trace logging system for font matching and detection debugging"},
+      {"type": "feat", "text": "Expanded font matcher with updated market text STPK templates"},
+      {"type": "fix", "text": "FuzzyLineEdit popup widgets created lazily, eliminating ~15 unnecessary QListWidget allocations at page init"},
+      {"type": "fix", "text": "Loadout dropdown name extraction and sorting moved to background thread"},
+      {"type": "fix", "text": "All pages prewarmed before main window is shown, so first tab click is always instant"},
+      {"type": "fix", "text": "Loading splash appears on the same monitor as the main window"},
+      {"type": "fix", "text": "Exchange overlay layout and interaction improvements"},
+      {"type": "fix", "text": "Profile overlay display refinements"},
+      {"type": "fix", "text": "Notification center styling and layout fixes"},
+      {"type": "fix", "text": "Ingestion uploader reliability improvements"},
+      {"type": "fix", "text": "Globals page mob name resolution fix"}
+    ]
+  },
+  {
     "version": "0.1.9",
     "date": "2026-03-06",
     "changes": [
