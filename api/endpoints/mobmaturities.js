@@ -4,7 +4,7 @@ const { getObjectByIdOrName } = require('./utils');
 // Internal: fetch attacks per maturity id and group
 async function getMobAttacks(maturityIds){
 	if(!maturityIds || maturityIds.length===0) return {};
-	const { rows } = await pool.query(`SELECT * FROM ONLY "MobAttacks" WHERE "MaturityId" IN (${maturityIds.join(',')})`);
+	const { rows } = await pool.query(`SELECT * FROM ONLY "MobAttacks" WHERE "MaturityId" = ANY($1::int[])`, [maturityIds]);
 	return rows.reduce((a,r)=>{ (a[r.MaturityId] ||= []).push(r); return a; }, {});
 }
 
@@ -15,7 +15,7 @@ async function getMobMaturities(mobIds){
 		`SELECT mm.*, m."Name" AS "Mob", m."Id" AS "MobId" 
 		 FROM ONLY "MobMaturities" mm 
 		 INNER JOIN ONLY "Mobs" m ON mm."MobId" = m."Id"
-		 WHERE mm."MobId" IN (${mobIds.join(',')})`
+		 WHERE mm."MobId" = ANY($1::int[])`, [mobIds]
 	);
 	const attacks = await getMobAttacks(rows.map(r=>r.Id));
 	rows.forEach(r => { r.Attacks = attacks[r.Id] || []; });

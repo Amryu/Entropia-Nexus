@@ -550,6 +550,7 @@ async function searchItems(query, fuzzy = false, options = {}){
   // When filtering by a specific type, skip per-category partitioning
   // and return up to resultLimit results of that type
   let sql;
+  const filterTypeIdx = filterType ? (useFuzzy ? 3 : 2) + mwParams.length + 1 : null;
   if (filterType) {
     // Direct search for a specific type without per-category limiting
     sql = `
@@ -562,12 +563,12 @@ async function searchItems(query, fuzzy = false, options = {}){
         FROM ONLY "Items"
         LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
         LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
-        WHERE "Items"."Type" = '${filterType}'
+        WHERE "Items"."Type" = $${filterTypeIdx}
         UNION ALL
         SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
           ${armorMatchedPieceSubquery} AS "MatchedName"
         FROM ONLY "ArmorSets"
-        WHERE 'ArmorSet' = '${filterType}' AND (
+        WHERE 'ArmorSet' = $${filterTypeIdx} AND (
           ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
           OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
         )
@@ -606,6 +607,7 @@ async function searchItems(query, fuzzy = false, options = {}){
 
   // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
   const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
+  if (filterType) params.push(filterType);
   const { rows } = await pool.query(sql, params);
 
   // Post-process results: apply scoring, filter, and sort

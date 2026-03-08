@@ -61,7 +61,7 @@ async function getVendorOffers(items, prices = null) {
     const ids = rows.map((r) => r.Id);
     if (ids.length === 0) return {};
     const { rows: p } = await pool.query(
-      `SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${ids.join(",")})`
+      `SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" = ANY($1::int[])`, [ids]
     );
     return p.reduce((a, r) => {
       (a[r.OfferId] ||= []).push(r);

@@ -17,8 +17,8 @@ function _formatProfessionSkillUnlock(x){
 }
 
 async function _getProfessionSkillsAndUnlocks(ids){
-  const { rows: professionSkills } = await pool.query(`SELECT "ProfessionSkills"."Weight", "Skills"."Id" AS "SkillId", "Skills"."Name" AS "SkillName", "Skills"."HPIncrease" AS "HPIncrease", "Skills"."Hidden" AS "Hidden", "ProfessionId" FROM ONLY "ProfessionSkills" INNER JOIN ONLY "Skills" ON "ProfessionSkills"."SkillId" = "Skills"."Id" WHERE "ProfessionId" IN (${ids.join(',')})`);
-  const { rows: skillUnlocks } = await pool.query(`SELECT "SkillUnlocks".*, "Skills"."Name" AS "Skill", "Skills"."HPIncrease" AS "HPIncrease", "Skills"."Hidden" AS "Hidden", "SkillUnlocks"."ProfessionId" FROM ONLY "SkillUnlocks" INNER JOIN ONLY "Skills" ON "SkillUnlocks"."SkillId" = "Skills"."Id" WHERE "SkillUnlocks"."ProfessionId" IN (${ids.join(',')})`);
+  const { rows: professionSkills } = await pool.query(`SELECT "ProfessionSkills"."Weight", "Skills"."Id" AS "SkillId", "Skills"."Name" AS "SkillName", "Skills"."HPIncrease" AS "HPIncrease", "Skills"."Hidden" AS "Hidden", "ProfessionId" FROM ONLY "ProfessionSkills" INNER JOIN ONLY "Skills" ON "ProfessionSkills"."SkillId" = "Skills"."Id" WHERE "ProfessionId" = ANY($1::int[])`, [ids]);
+  const { rows: skillUnlocks } = await pool.query(`SELECT "SkillUnlocks".*, "Skills"."Name" AS "Skill", "Skills"."HPIncrease" AS "HPIncrease", "Skills"."Hidden" AS "Hidden", "SkillUnlocks"."ProfessionId" FROM ONLY "SkillUnlocks" INNER JOIN ONLY "Skills" ON "SkillUnlocks"."SkillId" = "Skills"."Id" WHERE "SkillUnlocks"."ProfessionId" = ANY($1::int[])`, [ids]);
   return { ProfessionSkills: _groupBy(professionSkills, 'ProfessionId'), SkillUnlocks: _groupBy(skillUnlocks, 'ProfessionId') };
 }
 

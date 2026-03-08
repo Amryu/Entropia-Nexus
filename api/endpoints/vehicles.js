@@ -7,7 +7,7 @@ const queries = { Vehicles: 'SELECT "Vehicles".*, "Materials"."Name" AS "Fuel" F
 
 function groupBy(arr,key){ return arr.reduce((a,r)=>{ (a[r[key]] ||= []).push(r); return a; },{}); }
 
-async function getAttachmentSlots(ids){ if(ids.length===0) return {}; const { rows } = await pool.query(`SELECT "VehicleAttachmentSlots".*, "VehicleAttachmentTypes"."Name" AS "Type" FROM ONLY "VehicleAttachmentSlots" INNER JOIN ONLY "VehicleAttachmentTypes" ON "VehicleAttachmentTypes"."Id" = "VehicleAttachmentSlots"."AttachmentId" WHERE "VehicleId" IN (${ids.join(',')})`); return groupBy(rows,'VehicleId'); }
+async function getAttachmentSlots(ids){ if(ids.length===0) return {}; const { rows } = await pool.query(`SELECT "VehicleAttachmentSlots".*, "VehicleAttachmentTypes"."Name" AS "Type" FROM ONLY "VehicleAttachmentSlots" INNER JOIN ONLY "VehicleAttachmentTypes" ON "VehicleAttachmentTypes"."Id" = "VehicleAttachmentSlots"."AttachmentId" WHERE "VehicleId" = ANY($1::int[])`, [ids]); return groupBy(rows,'VehicleId'); }
 
 function formatAttachmentSlot(x){ return { Name: x.Type, Links: { "$Url": `/vehicleattachmenttypes/${x.AttachmentId}` } }; }
 

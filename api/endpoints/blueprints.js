@@ -164,7 +164,7 @@ async function getDropsForBlueprintIds(ids){
     `SELECT bd."SourceId", bd."DropId", d."Name" AS "DropName"
      FROM ONLY "BlueprintDrops" bd
      INNER JOIN ONLY "Blueprints" d ON d."Id" = bd."DropId"
-     WHERE bd."SourceId" IN (${ids.join(',')})`
+     WHERE bd."SourceId" = ANY($1::int[])`, [ids]
   );
   for (const r of rows){ (map[r.SourceId] ||= []).push(r); }
   return map;

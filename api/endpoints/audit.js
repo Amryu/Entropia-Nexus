@@ -523,7 +523,7 @@ async function loadItemNamesFromAudit(itemIds, timestamp) {
     const query = `
       SELECT DISTINCT ON ("Id") "Id", "Name"
       FROM "${table}_audit"
-      WHERE "Id" IN (${originalIds.join(',')})
+      WHERE "Id" = ANY($2::int[])
         AND (stamp = $1 OR stamp < $1 OR stamp > $1)
       ORDER BY "Id",
         CASE WHEN stamp = $1 THEN 0 WHEN stamp < $1 THEN 1 ELSE 2 END,
@@ -532,7 +532,7 @@ async function loadItemNamesFromAudit(itemIds, timestamp) {
     `;
 
     try {
-      const { rows } = await pool.query(query, [timestamp]);
+      const { rows } = await pool.query(query, [timestamp, originalIds]);
       const itemType = getItemTypeFromTable(table);
       for (const row of rows) {
         // Find the itemId that maps to this originalId
@@ -564,7 +564,7 @@ async function loadMobAttacksAudit(maturityIds, timestamp) {
   const query = `
     SELECT ma.*
     FROM "MobAttacks_audit" ma
-    WHERE ma."MaturityId" IN (${maturityIds.join(',')})
+    WHERE ma."MaturityId" = ANY($2::int[])
       AND (ma.stamp = $1 OR ma.stamp < $1 OR ma.stamp > $1)
     ORDER BY
       CASE WHEN ma.stamp = $1 THEN 0
@@ -574,7 +574,7 @@ async function loadMobAttacksAudit(maturityIds, timestamp) {
   `;
 
   try {
-    const { rows } = await pool.query(query, [timestamp]);
+    const { rows } = await pool.query(query, [timestamp, maturityIds]);
     // Group by MaturityId, dedupe by attack Id
     const grouped = {};
     const seen = {};

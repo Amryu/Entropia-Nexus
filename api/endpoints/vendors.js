@@ -65,10 +65,10 @@ function formatVendor(x, data){
 
 async function _getVendorOffers(ids){
   if (ids.length === 0) return { Offers: {}, Prices: {} };
-  const { rows: offers } = await pool.query(`SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "LocationId" IN (${ids.join(',')})`);
+  const { rows: offers } = await pool.query(`SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "LocationId" = ANY($1::int[])`, [ids]);
   const offerIds = offers.map(x => x.Id);
   if (offerIds.length === 0) return { Offers: {}, Prices: {} };
-  const { rows: prices } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${offerIds.join(',')})`);
+  const { rows: prices } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" = ANY($1::int[])`, [offerIds]);
   return { Offers: offers.reduce((a,r)=>{ (a[r.LocationId] ||= []).push(r); return a; }, {}), Prices: prices.reduce((a,r)=>{ (a[r.OfferId] ||= []).push(r); return a; }, {}) };
 }
 

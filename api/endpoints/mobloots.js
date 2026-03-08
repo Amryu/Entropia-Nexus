@@ -4,7 +4,7 @@ const pgp = require('pg-promise')();
 // Helper used by mobs endpoint to prefetch loots for given mob IDs (full join like legacy)
 async function getMobLoots(mobIds){
 	if(!mobIds || mobIds.length===0) return {};
-	const { rows } = await pool.query(buildBaseQuery() + ` WHERE "MobLoots"."MobId" IN (${mobIds.join(',')})`);
+	const { rows } = await pool.query(buildBaseQuery() + ` WHERE "MobLoots"."MobId" = ANY($1::int[])`, [mobIds]);
 	return rows.reduce((a,r)=>{ (a[r.MobId] ||= []).push(r); return a; },{});
 }
 

@@ -5,8 +5,8 @@ const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   EquipSets: 'SELECT * FROM ONLY "EquipSets"',
-  EquipSetItems: 'SELECT esi."EquipSetId" AS "EquipSetId", i.* FROM ONLY "EquipSetItems" esi INNER JOIN ONLY "Items" i ON esi."ItemId" = i."Id" WHERE esi."EquipSetId" IN (__IDS__)',
-  EffectsOnSetEquip: 'SELECT ese."SetId", e."Id" AS "EffectId", e."Name", e."Unit", ese."Strength", ese."MinSetPieces" FROM ONLY "EffectsOnSetEquip" ese INNER JOIN ONLY "Effects" e ON ese."EffectId" = e."Id" WHERE ese."SetId" IN (__SETIDS__)',
+  EquipSetItems: 'SELECT esi."EquipSetId" AS "EquipSetId", i.* FROM ONLY "EquipSetItems" esi INNER JOIN ONLY "Items" i ON esi."ItemId" = i."Id" WHERE esi."EquipSetId" = ANY($1::int[])',
+  EffectsOnSetEquip: 'SELECT ese."SetId", e."Id" AS "EffectId", e."Name", e."Unit", ese."Strength", ese."MinSetPieces" FROM ONLY "EffectsOnSetEquip" ese INNER JOIN ONLY "Effects" e ON ese."EffectId" = e."Id" WHERE ese."SetId" = ANY($1::int[])',
 };
 
 function formatItem(x){
@@ -28,11 +28,10 @@ function formatEquipSet(x, items, effects){
 
 async function _getData(ids){
   if (!ids.length) return { items:{}, effects:{} };
-  const idsCsv = ids.join(',');
-  const setIdsCsv = ids.map(id=>id+100000).join(',');
+  const setIds = ids.map(id=>id+100000);
   const [itemsRes, effRes] = await Promise.all([
-    pool.query(queries.EquipSetItems.replace('__IDS__', idsCsv)),
-    pool.query(queries.EffectsOnSetEquip.replace('__SETIDS__', setIdsCsv))
+    pool.query(queries.EquipSetItems, [ids]),
+    pool.query(queries.EffectsOnSetEquip, [setIds])
   ]);
   const items = itemsRes.rows.reduce((acc,r)=>{ (acc[r.EquipSetId] ||= []).push(r); return acc; },{});
   const eff = effRes.rows.reduce((acc,r)=>{ (acc[r.SetId] ||= []).push(r); return acc; },{});

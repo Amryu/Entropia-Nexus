@@ -25,7 +25,7 @@ function formatRefiningRecipe(x, ingredients){
 async function _getRefiningRecipeIngredients(ids){
   if (ids.length === 0) return {};
   const { pool } = require('./dbClient');
-  const { rows } = await pool.query('SELECT "RefiningIngredients"."RecipeId", "RefiningIngredients"."Amount", "Items"."Id" AS "ItemId", "Items"."Name" AS "ItemName", "Items"."Type" AS "ItemType", "Items"."Value" AS "ItemValue" FROM ONLY "RefiningIngredients" INNER JOIN ONLY "Items" ON "RefiningIngredients"."ItemId" = "Items"."Id" WHERE "RefiningIngredients"."RecipeId" IN ('+ids.join(',')+')');
+  const { rows } = await pool.query(`SELECT "RefiningIngredients"."RecipeId", "RefiningIngredients"."Amount", "Items"."Id" AS "ItemId", "Items"."Name" AS "ItemName", "Items"."Type" AS "ItemType", "Items"."Value" AS "ItemValue" FROM ONLY "RefiningIngredients" INNER JOIN ONLY "Items" ON "RefiningIngredients"."ItemId" = "Items"."Id" WHERE "RefiningIngredients"."RecipeId" = ANY($1::int[])`, [ids]);
   return rows.reduce((acc,r)=>{ (acc[r.RecipeId] ||= []).push(r); return acc; },{});
 }
 

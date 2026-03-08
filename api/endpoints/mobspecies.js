@@ -4,7 +4,7 @@ const { withCache, withCachedLookup } = require('./responseCache');
 
 async function getMobSpecies(ids){
 	if(!ids || ids.length===0) return {};
-	const { rows } = await pool.query(`SELECT ms.* FROM ONLY "MobSpecies" ms WHERE ms."MobId" IN (${ids.join(',')})`);
+	const { rows } = await pool.query(`SELECT ms.* FROM ONLY "MobSpecies" ms WHERE ms."MobId" = ANY($1::int[])`, [ids]);
 	return rows.reduce((a,r)=>{ (a[r.MobId] ||= []).push(r); return a; },{});
 }
 

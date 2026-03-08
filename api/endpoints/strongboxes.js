@@ -8,7 +8,7 @@ const queries = { Strongboxes: 'SELECT * FROM ONLY "Strongboxes"' };
 function groupBy(arr,key){ return arr.reduce((a,r)=>{ (a[r[key]] ||= []).push(r); return a; },{}); }
 async function getLoots(ids){
   if(ids.length===0) return { Loots:{} };
-  const { rows } = await pool.query(`SELECT "StrongboxLoots".*, "Items"."Name" AS "Name", "Items"."Type" AS "Type", "Items"."Value" AS "Value" FROM "StrongboxLoots" INNER JOIN ONLY "Items" ON "StrongboxLoots"."ItemId" = "Items"."Id" WHERE "StrongboxId" IN (${ids.join(',')})`);
+  const { rows } = await pool.query(`SELECT "StrongboxLoots".*, "Items"."Name" AS "Name", "Items"."Type" AS "Type", "Items"."Value" AS "Value" FROM "StrongboxLoots" INNER JOIN ONLY "Items" ON "StrongboxLoots"."ItemId" = "Items"."Id" WHERE "StrongboxId" = ANY($1::int[])`, [ids]);
   return { Loots: groupBy(rows,'StrongboxId') };
 }
 function formatLoot(x){ return { Rarity: x.Rarity, AvailableFrom: x.AvailableFrom, AvailableUntil: x.AvailableUntil, Item: { Name: x.Name, Properties: { Type: x.Type, Economy: { MaxTT: x.Value != null ? Number(x.Value) : null } }, Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.ItemId % 100000}` } } }; }
