@@ -3958,151 +3958,10 @@ export async function updateUserBlueprintOwnership(userId, data) {
   return rows[0];
 }
 
-// ============================================
-// ITEM PRICE FUNCTIONS
-// ============================================
+// =============================================
+// (item_prices tables removed — see migration 098)
+// =============================================
 
-export async function getItemPriceHistory(itemId, { from, to, source, limit = 500 }) {
-  const conditions = ['item_id = $1'];
-  const values = [itemId];
-  let idx = 2;
-
-  if (from) {
-    conditions.push(`recorded_at >= $${idx}`);
-    values.push(from);
-    idx++;
-  }
-  if (to) {
-    conditions.push(`recorded_at <= $${idx}`);
-    values.push(to);
-    idx++;
-  }
-  if (source !== undefined) {
-    if (source === null) {
-      conditions.push('source IS NULL');
-    } else {
-      conditions.push(`source = $${idx}`);
-      values.push(source);
-      idx++;
-    }
-  }
-
-  const query = `
-    SELECT price_value, quantity, recorded_at
-    FROM item_prices
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY recorded_at DESC
-    LIMIT $${idx}
-  `;
-  values.push(limit);
-
-  const { rows } = await pool.query(query, values);
-  return rows;
-}
-
-export async function getItemPriceSummaries(itemId, { periodType, from, to, source, limit = 500 }) {
-  const conditions = ['item_id = $1', 'period_type = $2'];
-  const values = [itemId, periodType];
-  let idx = 3;
-
-  if (from) {
-    conditions.push(`period_start >= $${idx}`);
-    values.push(from);
-    idx++;
-  }
-  if (to) {
-    conditions.push(`period_start <= $${idx}`);
-    values.push(to);
-    idx++;
-  }
-  if (source !== undefined) {
-    if (source === null) {
-      conditions.push('source IS NULL');
-    } else {
-      conditions.push(`source = $${idx}`);
-      values.push(source);
-      idx++;
-    }
-  }
-
-  const query = `
-    SELECT period_start, price_min, price_max, price_avg, price_p5, price_median, price_p95, price_wap, volume, sample_count
-    FROM item_price_summaries
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY period_start DESC
-    LIMIT $${idx}
-  `;
-  values.push(limit);
-
-  const { rows } = await pool.query(query, values);
-  return rows;
-}
-
-export async function getLatestItemPrices(itemIds, source) {
-  if (!itemIds.length) return {};
-
-  let query;
-  const values = [itemIds];
-
-  if (source !== undefined) {
-    if (source === null) {
-      query = `
-        SELECT DISTINCT ON (item_id) item_id, price_value, quantity, recorded_at
-        FROM item_prices
-        WHERE item_id = ANY($1) AND source IS NULL
-        ORDER BY item_id, recorded_at DESC
-      `;
-    } else {
-      query = `
-        SELECT DISTINCT ON (item_id) item_id, price_value, quantity, recorded_at
-        FROM item_prices
-        WHERE item_id = ANY($1) AND source = $2
-        ORDER BY item_id, recorded_at DESC
-      `;
-      values.push(source);
-    }
-  } else {
-    query = `
-      SELECT DISTINCT ON (item_id) item_id, price_value, quantity, recorded_at
-      FROM item_prices
-      WHERE item_id = ANY($1)
-      ORDER BY item_id, recorded_at DESC
-    `;
-  }
-
-  const { rows } = await pool.query(query, values);
-
-  const result = {};
-  for (const row of rows) {
-    result[row.item_id] = {
-      price: row.price_value,
-      quantity: row.quantity,
-      recorded_at: row.recorded_at
-    };
-  }
-  return result;
-}
-
-export async function insertItemPrices(prices) {
-  if (!prices.length) return;
-
-  const valueClauses = [];
-  const values = [];
-  let idx = 1;
-
-  for (const p of prices) {
-    valueClauses.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4})`);
-    values.push(p.item_id, p.price_value, p.quantity || 1, p.source || null, p.recorded_at || new Date());
-    idx += 5;
-  }
-
-  const query = `
-    INSERT INTO item_prices (item_id, price_value, quantity, source, recorded_at)
-    VALUES ${valueClauses.join(', ')}
-  `;
-
-  await pool.query(query, values);
-}
 
 // =============================================
 // ROLE & GRANT MANAGEMENT
@@ -5053,7 +4912,62 @@ export async function completePayout(id) {
 // MARKET PRICE SNAPSHOTS
 // =============================================
 
+// In-memory cache for market price queries.
+// Confirmed (finalized, older than 2h) entries: 1 hour TTL.
+// Pending (recent/unfinalized) entries: 1 minute TTL — can still change.
+const MPS_CACHE_TTL_CONFIRMED = 60 * 60 * 1000; // 1 hour
+const MPS_CACHE_TTL_PENDING = 60 * 1000;          // 1 minute
+const MPS_CACHE_MAX = 500;
+const MPS_PENDING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
+const mpsCache = new Map();
+
+function mpsCacheGet(key) {
+  const entry = mpsCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > entry.ttl) {
+    mpsCache.delete(key);
+    return undefined;
+  }
+  return entry.data;
+}
+
+/**
+ * Check whether any row in the result set is still pending confirmation.
+ * A row is pending if its recorded_at is within the last 2 hours (it may
+ * still receive new submissions or be re-finalized).
+ */
+function mpsHasPendingRows(data) {
+  const cutoff = Date.now() - MPS_PENDING_THRESHOLD_MS;
+  const rows = Array.isArray(data) ? data : (data ? [data] : []);
+  return rows.some(r => {
+    const recAt = r.recorded_at ? new Date(r.recorded_at).getTime() : 0;
+    return recAt > cutoff;
+  });
+}
+
+function mpsCacheSet(key, data) {
+  if (mpsCache.size >= MPS_CACHE_MAX) {
+    const keys = [...mpsCache.keys()];
+    for (let i = 0; i < keys.length / 2; i++) mpsCache.delete(keys[i]);
+  }
+  const ttl = mpsHasPendingRows(data) ? MPS_CACHE_TTL_PENDING : MPS_CACHE_TTL_CONFIRMED;
+  mpsCache.set(key, { data, ts: Date.now(), ttl });
+}
+
+/** Invalidate cache entries for a specific item (called after finalization). */
+export function invalidateMarketPriceCache(itemId) {
+  for (const key of mpsCache.keys()) {
+    if (key.startsWith(`mps:${itemId}:`) || key.startsWith('mps-latest:') || key === 'mps-all') {
+      mpsCache.delete(key);
+    }
+  }
+}
+
 export async function getMarketPriceSnapshots(itemId, { from, to, limit = 100 } = {}) {
+  const cacheKey = `mps:${itemId}:${from || ''}:${to || ''}:${limit}`;
+  const cached = mpsCacheGet(cacheKey);
+  if (cached) return cached;
+
   const conditions = ['item_id = $1'];
   const values = [itemId];
   let idx = 2;
@@ -5076,22 +4990,30 @@ export async function getMarketPriceSnapshots(itemId, { from, to, limit = 100 } 
      LIMIT $${idx}`,
     [...values, Math.min(limit, 1000)]
   );
+  mpsCacheSet(cacheKey, rows);
   return rows;
 }
 
 export async function getLatestMarketPrices(itemIds) {
   if (!itemIds.length) return [];
+  const sorted = [...itemIds].sort((a, b) => a - b);
+  const cacheKey = `mps-latest:${sorted.join(',')}`;
+  const cached = mpsCacheGet(cacheKey);
+  if (cached) return cached;
+
   const { rows } = await pool.query(
     `SELECT DISTINCT ON (item_id)
        id, item_name, item_id, tier,
        markup_1d, sales_1d, markup_7d, sales_7d,
-       markup_30d, sales_30d, markup_90d, sales_90d,
-       markup_365d, sales_365d, recorded_at
+       markup_30d, sales_30d, markup_365d, sales_365d,
+       markup_3650d, sales_3650d, recorded_at,
+       confidence, finalized_at, submission_count, manually_reviewed
      FROM ONLY market_price_snapshots
      WHERE item_id = ANY($1)
      ORDER BY item_id, recorded_at DESC`,
-    [itemIds]
+    [sorted]
   );
+  mpsCacheSet(cacheKey, rows);
   return rows;
 }
 
@@ -5100,6 +5022,10 @@ export async function getLatestMarketPrices(itemIds) {
  * Pass itemId when the caller can resolve name→id from the item cache.
  */
 export async function getLatestMarketPriceByName(name, itemId = null) {
+  const cacheKey = `mps-name:${name.toLowerCase()}:${itemId || ''}`;
+  const cached = mpsCacheGet(cacheKey);
+  if (cached !== undefined) return cached;
+
   const { rows } = await pool.query(
     `SELECT * FROM ONLY market_price_snapshots
      WHERE (
@@ -5110,7 +5036,9 @@ export async function getLatestMarketPriceByName(name, itemId = null) {
      LIMIT 1`,
     [name, itemId]
   );
-  return rows[0] || null;
+  const result = rows[0] || null;
+  mpsCacheSet(cacheKey, result);
+  return result;
 }
 
 /**
@@ -5118,13 +5046,17 @@ export async function getLatestMarketPriceByName(name, itemId = null) {
  * unresolved (by item_name) entries.
  */
 export async function getAllLatestMarketPrices() {
+  const cached = mpsCacheGet('mps-all');
+  if (cached) return cached;
+
   const { rows } = await pool.query(
     `SELECT * FROM (
        (SELECT DISTINCT ON (item_id)
           id, item_name, item_id, tier,
           markup_1d, sales_1d, markup_7d, sales_7d,
-          markup_30d, sales_30d, markup_90d, sales_90d,
-          markup_365d, sales_365d, recorded_at
+          markup_30d, sales_30d, markup_365d, sales_365d,
+          markup_3650d, sales_3650d, recorded_at,
+          confidence, finalized_at, submission_count, manually_reviewed
         FROM ONLY market_price_snapshots
         WHERE item_id IS NOT NULL
         ORDER BY item_id, recorded_at DESC)
@@ -5132,8 +5064,9 @@ export async function getAllLatestMarketPrices() {
        (SELECT DISTINCT ON (LOWER(item_name))
           id, item_name, item_id, tier,
           markup_1d, sales_1d, markup_7d, sales_7d,
-          markup_30d, sales_30d, markup_90d, sales_90d,
-          markup_365d, sales_365d, recorded_at
+          markup_30d, sales_30d, markup_365d, sales_365d,
+          markup_3650d, sales_3650d, recorded_at,
+          confidence, finalized_at, submission_count, manually_reviewed
         FROM ONLY market_price_snapshots
         WHERE item_id IS NULL AND item_name IS NOT NULL
         ORDER BY LOWER(item_name), recorded_at DESC)
@@ -5141,6 +5074,7 @@ export async function getAllLatestMarketPrices() {
      ORDER BY recorded_at DESC
      LIMIT 10000`
   );
+  mpsCacheSet('mps-all', rows);
   return rows;
 }
 

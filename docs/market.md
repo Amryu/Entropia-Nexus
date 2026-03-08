@@ -1726,87 +1726,71 @@ A dedicated Discord text channel displays all active auctions as embed messages,
 
 ---
 
-## Price Tracking
+## Market Price Snapshots
 
-Historical item price observations with pre-computed summaries for charting.
+In-game market prices submitted by desktop clients via OCR. Multiple users submit the same hourly data; a confidence-weighted majority vote finalizes authoritative snapshots.
 
-### Price Formats
+### Data Flow
 
-- **Stackable items**: percentage markup (e.g., `123.4567` = 123.4567% of MaxTT) — excludes Deed/Token materials
-- **Condition items** (`hasCondition()` = true): flat absolute markup (e.g., `45.0000` = +45 PED)
-- **Deed/Token materials**: flat absolute markup despite being stackable (`ABSOLUTE_MARKUP_MATERIAL_TYPES`)
-
-The `price_value` column stores the raw number; interpretation depends on item type.
+1. Client OCR reads the in-game market price window
+2. Client submits via `POST /api/ingestion/market-prices` (OAuth required, allowlisted clients only)
+3. Server stores in `market_price_submissions` bucketed by hour
+4. After the hour elapses (+5 min grace), lazy finalization runs a per-column confidence-weighted majority vote
+5. Winner is upserted into `market_price_snapshots` as the authoritative record
+6. Raw submissions are auto-deleted after 3 days
 
 ### Database Tables (nexus_users)
 
-#### `item_prices` — Raw observations
+#### `market_price_submissions` — Raw per-user submissions (retained 3 days)
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | bigserial | Primary key |
 | item_id | integer | Composite item ID |
-| price_value | numeric(12,4) | Markup value |
-| quantity | integer | Traded quantity (for WAP) |
-| source | text | NULL = aggregate, or specific source |
-| recorded_at | timestamptz | Observation time |
+| tier | smallint | Item tier |
+| bucket_hour | timestamptz | Floor-to-hour bucket |
+| markup_Xd / sales_Xd | numeric(12,4) | Per-period values (1d, 7d, 30d, 365d, 3650d) |
+| submitted_at | timestamptz | Submission time |
+| submitted_by | bigint | User ID |
+| confidence | real | OCR confidence score |
+| manually_reviewed | jsonb | Fields manually reviewed by user |
 
-#### `item_price_summaries` — Pre-computed rollups
+Unique on `(item_id, submitted_by, bucket_hour)`.
+
+#### `market_price_snapshots` — Finalized authoritative snapshots
+
+Same value columns as submissions, plus:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | bigserial | Primary key |
-| item_id | integer | Composite item ID |
-| source | text | Source filter |
-| period_type | enum | 'hour', 'day', 'week' |
-| period_start | timestamptz | Start of period |
-| price_min/max/avg | numeric(12,4) | Basic stats |
-| price_p5/median/p95 | numeric(12,4) | Percentiles |
-| price_wap | numeric(12,4) | Volume-weighted average |
-| volume | bigint | Total traded quantity |
-| sample_count | integer | Number of observations |
+| item_name | text | OCR'd item name (may be NULL after resolution) |
+| finalized_at | timestamptz | When majority vote ran |
+| submission_count | smallint | Number of submissions that contributed |
 
-#### `item_price_summary_watermarks` — Incremental computation tracking
+Unique on `(item_id, recorded_at) WHERE item_id IS NOT NULL`.
 
-One row per period type, tracks `last_computed_until` for watermark-based processing.
-
-### API Endpoints
+### Public API Endpoints
 
 ```
-GET  /api/market/prices/[itemId]    - Price history (raw or summary)
-GET  /api/market/prices/latest      - Latest prices (batch)
-POST /api/market/prices/ingest      - Insert price data (admin)
-POST /api/market/prices/summarize   - Trigger summary computation (admin)
+GET /api/market/prices/snapshots/{itemId}  - Hourly history (max 30d, 750 rows)
+GET /api/market/prices/snapshots/latest    - Latest per item (by itemIds/name/all)
 ```
 
-#### Price History
+#### Snapshot History
 
-`GET /api/market/prices/[itemId]?from=&to=&granularity=auto&source=&limit=500`
+`GET /api/market/prices/snapshots/{itemId}?from=&to=&limit=100`
 
-Granularity options: `raw`, `hour`, `day`, `week`, `auto`
+Rate limit: 30 req/min per IP. Max timespan 30 days. Max limit 750.
 
-Auto-granularity selects based on time range:
-- ≤ 48h → raw, ≤ 30d → hour, ≤ 365d → day, > 365d → week
+#### Latest Snapshots
 
-#### Latest Prices
+`GET /api/market/prices/snapshots/latest?itemIds=1,2,3`
 
-`GET /api/market/prices/latest?items=1000124,2000081&source=`
+Rate limits vary by mode: `itemIds` (max 50) = 20/min, `name` = 30/min, `all=true` = 5/min.
 
-Returns most recent price per item using `DISTINCT ON`.
+### Ingestion
 
-#### Ingest
-
-`POST /api/market/prices/ingest` (admin-only)
-
-```json
-{ "prices": [{ "item_id": 1000124, "price_value": 123.45, "quantity": 10, "source": "auction" }] }
-```
-
-Max 1000 per request. Bot can also insert directly via `nexus-bot/db.js`.
-
-### Summary Computation
-
-Bot runs `computeAllPriceSummaries()` every 15 minutes. Uses watermark-based incremental processing — only aggregates new raw data since last run. Computes min, max, avg, p5, median, p95, WAP, and volume per item/source/period bucket.
+`POST /api/ingestion/market-prices` — OAuth required, allowlisted clients only. Browser sessions rejected. Rate limit: 20 req/min per user. Max 50 entries per batch.
 
 ---
 

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import crypto from 'crypto';
-import { pool, startTransaction } from './db.js';
+import { pool, startTransaction, invalidateMarketPriceCache } from './db.js';
 import { resolveUserGrants } from './grants.js';
 import { resolveMob } from './mobResolver.js';
 import { invalidateGlobalsCache } from './globals-cache.js';
@@ -1209,8 +1209,18 @@ export function maybeRunFraudDetection() {
 
 const MAX_ITEM_NAME_LENGTH = 200;
 const MAX_MARKUP_VALUE = 100_000_000;
-const MARKET_PRICE_DEDUP_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MARKET_PRICE_PERIODS = ['1d', '7d', '30d', '90d', '365d'];
+const MARKET_PRICE_PERIODS = ['1d', '7d', '30d', '365d', '3650d'];
+const MARKET_PRICE_VALUE_COLS = MARKET_PRICE_PERIODS.flatMap(p => [`markup_${p}`, `sales_${p}`]);
+const FINALIZATION_GRACE_MS = 5 * 60 * 1000;              // 5 min after hour before finalizing
+const SUBMISSION_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;  // 3 days
+const MANUAL_REVIEW_CONFIDENCE_BOOST = 1.5;                // voting weight multiplier
+
+let _lastMarketFinalization = 0;
+let _marketFinalizationRunning = false;
+const MARKET_FINALIZATION_INTERVAL_MS = 60 * 1000; // at most once per minute
+
+let _lastSubmissionCleanup = 0;
+const SUBMISSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // at most once per hour
 
 /**
  * Validate a single market price entry.
@@ -1222,6 +1232,12 @@ export function validateMarketPrice(entry) {
   // item_name: required, string, 1–200 chars
   if (typeof entry.item_name !== 'string' || entry.item_name.trim().length === 0) return 'Missing item_name';
   if (entry.item_name.length > MAX_ITEM_NAME_LENGTH) return 'item_name too long';
+
+  // item_name_ocr: optional, string — raw OCR read before item matching
+  if (entry.item_name_ocr != null) {
+    if (typeof entry.item_name_ocr !== 'string') return 'Invalid item_name_ocr';
+    if (entry.item_name_ocr.length > MAX_ITEM_NAME_LENGTH) return 'item_name_ocr too long';
+  }
 
   // tier: optional, integer 1–10 or null
   if (entry.tier != null) {
@@ -1257,26 +1273,36 @@ export function validateMarketPrice(entry) {
     if (entry.confidence < 0 || entry.confidence > 1) return 'confidence out of range';
   }
 
+  // manually_reviewed: optional, array of field name strings
+  if (entry.manually_reviewed != null) {
+    if (!Array.isArray(entry.manually_reviewed)) return 'Invalid manually_reviewed';
+    if (entry.manually_reviewed.some(f => typeof f !== 'string')) return 'Invalid manually_reviewed entry';
+  }
+
   return null;
 }
 
 /**
- * Ingest a batch of market price snapshots.
- * Deduplicates within a 1-hour window by item_id.
- * Rejects entries where the item name could not be resolved.
- * @param {number} userId
+ * Ingest a batch of market price submissions.
+ *
+ * Each submission is stored in `market_price_submissions` bucketed by hour.
+ * After the hour elapses (+ 5 min grace), a confidence-weighted majority
+ * vote finalizes each column into a single authoritative snapshot in
+ * `market_price_snapshots`.
+ *
+ * @param {bigint|string} userId
  * @param {Array} prices
- * @param {Function} resolveItem - async (name, rawName) => number|null (item_id)
+ * @param {Function} resolveItem - async (name, rawName) => { itemId }|null
  * @returns {{ accepted: number, duplicates: number, rejected: number }}
  */
 export async function ingestMarketPrices(userId, prices, resolveItem) {
+  userId = String(userId);
   let accepted = 0, duplicates = 0, rejected = 0;
 
   for (const entry of prices) {
     const ocrName = entry.item_name.trim();
-    const rawName = entry.item_name_raw?.trim() || null;
+    const rawName = entry.item_name_ocr?.trim() || entry.item_name_raw?.trim() || null;
 
-    // Resolve item_id (exact → case-insensitive → raw → prefix → fuzzy)
     let itemId = null;
     if (resolveItem) {
       try {
@@ -1285,46 +1311,252 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
         // Non-fatal
       }
     }
+    if (!itemId) { rejected++; continue; }
 
-    if (!itemId) {
-      rejected++;
-      continue;
-    }
+    // Bucket to the last full hour
+    const entryTs = new Date(entry.timestamp);
+    const bucketHour = new Date(entryTs);
+    bucketHour.setMinutes(0, 0, 0);
 
-    // Server-side 1hr dedup by item_id
-    const { rows: existing } = await pool.query(
-      `SELECT 1 FROM ONLY market_price_snapshots
-       WHERE item_id = $1
-       AND recorded_at > now() - interval '1 hour'
-       LIMIT 1`,
-      [itemId]
-    );
-    if (existing.length > 0) {
-      duplicates++;
-      continue;
-    }
-
-    await pool.query(
-      `INSERT INTO market_price_snapshots
-       (item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
-        markup_30d, sales_30d, markup_90d, sales_90d, markup_365d, sales_365d,
-        recorded_at, submitted_by, confidence)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    // Insert submission — on conflict (same user+item+hour), replace with
+    // latest data. Manual review always overwrites; otherwise higher
+    // confidence wins.
+    const { rowCount } = await pool.query(
+      `INSERT INTO market_price_submissions
+       (item_id, tier, bucket_hour,
+        markup_1d, sales_1d, markup_7d, sales_7d,
+        markup_30d, sales_30d, markup_365d, sales_365d,
+        markup_3650d, sales_3650d,
+        submitted_by, confidence, manually_reviewed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       ON CONFLICT (item_id, submitted_by, bucket_hour)
+       DO UPDATE SET
+         tier = EXCLUDED.tier,
+         markup_1d = EXCLUDED.markup_1d, sales_1d = EXCLUDED.sales_1d,
+         markup_7d = EXCLUDED.markup_7d, sales_7d = EXCLUDED.sales_7d,
+         markup_30d = EXCLUDED.markup_30d, sales_30d = EXCLUDED.sales_30d,
+         markup_365d = EXCLUDED.markup_365d, sales_365d = EXCLUDED.sales_365d,
+         markup_3650d = EXCLUDED.markup_3650d, sales_3650d = EXCLUDED.sales_3650d,
+         confidence = EXCLUDED.confidence,
+         manually_reviewed = EXCLUDED.manually_reviewed,
+         submitted_at = now()
+       WHERE EXCLUDED.manually_reviewed IS NOT NULL
+         OR COALESCE(EXCLUDED.confidence, 0) >= COALESCE(market_price_submissions.confidence, 0)`,
       [
         itemId,
         entry.tier ?? null,
+        bucketHour.toISOString(),
         entry.markup_1d ?? null, entry.sales_1d ?? null,
         entry.markup_7d ?? null, entry.sales_7d ?? null,
         entry.markup_30d ?? null, entry.sales_30d ?? null,
-        entry.markup_90d ?? null, entry.sales_90d ?? null,
         entry.markup_365d ?? null, entry.sales_365d ?? null,
-        new Date(entry.timestamp).toISOString(),
+        entry.markup_3650d ?? null, entry.sales_3650d ?? null,
         userId,
         entry.confidence ?? null,
+        entry.manually_reviewed ? JSON.stringify(entry.manually_reviewed) : null,
       ]
     );
-    accepted++;
+
+    if (rowCount > 0) accepted++;
+    else duplicates++;
+
+    // Late manual review for an already-finalized hour → re-finalize
+    if (entry.manually_reviewed) {
+      const currentBucket = new Date();
+      currentBucket.setMinutes(0, 0, 0);
+      if (bucketHour < currentBucket) {
+        try { await finalizeMarketPriceHour(itemId, bucketHour); } catch { /* non-fatal */ }
+      }
+    }
   }
 
+  // Fire-and-forget: finalize elapsed hours + cleanup old submissions
+  maybeRunMarketFinalization();
+  maybeCleanupSubmissions();
+
   return { accepted, duplicates, rejected };
+}
+
+// --- Market Price Finalization ---
+
+/**
+ * Finalize a single (item_id, bucket_hour) into an authoritative snapshot.
+ *
+ * For each value column, computes a confidence-weighted majority vote.
+ * Manually reviewed submissions get a 1.5× confidence boost.
+ * Result is upserted into market_price_snapshots.
+ */
+async function finalizeMarketPriceHour(itemId, bucketHour) {
+  const { rows: submissions } = await pool.query(
+    `SELECT * FROM market_price_submissions
+     WHERE item_id = $1 AND bucket_hour = $2`,
+    [itemId, bucketHour]
+  );
+
+  if (submissions.length === 0) return;
+
+  const result = {};
+
+  // Confidence-weighted majority vote for each value column
+  for (const col of MARKET_PRICE_VALUE_COLS) {
+    const votes = new Map(); // stringified value → total weight
+    for (const sub of submissions) {
+      const val = sub[col];
+      if (val == null) continue;
+      const key = String(val);
+      const conf = parseFloat(sub.confidence ?? 0.5);
+      const boost = sub.manually_reviewed ? MANUAL_REVIEW_CONFIDENCE_BOOST : 1.0;
+      votes.set(key, (votes.get(key) || 0) + conf * boost);
+    }
+    if (votes.size === 0) {
+      result[col] = null;
+      continue;
+    }
+    let bestKey = null, bestWeight = -1;
+    for (const [key, weight] of votes) {
+      if (weight > bestWeight) { bestKey = key; bestWeight = weight; }
+    }
+    result[col] = parseFloat(bestKey);
+  }
+
+  // Tier: simple majority (integer)
+  const tierVotes = new Map();
+  for (const sub of submissions) {
+    if (sub.tier != null) {
+      const t = Number(sub.tier);
+      tierVotes.set(t, (tierVotes.get(t) || 0) + 1);
+    }
+  }
+  let bestTier = null;
+  if (tierVotes.size > 0) {
+    let maxCount = 0;
+    for (const [tier, count] of tierVotes) {
+      if (count > maxCount) { bestTier = tier; maxCount = count; }
+    }
+  }
+
+  // Best submitter = highest raw confidence
+  let bestConfidence = 0, bestSubmitter = null;
+  for (const sub of submissions) {
+    const conf = parseFloat(sub.confidence ?? 0);
+    if (conf > bestConfidence) {
+      bestConfidence = conf;
+      bestSubmitter = sub.submitted_by;
+    }
+  }
+  if (!bestSubmitter) bestSubmitter = submissions[0].submitted_by;
+
+  // Aggregate manually_reviewed fields across all submissions
+  const allReviewed = new Set();
+  for (const sub of submissions) {
+    if (Array.isArray(sub.manually_reviewed)) {
+      for (const field of sub.manually_reviewed) allReviewed.add(field);
+    }
+  }
+
+  // Upsert snapshot (ON CONFLICT updates if re-finalizing)
+  await pool.query(
+    `INSERT INTO market_price_snapshots
+     (item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
+      markup_30d, sales_30d, markup_365d, sales_365d, markup_3650d, sales_3650d,
+      recorded_at, submitted_by, confidence, manually_reviewed,
+      finalized_at, submission_count)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17)
+     ON CONFLICT (item_id, recorded_at) WHERE item_id IS NOT NULL
+     DO UPDATE SET
+       tier = EXCLUDED.tier,
+       markup_1d = EXCLUDED.markup_1d, sales_1d = EXCLUDED.sales_1d,
+       markup_7d = EXCLUDED.markup_7d, sales_7d = EXCLUDED.sales_7d,
+       markup_30d = EXCLUDED.markup_30d, sales_30d = EXCLUDED.sales_30d,
+       markup_365d = EXCLUDED.markup_365d, sales_365d = EXCLUDED.sales_365d,
+       markup_3650d = EXCLUDED.markup_3650d, sales_3650d = EXCLUDED.sales_3650d,
+       submitted_by = EXCLUDED.submitted_by,
+       confidence = EXCLUDED.confidence,
+       manually_reviewed = EXCLUDED.manually_reviewed,
+       finalized_at = now(),
+       submission_count = EXCLUDED.submission_count`,
+    [
+      itemId, bestTier,
+      result.markup_1d, result.sales_1d,
+      result.markup_7d, result.sales_7d,
+      result.markup_30d, result.sales_30d,
+      result.markup_365d, result.sales_365d,
+      result.markup_3650d, result.sales_3650d,
+      bucketHour,
+      bestSubmitter,
+      bestConfidence,
+      allReviewed.size > 0 ? JSON.stringify([...allReviewed]) : null,
+      submissions.length,
+    ]
+  );
+
+  // Invalidate cached query results for this item
+  invalidateMarketPriceCache(itemId);
+}
+
+/**
+ * Finalize all pending hours across all items.
+ * Only finalizes hours that are past the grace period and don't have a
+ * snapshot yet (or have newer submissions than the existing finalization).
+ */
+async function finalizeAllPendingHours() {
+  const graceTime = new Date(Date.now() - FINALIZATION_GRACE_MS);
+
+  // Find (item_id, bucket_hour) pairs needing finalization
+  const { rows: pending } = await pool.query(`
+    SELECT DISTINCT s.item_id, s.bucket_hour
+    FROM market_price_submissions s
+    WHERE s.bucket_hour < date_trunc('hour', $1::timestamptz)
+      AND (
+        NOT EXISTS (
+          SELECT 1 FROM ONLY market_price_snapshots snap
+          WHERE snap.item_id = s.item_id AND snap.recorded_at = s.bucket_hour
+        )
+        OR EXISTS (
+          SELECT 1 FROM market_price_submissions s2
+          WHERE s2.item_id = s.item_id AND s2.bucket_hour = s.bucket_hour
+            AND s2.submitted_at > (
+              SELECT snap2.finalized_at FROM ONLY market_price_snapshots snap2
+              WHERE snap2.item_id = s.item_id AND snap2.recorded_at = s.bucket_hour
+            )
+        )
+      )
+    LIMIT 200
+  `, [graceTime.toISOString()]);
+
+  for (const { item_id, bucket_hour } of pending) {
+    try {
+      await finalizeMarketPriceHour(item_id, bucket_hour);
+    } catch (err) {
+      console.error(`[ingestion] Failed to finalize market price hour item=${item_id} hour=${bucket_hour}:`, err.message);
+    }
+  }
+}
+
+/**
+ * Fire-and-forget market price finalization, throttled to once per minute.
+ */
+function maybeRunMarketFinalization() {
+  const now = Date.now();
+  if (_marketFinalizationRunning || now - _lastMarketFinalization < MARKET_FINALIZATION_INTERVAL_MS) return;
+  _lastMarketFinalization = now;
+  _marketFinalizationRunning = true;
+
+  void finalizeAllPendingHours()
+    .catch(err => console.error('[ingestion] Market finalization failed:', err))
+    .finally(() => { _marketFinalizationRunning = false; });
+}
+
+/**
+ * Delete submissions older than 3 days. Throttled to once per hour.
+ * PostgreSQL autovacuum reclaims the freed space automatically.
+ */
+function maybeCleanupSubmissions() {
+  const now = Date.now();
+  if (now - _lastSubmissionCleanup < SUBMISSION_CLEANUP_INTERVAL_MS) return;
+  _lastSubmissionCleanup = now;
+
+  void pool.query(
+    `DELETE FROM market_price_submissions WHERE submitted_at < now() - interval '3 days'`
+  ).catch(err => console.error('[ingestion] Submission cleanup failed:', err));
 }

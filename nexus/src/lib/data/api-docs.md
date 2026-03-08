@@ -221,26 +221,29 @@ Unified market search across exchange orders, services, auctions, rentals, and s
 
 Returns up to 30 scored results, each with `id`, `name`, `marketType`, `entityType`, `price`, `detail`, `url`, and `score`.
 
-#### `GET /api/market/prices/{itemId}`
+#### `GET /api/market/prices/snapshots/{itemId}`
 
-Price history for an item from external price sources.
+Hourly market price history for an item (from in-game market data). Rate limited: 30 req/min per IP.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `from` | string | Start date (ISO 8601) |
 | `to` | string | End date (ISO 8601) |
-| `granularity` | string | `raw`, `hour`, `day`, `week`, or `auto` |
-| `source` | string | Filter by price source |
-| `limit` | integer | Max results (1-2000, default 500) |
+| `limit` | integer | Max results (1-750, default 100) |
 
-#### `GET /api/market/prices/latest`
+Maximum timespan is 30 days. Returns hourly snapshots with markup and sales data for each period (1d, 7d, 30d, 365d, 3650d).
 
-Latest prices for multiple items at once.
+#### `GET /api/market/prices/snapshots/latest`
+
+Latest market price snapshot per item. Rate limited per mode.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `items` | string | **Required.** Comma-separated item IDs (max 100) |
-| `source` | string | Filter by price source |
+| `itemIds` | string | Comma-separated item IDs (max 50). 20 req/min per IP. |
+| `name` | string | Item name (case-insensitive match). 30 req/min per IP. |
+| `all` | string | Set to `true` to get all items. 5 req/min per IP. |
+
+Exactly one of `itemIds`, `name`, or `all` is required.
 
 #### `GET /api/market/prices/exchange/{itemId}`
 

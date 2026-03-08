@@ -42,8 +42,12 @@ export async function POST({ request, locals, fetch }) {
   startUpload(uploadKey);
 
   try {
+    // Require OAuth client — browser sessions cannot submit market prices
+    if (!locals.oauthClientId) {
+      return getResponse({ error: 'Market price ingestion requires an authorized client application' }, 403);
+    }
     // Allowlist check (OAuth client application must be approved)
-    if (!(await isIngestionAllowed(locals.oauthClientId || null))) {
+    if (!(await isIngestionAllowed(locals.oauthClientId))) {
       return getResponse({ error: 'This application is not authorized for ingestion' }, 403);
     }
     if (await isIngestionBanned(user.id)) {

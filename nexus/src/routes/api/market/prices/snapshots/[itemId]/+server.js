@@ -6,6 +6,8 @@ import { resolveItemDataByItemId } from '$lib/server/item-type-cache.js';
 
 const RATE_LIMIT_MAX = 30;
 const RATE_LIMIT_WINDOW = 60_000; // 30 requests per 60 seconds
+const MAX_LIMIT = 750; // 30d * 24h = 720 possible hourly snapshots
+const MAX_TIMESPAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /**
  * GET /api/market/prices/snapshots/[itemId] — History of market price snapshots for an item.
@@ -18,25 +20,40 @@ export async function GET({ params, url, locals, request, fetch }) {
     return getResponse({ error: 'Rate limited', retryAfter: Math.ceil(rl.resetIn / 1000) }, 429);
   }
 
-  const itemId = parseInt(params.itemId);
+  const itemId = parseInt(params.itemId, 10);
   if (!Number.isInteger(itemId) || itemId <= 0) {
     return getResponse({ error: 'Invalid itemId' }, 400);
   }
 
-  const from = url.searchParams.get('from') || undefined;
-  const to = url.searchParams.get('to') || undefined;
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100') || 100, 1000);
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to');
+  const limitParam = parseInt(url.searchParams.get('limit') || '100', 10);
+  const limit = Math.min(Math.max(1, limitParam || 100), MAX_LIMIT);
 
-  // Validate date params if provided
-  if (from && isNaN(new Date(from).getTime())) {
-    return getResponse({ error: 'Invalid from date' }, 400);
+  // Validate date params
+  let from, to;
+  if (fromParam) {
+    from = new Date(fromParam);
+    if (isNaN(from.getTime())) return getResponse({ error: 'Invalid from date' }, 400);
   }
-  if (to && isNaN(new Date(to).getTime())) {
-    return getResponse({ error: 'Invalid to date' }, 400);
+  if (toParam) {
+    to = new Date(toParam);
+    if (isNaN(to.getTime())) return getResponse({ error: 'Invalid to date' }, 400);
+  }
+
+  // Enforce max 30-day timespan
+  const effectiveFrom = from || new Date(Date.now() - MAX_TIMESPAN_MS);
+  const effectiveTo = to || new Date();
+  if (effectiveTo.getTime() - effectiveFrom.getTime() > MAX_TIMESPAN_MS) {
+    return getResponse({ error: 'Maximum timespan is 30 days' }, 400);
   }
 
   try {
-    const rows = await getMarketPriceSnapshots(itemId, { from, to, limit });
+    const rows = await getMarketPriceSnapshots(itemId, {
+      from: from?.toISOString(),
+      to: to?.toISOString(),
+      limit
+    });
 
     // Enrich resolved rows (item_name IS NULL) with name from Item table
     if (rows.length > 0 && rows.some(r => !r.item_name)) {
@@ -49,7 +66,19 @@ export async function GET({ params, url, locals, request, fetch }) {
       }
     }
 
-    return getResponse(rows, 200);
+    // Shorter cache for results containing recent/pending data
+    const hasPending = rows.some(r => {
+      const recAt = r.recorded_at ? new Date(r.recorded_at).getTime() : 0;
+      return recAt > Date.now() - 2 * 60 * 60 * 1000;
+    });
+
+    return new Response(JSON.stringify(rows), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': hasPending ? 'public, max-age=60' : 'public, max-age=300'
+      }
+    });
   } catch (e) {
     console.error('[market-prices] Failed to fetch snapshots:', e);
     return getResponse({ error: 'Internal server error' }, 500);
