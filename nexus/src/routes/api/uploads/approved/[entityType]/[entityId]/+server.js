@@ -2,7 +2,7 @@
  * API endpoint to serve approved images.
  */
 import { error } from '@sveltejs/kit';
-import { getApprovedImagePath } from '$lib/server/imageProcessor.js';
+import { getApprovedImagePath, isValidEntityType } from '$lib/server/imageProcessor.js';
 import { readFile } from 'fs/promises';
 
 /** @type {import('./$types').RequestHandler} */
@@ -12,6 +12,14 @@ export async function GET({ params, url }) {
 
   if (!entityType || !entityId) {
     throw error(400, 'Entity type and ID are required');
+  }
+
+  if (!isValidEntityType(entityType)) {
+    throw error(400, 'Invalid entity type');
+  }
+
+  if (!/^[\w\s\-]+$/.test(entityId) || entityId.length > 200) {
+    throw error(400, 'Invalid entity ID');
   }
 
   if (!['icon', 'thumb'].includes(type)) {

@@ -17,6 +17,10 @@ export async function POST({ request, locals }) {
   if (!user) throw error(401, 'Authentication required');
   if (!user.verified) throw error(403, 'Account verification required');
 
+  if (!user.grants?.includes('wiki.approve') && !user.grants?.includes('admin.panel')) {
+    throw error(403, 'Image linking requires wiki approval or admin permission');
+  }
+
   const body = await request.json().catch(() => null);
   if (!body) throw error(400, 'Invalid request body');
 
@@ -37,7 +41,7 @@ export async function POST({ request, locals }) {
     await createImageLink(entityType, String(entityId), entityType, String(sourceEntityId), userId);
   } catch (err) {
     console.error('Image link error:', err);
-    throw error(500, err.message || 'Failed to create image link');
+    throw error(500, 'Failed to create image link');
   }
 
   return new Response(JSON.stringify({

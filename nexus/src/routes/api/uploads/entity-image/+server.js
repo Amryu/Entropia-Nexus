@@ -272,7 +272,8 @@ export async function POST({ request, locals }) {
       throw error(413, message);
     }
 
-    throw error(500, message);
+    console.error('Unhandled upload error:', message);
+    throw error(500, 'Failed to process image');
   } finally {
     // Always decrement concurrent upload counter
     endUpload(userId);

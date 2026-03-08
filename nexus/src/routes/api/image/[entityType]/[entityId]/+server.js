@@ -6,10 +6,22 @@ import {
   deleteApprovedImage,
   getApprovedImagePath
 } from '$lib/server/imageProcessor.js';
+import {
+  checkRateLimit,
+  checkConcurrentUploads,
+  startUpload,
+  endUpload
+} from '$lib/server/rateLimiter.js';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 
 const CACHE_MAX_AGE = 86400;
+
+// Profile image upload limits
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 minutes
+const MAX_REQUEST_SIZE = 3 * 1024 * 1024; // 3MB
+const MAX_CONCURRENT = 2;
 
 /** @type {import('./$types').RequestHandler} */
 export async function GET({ params }) {
@@ -66,28 +78,48 @@ export async function POST({ params, request, locals }) {
     return getResponse({ error: 'You can only update your own profile image.' }, 403);
   }
 
-  let formData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return getResponse({ error: 'Invalid form data.' }, 400);
+  // Rate limiting
+  const rateCheck = checkRateLimit(`profile-upload:${userId}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many upload requests. Please try again later.' }, 429);
   }
 
-  const imageFile = formData.get('image');
-  if (!imageFile || !(imageFile instanceof File)) {
-    return getResponse({ error: 'Image file is required.' }, 400);
+  // Concurrent upload limit
+  if (!checkConcurrentUploads(userId, MAX_CONCURRENT)) {
+    return getResponse({ error: 'Too many concurrent uploads.' }, 429);
   }
 
-  const arrayBuffer = await imageFile.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+  // Content-Length pre-check
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
+    return getResponse({ error: 'Request too large.' }, 413);
+  }
 
+  startUpload(userId);
   try {
+    let formData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return getResponse({ error: 'Invalid form data.' }, 400);
+    }
+
+    const imageFile = formData.get('image');
+    if (!imageFile || !(imageFile instanceof File)) {
+      return getResponse({ error: 'Image file is required.' }, 400);
+    }
+
+    const arrayBuffer = await imageFile.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
     await processAndSaveImage(buffer, type, entityId, userId);
     await approveImage(type, entityId);
     return getResponse({ success: true }, 200);
   } catch (err) {
     console.error('Profile image upload error:', err);
-    return getResponse({ error: err.message || 'Failed to upload image.' }, 500);
+    return getResponse({ error: 'Failed to upload image.' }, 500);
+  } finally {
+    endUpload(userId);
   }
 }
 
@@ -120,7 +152,7 @@ export async function DELETE({ params, locals }) {
       return getResponse({ success: true }, 200);
     }
     console.error('Profile image delete error:', err);
-    return getResponse({ error: err.message || 'Failed to delete image.' }, 500);
+    return getResponse({ error: 'Failed to delete image.' }, 500);
   }
 
   return getResponse({ success: true }, 200);

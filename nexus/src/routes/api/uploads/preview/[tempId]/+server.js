@@ -4,13 +4,15 @@
 import { error } from '@sveltejs/kit';
 import { getPreviewImage } from '$lib/server/imageProcessor.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** @type {import('./$types').RequestHandler} */
 export async function GET({ params, url }) {
   const { tempId } = params;
   const type = url.searchParams.get('type') || 'icon';
 
-  if (!tempId) {
-    throw error(400, 'Temp ID is required');
+  if (!tempId || !UUID_REGEX.test(tempId)) {
+    throw error(400, 'Invalid preview ID');
   }
 
   if (!['icon', 'thumb'].includes(type)) {
@@ -27,7 +29,7 @@ export async function GET({ params, url }) {
     return new Response(imageBuffer, {
       headers: {
         'Content-Type': 'image/webp',
-        'Cache-Control': 'private, max-age=3600'
+        'Cache-Control': 'private, no-store'
       }
     });
   } catch (err) {
