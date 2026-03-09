@@ -154,11 +154,14 @@ export function fillActivityGaps(rows, sqlUnit, from, to, period) {
     rangeEnd = new Date(rows[rows.length - 1].bucket);
   }
 
-  // Build a map of existing buckets
+  // Build a map of existing buckets (supports optional value field for dual-series)
   const bucketMap = new Map();
   for (const row of rows) {
     const key = truncateDate(new Date(row.bucket), sqlUnit).toISOString();
-    bucketMap.set(key, (bucketMap.get(key) || 0) + row.count);
+    const existing = bucketMap.get(key) || { count: 0, value: 0 };
+    existing.count += row.count;
+    existing.value += (row.value || 0);
+    bucketMap.set(key, existing);
   }
 
   // Generate all buckets in the range
@@ -170,7 +173,8 @@ export function fillActivityGaps(rows, sqlUnit, from, to, period) {
   let i = 0;
   while (current <= end && i < maxBuckets) {
     const key = current.toISOString();
-    result.push({ bucket: key, count: bucketMap.get(key) || 0 });
+    const entry = bucketMap.get(key) || { count: 0, value: 0 };
+    result.push({ bucket: key, count: entry.count, value: entry.value });
     current = advanceBucket(current, sqlUnit);
     i++;
   }

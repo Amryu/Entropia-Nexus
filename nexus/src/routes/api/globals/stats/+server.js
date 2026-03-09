@@ -179,7 +179,8 @@ export async function GET({ url, request }) {
             ),
         // Activity timeline
         pool.query(
-          `SELECT period_start AS bucket, SUM(event_count) AS count
+          `SELECT period_start AS bucket, SUM(event_count) AS count,
+                  COALESCE(SUM(sum_value), 0) AS total_value
            FROM globals_rollup
            WHERE granularity = $1${periodWhere}${typeCond}
            GROUP BY period_start
@@ -222,7 +223,7 @@ export async function GET({ url, request }) {
         })),
         bucket_unit: chartUnit,
         activity: fillActivityGaps(
-          activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+          activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count), value: parseFloat(r.total_value || 0) })),
           bucketUnit, from, to, period
         ),
       }), {
@@ -308,7 +309,8 @@ export async function GET({ url, request }) {
 
       // Activity timeline (dynamic bucket aggregation)
       client.query(
-        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count
+        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count,
+                COALESCE(sum(value), 0) AS total_value
          FROM ingested_globals
          ${whereClause}
          GROUP BY bucket
@@ -353,7 +355,7 @@ export async function GET({ url, request }) {
       })),
       bucket_unit: chartUnit,
       activity: fillActivityGaps(
-        activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+        activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count), value: parseFloat(r.total_value || 0) })),
         bucketUnit, from, to, period
       ),
     }), {

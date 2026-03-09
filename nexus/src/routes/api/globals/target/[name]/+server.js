@@ -177,14 +177,15 @@ export async function GET({ params, url }) {
          WHERE confirmed = true AND ${targetCond}${periodCond}
          GROUP BY player_name
          ORDER BY sum(value) DESC
-         LIMIT 10`,
+         LIMIT 50`,
         targetParams
       ),
 
       // Activity (rollup or raw)
       useRollup
         ? q(
-            `SELECT period_start AS bucket, SUM(event_count) AS count
+            `SELECT period_start AS bucket, SUM(event_count) AS count,
+                    COALESCE(SUM(sum_value), 0) AS total_value
              FROM globals_rollup_target
              WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}
              GROUP BY period_start
@@ -194,7 +195,8 @@ export async function GET({ params, url }) {
           )
         : q(
             `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
-                    count(*) AS count
+                    count(*) AS count,
+                    COALESCE(sum(value), 0) AS total_value
              FROM ingested_globals
              WHERE confirmed = true AND ${targetCond}${periodCond}
              GROUP BY 1
@@ -211,7 +213,7 @@ export async function GET({ params, url }) {
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}${periodCond}
          ORDER BY event_timestamp DESC
-         LIMIT 20`,
+         LIMIT 50`,
         targetParams
       ),
 
@@ -307,7 +309,7 @@ export async function GET({ params, url }) {
       })),
       bucket_unit: bucketUnit,
       activity: fillActivityGaps(
-        activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+        activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count), value: parseFloat(r.total_value || 0) })),
         bucketUnit, from, to, period
       ),
       recent: recentResult.rows.map(r => ({

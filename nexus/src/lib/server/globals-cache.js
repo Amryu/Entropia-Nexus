@@ -111,7 +111,8 @@ async function buildStatsCache() {
        LIMIT 10`
     ),
     pool.query(
-      `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count
+      `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count,
+              COALESCE(sum(value), 0) AS total_value
        FROM ingested_globals
        WHERE confirmed = true
        GROUP BY bucket
@@ -152,7 +153,7 @@ async function buildStatsCache() {
     })),
     bucket_unit: chartUnit,
     activity: fillActivityGaps(
-      activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+      activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count), value: parseFloat(r.total_value || 0) })),
       bucketUnit, null, null, 'all'
     ),
   };

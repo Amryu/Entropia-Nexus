@@ -323,26 +323,44 @@
     if (activityChart) activityChart.destroy();
 
     const accentColor = getComputedCssVar('--accent-color') || '#60b0ff';
+    const valueColor = '#2ecc71';
 
     activityChart = new Chart(activityCanvas, {
       type: 'line',
       data: {
         labels: stats.activity.map(a => new Date(a.bucket)),
-        datasets: [{
-          label: 'Globals',
-          data: stats.activity.map(a => a.count),
-          borderColor: accentColor,
-          backgroundColor: accentColor + '20',
-          borderWidth: 2,
-          pointRadius: stats.activity.length < 30 ? 3 : 0,
-          pointHoverRadius: 5,
-          fill: true,
-          tension: 0.1,
-        }],
+        datasets: [
+          {
+            label: 'Count',
+            data: stats.activity.map(a => a.count),
+            borderColor: accentColor,
+            backgroundColor: accentColor + '20',
+            borderWidth: 2,
+            pointRadius: stats.activity.length < 30 ? 3 : 0,
+            pointHoverRadius: 5,
+            fill: true,
+            tension: 0.1,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Value (PED)',
+            data: stats.activity.map(a => a.value || 0),
+            borderColor: valueColor,
+            backgroundColor: valueColor + '20',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            fill: false,
+            tension: 0.1,
+            borderDash: [4, 2],
+            yAxisID: 'y1',
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         scales: {
           x: {
             type: 'time',
@@ -352,11 +370,28 @@
           },
           y: {
             beginAtZero: true,
+            position: 'left',
+            title: { display: true, text: 'Count', color: textMuted, font: { size: 11 } },
             ticks: { color: textMuted, font: { size: 11 } },
             grid: { color: borderColor + '30' },
           },
+          y1: {
+            beginAtZero: true,
+            position: 'right',
+            title: { display: true, text: 'PED', color: textMuted, font: { size: 11 } },
+            ticks: { color: textMuted, font: { size: 11 }, callback: v => formatPedShort(v) },
+            grid: { display: false },
+          },
         },
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(0,0,0,0.85)', borderColor: accentColor, borderWidth: 1 } },
+        plugins: {
+          legend: { display: true, labels: { color: textMuted, font: { size: 11 }, usePointStyle: true, pointStyle: 'line' } },
+          tooltip: {
+            backgroundColor: 'rgba(0,0,0,0.85)',
+            borderColor: accentColor,
+            borderWidth: 1,
+            callbacks: { label: ctx => ctx.dataset.yAxisID === 'y1' ? `Value: ${formatPedShort(ctx.parsed.y)} PED` : `Count: ${ctx.parsed.y}` },
+          },
+        },
       },
     });
   }
