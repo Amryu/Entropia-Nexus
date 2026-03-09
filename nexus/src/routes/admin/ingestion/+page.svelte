@@ -379,7 +379,7 @@
             <div class="alert-header">
               <span class="alert-type"
                 class:badge-danger={alert.type === 'collusion_pattern' || alert.type === 'solo_fabrication'}
-                class:badge-warning={alert.type === 'mp_consistent_outlier' || alert.type === 'mp_confidence_cluster'}>
+                class:badge-warning={alert.type === 'mp_consistent_outlier' || alert.type === 'mp_confidence_cluster' || alert.type === 'mp_low_confidence'}>
                 {alert.type.replace(/_/g, ' ')}
               </span>
               <span class="alert-date">{formatDate(alert.created_at)}</span>
@@ -423,6 +423,13 @@
                     <span>Price Submissions: {alert.details.total_submissions}</span>
                     <span>Mode confidence: {alert.details.mode_confidence}</span>
                     <span>At mode: {alert.details.mode_count} ({alert.details.mode_pct}%)</span>
+                  {/if}
+
+                  <!-- mp_low_confidence -->
+                  {#if alert.type === 'mp_low_confidence'}
+                    <span>Price Submissions: {alert.details.total_submissions}</span>
+                    <span>Below {alert.details.threshold}: {alert.details.low_count} ({alert.details.low_rate}%)</span>
+                    <span>Avg confidence: {alert.details.avg_confidence}</span>
                   {/if}
                 </div>
               {/if}

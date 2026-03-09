@@ -1266,6 +1266,7 @@ export function maybeRunFraudDetection() {
     // Market price fraud detection runs independently of global contributor count
     await detectMarketPriceOutliers();
     await detectConfidenceClustering();
+    await detectLowConfidenceUsers();
   })()
     .catch(err => console.error('[ingestion] Fraud detection failed:', err))
     .finally(() => { _fraudDetectionRunning = false; });
@@ -1383,6 +1384,55 @@ async function detectConfidenceClustering() {
   }
 }
 
+/**
+ * Flag users whose market price submissions are consistently below the
+ * quality threshold (0.85).  The ON CONFLICT upsert in ingestMarketPrices
+ * keeps only the best confidence per (user, item, tier, hour), so
+ * superseded low-confidence submissions are already excluded — only the
+ * user's final best attempt for each slot is evaluated.
+ */
+async function detectLowConfidenceUsers() {
+  const { rows: candidates } = await pool.query(`
+    SELECT submitted_by,
+           count(*) AS total,
+           count(*) FILTER (WHERE confidence < $1) AS low_count,
+           round(avg(confidence)::numeric, 3) AS avg_confidence
+    FROM market_price_submissions
+    WHERE submitted_at > now() - interval '7 days'
+      AND confidence IS NOT NULL
+    GROUP BY submitted_by
+    HAVING count(*) >= $2
+      AND count(*) FILTER (WHERE confidence < $1)::numeric / count(*) >= $3
+  `, [MP_LOW_CONF_THRESHOLD, MP_LOW_CONF_MIN_SUBMISSIONS, MP_LOW_CONF_RATE_THRESHOLD]);
+
+  for (const user of candidates) {
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM ingestion_alerts
+       WHERE NOT resolved AND type = 'mp_low_confidence'
+         AND $1 = ANY(user_ids)
+       LIMIT 1`,
+      [user.submitted_by]
+    );
+    if (existing.length > 0) continue;
+
+    await pool.query(
+      `INSERT INTO ingestion_alerts (type, user_ids, details)
+       VALUES ('mp_low_confidence', $1, $2)`,
+      [
+        [user.submitted_by],
+        JSON.stringify({
+          total_submissions: parseInt(user.total),
+          low_count: parseInt(user.low_count),
+          low_rate: Math.round(parseInt(user.low_count) / parseInt(user.total) * 100),
+          avg_confidence: parseFloat(user.avg_confidence),
+          threshold: MP_LOW_CONF_THRESHOLD,
+          period: '7 days',
+        }),
+      ]
+    );
+  }
+}
+
 // --- Market Price Ingestion ---
 
 const MAX_ITEM_NAME_LENGTH = 200;
@@ -1400,6 +1450,9 @@ const MP_OUTLIER_SCORE_THRESHOLD = 0.5;  // avg outlier score to flag
 const MP_OUTLIER_RATE_THRESHOLD = 0.4;   // fraction of submissions > 0.5 to flag
 const MP_CONFIDENCE_CLUSTER_MIN = 50;    // min submissions to check clustering
 const MP_CONFIDENCE_CLUSTER_RATE = 0.90; // 90% at same confidence = suspicious
+const MP_LOW_CONF_THRESHOLD = 0.85;     // below this = "low confidence"
+const MP_LOW_CONF_MIN_SUBMISSIONS = 20; // min submissions to evaluate a user
+const MP_LOW_CONF_RATE_THRESHOLD = 0.50; // flag if ≥50% of submissions are low
 
 let _lastMarketFinalization = 0;
 let _marketFinalizationRunning = false;
@@ -1451,9 +1504,11 @@ export function validateMarketPrice(entry) {
   if (now - ts.getTime() > MAX_EVENT_AGE_MS) return 'Timestamp too old';
 
   // confidence: optional, number 0.0-1.0
-  // Minimum 0.85 required — low-confidence scans are too noisy to be useful.
+  // Minimum 0.60 — the server accepts low-confidence submissions to track
+  // per-user quality patterns.  Snapshot finalization uses confidence-weighted
+  // voting, so low-confidence entries have little influence on final values.
   // Manually reviewed submissions bypass the minimum (user corrected values).
-  const MIN_CONFIDENCE = 0.85;
+  const MIN_CONFIDENCE = 0.60;
   if (entry.confidence != null) {
     if (typeof entry.confidence !== 'number' || !Number.isFinite(entry.confidence)) return 'Invalid confidence';
     if (entry.confidence < 0 || entry.confidence > 1) return 'confidence out of range';
