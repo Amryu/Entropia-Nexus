@@ -72,7 +72,8 @@
     { value: 'Monria', label: 'Monria' },
     { value: 'ROCKtropia', label: 'Rocktropia' },
     { value: 'Toulan', label: 'Toulan' },
-    { value: 'Next Island', label: 'Next Island' }
+    { value: 'Next Island', label: 'Next Island' },
+    { value: 'Space', label: 'Space' }
   ];
 
   // Empty vendor template for create mode
