@@ -227,9 +227,9 @@
     updateCooldownDuration();
   }
 
-  // Main planets only (excludes Space, asteroids, etc.)
+  // Main planets only (excludes asteroids, etc.)
   const MAIN_PLANET_NAMES = new Set([
-    'Calypso', 'Arkadia', 'Cyrene', 'Monria', 'ROCKtropia', 'Toulan', 'Next Island'
+    'Calypso', 'Arkadia', 'Cyrene', 'Monria', 'ROCKtropia', 'Toulan', 'Next Island', 'Space'
   ]);
 
   $: planetOptions = (data.planetsList || [])
