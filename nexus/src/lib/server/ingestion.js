@@ -1451,9 +1451,9 @@ export function validateMarketPrice(entry) {
   if (now - ts.getTime() > MAX_EVENT_AGE_MS) return 'Timestamp too old';
 
   // confidence: optional, number 0.0-1.0
-  // Minimum 0.75 required — low-confidence scans are too noisy to be useful.
+  // Minimum 0.85 required — low-confidence scans are too noisy to be useful.
   // Manually reviewed submissions bypass the minimum (user corrected values).
-  const MIN_CONFIDENCE = 0.75;
+  const MIN_CONFIDENCE = 0.85;
   if (entry.confidence != null) {
     if (typeof entry.confidence !== 'number' || !Number.isFinite(entry.confidence)) return 'Invalid confidence';
     if (entry.confidence < 0 || entry.confidence > 1) return 'confidence out of range';
