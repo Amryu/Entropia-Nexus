@@ -60,7 +60,12 @@ export async function execute(interaction) {
     const guild = interaction.guild;
     const discordUser = await guild.members.fetch(userVerify.id).catch(() => null);
     if (discordUser && !discordUser.roles.cache.has(getConfigValue('verifiedRoleId'))) {
-      await discordUser.roles.add(getConfigValue('verifiedRoleId'));
+      try {
+        await discordUser.roles.add(getConfigValue('verifiedRoleId'));
+      } catch (e) {
+        console.error(`Failed to re-add verified role to ${userVerify.id}: ${e.message}`);
+        return interaction.reply({ content: 'This user is already verified but the role could not be assigned. Check bot permissions.', flags: MessageFlags.Ephemeral });
+      }
     }
     return interaction.reply({ content: 'This user is already verified.', flags: MessageFlags.Ephemeral });
   }
@@ -93,8 +98,9 @@ export async function startVerification(thread, userId, guild, { onEnd } = {}) {
     return;
   }
 
-  const discordUserVerify = await guild.members.fetch(userId).catch(() => null);
-  if (!discordUserVerify) {
+  // Verify the member is still in the guild before starting
+  const guildMember = await guild.members.fetch(userId).catch(() => null);
+  if (!guildMember) {
     onEnd?.();
     return;
   }
@@ -116,7 +122,7 @@ export async function startVerification(thread, userId, guild, { onEnd } = {}) {
   // DM moderators with the code
   await notifyModeratorsWithCode(guild, thread.id, code, userVerify.eu_name);
 
-  const handle = collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd);
+  const handle = collectVerificationCode(thread, userVerify, guild, code, onEnd);
   replaceVerificationFlow(userId, handle);
   return handle;
 }
@@ -146,14 +152,15 @@ export async function resumeVerification(thread, userId, guild, { onEnd } = {}) 
     return;
   }
 
-  const discordUserVerify = await guild.members.fetch(userId).catch(() => null);
-  if (!discordUserVerify) {
+  // Verify the member is still in the guild before setting up the collector
+  const guildMember = await guild.members.fetch(userId).catch(() => null);
+  if (!guildMember) {
     onEnd?.();
     return;
   }
 
   console.log(`resumeVerification: Resuming code collector for ${userVerify.username} (code preserved)`);
-  const handle = collectVerificationCode(thread, userVerify, discordUserVerify, guild, parseInt(existingCode, 10), onEnd);
+  const handle = collectVerificationCode(thread, userVerify, guild, parseInt(existingCode, 10), onEnd);
   replaceVerificationFlow(userId, handle);
   return handle;
 }
@@ -184,7 +191,7 @@ async function notifyModeratorsWithCode(guild, threadId, code, euName) {
 /**
  * @returns {{ stop: () => void }} Handle to stop the collector externally
  */
-function collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd) {
+function collectVerificationCode(thread, userVerify, guild, code, onEnd) {
   let settled = false;
   const codeStr = String(code);
 
@@ -209,22 +216,56 @@ function collectVerificationCode(thread, userVerify, discordUserVerify, guild, c
   }
 
   async function onVerified() {
-    if (!settle()) return;
-
-    const verifiedRole = guild.roles.cache.get(getConfigValue('verifiedRoleId'));
+    // Check role config BEFORE settling — if missing, don't settle so user can retry
+    const verifiedRoleId = getConfigValue('verifiedRoleId');
+    const verifiedRole = verifiedRoleId ? guild.roles.cache.get(verifiedRoleId) : null;
     if (!verifiedRole) {
       try {
-        await thread.send('The verified role has not been set. Please contact an administrator.');
+        await thread.send('The verified role could not be found. Please contact an administrator.');
       } catch (e) {
         console.error(`Failed to send error message to thread ${thread.id}: ${e.message}`);
       }
       return;
     }
 
-    await discordUserVerify.roles.add(verifiedRole);
-    await setUserVerified(userVerify.id, true);
-    await assignUserRole(userVerify.id);
-    await setBotConfig(`verify_code:${userVerify.id}`, null);
+    // Re-fetch the GuildMember to ensure a fresh reference
+    let freshMember;
+    try {
+      freshMember = await guild.members.fetch(userVerify.id);
+    } catch (e) {
+      console.error(`Failed to fetch member ${userVerify.id}: ${e.message}`);
+      try {
+        await thread.send('Could not find you in the server. Please make sure you are still a member and try typing the code again.');
+      } catch (e2) {
+        console.error(`Failed to send error message to thread ${thread.id}: ${e2.message}`);
+      }
+      return;
+    }
+
+    // Attempt to add the verified role — on failure, don't settle so user can retry
+    try {
+      await freshMember.roles.add(verifiedRole);
+    } catch (e) {
+      console.error(`Failed to add verified role to ${userVerify.id}: ${e.message}`);
+      try {
+        await thread.send('There was a technical issue assigning your role. Please try typing the code again in a moment, or contact a moderator.');
+      } catch (e2) {
+        console.error(`Failed to send error message to thread ${thread.id}: ${e2.message}`);
+      }
+      return;
+    }
+
+    // Role added successfully — NOW settle (stop collectors)
+    if (!settle()) return;
+
+    try {
+      await setUserVerified(userVerify.id, true);
+      await assignUserRole(userVerify.id);
+      await setBotConfig(`verify_code:${userVerify.id}`, null);
+    } catch (e) {
+      console.error(`Failed to update DB after verification for ${userVerify.id}: ${e.message}`);
+    }
+
     try {
       await thread.send(`${userVerify.global_name} has been successfully verified with the Entropia name "${userVerify.eu_name}"!`);
       await thread.setArchived(true);

@@ -485,17 +485,24 @@ async function promptModeratorForConfirmation(interaction, onApprove) {
 
   await interaction.reply(prompt);
 
-  const filter = _ => true;
-  const collector = interaction.channel.createMessageComponentCollector({ filter, time: 0 });
+  const filter = i => i.customId === 'yes' || i.customId === 'no';
+  const collector = interaction.channel.createMessageComponentCollector({ filter, time: 300_000 });
 
   collector.on('collect', async i => {
     if (i.customId === 'yes') {
-      i.update({ content: '...', components: [], flags: MessageFlags.Ephemeral });
-      await onApprove();
+      await i.update({ content: 'Applying changes...', components: [], flags: MessageFlags.Ephemeral });
+      try {
+        await onApprove();
+      } catch (e) {
+        console.error('[approve] Error during approval:', e);
+        try {
+          await interaction.channel.send('An error occurred during the approval process. The change may have been partially applied — please check.');
+        } catch {}
+      }
       collector.stop();
     }
     else {
-      i.reply('The approval was cancelled.', { flags: MessageFlags.Ephemeral });
+      await i.reply({ content: 'The approval was cancelled.', flags: MessageFlags.Ephemeral });
       collector.stop();
     }
   });

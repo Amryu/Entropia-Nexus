@@ -55,24 +55,29 @@ export async function execute(interaction) {
   });
 }
 
-async function promptModeratorForConfirmation(interaction, onApprove) {
+async function promptModeratorForConfirmation(interaction, onDeny) {
   const prompt = { content: `Are you sure you want to deny these changes?`, components: [denyRow], flags: MessageFlags.Ephemeral };
-  
+
   await interaction.reply(prompt);
 
-  const filter = _ => true;
-  const collector = interaction.channel.createMessageComponentCollector({ filter, time: 0 });
-  
+  const filter = i => i.customId === 'yes' || i.customId === 'no';
+  const collector = interaction.channel.createMessageComponentCollector({ filter, time: 300_000 });
+
   collector.on('collect', async i => {
     if (i.customId === 'yes') {
-      i.update({ content: '...', flags: MessageFlags.Ephemeral });
-      if (!(await onApprove())) {
-        i.update({ content: 'The denial failed.', components: [], flags: MessageFlags.Ephemeral });
+      await i.update({ content: 'Denying changes...', components: [], flags: MessageFlags.Ephemeral });
+      try {
+        await onDeny();
+      } catch (e) {
+        console.error('[deny] Error during denial:', e);
+        try {
+          await interaction.channel.send('An error occurred during the denial process.');
+        } catch {}
       }
       collector.stop();
     }
     else {
-      i.reply('The denial was cancelled.', { flags: MessageFlags.Ephemeral });
+      await i.reply({ content: 'The denial was cancelled.', flags: MessageFlags.Ephemeral });
       collector.stop();
     }
   });

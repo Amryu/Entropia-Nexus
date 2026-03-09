@@ -34,7 +34,7 @@ export async function rollbackTransaction(client) {
 export async function createUser(user) {
   const query = 'INSERT INTO users (id, username, global_name, discriminator, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *';
   const values = [user.id, user.username, user.global_name, user.discriminator, user.avatar];
-  await (await poolUsers.query(query, values)).rows[0];
+  return (await poolUsers.query(query, values)).rows[0];
 }
 export async function getUsers() {
   return (await poolUsers.query('SELECT * FROM users')).rows;

@@ -948,6 +948,59 @@ async function syncReviewerRole() {
   }
 }
 
+async function syncVerifiedRole() {
+  const verifiedRoleId = getConfigValue('verifiedRoleId');
+  if (!verifiedRoleId) return;
+
+  const channel = client.channels.cache.get(config.verifiedChannelId);
+  if (!channel?.guild) {
+    console.error('syncVerifiedRole: Could not resolve guild');
+    return;
+  }
+  const guild = channel.guild;
+
+  const role = guild.roles.cache.get(verifiedRoleId);
+  if (!role) {
+    console.error(`syncVerifiedRole: Role ${verifiedRoleId} not found in guild`);
+    return;
+  }
+
+  const allUsers = await getUsers();
+  const verifiedUsers = allUsers.filter(u => u.verified);
+
+  // Fetch members in batches (Discord limits to 100 per request)
+  const BATCH_SIZE = 100;
+  const userIds = verifiedUsers.map(u => u.id);
+  for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+    const batch = userIds.slice(i, i + BATCH_SIZE);
+    try {
+      await guild.members.fetch({ user: batch });
+    } catch (e) {
+      console.error('syncVerifiedRole: Batch fetch error:', e.message);
+    }
+  }
+
+  // Add role to verified users who are missing it (add-only, never remove)
+  let added = 0;
+  for (const user of verifiedUsers) {
+    const member = guild.members.cache.get(user.id);
+    if (!member) continue;
+    if (member.roles.cache.has(verifiedRoleId)) continue;
+
+    try {
+      await member.roles.add(verifiedRoleId);
+      added++;
+      console.log(`syncVerifiedRole: Added verified role to ${member.user.username}`);
+    } catch (e) {
+      console.error(`syncVerifiedRole: Failed to add role to ${user.id}: ${e.message}`);
+    }
+  }
+
+  if (added > 0) {
+    console.log(`syncVerifiedRole: Added role to ${added} member(s)`);
+  }
+}
+
 function formatJsonForDiscord(json) {
   if (json === null) {
     return ['```yaml\nNo changes detected\n```'];
@@ -1372,6 +1425,7 @@ setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNo
 setInterval(() => runScheduled('checkRentalDmNotifications', checkRentalDmNotifications), 30 * 1000);
 setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 15 * 1000);
 setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
+setInterval(() => runScheduled('syncVerifiedRole', syncVerifiedRole), 5 * 60 * 1000);
 setInterval(() => runScheduled('checkAuctions', () => checkAuctions(client, config)), 30 * 1000);
 setInterval(() => runScheduled('refreshAuctionColors', () => refreshAuctionColors(client, config)), 5 * 60 * 1000);
 setInterval(() => runScheduled('cleanupStaleUnverifiedUsers', cleanupStaleUnverifiedUsers), 60 * 60 * 1000);
