@@ -246,6 +246,11 @@ class ScreenCapturer:
         """
         if sys.platform != "win32":
             return False
+        # Windows builds >= 20348 natively support IsBorderRequired.
+        # All Windows 11 versions (build 22000+) satisfy this.  Skip the
+        # fragile runtime probe when the OS version already guarantees support.
+        if sys.getwindowsversion().build >= _WGC_BORDERLESS_MIN_BUILD:
+            return True
         try:
             from windows_capture.windows_capture import NativeWindowsCapture
 
@@ -263,15 +268,17 @@ class ScreenCapturer:
                 None,                                     # secondary_window
                 None,                                     # minimum_update_interval
                 None,                                     # dirty_region
-                None,                                     # monitor_index
-                "__nexus_borderless_probe_nonexistent__",  # window_name
+                1,                                        # monitor_index (primary)
+                None,                                     # window_name
             )
-            # start_free_threaded will fail because the window doesn't exist,
-            # but the border-unsupported check happens first in the Rust code.
-            native.start_free_threaded()
-            return True  # session started somehow — borderless is supported
+            # The session will start on the primary monitor.  If the OS
+            # rejects draw_border=False the error is raised here.
+            ctrl = native.start_free_threaded()
+            ctrl.stop()
+            return True
         except Exception as e:
             err_msg = str(e).lower()
+            log.warning("WGC borderless probe error: %s", e)
             if "border" in err_msg:
                 return False
             # Any other error (e.g. window not found) means the border setting
