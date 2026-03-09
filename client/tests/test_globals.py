@@ -6,13 +6,13 @@ from client.chat_parser.handlers.globals import GlobalsHandler
 from client.chat_parser.models import GlobalType, ParsedLine
 
 
-def _make_global_line(msg: str) -> ParsedLine:
+def _make_global_line(msg: str, *, channel: str = "Globals") -> ParsedLine:
     return ParsedLine(
         timestamp=datetime(2026, 2, 7, 11, 19, 15),
-        channel="Globals",
+        channel=channel,
         username="",
         message=msg,
-        raw_line=f"2026-02-07 11:19:15 [Globals] [] {msg}",
+        raw_line=f"2026-02-07 11:19:15 [{channel}] [] {msg}",
         line_number=1,
     )
 
@@ -179,6 +179,44 @@ class TestGlobalsHandler(unittest.TestCase):
         self.assertEqual(event.target_name, "A.R.C. Adept Leg Guards (M,L)")
         self.assertAlmostEqual(event.value, 7.0)
         self.assertEqual(event.value_unit, "TIER")
+
+    # --- Legacy format (pre-2012: globals on [Local] channel) ---
+
+    def test_legacy_local_channel_kill(self):
+        line = _make_global_line(
+            "Phil phobos demars killed a creature (Araneatrox Young) with a value of 81 PED!",
+            channel="Local",
+        )
+        self.assertTrue(self.handler.can_handle(line))
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.KILL)
+        self.assertEqual(event.player_name, "Phil phobos demars")
+        self.assertEqual(event.target_name, "Araneatrox Young")
+        self.assertAlmostEqual(event.value, 81.0)
+
+    def test_legacy_manufactured_craft(self):
+        line = _make_global_line(
+            "Buzz Erik Lightyear manufactured an item (Weapon Damage Enhancer VI) worth 143 PED!",
+            channel="Local",
+        )
+        self.assertTrue(self.handler.can_handle(line))
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.CRAFT)
+        self.assertEqual(event.player_name, "Buzz Erik Lightyear")
+        self.assertEqual(event.target_name, "Weapon Damage Enhancer VI")
+        self.assertAlmostEqual(event.value, 143.0)
+
+    def test_legacy_local_ignores_non_global_messages(self):
+        """Non-global messages on Local channel with empty username should not crash."""
+        line = _make_global_line(
+            "Daniel DAN Jagiello has left the Entropia Universe.",
+            channel="Local",
+        )
+        self.assertTrue(self.handler.can_handle(line))
+        self.handler.handle(line)
+        self.bus.publish.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -493,9 +493,9 @@ def validate_config(config: AppConfig) -> list[str]:
     if not 0.0 <= config.ocr_confidence_threshold <= 1.0:
         errors.append(f"ocr_confidence_threshold must be 0.0-1.0, got {config.ocr_confidence_threshold}")
 
-    if config.ocr_capture_backend not in {"auto", "printwindow", "wgc"}:
+    if config.ocr_capture_backend not in {"auto", "bitblt", "printwindow", "wgc"}:
         errors.append(
-            "ocr_capture_backend must be one of: auto, printwindow, wgc "
+            "ocr_capture_backend must be one of: auto, bitblt, printwindow, wgc "
             f"(got {config.ocr_capture_backend})",
         )
 

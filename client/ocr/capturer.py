@@ -146,6 +146,10 @@ class ScreenCapturer:
     own pixels, ignoring overlays on top.
     """
 
+    #: Class-level tracker so the backend message is only logged once
+    #: across all instances (avoids spamming the ring buffer).
+    _logged_backend: str | None = None
+
     def __init__(self, capture_backend: str | None = None):
         if mss is None:
             raise ImportError("mss is required for screen capture. Install with: pip install mss")
@@ -153,7 +157,7 @@ class ScreenCapturer:
         self._capture_backend_preference = self._normalize_backend_name(
             capture_backend or os.getenv("NEXUS_CAPTURE_BACKEND", DEFAULT_CAPTURE_BACKEND),
         )
-        self._active_window_backend = "printwindow"
+        self._active_window_backend: str | None = None
         self._wgc_fail_streak = 0
 
         # Persistent WGC session state
@@ -205,39 +209,42 @@ class ScreenCapturer:
 
     def _init_windows_backend(self) -> None:
         pref = self._capture_backend_preference
+        prev = self._active_window_backend
 
         if pref == "printwindow":
             self._active_window_backend = "printwindow"
-            log.warning("Window capture backend: PrintWindow")
-            return
-
-        if pref == "bitblt":
+        elif pref == "bitblt":
             self._active_window_backend = "bitblt"
-            log.warning("Window capture backend: BitBlt")
-            return
-
-        if pref in {"auto", "wgc"}:
+        elif pref in {"auto", "wgc"}:
             if self._is_wgc_available() and self._is_borderless_supported():
                 self._wgc_available = True
                 self._wgc_draw_border = False
                 self._active_window_backend = "wgc"
-                log.warning("Window capture backend: Windows Graphics Capture (borderless)")
-                return
-            if pref == "wgc":
+            elif pref == "wgc":
                 # Explicit WGC request — use it even with yellow border
                 if self._is_wgc_available():
                     self._wgc_available = True
                     self._wgc_draw_border = None
                     self._active_window_backend = "wgc"
-                    log.warning("Window capture backend: Windows Graphics Capture (with border)")
-                    return
-                log.warning(
-                    "WGC backend was requested but is unavailable. Falling back to BitBlt.",
-                )
+                else:
+                    log.warning("WGC requested but unavailable, falling back to BitBlt")
+                    self._active_window_backend = "bitblt"
+            else:
+                self._active_window_backend = "bitblt"
 
-        # Auto fallback: BitBlt (no flicker, no border)
-        self._active_window_backend = "bitblt"
-        log.warning("Window capture backend: BitBlt (WGC borderless not available)")
+        backend = self._active_window_backend
+        if backend != prev or backend != ScreenCapturer._logged_backend:
+            names = {
+                "printwindow": "PrintWindow",
+                "bitblt": "BitBlt",
+                "wgc": "Windows Graphics Capture",
+            }
+            name = names.get(backend, backend)
+            if backend == "wgc":
+                border = "borderless" if self._wgc_draw_border is False else "with border"
+                name = f"{name} ({border})"
+            log.warning("Window capture backend: %s", name)
+            ScreenCapturer._logged_backend = backend
 
     @staticmethod
     def _is_wgc_available() -> bool:

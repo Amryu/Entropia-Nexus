@@ -22,7 +22,9 @@ class GlobalsHandler(BaseHandler):
     suppress_events: bool = False  # Set during catchup to skip EventBus publish
 
     def can_handle(self, parsed_line: ParsedLine) -> bool:
-        return parsed_line.channel == "Globals" and parsed_line.username == ""
+        # Accept both modern [Globals] channel and legacy [Local] channel
+        # (pre-2012 clients broadcast globals on Local with empty username)
+        return parsed_line.channel in ("Globals", "Local") and parsed_line.username == ""
 
     def handle(self, parsed_line: ParsedLine) -> None:
         msg = parsed_line.message

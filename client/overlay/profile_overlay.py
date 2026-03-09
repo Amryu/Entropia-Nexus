@@ -1718,7 +1718,7 @@ class ProfileOverlayWidget(OverlayWidget):
         society_id = profile.get("societyId")
         base = self._nexus_client._config.nexus_base_url.rstrip("/")
 
-        if society and society_id and society_id > 0:
+        if society and society_id and int(society_id) > 0:
             # Member of a society
             soc_name = society.get("name", "")
             soc_abbr = society.get("abbreviation", "")
