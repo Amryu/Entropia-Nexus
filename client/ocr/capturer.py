@@ -32,7 +32,7 @@ if sys.platform == "win32":
 
 log = get_logger("Capturer")
 
-WINDOW_BACKENDS = {"auto", "printwindow", "wgc"}
+WINDOW_BACKENDS = {"auto", "printwindow", "bitblt", "wgc"}
 DEFAULT_CAPTURE_BACKEND = "auto"
 WGC_MAX_FAIL_STREAK = 5
 
@@ -188,7 +188,7 @@ class ScreenCapturer:
         name = (value or DEFAULT_CAPTURE_BACKEND).strip().lower()
         aliases = {
             "default": "auto",
-            "gdi": "printwindow",
+            "gdi": "bitblt",
             "print": "printwindow",
             "print_window": "printwindow",
             "wgcapture": "wgc",
@@ -204,27 +204,40 @@ class ScreenCapturer:
         return normalized
 
     def _init_windows_backend(self) -> None:
-        if self._capture_backend_preference == "printwindow":
+        pref = self._capture_backend_preference
+
+        if pref == "printwindow":
             self._active_window_backend = "printwindow"
-            log.info("Window capture backend: PrintWindow")
+            log.warning("Window capture backend: PrintWindow")
             return
 
-        if self._capture_backend_preference in {"auto", "wgc"}:
-            if self._is_wgc_available():
+        if pref == "bitblt":
+            self._active_window_backend = "bitblt"
+            log.warning("Window capture backend: BitBlt")
+            return
+
+        if pref in {"auto", "wgc"}:
+            if self._is_wgc_available() and self._is_borderless_supported():
                 self._wgc_available = True
-                self._wgc_draw_border = False if self._is_borderless_supported() else None
+                self._wgc_draw_border = False
                 self._active_window_backend = "wgc"
-                border_info = "borderless" if self._wgc_draw_border is False else "with border"
-                log.info("Window capture backend: Windows Graphics Capture (%s)", border_info)
+                log.warning("Window capture backend: Windows Graphics Capture (borderless)")
                 return
-            if self._capture_backend_preference == "wgc":
+            if pref == "wgc":
+                # Explicit WGC request — use it even with yellow border
+                if self._is_wgc_available():
+                    self._wgc_available = True
+                    self._wgc_draw_border = None
+                    self._active_window_backend = "wgc"
+                    log.warning("Window capture backend: Windows Graphics Capture (with border)")
+                    return
                 log.warning(
-                    "WGC backend was requested but is unavailable. Falling back to PrintWindow.",
+                    "WGC backend was requested but is unavailable. Falling back to BitBlt.",
                 )
 
-        self._active_window_backend = "printwindow"
-        if self._capture_backend_preference == "auto":
-            log.info("Window capture backend: PrintWindow (WGC not available)")
+        # Auto fallback: BitBlt (no flicker, no border)
+        self._active_window_backend = "bitblt"
+        log.warning("Window capture backend: BitBlt (WGC borderless not available)")
 
     @staticmethod
     def _is_wgc_available() -> bool:
@@ -373,9 +386,9 @@ class ScreenCapturer:
     ) -> np.ndarray | None:
         """Capture a window's content.
 
-        On Windows, tries the configured backend (WGC or PrintWindow) and
-        falls back to PrintWindow as needed. On Linux, falls back to mss
-        region capture using *geometry* (x, y, w, h).
+        On Windows, tries the configured backend (WGC, BitBlt, or
+        PrintWindow) and falls back to BitBlt as needed. On Linux, falls
+        back to mss region capture using *geometry* (x, y, w, h).
 
         Returns the window as a numpy array (BGR format), or None.
         """
@@ -388,15 +401,20 @@ class ScreenCapturer:
 
                 self._wgc_fail_streak += 1
                 if self._wgc_fail_streak == 1:
-                    log.debug("WGC session returned no frame; using PrintWindow fallback")
+                    log.debug("WGC session returned no frame; using BitBlt fallback")
                 if self._wgc_fail_streak >= WGC_MAX_FAIL_STREAK:
                     log.warning(
                         "WGC returned no frames %d times in a row; disabling WGC for this session",
                         self._wgc_fail_streak,
                     )
                     self._stop_wgc_session()
-                    self._active_window_backend = "printwindow"
-            return self._capture_window_win32(hwnd)
+                    self._active_window_backend = "bitblt"
+            if self._active_window_backend == "bitblt":
+                return self._capture_window_bitblt(hwnd)
+            if self._active_window_backend == "printwindow":
+                return self._capture_window_win32(hwnd)
+            # WGC frame miss — use BitBlt for the single fallback frame
+            return self._capture_window_bitblt(hwnd)
 
         # Linux: fall back to region capture using geometry
         if geometry is None:
@@ -488,3 +506,67 @@ class ScreenCapturer:
             # Convert to numpy array (BGRA -> BGR)
             image = np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 4)
             return image[:, :, :3]  # Drop alpha channel
+
+    def _capture_window_bitblt(self, hwnd: int) -> np.ndarray | None:
+        """Capture a window via BitBlt from its device context.
+
+        Copies the window's client area directly via its DC.  Unlike
+        PrintWindow, does not send WM_PRINT so there is no flicker.
+        May return black for DirectX/OpenGL surfaces that don't
+        render to the GDI-accessible buffer.
+        """
+        with _thread_per_monitor_dpi():
+            rect = ctypes.wintypes.RECT()
+            user32.GetClientRect(hwnd, ctypes.byref(rect))
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+            if width <= 0 or height <= 0:
+                return None
+
+            hwnd_dc = user32.GetDC(hwnd)
+            if not hwnd_dc:
+                return None
+
+            mem_dc = gdi32.CreateCompatibleDC(hwnd_dc)
+            bitmap = gdi32.CreateCompatibleBitmap(hwnd_dc, width, height)
+            gdi32.SelectObject(mem_dc, bitmap)
+
+            gdi32.BitBlt(mem_dc, 0, 0, width, height, hwnd_dc, 0, 0, SRCCOPY)
+
+            class BITMAPINFOHEADER(ctypes.Structure):
+                _fields_ = [
+                    ("biSize", ctypes.c_uint32),
+                    ("biWidth", ctypes.c_int32),
+                    ("biHeight", ctypes.c_int32),
+                    ("biPlanes", ctypes.c_uint16),
+                    ("biBitCount", ctypes.c_uint16),
+                    ("biCompression", ctypes.c_uint32),
+                    ("biSizeImage", ctypes.c_uint32),
+                    ("biXPelsPerMeter", ctypes.c_int32),
+                    ("biYPelsPerMeter", ctypes.c_int32),
+                    ("biClrUsed", ctypes.c_uint32),
+                    ("biClrImportant", ctypes.c_uint32),
+                ]
+
+            bmi = BITMAPINFOHEADER()
+            bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.biWidth = width
+            bmi.biHeight = -height  # top-down DIB
+            bmi.biPlanes = 1
+            bmi.biBitCount = 32
+            bmi.biCompression = 0  # BI_RGB
+
+            buffer_size = width * height * 4
+            buffer = ctypes.create_string_buffer(buffer_size)
+
+            gdi32.GetDIBits(
+                mem_dc, bitmap, 0, height,
+                buffer, ctypes.byref(bmi), DIB_RGB_COLORS,
+            )
+
+            gdi32.DeleteObject(bitmap)
+            gdi32.DeleteDC(mem_dc)
+            user32.ReleaseDC(hwnd, hwnd_dc)
+
+            image = np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 4)
+            return image[:, :, :3]

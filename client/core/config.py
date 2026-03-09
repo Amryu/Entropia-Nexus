@@ -25,8 +25,8 @@ class AppConfig:
     ocr_adjust_margin: int = 8        # px, skills quick_adjust search radius
     ocr_idle_threshold: int = 50      # ticks with no change before entering idle mode
     ocr_idle_multiplier: int = 5      # poll interval multiplier in idle mode
-    ocr_capture_backend: str = "auto"  # auto | printwindow | wgc
-    wgc_border_choice_made: bool = False  # one-time dialog about WGC yellow border
+    ocr_capture_backend: str = "auto"  # auto | bitblt | printwindow | wgc
+    capture_backend_choice_made: bool = False  # one-time capture backend dialog
     ocr_auto_scan_enabled: bool = True
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
@@ -188,7 +188,7 @@ DEFAULTS = {
     "ocr_idle_threshold": 50,
     "ocr_idle_multiplier": 5,
     "ocr_capture_backend": "auto",
-    "wgc_border_choice_made": False,
+    "capture_backend_choice_made": False,
     "ocr_auto_scan_enabled": True,
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},

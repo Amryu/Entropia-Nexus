@@ -1,8 +1,4 @@
-"""One-time dialog shown when WGC borderless capture is not supported.
-
-Explains the trade-off between PrintWindow (no border, potential flickering)
-and WGC (no game interference, yellow border) and lets the user choose.
-"""
+"""One-time dialog to choose the window capture backend for OCR."""
 
 from __future__ import annotations
 
@@ -23,25 +19,22 @@ _MONITOR_SVG = (
 
 _BODY_HTML = """\
 <h3>Screen Capture Method</h3>
-<p>Your version of Windows does not support borderless screen capture.
-The client needs to choose how to capture the game window for OCR.</p>
+<p>Choose how the client captures the game window for OCR.</p>
 
-<h4 style="color: {accent};">Option 1: PrintWindow</h4>
-<ul>
-  <li><b>No yellow border</b> around the game window.</li>
-  <li>May have issues with certain hardware and refresh rates.</li>
-  <li>May cause <b>occasional black flickering</b> in the game. If this
-      happens, switch to WGC in settings.</li>
-</ul>
-
-<h4 style="color: {accent};">Option 2: Windows Graphics Capture</h4>
-<ul>
-  <li><b>No game interference</b> &mdash; does not touch the game's rendering pipeline.</li>
-  <li>A <b>permanent yellow border</b> will be visible around the game window
-      while the client is running. This is a Windows system limitation that
-      cannot be removed on your OS version.</li>
-  <li>This is supported in a newer version of Windows 10, so an update may resolve this.</li>
-</ul>
+<table style="border-collapse: collapse; width: 100%;">
+  <tr>
+    <td style="padding: 6px 8px; font-weight: bold; color: {accent};">WGC</td>
+    <td style="padding: 6px 8px;">{wgc_desc}</td>
+  </tr>
+  <tr>
+    <td style="padding: 6px 8px; font-weight: bold; color: {accent};">BitBlt</td>
+    <td style="padding: 6px 8px;">Direct read from game buffer, may not work on some systems.</td>
+  </tr>
+  <tr>
+    <td style="padding: 6px 8px; font-weight: bold; color: {accent};">PrintWindow</td>
+    <td style="padding: 6px 8px;">Forces a game redraw, can cause flickering. Use as a last resort.</td>
+  </tr>
+</table>
 
 <p style="color: {muted}; font-size: 12px; margin-top: 16px;">
   You can change this later in <b>Settings &rarr; Window capture backend</b>.
@@ -52,15 +45,17 @@ The client needs to choose how to capture the game window for OCR.</p>
 class CaptureBackendDialog(QDialog):
     """One-time capture backend choice dialog.
 
-    Returns ``QDialog.DialogCode.Accepted`` if the user chose WGC (yellow
-    border), ``QDialog.DialogCode.Rejected`` if they chose PrintWindow.
+    After ``exec()``, read :attr:`chosen_backend` for the selected value
+    (``"bitblt"``, ``"printwindow"``, or ``"wgc"``).  Defaults to
+    ``"wgc"`` (borderless) or ``"bitblt"`` (bordered) if closed without choosing.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, borderless_supported: bool = False, parent=None):
         super().__init__(parent)
+        self.chosen_backend = "wgc" if borderless_supported else "bitblt"
         self.setWindowTitle("Screen Capture Method")
-        self.setMinimumSize(480, 380)
-        self.resize(520, 440)
+        self.setMinimumSize(420, 380)
+        self.resize(480, 430)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {SECONDARY}; }}
             QLabel {{ background: transparent; }}
@@ -94,9 +89,16 @@ class CaptureBackendDialog(QDialog):
         layout.addWidget(self._separator())
 
         # Body
+        if borderless_supported:
+            wgc_desc = "Mandatory for HDR users, no yellow border on your system."
+        else:
+            wgc_desc = "Mandatory for HDR users, causes a yellow border on your system."
+
         browser = QTextBrowser()
         browser.setOpenExternalLinks(False)
-        browser.setHtml(_BODY_HTML.format(accent=ACCENT, muted=TEXT_MUTED))
+        browser.setHtml(_BODY_HTML.format(
+            accent=ACCENT, muted=TEXT_MUTED, wgc_desc=wgc_desc,
+        ))
         browser.setStyleSheet(f"""
             QTextBrowser {{
                 background: {PRIMARY};
@@ -124,21 +126,37 @@ class CaptureBackendDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        wgc_btn = QPushButton("Use WGC")
-        wgc_btn.setStyleSheet(self._secondary_btn_style())
-        wgc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        wgc_btn.clicked.connect(self.accept)
-        btn_row.addWidget(wgc_btn)
+        pw_btn = QPushButton("PrintWindow")
+        pw_btn.setStyleSheet(self._secondary_btn_style())
+        pw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pw_btn.clicked.connect(lambda: self._choose("printwindow"))
+        btn_row.addWidget(pw_btn)
 
         btn_row.addStretch()
 
-        pw_btn = QPushButton("Use PrintWindow")
-        pw_btn.setStyleSheet(self._primary_btn_style())
-        pw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        pw_btn.clicked.connect(self.reject)
-        btn_row.addWidget(pw_btn)
+        bitblt_btn = QPushButton("BitBlt")
+        if borderless_supported:
+            bitblt_btn.setStyleSheet(self._secondary_btn_style())
+        else:
+            bitblt_btn.setStyleSheet(self._primary_btn_style())
+        bitblt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        bitblt_btn.clicked.connect(lambda: self._choose("bitblt"))
+        btn_row.addWidget(bitblt_btn)
+
+        wgc_btn = QPushButton("WGC")
+        if borderless_supported:
+            wgc_btn.setStyleSheet(self._primary_btn_style())
+        else:
+            wgc_btn.setStyleSheet(self._secondary_btn_style())
+        wgc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        wgc_btn.clicked.connect(lambda: self._choose("wgc"))
+        btn_row.addWidget(wgc_btn)
 
         layout.addLayout(btn_row)
+
+    def _choose(self, backend: str) -> None:
+        self.chosen_backend = backend
+        self.accept()
 
     @staticmethod
     def _separator() -> QFrame:

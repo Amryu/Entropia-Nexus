@@ -246,16 +246,16 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         config.tos_accepted_version = TOS_VERSION
         save_config(config, config_path)
 
-    # Capture backend choice (one-time, when borderless WGC unavailable)
-    if sys.platform == "win32" and not config.wgc_border_choice_made:
+    # Capture backend choice (one-time)
+    if sys.platform == "win32" and not config.capture_backend_choice_made:
         from .ocr.capturer import ScreenCapturer
-        if not ScreenCapturer._is_borderless_supported():
-            from .ui.dialogs.capture_backend_dialog import CaptureBackendDialog
-            dlg = CaptureBackendDialog()
-            if dlg.exec() != QDialog.DialogCode.Accepted:
-                config.ocr_capture_backend = "printwindow"
-            config.wgc_border_choice_made = True
-            save_config(config, config_path)
+        from .ui.dialogs.capture_backend_dialog import CaptureBackendDialog
+        borderless = ScreenCapturer._is_borderless_supported()
+        dlg = CaptureBackendDialog(borderless_supported=borderless)
+        dlg.exec()
+        config.ocr_capture_backend = dlg.chosen_backend
+        config.capture_backend_choice_made = True
+        save_config(config, config_path)
 
     # Init auth early (needed to decide whether to show splash)
     token_store = TokenStore()
