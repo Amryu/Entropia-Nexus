@@ -601,6 +601,7 @@
       { label: 'Shops', url: 'shops' },
     ],
     'External': [
+      { label: 'Entropia Museum', url: 'entropiamuseum' },
       { label: 'NI Helper', url: 'nihelper' },
       { label: 'Cyrenedream', url: 'cyrenedream' },
       { label: 'The Delta Project', url: 'deltaproject' },
@@ -660,6 +661,7 @@
 
   const customUrls: Record<string, string> = {
     'api': `${import.meta.env.VITE_API_URL}/docs/`,
+    'entropiamuseum': 'https://www.entropiamuseum.com/',
     'nihelper': 'https://www.nihelper.com',
     'cyrenedream': 'https://www.cyrenedream.org',
     'deltaproject': 'https://www.thedeltaproject.net',
@@ -676,7 +678,7 @@
   }
 
   function isExternalLink(item: { label: string; url: string }) {
-    return ['api', 'nihelper', 'cyrenedream', 'deltaproject', 'ripcraze', 'entropialife', 'pcforum'].includes(item.url);
+    return ['api', 'entropiamuseum', 'nihelper', 'cyrenedream', 'deltaproject', 'ripcraze', 'entropialife', 'pcforum'].includes(item.url);
   }
 
   // Top-level menus to visually highlight
