@@ -6,7 +6,7 @@ const BUILTIN_ENUMERATIONS = [
   { name: 'MobLoots', description: 'Mob loot relations flattened by mob and item.' },
   { name: 'RefiningRecipes', description: 'Refining recipes flattened by ingredient.' },
   { name: 'Tiers', description: 'Tier requirements flattened by material.' },
-  { name: 'BlueprintDrops', description: 'Blueprint drop relations.' },
+  { name: 'BlueprintDrops', description: 'Droppable blueprints with rarity classifications.' },
   { name: 'Effects', description: 'Effect definitions.' },
   { name: 'EffectsOnEquip', description: 'Effects that apply while equipped.' },
   { name: 'EffectsOnSetEquip', description: 'Set effects by minimum set pieces.' },
@@ -408,29 +408,27 @@ async function loadTiers() {
 
 async function loadBlueprintDrops() {
   const rows = await safeRows(
-    `SELECT bd."SourceId", s."Name" AS "SourceName",
-            bd."DropId", d."Name" AS "DropName",
-            d."Level" AS "DropLevel"
-     FROM ONLY "BlueprintDrops" bd
-     INNER JOIN ONLY "Blueprints" s ON s."Id" = bd."SourceId"
-     INNER JOIN ONLY "Blueprints" d ON d."Id" = bd."DropId"
-     ORDER BY s."Name", d."Name"`
+    `SELECT "Id", "Name", "Type", "Level", "DropRarity"
+     FROM ONLY "Blueprints"
+     WHERE "IsDroppable" = true
+     ORDER BY "Type", "Level", "Name"`
   );
   return {
     columns: [
-      { key: 'SourceBlueprint', label: 'Source Blueprint' },
-      { key: 'DropBlueprint', label: 'Drop Blueprint' },
-      { key: 'DropLevel', label: 'Drop Level' },
+      { key: 'Name', label: 'Name' },
+      { key: 'Type', label: 'Type' },
+      { key: 'Level', label: 'Level' },
+      { key: 'DropRarity', label: 'Rarity' },
     ],
     rows: rows.map((r) => withRefs(
       {
-        SourceBlueprint: r.SourceName,
-        DropBlueprint: r.DropName,
-        DropLevel: r.DropLevel === null || r.DropLevel === undefined ? null : Number(r.DropLevel),
+        Name: r.Name,
+        Type: r.Type || null,
+        Level: r.Level != null ? Number(r.Level) : null,
+        DropRarity: r.DropRarity || null,
       },
       {
-        SourceBlueprint: { type: 'Blueprint', id: r.SourceId, name: r.SourceName },
-        DropBlueprint: { type: 'Blueprint', id: r.DropId, name: r.DropName }
+        Name: { type: 'Blueprint', id: r.Id, name: r.Name }
       }
     ))
   };

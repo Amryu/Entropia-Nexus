@@ -56,9 +56,9 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/armorplatings` | Armor plating attachments |
 | `/armorsets` | Armor sets with pieces, effects, and tiers |
 | `/armors` | Individual armor pieces |
-| `/blueprints` | Blueprints with materials, books, and drops |
+| `/blueprints` | Blueprints with materials, books, droppable status, and rarity |
 | `/blueprintbooks` | Blueprint book collections |
-| `/blueprintdrops` | Blueprint drop sources |
+| `/blueprintdrops` | Droppable blueprints (computed by level range and category) |
 | `/capsules` | Creature control capsules |
 | `/clothings` | Clothing with effects and equip sets |
 | `/consumables` | Consumable items with effects |

@@ -198,13 +198,15 @@
     return acquisition.BlueprintDrops.map(bp => ({
       name: bp.Name,
       nameLink: getTypeLink(bp.Name, 'Blueprint'),
-      level: bp?.Properties?.Level ?? 'N/A'
+      level: bp?.Properties?.Level ?? 'N/A',
+      rarity: bp?.Properties?.DropRarity ?? '-'
     }));
   })();
 
   $: blueprintDropColumns = [
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'level', header: 'Level' }
+    { key: 'level', header: 'Level' },
+    { key: 'rarity', header: 'Rarity' }
   ];
 
   // Copy waypoint handler

@@ -32,6 +32,15 @@ export const Blueprint = {
           "type": ["boolean", "null"],
           "default": null
         },
+        "IsDroppable": {
+          "type": ["boolean", "null"],
+          "default": false
+        },
+        "DropRarity": {
+          "type": ["string", "null"],
+          "enum": [null, "Common", "Uncommon", "Rare", "Very Rare", "Extremely Rare"],
+          "default": null
+        },
         "MinimumCraftAmount": {
           "type": ["integer", "null"],
           "default": null
@@ -101,18 +110,6 @@ export const Blueprint = {
           "Item"
         ]
       }
-    },
-    "Drops": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "Name": { "type": "string" }
-        },
-        "required": ["Name"]
-      },
-      "default": []
     },
     "Book": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Product": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },

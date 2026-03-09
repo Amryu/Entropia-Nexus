@@ -96,4 +96,26 @@ const TABLE_TO_ENTITY_TYPE = {
   Professions:              'Profession',
 };
 
-module.exports = { idOffsets, ITEM_TABLES, TABLE_TO_ENTITY_TYPE };
+// Blueprint drop category mapping
+// Types within the same category can drop from each other
+const BLUEPRINT_DROP_CATEGORIES = {
+  'Weapon': 'Weapon',
+  'Textile': 'Textile',
+  'Vehicle': 'Vehicle',
+  'Enhancer': 'Enhancer',
+  'Furniture': 'Furniture',
+  'Tool': 'Tool',
+  'Armor': 'Armor',
+  'Attachment': 'Attachment',
+  'Metal Component': 'Components',
+  'Electrical Component': 'Components',
+  'Mechanical Component': 'Components',
+  'Chemistry': 'Chemistry',
+};
+
+// Level range for blueprint drops: crafting a level N BP can drop BPs from level N-3 to N+2
+const BLUEPRINT_DROP_LEVEL_RANGE = { above: 2, below: 3 };
+
+const BLUEPRINT_DROP_RARITIES = ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Extremely Rare'];
+
+module.exports = { idOffsets, ITEM_TABLES, TABLE_TO_ENTITY_TYPE, BLUEPRINT_DROP_CATEGORIES, BLUEPRINT_DROP_LEVEL_RANGE, BLUEPRINT_DROP_RARITIES };

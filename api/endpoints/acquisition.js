@@ -48,18 +48,17 @@ function register(app){
         getShopListings(items),
       ]);
       const hydrated = await hydrateShopItems(listings);
-      // If any requested items are blueprint names, also include their drop blueprints (Blueprint Discovery)
+      // If any requested items are blueprint names, also include their computed drop blueprints (Blueprint Discovery)
       let blueprintDrops = [];
       try {
         const rows = await getBlueprintDropRows({ sources: items });
         if (rows && rows.length) {
-          // Deduplicate by DropId
           const seen = new Set();
           for (const r of rows) {
             if (seen.has(r.DropId)) continue;
             seen.add(r.DropId);
             const level = r.DropLevel != null ? Number(r.DropLevel) : null;
-            blueprintDrops.push({ Name: r.DropName, Properties: { Level: level } });
+            blueprintDrops.push({ Name: r.DropName, Properties: { Level: level, DropRarity: r.DropRarity || null } });
           }
         }
       } catch {}

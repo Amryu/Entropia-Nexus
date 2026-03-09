@@ -18,10 +18,9 @@
       Profession: { Name: null },
       Product: { Name: null },
       Materials: [],
-      Drops: []
     }),
-    dependencies: ['items', 'materials', 'blueprintbooks', 'professions', 'blueprints'],
-    controls: [General group, Skill group, Materials list, Drops list]
+    dependencies: ['items', 'materials', 'blueprintbooks', 'professions'],
+    controls: [General group, Skill group, Materials list]
   }
 -->
 <script>
@@ -114,8 +113,15 @@
   $: bookOptions = blueprintbooks.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label));
   $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label));
   $: productOptions = productItems.map(i => ({ value: i.Name, label: i.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
-  // For Drops, use all blueprints (allItems)
-  $: blueprintDropOptions = allItems.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  // Rarity options for drop rarity editing
+  const rarityOptions = [
+    { value: null, label: '—' },
+    { value: 'Common', label: 'Common' },
+    { value: 'Uncommon', label: 'Uncommon' },
+    { value: 'Rare', label: 'Rare' },
+    { value: 'Very Rare', label: 'Very Rare' },
+    { value: 'Extremely Rare', label: 'Extremely Rare' },
+  ];
 
   // Can edit if user is verified or admin
   $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
@@ -131,6 +137,8 @@
       Type: 'Weapon',
       Level: 1,
       IsBoosted: false,
+      IsDroppable: false,
+      DropRarity: null,
       MinimumCraftAmount: null,
       MaximumCraftAmount: null,
       Skill: {
@@ -143,7 +151,6 @@
     Profession: null,
     Product: null,
     Materials: [],
-    Drops: []
   };
 
   /** Enrich material Items with full data from availableMaterials (for cost calc) */
@@ -322,6 +329,14 @@
       filterPlaceholder: '>1',
       getValue: (item) => getCost(item),
       format: (v) => v != null ? `${v.toFixed(2)}` : '-'
+    },
+    rarity: {
+      key: 'rarity',
+      header: 'Rarity',
+      width: '75px',
+      filterPlaceholder: 'Common',
+      getValue: (item) => item.Properties?.DropRarity,
+      format: (v) => v || '-'
     }
   };
 
@@ -339,7 +354,8 @@
     bpColumnDefs.sib,
     bpColumnDefs.limited,
     bpColumnDefs.book,
-    bpColumnDefs.boosted
+    bpColumnDefs.boosted,
+    bpColumnDefs.rarity
   ];
 
   const allAvailableColumns = Object.values(bpColumnDefs);
@@ -572,24 +588,7 @@
     }
   }
 
-  // Drops array handlers
-  function addDrop() {
-    const currentDrops = activeEntity?.Drops || [];
-    const newDrop = { Name: blueprintDropOptions[0]?.value || '' };
-    updateField('Drops', [...currentDrops, newDrop]);
-  }
 
-  function updateDrop(index, name) {
-    const currentDrops = [...(activeEntity?.Drops || [])];
-    currentDrops[index] = { Name: name };
-    updateField('Drops', currentDrops);
-  }
-
-  function removeDrop(index) {
-    const currentDrops = [...(activeEntity?.Drops || [])];
-    currentDrops.splice(index, 1);
-    updateField('Drops', currentDrops);
-  }
 </script>
 
 <WikiSEO
@@ -783,6 +782,29 @@
               />
             </span>
           </div>
+          <div class="stat-row">
+            <span class="stat-label">Droppable</span>
+            <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.IsDroppable}>
+              <InlineEdit
+                value={activeEntity?.Properties?.IsDroppable}
+                path="Properties.IsDroppable"
+                type="checkbox"
+              />
+            </span>
+          </div>
+          {#if activeEntity?.Properties?.IsDroppable || $editMode}
+            <div class="stat-row">
+              <span class="stat-label">Drop Rarity</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.DropRarity}
+                  path="Properties.DropRarity"
+                  type="select"
+                  options={rarityOptions}
+                />
+              </span>
+            </div>
+          {/if}
         </div>
 
         <!-- Skill Info -->
@@ -901,50 +923,23 @@
           </DataSection>
         {/if}
 
-        <!-- Drops Section (blueprints that can drop from crafting this) -->
-        {#if (activeEntity?.Drops?.length > 0) || $editMode}
+        <!-- Possible Drops Section (computed: blueprints that can drop from crafting this) -->
+        {#if activeEntity?.Drops?.length > 0}
           <DataSection
-            title="Drops"
+            title="Possible Drops"
             icon=""
             bind:expanded={panelStates.drops}
-            subtitle="{activeEntity?.Drops?.length || 0} blueprints"
+            subtitle="{activeEntity.Drops.length} blueprints"
             on:toggle={savePanelStates}
           >
-            {#if $editMode}
-              <div class="drops-edit-list">
-                {#each activeEntity?.Drops || [] as drop, i}
-                  <div class="drop-edit-row">
-                    <SearchInput
-                      value={drop.Name || ''}
-                      options={blueprintDropOptions}
-                      placeholder="Select blueprint..."
-                      on:select={(e) => updateDrop(i, e.detail.value)}
-                    />
-                    <button class="btn-remove" on:click={() => removeDrop(i)} title="Remove drop">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                {/each}
-                <button class="btn-add" on:click={addDrop}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Add Drop
-                </button>
-              </div>
-            {:else}
-              <div class="drops-list">
-                {#each activeEntity?.Drops || [] as drop}
-                  <a href="/items/blueprints/{encodeURIComponentSafe(drop.Name)}" class="drop-link">
-                    {drop.Name}
-                  </a>
-                {/each}
-              </div>
-            {/if}
+            <div class="drops-list">
+              {#each activeEntity.Drops as drop}
+                <a href="/items/blueprints/{encodeURIComponentSafe(drop.Name)}" class="drop-link">
+                  {drop.Name}
+                  <span class="drop-meta">L{drop.Level ?? '?'}{drop.DropRarity ? ` · ${drop.DropRarity}` : ''}</span>
+                </a>
+              {/each}
+            </div>
           </DataSection>
         {/if}
       </article>
@@ -1035,65 +1030,10 @@
     text-decoration: underline;
   }
 
-  .drops-edit-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .drop-edit-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 6px;
-  }
-
-  .drop-edit-row :global(.searchable-select) {
-    flex: 1;
-  }
-
-  .btn-remove {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    background-color: transparent;
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    color: var(--error-color, #ff6b6b);
-    cursor: pointer;
-    transition: all 0.15s;
-    flex-shrink: 0;
-  }
-
-  .btn-remove:hover {
-    background-color: var(--error-color, #ff6b6b);
-    color: white;
-    border-color: var(--error-color, #ff6b6b);
-  }
-
-  .btn-add {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 14px;
-    background-color: transparent;
-    border: 1px dashed var(--border-color, #555);
-    border-radius: 6px;
+  .drop-meta {
+    float: right;
+    font-size: 12px;
     color: var(--text-muted, #999);
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.15s;
   }
 
-  .btn-add:hover {
-    background-color: var(--hover-color);
-    color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-  }
 </style>

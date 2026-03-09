@@ -643,7 +643,7 @@ async function searchItems(query, fuzzy = false, options = {}){
 const ENRICHMENT_MAP = {
   Weapon:       { route: '/weapons',      tables: ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getter: getWeapons },
   Material:     { route: '/materials',     tables: ['Materials'], getter: getMaterials },
-  Blueprint:    { route: '/blueprints',    tables: ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getter: getBlueprints },
+  Blueprint:    { route: '/blueprints',    tables: ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials'], getter: getBlueprints },
   ArmorSet:     { route: '/armorsets',     tables: ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials'], getter: getArmorSets },
   Vehicle:      { route: '/vehicles',      tables: ['Vehicles'], getter: getVehicles },
   Clothing:     { route: '/clothings',     tables: ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getter: getClothings },

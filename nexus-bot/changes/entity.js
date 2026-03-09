@@ -411,15 +411,14 @@ export const UpsertConfigs = {
       { name: "IsBoosted", value: x => x.Properties.Skill.IsBoosted ? 1 : 0 },
       { name: "MinimumCraftAmount", value: x => x.Properties.MinimumCraftAmount },
       { name: "MaximumCraftAmount", value: x => x.Properties.MaximumCraftAmount },
+      { name: "IsDroppable", value: x => x.Properties.IsDroppable ? true : false },
+      { name: "DropRarity", value: x => x.Properties.DropRarity || null },
     ],
     offset: 6000000,
     table: "Blueprints",
     relationChangeFunc: async (client, id, x) => {
       const bpId = id - 6000000;
       await applyBlueprintMaterialsChanges(client, bpId, x.Materials);
-      if (Array.isArray(x.Drops)) {
-        await applyBlueprintDropsChanges(client, bpId, x.Drops);
-      }
     }
   },
   Material: {
@@ -2229,20 +2228,3 @@ async function applyRefiningRecipesChanges(client, materialId, recipes) {
   }));
 }
 
-async function applyBlueprintDropsChanges(client, sourceBlueprintId, drops) {
-  // Resolve drop blueprint names to IDs
-  const resolved = await Promise.all(
-    drops.map(d => client.query(`SELECT "Id" FROM ONLY "Blueprints" WHERE "Name" = $1`, [d.Name]).then(res => res.rows[0]?.Id))
-  );
-  const dropIds = resolved.filter(id => Number.isInteger(id));
-
-  // Clean up relations not present anymore
-  await client.query(`DELETE FROM ONLY "BlueprintDrops" WHERE "SourceId" = $1 AND "DropId" NOT IN (SELECT * FROM unnest($2::int[]))`, [sourceBlueprintId, dropIds.length ? dropIds : [0]]);
-
-  // Upsert current relations
-  await Promise.all(dropIds.map(dropId => client.query(
-    `INSERT INTO "BlueprintDrops" ("SourceId", "DropId") VALUES ($1, $2)
-     ON CONFLICT ("SourceId", "DropId") DO NOTHING`,
-    [sourceBlueprintId, dropId]
-  )));
-}
