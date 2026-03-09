@@ -15,6 +15,8 @@
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects';
+  import { TYPE_FILTERS } from '$lib/data/globals-constants.js';
+  import { formatPedShort, timeAgo, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
 
   export let data;
 
@@ -123,7 +125,9 @@
     globalsData = null;
     globalsLoading = false;
     globalsLoaded = false;
-    globalsExpandedMobs = new Set();
+    globalsTypeFilter = '';
+    globalsSort = { col: 'total_value', asc: false };
+    globalsPage = 0;
     // Reset form to new profile data
     form = {
       biographyHtml: profile?.biographyHtml || '',
@@ -142,7 +146,11 @@
   let globalsData = null;
   let globalsLoading = false;
   let globalsLoaded = false;
-  let globalsExpandedMobs = new Set();
+  let globalsTypeFilter = '';
+  let globalsSort = { col: 'total_value', asc: false };
+  let globalsPage = 0;
+  const GLOBALS_PAGE_SIZE = 10;
+  const GLOBALS_TYPE_FILTERS = TYPE_FILTERS.filter(tf => tf.value !== 'examine');
 
   async function loadGlobalsData() {
     if (globalsLoaded || globalsLoading || !profile.euName) return;
@@ -157,23 +165,48 @@
     globalsLoaded = true;
   }
 
-  function toggleGlobalsMob(key) {
-    if (globalsExpandedMobs.has(key)) {
-      globalsExpandedMobs.delete(key);
-    } else {
-      globalsExpandedMobs.add(key);
-    }
-    globalsExpandedMobs = new Set(globalsExpandedMobs);
-  }
-
-  function formatPedGlobals(v) {
-    if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
-    return v.toFixed(2);
-  }
-
   $: if (activeTab === 'Globals' && !globalsLoaded) {
     loadGlobalsData();
   }
+
+  function onGlobalsSort(col) {
+    globalsSort = toggleSort(globalsSort, col);
+    globalsPage = 0;
+  }
+
+  // Merge hunting/mining/crafting into a unified table
+  $: globalsUnifiedRows = (() => {
+    if (!globalsData) return [];
+    const rows = [];
+    for (const mob of (globalsData.hunting || [])) {
+      rows.push({ target: mob.target, type: 'hunting', typeLabel: 'Hunting', count: mob.kills, total_value: mob.total_value, avg_value: mob.avg_value || 0, best_value: mob.best_value });
+    }
+    for (const res of (globalsData.mining?.resources || [])) {
+      rows.push({ target: res.target, type: 'mining', typeLabel: 'Mining', count: res.finds, total_value: res.total_value, avg_value: res.avg_value || 0, best_value: res.best_value });
+    }
+    for (const item of (globalsData.crafting?.items || [])) {
+      rows.push({ target: item.target, type: 'crafting', typeLabel: 'Crafting', count: item.crafts, total_value: item.total_value, avg_value: item.avg_value || 0, best_value: item.best_value });
+    }
+    return rows;
+  })();
+
+  $: globalsFilteredRows = (() => {
+    if (!globalsTypeFilter) return globalsUnifiedRows;
+    if (globalsTypeFilter === 'kill,team_kill') return globalsUnifiedRows.filter(r => r.type === 'hunting');
+    if (globalsTypeFilter === 'deposit') return globalsUnifiedRows.filter(r => r.type === 'mining');
+    if (globalsTypeFilter === 'craft') return globalsUnifiedRows.filter(r => r.type === 'crafting');
+    return globalsUnifiedRows;
+  })();
+
+  $: globalsSortedRows = sortedData(globalsFilteredRows, globalsSort);
+  $: globalsTotalPages = Math.ceil(globalsSortedRows.length / GLOBALS_PAGE_SIZE);
+  $: globalsDisplayRows = globalsSortedRows.slice(globalsPage * GLOBALS_PAGE_SIZE, (globalsPage + 1) * GLOBALS_PAGE_SIZE);
+
+  // ATH rankings data
+  $: globalsAthRankings = globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] };
+  // Rare items and discoveries
+  $: globalsRareItems = (globalsData?.rare_items || []).slice(0, 5);
+  $: globalsDiscoveries = (globalsData?.achievements || []).filter(a => a.type === 'discovery').slice(0, 5);
   function sortOrdersByCategory(orderList) {
     return orderList
       .map(o => ({ ...o, category: getItemCategoryPath(o.item_type, o.item_sub_type) }))
@@ -1358,85 +1391,176 @@
         {:else if !globalsData || globalsData.summary?.total_count === 0}
           <div class="empty-state">No globals recorded yet</div>
         {:else}
-          <div class="globals-tab-summary">
-            <div class="globals-stat"><strong>{globalsData.summary.total_count}</strong> <span>Globals</span></div>
-            <div class="globals-stat"><strong>{formatPedGlobals(globalsData.summary.total_value)} PED</strong> <span>Total</span></div>
-            <div class="globals-stat"><strong>{globalsData.summary.hof_count}</strong> <span>HoF</span></div>
-            <div class="globals-stat"><strong>{globalsData.summary.kill_count + globalsData.summary.team_kill_count}</strong> <span>Hunting</span></div>
-            <div class="globals-stat"><strong>{globalsData.summary.deposit_count}</strong> <span>Mining</span></div>
-            <div class="globals-stat"><strong>{globalsData.summary.craft_count}</strong> <span>Crafting</span></div>
+          <!-- Summary stat cards -->
+          <div class="globals-compact-stats">
+            <div class="globals-compact-stat">
+              <svg class="globals-stat-icon" viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <strong>{globalsData.summary.total_count.toLocaleString()}</strong>
+              <span>Globals</span>
+            </div>
+            <div class="globals-compact-stat">
+              <svg class="globals-stat-icon" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              <strong>{formatPedShort(globalsData.summary.total_value)} PED</strong>
+              <span>Total Value</span>
+            </div>
+            <div class="globals-compact-stat">
+              <svg class="globals-stat-icon" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <strong>{formatPedShort(globalsData.summary.avg_value)} PED</strong>
+              <span>Avg Value</span>
+            </div>
+            <div class="globals-compact-stat">
+              <svg class="globals-stat-icon" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              <strong>{formatPedShort(globalsData.summary.max_value)} PED</strong>
+              <span>Best Loot</span>
+            </div>
+            <div class="globals-compact-stat">
+              <svg class="globals-stat-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <strong>{globalsData.summary.hof_count.toLocaleString()}</strong>
+              <span>HoF</span>
+            </div>
           </div>
 
-          {#if globalsData.hunting?.length > 0}
-            <div class="globals-section">
-              <h3>Hunting</h3>
-              <table class="globals-detail-table">
-                <thead><tr><th>Target</th><th class="right">Kills</th><th class="right">Total</th><th class="right">Best</th></tr></thead>
-                <tbody>
-                  {#each globalsData.hunting as mob, i}
-                    {@const key = mob.mob_id || mob.target || i}
-                    {@const multi = mob.maturities?.length > 1}
-                    <tr class:expandable-row={multi} on:click={() => multi && toggleGlobalsMob(key)}>
-                      <td>{#if multi}<span class="expand-icon">{globalsExpandedMobs.has(key) ? '\u25BC' : '\u25B6'}</span>{/if}{mob.target}</td>
-                      <td class="right">{mob.kills}</td>
-                      <td class="right">{formatPedGlobals(mob.total_value)}</td>
-                      <td class="right">{formatPedGlobals(mob.best_value)}</td>
-                    </tr>
-                    {#if multi && globalsExpandedMobs.has(key)}
-                      {#each mob.maturities as mat}
-                        <tr class="maturity-row"><td class="indent-cell">{mat.target}</td><td class="right">{mat.kills}</td><td class="right">{formatPedGlobals(mat.total_value)}</td><td class="right">{formatPedGlobals(mat.best_value)}</td></tr>
-                      {/each}
-                    {/if}
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-
-          {#if globalsData.mining?.resources?.length > 0}
-            <div class="globals-section">
-              <h3>Mining</h3>
-              <table class="globals-detail-table">
-                <thead><tr><th>Resource</th><th class="right">Finds</th><th class="right">Total</th><th class="right">Best</th></tr></thead>
-                <tbody>
-                  {#each globalsData.mining.resources as res}
-                    <tr><td>{res.target}</td><td class="right">{res.finds}</td><td class="right">{formatPedGlobals(res.total_value)}</td><td class="right">{formatPedGlobals(res.best_value)}</td></tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-
-          {#if globalsData.crafting?.items?.length > 0}
-            <div class="globals-section">
-              <h3>Crafting</h3>
-              <table class="globals-detail-table">
-                <thead><tr><th>Item</th><th class="right">Crafts</th><th class="right">Total</th><th class="right">Best</th></tr></thead>
-                <tbody>
-                  {#each globalsData.crafting.items as item}
-                    <tr><td>{item.target}</td><td class="right">{item.crafts}</td><td class="right">{formatPedGlobals(item.total_value)}</td><td class="right">{formatPedGlobals(item.best_value)}</td></tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-
-          {#if globalsData.achievements?.length > 0}
-            <div class="globals-section">
-              <h3>Achievements</h3>
-              <div class="achievements-compact">
-                {#each globalsData.achievements as ach}
-                  <div class="achievement-row">
-                    <span class="ach-type">{ach.type === 'discovery' ? 'Discovery' : 'Tier Record'}</span>
-                    <span class="ach-target">{ach.target}</span>
-                    {#if ach.extra?.tier}<span class="ach-detail">Tier {ach.extra.tier}</span>{/if}
+          <!-- Category rankings -->
+          {#if globalsAthRankings.hunting.length > 0 || globalsAthRankings.mining.length > 0 || globalsAthRankings.crafting.length > 0}
+            <div class="globals-rankings">
+              <h3>All-Time High Rankings</h3>
+              <div class="globals-rankings-grid">
+                {#if globalsAthRankings.hunting.length > 0}
+                  <div class="globals-ranking-card">
+                    <div class="ranking-card-header hunting-color">Hunting</div>
+                    {#each globalsAthRankings.hunting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                      <div class="ranking-entry">
+                        <span class="ranking-target">{entry.target}</span>
+                        {#if entry.total_rank <= 10}
+                          <span class="ranking-badge">#{entry.total_rank} total</span>
+                        {/if}
+                        {#if entry.best_rank <= 10}
+                          <span class="ranking-badge best">#{entry.best_rank} best</span>
+                        {/if}
+                      </div>
+                    {/each}
                   </div>
-                {/each}
+                {/if}
+                {#if globalsAthRankings.mining.length > 0}
+                  <div class="globals-ranking-card">
+                    <div class="ranking-card-header mining-color">Mining</div>
+                    {#each globalsAthRankings.mining.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                      <div class="ranking-entry">
+                        <span class="ranking-target">{entry.target}</span>
+                        {#if entry.total_rank <= 10}
+                          <span class="ranking-badge">#{entry.total_rank} total</span>
+                        {/if}
+                        {#if entry.best_rank <= 10}
+                          <span class="ranking-badge best">#{entry.best_rank} best</span>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+                {#if globalsAthRankings.crafting.length > 0}
+                  <div class="globals-ranking-card">
+                    <div class="ranking-card-header crafting-color">Crafting</div>
+                    {#each globalsAthRankings.crafting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                      <div class="ranking-entry">
+                        <span class="ranking-target">{entry.target}</span>
+                        {#if entry.total_rank <= 10}
+                          <span class="ranking-badge">#{entry.total_rank} total</span>
+                        {/if}
+                        {#if entry.best_rank <= 10}
+                          <span class="ranking-badge best">#{entry.best_rank} best</span>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
               </div>
             </div>
           {/if}
 
-          <a href="/globals/player/{encodeURIComponent(profile.euName)}" class="globals-detail-link">View full details</a>
+          <!-- Rare Items & Discoveries -->
+          {#if globalsRareItems.length > 0 || globalsDiscoveries.length > 0}
+            <div class="globals-highlights">
+              {#if globalsRareItems.length > 0}
+                <div class="globals-highlight-card">
+                  <h3>Rare Items</h3>
+                  {#each globalsRareItems as item}
+                    <div class="highlight-row">
+                      <span class="highlight-name">{item.target}</span>
+                      <span class="highlight-value">{formatPedShort(item.value)} PED</span>
+                      {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                      <span class="highlight-time">{timeAgo(item.timestamp)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+              {#if globalsDiscoveries.length > 0}
+                <div class="globals-highlight-card">
+                  <h3>Discoveries</h3>
+                  {#each globalsDiscoveries as ach}
+                    <div class="highlight-row">
+                      <span class="highlight-name">{ach.target}</span>
+                      {#if ach.ath}<span class="highlight-badge ath">ATH</span>{:else if ach.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                      <span class="highlight-time">{timeAgo(ach.timestamp)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Type filter buttons -->
+          <div class="globals-compact-filters">
+            {#each GLOBALS_TYPE_FILTERS as tf}
+              <button
+                class="globals-type-btn"
+                class:active={globalsTypeFilter === tf.value}
+                on:click={() => { globalsTypeFilter = tf.value; globalsPage = 0; }}
+              >
+                {tf.label}
+              </button>
+            {/each}
+          </div>
+
+          <!-- Unified data table -->
+          {#if globalsDisplayRows.length > 0}
+            <div class="globals-compact-table-wrap">
+              <table class="globals-compact-table">
+                <thead>
+                  <tr>
+                    <th class="col-target" on:click={() => onGlobalsSort('target')}>Target{sortIcon(globalsSort, 'target')}</th>
+                    <th class="col-type">Type</th>
+                    <th class="col-num right" on:click={() => onGlobalsSort('count')}>Count{sortIcon(globalsSort, 'count')}</th>
+                    <th class="col-num right" on:click={() => onGlobalsSort('total_value')}>Total Value{sortIcon(globalsSort, 'total_value')}</th>
+                    <th class="col-num right" on:click={() => onGlobalsSort('avg_value')}>Avg{sortIcon(globalsSort, 'avg_value')}</th>
+                    <th class="col-num right" on:click={() => onGlobalsSort('best_value')}>Best{sortIcon(globalsSort, 'best_value')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each globalsDisplayRows as row}
+                    <tr>
+                      <td class="col-target"><a href="/globals/target/{encodeURIComponent(row.target)}" class="globals-target-link">{row.target}</a></td>
+                      <td class="col-type"><span class="globals-type-badge globals-type-{row.type}">{row.typeLabel}</span></td>
+                      <td class="col-num right">{row.count.toLocaleString()}</td>
+                      <td class="col-num right font-mono">{formatPedShort(row.total_value)} PED</td>
+                      <td class="col-num right font-mono">{formatPedShort(row.avg_value)} PED</td>
+                      <td class="col-num right font-mono">{formatPedShort(row.best_value)} PED</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            {#if globalsTotalPages > 1}
+              <div class="globals-pagination">
+                <button class="page-btn" disabled={globalsPage <= 0} on:click={() => globalsPage--}>Previous</button>
+                <span class="page-info">Page {globalsPage + 1} of {globalsTotalPages}</span>
+                <button class="page-btn" disabled={globalsPage >= globalsTotalPages - 1} on:click={() => globalsPage++}>Next</button>
+              </div>
+            {/if}
+          {:else}
+            <div class="empty-state">No targets match this filter</div>
+          {/if}
+
+          <a href="/globals/player/{encodeURIComponent(profile.euName)}" class="globals-detail-link">View full details &rarr;</a>
         {/if}
       </section>
     {/if}
@@ -2543,16 +2667,18 @@
     text-overflow: ellipsis;
   }
 
-  /* Globals tab */
-  .globals-tab-summary {
+  /* Globals tab — compact stats */
+  .globals-compact-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 20px;
+    gap: 10px;
+    margin-bottom: 16px;
   }
 
-  .globals-stat {
-    padding: 10px 16px;
+  .globals-compact-stat {
+    flex: 1;
+    min-width: 100px;
+    padding: 10px 14px;
     background: var(--primary-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -2560,83 +2686,324 @@
     font-size: 0.8125rem;
   }
 
-  .globals-stat strong {
+  .globals-stat-icon {
+    width: 20px;
+    height: 20px;
+    margin-bottom: 4px;
+  }
+
+  .globals-compact-stat strong {
     display: block;
     font-size: 1.125rem;
     font-variant-numeric: tabular-nums;
   }
 
-  .globals-stat span {
+  .globals-compact-stat span {
     color: var(--text-muted);
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.3px;
   }
 
-  .globals-section {
+  /* Globals tab — ATH rankings */
+  .globals-rankings {
     margin-bottom: 16px;
   }
 
-  .globals-section h3 {
-    margin: 0 0 8px 0;
+  .globals-rankings h3 {
+    margin: 0 0 10px 0;
     font-size: 0.9375rem;
     font-weight: 600;
   }
 
-  .globals-detail-table {
-    width: 100%;
-    border-collapse: collapse;
+  .globals-rankings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .globals-ranking-card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--primary-color);
+  }
+
+  .ranking-card-header {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .ranking-card-header.hunting-color { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .ranking-card-header.mining-color  { background: rgba(96, 176, 255, 0.12); color: #60b0ff; }
+  .ranking-card-header.crafting-color { background: rgba(249, 115, 22, 0.12); color: #f97316; }
+
+  .ranking-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .ranking-target {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .ranking-badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    background: rgba(96, 176, 255, 0.15);
+    color: var(--accent-color);
+    white-space: nowrap;
+  }
+
+  .ranking-badge.best {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+  }
+
+  /* Globals tab — rare items & discoveries */
+  .globals-highlights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .globals-highlight-card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--primary-color);
+    padding: 12px;
+  }
+
+  .globals-highlight-card h3 {
+    margin: 0 0 8px 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .highlight-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
     font-size: 0.8125rem;
   }
 
-  .globals-detail-table th {
-    padding: 6px 10px;
+  .highlight-row + .highlight-row {
+    border-top: 1px solid var(--border-color);
+    padding-top: 6px;
+  }
+
+  .highlight-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .highlight-value {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .highlight-badge {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .highlight-badge.hof { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .highlight-badge.ath { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+  .highlight-time {
+    flex-shrink: 0;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* Globals tab — type filter buttons */
+  .globals-compact-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .globals-type-btn {
+    padding: 5px 12px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .globals-type-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .globals-type-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+  }
+
+  /* Globals tab — data table */
+  .globals-compact-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--secondary-color);
+  }
+
+  .globals-compact-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    table-layout: fixed;
+  }
+
+  .globals-compact-table .col-target { width: 35%; }
+  .globals-compact-table .col-type { width: 13%; }
+  .globals-compact-table .col-num { width: 13%; }
+
+  .globals-compact-table th {
+    padding: 10px 14px;
     text-align: left;
     font-weight: 600;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
   }
 
-  .globals-detail-table td {
-    padding: 6px 10px;
+  .globals-compact-table th:hover {
+    color: var(--text-color);
+  }
+
+  .globals-compact-table th.col-type {
+    cursor: default;
+  }
+
+  .globals-compact-table td {
+    padding: 8px 14px;
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .globals-detail-table th.right,
-  .globals-detail-table td.right {
+  .globals-compact-table tr:last-child td { border-bottom: none; }
+
+  .globals-compact-table tbody tr:nth-child(even) {
+    background-color: var(--table-alt-row, rgba(255, 255, 255, 0.02));
+  }
+
+  .globals-compact-table tbody tr:hover {
+    background-color: var(--hover-color);
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: -2px;
+  }
+
+  .globals-compact-table th.right,
+  .globals-compact-table td.right {
     text-align: right;
   }
 
-  .globals-detail-table tr:hover {
-    background-color: var(--hover-color);
+  .globals-compact-table .font-mono {
+    font-variant-numeric: tabular-nums;
   }
 
-  .globals-detail-table tr:last-child td {
-    border-bottom: none;
+  .globals-target-link {
+    color: var(--text-color);
+    text-decoration: none;
+    font-weight: 600;
   }
 
-  .expandable-row {
+  .globals-target-link:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+  }
+
+  /* Globals tab — type badges */
+  .globals-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .globals-type-hunting  { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+  .globals-type-mining   { background: rgba(96, 176, 255, 0.15); color: #60b0ff; }
+  .globals-type-crafting { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+
+  /* Globals tab — pagination */
+  .globals-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 12px;
+  }
+
+  .globals-pagination .page-btn {
+    padding: 5px 14px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
     cursor: pointer;
+    transition: all 0.15s ease;
   }
 
-  .expand-icon {
-    font-size: 0.625rem;
-    margin-right: 6px;
+  .globals-pagination .page-btn:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .globals-pagination .page-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .globals-pagination .page-info {
+    font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-
-  .maturity-row td {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-  }
-
-  .indent-cell {
-    padding-left: 26px !important;
   }
 
   .globals-detail-link {
@@ -2651,37 +3018,13 @@
     text-decoration: underline;
   }
 
-  .achievements-compact {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .achievement-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.8125rem;
-  }
-
-  .ach-type {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    min-width: 80px;
-  }
-
-  .ach-target {
-    flex: 1;
-    font-weight: 600;
-  }
-
-  .ach-detail {
-    color: var(--text-muted);
-    font-size: 0.75rem;
+  @media (max-width: 599px) {
+    .globals-compact-stats { gap: 8px; }
+    .globals-compact-stat { min-width: 80px; padding: 8px 10px; }
+    .globals-compact-stat strong { font-size: 1rem; }
+    .globals-compact-table th,
+    .globals-compact-table td { padding: 6px 8px; }
+    .globals-rankings-grid { grid-template-columns: 1fr; }
+    .globals-highlights { grid-template-columns: 1fr; }
   }
 </style>
