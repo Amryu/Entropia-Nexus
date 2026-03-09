@@ -92,6 +92,12 @@ EVENT_MARKET_PRICE_REVIEW = "market_price_review"  # needs manual review (overfl
 EVENT_PLAYER_STATUS_UPDATE = "player_status_update"
 EVENT_PLAYER_STATUS_LOST = "player_status_lost"
 
+# Event names — Capture (screenshots / video clips)
+EVENT_SCREENSHOT_SAVED = "screenshot_saved"
+EVENT_CLIP_SAVED = "clip_saved"
+EVENT_CAPTURE_ERROR = "capture_error"
+EVENT_OWN_GLOBAL = "own_global"
+
 # Debug events
 EVENT_DEBUG_REGIONS = "debug_regions"      # Window/sidebar/table/pagination bounds
 EVENT_DEBUG_ROW = "debug_row"              # Individual row OCR result
@@ -185,7 +191,7 @@ GLOBAL_DEPOSIT_PATTERN = re.compile(
     r'^(.+?) found a deposit \((.+?)\) with a value of ([\d.]+) PED'
 )
 GLOBAL_CRAFT_PATTERN = re.compile(
-    r'^(.+?) constructed an item \((.+?)\) worth ([\d.]+) PED!'
+    r'^(.+?) (?:constructed|manufactured) an item \((.+?)\) worth ([\d.]+) PED!'
 )
 GLOBAL_RARE_PATTERN = re.compile(
     r'^(.+?) has found a rare item \((.+?)\) with a value of ([\d.]+) (PED|PEC)!'

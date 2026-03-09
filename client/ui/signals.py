@@ -44,6 +44,10 @@ from ..core.constants import (
     EVENT_UPDATE_PROGRESS,
     EVENT_UPDATE_READY,
     EVENT_UPDATE_ERROR,
+    EVENT_SCREENSHOT_SAVED,
+    EVENT_CLIP_SAVED,
+    EVENT_CAPTURE_ERROR,
+    EVENT_OWN_GLOBAL,
 )
 
 
@@ -126,6 +130,12 @@ class AppSignals(QObject):
     # Inventory
     inventory_open_wiki = pyqtSignal(int, str, str)  # (item_id, item_type, item_name)
 
+    # Capture (screenshots / video clips)
+    screenshot_saved = pyqtSignal(object)   # {"path": str, "timestamp": str}
+    clip_saved = pyqtSignal(object)         # {"path": str, "duration": float}
+    capture_error = pyqtSignal(object)      # {"error": str}
+    own_global = pyqtSignal(object)         # GlobalEvent for own player
+
     # Open entity in detail overlay (dict with Name, Type)
     open_entity_overlay = pyqtSignal(dict)
 
@@ -174,6 +184,10 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_INGESTION_STATUS: signals.ingestion_status,
         EVENT_HISTORICAL_IMPORT_PROGRESS: signals.historical_import_progress,
         EVENT_HISTORICAL_IMPORT_COMPLETE: signals.historical_import_complete,
+        EVENT_SCREENSHOT_SAVED: signals.screenshot_saved,
+        EVENT_CLIP_SAVED: signals.clip_saved,
+        EVENT_CAPTURE_ERROR: signals.capture_error,
+        EVENT_OWN_GLOBAL: signals.own_global,
     }
 
     for event_name, signal in _WIRING.items():

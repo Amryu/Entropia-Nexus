@@ -70,6 +70,8 @@ class SettingsPage(QWidget):
         self._build_ocr_section()
         self._build_overlay_section()
         self._build_overlay_shortcuts_section()
+        self._build_screenshot_section()
+        self._build_video_section()
         self._build_about_section()
         self._build_legal_section()
         self._build_advanced_section()
@@ -857,6 +859,364 @@ class SettingsPage(QWidget):
                 self._hotkey_inputs[config_key].combo = default
         self._schedule_save()
 
+    # --- Screenshots ---
+    def _build_screenshot_section(self):
+        group = QGroupBox("Screenshots")
+        layout = QVBoxLayout(group)
+
+        # Enable toggle
+        self._screenshot_enabled_cb = QCheckBox("Enable screenshot capture")
+        self._screenshot_enabled_cb.setChecked(self._config.screenshot_enabled)
+        self._screenshot_enabled_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._screenshot_enabled_cb)
+
+        # Auto on global
+        self._screenshot_auto_cb = QCheckBox("Auto-capture on own global")
+        self._screenshot_auto_cb.setChecked(self._config.screenshot_auto_on_global)
+        self._screenshot_auto_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._screenshot_auto_cb)
+
+        # Delay
+        delay_row = QHBoxLayout()
+        delay_row.addWidget(QLabel("Delay after global (s):"))
+        self._screenshot_delay = QDoubleSpinBox()
+        self._screenshot_delay.setRange(0.5, 5.0)
+        self._screenshot_delay.setSingleStep(0.5)
+        self._screenshot_delay.setValue(self._config.screenshot_delay_s)
+        self._screenshot_delay.valueChanged.connect(self._schedule_save)
+        delay_row.addWidget(self._screenshot_delay)
+        delay_row.addStretch()
+        layout.addLayout(delay_row)
+
+        # Directory
+        dir_row = QHBoxLayout()
+        dir_row.addWidget(QLabel("Save directory:"))
+        self._screenshot_dir = QLineEdit(self._config.screenshot_directory)
+        self._screenshot_dir.setPlaceholderText("~/Pictures/Entropia Nexus Screenshots")
+        self._screenshot_dir.editingFinished.connect(self._schedule_save)
+        dir_row.addWidget(self._screenshot_dir)
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self._browse_screenshot_dir)
+        dir_row.addWidget(browse_btn)
+        layout.addLayout(dir_row)
+
+        # Daily subfolder
+        self._screenshot_daily_cb = QCheckBox("Organize in daily subfolders")
+        self._screenshot_daily_cb.setChecked(self._config.screenshot_daily_subfolder)
+        self._screenshot_daily_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._screenshot_daily_cb)
+
+        # Hotkey
+        hotkey_row = QHBoxLayout()
+        hotkey_row.addWidget(QLabel("Screenshot hotkey:"))
+        self._screenshot_hotkey = HotkeyInput(self._config.hotkey_screenshot)
+        self._screenshot_hotkey.combo_changed.connect(self._schedule_save)
+        hotkey_row.addWidget(self._screenshot_hotkey)
+        clear_btn = QPushButton("X")
+        clear_btn.setFixedSize(28, 28)
+        clear_btn.setStyleSheet("padding: 0px;")
+        clear_btn.clicked.connect(self._screenshot_hotkey.clear_combo)
+        hotkey_row.addWidget(clear_btn)
+        hotkey_row.addStretch()
+        layout.addLayout(hotkey_row)
+
+        # Character name
+        char_row = QHBoxLayout()
+        char_row.addWidget(QLabel("Character name:"))
+        self._character_name = QLineEdit(self._config.character_name)
+        self._character_name.setPlaceholderText("Auto-detected when logged in")
+        self._character_name.setToolTip(
+            "Your Entropia Universe character name.\n"
+            "Used to detect your own globals. Auto-detected from your Nexus account."
+        )
+        self._character_name.editingFinished.connect(self._schedule_save)
+        char_row.addWidget(self._character_name)
+        char_row.addStretch()
+        layout.addLayout(char_row)
+
+        # Blur regions button
+        blur_btn = QPushButton("Configure Blur Regions...")
+        blur_btn.setToolTip("Draw regions to blur in screenshots and video clips")
+        blur_btn.clicked.connect(self._open_blur_dialog)
+        blur_row = QHBoxLayout()
+        blur_row.addWidget(blur_btn)
+        blur_row.addStretch()
+        layout.addLayout(blur_row)
+
+        self._sections.append(group)
+        self._layout.addWidget(group)
+
+    def _browse_screenshot_dir(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Screenshot Directory",
+            self._screenshot_dir.text() or "",
+        )
+        if path:
+            self._screenshot_dir.setText(path)
+            self._schedule_save()
+
+    def _open_blur_dialog(self):
+        try:
+            from ..dialogs.blur_region_dialog import BlurRegionDialog
+            dialog = BlurRegionDialog(
+                config=self._config,
+                config_path=self._config_path,
+                event_bus=self._event_bus,
+                parent=self,
+            )
+            dialog.exec()
+        except Exception as e:
+            log.error("Failed to open blur dialog: %s", e)
+
+    # --- Video ---
+    def _build_video_section(self):
+        group = QGroupBox("Video Clips")
+        layout = QVBoxLayout(group)
+
+        # Enable toggle
+        self._clip_enabled_cb = QCheckBox("Enable video clip recording")
+        self._clip_enabled_cb.setChecked(self._config.clip_enabled)
+        self._clip_enabled_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_enabled_cb)
+
+        note = QLabel("Requires FFmpeg. Continuously buffers game footage for instant replay.")
+        note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        # Auto on global
+        self._clip_auto_cb = QCheckBox("Auto-save clip on own global")
+        self._clip_auto_cb.setChecked(self._config.clip_auto_on_global)
+        self._clip_auto_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_auto_cb)
+
+        # Buffer duration
+        buf_row = QHBoxLayout()
+        buf_row.addWidget(QLabel("Buffer duration (s):"))
+        self._clip_buffer = QSpinBox()
+        self._clip_buffer.setRange(5, 60)
+        self._clip_buffer.setValue(self._config.clip_buffer_seconds)
+        self._clip_buffer.valueChanged.connect(self._schedule_save)
+        buf_row.addWidget(self._clip_buffer)
+        buf_row.addStretch()
+        layout.addLayout(buf_row)
+
+        # Post-global delay
+        post_row = QHBoxLayout()
+        post_row.addWidget(QLabel("Save delay after global (s):"))
+        self._clip_post_global = QSpinBox()
+        self._clip_post_global.setRange(0, 15)
+        self._clip_post_global.setValue(self._config.clip_post_global_seconds)
+        self._clip_post_global.valueChanged.connect(self._schedule_save)
+        post_row.addWidget(self._clip_post_global)
+        post_row.addStretch()
+        layout.addLayout(post_row)
+
+        # Directory
+        cdir_row = QHBoxLayout()
+        cdir_row.addWidget(QLabel("Save directory:"))
+        self._clip_dir = QLineEdit(self._config.clip_directory)
+        self._clip_dir.setPlaceholderText("~/Videos/Entropia Nexus Clips")
+        self._clip_dir.editingFinished.connect(self._schedule_save)
+        cdir_row.addWidget(self._clip_dir)
+        cbrowse = QPushButton("Browse")
+        cbrowse.clicked.connect(self._browse_clip_dir)
+        cdir_row.addWidget(cbrowse)
+        layout.addLayout(cdir_row)
+
+        # Daily subfolder
+        self._clip_daily_cb = QCheckBox("Organize in daily subfolders")
+        self._clip_daily_cb.setChecked(self._config.clip_daily_subfolder)
+        self._clip_daily_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_daily_cb)
+
+        # FPS / Resolution / Bitrate row
+        quality_row = QHBoxLayout()
+        quality_row.addWidget(QLabel("FPS:"))
+        self._clip_fps = QComboBox()
+        for fps in (15, 24, 30, 60):
+            self._clip_fps.addItem(str(fps), fps)
+        idx = self._clip_fps.findData(self._config.clip_fps)
+        if idx >= 0:
+            self._clip_fps.setCurrentIndex(idx)
+        self._clip_fps.currentIndexChanged.connect(self._schedule_save)
+        quality_row.addWidget(self._clip_fps)
+
+        quality_row.addWidget(QLabel("Resolution:"))
+        self._clip_resolution = QComboBox()
+        for res in ("source", "1080p", "720p", "480p"):
+            self._clip_resolution.addItem(res.capitalize() if res != "source" else "Source", res)
+        idx = self._clip_resolution.findData(self._config.clip_resolution)
+        if idx >= 0:
+            self._clip_resolution.setCurrentIndex(idx)
+        self._clip_resolution.currentIndexChanged.connect(self._schedule_save)
+        quality_row.addWidget(self._clip_resolution)
+
+        quality_row.addWidget(QLabel("Bitrate:"))
+        self._clip_bitrate = QComboBox()
+        for br in ("low", "medium", "high", "ultra"):
+            self._clip_bitrate.addItem(br.capitalize(), br)
+        idx = self._clip_bitrate.findData(self._config.clip_bitrate)
+        if idx >= 0:
+            self._clip_bitrate.setCurrentIndex(idx)
+        self._clip_bitrate.currentIndexChanged.connect(self._schedule_save)
+        quality_row.addWidget(self._clip_bitrate)
+        quality_row.addStretch()
+        layout.addLayout(quality_row)
+
+        # Clip hotkey
+        hotkey_row = QHBoxLayout()
+        hotkey_row.addWidget(QLabel("Save clip hotkey:"))
+        self._clip_hotkey = HotkeyInput(self._config.hotkey_save_clip)
+        self._clip_hotkey.combo_changed.connect(self._schedule_save)
+        hotkey_row.addWidget(self._clip_hotkey)
+        clear_btn = QPushButton("X")
+        clear_btn.setFixedSize(28, 28)
+        clear_btn.setStyleSheet("padding: 0px;")
+        clear_btn.clicked.connect(self._clip_hotkey.clear_combo)
+        hotkey_row.addWidget(clear_btn)
+        hotkey_row.addStretch()
+        layout.addLayout(hotkey_row)
+
+        # FFmpeg path
+        ff_row = QHBoxLayout()
+        ff_row.addWidget(QLabel("FFmpeg path:"))
+        self._ffmpeg_path = QLineEdit(self._config.ffmpeg_path)
+        self._ffmpeg_path.setPlaceholderText("Auto-detected from PATH")
+        self._ffmpeg_path.editingFinished.connect(self._schedule_save)
+        ff_row.addWidget(self._ffmpeg_path)
+        ff_browse = QPushButton("Browse")
+        ff_browse.clicked.connect(self._browse_ffmpeg)
+        ff_row.addWidget(ff_browse)
+        layout.addLayout(ff_row)
+
+        # FFmpeg status
+        self._ffmpeg_status = QLabel("")
+        self._ffmpeg_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(self._ffmpeg_status)
+        self._update_ffmpeg_status()
+
+        # --- Audio sub-section ---
+        audio_label = QLabel("Audio")
+        audio_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        layout.addWidget(audio_label)
+
+        self._clip_audio_cb = QCheckBox("Record system audio")
+        self._clip_audio_cb.setChecked(self._config.clip_audio_enabled)
+        self._clip_audio_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_audio_cb)
+
+        dev_row = QHBoxLayout()
+        dev_row.addWidget(QLabel("Audio device:"))
+        self._clip_audio_device = QComboBox()
+        self._clip_audio_device.addItem("System Default", "")
+        self._populate_audio_devices()
+        self._clip_audio_device.currentIndexChanged.connect(self._schedule_save)
+        dev_row.addWidget(self._clip_audio_device)
+        dev_row.addStretch()
+        layout.addLayout(dev_row)
+
+        self._audio_noise_cb = QCheckBox("Noise suppression")
+        self._audio_noise_cb.setChecked(self._config.clip_audio_noise_suppression)
+        self._audio_noise_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._audio_noise_cb)
+
+        self._audio_gate_cb = QCheckBox("Noise gate")
+        self._audio_gate_cb.setChecked(self._config.clip_audio_noise_gate)
+        self._audio_gate_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._audio_gate_cb)
+
+        self._audio_compressor_cb = QCheckBox("Compressor")
+        self._audio_compressor_cb.setChecked(self._config.clip_audio_compressor)
+        self._audio_compressor_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._audio_compressor_cb)
+
+        # --- Webcam sub-section ---
+        webcam_label = QLabel("Webcam")
+        webcam_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        layout.addWidget(webcam_label)
+
+        self._clip_webcam_cb = QCheckBox("Include webcam overlay")
+        self._clip_webcam_cb.setChecked(self._config.clip_webcam_enabled)
+        self._clip_webcam_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_webcam_cb)
+
+        wcam_row = QHBoxLayout()
+        wcam_row.addWidget(QLabel("Webcam device:"))
+        self._clip_webcam_device = QSpinBox()
+        self._clip_webcam_device.setRange(0, 9)
+        self._clip_webcam_device.setValue(self._config.clip_webcam_device)
+        self._clip_webcam_device.valueChanged.connect(self._schedule_save)
+        wcam_row.addWidget(self._clip_webcam_device)
+
+        wcam_row.addWidget(QLabel("Position:"))
+        self._clip_webcam_pos = QComboBox()
+        for pos in ("top_left", "top_right", "bottom_left", "bottom_right"):
+            self._clip_webcam_pos.addItem(pos.replace("_", " ").title(), pos)
+        idx = self._clip_webcam_pos.findData(self._config.clip_webcam_position)
+        if idx >= 0:
+            self._clip_webcam_pos.setCurrentIndex(idx)
+        self._clip_webcam_pos.currentIndexChanged.connect(self._schedule_save)
+        wcam_row.addWidget(self._clip_webcam_pos)
+        wcam_row.addStretch()
+        layout.addLayout(wcam_row)
+
+        self._sections.append(group)
+        self._layout.addWidget(group)
+
+    def _browse_clip_dir(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Clip Directory",
+            self._clip_dir.text() or "",
+        )
+        if path:
+            self._clip_dir.setText(path)
+            self._schedule_save()
+
+    def _browse_ffmpeg(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select FFmpeg Binary",
+            self._ffmpeg_path.text() or "",
+            "Executable (*.exe);;All Files (*)",
+        )
+        if path:
+            self._ffmpeg_path.setText(path)
+            self._schedule_save()
+            self._update_ffmpeg_status()
+
+    def _update_ffmpeg_status(self):
+        try:
+            from ...capture.ffmpeg import find_ffmpeg, get_version
+            path = find_ffmpeg(self._ffmpeg_path.text())
+            if path:
+                ver = get_version(path) or "unknown version"
+                self._ffmpeg_status.setText(f"Found: {ver}")
+                self._ffmpeg_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+            else:
+                self._ffmpeg_status.setText(
+                    "FFmpeg not found. Video clips require FFmpeg — "
+                    "it will be downloaded automatically when needed."
+                )
+                self._ffmpeg_status.setStyleSheet("color: #ff6b6b; font-size: 11px;")
+        except Exception:
+            self._ffmpeg_status.setText("Could not check FFmpeg status")
+
+    def _populate_audio_devices(self):
+        try:
+            import sounddevice as sd
+            devices = sd.query_devices()
+            current = self._config.clip_audio_device
+            for i, dev in enumerate(devices):
+                if dev.get("max_input_channels", 0) > 0 or dev.get("hostapi") == 0:
+                    name = dev.get("name", f"Device {i}")
+                    self._clip_audio_device.addItem(name, name)
+            # Select current
+            idx = self._clip_audio_device.findData(current)
+            if idx >= 0:
+                self._clip_audio_device.setCurrentIndex(idx)
+        except Exception:
+            pass  # sounddevice not installed or no devices
+
     # --- About ---
     def _build_about_section(self):
         group = QGroupBox("About")
@@ -1078,6 +1438,40 @@ class SettingsPage(QWidget):
         self._config.hotkeys_enabled = self._hotkeys_enabled_cb.isChecked()
         for config_key, hk in self._hotkey_inputs.items():
             setattr(self._config, config_key, hk.combo)
+
+        # Screenshots
+        self._config.screenshot_enabled = self._screenshot_enabled_cb.isChecked()
+        self._config.screenshot_auto_on_global = self._screenshot_auto_cb.isChecked()
+        self._config.screenshot_delay_s = self._screenshot_delay.value()
+        self._config.screenshot_directory = self._screenshot_dir.text()
+        self._config.screenshot_daily_subfolder = self._screenshot_daily_cb.isChecked()
+        self._config.hotkey_screenshot = self._screenshot_hotkey.combo
+        self._config.character_name = self._character_name.text()
+
+        # Video Clips
+        self._config.clip_enabled = self._clip_enabled_cb.isChecked()
+        self._config.clip_auto_on_global = self._clip_auto_cb.isChecked()
+        self._config.clip_buffer_seconds = self._clip_buffer.value()
+        self._config.clip_post_global_seconds = self._clip_post_global.value()
+        self._config.clip_directory = self._clip_dir.text()
+        self._config.clip_daily_subfolder = self._clip_daily_cb.isChecked()
+        self._config.clip_fps = self._clip_fps.currentData() or 30
+        self._config.clip_resolution = self._clip_resolution.currentData() or "source"
+        self._config.clip_bitrate = self._clip_bitrate.currentData() or "medium"
+        self._config.hotkey_save_clip = self._clip_hotkey.combo
+        self._config.ffmpeg_path = self._ffmpeg_path.text()
+
+        # Audio
+        self._config.clip_audio_enabled = self._clip_audio_cb.isChecked()
+        self._config.clip_audio_device = self._clip_audio_device.currentData() or ""
+        self._config.clip_audio_noise_suppression = self._audio_noise_cb.isChecked()
+        self._config.clip_audio_noise_gate = self._audio_gate_cb.isChecked()
+        self._config.clip_audio_compressor = self._audio_compressor_cb.isChecked()
+
+        # Webcam
+        self._config.clip_webcam_enabled = self._clip_webcam_cb.isChecked()
+        self._config.clip_webcam_device = self._clip_webcam_device.value()
+        self._config.clip_webcam_position = self._clip_webcam_pos.currentData() or "bottom_right"
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)

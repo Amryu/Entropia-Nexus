@@ -176,6 +176,45 @@ class AppConfig:
     ingestion_upload_interval_seconds: int = 30
     ingestion_receive_interval_seconds: int = 60
 
+    # Character name (fallback for own-global detection when not logged in)
+    character_name: str = ""
+
+    # Screenshots
+    screenshot_enabled: bool = True
+    screenshot_auto_on_global: bool = True
+    screenshot_delay_s: float = 1.0
+    screenshot_directory: str = ""          # empty = ~/Pictures/Entropia Nexus Screenshots
+    screenshot_daily_subfolder: bool = True
+    hotkey_screenshot: str = ""
+
+    # Video clips
+    clip_enabled: bool = False              # off by default (needs FFmpeg + resources)
+    clip_auto_on_global: bool = True
+    clip_buffer_seconds: int = 15
+    clip_post_global_seconds: int = 5
+    clip_directory: str = ""                # empty = ~/Videos/Entropia Nexus Clips
+    clip_daily_subfolder: bool = True
+    clip_fps: int = 30
+    clip_resolution: str = "source"         # source | 1080p | 720p | 480p
+    clip_bitrate: str = "medium"            # low | medium | high | ultra
+    hotkey_save_clip: str = ""
+    ffmpeg_path: str = ""                   # manual override for FFmpeg binary
+
+    # Audio (for video clips)
+    clip_audio_enabled: bool = False
+    clip_audio_device: str = ""             # empty = system default loopback
+    clip_audio_noise_suppression: bool = True
+    clip_audio_noise_gate: bool = True
+    clip_audio_compressor: bool = True
+
+    # Webcam (for video clips)
+    clip_webcam_enabled: bool = False
+    clip_webcam_device: int = 0
+    clip_webcam_position: str = "bottom_right"  # top_left|top_right|bottom_left|bottom_right
+
+    # Blur/privacy regions for captures
+    capture_blur_regions: list[dict] = field(default_factory=list)  # [{x, y, w, h}] normalized 0.0-1.0
+
 
 DEFAULTS = {
     "chat_log_path": str(Path(DEFAULT_CHAT_LOG_PATH).expanduser()),
@@ -288,6 +327,33 @@ DEFAULTS = {
     "ingestion_enabled": True,
     "ingestion_upload_interval_seconds": 30,
     "ingestion_receive_interval_seconds": 60,
+    "character_name": "",
+    "screenshot_enabled": True,
+    "screenshot_auto_on_global": True,
+    "screenshot_delay_s": 1.0,
+    "screenshot_directory": "",
+    "screenshot_daily_subfolder": True,
+    "hotkey_screenshot": "",
+    "clip_enabled": False,
+    "clip_auto_on_global": True,
+    "clip_buffer_seconds": 15,
+    "clip_post_global_seconds": 5,
+    "clip_directory": "",
+    "clip_daily_subfolder": True,
+    "clip_fps": 30,
+    "clip_resolution": "source",
+    "clip_bitrate": "medium",
+    "hotkey_save_clip": "",
+    "ffmpeg_path": "",
+    "clip_audio_enabled": False,
+    "clip_audio_device": "",
+    "clip_audio_noise_suppression": True,
+    "clip_audio_noise_gate": True,
+    "clip_audio_compressor": True,
+    "clip_webcam_enabled": False,
+    "clip_webcam_device": 0,
+    "clip_webcam_position": "bottom_right",
+    "capture_blur_regions": [],
 }
 
 
@@ -365,7 +431,8 @@ def load_config(config_path: str = "config.json") -> AppConfig:
             merged[key] = tuple(val)
 
     # Expand ~ in paths
-    for key in ("chat_log_path", "database_path", "js_utils_path"):
+    for key in ("chat_log_path", "database_path", "js_utils_path",
+                "screenshot_directory", "clip_directory", "ffmpeg_path"):
         if merged.get(key):
             merged[key] = str(Path(merged[key]).expanduser())
 

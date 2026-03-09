@@ -13,6 +13,8 @@ HOTKEY_ACTIONS = {
     # "hotkey_stop_hunt": "stop_hunt",
     # "hotkey_manual_mob_name": "manual_mob_name",
     # "hotkey_ocr_scan": "ocr_scan",
+    "hotkey_screenshot": "screenshot",
+    "hotkey_save_clip": "save_clip",
 }
 
 

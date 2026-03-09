@@ -442,6 +442,15 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     frame_distributor.start()
     workers.append(frame_distributor)
 
+    # Capture manager — screenshot and video clip recording
+    from .capture.capture_manager import CaptureManager
+    capture_manager = CaptureManager(
+        config=config, event_bus=event_bus,
+        frame_distributor=frame_distributor, oauth=oauth,
+    )
+    capture_manager.start()
+    workers.append(capture_manager)
+
     # Defer overlay wiring so the main window renders first.
     # Heavy overlay widgets are created lazily on first use via _ensure_*_overlay().
     def _create_overlays():

@@ -66,7 +66,8 @@ PAGE_LOADOUT = 4
 PAGE_INVENTORY = 5
 PAGE_EXCHANGE = 6
 PAGE_TRACKER = 7
-PAGE_SETTINGS = 8
+PAGE_GALLERY = 8
+PAGE_SETTINGS = 9
 
 
 @dataclass
@@ -191,6 +192,7 @@ class MainWindow(QWidget):
             PAGE_INVENTORY: self._create_inventory_page,
             PAGE_EXCHANGE: self._create_exchange_page,
             PAGE_TRACKER: self._create_tracker_page,
+            PAGE_GALLERY: self._create_gallery_page,
             PAGE_SETTINGS: self._create_settings_page,
         }
 
@@ -318,6 +320,10 @@ class MainWindow(QWidget):
                            event_bus=self._event_bus,
                            oauth=self._oauth,
                            db=self._db)
+
+    def _create_gallery_page(self):
+        from .pages.gallery_page import GalleryPage
+        return GalleryPage(config=self._config, signals=self._signals)
 
     def _create_settings_page(self):
         from .pages.settings_page import SettingsPage

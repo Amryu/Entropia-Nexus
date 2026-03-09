@@ -10,7 +10,7 @@ from ..theme import (
     SIDEBAR_WIDTH, SIDEBAR_INDICATOR_WIDTH,
     PRIMARY, SECONDARY, MAIN_DARK, HOVER, TEXT, TEXT_MUTED, ACCENT, BORDER, ERROR,
 )
-from ..icons import svg_icon, svg_pixmap, DASHBOARD, SKILLS, LOADOUT, INVENTORY, WIKI, MAPS, EXCHANGE, TRACKER, BELL, SETTINGS, USER
+from ..icons import svg_icon, svg_pixmap, DASHBOARD, SKILLS, LOADOUT, INVENTORY, WIKI, MAPS, EXCHANGE, TRACKER, GALLERY, BELL, SETTINGS, USER
 
 # Page definitions: (svg_data, tooltip)
 PAGE_ICONS = [
@@ -22,6 +22,7 @@ PAGE_ICONS = [
     (INVENTORY, "Inventory"),
     (EXCHANGE, "Exchange"),
     (TRACKER, "Tracker"),
+    (GALLERY, "Gallery"),
 ]
 
 SETTINGS_ENTRY = (SETTINGS, "Settings")  # always at the bottom

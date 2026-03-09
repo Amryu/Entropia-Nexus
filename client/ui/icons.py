@@ -77,6 +77,16 @@ BELL = (
     's-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.93 6 11v5l-2 2v1h16v-1l-2-2z"/>'
 )
 
+# Photo/film gallery (grid of images)
+GALLERY = (
+    '<rect x="3" y="3" width="7" height="7" rx="1"/>'
+    '<rect x="14" y="3" width="7" height="5" rx="1"/>'
+    '<rect x="3" y="14" width="7" height="7" rx="1"/>'
+    '<rect x="14" y="12" width="7" height="9" rx="1"/>'
+    '<path d="M5 8l2-2 2 2" fill="none" stroke="currentColor" stroke-width="0.8" opacity="0.6"/>'
+    '<circle cx="16" cy="16" r="2" opacity="0.5"/>'
+)
+
 # Gear cog (fill-based, 6 teeth)
 SETTINGS = (
     '<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm0 5a1.5 1.5 0 1 1 0-3 '
