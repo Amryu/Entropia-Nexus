@@ -29,6 +29,7 @@
   import MobLocations from '$lib/components/wiki/mobs/MobLocations.svelte';
   import MobCodex from '$lib/components/wiki/mobs/MobCodex.svelte';
   import MobDamageGrid from '$lib/components/wiki/mobs/MobDamageGrid.svelte';
+  import MobGlobals from '$lib/components/wiki/mobs/MobGlobals.svelte';
 
   // Mob edit components
   import MobMaturitiesEdit from '$lib/components/wiki/mobs/MobMaturitiesEdit.svelte';
@@ -717,7 +718,8 @@
     maturities: true,
     locations: true,
     loots: true,
-    codex: true
+    codex: true,
+    globals: false
   };
   let maturitiesSectionAnchor;
   let lastMaturityScrollKey = null;
@@ -1461,6 +1463,19 @@
               mobType={mobType}
               skills={skillsList}
             />
+          </DataSection>
+        {/if}
+
+        <!-- Globals Section -->
+        {#if !isCreateMode && activeMob?.Id}
+          <DataSection
+            title="Globals"
+            icon=""
+            bind:expanded={panelStates.globals}
+            subtitle="Global loot events"
+            on:toggle={savePanelStates}
+          >
+            <MobGlobals mobName={activeMob.Name} />
           </DataSection>
         {/if}
       </article>
