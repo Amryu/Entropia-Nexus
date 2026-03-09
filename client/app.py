@@ -163,12 +163,37 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # C++ event loop is caught by SIP and swallowed.  Route SIGINT directly
     # to QApplication.quit().  Second Ctrl+C force-kills immediately.
     _sigint_count = 0
+    _sigint_extras = {}  # populated later with objects that need stopping
 
     def _on_sigint(*_):
         nonlocal _sigint_count
         _sigint_count += 1
         if _sigint_count >= 2:
             os._exit(1)
+        _start_shutdown_watchdog()
+        # Stop workers and extras immediately — don't wait for app.exec()
+        # to return, because on Windows it may never return after app.quit().
+        def _signal_cleanup():
+            fd = _sigint_extras.get("freeze_detector")
+            if fd:
+                fd.stop()
+            mw = _sigint_extras.get("main_window")
+            if mw:
+                mw.cleanup()
+            om = _sigint_extras.get("overlay_manager")
+            if om:
+                om.stop()
+            _cleanup_workers(list(workers))
+            db.close()
+            # app.exec() may never return on Windows after app.quit(),
+            # so force-exit once cleanup is done.
+            os._exit(0)
+        kill_timer = threading.Timer(5.0, lambda: os._exit(1))
+        kill_timer.daemon = True
+        kill_timer.start()
+        threading.Thread(
+            target=_signal_cleanup, daemon=True, name="signal-cleanup",
+        ).start()
         app.quit()
 
     signal.signal(signal.SIGINT, _on_sigint)
@@ -220,6 +245,17 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             return
         config.tos_accepted_version = TOS_VERSION
         save_config(config, config_path)
+
+    # Capture backend choice (one-time, when borderless WGC unavailable)
+    if sys.platform == "win32" and not config.wgc_border_choice_made:
+        from .ocr.capturer import ScreenCapturer
+        if not ScreenCapturer._is_borderless_supported():
+            from .ui.dialogs.capture_backend_dialog import CaptureBackendDialog
+            dlg = CaptureBackendDialog()
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                config.ocr_capture_backend = "printwindow"
+            config.wgc_border_choice_made = True
+            save_config(config, config_path)
 
     # Init auth early (needed to decide whether to show splash)
     token_store = TokenStore()
@@ -288,74 +324,52 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # Build all pages synchronously while the loading splash covers the screen.
     main_window.prewarm_all_pages()
 
+    # Load skills data synchronously during splash so the heavy card-widget
+    # creation can happen before the user sees the main window.
+    from .ui.main_window import PAGE_SKILLS
+    _skills_page = main_window._pages.widget(PAGE_SKILLS)
+    _skills_page.prewarm_data()
+
     # Overlay manager (focus detection, widget registry, snap) — lightweight,
     # needed before building overlay widgets below.
     from .overlay.overlay_manager import OverlayManager
     overlay_manager = OverlayManager(config=config, event_bus=event_bus)
 
-    # Build heavy overlay widgets while splash still covers the screen.
-    # These take 400-700ms each and would cause visible freezes if deferred.
-    from .overlay.map_overlay import MapOverlay
-    _map_overlay = MapOverlay(
-        config=config, config_path=config_path,
-        data_client=data_client, manager=overlay_manager,
-    )
-    from .overlay.exchange_overlay import ExchangeOverlay
-    _exchange_overlay = ExchangeOverlay(
-        config=config, config_path=config_path,
-        store=_exchange_store, favourites=_favourites_store,
-        manager=overlay_manager,
-    )
-    from .overlay.notifications_overlay import NotificationsOverlay
-    _notifications_overlay = NotificationsOverlay(
-        config=config, config_path=config_path,
-        notif_manager=main_window._notif_manager,
-        manager=overlay_manager,
-    )
+    # Heavy overlay widgets — created lazily on first use.
+    # See _ensure_*_overlay() in _create_overlays().
+    _map_overlay = None
+    _exchange_overlay = None
+    _notifications_overlay = None
 
-    # Search overlay
+    # Pre-import detail_overlay during splash — compiling this large module
+    # takes ~0.6s and would freeze the main thread if deferred to _create_overlays.
+    from .overlay import detail_overlay as _detail_overlay_mod  # noqa: F811
+
+    # Overlay widgets and review dialog — created in _create_overlays() after
+    # splash closes.  Declared here so the outer scope can reference them.
     _search_overlay = None
-    try:
-        from .overlay.search_overlay import SearchOverlayWidget
-        _search_overlay = SearchOverlayWidget(
-            config=config, config_path=config_path,
-            data_client=data_client, manager=overlay_manager,
-        )
-    except Exception as e:
-        log.warning("Search overlay failed: %s", e)
-
-    # Scan summary overlay
     _scan_summary = None
-    try:
-        from .overlay.scan_summary_overlay import ScanSummaryOverlay
-        from .ui.main_window import PAGE_SKILLS
-
-        def _get_skill_values():
-            if PAGE_SKILLS in main_window._page_created:
-                page = main_window._pages.widget(PAGE_SKILLS)
-                return page._manager.get_all_values()
-            return {}
-
-        _scan_summary = ScanSummaryOverlay(
-            config=config, config_path=config_path,
-            event_bus=event_bus, manager=overlay_manager,
-            skill_values_fn=_get_skill_values,
-        )
-        overlay_manager._scan_summary = _scan_summary
-    except Exception as e:
-        log.warning("Scan summary overlay failed: %s", e)
-
-    # Market price review dialog — construct during splash to avoid post-show freeze.
     _review_dialog = None
-    try:
-        from .ui.dialogs.market_review_dialog import MarketReviewDialog
-        _review_dialog = MarketReviewDialog(
-            config=config, parent=main_window,
-        )
-    except Exception as e:
-        log.warning("Market review dialog construction failed: %s", e)
 
-    # Close the loading splash and show the main window.
+    # Show the main window BEFORE closing the splash so Qt computes real
+    # widget geometry.  The splash process has WindowStaysOnTopHint, so the
+    # main window appears behind it and the user doesn't see anything yet.
+    main_window.show()
+
+    # If we came from the login splash, show the main window on the same monitor
+    if splash_screen is not None:
+        main_window.bring_to_front_on_screen(splash_screen)
+
+    # Force Qt to process layout events so viewports have their real sizes.
+    from PyQt6.QtWidgets import QApplication
+    QApplication.processEvents()
+
+    # Build deferred skill/profession grids synchronously.  This is the
+    # expensive card-widget creation (~0.6s) that would otherwise freeze the
+    # main thread after the splash closes.  The splash still covers the screen.
+    _skills_page.flush_prewarm()
+
+    # NOW close the loading splash — the main window is fully rendered.
     if _splash_proc is not None:
         try:
             _splash_proc.stdin.write(b"close\n")
@@ -364,12 +378,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         except Exception:
             _splash_proc.kill()
         _splash_proc = None
-
-    main_window.show()
-
-    # If we came from the login splash, show the main window on the same monitor
-    if splash_screen is not None:
-        main_window.bring_to_front_on_screen(splash_screen)
 
     # Wire single-instance IPC: when another instance connects, bring window to front
     def _handle_ipc_connection():
@@ -406,14 +414,15 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # Ingestion uploader must subscribe to EVENT_CATCHUP_COMPLETE BEFORE
     # the chat watcher starts its catchup thread, to avoid a race condition
     # where catchup finishes before the uploader exists.
-    # Shared frame cache — all OCR detectors reuse the same PrintWindow captures
-    from .ocr.frame_cache import SharedFrameCache
-    frame_cache = SharedFrameCache(capture_backend=config.ocr_capture_backend)
+    # Shared frame distributor — single capture thread pushes frames to all
+    # OCR detectors at their declared rates (replaces SharedFrameCache).
+    from .ocr.frame_distributor import FrameDistributor
+    frame_distributor = FrameDistributor(capture_backend=config.ocr_capture_backend)
 
     def _sync_capture_backend(updated_config):
         if not updated_config:
             return
-        frame_cache.set_capture_backend(
+        frame_distributor.set_capture_backend(
             getattr(updated_config, "ocr_capture_backend", "auto"),
         )
 
@@ -422,21 +431,21 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
     workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated()))
-    workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_cache))
+    workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_distributor))
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
-    workers.extend(_start_target_lock_detector(config, event_bus, frame_cache))
-    workers.extend(_start_player_status_detector(config, event_bus, frame_cache))
-    workers.extend(_start_market_price_detector(config, event_bus, frame_cache, data_client))
+    workers.extend(_start_target_lock_detector(config, event_bus, frame_distributor))
+    workers.extend(_start_player_status_detector(config, event_bus, frame_distributor))
+    workers.extend(_start_market_price_detector(config, event_bus, frame_distributor, data_client))
+
+    frame_distributor.start()
+    workers.append(frame_distributor)
 
     # Defer overlay wiring so the main window renders first.
-    # Heavy overlay widgets are already built during the splash phase;
-    # this callback handles lightweight signal wiring and scan overlays.
+    # Heavy overlay widgets are created lazily on first use via _ensure_*_overlay().
     def _create_overlays():
-        # Heavy overlay widgets (_map_overlay, _exchange_overlay,
-        # _notifications_overlay) are already built during the splash phase.
-        # This function wires up signals, toggle callbacks, and scan overlays.
+        nonlocal _search_overlay, _scan_summary
 
         # Toast manager (lightweight widget)
         from .overlay.toast_widget import ToastManager
@@ -445,38 +454,105 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         main_window.set_toast_manager(toast_manager)
         overlay_manager.game_focus_changed.connect(toast_manager.set_visible)
 
-        # --- Toggle functions (safe before overlays exist) ---
+        # Search overlay
+        try:
+            from .overlay.search_overlay import SearchOverlayWidget
+            _search_overlay = SearchOverlayWidget(
+                config=config, config_path=config_path,
+                data_client=data_client, manager=overlay_manager,
+            )
+        except Exception as e:
+            log.warning("Search overlay failed: %s", e)
+
+        # Scan summary overlay
+        try:
+            from .overlay.scan_summary_overlay import ScanSummaryOverlay
+            from .ui.main_window import PAGE_SKILLS
+
+            def _get_skill_values():
+                if PAGE_SKILLS in main_window._page_created:
+                    page = main_window._pages.widget(PAGE_SKILLS)
+                    return page._manager.get_all_values()
+                return {}
+
+            _scan_summary = ScanSummaryOverlay(
+                config=config, config_path=config_path,
+                event_bus=event_bus, manager=overlay_manager,
+                skill_values_fn=_get_skill_values,
+            )
+            overlay_manager._scan_summary = _scan_summary
+        except Exception as e:
+            log.warning("Scan summary overlay failed: %s", e)
+
+        # --- Lazy overlay factories ---
+
+        def _ensure_map_overlay():
+            nonlocal _map_overlay
+            if _map_overlay is not None:
+                return _map_overlay
+            from .overlay.map_overlay import MapOverlay
+            _map_overlay = MapOverlay(
+                config=config, config_path=config_path,
+                data_client=data_client, manager=overlay_manager,
+            )
+            return _map_overlay
+
+        def _ensure_exchange_overlay():
+            nonlocal _exchange_overlay
+            if _exchange_overlay is not None:
+                return _exchange_overlay
+            from .overlay.exchange_overlay import ExchangeOverlay
+            _exchange_overlay = ExchangeOverlay(
+                config=config, config_path=config_path,
+                store=_exchange_store, favourites=_favourites_store,
+                manager=overlay_manager,
+            )
+            _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
+            return _exchange_overlay
+
+        def _ensure_notifications_overlay():
+            nonlocal _notifications_overlay
+            if _notifications_overlay is not None:
+                return _notifications_overlay
+            from .overlay.notifications_overlay import NotificationsOverlay
+            _notifications_overlay = NotificationsOverlay(
+                config=config, config_path=config_path,
+                notif_manager=main_window._notif_manager,
+                manager=overlay_manager,
+            )
+            _notifications_overlay.read_state_changed.connect(
+                main_window._update_badge
+            )
+            return _notifications_overlay
+
+        # --- Toggle functions ---
 
         def _toggle_map_overlay():
-            if _map_overlay is None:
-                return
-            if not _map_overlay.isVisible():
-                _map_overlay.set_wants_visible(True)
-                _map_overlay.raise_()
+            overlay = _ensure_map_overlay()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
             else:
-                _map_overlay.set_wants_visible(False)
+                overlay.set_wants_visible(False)
 
         def _open_map_overlay_at(planet_name: str, location_id: int):
-            if _map_overlay is not None:
-                _map_overlay.open_at_location(planet_name, location_id)
+            _ensure_map_overlay().open_at_location(planet_name, location_id)
 
         def _toggle_exchange_overlay():
-            if _exchange_overlay is None:
-                return
-            if not _exchange_overlay.isVisible():
-                _exchange_overlay.set_wants_visible(True)
-                _exchange_overlay.raise_()
+            overlay = _ensure_exchange_overlay()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
             else:
-                _exchange_overlay.set_wants_visible(False)
+                overlay.set_wants_visible(False)
 
         def _toggle_notifications_overlay():
-            if _notifications_overlay is None:
-                return
-            if not _notifications_overlay.isVisible():
-                _notifications_overlay.set_wants_visible(True)
-                _notifications_overlay.raise_()
+            overlay = _ensure_notifications_overlay()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
             else:
-                _notifications_overlay.set_wants_visible(False)
+                overlay.set_wants_visible(False)
 
         overlay_manager.map_hotkey_pressed.connect(_toggle_map_overlay)
         overlay_manager.exchange_hotkey_pressed.connect(_toggle_exchange_overlay)
@@ -569,11 +645,10 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 overlay.open_entity.connect(_on_overlay_result_selected)
 
                 def _open_exchange_orderbook(item_id):
-                    if _exchange_overlay is None:
-                        return
-                    _exchange_overlay.set_wants_visible(True)
-                    _exchange_overlay.raise_()
-                    _exchange_overlay.navigate_to_order_book(item_id)
+                    overlay = _ensure_exchange_overlay()
+                    overlay.set_wants_visible(True)
+                    overlay.raise_()
+                    overlay.navigate_to_order_book(item_id)
 
                 overlay.open_exchange.connect(_open_exchange_orderbook)
                 _current_profile_overlay = overlay
@@ -644,12 +719,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
             # Notification badge on logo
             main_window.set_search_overlay(_search_overlay)
-
-        # Wire signals on the pre-built overlays
-        _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
-        _notifications_overlay.read_state_changed.connect(
-            main_window._update_badge
-        )
 
         def _create_scan_overlays():
             # Scan highlight overlay
@@ -766,13 +835,19 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         # Scan highlight overlay (click-through, shows scanned rows + target lock)
         _create_scan_overlays()
 
-        # Market price review dialog — wire signals for the pre-built dialog
-        def _wire_market_review_dialog():
-            if _review_dialog is None:
-                return
+        # Market price review dialog — created lazily on first review request
+        def _ensure_review_dialog():
+            """Create and wire the MarketReviewDialog on first use."""
+            nonlocal _review_dialog
+            if _review_dialog is not None:
+                return _review_dialog
             try:
+                from .ui.dialogs.market_review_dialog import MarketReviewDialog
+                _review_dialog = MarketReviewDialog(
+                    config=config, parent=main_window,
+                )
+
                 def _on_reviewed(original_data, corrections, reviewed_fields):
-                    """User submitted corrections — merge and publish."""
                     merged = dict(original_data)
                     merged.update(corrections)
                     merged.pop("_match_result", None)
@@ -780,7 +855,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     event_bus.publish(EVENT_MARKET_PRICE_SCAN, merged)
 
                 def _on_skipped(original_data):
-                    """User skipped — publish original data as-is."""
                     data = dict(original_data)
                     data.pop("_match_result", None)
                     event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
@@ -788,22 +862,32 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 _review_dialog.reviewed.connect(_on_reviewed)
                 _review_dialog.skipped.connect(_on_skipped)
 
-                # Persist config when tutorial/never state changes
                 def _on_review_config_changed():
                     save_config(config, config_path)
                     event_bus.publish(EVENT_CONFIG_CHANGED, config)
 
                 _review_dialog.config_changed.connect(_on_review_config_changed)
-
-                # Bridge event bus (background thread) → Qt main thread via signal
-                event_bus.subscribe(
-                    EVENT_MARKET_PRICE_REVIEW,
-                    _review_dialog._enqueue_requested.emit,
-                )
             except Exception as e:
-                log.warning("Market review dialog wiring failed: %s", e)
+                log.warning("Market review dialog creation failed: %s", e)
+            return _review_dialog
 
-        _wire_market_review_dialog()
+        def _on_market_review_request(review_request):
+            """Bridge from event bus (background thread) → main thread dialog."""
+            from .core.thread_utils import invoke_on_main
+            invoke_on_main(lambda: _handle_review_on_main(review_request))
+
+        def _handle_review_on_main(review_request):
+            dlg = _ensure_review_dialog()
+            if dlg is not None:
+                dlg.enqueue(review_request)
+
+        event_bus.subscribe(EVENT_MARKET_PRICE_REVIEW, _on_market_review_request)
+
+        # All overlay wiring is complete — start the focus-detection timer.
+        # This is deferred from OverlayManager.__init__ to avoid showing
+        # overlay HWNDs (with a possible bordered-window flash) during the
+        # splash phase.
+        overlay_manager.start_focus_polling()
 
     QTimer.singleShot(0, _create_overlays)
 
@@ -813,6 +897,11 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     freeze_detector = FreezeDetector()
     freeze_detector.start()
     freeze_detector.arm()
+    _sigint_extras.update(
+        freeze_detector=freeze_detector,
+        main_window=main_window,
+        overlay_manager=overlay_manager,
+    )
 
     exit_code = app.exec()
 
@@ -825,6 +914,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     kill_timer = threading.Timer(5.0, force_exit)
     kill_timer.daemon = True
     kill_timer.start()
+    _start_shutdown_watchdog()
 
     freeze_detector.stop()
     local_server.close()
@@ -968,6 +1058,13 @@ def _run_headless(config, event_bus, db):
     shutdown_event = threading.Event()
 
     def on_signal(signum, frame):
+        _start_shutdown_watchdog()
+        # Stop workers immediately so background threads don't keep running
+        # while the main loop is still draining.
+        threading.Thread(
+            target=_cleanup_workers, args=(list(workers),),
+            daemon=True, name="signal-cleanup",
+        ).start()
         shutdown_event.set()
 
     signal.signal(signal.SIGINT, on_signal)
@@ -999,6 +1096,7 @@ def _run_headless(config, event_bus, db):
     kill_timer.start()
 
     log.warning("Shutting down...")
+    _start_shutdown_watchdog()
     data_client.close()
     _cleanup_workers(workers)
     db.close()
@@ -1222,6 +1320,44 @@ def _start_ingestion(config, event_bus, nexus_client, db=None):
     except Exception as e:
         log.error("Ingestion receiver failed to start: %s", e)
     return workers
+
+
+_shutdown_watchdog_started = False
+
+
+def _start_shutdown_watchdog():
+    """Log threads that are still running during shutdown.
+
+    Takes a snapshot of all threads (except main and itself) at call time,
+    then periodically logs which of those are still alive.  Safe to call
+    multiple times — only the first call has any effect.
+    """
+    global _shutdown_watchdog_started
+    if _shutdown_watchdog_started:
+        return
+    _shutdown_watchdog_started = True
+
+    main = threading.main_thread()
+    # Snapshot threads that exist right now — these are the ones we expect
+    # to wind down during shutdown.  Threads spawned later (stop-worker,
+    # force-exit timer) are not our concern.
+    watched = [
+        t for t in threading.enumerate()
+        if t is not main and t.name != "shutdown-watchdog"
+    ]
+    if not watched:
+        return
+
+    def _watch():
+        while True:
+            time.sleep(2)
+            alive = [t for t in watched if t.is_alive()]
+            if not alive:
+                return
+            names = ", ".join(t.name for t in alive)
+            log.warning("Shutdown watchdog: still running: %s", names)
+
+    threading.Thread(target=_watch, daemon=True, name="shutdown-watchdog").start()
 
 
 def _cleanup_workers(workers):

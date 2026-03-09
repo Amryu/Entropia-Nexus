@@ -72,7 +72,14 @@ class MarketReviewDialog(QDialog):
     _enqueue_requested = pyqtSignal(dict)  # thread-safe bridge → enqueue()
 
     def __init__(self, config: AppConfig, parent=None):
-        super().__init__(parent)
+        # Pass WindowStaysOnTopHint to the constructor so the native window
+        # is created once with the correct flags.  Calling setWindowFlag()
+        # after super().__init__() triggers an HWND destroy+recreate on
+        # Windows, which briefly flashes a small default-styled window.
+        super().__init__(
+            parent,
+            Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint,
+        )
         self._config = config
         self._queue: deque[dict] = deque()
         self._current: dict | None = None
@@ -81,7 +88,6 @@ class MarketReviewDialog(QDialog):
         self.setWindowTitle("Market Price Review")
         self.setMinimumWidth(440)
         self.setStyleSheet(f"QDialog {{ background-color: {SECONDARY}; }}")
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
         self.setModal(False)
         self._enqueue_requested.connect(self.enqueue)
 
@@ -223,10 +229,10 @@ class MarketReviewDialog(QDialog):
 
             # Markup spin
             markup_spin = QDoubleSpinBox()
-            markup_spin.setDecimals(1)
-            markup_spin.setRange(-1, 99_999_999)
-            markup_spin.setSpecialValueText("\u2014")  # em dash for -1
-            markup_spin.setFixedWidth(110)
+            markup_spin.setDecimals(2)
+            markup_spin.setRange(-1, 100_000_000)
+            markup_spin.setSpecialValueText("-")
+            markup_spin.setFixedWidth(150)
             self._markup_spins[period] = markup_spin
             markup_lbl = QLabel()
             markup_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
@@ -241,7 +247,7 @@ class MarketReviewDialog(QDialog):
             sales_spin = QDoubleSpinBox()
             sales_spin.setDecimals(2)
             sales_spin.setRange(0, 999_999_999)
-            sales_spin.setFixedWidth(110)
+            sales_spin.setFixedWidth(150)
             self._sales_spins[period] = sales_spin
             sales_lbl = QLabel()
             sales_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")

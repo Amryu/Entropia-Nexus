@@ -528,11 +528,13 @@ class Database:
     def save_pending_ingestion(self, event_type: str, items: list[dict]):
         """Persist pending ingestion items so they survive a crash."""
         import json
+        # Pre-serialize JSON outside the lock to reduce hold time
+        serialized = [(event_type, json.dumps(item)) for item in items]
         with self._lock:
             self._conn.execute("DELETE FROM pending_ingestion WHERE type = ?", (event_type,))
             self._conn.executemany(
                 "INSERT INTO pending_ingestion (type, data) VALUES (?, ?)",
-                ((event_type, json.dumps(item)) for item in items)
+                serialized,
             )
             self._conn.commit()
 
@@ -543,7 +545,9 @@ class Database:
             cur = self._conn.execute(
                 "SELECT data FROM pending_ingestion WHERE type = ? ORDER BY id", (event_type,)
             )
-            return [json.loads(row[0]) for row in cur.fetchall()]
+            raw = [row[0] for row in cur.fetchall()]
+        # JSON parsing outside the lock to reduce hold time
+        return [json.loads(r) for r in raw]
 
     def clear_pending_ingestion(self, event_type: str):
         """Clear pending ingestion items after successful upload."""
@@ -571,6 +575,19 @@ class Database:
                 "SELECT skill_id, SUM(amount) FROM skill_gains "
                 "WHERE ts >= ? GROUP BY skill_id",
                 (since_ts,)
+            )
+            return {row[0]: row[1] for row in cur.fetchall()}
+
+    def get_skill_gains_before(self, before_ts: int) -> dict[int, float]:
+        """Sum skill gains per skill_id before a Unix timestamp.
+
+        Returns {skill_id: total_amount}.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT skill_id, SUM(amount) FROM skill_gains "
+                "WHERE ts < ? GROUP BY skill_id",
+                (before_ts,)
             )
             return {row[0]: row[1] for row in cur.fetchall()}
 
@@ -1184,55 +1201,73 @@ class Database:
         changed = 0
         dirty_int = 1 if dirty else 0
 
+        # Pre-parse values outside the lock to reduce hold time
+        parsed = []
+        for skill_name, raw_value in skill_values.items():
+            try:
+                parsed.append((skill_name, float(raw_value)))
+            except (TypeError, ValueError):
+                continue
+
         with self._lock:
-            for skill_name, raw_value in skill_values.items():
-                try:
-                    new_value = float(raw_value)
-                except (TypeError, ValueError):
-                    continue
+            # Single bulk fetch replaces N per-skill SELECTs
+            cur = self._conn.execute(
+                "SELECT skill_name, current_points FROM local_skill_values"
+            )
+            existing = {row[0]: float(row[1]) for row in cur.fetchall()}
 
-                cur = self._conn.execute(
-                    "SELECT current_points FROM local_skill_values WHERE skill_name = ?",
-                    (skill_name,),
-                )
-                row = cur.fetchone()
+            # Categorise into batches
+            new_values = []
+            new_history = []
+            changed_values = []
+            changed_history = []
+            unchanged_touch = []
 
-                if row is None:
-                    self._conn.execute(
-                        "INSERT INTO local_skill_values (skill_name, current_points, updated_at, dirty) "
-                        "VALUES (?, ?, ?, ?)",
-                        (skill_name, new_value, ts, dirty_int),
-                    )
-                    self._conn.execute(
-                        "INSERT INTO local_skill_history (imported_at, skill_name, old_value, new_value, source) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (ts, skill_name, None, new_value, source),
-                    )
-                    changed += 1
-                    continue
-
-                old_value = float(row[0])
-                value_changed = abs(old_value - new_value) > 1e-9
-                if value_changed:
-                    self._conn.execute(
-                        "UPDATE local_skill_values "
-                        "SET current_points = ?, updated_at = ?, dirty = ? "
-                        "WHERE skill_name = ?",
-                        (new_value, ts, dirty_int, skill_name),
-                    )
-                    self._conn.execute(
-                        "INSERT INTO local_skill_history (imported_at, skill_name, old_value, new_value, source) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (ts, skill_name, old_value, new_value, source),
-                    )
+            for skill_name, new_value in parsed:
+                if skill_name not in existing:
+                    new_values.append((skill_name, new_value, ts, dirty_int))
+                    new_history.append((ts, skill_name, None, new_value, source))
                     changed += 1
                 else:
-                    # Even when the value is unchanged we refresh sync state.
-                    self._conn.execute(
-                        "UPDATE local_skill_values SET updated_at = ?, dirty = ? "
-                        "WHERE skill_name = ?",
-                        (ts, dirty_int, skill_name),
-                    )
+                    old_value = existing[skill_name]
+                    if abs(old_value - new_value) > 1e-9:
+                        changed_values.append((new_value, ts, dirty_int, skill_name))
+                        changed_history.append((ts, skill_name, old_value, new_value, source))
+                        changed += 1
+                    else:
+                        unchanged_touch.append((ts, dirty_int, skill_name))
+
+            if new_values:
+                self._conn.executemany(
+                    "INSERT INTO local_skill_values (skill_name, current_points, updated_at, dirty) "
+                    "VALUES (?, ?, ?, ?)",
+                    new_values,
+                )
+            if new_history:
+                self._conn.executemany(
+                    "INSERT INTO local_skill_history (imported_at, skill_name, old_value, new_value, source) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    new_history,
+                )
+            if changed_values:
+                self._conn.executemany(
+                    "UPDATE local_skill_values "
+                    "SET current_points = ?, updated_at = ?, dirty = ? "
+                    "WHERE skill_name = ?",
+                    changed_values,
+                )
+            if changed_history:
+                self._conn.executemany(
+                    "INSERT INTO local_skill_history (imported_at, skill_name, old_value, new_value, source) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    changed_history,
+                )
+            if unchanged_touch:
+                self._conn.executemany(
+                    "UPDATE local_skill_values SET updated_at = ?, dirty = ? "
+                    "WHERE skill_name = ?",
+                    unchanged_touch,
+                )
 
             self._auto_commit()
 
@@ -1717,12 +1752,15 @@ class Database:
         """Save a pending inventory import for later sync. Returns the row ID."""
         import json
         from datetime import datetime
+        # Pre-serialize JSON outside the lock to reduce hold time
+        items_json = json.dumps(items)
+        unresolved_json = json.dumps(unresolved)
+        ts = datetime.now().isoformat()
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO pending_inventory_import (items, unresolved, raw_count, imported_at) "
                 "VALUES (?, ?, ?, ?)",
-                (json.dumps(items), json.dumps(unresolved), raw_count,
-                 datetime.now().isoformat())
+                (items_json, unresolved_json, raw_count, ts)
             )
             self._auto_commit()
             return cur.lastrowid
@@ -1736,14 +1774,14 @@ class Database:
                 "SELECT * FROM pending_inventory_import WHERE synced = 0 "
                 "ORDER BY imported_at DESC"
             )
-            rows = []
-            for r in cur.fetchall():
-                d = dict(r)
-                d['items'] = json.loads(d['items'])
-                d['unresolved'] = json.loads(d['unresolved'])
-                rows.append(d)
+            raw_rows = [dict(r) for r in cur.fetchall()]
             self._conn.row_factory = None
-            return rows
+
+        # JSON parsing outside the lock to reduce hold time
+        for d in raw_rows:
+            d['items'] = json.loads(d['items'])
+            d['unresolved'] = json.loads(d['unresolved'])
+        return raw_rows
 
     def mark_pending_inventory_synced(self, import_id: int):
         """Mark a pending import as synced."""

@@ -15,13 +15,14 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QScrollArea, QSizePolicy, QFrame,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QPoint, pyqtSignal
 from PyQt6.QtGui import QFontMetrics
 
 from ..theme import (
     TEXT, TEXT_MUTED, BORDER, SECONDARY, PRIMARY, HOVER, ACCENT,
     TABLE_HEADER, TABLE_ROW, TABLE_ROW_ALT, MAIN_DARK,
 )
+from ..icons import svg_icon, SETTINGS
 
 # Blue-tinted hover — matches website rgba(59, 130, 246, 0.15) over PRIMARY
 _ROW_HOVER_COLOR = "#263042"
@@ -164,6 +165,9 @@ COLUMN_WIDTH_PADDING = 38  # cell padding (16) + sort indicator (14) + spacing (
 MIN_COLUMN_WIDTH = 50
 MIN_MAIN_COLUMN_WIDTH = 150
 SCROLL_BUFFER_ROWS = 10
+RESIZE_GRIP_WIDTH = 5    # px from right edge of header cell for resize handle
+DRAG_THRESHOLD = 5       # px movement before header drag starts
+MIN_RESIZE_WIDTH = 30    # minimum column width during resize
 
 _SORT_ASC = "\u25B2"   # ▲
 _SORT_DESC = "\u25BC"  # ▼
@@ -191,17 +195,31 @@ def _make_hidden_scroll_area(fixed_height: int | None = None) -> QScrollArea:
 # ---------------------------------------------------------------------------
 
 class _HeaderCell(QWidget):
-    """Clickable header cell with sort indicator."""
+    """Clickable header cell with sort indicator, drag-to-reorder, and edge resize."""
 
-    clicked = pyqtSignal(int)  # column index
+    clicked = pyqtSignal(int)              # sort click (col_idx)
+    drag_started = pyqtSignal(int)         # col_idx
+    drag_moved = pyqtSignal(int, int)      # col_idx, global_x
+    drag_finished = pyqtSignal(int, int)   # col_idx, global_x
+    resize_moved = pyqtSignal(int, int)    # col_idx, global_x
+    resize_finished = pyqtSignal(int)      # col_idx
 
-    def __init__(self, col_idx: int, text: str, sortable: bool, parent=None):
+    def __init__(self, col_idx: int, text: str, sortable: bool,
+                 reorderable: bool = False, resizable: bool = False,
+                 parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._col_idx = col_idx
         self._sortable = sortable
+        self._reorderable = reorderable
+        self._resizable = resizable
+        self._press_pos = None
+        self._dragging = False
+        self._resizing = False
         if sortable:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
+        if resizable:
+            self.setMouseTracking(True)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
@@ -234,9 +252,57 @@ class _HeaderCell(QWidget):
         )
 
     def mousePressEvent(self, event):
-        if self._sortable and event.button() == Qt.MouseButton.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(event)
+        self._press_pos = event.position()
+        self._dragging = False
+        self._resizing = False
+        # Right-edge press → resize
+        if self._resizable and event.position().x() >= self.width() - RESIZE_GRIP_WIDTH:
+            self._resizing = True
+            return
+        # Otherwise potential click or drag-reorder
+
+    def mouseMoveEvent(self, event):
+        # Cursor hint when hovering (no button pressed)
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            if self._resizable and event.position().x() >= self.width() - RESIZE_GRIP_WIDTH:
+                self.setCursor(Qt.CursorShape.SplitHCursor)
+            elif self._sortable:
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.unsetCursor()
+            return
+        if self._resizing:
+            self.resize_moved.emit(self._col_idx, int(event.globalPosition().x()))
+            return
+        if self._press_pos is None:
+            return
+        if not self._dragging and self._reorderable:
+            delta = event.position().x() - self._press_pos.x()
+            if abs(delta) > DRAG_THRESHOLD:
+                self._dragging = True
+                self.drag_started.emit(self._col_idx)
+        if self._dragging:
+            self.drag_moved.emit(self._col_idx, int(event.globalPosition().x()))
+
+    def mouseReleaseEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._resizing:
+            self.resize_finished.emit(self._col_idx)
+            self._resizing = False
+            self._press_pos = None
+            return
+        if self._dragging:
+            self.drag_finished.emit(self._col_idx, int(event.globalPosition().x()))
+            self._dragging = False
+            self._press_pos = None
+            return
+        # Plain click → sort
+        self._press_pos = None
+        if self._sortable:
             self.clicked.emit(self._col_idx)
-        super().mousePressEvent(event)
 
 
 class _TableRow(QWidget):
@@ -267,8 +333,14 @@ class _TableRow(QWidget):
         self._display_index: int = -1
         self._data_index: int = -1
 
-    def configure_columns(self, widths: list[int], alignments: list[Qt.AlignmentFlag]):
-        """Set column widths and alignments."""
+    def configure_columns(self, widths: list[int], alignments: list[Qt.AlignmentFlag],
+                          row_width: int | None = None):
+        """Set column widths and alignments.
+
+        *row_width* overrides the total fixed width of the row widget so it
+        fills the viewport.  The trailing addStretch() handles the gap.
+        """
+        self._cell_widths = list(widths)
         total = 0
         for i, lbl in enumerate(self._cells):
             if i < len(widths):
@@ -276,7 +348,7 @@ class _TableRow(QWidget):
                 total += widths[i]
                 alignment = alignments[i] if i < len(alignments) else Qt.AlignmentFlag.AlignLeft
                 lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | alignment)
-        self.setFixedWidth(total)
+        self.setFixedWidth(row_width if row_width is not None else total)
 
     def set_data(
         self,
@@ -288,9 +360,18 @@ class _TableRow(QWidget):
         """Fill cell contents and position."""
         self._display_index = display_index
         self._data_index = data_index
+        widths = getattr(self, "_cell_widths", [])
         for i, lbl in enumerate(self._cells):
             if i < len(texts):
-                lbl.setText(texts[i])
+                text = texts[i]
+                w = widths[i] if i < len(widths) else 0
+                if w > 16:
+                    fm = lbl.fontMetrics()
+                    # Account for padding (8px each side from stylesheet)
+                    elided = fm.elidedText(text, Qt.TextElideMode.ElideRight, w - 16)
+                    lbl.setText(elided)
+                else:
+                    lbl.setText(text)
             else:
                 lbl.setText("")
         self.setStyleSheet(f"background-color: {bg_color};")
@@ -315,6 +396,7 @@ class FancyTable(QWidget):
     row_hover = pyqtSignal(object)           # dict or None
     row_activated = pyqtSignal(dict, int)    # double-click (row_data, row_index)
     sort_changed = pyqtSignal(str, str)      # (column_key, direction)
+    columns_reordered = pyqtSignal(list)     # [column_key, ...]
 
     def __init__(
         self,
@@ -328,6 +410,8 @@ class FancyTable(QWidget):
         empty_message: str = "No data available",
         max_visible_rows: int | None = None,
         show_toolbar: bool = True,
+        reorderable: bool = False,
+        resizable: bool = False,
         parent=None,
     ):
         super().__init__(parent)
@@ -342,6 +426,8 @@ class FancyTable(QWidget):
         self._empty_message = empty_message
         self._max_visible_rows = max_visible_rows
         self._show_toolbar = show_toolbar
+        self._reorderable = reorderable
+        self._resizable = resizable
 
         # Data
         self._items: list[dict] = []
@@ -421,9 +507,10 @@ class FancyTable(QWidget):
         self._new_btn.hide()
         toolbar.addWidget(self._new_btn)
 
-        self._config_btn = QPushButton("\u2699")
+        self._config_btn = QPushButton()
         self._config_btn.setToolTip("Configure columns")
         self._config_btn.setFixedSize(28, 28)
+        self._config_btn.setIcon(svg_icon(SETTINGS, TEXT_MUTED, 14))
         self._config_btn.setStyleSheet(_toolbar_btn_style)
         toolbar.addWidget(self._config_btn)
 
@@ -445,6 +532,11 @@ class FancyTable(QWidget):
         self._header_layout.setContentsMargins(0, 0, 0, 0)
         self._header_layout.setSpacing(0)
         self._header_cells: list[_HeaderCell] = []
+        # Drop indicator for column reorder
+        self._drop_indicator = QFrame(self._header_inner)
+        self._drop_indicator.setFixedWidth(2)
+        self._drop_indicator.setStyleSheet(f"background-color: {ACCENT};")
+        self._drop_indicator.hide()
         self._header_scroll.setWidget(self._header_inner)
         root.addWidget(self._header_scroll)
 
@@ -511,11 +603,8 @@ class FancyTable(QWidget):
         self._footer_scroll.hide()
         root.addWidget(self._footer_scroll)
 
-        # -- Reserve right margin for the body's vertical scrollbar --
-        _SB_W = 10  # matches QScrollBar:vertical { width: 10px } in theme
-        self._header_scroll.setViewportMargins(0, 0, _SB_W, 0)
-        self._filter_scroll.setViewportMargins(0, 0, _SB_W, 0)
-        self._footer_scroll.setViewportMargins(0, 0, _SB_W, 0)
+        # Scrollbar width constant — matches QScrollBar:vertical { width: 10px } in theme
+        self._sb_width = 10
 
         # -- Sync horizontal scroll: body drives header + filter + footer --
         self._body_scroll.horizontalScrollBar().valueChanged.connect(self._on_h_scroll)
@@ -532,6 +621,14 @@ class FancyTable(QWidget):
     def _on_v_scroll(self):
         """Handle vertical scroll — re-render visible rows."""
         self._render_visible()
+
+    def _sync_scrollbar_margin(self):
+        """Reserve right margin on header/filter/footer only when the body has a vertical scrollbar."""
+        has_sb = self._body_scroll.verticalScrollBar().isVisible()
+        margin = self._sb_width if has_sb else 0
+        self._header_scroll.setViewportMargins(0, 0, margin, 0)
+        self._filter_scroll.setViewportMargins(0, 0, margin, 0)
+        self._footer_scroll.setViewportMargins(0, 0, margin, 0)
 
     # -----------------------------------------------------------------------
     # Public API
@@ -556,9 +653,13 @@ class FancyTable(QWidget):
         else:
             self._cache, self._numeric = build_fancy_cache(items, self._active_columns)
 
+        # Detect whether columns changed (same count = data-only refresh)
+        columns_changed = len(self._header_cells) != len(self._active_columns)
+
         # Init index pipeline
         self._sorted_indices = list(range(len(self._cache)))
-        self._col_filters = [""] * len(self._active_columns)
+        if columns_changed:
+            self._col_filters = [""] * len(self._active_columns)
 
         # Apply default sort
         if self._default_sort:
@@ -578,24 +679,30 @@ class FancyTable(QWidget):
         # Auto-size columns
         self._auto_size_columns()
 
-        # Build headers and filters
-        self._rebuild_header()
-        self._rebuild_filters()
+        # If viewport has real dimensions, render immediately (revalidation
+        # path where the widget is already on screen).  Otherwise defer all
+        # widget creation to _deferred_layout — building headers, filters,
+        # and rows here would be wasted because _deferred_layout will
+        # rebuild them once the widget is visible and has a real viewport.
+        if self._body_scroll.viewport().width() > 0:
+            if columns_changed:
+                self._rebuild_header()
+                self._rebuild_filters()
+            else:
+                # Data-only refresh: update widths on existing cells
+                # without recreating widgets (avoids focus theft).
+                self._update_column_widths()
+            self._recycle_all_rows()
+            self._update_virtual_size()
+            self._render_visible()
+        else:
+            QTimer.singleShot(0, self._deferred_layout)
+
+        self._update_count_label()
 
         # Check compact after layout settles
         self._compact = False
         QTimer.singleShot(0, self._check_compact_mode)
-
-        # Render
-        self._recycle_all_rows()
-        self._update_virtual_size()
-        self._render_visible()
-        self._update_count_label()
-
-        # Deferred layout pass: viewport width is 0 during initial set_data()
-        # because the widget hasn't been shown yet.  Re-expand the main
-        # column once Qt has processed the layout so it fills the viewport.
-        QTimer.singleShot(0, self._deferred_layout)
 
     def set_loading(self):
         """Show loading state."""
@@ -609,13 +716,11 @@ class FancyTable(QWidget):
         self._empty_label.show()
 
     def set_columns(self, columns: list[ColumnDef]):
-        """Replace the column definitions and re-render if data is loaded."""
+        """Replace the column definitions.  Caller must follow with set_data()."""
         self._all_columns = list(columns)
         self._active_columns = list(columns)
         self._full_col_keys = [c.key for c in columns]
         self._compact = False
-        if self._items:
-            self.set_data(self._items)
 
     def set_footer(self, rows: list[dict], label_key: str | None = None):
         """Set footer aggregate rows."""
@@ -740,35 +845,22 @@ class FancyTable(QWidget):
             if self._col_widths[i] < min_w:
                 self._col_widths[i] = min_w
 
-        # Expand main column to fill remaining viewport space
-        self._expand_main_column()
-
-    def _expand_main_column(self):
-        """Adjust main column width so total columns fill the viewport.
-
-        Grows when there's extra space, shrinks (down to its content-based
-        minimum) when the viewport is narrower than the total.
-        """
+        # Fit main column to viewport: shrink or grow to fill available space
         viewport_w = self._body_scroll.viewport().width()
-        if viewport_w <= 0:
-            return
-        main_idx = None
-        for i, col in enumerate(self._active_columns):
-            if col.main:
-                main_idx = i
-                break
-        if main_idx is None:
-            return
-        total = sum(self._col_widths)
-        delta = viewport_w - total
-        if delta == 0:
-            return
-        new_w = self._col_widths[main_idx] + delta
-        # Never shrink below the main column minimum
-        self._col_widths[main_idx] = max(new_w, MIN_MAIN_COLUMN_WIDTH)
+        if viewport_w > 0:
+            main_idx = next((i for i, c in enumerate(self._active_columns) if c.main), None)
+            if main_idx is not None:
+                # Reserve space for vertical scrollbar when rows exceed max_visible_rows
+                row_count = len(self._filtered_indices) if self._filtered_indices else len(self._items)
+                needs_vscroll = (self._max_visible_rows is not None
+                                 and row_count > self._max_visible_rows)
+                sb_reserve = self._sb_width if needs_vscroll else 0
+                other_width = sum(w for i, w in enumerate(self._col_widths) if i != main_idx)
+                available = viewport_w - other_width - sb_reserve
+                self._col_widths[main_idx] = max(available, MIN_MAIN_COLUMN_WIDTH)
 
     def _deferred_layout(self, _retries: int = 3):
-        """Re-expand columns after the viewport has its real dimensions."""
+        """Re-render after the viewport has its real dimensions."""
         if not self._items:
             return
         # Viewport may still be 0 if the widget hasn't been shown yet
@@ -778,9 +870,13 @@ class FancyTable(QWidget):
             if _retries > 0:
                 QTimer.singleShot(0, lambda: self._deferred_layout(_retries - 1))
             return
-        self._expand_main_column()
-        self._rebuild_header()
-        self._rebuild_filters()
+        self._auto_size_columns()
+        columns_changed = len(self._header_cells) != len(self._active_columns)
+        if columns_changed:
+            self._rebuild_header()
+            self._rebuild_filters()
+        else:
+            self._update_column_widths()
         self._recycle_all_rows()
         self._update_virtual_size()
         self._render_visible()
@@ -805,10 +901,17 @@ class FancyTable(QWidget):
         total_w = self._total_column_width()
 
         for i, col in enumerate(self._active_columns):
-            cell = _HeaderCell(i, col.header, col.sortable and self._sortable)
+            cell = _HeaderCell(
+                i, col.header, col.sortable and self._sortable,
+                reorderable=self._reorderable, resizable=self._resizable,
+            )
             cell.setFixedWidth(self._col_widths[i] if i < len(self._col_widths) else MIN_COLUMN_WIDTH)
             cell.setFixedHeight(self._row_height)
             cell.clicked.connect(self._on_header_clicked)
+            cell.drag_moved.connect(self._on_header_drag_moved)
+            cell.drag_finished.connect(self._on_header_drag_finished)
+            cell.resize_moved.connect(self._on_header_resize_moved)
+            cell.resize_finished.connect(self._on_header_resize_finished)
             self._header_layout.addWidget(cell)
             self._header_cells.append(cell)
 
@@ -850,6 +953,31 @@ class FancyTable(QWidget):
         self._filter_layout.addStretch()
         viewport_w = self._body_scroll.viewport().width()
         self._filter_inner.setFixedWidth(max(total_w, viewport_w))
+
+        # Restore filter texts (e.g. after column reorder)
+        for i, inp in enumerate(self._filter_inputs):
+            if i < len(self._col_filters) and self._col_filters[i]:
+                inp.blockSignals(True)
+                inp.setText(self._col_filters[i])
+                inp.blockSignals(False)
+
+    def _update_column_widths(self):
+        """Update widths on existing header cells and filter inputs.
+
+        Used during data-only refreshes (e.g. pagination) to avoid
+        recreating widgets and the focus-stealing that entails.
+        """
+        total_w = self._total_column_width()
+        viewport_w = self._body_scroll.viewport().width()
+        inner_w = max(total_w, viewport_w)
+        for i, cell in enumerate(self._header_cells):
+            if i < len(self._col_widths):
+                cell.setFixedWidth(self._col_widths[i])
+        for i, inp in enumerate(self._filter_inputs):
+            if i < len(self._col_widths):
+                inp.setFixedWidth(self._col_widths[i])
+        self._header_inner.setFixedWidth(inner_w)
+        self._filter_inner.setFixedWidth(inner_w)
 
     # -----------------------------------------------------------------------
     # Sorting
@@ -965,6 +1093,110 @@ class FancyTable(QWidget):
                 cell.set_sort_indicator(None)
 
     # -----------------------------------------------------------------------
+    # Column reorder (header drag)
+    # -----------------------------------------------------------------------
+
+    def _on_header_drag_moved(self, col_idx: int, global_x: int):
+        """Show drop indicator at the target insertion position."""
+        local_x = self._header_inner.mapFromGlobal(QPoint(global_x, 0)).x()
+        target = self._find_drop_index(local_x)
+        x_pos = sum(self._col_widths[:target])
+        self._drop_indicator.setFixedHeight(self._row_height)
+        self._drop_indicator.move(x_pos - 1, 0)
+        self._drop_indicator.show()
+        self._drop_indicator.raise_()
+
+    def _on_header_drag_finished(self, col_idx: int, global_x: int):
+        """Perform column reorder on drag release."""
+        self._drop_indicator.hide()
+        local_x = self._header_inner.mapFromGlobal(QPoint(global_x, 0)).x()
+        target = self._find_drop_index(local_x)
+        if target != col_idx and target != col_idx + 1:
+            # Adjust target for pop/insert semantics
+            to_idx = target if target < col_idx else target - 1
+            self._reorder_column(col_idx, to_idx)
+
+    def _find_drop_index(self, local_x: int) -> int:
+        """Find insertion index from x position in header."""
+        cum = 0
+        for i, w in enumerate(self._col_widths):
+            mid = cum + w // 2
+            if local_x < mid:
+                return i
+            cum += w
+        return len(self._col_widths)
+
+    def _reorder_column(self, from_idx: int, to_idx: int):
+        """Move a column from one position to another, updating all state."""
+        if from_idx == to_idx:
+            return
+
+        def _move(lst, f, t):
+            item = lst.pop(f)
+            lst.insert(t, item)
+
+        _move(self._active_columns, from_idx, to_idx)
+        if not self._compact:
+            _move(self._all_columns, from_idx, to_idx)
+        _move(self._col_widths, from_idx, to_idx)
+        _move(self._col_alignments, from_idx, to_idx)
+        _move(self._numeric, from_idx, to_idx)
+        for row in self._cache:
+            _move(row, from_idx, to_idx)
+
+        # Remap sort column index
+        if self._sort_col_idx is not None:
+            if self._sort_col_idx == from_idx:
+                self._sort_col_idx = to_idx
+            elif from_idx < self._sort_col_idx <= to_idx:
+                self._sort_col_idx -= 1
+            elif to_idx <= self._sort_col_idx < from_idx:
+                self._sort_col_idx += 1
+
+        # Remap filter texts
+        if len(self._col_filters) > max(from_idx, to_idx):
+            _move(self._col_filters, from_idx, to_idx)
+
+        # Rebuild UI
+        self._rebuild_header()
+        self._rebuild_filters()
+        self._recycle_all_rows()
+        self._render_visible()
+
+        self.columns_reordered.emit([c.key for c in self._active_columns])
+
+    # -----------------------------------------------------------------------
+    # Column resize (header edge drag)
+    # -----------------------------------------------------------------------
+
+    def _on_header_resize_moved(self, col_idx: int, global_x: int):
+        """Live-update column width while dragging the header edge."""
+        if col_idx >= len(self._header_cells):
+            return
+        cell = self._header_cells[col_idx]
+        cell_left = cell.mapToGlobal(QPoint(0, 0)).x()
+        new_w = max(global_x - cell_left, MIN_RESIZE_WIDTH)
+        self._col_widths[col_idx] = new_w
+        # Update in-place for smooth feedback
+        cell.setFixedWidth(new_w)
+        if col_idx < len(self._filter_inputs):
+            self._filter_inputs[col_idx].setFixedWidth(new_w)
+        # Update container widths
+        total_w = self._total_column_width()
+        viewport_w = self._body_scroll.viewport().width()
+        w = max(total_w, viewport_w)
+        self._header_inner.setFixedWidth(w)
+        self._filter_inner.setFixedWidth(w)
+        # Re-render rows
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._render_visible()
+
+    def _on_header_resize_finished(self, col_idx: int):
+        """Finalize column resize (already applied live)."""
+        pass
+
+    # -----------------------------------------------------------------------
     # Filtering
     # -----------------------------------------------------------------------
 
@@ -1034,6 +1266,11 @@ class FancyTable(QWidget):
         else:
             self._empty_label.hide()
 
+        # Sync now (catches already-settled layouts) and after Qt processes
+        # the size change (scrollbar visibility may lag by one event loop tick).
+        self._sync_scrollbar_margin()
+        QTimer.singleShot(0, self._sync_scrollbar_margin)
+
     def _render_visible(self):
         """Render only the rows visible in the viewport + buffer."""
         if not self._filtered_indices:
@@ -1067,6 +1304,8 @@ class FancyTable(QWidget):
 
         # Assign rows for new indices
         col_count = len(self._active_columns)
+        viewport_w = self._body_scroll.viewport().width()
+        row_width = max(self._total_column_width(), viewport_w)
         for di in sorted(needed - current):
             row = self._get_or_create_row(col_count)
             data_idx = self._filtered_indices[di]
@@ -1082,7 +1321,7 @@ class FancyTable(QWidget):
             # Alternating row color
             bg = TABLE_ROW_ALT if (di % 2 == 1) else PRIMARY
 
-            row.configure_columns(self._col_widths, self._col_alignments)
+            row.configure_columns(self._col_widths, self._col_alignments, row_width)
             row.set_data(di, data_idx, texts, bg)
             row.move(0, di * self._row_height)
             row.show()
@@ -1205,13 +1444,18 @@ class FancyTable(QWidget):
         self._render_visible()
         self._update_count_label()
 
+    def showEvent(self, event):
+        """Trigger deferred layout when the widget first becomes visible."""
+        super().showEvent(event)
+        if self._items:
+            QTimer.singleShot(0, self._deferred_layout)
+
     def resizeEvent(self, event):
-        """Re-check compact mode and re-expand main column on resize."""
+        """Re-check compact mode and update layout on resize."""
         super().resizeEvent(event)
         if self._items:
             self._compact_timer.start()
-            # Recalculate main column expansion
-            self._expand_main_column()
+            self._auto_size_columns()
             self._rebuild_header()
             self._rebuild_filters()
             self._recycle_all_rows()

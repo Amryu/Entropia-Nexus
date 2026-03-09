@@ -473,8 +473,10 @@ class SettingsPage(QWidget):
         self._ocr_capture_backend.addItem("PrintWindow (legacy fallback)", "printwindow")
         self._ocr_capture_backend.setToolTip(
             "Select how the game window is captured for OCR.\n"
-            "Changes apply immediately. WGC is Windows-only and requires\n"
-            "the optional 'wgcapture' package. 'Auto' falls back safely."
+            "Changes apply immediately.\n\n"
+            "Auto: Uses WGC (borderless if supported, yellow border otherwise).\n"
+            "WGC: Forces Windows Graphics Capture (no game interference).\n"
+            "PrintWindow: Legacy fallback (no border, may cause game flickering)."
         )
         current_backend = getattr(self._config, "ocr_capture_backend", "auto")
         backend_index = self._ocr_capture_backend.findData(current_backend)

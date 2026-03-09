@@ -41,6 +41,11 @@ log = get_logger("MarketPrice")
 # --- Foreground gating ---
 BACKGROUND_SLEEP = 1.0  # seconds to sleep when game is not visible
 
+# --- Re-scan threshold ---
+# When OCR confidence is below this, bypass the pixel-unchanged optimization
+# and force re-reading every tick.  Must match client MIN_SUBMISSION_CONFIDENCE.
+MIN_RESCAN_CONFIDENCE = 0.60
+
 # --- Match validation ---
 MIN_INSIDE_BRIGHTNESS = 180  # pixels under mask must be bright
 MIN_CONTRAST = 30            # brightness gap between inside and outside mask
@@ -96,18 +101,25 @@ class MarketPriceDetector:
     using STPK font templates when available.
     """
 
-    def __init__(self, config, event_bus, capturer_or_cache, data_client=None):
+    def __init__(self, config, event_bus, frame_source, data_client=None):
         self._config = config
         self._event_bus = event_bus
 
-        # Accept either a SharedFrameCache or legacy ScreenCapturer
-        from .frame_cache import SharedFrameCache
-        if isinstance(capturer_or_cache, SharedFrameCache):
-            self._frame_cache = capturer_or_cache
-            self._capturer = None
+        # Detect frame source type
+        self._distributor = None
+        self._subscription = None
+        self._frame_cache = None
+        self._capturer = None
+
+        from .frame_distributor import FrameDistributor
+        if isinstance(frame_source, FrameDistributor):
+            self._distributor = frame_source
         else:
-            self._frame_cache = None
-            self._capturer = capturer_or_cache
+            from .frame_cache import SharedFrameCache
+            if isinstance(frame_source, SharedFrameCache):
+                self._frame_cache = frame_source
+            else:
+                self._capturer = frame_source
 
         self._running = False
         self._thread = None
@@ -138,6 +150,7 @@ class MarketPriceDetector:
         # Tracking state (multi-window)
         # Each tracked window: {"pos": (x,y), "pixels": ndarray, "data": dict}
         self._tracked_windows: list[dict] = []
+        self._tick_seq: int = 0  # Monotonic counter for overlay tick dedup
 
         # STPK entries (loaded lazily, None = not loaded, [] = loaded but empty)
         self._digit_entries: list[dict] | None = None
@@ -261,21 +274,47 @@ class MarketPriceDetector:
         if self._running or self._template_gray is None:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="market-price"
-        )
-        self._thread.start()
-        log.info("Started")
+
+        if self._distributor is not None:
+            self._subscription = self._distributor.subscribe(
+                "market-price", self._on_frame, hz=1,
+            )
+            log.info("Started (push mode)")
+        else:
+            self._thread = threading.Thread(
+                target=self._poll_loop, daemon=True, name="market-price",
+            )
+            self._thread.start()
+            log.info("Started (poll mode)")
 
     def stop(self):
         self._running = False
+        if self._subscription is not None:
+            self._subscription.enabled = False
+            self._subscription = None
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
         log.info("Stopped")
 
     # ------------------------------------------------------------------
-    # Poll loop
+    # Push mode (FrameDistributor callback)
+    # ------------------------------------------------------------------
+
+    def _on_frame(self, frame: np.ndarray, timestamp: float):
+        """Callback from FrameDistributor — runs on the capture thread."""
+        if not self._running:
+            return
+        if not getattr(self._config, "market_price_enabled", True):
+            return
+        try:
+            self._game_origin = self._distributor.game_origin
+            self._process_image(frame)
+        except Exception as e:
+            log.error("Tick error: %s", e)
+
+    # ------------------------------------------------------------------
+    # Legacy poll mode
     # ------------------------------------------------------------------
 
     def _capture_window(self, hwnd):
@@ -289,12 +328,13 @@ class MarketPriceDetector:
         while self._running:
             try:
                 if getattr(self._config, "market_price_enabled", True):
-                    self._tick()
+                    self._tick_legacy()
             except Exception as e:
                 log.error("Tick error: %s", e)
             time.sleep(interval)
 
-    def _tick(self):
+    def _tick_legacy(self):
+        """Legacy poll tick: discover window, capture, then process."""
         # Auto-discover game window
         if not self._game_hwnd or not _platform.is_window_visible(self._game_hwnd):
             self._game_hwnd = None
@@ -317,11 +357,27 @@ class MarketPriceDetector:
         if image is None:
             return
 
+        self._process_image(image)
+
+    # ------------------------------------------------------------------
+    # Core image processing (shared by both modes)
+    # ------------------------------------------------------------------
+
+    def _process_image(self, image: np.ndarray):
+        """Process a captured game frame: find market windows and read prices."""
         threshold = getattr(self._config, "market_price_match_threshold", 0.85)
+        self._tick_seq += 1
 
         # Quick check: if all tracked positions are pixel-identical, emit
         # debug events for the cached data and skip the expensive search.
-        if self._tracked_windows and self._all_positions_unchanged(image):
+        # Exception: if any tracked window has low OCR confidence, force a
+        # re-scan — pixel noise from the semi-transparent background may
+        # yield better readings on the next frame.
+        low_conf = any(
+            tw["data"].get("ocr_confidence", 0) < MIN_RESCAN_CONFIDENCE
+            for tw in self._tracked_windows
+        )
+        if self._tracked_windows and not low_conf and self._all_positions_unchanged(image):
             gx, gy = self._game_origin
             for tw in self._tracked_windows:
                 x, y = tw["pos"]
@@ -331,6 +387,7 @@ class MarketPriceDetector:
                     "confidence": tw["data"].get("confidence", 1.0),
                     "data": tw["data"],
                     "game_origin": self._game_origin,
+                    "tick_seq": self._tick_seq,
                 })
             return
 
@@ -363,6 +420,16 @@ class MarketPriceDetector:
             data["confidence"] = confidence
             data["timestamp"] = timestamp
 
+            # Within-tick dedup: if a match already processed this tick
+            # produced the same scan data, this is the same physical window
+            # detected twice — skip it entirely.
+            if any(not self._data_changed(data, nt["data"])
+                   for nt in new_tracked):
+                if self._tracer and self._tracer.enabled:
+                    self._tracer.log("MARKET",
+                        f"dup at ({x},{y}), same data as prior match")
+                continue
+
             # Publish debug data every tick (screen-absolute coordinates)
             self._event_bus.publish(EVENT_MARKET_PRICE_DEBUG, {
                 "x": gx + x, "y": gy + y,
@@ -370,13 +437,21 @@ class MarketPriceDetector:
                 "confidence": confidence,
                 "data": data,
                 "game_origin": self._game_origin,
+                "tick_seq": self._tick_seq,
             })
 
             # Find previous tracked window near this position
             prev = self._find_tracked_near(pos)
             prev_data = prev["data"] if prev else None
 
-            if prev_data is None or self._data_changed(data, prev_data):
+            values_changed = prev_data is None or self._data_changed(data, prev_data)
+            confidence_improved = (
+                prev_data is not None
+                and not values_changed
+                and data.get("ocr_confidence", 0) > prev_data.get("ocr_confidence", 0)
+            )
+
+            if values_changed or confidence_improved:
                 # Check if manual review is needed (overflow / ambiguity)
                 review = self._build_review_request(data)
                 if review:
@@ -717,7 +792,6 @@ class MarketPriceDetector:
                     name_confs.append(conf)
                     name_per_char.extend(char_scores)
         name_conf = min(name_confs) if name_confs else 0.0
-        cell_confidences.append(name_conf)
         raw_name = " ".join(name_parts).strip()
         normalized = self._normalize_item_name(raw_name)
 
@@ -768,21 +842,46 @@ class MarketPriceDetector:
                     roi = {"dx": cell_dx, "dy": cell_dy, "w": cell_w, "h": cell_h}
                     region = self._get_roi_region(image, tx, ty, roi)
                     if region is not None and region.size > 0:
-                        value, raw, conf = self._read_cell(region)
+                        value, raw, conf, worst = self._read_cell(region)
+                        # Markup validation: raw text must be N/A, start
+                        # with '+', or end with '%'.  Anything else is
+                        # garbled OCR and treated as a total failure.
+                        if metric == "markup" and raw:
+                            raw_upper = raw.strip().upper()
+                            if raw_upper not in ("N/A", "NA", "N", "-") \
+                                    and not raw.startswith("+") \
+                                    and not raw.startswith(">") \
+                                    and not raw.endswith("%"):
+                                # Bare numbers are accepted — in absolute
+                                # mode the '+' prefix is often dropped by
+                                # OCR (not in digit STPK).  The mode
+                                # consistency check catches real mismatches.
+                                raw_clean = raw.strip().replace(",", "")
+                                try:
+                                    float(raw_clean)
+                                except ValueError:
+                                    if self._tracer and self._tracer.enabled:
+                                        self._tracer.log(
+                                            "MARKET_CELL",
+                                            f"markup_{period} invalid format:"
+                                            f" {raw!r}")
+                                    value = None
+                                    conf = 0.0
                         key = f"{metric}_{period}"
                         data[key] = value
                         data[f"{key}_raw"] = raw
                         data[f"{key}_conf"] = conf
+                        data[f"{key}_worst_char"] = worst
                         cell_confidences.append(conf)
                         if self._tracer and self._tracer.enabled:
                             self._tracer.log("MARKET_CELL", f"{key}={value}")
                     else:
                         errors.append(f"{metric}_{period}: out of bounds")
 
-            # Detect markup mode from first non-empty markup raw text
+            # Detect markup mode from first non-N/A markup raw text
             for period in PERIODS:
                 raw = data.get(f"markup_{period}_raw", "")
-                if raw:
+                if raw and raw.strip().upper() not in ("N/A", "NA", "N", "-"):
                     data["markup_mode"] = "percent" if "%" in raw else "absolute"
                     break
 
@@ -813,6 +912,42 @@ class MarketPriceDetector:
         data["ocr_confidence"] = ocr_conf * heuristic_penalty
         if heuristic_penalty < 1.0:
             data["heuristic_penalty"] = round(heuristic_penalty, 3)
+        # Store raw aggregate + individual confidences for debug overlay
+        data["_agg_raw"] = round(ocr_conf, 4)
+        data["_hp_raw"] = round(heuristic_penalty, 4)
+        data["_cell_confs"] = [round(c, 3) for c in cell_confidences]
+
+        # Validate markup/sales format consistency.
+        # Percent markup (%) always pairs with unit-suffixed sales (PED/PEC).
+        # Absolute markup (+) always pairs with bare numeric sales.
+        # A mismatch means the window is partially occluded and cell
+        # readings are shifted — values could be off by magnitudes.
+        markup_mode = data.get("markup_mode")
+        if markup_mode and data["ocr_confidence"] > 0:
+            for period in PERIODS:
+                sales_raw = data.get(f"sales_{period}_raw", "")
+                if not sales_raw:
+                    continue
+                sr_upper = sales_raw.strip().upper()
+                if sr_upper in ("N/A", "NA", "N", "-"):
+                    continue
+                has_unit = sr_upper.endswith("PED") or sr_upper.endswith("PEC")
+                if markup_mode == "percent" and not has_unit:
+                    data["ocr_confidence"] = 0.0
+                    if self._tracer and self._tracer.enabled:
+                        self._tracer.log(
+                            "MARKET_CELL",
+                            f"mode mismatch: %% markup but sales_{period} "
+                            f"has no unit suffix: {sales_raw!r}")
+                    break
+                if markup_mode == "absolute" and has_unit:
+                    data["ocr_confidence"] = 0.0
+                    if self._tracer and self._tracer.enabled:
+                        self._tracer.log(
+                            "MARKET_CELL",
+                            f"mode mismatch: + markup but sales_{period} "
+                            f"has unit suffix: {sales_raw!r}")
+                    break
 
         if errors:
             self._event_bus.publish(EVENT_MARKET_PRICE_ERROR, {
@@ -1024,15 +1159,18 @@ class MarketPriceDetector:
 
         # If STPK digit entries are available, use grid-based matching
         if self._digit_entries:
-            text, conf = self._match_stpk_digits(region)
+            text, conf, _worst = self._match_stpk_digits(region)
             if text:
                 return self._parse_cell_value(text), conf
 
         # Fallback: no STPK available
         return None, 0.0
 
-    def _read_cell(self, region: np.ndarray) -> tuple[float | None, str, float]:
-        """Read a cell and return (parsed_value, raw_ocr_text, confidence).
+    def _read_cell(
+        self, region: np.ndarray,
+    ) -> tuple[float | None, str, float, str]:
+        """Read a cell and return (parsed_value, raw_ocr_text, confidence,
+        worst_char).
 
         Empty cells get confidence 1.0 (valid state). Unreadable cells get 0.0.
         """
@@ -1042,12 +1180,12 @@ class MarketPriceDetector:
             TEXT_BRIGHTNESS_THRESHOLD,
         )
         if int(np.max(gray)) < threshold:
-            return None, "", 1.0
+            return None, "", 1.0, ""
         if self._digit_entries:
-            text, conf = self._match_stpk_digits(region)
+            text, conf, worst = self._match_stpk_digits(region)
             if text:
-                return self._parse_cell_value(text), text, conf
-        return None, "", 0.0
+                return self._parse_cell_value(text), text, conf, worst
+        return None, "", 0.0, ""
 
     def _read_text(
         self, region: np.ndarray,
@@ -1071,7 +1209,9 @@ class MarketPriceDetector:
 
         return self._match_stpk_text(region)
 
-    def _match_stpk_digits(self, region: np.ndarray) -> tuple[str, float]:
+    def _match_stpk_digits(
+        self, region: np.ndarray,
+    ) -> tuple[str, float, str]:
         """Match digit STPK entries against a BGR cell image.
 
         Uses blob segmentation to find contiguous character groups, then
@@ -1079,17 +1219,40 @@ class MarketPriceDetector:
         tested against multi-character entries (N/A, kPED, etc.) before
         being scored as single characters.
 
-        Returns (matched_text, confidence) where confidence is the minimum
-        per-character score (weakest link), or 0.0 if no match.
+        Returns (matched_text, confidence, worst_char) where confidence
+        is the minimum per-character score (weakest link), or 0.0 if
+        no match.  worst_char is the blob text with the lowest score.
         """
         if not self._digit_entries or self._digit_grid_w == 0:
-            return "", 0.0
-        text, scores = self._match_stpk_blobs(
+            return "", 0.0, ""
+        text, scores, blob_texts = self._match_stpk_blobs(
             region, self._digit_entries,
             self._digit_grid_w, self._digit_grid_h,
             right_align=True,
         )
-        return text, (min(scores) if scores else 0.0)
+        if scores:
+            # Exclude auto-detected periods from confidence unless they
+            # scored poorly (< 0.75).  Periods are tiny (1-2px) and get
+            # a hardcoded 0.9 which would otherwise cap every cell with
+            # a decimal point at 90%.
+            conf_scores = [
+                s for s, bt in zip(scores, blob_texts)
+                if bt != "." or s < 0.75
+            ] or scores  # fall back to all scores if only periods
+            min_score = min(conf_scores)
+            min_idx = conf_scores.index(min_score)
+            # Map back to blob_texts for worst char display
+            idx = 0
+            for i, (s, bt) in enumerate(zip(scores, blob_texts)):
+                if bt != "." or s < 0.75:
+                    if idx == min_idx:
+                        worst = bt
+                        break
+                    idx += 1
+            else:
+                worst = blob_texts[scores.index(min(scores))]
+            return text, min_score, worst
+        return text, 0.0, ""
 
     # Characters likely to appear in item names
     _TEXT_ALLOWED = set(
@@ -1119,7 +1282,7 @@ class MarketPriceDetector:
             e for e in self._text_entries
             if e.get("text", "") in self._TEXT_ALLOWED
         ]
-        text, scores = self._match_stpk_blobs(
+        text, scores, _blob_texts = self._match_stpk_blobs(
             region, filtered,
             self._text_grid_w, self._text_grid_h,
             right_align=False,
@@ -1176,7 +1339,7 @@ class MarketPriceDetector:
         grid_w: int,
         grid_h: int,
         right_align: bool,
-    ) -> tuple[str, list[float]]:
+    ) -> tuple[str, list[float], list[str]]:
         """Blob-based STPK matching.
 
         1. Extract text intensity (threshold out background noise)
@@ -1185,6 +1348,9 @@ class MarketPriceDetector:
         4. For each blob, match against all STPK entries
         5. Wide blobs try multi-char entries first; if none match well,
            treat as single character
+
+        Returns (joined_text, per_blob_scores, blob_texts) where
+        blob_texts are the non-space entries parallel to scores.
         """
         # Extract text intensity with noise filtering
         intensity = self._extract_text_intensity(region)
@@ -1378,7 +1544,8 @@ class MarketPriceDetector:
                         f"x={x0}-{x1} NO_MATCH best_s={best_score:.3f}")
             i += 1
 
-        return "".join(result_chars), result_scores
+        blob_texts = [c for c in result_chars if c != " "]
+        return "".join(result_chars), result_scores, blob_texts
 
     @staticmethod
     def _split_blobs_at_valleys(
@@ -1442,7 +1609,36 @@ class MarketPriceDetector:
             else:
                 result.append((x0, x1))
 
-        return result
+        # Second pass: force-split blobs still too wide for a single
+        # character.  Handles adjacent identical chars (e.g. "99") where
+        # the inter-character valley doesn't cross MARKET_VALLEY_THRESHOLD
+        # but is still a local minimum in column intensity.
+        force_split_w = int(max_single_w * 1.6)
+        if not any((x1 - x0 + 1) >= force_split_w for x0, x1 in result):
+            return result
+
+        final: list[tuple[int, int]] = []
+        for sx0, sx1 in result:
+            sw = sx1 - sx0 + 1
+            if sw >= force_split_w:
+                region_slice = intensity_4bit[
+                    text_top:text_top + rows, sx0:sx1 + 1]
+                col_sums = region_slice.sum(axis=0).astype(np.int32)
+                margin = MARKET_MIN_SUB_BLOB_W
+                if sw > margin * 2 + 1:
+                    zone = col_sums[margin:sw - margin]
+                    if len(zone) > 0:
+                        min_idx = int(np.argmin(zone)) + margin
+                        left_end = sx0 + min_idx - 1
+                        right_start = sx0 + min_idx + 1
+                        if (left_end - sx0 + 1 >= MARKET_MIN_SUB_BLOB_W
+                                and sx1 - right_start + 1
+                                >= MARKET_MIN_SUB_BLOB_W):
+                            final.append((sx0, left_end))
+                            final.append((right_start, sx1))
+                            continue
+            final.append((sx0, sx1))
+        return final
 
     @staticmethod
     def _merge_narrow_pairs(
@@ -1601,8 +1797,10 @@ class MarketPriceDetector:
 
         return raw_score
 
-    # Sales column unit suffixes → multiplier to normalize to PED
-    # Ordered longest-first so "mPEC" matches before "PEC", "MPED" before "PED"
+    # Value suffixes → multiplier to normalize to PED.
+    # Ordered longest-first so "mPEC" matches before "PEC", "MPED" before "PED",
+    # and full unit suffixes match before bare SI prefixes.
+    # Bare "k" and "M" appear in absolute markup mode (game omits PED/PEC unit).
     _SALES_SUFFIXES = [
         ("MPED",  1_000_000.0),    # Mega-PED
         ("kPED",  1_000.0),        # Kilo-PED
@@ -1610,6 +1808,8 @@ class MarketPriceDetector:
         ("mPEC",  0.00001),        # Milli-PEC (1 PEC = 0.01 PED)
         ("uPEC",  0.00000001),     # Micro-PEC (game displays µ as 'u')
         ("PEC",   0.01),           # PEC (1 PEC = 0.01 PED)
+        ("M",     1_000_000.0),    # Bare Mega (absolute mode)
+        ("k",     1_000.0),        # Bare kilo (absolute mode)
     ]
 
     @classmethod

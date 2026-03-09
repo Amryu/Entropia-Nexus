@@ -66,16 +66,38 @@ class OverlayManager(QObject):
         self._hotkey_bindings: dict[str, list[tuple[set[str], str]]] = {}
         self._rebuild_hotkey_bindings()
 
+        # Periodic hook re-registration to recover from silent removal.
+        # Windows silently removes WH_KEYBOARD_LL hooks if the callback
+        # doesn't return within ~300ms (GIL contention can cause this).
+        self._hook_refresh_counter = 0
+
+        # Pre-initialise the keyboard library so the first hook() call
+        # (triggered by _poll_focus) doesn't block the main thread for ~0.6s.
+        _platform.preinit_hotkeys()
+
         self._timer = QTimer(self)
         self._timer.setInterval(OVERLAY_FOCUS_POLL_MS)
         self._timer.timeout.connect(self._poll_focus)
 
-        if _platform.supports_focus_detection() and getattr(config, "overlay_enabled", True):
-            self._timer.start()
+        # Timer is NOT started here — call start_focus_polling() after the
+        # splash closes and _create_overlays finishes so that overlay wiring
+        # is complete before visibility management begins.
 
         if event_bus:
             self._event_bus = event_bus
             event_bus.subscribe(EVENT_CONFIG_CHANGED, self._on_config_changed)
+
+    # --- Startup ---
+
+    def start_focus_polling(self) -> None:
+        """Begin focus detection and overlay visibility management.
+
+        Call once after the splash screen closes and overlay wiring is
+        complete.  Avoids HWND creation / flicker during the splash phase.
+        """
+        if not self._timer.isActive() and _platform.supports_focus_detection() \
+                and getattr(self._config, "overlay_enabled", True):
+            self._timer.start()
 
     # --- Widget registry ---
 
@@ -213,8 +235,7 @@ class OverlayManager(QObject):
                 return
 
             # Game has focus → always visible
-            fg_title = _platform.get_foreground_window_title()
-            game_is_fg = fg_title.startswith(GAME_TITLE_PREFIX)
+            game_is_fg = fg_wid == game_wid
             if game_is_fg:
                 visible = True
             else:
@@ -233,6 +254,17 @@ class OverlayManager(QObject):
 
             # Hotkeys only when game has actual input focus
             self._set_hotkeys_active(game_is_fg)
+
+            # Periodic hook refresh: re-register to recover from silent
+            # removal by Windows (WH_KEYBOARD_LL timeout).
+            if self._hotkey_registered:
+                self._hook_refresh_counter += 1
+                if self._hook_refresh_counter >= 120:  # ~60s at 500ms poll
+                    self._hook_refresh_counter = 0
+                    self._unregister_hotkey()
+                    self._register_hotkey()
+            else:
+                self._hook_refresh_counter = 0
         except Exception:
             pass
 

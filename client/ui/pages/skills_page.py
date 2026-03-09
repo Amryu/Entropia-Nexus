@@ -401,71 +401,142 @@ class _GoalProgressCard(QFrame):
 
     edit_clicked = pyqtSignal(int)
     delete_clicked = pyqtSignal(int)
+    visibility_toggled = pyqtSignal(int, bool)  # (goal_id, visible)
+
+    # SVG paths for eye icons (16x16 viewBox)
+    _EYE_OPEN = (
+        '<svg viewBox="0 0 16 16" width="14" height="14">'
+        '<path d="M8 3C4.5 3 1.5 5.5 0.5 8c1 2.5 4 5 7.5 5s6.5-2.5 7.5-5c-1-2.5-4-5-7.5-5z" '
+        'fill="none" stroke="{color}" stroke-width="1.2"/>'
+        '<circle cx="8" cy="8" r="2.5" fill="none" stroke="{color}" stroke-width="1.2"/>'
+        '</svg>'
+    )
+    _EYE_CLOSED = (
+        '<svg viewBox="0 0 16 16" width="14" height="14">'
+        '<path d="M8 3C4.5 3 1.5 5.5 0.5 8c1 2.5 4 5 7.5 5s6.5-2.5 7.5-5c-1-2.5-4-5-7.5-5z" '
+        'fill="none" stroke="{color}" stroke-width="1.2"/>'
+        '<circle cx="8" cy="8" r="2.5" fill="none" stroke="{color}" stroke-width="1.2"/>'
+        '<line x1="3" y1="13" x2="13" y2="3" stroke="{color}" stroke-width="1.2"/>'
+        '</svg>'
+    )
 
     def __init__(self, goal: dict, skill_values: dict[str, float],
-                 profession_levels: dict[str, float], parent=None):
+                 profession_levels: dict[str, float], *, visible: bool = True,
+                 parent=None):
         super().__init__(parent)
         self._goal_id = goal["id"]
         self._goal = goal
+        self._visible = visible
         self.setStyleSheet(
             f"_GoalProgressCard {{ background-color: {SECONDARY}; "
             f"border: 1px solid {BORDER}; border-radius: 6px; }}"
         )
-        self.setFixedHeight(64)
+        self.setFixedHeight(60)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(2)
+        layout.setContentsMargins(10, 8, 10, 20)
+        layout.setSpacing(6)
 
-        # Row 1: title + buttons
-        top = QHBoxLayout()
-        top.setSpacing(8)
         is_prof = goal["goal_type"] == "profession_level"
-        prefix = "Level" if is_prof else "Points"
-        title = QLabel(f"{goal['target_name']} — {prefix} {goal['target_value']:.1f}")
-        title.setStyleSheet("font-weight: bold; font-size: 12px; background: transparent; border: none;")
-        top.addWidget(title, 1)
+        start = goal.get("start_value") or 0
+        target = goal["target_value"]
+
+        # Compute progress
+        current, pct = self._compute_progress(skill_values, profession_levels)
+
+        # Row 1: name + range (current) + pct + eye + edit + X
+        top = QHBoxLayout()
+        top.setSpacing(6)
+
+        name_label = QLabel(goal["target_name"])
+        name_label.setStyleSheet("font-weight: bold; font-size: 12px; background: transparent; border: none;")
+        top.addWidget(name_label)
+
+        if is_prof:
+            range_text = f"Lv {start:.1f} \u2192 {target:.1f}"
+        else:
+            range_text = f"{start:,.0f} \u2192 {target:,.0f} pts"
+        range_label = QLabel(range_text)
+        range_label.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;")
+        top.addWidget(range_label)
+
+        top.addStretch()
+
+        self._pct_label = QLabel(self._format_progress(is_prof, current, pct))
+        self._pct_label.setStyleSheet("font-size: 11px; font-weight: bold; background: transparent; border: none;")
+        top.addWidget(self._pct_label)
+
+        # Eye toggle
+        eye_btn = QPushButton()
+        eye_btn.setFixedSize(20, 20)
+        eye_btn.setStyleSheet("padding: 0; border: none; background: transparent;")
+        eye_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        eye_btn.setToolTip("Toggle chart visibility")
+        eye_btn.clicked.connect(self._toggle_visibility)
+        self._eye_btn = eye_btn
+        self._update_eye_icon()
+        top.addWidget(eye_btn)
 
         edit_btn = QPushButton("Edit")
-        edit_btn.setFixedSize(40, 20)
-        edit_btn.setStyleSheet("font-size: 10px; padding: 0; border: none; background: transparent;")
+        edit_btn.setFixedSize(32, 20)
+        edit_btn.setStyleSheet(
+            f"font-size: 10px; padding: 0; border: none; background: transparent; color: {ACCENT};"
+        )
         edit_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self._goal_id))
         top.addWidget(edit_btn)
 
         del_btn = QPushButton("X")
-        del_btn.setFixedSize(20, 20)
-        del_btn.setStyleSheet("font-size: 10px; padding: 0; border: none; background: transparent;")
+        del_btn.setFixedSize(18, 20)
+        del_btn.setStyleSheet(
+            f"font-size: 10px; padding: 0; border: none; background: transparent; color: {TEXT_MUTED};"
+        )
         del_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         del_btn.clicked.connect(lambda: self.delete_clicked.emit(self._goal_id))
         top.addWidget(del_btn)
         layout.addLayout(top)
 
-        # Compute progress
-        current, pct = self._compute_progress(skill_values, profession_levels)
-
-        # Row 2: progress bar + percentage
-        bottom = QHBoxLayout()
-        bottom.setSpacing(8)
+        # Row 2: full-width progress bar
         self._bar = QProgressBar()
         self._bar.setMaximum(1000)
         self._bar.setValue(int(pct * 10))
         self._bar.setTextVisible(False)
-        self._bar.setFixedHeight(10)
-        bottom.addWidget(self._bar, 1)
+        self._bar.setFixedHeight(8)
+        layout.addWidget(self._bar)
 
-        is_prof = goal["goal_type"] == "profession_level"
-        target = goal["target_value"]
+    def _toggle_visibility(self):
+        self._visible = not self._visible
+        self._update_eye_icon()
+        self.visibility_toggled.emit(self._goal_id, self._visible)
+
+    def _update_eye_icon(self):
+        from PyQt6.QtSvg import QSvgRenderer
+        from PyQt6.QtGui import QIcon, QPixmap, QPainter as _QPainter
+        svg_template = self._EYE_OPEN if self._visible else self._EYE_CLOSED
+        color = TEXT_MUTED
+        svg_data = svg_template.format(color=color).encode()
+        renderer = QSvgRenderer(svg_data)
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = _QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        self._eye_btn.setIcon(QIcon(pixmap))
+
+    @property
+    def goal_id(self) -> int:
+        return self._goal_id
+
+    @property
+    def is_chart_visible(self) -> bool:
+        return self._visible
+
+    @staticmethod
+    def _format_progress(is_prof: bool, current: float, pct: float) -> str:
         if is_prof:
-            val_text = f"{current:.1f} / {target:.1f}"
+            return f"Lv {current:.1f}  {pct:.1f}%"
         else:
-            val_text = f"{current:,.0f} / {target:,.0f}"
-        self._pct_label = QLabel(f"{val_text}  ({pct:.2f}%)")
-        self._pct_label.setStyleSheet(
-            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
-        )
-        bottom.addWidget(self._pct_label)
-        layout.addLayout(bottom)
+            return f"{current:,.0f} pts  {pct:.1f}%"
 
     def _compute_progress(self, skill_values, profession_levels):
         """Compute current value and progress percentage."""
@@ -491,12 +562,7 @@ class _GoalProgressCard(QFrame):
         current, pct = self._compute_progress(skill_values, profession_levels)
         self._bar.setValue(int(pct * 10))
         is_prof = goal["goal_type"] == "profession_level"
-        target = goal["target_value"]
-        if is_prof:
-            val_text = f"{current:.1f} / {target:.1f}"
-        else:
-            val_text = f"{current:,.0f} / {target:,.0f}"
-        self._pct_label.setText(f"{val_text}  ({pct:.2f}%)")
+        self._pct_label.setText(self._format_progress(is_prof, current, pct))
 
 
 class SkillsPage(QWidget):
@@ -533,6 +599,7 @@ class SkillsPage(QWidget):
 
         # Skill gains since last baseline (scan/import)
         self._skill_gains: dict[str, float] = {}  # {skill_name: accumulated_gain}
+        self._pre_scan_gains: dict[str, float] = {}  # gains before first scan
         self._gains_loaded = False
         self._gain_refresh_pending = False
 
@@ -541,14 +608,20 @@ class SkillsPage(QWidget):
 
         # Dashboard state
         self._active_goals: list[dict] = []
+        self._hidden_goal_ids: set[int] = set()  # goals hidden from chart
+        self._goal_page_idx = 0  # pagination index
         self._dash_period_idx = 3  # default "1 month" (index into TIME_PERIODS)
+        self._dash_custom_range: tuple[int, int] | None = None  # (from_ts, to_ts)
         self._dash_loaded = False
         self._dash_view_mode = "goals"  # "goals", "top_gains", or "custom"
+        self._dash_graph_mode = "skills"  # "skills" or "professions"
         self._dash_last_top_gains: list[dict] = []
         self._dash_last_top_timeseries: list[dict] = []
         self._dash_last_goal_timeseries: list[dict] = []
         self._dash_last_custom_timeseries: list[dict] = []
         self._dash_custom_skill_ids: list[int] = []
+        self._dash_custom_prof_names: list[str] = []
+        self._dash_custom_mode: str = "skills"  # "skills" | "professions"
         self._dash_last_baselines: dict[int, float] = {}
 
         # Guard: suppress navigation_changed during set_sub_state restore
@@ -596,7 +669,8 @@ class SkillsPage(QWidget):
         self._rollup_timer.timeout.connect(self._refresh_rollups_bg)
         self._rollup_timer.start()
 
-        # Initial data load (deferred)
+        # Initial data load (deferred, skipped if prewarm_data() was called)
+        self._data_prewarmed = False
         QTimer.singleShot(200, self._initial_load)
 
     # ── Tab Builders ──────────────────────────────────────────────────────
@@ -753,15 +827,26 @@ class SkillsPage(QWidget):
             btn.clicked.connect(partial(self._on_dash_period_changed, idx))
             self._dash_period_btns.append(btn)
             controls.addWidget(btn)
+        self._dash_custom_period_btn = QPushButton("Custom")
+        self._dash_custom_period_btn.setFixedHeight(26)
+        self._dash_custom_period_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._dash_custom_period_btn.clicked.connect(self._on_custom_period)
+        controls.addWidget(self._dash_custom_period_btn)
         controls.addStretch()
-        # Toggle between goals and top gains views
-        self._dash_view_toggle = QPushButton("Show Top Gains")
-        self._dash_view_toggle.setFixedHeight(26)
-        self._dash_view_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self._dash_view_toggle.clicked.connect(self._on_dash_view_toggle)
-        self._dash_view_toggle.hide()  # shown only when goals exist
-        controls.addWidget(self._dash_view_toggle)
-        self._dash_pick_skills_btn = QPushButton("Pick Skills")
+        # View mode dropdown
+        self._dash_view_combo = QComboBox()
+        self._dash_view_combo.setFixedHeight(26)
+        self._dash_view_combo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._dash_view_combo.currentIndexChanged.connect(self._on_dash_view_changed)
+        self._dash_view_combo.hide()
+        controls.addWidget(self._dash_view_combo)
+        self._dash_graph_mode_btn = QPushButton("Professions")
+        self._dash_graph_mode_btn.setFixedHeight(26)
+        self._dash_graph_mode_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._dash_graph_mode_btn.clicked.connect(self._on_graph_mode_toggle)
+        self._dash_graph_mode_btn.hide()
+        controls.addWidget(self._dash_graph_mode_btn)
+        self._dash_pick_skills_btn = QPushButton("Pick Skills/Professions")
         self._dash_pick_skills_btn.setFixedHeight(26)
         self._dash_pick_skills_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._dash_pick_skills_btn.clicked.connect(self._on_pick_skills)
@@ -810,9 +895,14 @@ class SkillsPage(QWidget):
         self._dash_gains_table.setHorizontalHeaderLabels(
             ["Skill", "Gained", "Current", "Rank"]
         )
-        self._dash_gains_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
+        _ghdr = self._dash_gains_table.horizontalHeader()
+        _ghdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        _ghdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        _ghdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        _ghdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        _ghdr.resizeSection(1, 110)
+        _ghdr.resizeSection(2, 100)
+        _ghdr.resizeSection(3, 200)
         self._dash_gains_table.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers
         )
@@ -974,9 +1064,12 @@ class SkillsPage(QWidget):
 
     def _initial_load(self):
         """Load metadata and sync skills on startup."""
+        if self._data_prewarmed:
+            return
         threading.Thread(target=self._load_data_bg, daemon=True, name="skills-load").start()
 
-    def _load_data_bg(self):
+    def _do_data_load(self):
+        """Core data loading logic (no UI scheduling). Safe from any thread."""
         self._manager.refresh_metadata()
         self._load_rank_thresholds()
 
@@ -988,8 +1081,28 @@ class SkillsPage(QWidget):
             self._manager.load_from_local()
             self._synced = False
 
+    def _load_data_bg(self):
+        self._do_data_load()
         # Update UI on main thread
         QTimer.singleShot(0, self._on_data_loaded)
+
+    def prewarm_data(self):
+        """Load skills data synchronously. Called from app.py during splash."""
+        try:
+            self._do_data_load()
+            self._data_prewarmed = True
+            self._on_data_loaded(sync=True)
+        except Exception:
+            log.exception("Skills data prewarm failed — will retry on timer")
+
+    def flush_prewarm(self):
+        """Build deferred grids synchronously. Call after show() while splash
+        still covers the screen so card creation doesn't cause a visible freeze.
+        """
+        if self._skills_grid_deferred:
+            self._refresh_skills_display(sync=True)
+        if self._prof_grid_deferred:
+            self._refresh_prof_display(sync=True)
 
     def _ensure_gains_loaded(self):
         """Load gains from DB on first access (lazy). Currently disabled."""
@@ -1018,6 +1131,16 @@ class SkillsPage(QWidget):
             name = id_names.get(skill_id)
             if name:
                 self._skill_gains[name] = self._skill_gains.get(name, 0) + total
+
+        # Load pre-scan gains (gains recorded before the first scan).
+        # These are already baked into the scan values, so we store them
+        # separately to allow computing pre-scan starting points for goals.
+        if baseline_ts and baseline_ts > 0:
+            pre_gains_by_id = self._db.get_skill_gains_before(baseline_ts)
+            for skill_id, total in pre_gains_by_id.items():
+                name = id_names.get(skill_id)
+                if name:
+                    self._pre_scan_gains[name] = total
 
     def _load_rank_thresholds(self):
         """Load rank thresholds for level/progress display."""
@@ -1065,8 +1188,12 @@ class SkillsPage(QWidget):
 
         return (rank_name, min(progress, 100.0))
 
-    def _on_data_loaded(self):
-        """Called on main thread after background data load."""
+    def _on_data_loaded(self, *, sync=False):
+        """Called on main thread after background data load.
+
+        When *sync* is True the refresh methods run synchronously (used during
+        splash prewarm so the event loop doesn't need to be running).
+        """
         meta = self._manager.skill_metadata
         profs = self._manager.professions
 
@@ -1087,8 +1214,14 @@ class SkillsPage(QWidget):
         self._prof_skill_filter.blockSignals(False)
 
         # Refresh displays
-        self._refresh_skills_display()
-        self._refresh_prof_display()
+        self._refresh_skills_display(sync=sync)
+        self._refresh_prof_display(sync=sync)
+
+        if sync:
+            # During prewarm, skip dashboard and goal checks — they'll run
+            # when the event loop starts via the deferred _initial_load path
+            # or when the user navigates to those tabs.
+            return
 
         # Always refresh dashboard so goal cards have up-to-date skill data
         self._dash_loaded = False
@@ -1128,7 +1261,7 @@ class SkillsPage(QWidget):
         self._skills_sort.setCurrentIndex(0)
         self._refresh_skills_display()
 
-    def _refresh_skills_display(self):
+    def _refresh_skills_display(self, *, sync=False):
         self._ensure_gains_loaded()
         view_mode = self._skills_view_mode
         self._skills_version += 1
@@ -1146,7 +1279,8 @@ class SkillsPage(QWidget):
         # Grid deferred check — must happen on main thread before spawning
         if view_mode == "grid" and skills_viewport_w <= 0:
             self._skills_grid_deferred = True
-            QTimer.singleShot(50, self._flush_deferred_grids)
+            if not sync:
+                QTimer.singleShot(50, self._flush_deferred_grids)
             return
 
         # Show loading state
@@ -1225,6 +1359,16 @@ class SkillsPage(QWidget):
                     self._apply_skills_table(data)
             except RuntimeError:
                 pass
+
+        if sync:
+            try:
+                result = compute()
+            except Exception:
+                log.exception("skills compute error")
+                result = ("grid" if view_mode == "grid" else "table",
+                          ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [])
+            apply(result)
+            return
 
         def worker():
             try:
@@ -1540,7 +1684,7 @@ class SkillsPage(QWidget):
         self._prof_sort.setCurrentIndex(0)
         self._refresh_prof_display()
 
-    def _refresh_prof_display(self):
+    def _refresh_prof_display(self, *, sync=False):
         view_mode = self._prof_view_mode
         self._prof_version += 1
         version = self._prof_version
@@ -1553,7 +1697,8 @@ class SkillsPage(QWidget):
         # Grid deferred check — must happen on main thread before spawning
         if view_mode == "grid" and prof_viewport_w <= 0:
             self._prof_grid_deferred = True
-            QTimer.singleShot(50, self._flush_deferred_grids)
+            if not sync:
+                QTimer.singleShot(50, self._flush_deferred_grids)
             return
 
         # Show loading state
@@ -1612,6 +1757,16 @@ class SkillsPage(QWidget):
                     self._apply_prof_table(payload)
             except RuntimeError:
                 pass
+
+        if sync:
+            try:
+                data = compute()
+            except Exception:
+                log.exception("prof compute error")
+                data = ("grid" if view_mode == "grid" else "table",
+                        ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [])
+            apply(data)
+            return
 
         def worker():
             try:
@@ -1808,20 +1963,112 @@ class SkillsPage(QWidget):
 
     def _update_dash_period_buttons(self):
         """Style period buttons, highlighting the active one."""
+        active_style = (
+            f"padding: 2px 8px; background-color: {ACCENT}; color: {PRIMARY}; "
+            f"font-weight: bold; border: none; border-radius: 3px;"
+        )
+        inactive_style = (
+            f"padding: 2px 8px; background-color: {SECONDARY}; "
+            f"border: 1px solid {BORDER}; border-radius: 3px;"
+        )
         for i, btn in enumerate(self._dash_period_btns):
-            if i == self._dash_period_idx:
-                btn.setStyleSheet(
-                    f"padding: 2px 8px; background-color: {ACCENT}; color: {PRIMARY}; "
-                    f"font-weight: bold; border: none; border-radius: 3px;"
-                )
-            else:
-                btn.setStyleSheet(
-                    f"padding: 2px 8px; background-color: {SECONDARY}; "
-                    f"border: 1px solid {BORDER}; border-radius: 3px;"
-                )
+            btn.setStyleSheet(active_style if i == self._dash_period_idx else inactive_style)
+        # Custom button: active when using a custom range
+        is_custom = self._dash_period_idx == -1
+        self._dash_custom_period_btn.setStyleSheet(active_style if is_custom else inactive_style)
 
     def _on_dash_period_changed(self, idx: int):
         self._dash_period_idx = idx
+        self._dash_custom_range = None
+        self._update_dash_period_buttons()
+        self._refresh_dashboard()
+
+    def _on_custom_period(self):
+        """Open dialog to set a custom time span or date range."""
+        from PyQt6.QtWidgets import QDialog, QRadioButton, QButtonGroup, QSpinBox, QDateEdit
+        from PyQt6.QtCore import QDate
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Custom Time Range")
+        dlg.setMinimumWidth(320)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        group = QButtonGroup(dlg)
+        radio_span = QRadioButton("Last N days")
+        radio_range = QRadioButton("Date range")
+        group.addButton(radio_span, 0)
+        group.addButton(radio_range, 1)
+        radio_span.setChecked(True)
+
+        # Span option
+        span_row = QHBoxLayout()
+        span_row.addWidget(radio_span)
+        span_spin = QSpinBox()
+        span_spin.setRange(1, 3650)
+        span_spin.setValue(14)
+        span_spin.setSuffix(" days")
+        span_row.addWidget(span_spin)
+        span_row.addStretch()
+        layout.addLayout(span_row)
+
+        # Range option
+        range_row = QHBoxLayout()
+        range_row.addWidget(radio_range)
+        range_row.addWidget(QLabel("From:"))
+        from_date = QDateEdit()
+        from_date.setCalendarPopup(True)
+        from_date.setDate(QDate.currentDate().addMonths(-1))
+        range_row.addWidget(from_date)
+        range_row.addWidget(QLabel("To:"))
+        to_date = QDateEdit()
+        to_date.setCalendarPopup(True)
+        to_date.setDate(QDate.currentDate())
+        range_row.addWidget(to_date)
+        layout.addLayout(range_row)
+
+        def _toggle(btn_id, checked):
+            if not checked:
+                return
+            span_spin.setEnabled(btn_id == 0)
+            from_date.setEnabled(btn_id == 1)
+            to_date.setEnabled(btn_id == 1)
+
+        group.idToggled.connect(_toggle)
+        _toggle(0, True)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(cancel_btn)
+        ok_btn = QPushButton("OK")
+        ok_btn.setObjectName("accentButton")
+        ok_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+        dlg.setStyleSheet(f"QDialog {{ background-color: {SECONDARY}; }}")
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        import time as _time
+        now_ts = int(_time.time())
+
+        if radio_span.isChecked():
+            days = span_spin.value()
+            from_ts = now_ts - days * 86400
+            self._dash_custom_range = (from_ts, now_ts)
+        else:
+            fd = from_date.date()
+            td = to_date.date()
+            from_dt = datetime(fd.year(), fd.month(), fd.day(), tzinfo=timezone.utc)
+            to_dt = datetime(td.year(), td.month(), td.day(), 23, 59, 59, tzinfo=timezone.utc)
+            self._dash_custom_range = (int(from_dt.timestamp()), int(to_dt.timestamp()))
+
+        self._dash_period_idx = -1
         self._update_dash_period_buttons()
         self._refresh_dashboard()
 
@@ -1877,12 +2124,11 @@ class SkillsPage(QWidget):
         if dlg.exec() and self._db:
             updated = dlg.get_goal()
             if updated:
-                update_kwargs = {"target_value": updated["target_value"]}
-                # Update start_value if user chose to re-base
-                original_start = goal.get("start_value") or 0
-                if updated["start_value"] != original_start:
-                    update_kwargs["start_value"] = updated["start_value"]
-                self._db.update_goal(goal_id, **update_kwargs)
+                self._db.update_goal(
+                    goal_id,
+                    target_value=updated["target_value"],
+                    start_value=updated["start_value"],
+                )
                 self._refresh_dashboard()
 
     def _on_delete_goal(self, goal_id: int):
@@ -1922,18 +2168,22 @@ class SkillsPage(QWidget):
         self._db.refresh_skill_rollups()
         goals = self._db.get_active_goals()
 
-        days = TIME_PERIODS[self._dash_period_idx][1]
         now_ts = int(_time.time())
-        from_ts = now_ts - int(days * 86400) if days > 0 else 0
+        if self._dash_custom_range is not None:
+            from_ts, to_ts = self._dash_custom_range
+        else:
+            days = TIME_PERIODS[self._dash_period_idx][1]
+            from_ts = now_ts - int(days * 86400) if days > 0 else 0
+            to_ts = now_ts
 
-        top_gains = self._db.get_top_gaining_skills(from_ts, now_ts, limit=10)
+        top_gains = self._db.get_top_gaining_skills(from_ts, to_ts, limit=10)
 
         # Always load top-gains timeseries (for toggle)
         top_timeseries = []
         if top_gains:
             top_ids = [g["skill_id"] for g in top_gains[:5]]
             top_timeseries = self._db.get_skill_gains_timeseries(
-                top_ids, from_ts, now_ts,
+                top_ids, from_ts, to_ts,
             )
 
         # Load goal-specific timeseries if goals exist
@@ -1958,14 +2208,15 @@ class SkillsPage(QWidget):
                                 goal_skill_ids.add(sid)
             if goal_skill_ids:
                 goal_timeseries = self._db.get_skill_gains_timeseries(
-                    list(goal_skill_ids), from_ts, now_ts,
+                    list(goal_skill_ids), from_ts, to_ts,
                 )
 
-        # Load custom timeseries if user has picked skills
+        # Load custom timeseries if user has picked skills/professions
         custom_timeseries = []
-        if self._dash_custom_skill_ids:
+        custom_ids = self._get_custom_skill_ids()
+        if custom_ids:
             custom_timeseries = self._db.get_skill_gains_timeseries(
-                list(self._dash_custom_skill_ids), from_ts, now_ts,
+                custom_ids, from_ts, to_ts,
             )
 
         # Collect baseline skill values (current scan values by skill_id)
@@ -1977,17 +2228,25 @@ class SkillsPage(QWidget):
             if sid is not None:
                 baselines[sid] = val
 
+        # Load pre-scan gains: gains before the first scan are already baked
+        # into the scan values.  Store them so the chart can compute what
+        # skill values were *before* those gains occurred.
+        baseline_ts = self._db.get_last_scan_timestamp()
+        pre_scan_gains: dict[int, float] = {}
+        if baseline_ts and baseline_ts > 0:
+            pre_scan_gains = self._db.get_skill_gains_before(baseline_ts)
+
         QTimer.singleShot(
             0, partial(
                 self._on_dashboard_loaded,
                 goals, top_gains, goal_timeseries, top_timeseries,
-                custom_timeseries, baselines,
+                custom_timeseries, baselines, pre_scan_gains,
             )
         )
 
     def _on_dashboard_loaded(self, goals, top_gains,
                              goal_timeseries, top_timeseries,
-                             custom_timeseries, baselines):
+                             custom_timeseries, baselines, pre_scan_gains):
         """Main thread: populate dashboard widgets."""
         self._dash_loading.hide()
         self._active_goals = goals
@@ -1998,21 +2257,29 @@ class SkillsPage(QWidget):
         self._dash_last_custom_timeseries = custom_timeseries
         self._dash_last_baselines = baselines
 
+        # Store pre-scan gains (id-based → name-based)
+        id_names = id_to_name_map()
+        self._pre_scan_gains = {}
+        for sid, total in pre_scan_gains.items():
+            name = id_names.get(sid)
+            if name:
+                self._pre_scan_gains[name] = total
+
         has_goals = bool(goals)
         has_data = bool(self._manager.skill_values) or bool(top_gains)
 
         # Show/hide view toggle — visible when more than one view is available
-        has_custom = bool(self._dash_custom_skill_ids)
+        has_custom = self._has_custom_picks
         modes_available = sum([has_goals, True, has_custom])  # top_gains always available
         if modes_available > 1 and has_data:
-            self._dash_view_toggle.show()
+            self._dash_view_combo.show()
         else:
-            self._dash_view_toggle.hide()
+            self._dash_view_combo.hide()
             if has_goals:
                 self._dash_view_mode = "goals"
             elif not has_data:
                 self._dash_view_mode = "top_gains"
-        self._update_toggle_text()
+        self._update_view_combo()
 
         self._apply_dashboard_view()
 
@@ -2024,6 +2291,8 @@ class SkillsPage(QWidget):
         self._dash_gains_label.hide()
         self._dash_gains_table.hide()
         self._dash_onboarding.hide()
+        self._dash_graph_mode_btn.hide()
+        self._dash_pick_skills_btn.hide()
 
         has_goals = bool(self._active_goals)
         has_data = bool(self._manager.skill_values) or bool(self._dash_last_top_gains)
@@ -2032,64 +2301,87 @@ class SkillsPage(QWidget):
             self._show_dashboard_goals(
                 self._active_goals, self._dash_last_goal_timeseries,
             )
-        elif self._dash_view_mode == "custom" and self._dash_custom_skill_ids:
+            # Show graph mode toggle if any goal maps to professions
+            has_prof_view = any(
+                g["goal_type"] == "profession_level" for g in self._active_goals
+            ) or (
+                self._manager.professions and any(
+                    g["goal_type"] != "profession_level"
+                    and any(
+                        any(sk["Name"] == g["target_name"]
+                            for sk in p.get("Skills", []))
+                        for p in self._manager.professions
+                    )
+                    for g in self._active_goals
+                )
+            )
+            if has_prof_view:
+                self._dash_graph_mode_btn.show()
+        elif self._dash_view_mode == "custom" and self._has_custom_picks:
             self._show_dashboard_custom(self._dash_last_custom_timeseries)
+            self._dash_pick_skills_btn.show()
         elif has_data:
             self._show_dashboard_top_gains(
                 self._dash_last_top_gains, self._dash_last_top_timeseries,
             )
+            self._dash_pick_skills_btn.show()
         else:
             self._dash_onboarding.show()
 
-    def _on_dash_view_toggle(self):
-        """Cycle through available views: goals → top_gains → custom → goals."""
-        has_goals = bool(self._active_goals)
-        has_custom = bool(self._dash_custom_skill_ids)
-        # Build ordered list of available modes
-        modes = []
-        if has_goals:
-            modes.append("goals")
-        modes.append("top_gains")
-        if has_custom:
-            modes.append("custom")
+    _VIEW_MODE_LABELS = {
+        "goals": "Goals",
+        "top_gains": "Top",
+        "custom": "Custom",
+    }
 
-        if not modes:
+    def _on_dash_view_changed(self, index: int):
+        """Handle view mode dropdown change."""
+        mode = self._dash_view_combo.itemData(index)
+        if mode is None or mode == self._dash_view_mode:
             return
-        try:
-            idx = modes.index(self._dash_view_mode)
-            self._dash_view_mode = modes[(idx + 1) % len(modes)]
-        except ValueError:
-            self._dash_view_mode = modes[0]
-        self._update_toggle_text()
+        self._dash_view_mode = mode
         self._apply_dashboard_view()
 
-    def _update_toggle_text(self):
-        """Set toggle button text based on what the next click would show."""
+    def _update_view_combo(self):
+        """Rebuild the view mode dropdown items."""
         has_goals = bool(self._active_goals)
-        has_custom = bool(self._dash_custom_skill_ids)
+        has_custom = self._has_custom_picks
         modes = []
         if has_goals:
             modes.append("goals")
         modes.append("top_gains")
         if has_custom:
             modes.append("custom")
-        if len(modes) <= 1:
-            return
-        try:
-            idx = modes.index(self._dash_view_mode)
-            next_mode = modes[(idx + 1) % len(modes)]
-        except ValueError:
-            next_mode = modes[0]
-        labels = {"goals": "Show Goals", "top_gains": "Show Top Gains", "custom": "Show Custom"}
-        self._dash_view_toggle.setText(labels.get(next_mode, "Toggle View"))
+
+        self._dash_view_combo.blockSignals(True)
+        self._dash_view_combo.clear()
+        for mode in modes:
+            self._dash_view_combo.addItem(
+                self._VIEW_MODE_LABELS.get(mode, mode), mode,
+            )
+        # Select current mode
+        for i in range(self._dash_view_combo.count()):
+            if self._dash_view_combo.itemData(i) == self._dash_view_mode:
+                self._dash_view_combo.setCurrentIndex(i)
+                break
+        self._dash_view_combo.blockSignals(False)
+
+    _GOAL_CARD_MIN_W = 280
+    _GOAL_CARD_MAX_W = 500
+    _GOAL_MAX_ROWS = 2  # max rows of cards visible per page
 
     def _show_dashboard_goals(self, goals, timeseries):
-        """Show goal progress cards and chart."""
-        # Clear old goal cards
+        """Show goal progress cards (grid, paginated) and chart."""
+        # Clear old contents
         while self._dash_goals_layout.count():
             item = self._dash_goals_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+            elif item.layout():
+                while item.layout().count():
+                    sub = item.layout().takeAt(0)
+                    if sub.widget():
+                        sub.widget().deleteLater()
 
         prof_levels = {}
         if self._manager.skill_values and self._manager.professions:
@@ -2099,26 +2391,94 @@ class SkillsPage(QWidget):
                 self._manager.skill_metadata,
             )
 
-        for goal in goals:
+        # Compute how many cards fit per row
+        avail_w = self._dash_goals_container.width() or 800
+        cols = max(1, avail_w // (self._GOAL_CARD_MIN_W + 6))
+        per_page = cols * self._GOAL_MAX_ROWS
+
+        # Clamp page index
+        total_pages = max(1, (len(goals) + per_page - 1) // per_page)
+        self._goal_page_idx = max(0, min(self._goal_page_idx, total_pages - 1))
+        start_idx = self._goal_page_idx * per_page
+        page_goals = goals[start_idx:start_idx + per_page]
+
+        # Lay out cards in rows
+        row_layout: QHBoxLayout | None = None
+        for i, goal in enumerate(page_goals):
+            if i % cols == 0:
+                row_layout = QHBoxLayout()
+                row_layout.setSpacing(6)
+                self._dash_goals_layout.addLayout(row_layout)
+
+            visible = goal["id"] not in self._hidden_goal_ids
             card = _GoalProgressCard(
                 goal,
                 self._manager.skill_values,
                 prof_levels,
+                visible=visible,
                 parent=self._dash_goals_container,
             )
+            card.setMinimumWidth(self._GOAL_CARD_MIN_W)
+            card.setMaximumWidth(self._GOAL_CARD_MAX_W)
             card.edit_clicked.connect(self._on_edit_goal)
             card.delete_clicked.connect(self._on_delete_goal)
-            self._dash_goals_layout.addWidget(card)
+            card.visibility_toggled.connect(self._on_goal_visibility_toggled)
+            row_layout.addWidget(card)
+
+        # Push cards left in every row
+        if row_layout is not None:
+            row_layout.addStretch()
+
+        # Pagination row (only if >1 page)
+        if total_pages > 1:
+            page_row = QHBoxLayout()
+            page_row.addStretch()
+            prev_btn = QPushButton("<")
+            prev_btn.setFixedSize(28, 22)
+            prev_btn.setEnabled(self._goal_page_idx > 0)
+            prev_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            prev_btn.clicked.connect(lambda: self._change_goal_page(-1))
+            page_row.addWidget(prev_btn)
+            page_label = QLabel(f"Page {self._goal_page_idx + 1}/{total_pages}")
+            page_label.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
+            page_row.addWidget(page_label)
+            next_btn = QPushButton(">")
+            next_btn.setFixedSize(28, 22)
+            next_btn.setEnabled(self._goal_page_idx < total_pages - 1)
+            next_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            next_btn.clicked.connect(lambda: self._change_goal_page(1))
+            page_row.addWidget(next_btn)
+            page_row.addStretch()
+            self._dash_goals_layout.addLayout(page_row)
 
         self._dash_goals_container.show()
 
-        # Build chart from timeseries
-        self._populate_chart(timeseries)
+        # Build chart from timeseries (filtered by visibility)
+        self._populate_goal_chart(timeseries)
+
+    def _change_goal_page(self, delta: int):
+        """Navigate goal pages without reloading data."""
+        self._goal_page_idx += delta
+        self._show_dashboard_goals(
+            self._active_goals, self._dash_last_goal_timeseries,
+        )
+
+    def _on_goal_visibility_toggled(self, goal_id: int, visible: bool):
+        """Handle eye toggle on a goal card."""
+        if visible:
+            self._hidden_goal_ids.discard(goal_id)
+        else:
+            self._hidden_goal_ids.add(goal_id)
+        # Re-populate chart with filtered timeseries
+        self._populate_goal_chart(self._dash_last_goal_timeseries)
 
     def _show_dashboard_top_gains(self, top_gains, timeseries):
         """Show top gaining skills table and chart."""
         id_names = id_to_name_map()
-        period_label = TIME_PERIODS[self._dash_period_idx][0]
+        period_label = (
+            "Custom" if self._dash_period_idx == -1
+            else TIME_PERIODS[self._dash_period_idx][0]
+        )
         self._dash_gains_label.setText(f"Top Gaining Skills ({period_label})")
         self._dash_gains_label.show()
 
@@ -2157,53 +2517,106 @@ class SkillsPage(QWidget):
         # Build chart from timeseries
         self._populate_chart(timeseries)
 
+    @property
+    def _has_custom_picks(self) -> bool:
+        return bool(self._dash_custom_skill_ids) or bool(self._dash_custom_prof_names)
+
+    def _get_custom_skill_ids(self) -> list[int]:
+        """Resolve effective skill IDs for the current custom pick."""
+        if self._dash_custom_mode == "professions" and self._dash_custom_prof_names:
+            nm = name_to_id_map()
+            ids: set[int] = set()
+            for prof_name in self._dash_custom_prof_names:
+                prof = next(
+                    (p for p in self._manager.professions
+                     if p["Name"] == prof_name), None,
+                )
+                if prof:
+                    for sk in prof.get("Skills", []):
+                        sid = nm.get(sk["Name"])
+                        if sid is not None:
+                            ids.add(sid)
+            return list(ids)
+        return list(self._dash_custom_skill_ids)
+
     def _show_dashboard_custom(self, timeseries):
-        """Show chart with user-picked custom skills."""
-        self._populate_chart(timeseries)
+        """Show chart with user-picked custom skills or professions."""
+        if self._dash_custom_mode == "professions":
+            self._populate_custom_profession_chart(timeseries)
+        else:
+            self._populate_chart(timeseries)
 
     def _on_pick_skills(self):
-        """Open skill picker dialog and switch to custom view."""
+        """Open skill/profession picker dialog and switch to custom view."""
         from ..dialogs.skill_picker_dialog import SkillPickerDialog
 
         top_ids = [g["skill_id"] for g in self._dash_last_top_gains[:10]]
+
+        prof_levels: dict[str, float] = {}
+        if self._manager.skill_values and self._manager.professions:
+            prof_levels = calculate_all_profession_levels(
+                self._manager.skill_values,
+                self._manager.professions,
+                self._manager.skill_metadata,
+            )
 
         dlg = SkillPickerDialog(
             skill_metadata=self._manager.skill_metadata or [],
             professions=self._manager.professions or [],
             skill_values=self._manager.skill_values or {},
+            profession_levels=prof_levels,
             top_gaining_skill_ids=top_ids,
             preselected_ids=self._dash_custom_skill_ids or None,
+            preselected_prof_names=self._dash_custom_prof_names or None,
+            initial_mode=self._dash_custom_mode,
             parent=self,
         )
         if dlg.exec():
-            selected = dlg.get_selected_skill_ids()
-            if selected:
-                self._dash_custom_skill_ids = selected
+            result = dlg.get_result()
+            if result is None:
+                return
+            if result.mode == "professions" and result.profession_names:
+                self._dash_custom_mode = "professions"
+                self._dash_custom_prof_names = result.profession_names
+                self._dash_custom_skill_ids = []
+                self._dash_view_mode = "custom"
+                self._load_custom_timeseries()
+            elif result.mode == "skills" and result.skill_ids:
+                self._dash_custom_mode = "skills"
+                self._dash_custom_skill_ids = result.skill_ids
+                self._dash_custom_prof_names = []
                 self._dash_view_mode = "custom"
                 self._load_custom_timeseries()
             else:
                 # Cleared selection — go back to top_gains
                 self._dash_custom_skill_ids = []
+                self._dash_custom_prof_names = []
                 if self._dash_view_mode == "custom":
                     self._dash_view_mode = "top_gains"
-                self._update_toggle_text()
+                self._update_view_combo()
                 self._apply_dashboard_view()
 
     def _load_custom_timeseries(self):
-        """Load timeseries for custom-picked skills in background."""
+        """Load timeseries for custom-picked skills/professions in background."""
         import time as _time
 
-        if not self._db or not self._dash_custom_skill_ids:
+        if not self._db or not self._has_custom_picks:
             return
 
-        skill_ids = list(self._dash_custom_skill_ids)
-        days = TIME_PERIODS[self._dash_period_idx][1]
+        skill_ids = self._get_custom_skill_ids()
+        if not skill_ids:
+            return
         now_ts = int(_time.time())
-        from_ts = now_ts - int(days * 86400) if days > 0 else 0
+        if self._dash_custom_range is not None:
+            from_ts, to_ts = self._dash_custom_range
+        else:
+            days = TIME_PERIODS[self._dash_period_idx][1]
+            from_ts = now_ts - int(days * 86400) if days > 0 else 0
+            to_ts = now_ts
 
         def _load():
             self._db.refresh_skill_rollups()
-            ts_data = self._db.get_skill_gains_timeseries(skill_ids, from_ts, now_ts)
+            ts_data = self._db.get_skill_gains_timeseries(skill_ids, from_ts, to_ts)
             QTimer.singleShot(0, partial(self._on_custom_timeseries_loaded, ts_data))
 
         threading.Thread(target=_load, daemon=True, name="custom-chart").start()
@@ -2211,13 +2624,14 @@ class SkillsPage(QWidget):
     def _on_custom_timeseries_loaded(self, timeseries):
         """Handle loaded custom timeseries data."""
         self._dash_last_custom_timeseries = timeseries
-        self._update_toggle_text()
-        # Update toggle visibility
+        self._update_view_combo()
+        # Update view dropdown
         has_goals = bool(self._active_goals)
-        has_custom = bool(self._dash_custom_skill_ids)
+        has_custom = self._has_custom_picks
         modes_available = sum([has_goals, True, has_custom])
         if modes_available > 1:
-            self._dash_view_toggle.show()
+            self._dash_view_combo.show()
+        self._update_view_combo()
         self._apply_dashboard_view()
 
     def _populate_chart(self, timeseries):
@@ -2274,6 +2688,181 @@ class SkillsPage(QWidget):
         self._dash_chart.set_cumulative(False)  # Already absolute values
         self._dash_chart.set_data(series_list)
         self._dash_chart.show()
+
+    def _populate_goal_chart(self, timeseries):
+        """Populate chart filtering by hidden goals and applying graph mode."""
+        # Filter out hidden goals' skill_ids
+        filtered = timeseries
+        if self._hidden_goal_ids:
+            nm = name_to_id_map()
+            hidden_sids: set[int] = set()
+            for g in self._active_goals:
+                if g["id"] not in self._hidden_goal_ids:
+                    continue
+                if g["goal_type"] == "profession_level":
+                    prof = next(
+                        (p for p in self._manager.professions if p["Name"] == g["target_name"]),
+                        None,
+                    )
+                    if prof:
+                        for sk in prof.get("Skills", []):
+                            sid = nm.get(sk["Name"])
+                            if sid is not None:
+                                hidden_sids.add(sid)
+                else:
+                    sid = nm.get(g["target_name"])
+                    if sid is not None:
+                        hidden_sids.add(sid)
+            filtered = [r for r in timeseries if r["skill_id"] not in hidden_sids]
+
+        if self._dash_graph_mode == "professions":
+            self._populate_profession_chart(filtered)
+        else:
+            self._populate_chart(filtered)
+
+    def _on_graph_mode_toggle(self):
+        """Toggle between skills and professions chart modes."""
+        if self._dash_graph_mode == "skills":
+            self._dash_graph_mode = "professions"
+            self._dash_graph_mode_btn.setText("Skills")
+        else:
+            self._dash_graph_mode = "skills"
+            self._dash_graph_mode_btn.setText("Professions")
+        self._populate_goal_chart(self._dash_last_goal_timeseries)
+
+    def _populate_profession_chart(self, timeseries):
+        """Build chart with one line per profession goal."""
+        if not timeseries:
+            self._dash_chart.clear()
+            return
+
+        # Collect professions to chart: explicit profession goals + professions
+        # that contain skills from skill-type goals
+        prof_names_seen: set[str] = set()
+        prof_list: list[dict] = []
+        for g in self._active_goals:
+            if g["id"] in self._hidden_goal_ids:
+                continue
+            if g["goal_type"] == "profession_level":
+                prof = next(
+                    (p for p in self._manager.professions
+                     if p["Name"] == g["target_name"]),
+                    None,
+                )
+                if prof and prof["Name"] not in prof_names_seen:
+                    prof_names_seen.add(prof["Name"])
+                    prof_list.append(prof)
+            else:
+                # Skill goal — find all professions this skill contributes to
+                skill_name = g["target_name"]
+                for p in self._manager.professions:
+                    if p["Name"] in prof_names_seen:
+                        continue
+                    if any(sk["Name"] == skill_name
+                           for sk in p.get("Skills", [])):
+                        prof_names_seen.add(p["Name"])
+                        prof_list.append(p)
+
+        if not prof_list:
+            self._populate_chart(timeseries)
+            return
+
+        series_list = self._build_profession_series(timeseries, prof_list)
+        if not series_list:
+            self._dash_chart.clear()
+            return
+        self._dash_chart.set_smooth(True)
+        self._dash_chart.set_cumulative(False)
+        self._dash_chart.set_data(series_list)
+        self._dash_chart.show()
+
+    def _populate_custom_profession_chart(self, timeseries):
+        """Build chart with one line per user-picked profession."""
+        if not timeseries:
+            self._dash_chart.clear()
+            return
+        target_names = set(self._dash_custom_prof_names)
+        prof_list = [
+            p for p in self._manager.professions
+            if p["Name"] in target_names
+        ]
+        if not prof_list:
+            self._dash_chart.clear()
+            return
+        series_list = self._build_profession_series(timeseries, prof_list)
+        if not series_list:
+            self._dash_chart.clear()
+            return
+        self._dash_chart.set_smooth(True)
+        self._dash_chart.set_cumulative(False)
+        self._dash_chart.set_data(series_list)
+        self._dash_chart.show()
+
+    def _build_profession_series(
+        self, timeseries: list[dict], prof_list: list[dict],
+    ) -> list[ChartSeries]:
+        """Build ChartSeries for profession level lines from timeseries data."""
+        import time as _time
+        id_names = id_to_name_map()
+        now_ts = int(_time.time())
+        skill_values = self._manager.skill_values or {}
+        attr_skills = build_attribute_skill_set(self._manager.skill_metadata)
+
+        # Group timeseries by skill_id
+        by_skill: dict[int, list[tuple[int, float]]] = {}
+        for row in timeseries:
+            sid = row["skill_id"]
+            by_skill.setdefault(sid, []).append((row["ts"], row["amount"]))
+        for sid in by_skill:
+            by_skill[sid].sort(key=lambda p: p[0])
+
+        # Total gain per skill for baseline computation
+        total_gains = {sid: sum(a for _, a in data) for sid, data in by_skill.items()}
+
+        # Collect all unique timestamps
+        all_ts = sorted({ts for data in by_skill.values() for ts, _ in data})
+        if not all_ts:
+            return []
+
+        # Base skill values at start of period
+        base_values = dict(skill_values)
+        for sid, tg in total_gains.items():
+            sk_name = id_names.get(sid)
+            if sk_name:
+                base_values[sk_name] = skill_values.get(sk_name, 0) - tg
+
+        # Build cumulative gains per skill over time
+        cumulative_by_ts: list[dict[int, float]] = []
+        cumulative: dict[int, float] = {}
+        for ts in all_ts:
+            for sid, data in by_skill.items():
+                for t, amt in data:
+                    if t == ts:
+                        cumulative[sid] = cumulative.get(sid, 0) + amt
+            cumulative_by_ts.append(dict(cumulative))
+
+        series_list = []
+        for i, prof in enumerate(prof_list):
+            prof_points = []
+            for ts_idx, ts in enumerate(all_ts):
+                current_values = dict(base_values)
+                for sid, cum_amt in cumulative_by_ts[ts_idx].items():
+                    sk_name = id_names.get(sid)
+                    if sk_name:
+                        current_values[sk_name] = base_values.get(sk_name, 0) + cum_amt
+                level = calculate_profession_level(
+                    current_values, prof.get("Skills", []), attr_skills
+                )
+                prof_points.append((ts, level))
+
+            if prof_points and prof_points[-1][0] < now_ts:
+                prof_points.append((now_ts, prof_points[-1][1]))
+
+            color = CHART_COLORS[i % len(CHART_COLORS)]
+            series_list.append(ChartSeries(
+                name=prof["Name"], color=color, data=prof_points,
+            ))
+        return series_list
 
     def _check_goal_completion(self):
         """Check if any active goals have been reached and mark them complete."""
@@ -2598,6 +3187,13 @@ class SkillsPage(QWidget):
         ";;JSON files (*.json);;All files (*)"
     )
 
+    def _get_export_timestamp(self) -> str:
+        """Get ISO timestamp for export: last scan time or current UTC."""
+        ts = self._db.get_last_scan_timestamp() if self._db else None
+        if ts is not None:
+            return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        return datetime.now(tz=timezone.utc).isoformat()
+
     def _on_export_skills(self):
         values = self._manager.get_all_values()
         if not values:
@@ -2611,14 +3207,19 @@ class SkillsPage(QWidget):
             return
 
         ext = Path(path).suffix.lower()
+        exported_at = self._get_export_timestamp()
         try:
             if ext == ".json":
                 text = json.dumps(
-                    {k: v for k, v in sorted(values.items())},
+                    {
+                        "exported_at": exported_at,
+                        "skills": {k: v for k, v in sorted(values.items())},
+                    },
                     indent=2,
                 )
             elif ext == ".tsv":
                 buf = io.StringIO()
+                buf.write(f"# Exported: {exported_at}\n")
                 writer = csv.writer(buf, delimiter="\t")
                 writer.writerow(["Skill", "Value"])
                 for name, val in sorted(values.items()):
@@ -2626,6 +3227,7 @@ class SkillsPage(QWidget):
                 text = buf.getvalue()
             else:  # default csv
                 buf = io.StringIO()
+                buf.write(f"# Exported: {exported_at}\n")
                 writer = csv.writer(buf)
                 writer.writerow(["Skill", "Value"])
                 for name, val in sorted(values.items()):
@@ -2650,16 +3252,30 @@ class SkillsPage(QWidget):
         try:
             raw = Path(path).read_text(encoding="utf-8")
             imported: dict[str, float] = {}
+            file_timestamp: str | None = None
 
             if ext == ".json":
                 data = json.loads(raw)
                 if not isinstance(data, dict):
                     raise ValueError("JSON must be an object mapping skill names to values")
+                # Support wrapped format: {exported_at, skills}
+                if "skills" in data and isinstance(data["skills"], dict):
+                    file_timestamp = data.get("exported_at")
+                    data = data["skills"]
                 for k, v in data.items():
+                    if k == "exported_at":
+                        continue
                     imported[str(k)] = float(v)
             elif ext in (".csv", ".tsv"):
                 delimiter = "\t" if ext == ".tsv" else ","
-                reader = csv.reader(io.StringIO(raw), delimiter=delimiter)
+                lines = raw.splitlines(True)
+                # Check for timestamp comment header
+                start_idx = 0
+                if lines and lines[0].startswith("# Exported:"):
+                    file_timestamp = lines[0].split(":", 1)[1].strip()
+                    start_idx = 1
+                content = "".join(lines[start_idx:])
+                reader = csv.reader(io.StringIO(content), delimiter=delimiter)
                 header = next(reader, None)
                 if not header or len(header) < 2:
                     raise ValueError("File must have at least two columns (Skill, Value)")
@@ -2673,6 +3289,13 @@ class SkillsPage(QWidget):
                 QMessageBox.warning(self, "Import Skills", "No valid skills found in file.")
                 return
 
+            # If no timestamp in file, ask the user
+            imported_at = file_timestamp
+            if not imported_at:
+                imported_at = self._ask_import_timestamp()
+                if imported_at is None:
+                    return  # User cancelled
+
             # Confirm before overwriting
             answer = QMessageBox.question(
                 self, "Import Skills",
@@ -2683,7 +3306,9 @@ class SkillsPage(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 return
 
-            synced = self._manager.apply_imported_values(imported)
+            synced = self._manager.apply_imported_values(
+                imported, imported_at=imported_at,
+            )
 
             # Reset gains baseline — import is the new reference point
             self._skill_gains.clear()
@@ -2708,6 +3333,59 @@ class SkillsPage(QWidget):
             QMessageBox.critical(self, "Import Failed", f"Invalid file format:\n{e}")
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", str(e))
+
+    def _ask_import_timestamp(self) -> str | None:
+        """Ask the user for a timestamp when import file has none.
+
+        Returns ISO timestamp string, or None if cancelled.
+        """
+        from PyQt6.QtWidgets import (
+            QDialog, QDialogButtonBox, QRadioButton, QButtonGroup, QDateEdit,
+        )
+        from PyQt6.QtCore import QDate
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Import Timestamp")
+        dlg.setMinimumWidth(340)
+        layout = QVBoxLayout(dlg)
+
+        layout.addWidget(QLabel("This file has no timestamp.\nWhen were these skills recorded?"))
+
+        group = QButtonGroup(dlg)
+        radio_now = QRadioButton("Use current time (this is a fresh scan)")
+        radio_date = QRadioButton("Enter date:")
+        group.addButton(radio_now, 0)
+        group.addButton(radio_date, 1)
+        radio_now.setChecked(True)
+        layout.addWidget(radio_now)
+
+        date_row = QHBoxLayout()
+        date_row.addWidget(radio_date)
+        date_edit = QDateEdit()
+        date_edit.setDate(QDate.currentDate())
+        date_edit.setCalendarPopup(True)
+        date_edit.setEnabled(False)
+        date_row.addWidget(date_edit)
+        layout.addLayout(date_row)
+
+        radio_date.toggled.connect(date_edit.setEnabled)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        if group.checkedId() == 0:
+            return datetime.now(tz=timezone.utc).isoformat()
+        else:
+            qdate = date_edit.date()
+            dt = datetime(qdate.year(), qdate.month(), qdate.day(), tzinfo=timezone.utc)
+            return dt.isoformat()
 
     # ── Auth ──────────────────────────────────────────────────────────────
 
@@ -2771,20 +3449,23 @@ class SkillsPage(QWidget):
                 self._manager.skill_metadata,
             )
 
+        # Cards are inside nested HBoxLayouts — walk both levels
         for i in range(self._dash_goals_layout.count()):
             item = self._dash_goals_layout.itemAt(i)
-            widget = item.widget() if item else None
-            if isinstance(widget, _GoalProgressCard):
-                widget.update_progress(live_values, prof_levels)
+            sub = item.layout() if item else None
+            if sub is not None:
+                for j in range(sub.count()):
+                    widget = sub.itemAt(j).widget() if sub.itemAt(j) else None
+                    if isinstance(widget, _GoalProgressCard):
+                        widget.update_progress(live_values, prof_levels)
 
         # Refresh chart with updated timeseries
         if self._dash_view_mode == "goals":
-            timeseries = self._dash_last_goal_timeseries
+            self._populate_goal_chart(self._dash_last_goal_timeseries)
         elif self._dash_view_mode == "custom":
-            timeseries = self._dash_last_custom_timeseries
+            self._show_dashboard_custom(self._dash_last_custom_timeseries)
         else:
-            timeseries = self._dash_last_top_timeseries
-        self._populate_chart(timeseries)
+            self._populate_chart(self._dash_last_top_timeseries)
 
         # Update top gains table current values if visible
         if self._dash_gains_table.isVisible():

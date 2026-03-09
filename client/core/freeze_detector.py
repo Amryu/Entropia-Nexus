@@ -54,7 +54,10 @@ class FreezeDetector:
     def stop(self) -> None:
         """Stop the detector. Safe to call from any thread."""
         self._running = False
-        if self._timer is not None:
+        # QTimers can only be stopped from the thread that created them.
+        # Setting _running = False is enough to stop the watchdog loop;
+        # only touch the QTimer when called from the main thread.
+        if self._timer is not None and threading.current_thread() is threading.main_thread():
             self._timer.stop()
             self._timer = None
 

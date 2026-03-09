@@ -7,6 +7,12 @@ Detection uses a three-tier strategy for performance:
 1. Cheap pixel check — if the region at the last position hasn't changed, reuse it
 2. Limited area search — template match in a ±SEARCH_MARGIN region around last position
 3. Full game window search — template match across the entire game screenshot
+
+Supports two modes:
+- **Push mode** (FrameDistributor): subscribes with divisor=5 (2 Hz),
+  receives frames via callback on the distributor's capture thread.
+- **Legacy poll mode** (SharedFrameCache / ScreenCapturer): runs its own
+  thread with sleep-based polling.
 """
 
 import os
@@ -31,7 +37,8 @@ from ..platform import backend as _platform
 log = get_logger("TargetLock")
 
 # --- Timing ---
-POLL_INTERVAL = 0.5  # seconds (~2 Hz)
+POLL_INTERVAL = 0.5  # seconds (~2 Hz) — legacy poll mode
+DISTRIBUTOR_HZ = 2   # 2 Hz delivery rate
 
 # --- Search ---
 LOST_TICKS = 3       # consecutive misses before publishing lost event
@@ -65,21 +72,29 @@ class TargetLockDetector:
     for fast, robust detection at ~2 Hz.
     """
 
-    def __init__(self, config, event_bus, capturer_or_cache):
+    def __init__(self, config, event_bus, frame_source):
         self._config = config
         self._event_bus = event_bus
 
-        # Accept either a SharedFrameCache or legacy ScreenCapturer
-        from .frame_cache import SharedFrameCache
-        if isinstance(capturer_or_cache, SharedFrameCache):
-            self._frame_cache = capturer_or_cache
-            self._capturer = None
+        # Detect frame source type
+        self._distributor = None
+        self._subscription = None
+        self._frame_cache = None
+        self._capturer = None
+
+        from .frame_distributor import FrameDistributor
+        if isinstance(frame_source, FrameDistributor):
+            self._distributor = frame_source
         else:
-            self._frame_cache = None
-            self._capturer = capturer_or_cache
+            from .frame_cache import SharedFrameCache
+            if isinstance(frame_source, SharedFrameCache):
+                self._frame_cache = frame_source
+            else:
+                self._capturer = frame_source
 
         self._running = False
         self._thread = None
+        self._tick_count = 0
 
         # Game window
         self._game_hwnd = None
@@ -164,14 +179,25 @@ class TargetLockDetector:
         if self._running or self._template_bgr is None:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="target-lock"
-        )
-        self._thread.start()
-        log.info("Started")
+        self._tick_count = 0
+
+        if self._distributor is not None:
+            self._subscription = self._distributor.subscribe(
+                "target-lock", self._on_frame, hz=DISTRIBUTOR_HZ,
+            )
+            log.info("Started (push mode)")
+        else:
+            self._thread = threading.Thread(
+                target=self._poll_loop, daemon=True, name="target-lock",
+            )
+            self._thread.start()
+            log.info("Started (poll mode)")
 
     def stop(self):
         self._running = False
+        if self._subscription is not None:
+            self._subscription.enabled = False
+            self._subscription = None
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
@@ -180,7 +206,32 @@ class TargetLockDetector:
         log.info("Stopped")
 
     # ------------------------------------------------------------------
-    # Poll loop
+    # Push mode (FrameDistributor callback)
+    # ------------------------------------------------------------------
+
+    def _on_frame(self, frame: np.ndarray, timestamp: float):
+        """Callback from FrameDistributor — runs on the capture thread."""
+        if not self._running:
+            return
+        if not getattr(self._config, "target_lock_enabled", True):
+            return
+
+        # Idle mode: skip most ticks when no target is found
+        idle_threshold = getattr(self._config, "ocr_idle_threshold", 50)
+        idle_mult = getattr(self._config, "ocr_idle_multiplier", 5)
+        if self._idle_ticks >= idle_threshold and self._tick_count % idle_mult != 0:
+            self._tick_count += 1
+            return
+
+        try:
+            self._game_origin = self._distributor.game_origin
+            self._process_image(frame)
+        except Exception as e:
+            log.error("Tick error: %s", e)
+        self._tick_count += 1
+
+    # ------------------------------------------------------------------
+    # Legacy poll mode
     # ------------------------------------------------------------------
 
     def _capture_window(self, hwnd):
@@ -193,9 +244,10 @@ class TargetLockDetector:
         while self._running:
             try:
                 if getattr(self._config, "target_lock_enabled", True):
-                    self._tick()
+                    self._tick_legacy()
             except Exception as e:
                 log.error("Tick error: %s", e)
+            self._tick_count += 1
             # Idle mode: multiply poll interval when no target found
             idle_threshold = getattr(self._config, "ocr_idle_threshold", 50)
             idle_mult = getattr(self._config, "ocr_idle_multiplier", 5)
@@ -204,7 +256,8 @@ class TargetLockDetector:
             else:
                 time.sleep(POLL_INTERVAL)
 
-    def _tick(self):
+    def _tick_legacy(self):
+        """Legacy poll tick: discover window, capture, then process."""
         # Auto-discover game window (or re-discover if capture fails)
         if not self._game_hwnd or not _platform.is_window_visible(self._game_hwnd):
             self._game_hwnd = None
@@ -227,6 +280,14 @@ class TargetLockDetector:
         if image is None:
             return
 
+        self._process_image(image)
+
+    # ------------------------------------------------------------------
+    # Core image processing (shared by both modes)
+    # ------------------------------------------------------------------
+
+    def _process_image(self, image: np.ndarray):
+        """Process a captured game frame: template match + ROI reads."""
         threshold = getattr(self._config, "target_lock_match_threshold", 0.85)
         pos, confidence = self._find_template(image, threshold)
 

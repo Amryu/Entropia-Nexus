@@ -39,3 +39,5 @@ class ScanProgress:
     current_page: int
     total_pages: int
     missing_names: list[str] = field(default_factory=list)
+    total_visible_skills: int = 0  # non-hidden skills count
+    hidden_skill_names: set = field(default_factory=set)  # skills with IsHidden flag

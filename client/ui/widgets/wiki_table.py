@@ -13,15 +13,13 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from .fancy_table import FancyTable, ColumnDef, column_def_from_dict
+from ...core.gil_yield import GilYielder
 from ...data.wiki_columns import COLUMN_DEFS, DEFAULT_COLUMNS, get_item_name
 
 
 # ---------------------------------------------------------------------------
 # Cache builder — can run on any thread (used by wiki_page warmup)
 # ---------------------------------------------------------------------------
-
-# Max time (seconds) to hold the GIL before yielding. Matches 120fps frame budget.
-_GIL_YIELD_BUDGET = 0.008
 
 
 def build_column_cache(items: list[dict], col_defs: list[dict]):
@@ -31,10 +29,8 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
     and numeric[col] = True if the column holds numeric data.
     Column 0 is always the Name column.
     """
-    import time
-
     cache: list[list[tuple]] = []
-    last_yield = time.monotonic()
+    yielder = GilYielder()
     for item in items:
         name = get_item_name(item)
         row: list[tuple] = [(name, name)]
@@ -43,11 +39,7 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
             display = str(col_def["format"](raw))
             row.append((raw, display))
         cache.append(row)
-        # Time-gated GIL yield so global input hooks (keyboard library)
-        # and the Qt event loop can process events without stalling.
-        if time.monotonic() - last_yield > _GIL_YIELD_BUDGET:
-            time.sleep(0)
-            last_yield = time.monotonic()
+        yielder.yield_if_needed()
 
     num_cols = 1 + len(col_defs)
     numeric = [False] * num_cols
@@ -104,6 +96,42 @@ def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Subset cache builder — can run on any thread
+# ---------------------------------------------------------------------------
+
+def build_subset_cache(
+    full_cache: list[list[tuple]],
+    full_numeric: list[bool],
+    all_type_col_keys: list[str],
+    active_col_keys: list[str],
+    all_defs: dict,
+) -> tuple[list[ColumnDef], list[list[tuple]], list[bool]]:
+    """Extract active columns from the full cache.  Thread-safe.
+
+    Returns (column_defs, subset_cache, subset_numeric) ready for FancyTable.
+    """
+    key_to_idx = {k: i for i, k in enumerate(all_type_col_keys)}
+    active_indices = [key_to_idx[k] for k in active_col_keys if k in key_to_idx]
+
+    column_defs = [_NAME_COLUMN]
+    for i in active_indices:
+        key = all_type_col_keys[i]
+        column_defs.append(column_def_from_dict(all_defs[key]))
+
+    numeric = [full_numeric[0]] + [full_numeric[i + 1] for i in active_indices]
+
+    # +1 offset because column 0 is always Name in the full cache
+    subset: list[list[tuple]] = []
+    for full_row in full_cache:
+        row = [full_row[0]]  # Name
+        for i in active_indices:
+            row.append(full_row[i + 1])
+        subset.append(row)
+
+    return column_defs, subset, numeric
+
+
+# ---------------------------------------------------------------------------
 # Name column definition
 # ---------------------------------------------------------------------------
 
@@ -153,20 +181,26 @@ class WikiTableView(QWidget):
         layout.setSpacing(0)
 
         # Create FancyTable with empty columns (set on first set_data)
-        self._table = FancyTable(columns=[], parent=self)
+        self._table = FancyTable(
+            columns=[], reorderable=True, resizable=True, parent=self,
+        )
         self._table.row_clicked.connect(self._on_row_activated)
         self._table.config_button.clicked.connect(self._open_column_config)
         self._table.new_button.clicked.connect(self.new_clicked.emit)
         self._table.new_button.show()
+        self._table.columns_reordered.connect(self._on_columns_reordered)
         layout.addWidget(self._table, 1)
 
     # --- Public API ---
 
-    def set_data(self, items: list[dict], full_cache=None, full_numeric=None):
+    def set_data(self, items: list[dict], full_cache=None, full_numeric=None,
+                 subset_result=None):
         """Populate the table with entity data.
 
         If *full_cache* / *full_numeric* are supplied (pre-computed on a
         background thread) the expensive per-cell computation is skipped.
+        If *subset_result* is supplied (column_defs, cache, numeric), the
+        main-thread subset extraction is also skipped.
         """
         self._items = items
         self._resolve_columns()
@@ -182,7 +216,7 @@ class WikiTableView(QWidget):
             col_defs_list = [all_defs[k] for k in self._all_type_col_keys]
             self._full_cache, self._full_numeric = build_column_cache(items, col_defs_list)
 
-        self._rebuild_table()
+        self._rebuild_table(subset_result=subset_result)
 
     def set_loading(self):
         """Show loading state."""
@@ -202,38 +236,18 @@ class WikiTableView(QWidget):
     # --- Cache subsetting ---
 
     def _subset_cache(self):
-        """Extract active columns from the pre-computed full cache.
-
-        Returns (column_defs, cache, numeric) ready for FancyTable.
-        """
-        key_to_idx = {k: i for i, k in enumerate(self._all_type_col_keys)}
+        """Extract active columns from the pre-computed full cache."""
         all_defs = COLUMN_DEFS.get(self._page_type_id, {})
-        active_indices = [key_to_idx[k] for k in self._full_col_keys if k in key_to_idx]
-
-        # Build ColumnDef list: Name + active data columns
-        column_defs = [_NAME_COLUMN]
-        for i in active_indices:
-            key = self._all_type_col_keys[i]
-            col_dict = all_defs[key]
-            column_defs.append(column_def_from_dict(col_dict))
-
-        numeric = [self._full_numeric[0]] + [self._full_numeric[i + 1] for i in active_indices]
-
-        # +1 offset because column 0 is always Name in the full cache
-        subset: list[list[tuple]] = []
-        for full_row in self._full_cache:
-            row = [full_row[0]]  # Name
-            for i in active_indices:
-                row.append(full_row[i + 1])
-            subset.append(row)
-
-        return column_defs, subset, numeric
+        return build_subset_cache(
+            self._full_cache, self._full_numeric,
+            self._all_type_col_keys, self._full_col_keys, all_defs,
+        )
 
     # --- Table rebuild ---
 
-    def _rebuild_table(self):
+    def _rebuild_table(self, subset_result=None):
         """Rebuild the FancyTable from the pre-computed cache."""
-        column_defs, cache, numeric = self._subset_cache()
+        column_defs, cache, numeric = subset_result or self._subset_cache()
         self._table.set_columns(column_defs)
         self._table.set_data(self._items, cache=cache, numeric=numeric)
 
@@ -265,3 +279,13 @@ class WikiTableView(QWidget):
                 self._rebuild_table()
                 if self._on_columns_changed:
                     self._on_columns_changed(self._page_type_id, new_keys)
+
+    # --- Column reorder from header drag ---
+
+    def _on_columns_reordered(self, new_keys: list[str]):
+        """Persist column order after drag-reorder in header."""
+        # new_keys includes the _name column — strip it
+        data_keys = [k for k in new_keys if k != "_name"]
+        self._full_col_keys = data_keys
+        if self._on_columns_changed:
+            self._on_columns_changed(self._page_type_id, data_keys)

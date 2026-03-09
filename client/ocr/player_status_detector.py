@@ -4,13 +4,19 @@ Finds the player's heart icon on the HUD using template matching,
 then reads health bar and reload bar fill percentages at high frequency.
 
 Multi-rate polling architecture:
-- 100 ms base interval (reload + health bar reads)
-- 1 s template re-detection + tool presence check (every 10th tick)
+- 250 ms base interval / 4 Hz (reload + health bar reads)
+- 1 s template re-detection + tool presence check (every 4th tick)
 
 Bar fill is measured by scanning columns left-to-right for matching
 colors. The health bar has a white marker at its fill edge (+1 px).
 When no tool is equipped (empty tool_name ROI), both bars shift down
 by 8 px.
+
+Supports two modes:
+- **Push mode** (FrameDistributor): subscribes with divisor=1, receives
+  frames via callback on the distributor's capture thread.
+- **Legacy poll mode** (SharedFrameCache / ScreenCapturer): runs its own
+  thread with sleep-based polling.
 """
 
 import os
@@ -31,9 +37,9 @@ from ..platform import backend as _platform
 log = get_logger("PlayerStatus")
 
 # --- Timing ---
-POLL_INTERVAL = 0.1    # 100 ms base interval (was 50 ms)
-TEMPLATE_TICKS = 10    # every 10 ticks = 1 s for template + tool check
-HEALTH_TICKS = 1       # every tick = 100 ms for health bar (same effective rate)
+POLL_INTERVAL = 0.25   # 250 ms base interval / 4 Hz (legacy poll mode)
+TEMPLATE_TICKS = 4     # every 4 ticks = 1 s for template + tool check
+HEALTH_TICKS = 1       # every tick = 250 ms for health bar
 
 # --- Search ---
 LOST_TICKS = 3         # consecutive template misses before publishing lost
@@ -83,21 +89,29 @@ class PlayerStatusDetector:
     fast vectorized color matching.
     """
 
-    def __init__(self, config, event_bus, capturer_or_cache):
+    def __init__(self, config, event_bus, frame_source):
         self._config = config
         self._event_bus = event_bus
 
-        # Accept either a SharedFrameCache or legacy ScreenCapturer
-        from .frame_cache import SharedFrameCache
-        if isinstance(capturer_or_cache, SharedFrameCache):
-            self._frame_cache = capturer_or_cache
-            self._capturer = None
+        # Detect frame source type
+        self._distributor = None
+        self._subscription = None
+        self._frame_cache = None
+        self._capturer = None
+
+        from .frame_distributor import FrameDistributor
+        if isinstance(frame_source, FrameDistributor):
+            self._distributor = frame_source
         else:
-            self._frame_cache = None
-            self._capturer = capturer_or_cache
+            from .frame_cache import SharedFrameCache
+            if isinstance(frame_source, SharedFrameCache):
+                self._frame_cache = frame_source
+            else:
+                self._capturer = frame_source
 
         self._running = False
         self._thread = None
+        self._tick_count = 0
 
         # Game window
         self._game_hwnd = None
@@ -185,21 +199,57 @@ class PlayerStatusDetector:
         if self._running or self._template_bgr is None:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="player-status"
-        )
-        self._thread.start()
-        log.info("Started")
+        self._tick_count = 0
+
+        if self._distributor is not None:
+            self._subscription = self._distributor.subscribe(
+                "player-status", self._on_frame, hz=4,
+            )
+            log.info("Started (push mode)")
+        else:
+            self._thread = threading.Thread(
+                target=self._poll_loop, daemon=True, name="player-status",
+            )
+            self._thread.start()
+            log.info("Started (poll mode)")
 
     def stop(self):
         self._running = False
+        if self._subscription is not None:
+            self._subscription.enabled = False
+            self._subscription = None
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
         log.info("Stopped")
 
     # ------------------------------------------------------------------
-    # Poll loop (multi-rate)
+    # Push mode (FrameDistributor callback)
+    # ------------------------------------------------------------------
+
+    def _on_frame(self, frame: np.ndarray, timestamp: float):
+        """Callback from FrameDistributor — runs on the capture thread."""
+        if not self._running:
+            return
+        if not getattr(self._config, "player_status_enabled", True):
+            return
+
+        # Idle mode: skip most ticks when nothing is changing
+        idle_threshold = getattr(self._config, "ocr_idle_threshold", 50)
+        idle_mult = getattr(self._config, "ocr_idle_multiplier", 5)
+        if self._idle_ticks >= idle_threshold and self._tick_count % idle_mult != 0:
+            self._tick_count += 1
+            return
+
+        try:
+            self._game_origin = self._distributor.game_origin
+            self._process_image(frame)
+        except Exception as e:
+            log.error("Tick error: %s", e)
+        self._tick_count += 1
+
+    # ------------------------------------------------------------------
+    # Legacy poll mode
     # ------------------------------------------------------------------
 
     def _capture_window(self, hwnd):
@@ -209,14 +259,13 @@ class PlayerStatusDetector:
         return self._capturer.capture_window(hwnd, geometry=self._game_geometry)
 
     def _poll_loop(self):
-        tick = 0
         while self._running:
             try:
                 if getattr(self._config, "player_status_enabled", True):
-                    self._tick(tick)
+                    self._tick_legacy()
             except Exception as e:
                 log.error("Tick error: %s", e)
-            tick += 1
+            self._tick_count += 1
             # Idle mode: multiply poll interval when no change detected
             idle_threshold = getattr(self._config, "ocr_idle_threshold", 50)
             idle_mult = getattr(self._config, "ocr_idle_multiplier", 5)
@@ -225,7 +274,8 @@ class PlayerStatusDetector:
             else:
                 time.sleep(POLL_INTERVAL)
 
-    def _tick(self, tick_count: int):
+    def _tick_legacy(self):
+        """Legacy poll tick: discover window, capture, then process."""
         # Auto-discover game window
         if not self._game_hwnd or not _platform.is_window_visible(self._game_hwnd):
             self._game_hwnd = None
@@ -247,6 +297,16 @@ class PlayerStatusDetector:
         image = self._capture_window(self._game_hwnd)
         if image is None:
             return
+
+        self._process_image(image)
+
+    # ------------------------------------------------------------------
+    # Core image processing (shared by both modes)
+    # ------------------------------------------------------------------
+
+    def _process_image(self, image: np.ndarray):
+        """Process a captured game frame: template match + bar reads."""
+        tick_count = self._tick_count
 
         # --- Template detection (every TEMPLATE_TICKS or when lost) ---
         do_template = (tick_count % TEMPLATE_TICKS == 0) or self._last_pos is None

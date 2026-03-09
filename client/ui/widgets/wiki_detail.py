@@ -1192,6 +1192,7 @@ class WikiDetailView(QWidget):
         self._nexus_base_url = nexus_base_url
         self._data_client = data_client
         self._image_loaded.connect(self._on_image_loaded)
+        self._article_sections: list[DataSection] = []
 
         # Main vertical layout: infobox panel → description → article sections
         self._main_layout = QVBoxLayout(self)
@@ -1417,6 +1418,8 @@ class WikiDetailView(QWidget):
 
     def _add_article_section(self, section: QWidget):
         """Add a widget to the bottom of the main layout."""
+        if isinstance(section, DataSection):
+            self._article_sections.append(section)
         self._main_layout.addWidget(section)
 
     # --- Market Prices section ---

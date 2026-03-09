@@ -556,16 +556,14 @@ class TrackerPage(QWidget):
                 remaining = -1  # not started
             entries.append((m, remaining))
 
-        # Sort: on-cooldown (asc), ready, idle, disabled custom dailies at bottom
+        # Sort: on-cooldown (asc), ready+idle by order, disabled at bottom
         def sort_key(pair):
             m, r = pair
             if m.get("is_custom") and not m.get("enabled", True):
-                return (3, m.get("order", 0))
+                return (2, m.get("order", 0))
             if r > 0:
                 return (0, r)
-            if r == 0:
-                return (1, m.get("order", 0))
-            return (2, m.get("order", 0))
+            return (1, m.get("order", 0))
 
         def reorder_group(pair):
             m, r = pair
@@ -646,6 +644,7 @@ class TrackerPage(QWidget):
                 name_item.setData(Qt.ItemDataRole.UserRole, mid)
                 self._missions_table.setItem(row, COL_NAME, name_item)
             else:
+                self._missions_table.removeCellWidget(row, COL_NAME)
                 name_item = QTableWidgetItem(name)
                 name_item.setData(Qt.ItemDataRole.UserRole, mid)
                 self._missions_table.setItem(row, COL_NAME, name_item)

@@ -144,8 +144,15 @@ UPDATE = (
 )
 
 
+_icon_cache: dict[tuple[str, str, int], QIcon] = {}
+
+
 def svg_icon(svg_elements: str, color: str, size: int = 24) -> QIcon:
     """Render inline SVG elements to a QIcon with the given fill color."""
+    key = (svg_elements, color, size)
+    cached = _icon_cache.get(key)
+    if cached is not None:
+        return cached
     resolved = svg_elements.replace("currentColor", color)
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -160,11 +167,20 @@ def svg_icon(svg_elements: str, color: str, size: int = 24) -> QIcon:
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
-    return QIcon(pixmap)
+    icon = QIcon(pixmap)
+    _icon_cache[key] = icon
+    return icon
+
+
+_pixmap_cache: dict[tuple[str, str, int], QPixmap] = {}
 
 
 def svg_pixmap(svg_elements: str, color: str, size: int = 24) -> QPixmap:
     """Render inline SVG elements to a QPixmap with the given fill color."""
+    key = (svg_elements, color, size)
+    cached = _pixmap_cache.get(key)
+    if cached is not None:
+        return cached
     resolved = svg_elements.replace("currentColor", color)
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -179,6 +195,7 @@ def svg_pixmap(svg_elements: str, color: str, size: int = 24) -> QPixmap:
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
+    _pixmap_cache[key] = pixmap
     return pixmap
 
 

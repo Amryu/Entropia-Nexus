@@ -8,14 +8,17 @@ from urllib.parse import quote as _url_quote
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QScrollArea, QSizePolicy, QFrame, QApplication,
+    QStyle, QStyleOption,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QSize
+from PyQt6.QtGui import QPainter
 
 from ..theme import (
     PRIMARY, SECONDARY, HOVER, BORDER, ACCENT, TEXT, TEXT_MUTED,
     MAIN_DARK, PAGE_HEADER_OBJECT_NAME,
 )
-from ...data.wiki_columns import LEAF_DATA_MAP, LEAF_TOGGLE_MAP, COLUMN_DEFS, get_item_name
+from ..icons import svg_icon
+from ...data.wiki_columns import LEAF_DATA_MAP, LEAF_TOGGLE_MAP, COLUMN_DEFS, DEFAULT_COLUMNS, get_item_name
 
 # ---------------------------------------------------------------------------
 # Category data — mirrors the website overview pages
@@ -314,6 +317,215 @@ def _section_title(text: str) -> QLabel:
 
 
 # ---------------------------------------------------------------------------
+# Table-of-contents sidebar for detail views
+# ---------------------------------------------------------------------------
+
+TOC_WIDTH = 150
+
+# --- SVG icon data for TOC entries (mirrors detail_overlay.py tab icons) ---
+
+_ICON_INFO = (
+    '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'
+    'm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>'
+)
+_ICON_ACQUIRE = (
+    '<path d="M18 6h-2c0-2.21-1.79-4-4-4S8 3.79 8 6H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2'
+    'h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2z"/>'
+)
+_ICON_USAGE = (
+    '<path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9'
+    ' 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1'
+    ' .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/>'
+)
+_ICON_MATURITY = (
+    '<path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7'
+    'v2zM7 7v2h14V7H7z"/>'
+)
+_ICON_LOOT = (
+    '<path d="M20 6h-2.18c.11-.31.18-.65.18-1a2.996 2.996 0 0 0-5.5-1.65l-.5.67-.5-.68'
+    'C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99'
+    ' 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2z"/>'
+)
+_ICON_LOCATION = (
+    '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z'
+    'm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>'
+)
+_ICON_GLOBE = (
+    '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'
+    'm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2'
+    ' 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55'
+    ' 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97'
+    '-2.1 5.39z"/>'
+)
+_ICON_STEPS = (
+    '<path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7'
+    'v2zM7 7v2h14V7H7z"/>'
+)
+_ICON_REWARDS = (
+    '<path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24'
+    'l5.46 4.73L5.82 21z"/>'
+)
+_ICON_OFFERS = (
+    '<path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
+)
+_ICON_UNLOCK = (
+    '<path d="M12 17a2 2 0 002-2 2 2 0 00-2-2 2 2 0 00-2 2 2 2 0 002 2m6-9a2 2 0 012'
+    ' 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V10a2 2 0 012-2h9V6a3 3 0 00-3-3 3 3 0 00-3 3H7'
+    'a5 5 0 015-5 5 5 0 015 5v2h1z"/>'
+)
+_ICON_EFFECTS = (
+    '<path d="M12 2 L14 9 L21 9 L15.5 13.5 L17.5 21 L12 16.5 L6.5 21 L8.5 13.5 L3 9 L10 9 Z"/>'
+)
+_ICON_MARKET = (
+    '<path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zM16.2 13H19v6h-2.8v-6z"/>'
+)
+_ICON_TIERS = (
+    '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'
+    'm0 18.5c-4.69 0-8.5-3.81-8.5-8.5S7.31 3.5 12 3.5s8.5 3.81 8.5 8.5-3.81 8.5-8.5 8.5z"/>'
+    '<circle cx="12" cy="12" r="4"/>'
+    '<path d="M14.83 4.1 A10 10 0 0 1 19.9 9.17 L15.17 10.83 A4 4 0 0 0 13.17 8.83 Z"/>'
+    '<path d="M9.17 19.9 A10 10 0 0 1 4.1 14.83 L8.83 13.17 A4 4 0 0 0 10.83 15.17 Z"/>'
+    '<path d="M19.9 14.83 A10 10 0 0 1 14.83 19.9 L13.17 15.17 A4 4 0 0 0 15.17 13.17 Z"/>'
+    '<path d="M4.1 9.17 A10 10 0 0 1 9.17 4.1 L10.83 8.83 A4 4 0 0 0 8.83 10.83 Z"/>'
+)
+_ICON_BLUEPRINT = (
+    '<rect x="3" y="3" width="18" height="18" rx="2" fill="none"'
+    ' stroke="currentColor" stroke-width="1.5"/>'
+    '<path d="M7 8h4v4H7z" fill="currentColor"/>'
+    '<path d="M11 10h5M14 10v4M14 14h3M8 12v5M8 17h4" fill="none"'
+    ' stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'
+)
+
+# Map section titles → overlay-consistent SVG icon data
+_SECTION_ICON_MAP: dict[str, str] = {
+    "Details": _ICON_INFO,
+    "Market Prices": _ICON_MARKET,
+    "Locations": _ICON_LOCATION,
+    "Maturities": _ICON_MATURITY,
+    "Loots": _ICON_LOOT,
+    "Globals": _ICON_GLOBE,
+    "Acquisition": _ICON_ACQUIRE,
+    "Drops": _ICON_LOOT,
+    "Usage": _ICON_USAGE,
+    "Tiers": _ICON_TIERS,
+    "Construction": _ICON_BLUEPRINT,
+    "Offers": _ICON_OFFERS,
+    "Steps": _ICON_STEPS,
+    "Rewards": _ICON_REWARDS,
+    "Dependencies": _ICON_STEPS,
+    "Unlocked By": _ICON_UNLOCK,
+    "Skill Unlocks": _ICON_UNLOCK,
+    "Skill Components": _ICON_MATURITY,
+    "Affected Professions": _ICON_MATURITY,
+    "Pet Skills": _ICON_EFFECTS,
+    "Set Pieces": _ICON_TIERS,
+    "Facilities": _ICON_LOCATION,
+    "Waves": _ICON_MATURITY,
+    "Spawns": _ICON_LOCATION,
+}
+
+
+class _TocEntry(QPushButton):
+    """Single entry in the table-of-contents sidebar."""
+
+    def __init__(self, title: str, section, parent=None):
+        super().__init__(parent)
+        self.section = section
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(title)
+        self.setFixedHeight(28)
+
+        svg_data = _SECTION_ICON_MAP.get(title, _ICON_INFO)
+        self.setIcon(svg_icon(svg_data, TEXT_MUTED, 14))
+        self.setIconSize(QSize(14, 14))
+        self.setText(title)
+        self.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: transparent;"
+            f"  border: none;"
+            f"  color: {TEXT_MUTED};"
+            f"  font-size: 12px;"
+            f"  text-align: left;"
+            f"  padding: 2px 8px 2px 10px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: {HOVER};"
+            f"  color: {TEXT};"
+            f"}}"
+        )
+
+
+class _TocPanel(QWidget):
+    """Table-of-contents sidebar showing article sections for detail views."""
+
+    entry_clicked = pyqtSignal(object)  # DataSection
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(TOC_WIDTH)
+        self.setObjectName("wikiTocPanel")
+        self.setStyleSheet(
+            f"#wikiTocPanel {{"
+            f"  background-color: {MAIN_DARK};"
+            f"  border-right: 1px solid {BORDER};"
+            f"}}"
+        )
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 12, 0, 12)
+        self._layout.setSpacing(0)
+
+        header = QLabel("Contents")
+        header.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; font-weight: bold;"
+            f" letter-spacing: 0.5px; padding: 0 10px 6px 10px;"
+            f" background: transparent;"
+        )
+        self._layout.addWidget(header)
+
+        self._entries_layout = QVBoxLayout()
+        self._entries_layout.setContentsMargins(0, 0, 0, 0)
+        self._entries_layout.setSpacing(0)
+        self._layout.addLayout(self._entries_layout)
+
+        self._layout.addStretch(1)
+
+    def set_sections(self, sections):
+        """Build TOC entries from a list of DataSection widgets.
+
+        A "Details" entry is prepended that scrolls to the top of the article.
+        """
+        self.clear()
+        # "Details" entry — scrolls to top (section=None signals scroll-to-top)
+        details_entry = _TocEntry("Details", None, self)
+        details_entry.clicked.connect(lambda _: self.entry_clicked.emit(None))
+        self._entries_layout.addWidget(details_entry)
+
+        for section in sections:
+            title = getattr(section, "_title_text", "")
+            if not title:
+                continue
+            entry = _TocEntry(title, section, self)
+            entry.clicked.connect(lambda _, s=section: self.entry_clicked.emit(s))
+            self._entries_layout.addWidget(entry)
+
+    def clear(self):
+        """Remove all TOC entries."""
+        while self._entries_layout.count():
+            item = self._entries_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+    def paintEvent(self, event):
+        """Required for QSS background on plain QWidget subclasses."""
+        opt = QStyleOption()
+        opt.initFrom(self)
+        p = QPainter(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, p, self)
+        p.end()
+
+
+# ---------------------------------------------------------------------------
 # Search results view (shown when user presses Enter in title-bar search)
 # ---------------------------------------------------------------------------
 
@@ -442,6 +654,7 @@ class WikiPage(QWidget):
         self._current_table_view = None  # active WikiTableView (if any)
         self._leaf_items: dict[str, list[dict]] = {}  # title → fetched items
         self._precomputed_data: dict[str, tuple[list, list, list]] = {}  # title → (items, cache, numeric)
+        self._precomputed_subsets: dict[str, tuple] = {}  # title → (col_defs, cache, numeric)
         self._cached_leaf_views: dict[str, QWidget] = {}    # title → container
         self._cached_table_refs = {}                         # title → WikiTableView
         self._toggle_states: dict[str, str] = {}             # title → "a" or "b"
@@ -466,11 +679,22 @@ class WikiPage(QWidget):
         self._toolbar.hide()
         root.addWidget(self._toolbar)
 
-        # Scrollable content area
+        # Content row: TOC sidebar + scrollable content area
+        content_row = QHBoxLayout()
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(0)
+
+        self._toc_panel = _TocPanel()
+        self._toc_panel.entry_clicked.connect(self._on_toc_entry_clicked)
+        self._toc_panel.hide()
+        content_row.addWidget(self._toc_panel)
+
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        root.addWidget(self._scroll)
+        content_row.addWidget(self._scroll)
+
+        root.addLayout(content_row)
 
         # Content widget (rebuilt on navigation)
         self._content: QWidget | None = None
@@ -491,11 +715,16 @@ class WikiPage(QWidget):
         self._sync_column_prefs_from_server()
 
         # Warm up all tables in the background
+        self._warmup_stop = threading.Event()
         threading.Thread(
             target=self._warmup_all, daemon=True, name="wiki-warmup"
         ).start()
 
     # --- Public API ---
+
+    def cleanup(self):
+        """Stop background warmup thread."""
+        self._warmup_stop.set()
 
     def navigate_to(self, path: list[str]):
         """Navigate to a path and emit navigation_changed."""
@@ -554,6 +783,7 @@ class WikiPage(QWidget):
     def _navigate_internal(self, path: list[str]):
         self._path = list(path)
         self._update_breadcrumbs()
+        self._toc_panel.hide()
 
         if not path:
             self._show_overview()
@@ -660,14 +890,29 @@ class WikiPage(QWidget):
         leaf_title = title
         ptid = page_type_id
         prefetched = self._leaf_items.get(title)
+        column_prefs = (self._config.wiki_column_prefs or {}) if self._config else {}
 
         def fetch():
-            from ..widgets.wiki_table import build_column_cache
+            from ..widgets.wiki_table import build_column_cache, build_subset_cache
 
             items = prefetched if prefetched else getattr(self._data_client, method_name)()
             all_defs = COLUMN_DEFS.get(ptid, {})
             col_defs_list = list(all_defs.values())
             cache, numeric = build_column_cache(items, col_defs_list)
+
+            # Pre-compute the active-column subset so the main thread
+            # only needs to build widgets, not process data.
+            prefs = column_prefs.get(ptid)
+            if prefs:
+                active_keys = list(prefs)
+            else:
+                active_keys = list(DEFAULT_COLUMNS.get(ptid, []))
+            all_type_keys = list(all_defs.keys())
+            subset = build_subset_cache(
+                cache, numeric, all_type_keys, active_keys, all_defs,
+            )
+            self._precomputed_subsets[leaf_title] = subset
+
             self._data_loaded.emit(leaf_title, items, cache, numeric)
 
         threading.Thread(target=fetch, daemon=True, name=f"wiki-{ptid}").start()
@@ -692,8 +937,6 @@ class WikiPage(QWidget):
         table_view.new_clicked.connect(
             lambda t=title: self._on_new_clicked(t)
         )
-        table_view.set_data(items, cache, numeric)
-
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(16, 8, 16, 16)
@@ -710,6 +953,9 @@ class WikiPage(QWidget):
             self._alt_table_refs[title] = alt_table
 
         layout.addWidget(table_view, 1)
+
+        subset_result = self._precomputed_subsets.pop(title, None)
+        table_view.set_data(items, cache, numeric, subset_result=subset_result)
 
         self._cached_leaf_views[title] = container
         self._cached_table_refs[title] = table_view
@@ -739,7 +985,10 @@ class WikiPage(QWidget):
 
         # If table already exists, refresh it in-place
         if title in self._cached_table_refs:
-            self._cached_table_refs[title].set_data(items, full_cache, full_numeric)
+            subset = self._precomputed_subsets.pop(title, None)
+            self._cached_table_refs[title].set_data(
+                items, full_cache, full_numeric, subset_result=subset,
+            )
             # Also refresh the alternate table if it was populated (e.g. re-derive maturities)
             toggle_config = LEAF_TOGGLE_MAP.get(title)
             if toggle_config and title in self._alt_table_refs and title in self._alt_items:
@@ -1094,6 +1343,31 @@ class WikiPage(QWidget):
         self._swap_content(container)
         self._current_table_view = None
 
+        # Populate TOC sidebar from the detail view's article sections
+        if hasattr(detail_view, "_article_sections") and detail_view._article_sections:
+            self._toc_panel.set_sections(detail_view._article_sections)
+            self._toc_panel.show()
+
+    def _on_toc_entry_clicked(self, section):
+        """Expand the section (if collapsed) and scroll its header into view."""
+        if section is None:
+            # "Details" entry — scroll to top
+            self._scroll.verticalScrollBar().setValue(0)
+            return
+        if not section._expanded:
+            section.toggle()
+        # Scroll the section header to the top of the viewport.
+        # ensureWidgetVisible centres the widget; instead, compute the
+        # header's position and scroll there directly.
+        def scroll_to_header():
+            header = section._header
+            # Map the header's top-left to the scroll area's widget coords,
+            # then offset upward by half the inter-section gap for breathing room.
+            pos = header.mapTo(self._scroll.widget(), header.rect().topLeft())
+            self._scroll.verticalScrollBar().setValue(max(0, pos.y() - 6))
+        # Small delay so layout updates after toggle before scrolling
+        QTimer.singleShot(50, scroll_to_header)
+
     def _show_loading_placeholder(self, title: str):
         """Show 'Loading...' placeholder while fetching data."""
         container = QWidget()
@@ -1194,10 +1468,14 @@ class WikiPage(QWidget):
         contends with the UI thread via the GIL.
         """
         import time
-        from ..widgets.wiki_table import build_column_cache
+        from ..widgets.wiki_table import build_column_cache, build_subset_cache
 
-        while True:
+        stop = self._warmup_stop
+        while not stop.is_set():
+            column_prefs = (self._config.wiki_column_prefs or {}) if self._config else {}
             for title, (method_name, page_type_id) in LEAF_DATA_MAP.items():
+                if stop.is_set():
+                    return
                 try:
                     items = getattr(self._data_client, method_name)()
                     old_items = self._leaf_items.get(title)
@@ -1210,6 +1488,13 @@ class WikiPage(QWidget):
                             col_defs_list = list(all_defs.values())
                             cache, numeric = build_column_cache(items, col_defs_list)
                             self._precomputed_data[title] = (items, cache, numeric)
+                            # Pre-compute subset for the active columns
+                            prefs = column_prefs.get(page_type_id)
+                            active_keys = list(prefs) if prefs else list(DEFAULT_COLUMNS.get(page_type_id, []))
+                            all_type_keys = list(all_defs.keys())
+                            self._precomputed_subsets[title] = build_subset_cache(
+                                cache, numeric, all_type_keys, active_keys, all_defs,
+                            )
                             self._data_loaded.emit(title, items, cache, numeric)
                 except Exception:
                     pass
@@ -1220,7 +1505,7 @@ class WikiPage(QWidget):
             # Invalidate data_client cache so next cycle fetches fresh data
             self._data_client.invalidate_cache()
 
-            time.sleep(900)  # 15 minutes
+            stop.wait(timeout=900)  # 15 minutes
 
     # --- Card grid builder ---
 

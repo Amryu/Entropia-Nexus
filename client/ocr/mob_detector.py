@@ -26,6 +26,7 @@ except ImportError:
     cv2 = None
 
 from ..core.constants import EVENT_MOB_TARGET_CHANGED
+from ..core.gil_yield import GilYielder
 from ..core.logger import get_logger
 
 log = get_logger("MobDetector")
@@ -92,12 +93,18 @@ class MobNameDetector:
 
     Uses HP bar color detection as anchor points, then OCRs the text above.
     Identifies the locked target by detecting the solid chevron below the HP bar.
+
+    Supports two modes:
+    - **Push mode** (FrameDistributor): subscribes with divisor=5 (2 Hz).
+      Because HSV+contour+OCR can exceed 50 ms, the distributor callback
+      drops the frame into a single-slot queue and a worker thread processes it.
+    - **Legacy poll mode** (ScreenCapturer): runs its own thread with
+      sleep-based polling.
     """
 
-    def __init__(self, config, event_bus, capturer, recognizer):
+    def __init__(self, config, event_bus, frame_source, recognizer):
         self._config = config
         self._event_bus = event_bus
-        self._capturer = capturer
         self._recognizer = recognizer
         self._running = False
         self._thread = None
@@ -108,6 +115,21 @@ class MobNameDetector:
         self._known_maturities: list[str] = []
         self._game_hwnd = None
         self._game_geometry: tuple[int, int, int, int] | None = None
+
+        # Detect frame source type
+        self._distributor = None
+        self._subscription = None
+        self._capturer = None
+
+        from .frame_distributor import FrameDistributor
+        if isinstance(frame_source, FrameDistributor):
+            self._distributor = frame_source
+        else:
+            self._capturer = frame_source
+
+        # Worker queue for push mode (single-slot, newest-wins)
+        self._frame_slot: np.ndarray | None = None
+        self._frame_cond = threading.Condition()
 
     def set_known_mobs(self, mob_names: list[str]):
         """Set known mob names for fuzzy matching (from Nexus API)."""
@@ -127,14 +149,32 @@ class MobNameDetector:
         if self._running:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="mob-detector"
-        )
-        self._thread.start()
-        log.info("Started (nameplate detection)")
+
+        if self._distributor is not None:
+            # Worker thread processes frames from the single-slot queue
+            self._thread = threading.Thread(
+                target=self._worker_loop, daemon=True, name="mob-detector",
+            )
+            self._thread.start()
+            self._subscription = self._distributor.subscribe(
+                "mob-detector", self._on_frame, hz=2,
+            )
+            log.info("Started (push mode, worker thread)")
+        else:
+            self._thread = threading.Thread(
+                target=self._poll_loop, daemon=True, name="mob-detector",
+            )
+            self._thread.start()
+            log.info("Started (poll mode)")
 
     def stop(self):
         self._running = False
+        if self._subscription is not None:
+            self._subscription.enabled = False
+            self._subscription = None
+        # Wake the worker thread so it can exit
+        with self._frame_cond:
+            self._frame_cond.notify()
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
@@ -194,6 +234,36 @@ class MobNameDetector:
         # Fallback: largest bar (likely closest mob / main target)
         return max(nameplates, key=lambda n: n.width)
 
+    # ------------------------------------------------------------------
+    # Push mode (FrameDistributor)
+    # ------------------------------------------------------------------
+
+    def _on_frame(self, frame: np.ndarray, timestamp: float):
+        """Callback from FrameDistributor — drops frame into worker queue."""
+        with self._frame_cond:
+            self._frame_slot = frame  # newest-wins: overwrite any pending frame
+            self._frame_cond.notify()
+
+    def _worker_loop(self):
+        """Worker thread: waits for frames from the distributor callback."""
+        while self._running:
+            with self._frame_cond:
+                while self._frame_slot is None and self._running:
+                    self._frame_cond.wait(timeout=1.0)
+                if not self._running:
+                    break
+                frame = self._frame_slot
+                self._frame_slot = None
+
+            try:
+                self._process_image(frame)
+            except Exception as e:
+                log.error("Error: %s", e)
+
+    # ------------------------------------------------------------------
+    # Legacy poll mode
+    # ------------------------------------------------------------------
+
     def _poll_loop(self):
         while self._running:
             try:
@@ -211,6 +281,14 @@ class MobNameDetector:
         if image is None:
             return
 
+        self._process_image(image)
+
+    # ------------------------------------------------------------------
+    # Core image processing (shared by both modes)
+    # ------------------------------------------------------------------
+
+    def _process_image(self, image: np.ndarray):
+        """Process a captured game frame: detect nameplates and publish."""
         target = self.get_locked_target(image)
         if not target or not target.mob_name:
             return
@@ -485,11 +563,13 @@ class MobNameDetector:
         text_lower = text.lower()
         best_match = None
         best_score = 0
+        yielder = GilYielder()
 
         for candidate in candidates:
             score = SequenceMatcher(None, text_lower, candidate.lower()).ratio()
             if score > best_score:
                 best_score = score
                 best_match = candidate
+            yielder.yield_if_needed()
 
         return best_match, best_score

@@ -222,6 +222,34 @@ class DataClient:
     def get_mob_loots(self, mob_name: str) -> list[dict]:
         return self._get_cached(f"/mobloots?Mob={mob_name}")
 
+    def get_mob_globals(self, mob_name: str, period: str = "30d",
+                        *, force_refresh: bool = False) -> dict:
+        """Fetch global loot event stats for a mob from the frontend API."""
+        from urllib.parse import quote
+        endpoint = f"/api/globals/target/{quote(mob_name, safe='')}?period={period}"
+
+        now = time.time()
+        if not force_refresh:
+            if endpoint in self._memory_cache:
+                cached_time, cached_data = self._memory_cache[endpoint]
+                if now - cached_time < CACHE_TTL_SECONDS:
+                    return cached_data
+
+        timeout = 25 if period == "all" else 15
+        try:
+            resp = self._session.get(
+                f"{self._frontend_url}{endpoint}", timeout=timeout,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self._memory_cache[endpoint] = (now, data)
+            return data
+        except Exception as e:
+            log.warning("Failed to fetch mob globals for '%s': %s", mob_name, e)
+            if endpoint in self._memory_cache:
+                return self._memory_cache[endpoint][1]
+            return {}
+
     def get_acquisition(self, item_name: str) -> dict:
         """Fetch acquisition data for an item (vendors, loot, blueprints, etc.).
 

@@ -6,6 +6,7 @@ import urllib.error
 from difflib import SequenceMatcher
 from typing import Optional
 
+from ..core.gil_yield import GilYielder
 from ..core.logger import get_logger
 
 log_skills = get_logger("SkillMatcher")
@@ -106,11 +107,13 @@ class SkillMatcher:
         # Fuzzy match
         best_match = None
         best_ratio = 0.0
+        yielder = GilYielder()
         for skill in self._skills:
             ratio = SequenceMatcher(None, ocr_lower, skill["name"].lower()).ratio()
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_match = skill
+            yielder.yield_if_needed()
 
         if best_ratio >= threshold:
             return best_match
@@ -231,11 +234,13 @@ class RankVerifier:
         # Fuzzy match
         best_name = None
         best_ratio = 0.0
+        yielder = GilYielder()
         for name in self._rank_names:
             ratio = SequenceMatcher(None, ocr_lower, name.lower()).ratio()
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_name = name
+            yielder.yield_if_needed()
 
         if best_ratio >= threshold:
             log_ranks.debug("Rank OCR '%s' matched to '%s' (%.2f)", ocr_text, best_name, best_ratio)

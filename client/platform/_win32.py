@@ -32,6 +32,7 @@ _WS_EX_NOACTIVATE = 0x08000000
 _WS_EX_LAYERED = 0x00080000
 _WS_EX_TRANSPARENT = 0x00000020
 
+_DWMWA_CLOAK = 13
 _DWMWA_CLOAKED = 14
 
 _FLASHW_ALL = 0x00000003
@@ -250,6 +251,25 @@ class Win32Backend:
         _user32.EnumWindows(WNDENUMPROC(_enum_cb), 0)
         return found
 
+    def cloak_window(self, wid: int) -> None:
+        """Cloak a window via DWM — hidden from the user but still composited.
+
+        Used after winId() so the HWND gets its frameless/translucent styles
+        composited by DWM without ever being visible.  Call uncloak_window()
+        when the overlay is ready to appear.
+        """
+        val = ctypes.c_bool(True)
+        _dwmapi.DwmSetWindowAttribute(
+            wid, _DWMWA_CLOAK, ctypes.byref(val), ctypes.sizeof(val),
+        )
+
+    def uncloak_window(self, wid: int) -> None:
+        """Remove DWM cloak — the window becomes visible immediately."""
+        val = ctypes.c_bool(False)
+        _dwmapi.DwmSetWindowAttribute(
+            wid, _DWMWA_CLOAK, ctypes.byref(val), ctypes.sizeof(val),
+        )
+
     # --- Decoration ---
 
     def enable_shadow(self, wid: int) -> bool:
@@ -262,6 +282,20 @@ class Win32Backend:
             return False
 
     # --- Hotkeys ---
+
+    def preinit_hotkeys(self) -> None:
+        """Eagerly initialise the keyboard library's key-name tables.
+
+        The first ``keyboard.hook()`` call triggers ``_setup_name_tables``
+        which iterates every virtual-key code via ``ToUnicode`` — taking ~0.6s.
+        Calling ``keyboard._winkeyboard.init()`` once at startup moves that
+        cost off the focus-poll timer.
+        """
+        try:
+            from keyboard import _winkeyboard
+            _winkeyboard.init()
+        except Exception:
+            pass
 
     def register_hotkey_hook(self, callback) -> bool:
         try:
@@ -284,6 +318,51 @@ class Win32Backend:
             return True
         except Exception:
             return False
+
+    # --- Window suppression ---
+
+    def suppress_new_windows(self):
+        """Context manager that hides any new windows created during its scope.
+
+        Used to prevent V8/MiniRacer DLL initialization from flashing
+        temporary native windows.  Installs a WH_CBT hook that intercepts
+        HCBT_CREATEWND and immediately hides the window via ShowWindow(SW_HIDE).
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _suppress():
+            pid = os.getpid()
+            known: set[int] = set()
+
+            # Snapshot existing windows
+            WNDENUMPROC = ctypes.WINFUNCTYPE(
+                ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p,
+            )
+            def _enum(hwnd, _lp):
+                lpdw = ctypes.wintypes.DWORD()
+                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw))
+                if lpdw.value == pid:
+                    known.add(hwnd)
+                return True
+            _user32.EnumWindows(WNDENUMPROC(_enum), 0)
+
+            yield
+
+            # Hide any new windows that appeared during the scope
+            new_wins: list[int] = []
+            def _enum2(hwnd, _lp):
+                lpdw = ctypes.wintypes.DWORD()
+                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw))
+                if lpdw.value == pid and hwnd not in known:
+                    new_wins.append(hwnd)
+                return True
+            _user32.EnumWindows(WNDENUMPROC(_enum2), 0)
+            for hwnd in new_wins:
+                _user32.ShowWindow(hwnd, 0)  # SW_HIDE
+                _user32.DestroyWindow(hwnd)
+
+        return _suppress()
 
     # --- Desktop integration ---
 

@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from ..api.nexus_client import RateLimitError, ServerError
 from ..chat_parser.models import GlobalEvent
 from ..core.constants import EVENT_CATCHUP_COMPLETE, EVENT_GLOBAL, EVENT_HISTORICAL_IMPORT_COMPLETE, EVENT_INGESTION_STATUS, EVENT_MARKET_PRICE_SCAN, EVENT_REPARSE_COMPLETE, EVENT_TRADE_CHAT
+from ..core.gil_yield import GilYielder
 from ..core.logger import get_logger
 
 log = get_logger("Ingestion.Upload")
@@ -66,7 +67,7 @@ class IngestionUploader:
         self._global_buffer: deque[dict] = deque()
         self._trade_buffer: deque[dict] = deque()
         self._market_price_buffer: deque[dict] = deque()
-        self._market_price_last_seen: dict[str, datetime] = {}  # 1hr dedup
+        self._market_price_last_seen: dict[str, tuple[datetime, float]] = {}  # 1hr dedup: name -> (time, confidence)
         self._lock = threading.Lock()
 
         self._stop_event = threading.Event()
@@ -225,23 +226,33 @@ class IngestionUploader:
         if "ocr_confidence" in clean:
             clean["confidence"] = clean.pop("ocr_confidence")
 
-        # Drop low-confidence scans — not worth sending to the server.
+        # Drop very-low-confidence scans — not worth sending to the server.
+        # The server applies its own quality threshold (0.85) for snapshot
+        # finalization but accepts lower submissions to track per-user quality.
         # Manually reviewed submissions bypass this since the user corrected them.
         MIN_SUBMISSION_CONFIDENCE = 0.60
+        CONFIDENCE_RESEND_THRESHOLD = 0.02  # resend if confidence improved by ≥2%
         now = datetime.now()
+        confidence = clean.get("confidence", 0)
         is_reviewed = bool(clean.get("manually_reviewed"))
-        if not is_reviewed and clean.get("confidence", 0) < MIN_SUBMISSION_CONFIDENCE:
+        if not is_reviewed and confidence < MIN_SUBMISSION_CONFIDENCE:
             log.debug("Dropping low-confidence scan for '%s' (%.2f < %.2f)",
-                       name, clean.get("confidence", 0), MIN_SUBMISSION_CONFIDENCE)
+                       name, confidence, MIN_SUBMISSION_CONFIDENCE)
             return
         with self._lock:
-            # 1hr dedup: skip if same item was buffered within the last hour.
+            # 1hr dedup: skip if same item was buffered within the last hour,
+            # unless the new scan has noticeably higher confidence (≥2% better).
             # Manually reviewed submissions always bypass dedup since they
             # carry corrected values that must reach the server.
             last = self._market_price_last_seen.get(name)
-            if not is_reviewed and last and (now - last) < timedelta(hours=1):
-                return
-            self._market_price_last_seen[name] = now
+            if not is_reviewed and last:
+                last_time, last_confidence = last
+                if (now - last_time) < timedelta(hours=1):
+                    if confidence < last_confidence + CONFIDENCE_RESEND_THRESHOLD:
+                        return
+                    log.info("Resending '%s' — confidence improved %.2f → %.2f",
+                             name, last_confidence, confidence)
+            self._market_price_last_seen[name] = (now, confidence)
             self._market_price_buffer.append(clean)
         if self._live:
             self._flush_requested.set()
@@ -275,31 +286,25 @@ class IngestionUploader:
             return
 
         def _rebuffer():
-            import time as _time
-
             with self._lock:
                 self._global_buffer.clear()
                 self._trade_buffer.clear()
                 self._recent_hashes.clear()
 
             # Stream globals from DB — never hold entire table in RAM.
-            # time.sleep(0) yields GIL so UI/keyboard hook stays responsive.
             global_count = 0
-            last_yield = _time.monotonic()
+            yielder = GilYielder()
             for g in self._db.iter_globals():
                 occurrence = self._assign_occurrence(g, datetime.fromisoformat(g["timestamp"]))
                 g["occurrence"] = occurrence
                 with self._lock:
                     self._global_buffer.append(g)
                 global_count += 1
-                if _time.monotonic() - last_yield > 0.008:
-                    _time.sleep(0)
-                    last_yield = _time.monotonic()
+                yielder.yield_if_needed()
 
             # Stream trades — filter inline, append matches directly.
             trade_count = 0
             now = datetime.now()
-            last_yield = _time.monotonic()
             for t in self._db.iter_trades(max_age_hours=24):
                 if not (TRADE_KEYWORDS_RE.search(t["message"]) or ITEM_LINK_RE.search(t["message"])):
                     continue
@@ -308,9 +313,7 @@ class IngestionUploader:
                 with self._lock:
                     self._trade_buffer.append(t)
                 trade_count += 1
-                if _time.monotonic() - last_yield > 0.008:
-                    _time.sleep(0)
-                    last_yield = _time.monotonic()
+                yielder.yield_if_needed()
 
             log.info("Re-buffered %d globals and %d trades from local DB for upload",
                      global_count, trade_count)

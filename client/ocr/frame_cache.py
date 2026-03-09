@@ -1,4 +1,8 @@
-"""Shared frame cache for OCR detectors.
+"""Shared frame cache for OCR detectors (DEPRECATED).
+
+Superseded by ``frame_distributor.FrameDistributor`` which provides a
+push-based single-capture-thread architecture.  This module is kept for
+backward compatibility with any code that still references SharedFrameCache.
 
 Wraps a single ScreenCapturer and caches the latest window-capture result
 with a timestamp. Multiple detectors polling at different rates can

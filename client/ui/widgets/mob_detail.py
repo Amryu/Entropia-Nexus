@@ -1,11 +1,14 @@
-"""Mob entity detail page — maturities, damage, spawns, loots, codex."""
+"""Mob entity detail page — maturities, damage, spawns, loots, codex, globals."""
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer, QSize
+import threading
+from datetime import datetime, timezone
+
+from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QLabel, QPushButton, QApplication,
+    QLabel, QPushButton, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
 
@@ -16,6 +19,7 @@ from .wiki_detail import (
     _TABLE_ROW_HEIGHT, _TABLE_MAX_HEIGHT,
 )
 from .fancy_table import ColumnDef
+from .multi_line_chart import MultiLineChart, ChartSeries
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get, get_item_name, fmt_int, fmt_bool
 from ..theme import (
     PRIMARY, SECONDARY, BORDER, HOVER, TEXT, TEXT_MUTED, ACCENT, SUCCESS,
@@ -99,6 +103,37 @@ def _fv(value, decimals: int) -> str:
     return f"{value:.{decimals}f}"
 
 
+def _format_ped(v) -> str:
+    """Format a PED value compactly (e.g. 1.5K)."""
+    if v is None:
+        return "0"
+    if v >= 1000:
+        return f"{v / 1000:.1f}K"
+    return f"{v:.2f}"
+
+
+def _time_ago(date_str: str) -> str:
+    """Convert an ISO timestamp to a relative time string."""
+    if not date_str:
+        return ""
+    try:
+        then = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        diff = datetime.now(timezone.utc) - then
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "now"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"{minutes}m"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h"
+        days = hours // 24
+        return f"{days}d"
+    except (ValueError, TypeError):
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Maturity aggregation helpers
 # ---------------------------------------------------------------------------
@@ -107,7 +142,7 @@ def _maturity_stats(item: dict):
     """Extract level range, HP range, and lowest HP/Level from maturities."""
     maturities = item.get("Maturities") or []
     if not maturities:
-        return None, None, None, None, None
+        return None, None, None
 
     levels = []
     hps = []
@@ -408,6 +443,9 @@ def _finish_table(table: QTableWidget, row_count: int,
 class MobDetailView(WikiDetailView):
     """Detail view for a single mob entity."""
 
+    _globals_loaded = pyqtSignal(object)    # globals data dict from background thread
+    _globals_refreshed = pyqtSignal(object)  # refresh update (partial)
+
     def __init__(self, item: dict, *, nexus_base_url: str = "",
                  data_client=None, parent=None):
         super().__init__(
@@ -706,3 +744,595 @@ class MobDetailView(WikiDetailView):
             )
             loot_section.set_content(table)
             self._add_article_section(loot_section)
+
+        # --- Globals section (async) ---
+        if self._data_client and name:
+            self._globals_section = DataSection("Globals", expanded=False)
+            self._globals_section.set_subtitle("Global loot events")
+            self._globals_section.set_loading()
+            self._add_article_section(self._globals_section)
+            self._globals_period = "30d"
+            self._globals_mob_name = name
+            self._globals_loaded.connect(self._on_globals_loaded)
+            self._fetch_globals()
+
+    # --- Globals helpers ---
+
+    def _fetch_globals(self):
+        dc = self._data_client
+        mob_name = self._globals_mob_name
+        period = self._globals_period
+
+        def fetch():
+            data = dc.get_mob_globals(mob_name, period=period)
+            self._globals_loaded.emit(data)
+
+        threading.Thread(
+            target=fetch, daemon=True, name="wiki-mob-globals",
+        ).start()
+
+    def _on_globals_loaded(self, data: dict):
+        section = getattr(self, "_globals_section", None)
+        if not section:
+            return
+        content = self._build_globals_content(data)
+        section.set_content(content)
+        summary = data.get("summary") or {}
+        count = summary.get("total_count", 0)
+        if count:
+            section.set_subtitle(f"{count:,} globals")
+            self._start_globals_refresh()
+        else:
+            section.set_subtitle("No globals")
+
+    def _build_globals_content(self, data: dict) -> QWidget:
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        summary = data.get("summary") or {}
+        if not summary or summary.get("total_count", 0) == 0:
+            # Distinguish "no data ever" from "request failed"
+            msg = ("Failed to load globals \u2014 try a shorter period"
+                   if not data else "No globals recorded for this mob")
+            lbl = QLabel(msg)
+            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+            return container
+
+        # Period selector
+        period_row = QWidget()
+        period_row.setStyleSheet("background: transparent;")
+        pl = QHBoxLayout(period_row)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.setSpacing(4)
+        period_label = QLabel("PERIOD")
+        period_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600;"
+            " letter-spacing: 0.3px; background: transparent;"
+        )
+        pl.addWidget(period_label)
+        for p in ("24h", "7d", "30d", "90d", "1y", "all"):
+            btn = QPushButton(p)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            active = p == self._globals_period
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: {ACCENT if active else 'transparent'};"
+                f"  color: {'#fff' if active else TEXT_MUTED};"
+                f"  border: 1px solid {ACCENT if active else BORDER};"
+                f"  border-radius: 3px; font-size: 11px;"
+                f"  padding: 2px 10px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  color: {'#fff' if active else TEXT};"
+                f"  border-color: {ACCENT};"
+                f"}}"
+            )
+            btn.clicked.connect(
+                lambda checked=False, period=p: self._on_globals_period_changed(period)
+            )
+            pl.addWidget(btn)
+        pl.addStretch(1)
+        layout.addWidget(period_row)
+
+        # Summary stats row
+        stats_row = QWidget()
+        stats_row.setStyleSheet(
+            f"background: {SECONDARY}; border-radius: 6px;"
+        )
+        sl = QHBoxLayout(stats_row)
+        sl.setContentsMargins(8, 6, 8, 6)
+        sl.setSpacing(8)
+        stats = [
+            ("Globals", f"{summary.get('total_count') or 0:,}"),
+            ("Total", f"{_format_ped(summary.get('total_value') or 0)} PED"),
+            ("Avg", f"{_format_ped(summary.get('avg_value') or 0)} PED"),
+            ("Highest", f"{_format_ped(summary.get('max_value') or 0)} PED"),
+            ("HoF", f"{summary.get('hof_count') or 0:,}"),
+            ("ATH", f"{summary.get('ath_count') or 0:,}"),
+        ]
+        self._globals_stat_labels: dict[str, QLabel] = {}
+        for label, value in stats:
+            card = QWidget()
+            card.setStyleSheet("background: transparent;")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(8, 6, 8, 6)
+            cl.setSpacing(2)
+            val_lbl = QLabel(value)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            val_lbl.setStyleSheet(
+                f"color: {TEXT}; font-size: 15px; font-weight: 700;"
+                " background: transparent;"
+            )
+            cl.addWidget(val_lbl)
+            self._globals_stat_labels[label] = val_lbl
+            label_lbl = QLabel(label.upper())
+            label_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label_lbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 600;"
+                " letter-spacing: 0.3px; background: transparent;"
+            )
+            cl.addWidget(label_lbl)
+            sl.addWidget(card)
+        layout.addWidget(stats_row)
+
+        # Activity chart
+        activity = data.get("activity") or []
+        if activity:
+            chart_label = QLabel("Activity")
+            chart_label.setStyleSheet(
+                f"color: {TEXT}; font-size: 14px; font-weight: 600;"
+                " background: transparent;"
+            )
+            layout.addWidget(chart_label)
+
+            chart = MultiLineChart()
+            chart.setFixedHeight(160)
+            count_points = []
+            value_points = []
+            for a in activity:
+                if not a.get("bucket") or a.get("count") is None:
+                    continue
+                ts = int(datetime.fromisoformat(
+                    a["bucket"].replace("Z", "+00:00")
+                ).timestamp())
+                count_points.append((ts, float(a["count"])))
+                value_points.append((ts, float(a.get("value", 0))))
+            series = []
+            if count_points:
+                series.append(ChartSeries("Count", ACCENT, count_points))
+            if value_points and any(v > 0 for _, v in value_points):
+                series.append(ChartSeries(
+                    "Value (PED)", SUCCESS, value_points,
+                    y_axis='right', dash_pattern=[6, 3],
+                ))
+            if series:
+                chart.set_data(series)
+                chart.set_smooth(True)
+            layout.addWidget(chart)
+
+        # Top players + recent side by side
+        top_players = data.get("top_players") or []
+        recent = data.get("recent") or []
+
+        if top_players or recent:
+            grid = QWidget()
+            grid.setStyleSheet("background: transparent;")
+            gl = QHBoxLayout(grid)
+            gl.setContentsMargins(0, 0, 0, 0)
+            gl.setSpacing(12)
+            gl.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+            if top_players:
+                self._globals_top_players = top_players
+                self._globals_top_page = 1
+                self._globals_top_page_size = 10
+                self._globals_top_sort = "value"
+
+                top_widget = QWidget()
+                top_widget.setStyleSheet("background: transparent;")
+                tw_layout = QVBoxLayout(top_widget)
+                tw_layout.setContentsMargins(0, 0, 0, 0)
+                tw_layout.setSpacing(4)
+
+                # Header row: label + sort toggle
+                top_header = QWidget()
+                top_header.setStyleSheet("background: transparent;")
+                th_layout = QHBoxLayout(top_header)
+                th_layout.setContentsMargins(0, 0, 0, 0)
+                th_layout.setSpacing(8)
+                top_label = QLabel("Top Players")
+                top_label.setStyleSheet(
+                    f"color: {TEXT}; font-size: 13px; font-weight: 600;"
+                    " background: transparent;"
+                )
+                th_layout.addWidget(top_label)
+                th_layout.addStretch(1)
+
+                # Sort toggle group
+                self._globals_sort_btns: list[QPushButton] = []
+                for sort_key, sort_label in [("value", "Total"), ("count", "Count"), ("best_value", "Best")]:
+                    sbtn = QPushButton(sort_label)
+                    sbtn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    active = sort_key == self._globals_top_sort
+                    sbtn.setStyleSheet(self._sort_btn_style(active))
+                    sbtn.clicked.connect(
+                        lambda checked=False, k=sort_key: self._on_top_players_sort(k)
+                    )
+                    th_layout.addWidget(sbtn)
+                    self._globals_sort_btns.append((sbtn, sort_key))
+                tw_layout.addWidget(top_header)
+
+                sorted_players = sorted(top_players, key=lambda p: p.get("value", 0), reverse=True)
+                page = sorted_players[:self._globals_top_page_size]
+                self._globals_top_table = make_section_table(
+                    self._top_players_columns(),
+                    self._top_players_rows(page),
+                    max_visible_rows=10,
+                    searchable=False,
+                    default_sort=None,
+                )
+                tw_layout.addWidget(self._globals_top_table)
+
+                # Pagination row
+                tw_layout.addWidget(self._build_pagination(
+                    "top", len(sorted_players), self._globals_top_page_size,
+                ))
+
+                gl.addWidget(top_widget, 1, Qt.AlignmentFlag.AlignTop)
+
+            if recent:
+                self._globals_recent_data = recent
+                self._globals_recent_page = 1
+                self._globals_recent_page_size = 10
+
+                rec_widget = QWidget()
+                rec_widget.setStyleSheet("background: transparent;")
+                rw_layout = QVBoxLayout(rec_widget)
+                rw_layout.setContentsMargins(0, 0, 0, 0)
+                rw_layout.setSpacing(4)
+                rec_header = QWidget()
+                rec_header.setStyleSheet("background: transparent;")
+                rh_layout = QHBoxLayout(rec_header)
+                rh_layout.setContentsMargins(0, 0, 0, 0)
+                rh_layout.setSpacing(8)
+                rec_label = QLabel("Recent Globals")
+                rec_label.setStyleSheet(
+                    f"color: {TEXT}; font-size: 13px; font-weight: 600;"
+                    " background: transparent;"
+                )
+                rh_layout.addWidget(rec_label)
+                rh_layout.addStretch(1)
+                # Match Top Players header height (which includes sort buttons)
+                if top_players:
+                    rec_header.setFixedHeight(top_header.sizeHint().height())
+                rw_layout.addWidget(rec_header)
+                page_data = recent[:self._globals_recent_page_size]
+                self._globals_recent_table = make_section_table(
+                    self._recent_columns(),
+                    self._recent_rows(page_data),
+                    max_visible_rows=10,
+                    searchable=False,
+                    default_sort=None,
+                )
+                rw_layout.addWidget(self._globals_recent_table)
+
+                # Pagination row
+                rw_layout.addWidget(self._build_pagination(
+                    "recent", len(recent), self._globals_recent_page_size,
+                ))
+
+                gl.addWidget(rec_widget, 1, Qt.AlignmentFlag.AlignTop)
+
+            layout.addWidget(grid)
+
+        return container
+
+    # --- Globals table helpers ---
+
+    @staticmethod
+    def _top_players_columns() -> list[ColumnDef]:
+        return [
+            ColumnDef("player", "Player", main=True),
+            ColumnDef("count", "#",
+                      format=lambda v: f"{v:,}" if v else "-"),
+            ColumnDef("value", "Total",
+                      format=lambda v: f"{_format_ped(v)} PED" if v else "-"),
+            ColumnDef("best_value", "Best",
+                      format=lambda v: f"{_format_ped(v)} PED" if v else "-"),
+        ]
+
+    @staticmethod
+    def _top_players_rows(players: list[dict]) -> list[dict]:
+        return [
+            {
+                "player": ("[T] " if p.get("is_team") else "") + (p.get("player") or "?"),
+                "count": p.get("count", 0),
+                "value": p.get("value", 0),
+                "best_value": p.get("best_value", 0),
+            }
+            for p in players
+        ]
+
+    @staticmethod
+    def _recent_columns() -> list[ColumnDef]:
+        return [
+            ColumnDef("player", "Player", main=True),
+            ColumnDef("value", "Value",
+                      format=lambda v: f"{_format_ped(v)} PED" if v else "-"),
+            ColumnDef("badge", ""),
+            ColumnDef("time", "Time"),
+        ]
+
+    @staticmethod
+    def _recent_rows(recent: list[dict]) -> list[dict]:
+        return [
+            {
+                "player": ("[T] " if g.get("type") == "team_kill" else "")
+                          + (g.get("player") or "?"),
+                "value": g.get("value", 0),
+                "badge": ("ATH" if g.get("ath")
+                          else "HoF" if g.get("hof") else ""),
+                "time": _time_ago(g.get("timestamp", "")),
+            }
+            for g in recent
+        ]
+
+    @staticmethod
+    def _page_btn_style() -> str:
+        return (
+            f"QPushButton {{"
+            f"  background: transparent; color: {TEXT_MUTED};"
+            f"  border: 1px solid {BORDER}; border-radius: 3px;"
+            f"  font-size: 14px; font-weight: 700;"
+            f"  padding: 2px 8px;"
+            f"}}"
+            f"QPushButton:hover {{ color: {TEXT}; border-color: {ACCENT}; }}"
+            f"QPushButton:disabled {{ color: {BORDER}; border-color: {BORDER}; }}"
+        )
+
+    @staticmethod
+    def _sort_btn_style(active: bool) -> str:
+        return (
+            f"QPushButton {{"
+            f"  background: {ACCENT if active else 'transparent'};"
+            f"  color: {'#fff' if active else TEXT_MUTED};"
+            f"  border: 1px solid {ACCENT if active else BORDER};"
+            f"  border-radius: 3px; font-size: 11px;"
+            f"  padding: 1px 8px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  color: {'#fff' if active else TEXT};"
+            f"  border-color: {ACCENT};"
+            f"}}"
+        )
+
+    def _build_pagination(self, prefix: str, total_items: int, page_size: int) -> QWidget:
+        """Build a Prev / page / Next pagination row."""
+        total_pages = max(1, -(-total_items // page_size))
+        page_row = QWidget()
+        page_row.setStyleSheet("background: transparent;")
+        pr_layout = QHBoxLayout(page_row)
+        pr_layout.setContentsMargins(0, 2, 0, 0)
+        pr_layout.setSpacing(6)
+        pr_layout.addStretch(1)
+
+        if total_pages > 1:
+            prev_btn = QPushButton("\u2039")
+            prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            prev_btn.setEnabled(False)
+            prev_btn.setStyleSheet(self._page_btn_style())
+            prev_btn.clicked.connect(lambda: self._on_page_change(prefix, -1))
+            pr_layout.addWidget(prev_btn)
+
+            page_lbl = QLabel(f"1 / {total_pages}")
+            page_lbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 11px; background: transparent;"
+            )
+            pr_layout.addWidget(page_lbl)
+
+            next_btn = QPushButton("\u203a")
+            next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            next_btn.setEnabled(total_pages > 1)
+            next_btn.setStyleSheet(self._page_btn_style())
+            next_btn.clicked.connect(lambda: self._on_page_change(prefix, 1))
+            pr_layout.addWidget(next_btn)
+
+            setattr(self, f"_globals_{prefix}_prev_btn", prev_btn)
+            setattr(self, f"_globals_{prefix}_next_btn", next_btn)
+            setattr(self, f"_globals_{prefix}_page_lbl", page_lbl)
+
+        pr_layout.addStretch(1)
+        return page_row
+
+    def _on_page_change(self, prefix: str, delta: int):
+        """Generic page change handler for 'top' or 'recent' tables."""
+        if prefix == "top":
+            sort_key = getattr(self, "_globals_top_sort", "value")
+            all_data = sorted(
+                getattr(self, "_globals_top_players", []),
+                key=lambda p: p.get(sort_key, 0), reverse=True,
+            )
+            ps = self._globals_top_page_size
+            page_attr = "_globals_top_page"
+            table_attr = "_globals_top_table"
+            row_fn = self._top_players_rows
+        else:
+            all_data = getattr(self, "_globals_recent_data", [])
+            ps = self._globals_recent_page_size
+            page_attr = "_globals_recent_page"
+            table_attr = "_globals_recent_table"
+            row_fn = self._recent_rows
+
+        total_pages = max(1, -(-len(all_data) // ps))
+        cur = getattr(self, page_attr, 1)
+        new_page = max(1, min(total_pages, cur + delta))
+        setattr(self, page_attr, new_page)
+        start = (new_page - 1) * ps
+
+        table = getattr(self, table_attr, None)
+        if table:
+            # Disable updates on the table and its scroll ancestor so the
+            # rebuild does not cause visible flicker or scroll jumps.
+            from PyQt6.QtWidgets import QApplication
+            prev_focus = QApplication.focusWidget()
+            table.setUpdatesEnabled(False)
+            table.set_data(row_fn(all_data[start:start + ps]))
+            table.setUpdatesEnabled(True)
+            if prev_focus and prev_focus is not QApplication.focusWidget():
+                prev_focus.setFocus()
+
+        lbl = getattr(self, f"_globals_{prefix}_page_lbl", None)
+        if lbl:
+            lbl.setText(f"{new_page} / {total_pages}")
+        prev_btn = getattr(self, f"_globals_{prefix}_prev_btn", None)
+        if prev_btn:
+            prev_btn.setEnabled(new_page > 1)
+        next_btn = getattr(self, f"_globals_{prefix}_next_btn", None)
+        if next_btn:
+            next_btn.setEnabled(new_page < total_pages)
+
+    def _on_top_players_sort(self, sort_key: str):
+        """Change top players sort field and reset to page 1."""
+        if getattr(self, "_globals_top_sort", "value") == sort_key:
+            return
+        self._globals_top_sort = sort_key
+        self._globals_top_page = 1
+
+        # Update button styles
+        for sbtn, key in getattr(self, "_globals_sort_btns", []):
+            sbtn.setStyleSheet(self._sort_btn_style(key == sort_key))
+
+        # Re-sort and show page 1
+        players = getattr(self, "_globals_top_players", [])
+        sorted_players = sorted(players, key=lambda p: p.get(sort_key, 0), reverse=True)
+        ps = self._globals_top_page_size
+        table = getattr(self, "_globals_top_table", None)
+        if table:
+            table.setUpdatesEnabled(False)
+            table.set_data(self._top_players_rows(sorted_players[:ps]))
+            table.setUpdatesEnabled(True)
+
+        # Update pagination
+        total_pages = max(1, -(-len(sorted_players) // ps))
+        lbl = getattr(self, "_globals_top_page_lbl", None)
+        if lbl:
+            lbl.setText(f"1 / {total_pages}")
+        prev_btn = getattr(self, "_globals_top_prev_btn", None)
+        if prev_btn:
+            prev_btn.setEnabled(False)
+        next_btn = getattr(self, "_globals_top_next_btn", None)
+        if next_btn:
+            next_btn.setEnabled(total_pages > 1)
+
+    def _on_globals_period_changed(self, period: str):
+        self._globals_period = period
+        self._stop_globals_refresh()
+        section = getattr(self, "_globals_section", None)
+        if section:
+            section.set_loading()
+        self._fetch_globals()
+
+    # --- Auto-refresh ---
+
+    _GLOBALS_REFRESH_MS = 60_000
+
+    def _start_globals_refresh(self):
+        self._stop_globals_refresh()
+        if not getattr(self, "_globals_refresh_connected", False):
+            self._globals_refreshed.connect(self._on_globals_refreshed)
+            self._globals_refresh_connected = True
+        timer = QTimer(self)
+        timer.timeout.connect(self._refresh_globals)
+        timer.start(self._GLOBALS_REFRESH_MS)
+        self._globals_refresh_timer = timer
+
+    def _stop_globals_refresh(self):
+        timer = getattr(self, "_globals_refresh_timer", None)
+        if timer:
+            timer.stop()
+            self._globals_refresh_timer = None
+
+    def _refresh_globals(self):
+        dc = self._data_client
+        mob_name = self._globals_mob_name
+        period = self._globals_period
+        if not dc or not mob_name:
+            return
+
+        def fetch():
+            data = dc.get_mob_globals(mob_name, period=period, force_refresh=True)
+            self._globals_refreshed.emit(data)
+
+        threading.Thread(
+            target=fetch, daemon=True, name="wiki-mob-globals-refresh",
+        ).start()
+
+    def _on_globals_refreshed(self, data: dict):
+        if not data:
+            return
+        # Update summary stat labels
+        summary = data.get("summary") or {}
+        if not summary:
+            return
+        stat_map = {
+            "Globals": f"{summary.get('total_count', 0):,}",
+            "Total": f"{_format_ped(summary.get('total_value', 0))} PED",
+            "Avg": f"{_format_ped(summary.get('avg_value', 0))} PED",
+            "Highest": f"{_format_ped(summary.get('max_value', 0))} PED",
+            "HoF": f"{summary.get('hof_count', 0):,}",
+            "ATH": f"{summary.get('ath_count', 0):,}",
+        }
+        labels = getattr(self, "_globals_stat_labels", {})
+        for key, value in stat_map.items():
+            lbl = labels.get(key)
+            if lbl:
+                lbl.setText(value)
+
+        # Update section subtitle
+        section = getattr(self, "_globals_section", None)
+        count = summary.get("total_count", 0)
+        if section and count:
+            section.set_subtitle(f"{count:,} globals")
+
+        # Update recent table
+        recent = data.get("recent") or []
+        if recent:
+            self._globals_recent_data = recent
+            ps = getattr(self, "_globals_recent_page_size", 10)
+            page = getattr(self, "_globals_recent_page", 1)
+            total_pages = max(1, -(-len(recent) // ps))
+            if page > total_pages:
+                self._globals_recent_page = total_pages
+                page = total_pages
+            start = (page - 1) * ps
+            rec_table = getattr(self, "_globals_recent_table", None)
+            if rec_table:
+                rec_table.set_data(self._recent_rows(recent[start:start + ps]))
+            lbl = getattr(self, "_globals_recent_page_lbl", None)
+            if lbl:
+                lbl.setText(f"{page} / {total_pages}")
+
+        # Update top players
+        top_players = data.get("top_players") or []
+        if top_players:
+            self._globals_top_players = top_players
+            sort_key = getattr(self, "_globals_top_sort", "value")
+            sorted_players = sorted(top_players, key=lambda p: p.get(sort_key, 0), reverse=True)
+            ps = getattr(self, "_globals_top_page_size", 10)
+            total_pages = max(1, -(-len(sorted_players) // ps))
+            page = getattr(self, "_globals_top_page", 1)
+            if page > total_pages:
+                self._globals_top_page = total_pages
+                page = total_pages
+            start = (page - 1) * ps
+            table = getattr(self, "_globals_top_table", None)
+            if table:
+                table.set_data(self._top_players_rows(sorted_players[start:start + ps]))
+            lbl = getattr(self, "_globals_top_page_lbl", None)
+            if lbl:
+                lbl.setText(f"{page} / {total_pages}")

@@ -530,8 +530,8 @@ class _NewsRow(QFrame):
         else:
             self._source.setText("Nexus")
             self._source.setStyleSheet(
-                f"font-size: 10px; font-weight: bold; padding: 1px 4px;"
-                f"border-radius: 3px; background: {ACCENT}20; color: {ACCENT};"
+                "font-size: 10px; font-weight: bold; padding: 1px 4px;"
+                "border-radius: 3px; background: #000; color: #fff;"
             )
 
     def mousePressEvent(self, event):

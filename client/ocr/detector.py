@@ -229,12 +229,16 @@ class SkillsWindowDetector:
             vision-based detection (dark rectangles, header verification).
     """
 
-    def __init__(self, capturer: ScreenCapturer, event_bus=None, config=None):
+    def __init__(self, capturer: ScreenCapturer, event_bus=None, config=None,
+                 frame_provider=None):
         if cv2 is None:
             raise ImportError("opencv-python is required")
         self._capturer = capturer
         self._event_bus = event_bus
         self._config = config
+        # Optional FrameDistributor for pulling latest frames in monitoring mode.
+        # Detection phase still uses self._capturer for on-demand capture.
+        self._frame_provider = frame_provider
         self._cached_bounds: Optional[tuple[int, int, int, int]] = None
         self._game_hwnd: Optional[int] = None
         self._game_origin: tuple[int, int] = (0, 0)
@@ -367,11 +371,24 @@ class SkillsWindowDetector:
     def capture_game(self) -> np.ndarray | None:
         """Capture the current game window image.
 
+        When a frame provider (FrameDistributor) is available, returns the
+        latest frame it captured — avoiding a redundant window capture.
+        Falls back to direct capture via self._capturer if the provider
+        has no fresh frame or is not set.
+
         Returns the full game window as BGR numpy array, or None.
         Also stores the result in last_game_image.
         """
         if not self._game_hwnd:
             return None
+
+        # Try the frame provider first (shares frames with other detectors)
+        if self._frame_provider is not None:
+            image = self._frame_provider.get_latest_frame()
+            if image is not None:
+                self._last_game_image = image
+                return image
+
         image = self._capturer.capture_window(
             self._game_hwnd, geometry=self._game_geometry,
         )

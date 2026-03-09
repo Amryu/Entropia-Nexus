@@ -75,6 +75,8 @@ class _ClickableLabel(QLabel):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
+            event.accept()
+            return
         super().mousePressEvent(event)
 
 
@@ -633,6 +635,13 @@ class SearchOverlayWidget(OverlayWidget):
             return super().eventFilter(obj, event)
 
         etype = event.type()
+
+        if etype == event.Type.MouseButtonPress:
+            # Ensure the overlay window is activated so the search input can
+            # receive keyboard focus.  Tool windows shown with
+            # WA_ShowWithoutActivating may not activate on the first click.
+            self._force_activate()
+            return False  # Let QLineEdit handle the click normally
 
         if etype == event.Type.FocusIn:
             self._search.selectAll()

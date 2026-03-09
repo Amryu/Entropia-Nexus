@@ -21,6 +21,7 @@ from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
 from PyQt6.QtGui import QFontMetrics, QPixmap
 
 from .overlay_widget import OverlayWidget
+from ..core.thread_utils import invoke_on_main
 from ..ui.icons import svg_icon, ARROW_LEFT, ARROW_RIGHT
 from ..ui.widgets.search_popup import WIKI_PATHS, ITEM_TYPES, get_type_name, get_display_type
 from ..data.wiki_columns import (
@@ -208,6 +209,15 @@ _TAB_MARKET_PRICES_SVG = (
     '<path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zM16.2 13H19v6h-2.8v-6z"/>'
 )
 
+# Globals (globe icon)
+_TAB_GLOBALS_SVG = (
+    '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'
+    'm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2'
+    ' 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55'
+    ' 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97'
+    '-2.1 5.39z"/>'
+)
+
 # Module-level callback set by app.py to open the map overlay.
 # Signature: (planet_name: str, location_id: int) -> None
 _map_overlay_callback = None
@@ -230,6 +240,7 @@ TAB_CONSTRUCTION = "construction"
 TAB_UNLOCKS = "unlocks"
 TAB_EFFECTS = "effects"
 TAB_MARKET_PRICES = "market_prices"
+TAB_GLOBALS = "globals"
 
 # Entity types that support tiering (have tier materials)
 _TIERABLE_TYPES = {"Weapon", "Armor", "ArmorSet", "MedicalTool", "Finder", "Excavator"}
@@ -243,6 +254,7 @@ def _get_tab_defs(entity_type: str, item_name: str = "") -> list[tuple[str, str,
             (_TAB_MATURITY_SVG, "Maturities", TAB_MATURITIES),
             (_TAB_LOOT_SVG, "Loots", TAB_LOOTS),
             (_TAB_LOCATION_SVG, "Locations", TAB_LOCATIONS),
+            (_TAB_GLOBALS_SVG, "Globals", TAB_GLOBALS),
             (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
         ]
     if entity_type in ("Mission", "MissionChain"):
@@ -1193,7 +1205,7 @@ class DetailOverlayWidget(OverlayWidget):
             markup = snapshot.get(f"markup_{key}")
             sales = snapshot.get(f"sales_{key}")
             markup_str = f"{float(markup):.2f}%" if markup is not None else "\u2014"
-            sales_str = f"{int(sales):,}" if sales is not None else "\u2014"
+            sales_str = f"{int(float(sales)):,}" if sales is not None else "\u2014"
             row = self._mps_row(label, markup_str, sales_str)
             layout.addWidget(row)
 
@@ -1493,6 +1505,7 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_MAP: self._build_map_content,
             TAB_UNLOCKS: self._build_unlocks_content,
             TAB_EFFECTS: self._build_effects_content,
+            TAB_GLOBALS: self._build_globals_tab_content,
         }.get(tab_id)
         if builder:
             scroll.setWidget(builder(item))
@@ -1713,6 +1726,452 @@ class DetailOverlayWidget(OverlayWidget):
             layout.addWidget(sep)
         layout.addStretch(1)
         return widget
+
+    # ----- Mob: Globals tab -----
+
+    def _build_globals_tab_content(self, item: dict) -> QWidget:
+        """Build globals tab content — fetches data asynchronously."""
+        mob_name = item.get("Name", "")
+        if not mob_name:
+            return _make_centered_label("No mob name")
+
+        widget, layout = _details_container()
+
+        loading = QLabel("Loading globals...")
+        loading.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+        )
+        loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(loading)
+
+        # Store reference for async replacement
+        self._globals_overlay_widget = widget
+        self._globals_overlay_layout = layout
+        self._globals_overlay_loading = loading
+        self._globals_overlay_mob_name = mob_name
+        self._globals_overlay_period = "30d"
+        self._globals_overlay_top_sort = "value"
+        self._globals_skeleton_built = False
+
+        dc = getattr(self, "_data_client", None)
+        if dc:
+            import threading as _th
+
+            def fetch():
+                data = dc.get_mob_globals(mob_name, period="30d")
+                invoke_on_main(lambda d=data: self._populate_globals_overlay(d))
+
+            _th.Thread(target=fetch, daemon=True, name="overlay-mob-globals").start()
+        else:
+            loading.setText("No data client available")
+
+        return widget
+
+    def _populate_globals_overlay(self, data: dict):
+        """Populate the globals tab after initial async fetch."""
+        layout = getattr(self, "_globals_overlay_layout", None)
+        if not layout:
+            return
+        # Clear loading label and build skeleton
+        _clear_layout(layout)
+        self._globals_overlay_loading = None
+        try:
+            self._populate_globals_overlay_inner(data, layout)
+        except Exception:
+            log.exception("Failed to populate globals overlay")
+            err = QLabel("Error loading globals")
+            err.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            err.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(err)
+
+    def _populate_globals_overlay_inner(self, data: dict, layout):
+        """Inner populate — separated so exceptions are caught."""
+        self._build_globals_skeleton(layout)
+        self._fill_globals_data(data)
+
+    def _build_globals_skeleton(self, layout):
+        """Build the persistent widget skeleton for the globals tab.
+
+        Creates period buttons, stat cards, message label, recent/top
+        containers — all reusable across period changes and re-sorts.
+        """
+        # Period buttons row
+        period_row = QWidget()
+        period_row.setStyleSheet("background: transparent;")
+        pl = QHBoxLayout(period_row)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.setSpacing(3)
+        self._globals_period_buttons = {}
+        for p in ("24h", "7d", "30d", "90d", "1y", "all"):
+            btn = QPushButton(p)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(
+                lambda checked=False, period=p: self._on_globals_overlay_period(period)
+            )
+            pl.addWidget(btn)
+            self._globals_period_buttons[p] = btn
+        pl.addStretch(1)
+        layout.addWidget(period_row)
+        self._update_globals_period_styles()
+
+        # Summary stats row — values start as "-"
+        stats_row = QWidget()
+        stats_row.setStyleSheet("background: transparent;")
+        sl = QHBoxLayout(stats_row)
+        sl.setContentsMargins(0, 8, 0, 0)
+        sl.setSpacing(4)
+        self._globals_stat_labels = {}
+        for key, label in [
+            ("total_count", "Globals"),
+            ("total_value", "Total"),
+            ("max_value", "Highest"),
+            ("hof_count", "HoF"),
+        ]:
+            card = QWidget()
+            card.setStyleSheet(
+                "background: rgba(30,30,50,80); border-radius: 3px;"
+            )
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(6, 4, 6, 4)
+            cl.setSpacing(1)
+            val_lbl = QLabel("-")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            val_lbl.setStyleSheet(
+                f"color: {TEXT_BRIGHT}; font-size: 12px; font-weight: 700;"
+                " background: transparent;"
+            )
+            cl.addWidget(val_lbl)
+            lbl = QLabel(label.upper())
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 9px; font-weight: 600;"
+                " letter-spacing: 0.2px; background: transparent;"
+            )
+            cl.addWidget(lbl)
+            sl.addWidget(card)
+            self._globals_stat_labels[key] = val_lbl
+        layout.addWidget(stats_row)
+
+        # Message label (loading / empty / error) — initially hidden
+        self._globals_message_label = QLabel("")
+        self._globals_message_label.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        self._globals_message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._globals_message_label.setVisible(False)
+        layout.addWidget(self._globals_message_label)
+
+        # Recent globals section
+        self._globals_recent_title = QLabel("RECENT")
+        self._globals_recent_title.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px; font-weight: 600;"
+            " letter-spacing: 0.3px; background: transparent;"
+            " margin-top: 8px;"
+        )
+        self._globals_recent_title.setVisible(False)
+        layout.addWidget(self._globals_recent_title)
+
+        self._globals_recent_container = QWidget()
+        self._globals_recent_container.setStyleSheet("background: transparent;")
+        rc_layout = QVBoxLayout(self._globals_recent_container)
+        rc_layout.setContentsMargins(0, 0, 0, 0)
+        rc_layout.setSpacing(0)
+        layout.addWidget(self._globals_recent_container)
+
+        # Top players header (label + sort buttons)
+        self._globals_top_header = QWidget()
+        self._globals_top_header.setStyleSheet("background: transparent;")
+        th_layout = QHBoxLayout(self._globals_top_header)
+        th_layout.setContentsMargins(0, 8, 0, 0)
+        th_layout.setSpacing(6)
+        top_label = QLabel("TOP PLAYERS")
+        top_label.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px; font-weight: 600;"
+            " letter-spacing: 0.3px; background: transparent;"
+        )
+        th_layout.addWidget(top_label)
+        th_layout.addStretch(1)
+        self._globals_sort_buttons = {}
+        for sk, sl_text in [("value", "Total"), ("count", "Count"), ("best_value", "Best")]:
+            sbtn = QPushButton(sl_text)
+            sbtn.setCursor(Qt.CursorShape.PointingHandCursor)
+            sbtn.clicked.connect(
+                lambda checked=False, k=sk: self._on_globals_overlay_sort(k)
+            )
+            th_layout.addWidget(sbtn)
+            self._globals_sort_buttons[sk] = sbtn
+        self._globals_top_header.setVisible(False)
+        layout.addWidget(self._globals_top_header)
+        self._update_globals_sort_styles()
+
+        # Top players rows container
+        self._globals_top_container = QWidget()
+        self._globals_top_container.setStyleSheet("background: transparent;")
+        tc_layout = QVBoxLayout(self._globals_top_container)
+        tc_layout.setContentsMargins(0, 0, 0, 0)
+        tc_layout.setSpacing(0)
+        layout.addWidget(self._globals_top_container)
+
+        layout.addStretch(1)
+        self._globals_skeleton_built = True
+
+    # --- Globals: data fill ---
+
+    def _fill_globals_data(self, data: dict):
+        """Populate data values into the existing skeleton."""
+        self._globals_overlay_data = data
+        summary = data.get("summary") or {}
+        has_data = summary and summary.get("total_count", 0) > 0
+
+        # Update stat labels
+        if has_data:
+            self._globals_stat_labels["total_count"].setText(
+                f"{summary.get('total_count', 0):,}")
+            self._globals_stat_labels["total_value"].setText(
+                _overlay_format_ped(summary.get("total_value", 0)))
+            self._globals_stat_labels["max_value"].setText(
+                _overlay_format_ped(summary.get("max_value", 0)))
+            self._globals_stat_labels["hof_count"].setText(
+                f"{summary.get('hof_count', 0):,}")
+        else:
+            for lbl in self._globals_stat_labels.values():
+                lbl.setText("-")
+
+        # Message label
+        if not has_data:
+            msg = ("Failed to load \u2014 try a shorter period"
+                   if not data else "No globals recorded")
+            self._globals_message_label.setText(msg)
+            self._globals_message_label.setVisible(True)
+        else:
+            self._globals_message_label.setVisible(False)
+
+        # Recent section
+        self._fill_globals_recent(data, has_data)
+
+        # Top players section
+        top = data.get("top_players") or []
+        self._globals_top_header.setVisible(bool(top) and has_data)
+        self._fill_globals_top_players()
+
+    def _fill_globals_recent(self, data: dict, has_data: bool):
+        """Fill the recent globals sub-container."""
+        rc_layout = self._globals_recent_container.layout()
+        _clear_layout(rc_layout)
+        recent = (data.get("recent") or [])[:8] if has_data else []
+        self._globals_recent_title.setVisible(bool(recent))
+        for g in recent:
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 1, 0, 1)
+            rl.setSpacing(4)
+            player = g.get("player") or "?"
+            if g.get("type") == "team_kill":
+                player = "[T] " + player
+            p_lbl = _ElidedLabel(player)
+            p_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(p_lbl, 1)
+            # Badge
+            if g.get("ath"):
+                badge = QLabel("ATH")
+                badge.setStyleSheet(
+                    "color: #ef4444; background: rgba(239,68,68,0.2);"
+                    " border-radius: 2px; padding: 0 3px; font-size: 9px;"
+                    " font-weight: 700;"
+                )
+                rl.addWidget(badge)
+            elif g.get("hof"):
+                badge = QLabel("HoF")
+                badge.setStyleSheet(
+                    "color: #eab308; background: rgba(234,179,8,0.15);"
+                    " border-radius: 2px; padding: 0 3px; font-size: 9px;"
+                    " font-weight: 700;"
+                )
+                rl.addWidget(badge)
+            val = g.get("value", 0)
+            v_lbl = QLabel(f"{_overlay_format_ped(val)} PED")
+            v_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; font-weight: 600;"
+                " background: transparent;"
+            )
+            rl.addWidget(v_lbl)
+            # Time
+            ts = g.get("timestamp", "")
+            t_lbl = QLabel(_overlay_time_ago(ts))
+            t_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+            )
+            rl.addWidget(t_lbl)
+            rc_layout.addWidget(row)
+
+    def _fill_globals_top_players(self):
+        """Fill the top players sub-container from stored data."""
+        tc_layout = self._globals_top_container.layout()
+        _clear_layout(tc_layout)
+        data = getattr(self, "_globals_overlay_data", None)
+        if not data:
+            return
+        top = data.get("top_players") or []
+        if not top:
+            return
+        sort_key = getattr(self, "_globals_overlay_top_sort", "value")
+        self._update_globals_sort_styles()
+        sorted_top = sorted(
+            top, key=lambda p: p.get(sort_key, 0), reverse=True,
+        )[:10]
+        for i, p in enumerate(sorted_top):
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 1, 0, 1)
+            rl.setSpacing(4)
+            rank_lbl = QLabel(f"#{i + 1}")
+            rank_lbl.setFixedWidth(20)
+            rank_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+            )
+            rl.addWidget(rank_lbl)
+            name = p.get("player", "?")
+            if p.get("is_team"):
+                name = "[T] " + name
+            n_lbl = _ElidedLabel(name)
+            n_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(n_lbl, 1)
+            cnt = p.get("count", 0)
+            c_lbl = QLabel(f"{cnt:,}")
+            c_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+            )
+            rl.addWidget(c_lbl)
+            total = p.get("value", 0)
+            t_lbl = QLabel(f"{_overlay_format_ped(total)} PED")
+            t_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; font-weight: 600;"
+                " background: transparent;"
+            )
+            rl.addWidget(t_lbl)
+            tc_layout.addWidget(row)
+
+    # --- Globals: style helpers ---
+
+    def _update_globals_period_styles(self):
+        """Restyle period buttons to reflect the active period."""
+        current = self._globals_overlay_period
+        for p, btn in self._globals_period_buttons.items():
+            active = p == current
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: {ACCENT if active else 'transparent'};"
+                f"  color: {'#fff' if active else TEXT_DIM};"
+                f"  border: 1px solid {ACCENT if active else BORDER};"
+                f"  border-radius: 2px; font-size: 10px;"
+                f"  padding: 2px 8px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  color: {'#fff' if active else TEXT_COLOR};"
+                f"  border-color: {ACCENT};"
+                f"}}"
+            )
+
+    def _update_globals_sort_styles(self):
+        """Restyle sort buttons to reflect the active sort key."""
+        current = getattr(self, "_globals_overlay_top_sort", "value")
+        for sk, sbtn in self._globals_sort_buttons.items():
+            active = sk == current
+            sbtn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: {ACCENT if active else 'transparent'};"
+                f"  color: {'#fff' if active else TEXT_DIM};"
+                f"  border: 1px solid {ACCENT if active else BORDER};"
+                f"  border-radius: 2px; font-size: 10px;"
+                f"  padding: 1px 6px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  color: {'#fff' if active else TEXT_COLOR};"
+                f"  border-color: {ACCENT};"
+                f"}}"
+            )
+
+    # --- Globals: period / sort handlers ---
+
+    def _on_globals_overlay_period(self, period: str):
+        """Refetch globals data for a different period.
+
+        Keeps the skeleton intact — updates button styles and stat labels
+        immediately, clears only the dynamic sub-containers.
+        """
+        self._globals_overlay_period = period
+        dc = getattr(self, "_data_client", None)
+        mob_name = getattr(self, "_globals_overlay_mob_name", "")
+        if not dc or not mob_name:
+            return
+
+        if getattr(self, "_globals_skeleton_built", False):
+            # Update period buttons immediately
+            self._update_globals_period_styles()
+            # Set stat labels to loading placeholder
+            for lbl in self._globals_stat_labels.values():
+                lbl.setText("-")
+            # Show loading message, clear dynamic sections
+            self._globals_message_label.setText("Loading\u2026")
+            self._globals_message_label.setVisible(True)
+            self._globals_recent_title.setVisible(False)
+            _clear_layout(self._globals_recent_container.layout())
+            self._globals_top_header.setVisible(False)
+            _clear_layout(self._globals_top_container.layout())
+
+        import threading as _th
+
+        def fetch():
+            data = dc.get_mob_globals(mob_name, period=period)
+            invoke_on_main(lambda d=data: self._replace_globals_overlay(d))
+
+        _th.Thread(target=fetch, daemon=True, name="overlay-mob-globals-refetch").start()
+
+    def _replace_globals_overlay(self, data: dict):
+        """Update globals tab content after a period change."""
+        if getattr(self, "_globals_skeleton_built", False):
+            # Skeleton exists — update data in place
+            try:
+                self._fill_globals_data(data)
+            except Exception:
+                log.exception("Failed to update globals overlay")
+                self._globals_message_label.setText("Error loading globals")
+                self._globals_message_label.setVisible(True)
+        else:
+            # No skeleton yet — full build (shouldn't normally happen)
+            layout = getattr(self, "_globals_overlay_layout", None)
+            if not layout:
+                return
+            _clear_layout(layout)
+            self._globals_overlay_loading = None
+            try:
+                self._populate_globals_overlay_inner(data, layout)
+            except Exception:
+                log.exception("Failed to populate globals overlay")
+                err = QLabel("Error loading globals")
+                err.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+                )
+                err.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(err)
+
+    def _on_globals_overlay_sort(self, sort_key: str):
+        """Re-sort top players in overlay without refetching."""
+        self._globals_overlay_top_sort = sort_key
+        if getattr(self, "_globals_skeleton_built", False):
+            self._fill_globals_top_players()
+        else:
+            data = getattr(self, "_globals_overlay_data", None)
+            if data:
+                self._replace_globals_overlay(data)
 
     # ----- Mission: Steps tab -----
 
@@ -2582,6 +3041,38 @@ def _stat_row(label: str, value: str, *, label_color: str = TEXT_DIM,
     return row
 
 
+def _overlay_format_ped(v) -> str:
+    """Format a PED value compactly for overlay display."""
+    if v is None:
+        return "0"
+    if v >= 1000:
+        return f"{v / 1000:.1f}K"
+    return f"{v:.2f}"
+
+
+def _overlay_time_ago(date_str: str) -> str:
+    """Convert ISO timestamp to relative time string."""
+    if not date_str:
+        return ""
+    try:
+        from datetime import datetime, timezone
+        then = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        diff = datetime.now(timezone.utc) - then
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "now"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"{minutes}m"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h"
+        days = hours // 24
+        return f"{days}d"
+    except (ValueError, TypeError):
+        return ""
+
+
 def _make_centered_label(text: str) -> QWidget:
     widget = QWidget()
     widget.setStyleSheet("background: transparent;")
@@ -2609,6 +3100,15 @@ def _make_exchange_link(text: str, url: str) -> QPushButton:
     )
     btn.clicked.connect(lambda: webbrowser.open(url))
     return btn
+
+
+def _clear_layout(layout):
+    """Remove and delete all child widgets from a layout."""
+    while layout.count():
+        item = layout.takeAt(0)
+        w = item.widget()
+        if w:
+            w.deleteLater()
 
 
 def _details_container() -> tuple[QWidget, QVBoxLayout]:

@@ -2,7 +2,7 @@ import os
 import sys
 import threading
 from contextlib import contextmanager
-from typing import Callable, Optional
+from typing import Optional
 
 import numpy as np
 
@@ -36,6 +36,9 @@ WINDOW_BACKENDS = {"auto", "printwindow", "wgc"}
 DEFAULT_CAPTURE_BACKEND = "auto"
 WGC_MAX_FAIL_STREAK = 5
 
+# Windows build that introduced GraphicsCaptureSession.IsBorderRequired
+_WGC_BORDERLESS_MIN_BUILD = 20348
+
 
 @contextmanager
 def _thread_per_monitor_dpi():
@@ -62,6 +65,80 @@ def _thread_per_monitor_dpi():
                 pass
 
 
+# ---------------------------------------------------------------------------
+# Persistent WGC session (wraps windows-capture)
+# ---------------------------------------------------------------------------
+
+class _WgcPersistentSession:
+    """Keeps a single WGC session alive across frames.
+
+    The session runs on its own thread (via ``start_free_threaded``).
+    ``on_frame_arrived`` stores the latest BGR frame; callers retrieve it
+    with :meth:`get_frame`.
+    """
+
+    def __init__(self, window_name: str, draw_border: bool | None):
+        self._latest_frame: np.ndarray | None = None
+        self._lock = threading.Lock()
+        self._control = None
+        self._closed = False
+
+        from windows_capture.windows_capture import NativeWindowsCapture
+
+        native = NativeWindowsCapture(
+            self._on_frame,
+            self._on_closed,
+            False,           # cursor_capture
+            draw_border,
+            None,            # secondary_window
+            None,            # minimum_update_interval
+            None,            # dirty_region
+            None,            # monitor_index
+            window_name,
+        )
+        self._control = native.start_free_threaded()
+
+    def _on_frame(self, buf, buf_len, width, height, stop_list, timespan):
+        row_pitch = buf_len // height
+        if row_pitch == width * 4:
+            arr = np.ctypeslib.as_array(
+                ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)),
+                shape=(height, width, 4),
+            )
+        else:
+            arr = np.ctypeslib.as_array(
+                ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)),
+                shape=(height, row_pitch),
+            )[:, :width * 4].reshape(height, width, 4)
+        # BGRA → BGR, copy to own buffer so the native side can free its memory
+        bgr = arr[:, :, :3].copy()
+        with self._lock:
+            self._latest_frame = bgr
+
+    def _on_closed(self):
+        self._closed = True
+
+    def get_frame(self) -> np.ndarray | None:
+        with self._lock:
+            return self._latest_frame
+
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
+
+    def stop(self):
+        if self._control:
+            try:
+                self._control.stop()
+            except Exception:
+                pass
+            self._control = None
+
+
+# ---------------------------------------------------------------------------
+# Main capturer
+# ---------------------------------------------------------------------------
+
 class ScreenCapturer:
     """Captures screen regions using mss or a Windows window-capture backend.
 
@@ -77,20 +154,30 @@ class ScreenCapturer:
             capture_backend or os.getenv("NEXUS_CAPTURE_BACKEND", DEFAULT_CAPTURE_BACKEND),
         )
         self._active_window_backend = "printwindow"
-        self._wgc_capture_fn: Optional[Callable[[str], object]] = None
         self._wgc_fail_streak = 0
+
+        # Persistent WGC session state
+        self._wgc_session: Optional[_WgcPersistentSession] = None
+        self._wgc_session_hwnd: Optional[int] = None
+        self._wgc_draw_border: bool | None = None  # False = borderless, None = OS default
+        self._wgc_available = False
 
         if sys.platform == "win32":
             self._init_windows_backend()
 
     def set_capture_backend(self, capture_backend: str | None) -> None:
         """Update backend preference at runtime."""
+        self._stop_wgc_session()
         self._capture_backend_preference = self._normalize_backend_name(
             capture_backend or DEFAULT_CAPTURE_BACKEND,
         )
         self._wgc_fail_streak = 0
         if sys.platform == "win32":
             self._init_windows_backend()
+
+    def stop(self) -> None:
+        """Clean up persistent sessions.  Called when the distributor stops."""
+        self._stop_wgc_session()
 
     @property
     def active_window_backend(self) -> str:
@@ -123,10 +210,12 @@ class ScreenCapturer:
             return
 
         if self._capture_backend_preference in {"auto", "wgc"}:
-            self._wgc_capture_fn = self._load_wgc_capture_fn()
-            if self._wgc_capture_fn is not None:
+            if self._is_wgc_available():
+                self._wgc_available = True
+                self._wgc_draw_border = False if self._is_borderless_supported() else None
                 self._active_window_backend = "wgc"
-                log.info("Window capture backend: Windows Graphics Capture")
+                border_info = "borderless" if self._wgc_draw_border is False else "with border"
+                log.info("Window capture backend: Windows Graphics Capture (%s)", border_info)
                 return
             if self._capture_backend_preference == "wgc":
                 log.warning(
@@ -137,17 +226,114 @@ class ScreenCapturer:
         if self._capture_backend_preference == "auto":
             log.info("Window capture backend: PrintWindow (WGC not available)")
 
-    def _load_wgc_capture_fn(self) -> Optional[Callable[[str], object]]:
+    @staticmethod
+    def _is_wgc_available() -> bool:
+        """Check if the windows-capture library can be loaded."""
         try:
-            import wgcapture
+            from windows_capture.windows_capture import NativeWindowsCapture  # noqa: F401
+            return True
         except Exception:
-            return None
+            return False
 
-        capture_fn = getattr(wgcapture, "capture_screen", None)
-        if not callable(capture_fn):
-            log.warning("wgcapture module is present but capture_screen() is missing")
-            return None
-        return capture_fn
+    @staticmethod
+    def _is_borderless_supported() -> bool:
+        """Check if the OS supports WGC borderless capture (IsBorderRequired).
+
+        Tries to create a session with ``draw_border=False`` targeting a
+        non-existent window name.  If ``windows-capture`` raises a border-
+        specific error the API is unavailable; any other outcome (including
+        window-not-found errors) means the border setting was accepted.
+        """
+        if sys.platform != "win32":
+            return False
+        try:
+            from windows_capture.windows_capture import NativeWindowsCapture
+
+            def _noop_frame(*a):
+                pass
+
+            def _noop_closed():
+                pass
+
+            native = NativeWindowsCapture(
+                _noop_frame,
+                _noop_closed,
+                False,                                    # cursor_capture
+                False,                                    # draw_border
+                None,                                     # secondary_window
+                None,                                     # minimum_update_interval
+                None,                                     # dirty_region
+                None,                                     # monitor_index
+                "__nexus_borderless_probe_nonexistent__",  # window_name
+            )
+            # start_free_threaded will fail because the window doesn't exist,
+            # but the border-unsupported check happens first in the Rust code.
+            native.start_free_threaded()
+            return True  # session started somehow — borderless is supported
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "border" in err_msg:
+                return False
+            # Any other error (e.g. window not found) means the border setting
+            # was accepted before the window lookup failed.
+            return True
+
+    # ------------------------------------------------------------------
+    # Persistent WGC session management
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _hwnd_to_title(hwnd: int) -> str:
+        """Return the window title for *hwnd*, or empty string on failure."""
+        try:
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length == 0:
+                return ""
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            return buf.value
+        except Exception:
+            return ""
+
+    def _start_wgc_session(self, hwnd: int) -> bool:
+        """Start a persistent WGC session for *hwnd*.  Returns True on success."""
+        title = self._hwnd_to_title(hwnd)
+        if not title:
+            log.warning("WGC session start failed: could not get window title for hwnd %s", hwnd)
+            return False
+        draw_border = self._wgc_draw_border
+        try:
+            self._wgc_session = _WgcPersistentSession(title, draw_border)
+            self._wgc_session_hwnd = hwnd
+            return True
+        except Exception as e:
+            err_msg = str(e).lower()
+            # If borderless was requested but unsupported, retry with OS default
+            if draw_border is False and "border" in err_msg:
+                log.warning("Borderless WGC not supported; retrying with OS default border")
+                self._wgc_draw_border = None
+                try:
+                    self._wgc_session = _WgcPersistentSession(title, None)
+                    self._wgc_session_hwnd = hwnd
+                    return True
+                except Exception as e2:
+                    log.warning("WGC session start failed: %s", e2)
+            else:
+                log.warning("WGC session start failed: %s", e)
+            self._wgc_session = None
+            self._wgc_session_hwnd = None
+            return False
+
+    def _stop_wgc_session(self) -> None:
+        """Stop the current persistent WGC session, if any."""
+        if self._wgc_session is not None:
+            self._wgc_session.stop()
+            self._wgc_session = None
+            self._wgc_session_hwnd = None
+
+    # ------------------------------------------------------------------
+    # Public capture API
+    # ------------------------------------------------------------------
 
     def _get_sct(self):
         """Get or create the mss instance for the current thread."""
@@ -188,19 +374,20 @@ class ScreenCapturer:
         """
         if sys.platform == "win32":
             if self._active_window_backend == "wgc":
-                image = self._capture_window_wgc(hwnd)
-                if image is not None:
+                frame = self._capture_from_wgc_session(hwnd)
+                if frame is not None:
                     self._wgc_fail_streak = 0
-                    return image
+                    return frame
 
                 self._wgc_fail_streak += 1
                 if self._wgc_fail_streak == 1:
-                    log.debug("WGC capture failed; using PrintWindow fallback")
+                    log.debug("WGC session returned no frame; using PrintWindow fallback")
                 if self._wgc_fail_streak >= WGC_MAX_FAIL_STREAK:
                     log.warning(
-                        "WGC failed %d times in a row; disabling WGC for this session",
+                        "WGC returned no frames %d times in a row; disabling WGC for this session",
                         self._wgc_fail_streak,
                     )
+                    self._stop_wgc_session()
                     self._active_window_backend = "printwindow"
             return self._capture_window_win32(hwnd)
 
@@ -210,41 +397,21 @@ class ScreenCapturer:
         x, y, w, h = geometry
         return self.capture_region(x, y, w, h)
 
-    def _capture_window_wgc(self, hwnd: int) -> np.ndarray | None:
-        """Capture via Windows Graphics Capture wrapper (if available)."""
-        if self._wgc_capture_fn is None:
-            return None
+    def _capture_from_wgc_session(self, hwnd: int) -> np.ndarray | None:
+        """Get the latest frame from the persistent WGC session.
 
-        title = self._get_window_title_win32(hwnd)
-        if not title:
-            return None
+        Starts a new session if needed, restarts if the HWND changed or
+        the session closed.
+        """
+        # Restart session if HWND changed or session died
+        if (self._wgc_session_hwnd != hwnd
+                or self._wgc_session is None
+                or self._wgc_session.is_closed):
+            self._stop_wgc_session()
+            if not self._start_wgc_session(hwnd):
+                return None
 
-        try:
-            raw = self._wgc_capture_fn(title)
-        except Exception as e:
-            log.debug("WGC capture raised for '%s': %s", title, e)
-            return None
-        if raw is None:
-            return None
-
-        image = np.asarray(raw)
-        if image.ndim != 3 or image.shape[2] < 3:
-            log.debug("WGC capture returned invalid shape: %s", getattr(image, "shape", None))
-            return None
-
-        if image.dtype != np.uint8:
-            image = image.astype(np.uint8, copy=False)
-
-        # wgcapture returns RGB/RGBA. Convert to BGR for OpenCV pipeline.
-        return image[:, :, [2, 1, 0]]
-
-    def _get_window_title_win32(self, hwnd: int) -> str:
-        length = user32.GetWindowTextLengthW(hwnd)
-        if length <= 0:
-            return ""
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        return buf.value
+        return self._wgc_session.get_frame()
 
     def _capture_window_win32(self, hwnd: int) -> np.ndarray | None:
         """Capture a window via Win32 PrintWindow (ignores overlays)."""

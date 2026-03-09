@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 log = get_logger("ScanSummary")
 
 # --- Layout ---
-SUMMARY_WIDTH = 360
+SUMMARY_WIDTH = 370
 BODY_HEIGHT = 300
 
 # --- Colors (matching detail_overlay dark theme) ---
@@ -101,6 +101,8 @@ class ScanSummaryOverlay(OverlayWidget):
         self._event_bus = event_bus
         self._get_previous_values = skill_values_fn or (lambda: {})
         self._total_skill_count = 0  # set by first progress event
+        self._total_visible_count = 0  # non-hidden skills count
+        self._hidden_skill_names: set[str] = set()
         self._dismissed = False  # True after user/system dismiss; blocks auto-show
         self._skills: list[SkillReading] = []
         self._skill_set: set[str] = set()
@@ -146,14 +148,14 @@ class ScanSummaryOverlay(OverlayWidget):
         header = QHBoxLayout()
         self._count_label = QLabel("0/165 skills read")
         self._count_label.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 11px; font-weight: bold;"
+            f"color: {TEXT_COLOR}; font-size: 12px; font-weight: bold;"
             " background: transparent;"
         )
         header.addWidget(self._count_label)
         header.addStretch()
         self._warning_label = QLabel("")
         self._warning_label.setStyleSheet(
-            f"color: {WARNING_COLOR}; font-size: 11px; background: transparent;"
+            f"color: {WARNING_COLOR}; font-size: 12px; background: transparent;"
         )
         self._warning_label.setVisible(False)
         header.addWidget(self._warning_label)
@@ -191,7 +193,7 @@ class ScanSummaryOverlay(OverlayWidget):
 
         self._total_label = QLabel("Total: 0")
         self._total_label.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 10px; font-weight: bold;"
+            f"color: {TEXT_COLOR}; font-size: 11px; font-weight: bold;"
             " background: transparent;"
         )
         footer_layout.addWidget(self._total_label)
@@ -212,7 +214,7 @@ class ScanSummaryOverlay(OverlayWidget):
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_btn.setStyleSheet(
-            f"color: {clear_color}; font-size: 10px;"
+            f"color: {clear_color}; font-size: 11px;"
             f" background: transparent; border: 1px solid {clear_color};"
             " border-radius: 3px; padding: 2px 8px;"
         )
@@ -222,7 +224,7 @@ class ScanSummaryOverlay(OverlayWidget):
         self._rescan_btn = QPushButton("Re-Scan")
         self._rescan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._rescan_btn.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 10px;"
+            f"color: {TEXT_COLOR}; font-size: 11px;"
             f" background: transparent; border: 1px solid {TEXT_DIM};"
             " border-radius: 3px; padding: 2px 8px;"
         )
@@ -365,6 +367,10 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def _on_progress(self, progress: ScanProgress):
         self._total_skill_count = progress.total_skills_expected
+        if progress.total_visible_skills > 0:
+            self._total_visible_count = progress.total_visible_skills
+        if progress.hidden_skill_names:
+            self._hidden_skill_names = progress.hidden_skill_names
         self._update_counts()
         self._set_scan_done()
 
@@ -393,7 +399,7 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def _make_skill_row(self, reading: SkillReading) -> QWidget:
         row = QWidget()
-        row.setFixedHeight(18)
+        row.setFixedHeight(20)
 
         layout = QHBoxLayout(row)
         layout.setContentsMargins(4, 0, 4, 0)
@@ -404,11 +410,11 @@ class ScanSummaryOverlay(OverlayWidget):
         layout.addWidget(name, 1)
 
         rank = QLabel(reading.rank)
-        rank.setFixedWidth(80)
+        rank.setFixedWidth(105)
         layout.addWidget(rank)
 
         points = QLabel("")
-        points.setFixedWidth(105)
+        points.setFixedWidth(50)
         points.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -429,14 +435,14 @@ class ScanSummaryOverlay(OverlayWidget):
         """Update Mark Complete button appearance based on enabled state."""
         if self._complete_btn.isEnabled():
             self._complete_btn.setStyleSheet(
-                f"color: {ACCENT}; font-size: 10px;"
+                f"color: {ACCENT}; font-size: 11px;"
                 f" background: transparent; border: 1px solid {ACCENT};"
                 " border-radius: 3px; padding: 2px 8px;"
             )
             self._complete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
             self._complete_btn.setStyleSheet(
-                f"color: {TEXT_DIM}; font-size: 10px;"
+                f"color: {TEXT_DIM}; font-size: 11px;"
                 f" background: transparent; border: 1px solid rgba(100,100,100,80);"
                 " border-radius: 3px; padding: 2px 8px;"
             )
@@ -454,9 +460,16 @@ class ScanSummaryOverlay(OverlayWidget):
         ]
 
         self._warning_count = sum(1 for s in counted_skills if s.is_mismatch)
-        self._count_label.setText(
-            f"{len(counted_skills)}/{self._total_skill_count} skills read"
-        )
+        count_text = f"{len(counted_skills)}/{self._total_skill_count} skills read"
+        # Show "(incomplete)" if any unhidden skills are missing from the scan
+        if self._total_visible_count > 0:
+            visible_read = sum(
+                1 for s in counted_skills
+                if s.skill_name not in self._hidden_skill_names
+            )
+            if visible_read < self._total_visible_count:
+                count_text += " (incomplete)"
+        self._count_label.setText(count_text)
         if self._warning_count > 0:
             self._warning_label.setText(f"{self._warning_count} warnings")
             self._warning_label.setVisible(True)
@@ -581,25 +594,19 @@ class ScanSummaryOverlay(OverlayWidget):
         name = row._name_label
         name.setText(reading.skill_name)
         name.setStyleSheet(
-            f"color: {text_color}; font-size: 10px; background: transparent;"
+            f"color: {text_color}; font-size: 12px; background: transparent;"
         )
 
         rank = row._rank_label
         rank.setText(reading.rank)
         rank.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
         )
 
-        points_text = f"{reading.current_points:.2f}"
-        if reading.estimated_points > 0 and reading.current_points <= 10000:
-            diff = reading.current_points - reading.estimated_points
-            sign = "+" if diff >= 0 else ""
-            points_text += f" ({sign}{diff:.0f})"
-
         points = row._points_label
-        points.setText(points_text)
+        points.setText(f"{reading.current_points:.2f}")
         points.setStyleSheet(
-            f"color: {text_color}; font-size: 10px; background: transparent;"
+            f"color: {text_color}; font-size: 12px; background: transparent;"
         )
 
     # --- Cleanup ---

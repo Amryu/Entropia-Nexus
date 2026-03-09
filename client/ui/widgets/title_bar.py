@@ -165,10 +165,7 @@ class CustomTitleBar(QWidget):
         """)
         # Initialize fields needed by eventFilter before installing it
         self._watched_window = None
-        self._search_popup = SearchResultsPopup()
-        self._search_popup.search_submitted.connect(self._on_search_enter)
-        self._search_popup.result_selected.connect(self._on_result_selected)
-        self._search_popup.create_requested.connect(self._on_create_requested)
+        self._search_popup: SearchResultsPopup | None = None  # created on first search
         self._last_scored: list[dict] = []
         self._suppress_reshow = False
         self._search.installEventFilter(self)
@@ -276,9 +273,21 @@ class CustomTitleBar(QWidget):
 
     # --- Search ---
 
+    def _ensure_search_popup(self) -> SearchResultsPopup:
+        if self._search_popup is None:
+            self._search_popup = SearchResultsPopup()
+            self._search_popup.search_submitted.connect(self._on_search_enter)
+            self._search_popup.result_selected.connect(self._on_result_selected)
+            self._search_popup.create_requested.connect(self._on_create_requested)
+        return self._search_popup
+
+    def _hide_search_popup(self):
+        if self._search_popup is not None:
+            self._search_popup.hide()
+
     def _on_search_text_changed(self, text: str):
         if len(text.strip()) < 2:
-            self._search_popup.hide()
+            self._hide_search_popup()
             self._search_timer.stop()
             return
         self._search_timer.start()
@@ -286,7 +295,7 @@ class CustomTitleBar(QWidget):
     def _perform_search(self):
         query = self._search.text().strip()
         if len(query) < 2 or not self._data_client:
-            self._search_popup.hide()
+            self._hide_search_popup()
             return
         self._search_version += 1
         version = self._search_version
@@ -324,7 +333,7 @@ class CustomTitleBar(QWidget):
         scored.sort(key=lambda r: (-r["_score"], len(r.get("Name", ""))))
 
         self._last_scored = scored
-        self._search_popup.set_results(scored, query)
+        self._ensure_search_popup().set_results(scored, query)
         self._position_popup()
 
         # Watch window for move/resize
@@ -336,9 +345,10 @@ class CustomTitleBar(QWidget):
             self._watched_window = win
 
     def _position_popup(self):
+        popup = self._ensure_search_popup()
         pos = self._search.mapToGlobal(QPoint(0, self._search.height() + 2))
         popup_w = self._search.width()
-        self._search_popup.move(pos.x(), pos.y())
+        popup.move(pos.x(), pos.y())
         # Compute max height, then let the popup show + defer height fitting
         screen = self._search.screen()
         if screen:
@@ -347,24 +357,24 @@ class CustomTitleBar(QWidget):
         else:
             max_h = 400
         max_h = min(max_h, int(self._window.height() * 0.6))
-        self._search_popup.show_popup(max_h, popup_w)
+        popup.show_popup(max_h, popup_w)
 
     def _on_search_enter(self, query: str):
         """User pressed Enter in search — open full results in wiki."""
         self._suppress_reshow = True
-        self._search_popup.hide()
+        self._hide_search_popup()
         self.search_submitted.emit(query, self._last_scored)
 
     def _on_result_selected(self, item: dict):
         """User clicked or pressed Enter on a specific result."""
         self._suppress_reshow = True
-        self._search_popup.hide()
+        self._hide_search_popup()
         self.result_selected.emit(item)
 
     def _on_create_requested(self, url_path: str):
         """User picked a category from the 'add to wiki' picker."""
         self._suppress_reshow = True
-        self._search_popup.hide()
+        self._hide_search_popup()
         self.create_requested.emit(url_path)
 
     # --- Event filter ---
@@ -376,13 +386,13 @@ class CustomTitleBar(QWidget):
             # Forward key events from search bar to popup
             if etype == QEvent.Type.KeyPress:
                 key = event.key()
-                if self._search_popup.isVisible():
+                if self._search_popup is not None and self._search_popup.isVisible():
                     if self._search_popup.handle_key(key):
                         return True
                 elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                     query = self._search.text().strip()
                     if len(query) >= 2:
-                        self._search_popup.hide()
+                        self._hide_search_popup()
                         self.search_submitted.emit(query, self._last_scored)
                         return True
             # Re-show popup when search bar regains focus with results
@@ -401,7 +411,7 @@ class CustomTitleBar(QWidget):
             QEvent.Type.Move, QEvent.Type.Resize, QEvent.Type.WindowStateChange,
             QEvent.Type.WindowDeactivate,
         ):
-            self._search_popup.hide()
+            self._hide_search_popup()
             if etype == QEvent.Type.WindowDeactivate:
                 self._search.clearFocus()
 
@@ -496,5 +506,7 @@ class CustomTitleBar(QWidget):
         p.end()
 
     def _maybe_hide_popup(self):
+        if self._search_popup is None:
+            return
         if not self._search.hasFocus() and not self._search_popup.underMouse():
             self._search_popup.hide()

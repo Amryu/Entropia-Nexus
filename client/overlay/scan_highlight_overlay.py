@@ -419,13 +419,12 @@ class ScanHighlightOverlay(QWidget):
         """Market price window detected — accumulate for this tick and repaint.
 
         Multiple events arrive per tick when several market price windows are
-        open.  We detect a new tick by checking if the timestamp changed.
+        open.  We detect a new tick via the monotonic tick_seq counter from
+        the detector (immune to cached/reused timestamps on the fast path).
         """
-        ts = data.get("data", {}).get("timestamp", "")
-        # New tick: clear accumulated windows from previous tick
-        tick_id = hash(ts)
-        if tick_id != self._mp_current_tick:
-            self._mp_current_tick = tick_id
+        tick_seq = data.get("tick_seq", 0)
+        if tick_seq != self._mp_current_tick:
+            self._mp_current_tick = tick_seq
             self._market_price_windows.clear()
         self._market_price_windows.append(data)
         self._update_game_origin(data)
@@ -633,6 +632,10 @@ class ScanHighlightOverlay(QWidget):
         if w <= 0 or h <= 0:
             return
 
+        # Hide no-match box unless confidence is near the threshold (≥50%)
+        if not matched and confidence < 0.50:
+            return
+
         color = ST_COLOR_OK if matched else ST_COLOR_FAIL
         painter.setPen(QPen(color, 2))
         painter.setBrush(QBrush(ST_FILL))
@@ -791,7 +794,16 @@ class ScanHighlightOverlay(QWidget):
         painter.setFont(MP_VALUE_FONT)
         painter.setPen(QPen(MP_COLOR))
         ocr_conf = parsed.get("ocr_confidence", 0)
+        agg_raw = parsed.get("_agg_raw", 0)
+        hp_raw = parsed.get("_hp_raw", 1)
+        cell_confs = parsed.get("_cell_confs", [])
+        # Raw cell confidences line above main label
+        if cell_confs:
+            painter.setFont(MP_LABEL_FONT)
+            confs_str = " ".join(f"{c:.2f}" for c in cell_confs)
+            painter.drawText(x, y - 16, confs_str)
         label = f"MARKET PRICE ({confidence:.0%} / OCR {ocr_conf:.0%})"
+        label += f"  agg={agg_raw} hp={hp_raw}"
         painter.drawText(x, y - 4, label)
 
         self._paint_market_price_rois(painter, x, y, parsed)
@@ -801,7 +813,8 @@ class ScanHighlightOverlay(QWidget):
         """Draw labeled ROI boxes for market price window regions."""
         cfg = self._config
 
-        def draw_roi(roi, color, label, value_text=""):
+        def draw_roi(roi, color, label, value_text="", conf=None,
+                     value_color=None, worst_char=""):
             if not roi:
                 return
             dx = roi.get("dx", 0)
@@ -820,7 +833,8 @@ class ScanHighlightOverlay(QWidget):
             # Value text at the bottom-right of the box
             if value_text:
                 painter.setFont(MP_VALUE_FONT)
-                painter.setPen(QPen(QColor(255, 255, 255, 220)))
+                vc = value_color or QColor(255, 255, 255, 220)
+                painter.setPen(QPen(vc))
                 fm = painter.fontMetrics()
                 tw = fm.horizontalAdvance(value_text)
                 th = fm.height()
@@ -830,12 +844,27 @@ class ScanHighlightOverlay(QWidget):
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom,
                     value_text,
                 )
+            # Per-field confidence below the box
+            if conf is not None:
+                painter.setFont(MP_LABEL_FONT)
+                conf_pct = f"{conf:.0%}"
+                if worst_char and conf < 0.95:
+                    conf_pct += f" '{worst_char}'"
+                if conf >= 0.90:
+                    conf_color = QColor(100, 255, 100, 180)   # Green
+                elif conf >= 0.70:
+                    conf_color = QColor(255, 255, 100, 180)   # Yellow
+                else:
+                    conf_color = QColor(255, 100, 100, 180)   # Red
+                painter.setPen(QPen(conf_color))
+                painter.drawText(rx + rw - 24, ry + rh + 11, conf_pct)
 
         # Name rows
         name = parsed.get("item_name", "")
         roi_r1 = getattr(cfg, "market_price_roi_name_row1", None)
         roi_r2 = getattr(cfg, "market_price_roi_name_row2", None)
-        draw_roi(roi_r1, MP_ROI_NAME, "Name R1", name if name else "—")
+        draw_roi(roi_r1, MP_ROI_NAME, "Name R1", name if name else "—",
+                 value_color=QColor(255, 80, 80, 220))
         draw_roi(roi_r2, MP_ROI_NAME, "Name R2")
 
         # Tier
@@ -865,17 +894,21 @@ class ScanHighlightOverlay(QWidget):
                                 "w": cell_w, "h": cell_h}
                     key = f"{metric}_{period}"
                     val = parsed.get(key)
-                    val_str = self._format_cell_value(val, metric)
+                    markup_mode = parsed.get("markup_mode", "percent")
+                    val_str = self._format_cell_value(val, metric, markup_mode)
+                    cell_conf = parsed.get(f"{key}_conf")
+                    cell_worst = parsed.get(f"{key}_worst_char", "")
                     label = f"{metric[0].upper()}{period}"
-                    draw_roi(cell_roi, MP_ROI_CELL, label, val_str)
+                    draw_roi(cell_roi, MP_ROI_CELL, label, val_str,
+                             conf=cell_conf, worst_char=cell_worst)
 
     @staticmethod
-    def _format_cell_value(val, metric: str) -> str:
+    def _format_cell_value(val, metric: str, markup_mode: str = "percent") -> str:
         """Format a parsed cell value for the debug overlay.
 
         Sales values use scientific notation for very small numbers
-        (mPEC/uPEC range).  Markup values use compact notation for
-        large percentages.
+        (mPEC/uPEC range).  Markup values use % or + suffix depending
+        on the detected markup mode.
         """
         if val is None:
             return "—"
@@ -884,23 +917,26 @@ class ScanHighlightOverlay(QWidget):
         if val == 0:
             return "0"
         if metric == "sales":
-            # Sales are in PED; 1 PEC = 0.01 PED
+            # Sales are in PED; 1 PEC = 0.01 PED.
+            # Values are already parsed (e.g. "2.1k" → 2100.0 PED),
+            # so divide back before applying SI suffix for display.
             abs_val = abs(val)
             if abs_val >= 1_000_000:
-                return f"{val:.2g}M"
+                return f"{val / 1_000_000:.4g}M"
             if abs_val >= 1_000:
-                return f"{val:.4g}k"
+                return f"{val / 1_000:.4g}k"
             if abs_val >= 0.01:
                 return f"{val:.4g}"
             # Sub-PEC: use scientific notation
             return f"{val:.2e}"
-        # Markup
+        # Markup — suffix depends on mode (percent → %, absolute → +PED)
+        suffix = "%" if markup_mode == "percent" else "+"
         abs_val = abs(val)
         if abs_val >= 100_000:
-            return f"{val:.3g}%"
+            return f"{val:.3g}{suffix}"
         if abs_val >= 100:
-            return f"{val:.4g}%"
-        return f"{val:.4g}"
+            return f"{val:.4g}{suffix}"
+        return f"{val:.4g}{suffix}"
 
     # ── Player status (heart) ────────────────────────────────────────
 

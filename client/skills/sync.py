@@ -30,15 +30,15 @@ class SkillDataManager:
         *,
         source: str,
         dirty: bool,
+        imported_at: str | None = None,
     ) -> None:
         if not self._db or not skill_values:
             return
         try:
-            self._db.upsert_local_skill_values(
-                skill_values,
-                source=source,
-                dirty=dirty,
-            )
+            kwargs = dict(source=source, dirty=dirty)
+            if imported_at is not None:
+                kwargs["imported_at"] = imported_at
+            self._db.upsert_local_skill_values(skill_values, **kwargs)
         except Exception as e:
             log.error("Failed to persist local skill values (%s): %s", source, e)
 
@@ -329,7 +329,12 @@ class SkillDataManager:
             log.error("Failed to upload scan results to remote API")
         return ok
 
-    def apply_imported_values(self, imported: dict[str, float]) -> bool:
+    def apply_imported_values(
+        self,
+        imported: dict[str, float],
+        *,
+        imported_at: str | None = None,
+    ) -> bool:
         """Apply imported values locally and sync to server when available."""
         if not imported:
             return True
@@ -349,6 +354,7 @@ class SkillDataManager:
             normalized,
             source="manual_import",
             dirty=True,
+            imported_at=imported_at,
         )
 
         if not self._nexus_client:

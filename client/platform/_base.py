@@ -70,6 +70,14 @@ class PlatformBackend(Protocol):
         """
         ...
 
+    def cloak_window(self, wid: int) -> None:
+        """Cloak a window (hidden from user, still composited) — no-op fallback."""
+        pass
+
+    def uncloak_window(self, wid: int) -> None:
+        """Remove window cloak — no-op fallback."""
+        pass
+
     def bring_to_foreground(self, wid: int) -> bool:
         """Activate the window and bring it to the front.
 
@@ -94,6 +102,10 @@ class PlatformBackend(Protocol):
         ...
 
     # --- Hotkeys ---
+
+    def preinit_hotkeys(self) -> None:
+        """Eagerly initialise platform hotkey internals (optional)."""
+        pass
 
     def register_hotkey_hook(self, callback) -> bool:
         """Install a low-level keyboard hook; *callback* receives key events.

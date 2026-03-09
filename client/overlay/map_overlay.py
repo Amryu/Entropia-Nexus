@@ -121,6 +121,9 @@ class _InfoPanelWrapper(QWidget):
         info_panel.setParent(self)
         layout.addWidget(info_panel)
 
+        # Force HWND creation while hidden (same as OverlayWidget pattern)
+        self.winId()
+
     def set_wants_visible(self, visible: bool):
         if visible:
             self.show()

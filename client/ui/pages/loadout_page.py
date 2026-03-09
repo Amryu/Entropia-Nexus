@@ -24,8 +24,202 @@ from ..widgets.gear_picker_dialog import GearPickerDialog
 from ..widgets.loadout_compare import LoadoutCompareWidget
 from ..theme import ACCENT, BORDER, ERROR, HOVER, MAIN_DARK, PRIMARY, SECONDARY, TEXT, TEXT_MUTED, WARNING
 from ..icons import svg_icon
+from ...loadout.calculator import LoadoutCalculator
 
 log = get_logger("Loadout")
+
+# ---------------------------------------------------------------------------
+# Stat display constants (module-level to avoid re-creation per update)
+# ---------------------------------------------------------------------------
+
+# (attribute, suffix, formatter)
+# Formatters: None = auto, "pec" = 4dp PEC, "pct" = ×100 %, "pct_raw" = raw %,
+#             "hit" = X.X/10.0, "int" = integer, "str" = string as-is
+_STAT_DEFS: dict[str, tuple[str, str, str | None]] = {
+    # Tier-1
+    "Efficiency": ("efficiency", "%", "pct_raw"),
+    "DPS": ("dps", "", None),
+    "DPP": ("dpp", "", None),
+    # Offensive
+    "Total Damage": ("total_damage", "", None),
+    "Effective Damage": ("effective_damage", "", None),
+    "Crit Chance": ("crit_chance", "%", "pct"),
+    "Crit Damage": ("crit_damage", "%", "pct"),
+    "Range": ("range", " m", None),
+    "Reload": ("reload", " s", None),
+    "Cost": ("cost", " PEC", "pec"),
+    # Economy
+    "Decay": ("decay", " PEC", "pec"),
+    "Ammo Burn": ("ammo_burn", "", "int"),
+    "Weapon Cost": ("weapon_cost", " PEC", "pec"),
+    "Total Uses": ("lowest_total_uses", "", "int"),
+    # Defense
+    "Armor Defense": ("armor_defense", "", None),
+    "Plate Defense": ("plate_defense", "", None),
+    "Total Defense": ("total_defense", "", None),
+    "Top Types": ("top_defense_types", "", "str"),
+    "Total Absorption": ("total_absorption", " HP", None),
+    "Block Chance": ("block_chance", "%", "pct_raw"),
+    # Healing
+    "Total Heal": ("total_heal", "", None),
+    "Effective Heal": ("effective_heal", "", None),
+    "Instant Heal": ("_hot_instant", "", None),
+    "HoT Heal": ("_hot_heal", "", None),
+    "Heal Reload": ("heal_reload", " s", None),
+    "Heal Decay": ("heal_decay", " PEC", "pec"),
+    "Heal Ammo Burn": ("heal_ammo_burn", "", "int"),
+    "Heal Cost": ("heal_cost", " PEC", "pec"),
+    "HPS": ("hps", "", None),
+    "HoT HPS": ("_hot_hps", "", None),
+    "Lifesteal HPS": ("lifesteal_hps", "", None),
+    "Total HPS": ("_total_hps", "", None),
+    "HPP": ("hpp", "", None),
+    "Heal Total Uses": ("heal_total_uses", "", "int"),
+    # Skill
+    "Hit Ability": ("hit_ability", "/10.0", "hit"),
+    "Crit Ability": ("crit_ability", "/10.0", "hit"),
+}
+
+
+def _fmt_stat(val, suffix, fmt):
+    """Format a single stat value for display."""
+    if val is None:
+        return "-"
+    if fmt == "str":
+        return str(val) if val else "-"
+    if fmt == "int":
+        return f"{int(val)}{suffix}" if val else "-"
+    if fmt == "pec":
+        return f"{val:.4f}{suffix}" if val else "-"
+    if fmt == "pct":
+        return f"{val * 100:.1f}{suffix}" if val else "-"
+    if fmt == "pct_raw":
+        return f"{val:.1f}{suffix}" if val else "-"
+    if fmt == "hit":
+        return f"{val:.1f}{suffix}" if val else "-"
+    if isinstance(val, float):
+        return f"{val:.2f}{suffix}"
+    return f"{val}{suffix}"
+
+
+def _prepare_display_data(stats):
+    """Pre-compute all formatted strings for stats display.
+
+    Safe to call from any thread.  Returns (stat_texts, effect_groups).
+    """
+    # --- Format stat label values ---
+    hot = stats.hot_breakdown or {}
+    derived = {
+        "_hot_instant": hot.get("instantHeal"),
+        "_hot_heal": hot.get("hotHeal"),
+        "_hot_hps": hot.get("hotHPS"),
+        "_total_hps": None,
+    }
+    total_hps_parts = stats.hps or 0
+    if stats.lifesteal_hps:
+        total_hps_parts += stats.lifesteal_hps
+    if stats.lifesteal_hps or hot.get("hotHPS"):
+        derived["_total_hps"] = total_hps_parts
+
+    stat_texts = {}
+    for display_name, (attr, suffix, fmt) in _STAT_DEFS.items():
+        if attr.startswith("_"):
+            val = derived.get(attr)
+        else:
+            val = getattr(stats, attr, None)
+        stat_texts[display_name] = _fmt_stat(val, suffix, fmt)
+
+    # --- Pre-compute effect display data ---
+    categories = [
+        ("Offensive Effects", stats.offensive_effects),
+        ("Defensive Effects", stats.defensive_effects),
+        ("Utility Effects", stats.utility_effects),
+    ]
+    effect_groups = []
+    for cat_name, effects in categories:
+        if not effects:
+            continue
+        rows = []
+        for effect in effects:
+            name = effect.get("name", "")
+            unit = effect.get("unit", "")
+            total = effect.get("signedTotal", 0)
+            polarity = effect.get("polarity")
+            capped_any = effect.get("cappedAny", False)
+            caps = effect.get("caps") or {}
+            has_caps = bool(caps.get("item") or caps.get("action") or caps.get("total"))
+
+            value_text = f"{abs(total):.2f}{unit}"
+            if capped_any:
+                value_text = f"[{value_text}]"
+
+            if polarity == "positive":
+                color = ACCENT
+            elif polarity == "negative":
+                color = ERROR
+            else:
+                color = TEXT
+
+            row_html = (
+                f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+                f'<td style="font-size:12px;">{name}</td>'
+                f'<td style="color:{color};font-size:12px;font-weight:600;"'
+                f' align="right">{value_text}</td>'
+                f'</tr></table>'
+            )
+            btn_style = (
+                f"QPushButton {{"
+                f"  background: transparent; border: none;"
+                f"  border-left: 3px solid transparent;"
+                f"  text-align: left; padding: 2px 4px; font-size: 12px;"
+                f"  border-radius: 3px;"
+                f"}}"
+                + (f"QPushButton:hover {{ background: {HOVER}; }}" if has_caps else "")
+            )
+
+            effect_key = f"{name}::{unit}"
+            cap_htmls: list[str] = []
+            if has_caps:
+                raw_item = effect.get("rawItem", 0)
+                raw_action = effect.get("rawAction", 0)
+                raw_bonus = effect.get("rawBonus", 0)
+                capped_item = effect.get("cappedItem", 0)
+                capped_action = effect.get("cappedAction", 0)
+
+                cap_entries: list[tuple[str, float, float]] = []
+                if caps.get("item"):
+                    cap_entries.append(("Item", raw_item, caps["item"]))
+                if caps.get("action"):
+                    cap_entries.append(("Action", raw_action, caps["action"]))
+                if caps.get("total"):
+                    total_base = capped_item + capped_action + raw_bonus
+                    cap_entries.append(("Total", total_base, caps["total"]))
+
+                for label_text, raw_val, cap_val in cap_entries:
+                    is_over = abs(raw_val) > cap_val + 0.0001
+                    val_color = WARNING if is_over else TEXT_MUTED
+                    cap_htmls.append(
+                        f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+                        f'<td style="color:{TEXT_MUTED};font-size:10px;'
+                        f'font-weight:600;text-transform:uppercase;'
+                        f'letter-spacing:0.3px;">{label_text}</td>'
+                        f'<td style="color:{val_color};font-size:10px;"'
+                        f' align="right">'
+                        f'{raw_val:.2f}{unit} / {cap_val:.2f}{unit}</td>'
+                        f'</tr></table>'
+                    )
+
+            rows.append({
+                "row_html": row_html,
+                "btn_style": btn_style,
+                "has_caps": has_caps,
+                "effect_key": effect_key,
+                "cap_htmls": cap_htmls,
+            })
+        effect_groups.append((cat_name, rows))
+
+    return stat_texts, effect_groups
+
 
 MAX_SETS = 10
 RECALC_DELAY_MS = 300
@@ -139,10 +333,14 @@ class LoadoutPage(QWidget):
         self._current_loadout: dict | None = None
         self._entity_data: dict = {}
         self._calculator = None
+        self._calculator_lock = threading.Lock()
+        self._page_shown = False  # True after user first visits this page
+        self._calc_pending = False  # True if _on_gear_changed was skipped
         self._applying = False  # True while populating UI from loadout data
         self._dirty = False     # True when UI has unsaved changes
         self._saved_last_update: dict[str, str] = {}  # loadout_id → last_update
         self._save_in_flight = False
+        self._active_picker: QDialog | None = None  # non-modal picker ref
 
         # Set management
         self._active_set_indices = {"Weapon": 0, "Armor": 0, "Healing": 0, "Accessories": 0}
@@ -162,6 +360,21 @@ class LoadoutPage(QWidget):
         self._clothing_items: list[dict] = []   # [{Name, Slot, Side?}]
         self._consumable_items: list[dict] = []  # [{Name}]
         self._pet_effect_value: str | None = None
+
+        # Widget reuse pools (avoid destroy/recreate on loadout switch)
+        self._clothing_row_pool: list[tuple[QWidget, QLabel, QLabel, QPushButton]] = []
+        self._clothing_empty_lbl: QLabel | None = None
+        self._consumable_row_pool: list[tuple[QWidget, QLabel, QPushButton]] = []
+        self._consumable_empty_lbl: QLabel | None = None
+        self._pet_effect_btn_pool: list[QPushButton] = []
+        self._pet_grid_container: QWidget | None = None
+        # Effect display pools (headers, effect row slots, empty label)
+        self._effect_empty_lbl: QLabel | None = None
+        self._effect_header_pool: list[QLabel] = []
+        # Each slot: (btn, row_label, cap_widget, [cap_row_labels])
+        self._effect_row_pool: list[
+            tuple[QPushButton, QLabel, QWidget, list[QLabel]]
+        ] = []
 
         # Expanded effect keys for collapsible cap breakdowns
         self._expanded_effect_keys: set[str] = set()
@@ -754,11 +967,11 @@ class LoadoutPage(QWidget):
         self._effects_group_layout = QVBoxLayout(effects_group)
         self._effects_group_layout.setContentsMargins(6, 6, 6, 6)
         self._effects_group_layout.setSpacing(2)
-        empty = QLabel("No effects are active")
-        empty.setStyleSheet(
+        self._effect_empty_lbl = QLabel("No effects are active")
+        self._effect_empty_lbl.setStyleSheet(
             f"color: {TEXT_MUTED}; font-style: italic; padding: 4px 0;"
         )
-        self._effects_group_layout.addWidget(empty)
+        self._effects_group_layout.addWidget(self._effect_empty_lbl)
         self._stats_layout.addWidget(effects_group)
 
         # Stat groups — arranged in responsive 2-column grid
@@ -809,6 +1022,14 @@ class LoadoutPage(QWidget):
         for i, group in enumerate(self._stat_groups):
             row, col = divmod(i, cols)
             self._stats_grid.addWidget(group, row, col)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._page_shown:
+            self._page_shown = True
+            if self._calc_pending:
+                self._calc_pending = False
+                self._on_gear_changed()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1298,6 +1519,10 @@ class LoadoutPage(QWidget):
 
     def _open_picker(self, kind: str, field: FuzzyLineEdit):
         """Open a GearPickerDialog for *kind* and set *field* on selection."""
+        if self._active_picker is not None:
+            self._active_picker.raise_()
+            self._active_picker.activateWindow()
+            return
         if not self._entity_data:
             return
         config = self._build_picker_config(kind)
@@ -1317,11 +1542,14 @@ class LoadoutPage(QWidget):
         if rebuild_cb:
             rebuild_cb(dlg)
 
-        def on_selected(name):
-            field.set_value(name)
+        dlg.item_selected.connect(lambda name: field.set_value(name))
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dlg.finished.connect(self._on_picker_closed)
+        self._active_picker = dlg
+        dlg.open()
 
-        dlg.item_selected.connect(on_selected)
-        dlg.exec()
+    def _on_picker_closed(self):
+        self._active_picker = None
 
     def _build_picker_config(self, kind: str) -> dict | None:
         """Build title, columns, rows (and optional extras) for a picker."""
@@ -1932,34 +2160,38 @@ class LoadoutPage(QWidget):
         self._save_timer.start()
 
     def _on_gear_changed(self):
-        if not self._calculator:
-            try:
-                from ...loadout.calculator import LoadoutCalculator
-                self._calculator = LoadoutCalculator(self._config.js_utils_path or None)
-            except Exception as e:
-                log.error("JS bridge init failed: %s", e)
-                return
-
+        if not self._page_shown:
+            self._calc_pending = True
+            return
         loadout = self._build_loadout_from_ui()
-        calculator = self._calculator
         entity_data = self._entity_data
+        js_path = self._config.js_utils_path or None
         self._calc_version = getattr(self, '_calc_version', 0) + 1
         version = self._calc_version
 
         def _bg():
             try:
-                return calculator.evaluate(loadout, entity_data)
+                with self._calculator_lock:
+                    if not self._calculator:
+                        self._calculator = LoadoutCalculator(js_path)
+                    calculator = self._calculator
+                stats = calculator.evaluate(loadout, entity_data)
             except Exception as e:
                 log.error("Calculation error: %s", e)
-                return None
+                return None, None
+            if stats is None:
+                return None, None
+            # Pre-compute all formatted strings while still on background thread
+            display_data = _prepare_display_data(stats)
+            return stats, display_data
 
-        def _done(stats):
+        def _done(stats, display_data):
             if getattr(self, '_calc_version', 0) != version:
                 return
             if stats is None:
                 return
             try:
-                self._update_stats_display(stats)
+                self._apply_stats_display(display_data)
             except RuntimeError:
                 return
 
@@ -1970,8 +2202,8 @@ class LoadoutPage(QWidget):
             self._schedule_compare()
 
         def _worker():
-            stats = _bg()
-            invoke_on_main(lambda: _done(stats))
+            stats, display_data = _bg()
+            invoke_on_main(lambda: _done(stats, display_data))
 
         threading.Thread(target=_worker, daemon=True, name="loadout-eval").start()
 
@@ -2093,6 +2325,24 @@ class LoadoutPage(QWidget):
         self._applying = True
         self.setUpdatesEnabled(False)
 
+        # Block signals on all input widgets to eliminate signal dispatch
+        # overhead during bulk apply (handlers already check _applying, but
+        # the Qt signal machinery itself is expensive across 30+ widgets).
+        blocked = []
+        for field in (self._weapon_field, self._amp_field, self._absorber_field,
+                      self._scope_field, self._scope_sight_field, self._sight_field,
+                      self._matrix_field, self._implant_field, self._armor_set_field,
+                      self._plate_field, self._heal_field, self._left_ring_field,
+                      self._right_ring_field, self._pet_field, self._name_input):
+            field.blockSignals(True)
+            blocked.append(field)
+        for spins in (self._weapon_enhancers, self._armor_enhancers,
+                      self._heal_enhancers, self._skill_inputs,
+                      self._bonus_inputs, self._markup_spins):
+            for spin in spins.values():
+                spin.blockSignals(True)
+                blocked.append(spin)
+
         gear = loadout.get("Gear", {})
         weapon = gear.get("Weapon", {})
         armor = gear.get("Armor", {})
@@ -2131,7 +2381,6 @@ class LoadoutPage(QWidget):
         self._heal_field.set_value(healing.get("Name") or "")
         for k, spin in self._heal_enhancers.items():
             spin.setValue((healing.get("Enhancers") or {}).get(k, 0))
-        self._on_healing_changed()
 
         # Settings
         for k, spin in self._skill_inputs.items():
@@ -2171,6 +2420,10 @@ class LoadoutPage(QWidget):
         self._left_ring_field.set_value(left_ring["Name"] if left_ring else "")
         self._right_ring_field.set_value(right_ring["Name"] if right_ring else "")
 
+        # Unblock signals now that all values are set
+        for w in blocked:
+            w.blockSignals(False)
+
         self._refresh_clothing_list()
         self._refresh_consumables_list()
         self._refresh_pet_effects()
@@ -2187,12 +2440,19 @@ class LoadoutPage(QWidget):
                     break
             self._refresh_set_bar(section)
 
-        # Update weapon field visibility + markup while still in _applying mode
+        # Update field visibility + markup while still in _applying mode
         # so that signals from these updates don't set _dirty.
         self._update_weapon_fields()
         self._update_markup("ArmorSet", self._armor_set_field.current_value())
         self._update_markup("PlateSet", self._plate_field.current_value())
         self._update_markup("HealingTool", self._heal_field.current_value())
+
+        # Healing chip check — enable/disable enhancers directly (bypasses
+        # _on_healing_changed's _applying guard).
+        is_chip = self._is_healing_chip()
+        self._heal_enhancer_group.setEnabled(not is_chip)
+        for spin in self._heal_enhancers.values():
+            spin.setEnabled(not is_chip)
 
         self._applying = False
         self._dirty = False
@@ -2205,84 +2465,123 @@ class LoadoutPage(QWidget):
     # ------------------------------------------------------------------
 
     def _refresh_clothing_list(self):
+        container = self._clothing_list_container
+        container.setUpdatesEnabled(False)
         layout = self._clothing_list_layout
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
+        pool = self._clothing_row_pool
 
         non_ring = [c for c in self._clothing_items if not _is_ring_slot(c.get("Slot", ""))]
-        if not non_ring:
-            lbl = QLabel("No clothing selected.")
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-style: italic;")
-            layout.addWidget(lbl)
-            return
 
-        for entry in non_ring:
-            row = QWidget()
-            rl = QHBoxLayout(row)
-            rl.setContentsMargins(0, 0, 0, 0)
-            name_lbl = QLabel(entry.get("Name", "?"))
-            slot_lbl = QLabel(entry.get("Slot", ""))
-            slot_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
-            rl.addWidget(name_lbl)
-            rl.addWidget(slot_lbl)
-            rl.addStretch()
-            rm_btn = QPushButton("Remove")
-            rm_btn.setFixedHeight(20)
-            rm_btn.setStyleSheet("padding: 1px 6px; font-size: 11px;")
-            rm_btn.clicked.connect(
-                lambda _, n=entry.get("Name", ""), s=entry.get("Slot", ""):
-                    self._remove_clothing(n, s)
-            )
-            rl.addWidget(rm_btn)
-            layout.addWidget(row)
+        # Lazy-create empty label (kept in layout, shown/hidden)
+        if self._clothing_empty_lbl is None:
+            self._clothing_empty_lbl = QLabel("No clothing selected.")
+            self._clothing_empty_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-style: italic;")
+            layout.addWidget(self._clothing_empty_lbl)
+        self._clothing_empty_lbl.setVisible(not non_ring)
+
+        # Reuse existing row widgets; create new ones only when pool is too small
+        for i, entry in enumerate(non_ring):
+            name = entry.get("Name", "?")
+            slot = entry.get("Slot", "")
+            if i < len(pool):
+                row, name_lbl, slot_lbl, rm_btn = pool[i]
+                name_lbl.setText(name)
+                slot_lbl.setText(slot)
+                try:
+                    rm_btn.clicked.disconnect()
+                except TypeError:
+                    pass
+                rm_btn.clicked.connect(
+                    lambda _, n=name, s=slot: self._remove_clothing(n, s)
+                )
+                row.setVisible(True)
+            else:
+                row = QWidget()
+                rl = QHBoxLayout(row)
+                rl.setContentsMargins(0, 0, 0, 0)
+                name_lbl = QLabel(name)
+                slot_lbl = QLabel(slot)
+                slot_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+                rl.addWidget(name_lbl)
+                rl.addWidget(slot_lbl)
+                rl.addStretch()
+                rm_btn = QPushButton("Remove")
+                rm_btn.setFixedHeight(20)
+                rm_btn.setStyleSheet("padding: 1px 6px; font-size: 11px;")
+                rm_btn.clicked.connect(
+                    lambda _, n=name, s=slot: self._remove_clothing(n, s)
+                )
+                rl.addWidget(rm_btn)
+                layout.addWidget(row)
+                pool.append((row, name_lbl, slot_lbl, rm_btn))
+
+        # Hide excess pool rows
+        for i in range(len(non_ring), len(pool)):
+            pool[i][0].setVisible(False)
+
+        container.setUpdatesEnabled(True)
 
     def _refresh_consumables_list(self):
+        container = self._consumable_list_container
+        container.setUpdatesEnabled(False)
         layout = self._consumable_list_layout
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
+        pool = self._consumable_row_pool
+        items = self._consumable_items
 
-        if not self._consumable_items:
-            lbl = QLabel("No consumables selected.")
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-style: italic;")
-            layout.addWidget(lbl)
-            return
+        # Lazy-create empty label (kept in layout, shown/hidden)
+        if self._consumable_empty_lbl is None:
+            self._consumable_empty_lbl = QLabel("No consumables selected.")
+            self._consumable_empty_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-style: italic;")
+            layout.addWidget(self._consumable_empty_lbl)
+        self._consumable_empty_lbl.setVisible(not items)
 
-        for entry in self._consumable_items:
+        for i, entry in enumerate(items):
             name = entry.get("Name", entry) if isinstance(entry, dict) else str(entry)
-            row = QWidget()
-            rl = QHBoxLayout(row)
-            rl.setContentsMargins(0, 0, 0, 0)
-            rl.addWidget(QLabel(name))
-            rl.addStretch()
-            rm_btn = QPushButton("Remove")
-            rm_btn.setFixedHeight(20)
-            rm_btn.setStyleSheet("padding: 1px 6px; font-size: 11px;")
-            rm_btn.clicked.connect(lambda _, n=name: self._remove_consumable(n))
-            rl.addWidget(rm_btn)
-            layout.addWidget(row)
+            if i < len(pool):
+                row, name_lbl, rm_btn = pool[i]
+                name_lbl.setText(name)
+                try:
+                    rm_btn.clicked.disconnect()
+                except TypeError:
+                    pass
+                rm_btn.clicked.connect(lambda _, n=name: self._remove_consumable(n))
+                row.setVisible(True)
+            else:
+                row = QWidget()
+                rl = QHBoxLayout(row)
+                rl.setContentsMargins(0, 0, 0, 0)
+                name_lbl = QLabel(name)
+                rl.addWidget(name_lbl)
+                rl.addStretch()
+                rm_btn = QPushButton("Remove")
+                rm_btn.setFixedHeight(20)
+                rm_btn.setStyleSheet("padding: 1px 6px; font-size: 11px;")
+                rm_btn.clicked.connect(lambda _, n=name: self._remove_consumable(n))
+                rl.addWidget(rm_btn)
+                layout.addWidget(row)
+                pool.append((row, name_lbl, rm_btn))
+
+        # Hide excess pool rows
+        for i in range(len(items), len(pool)):
+            pool[i][0].setVisible(False)
+
+        container.setUpdatesEnabled(True)
 
     def _refresh_pet_effects(self):
+        outer = self._pet_effects_container
+        outer.setUpdatesEnabled(False)
         layout = self._pet_effects_layout
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.setParent(None)
-                w.deleteLater()
+        pool = self._pet_effect_btn_pool
 
         pet_name = self._pet_field.current_value()
+
+        # Reuse the label created during init (self._pet_effects_label)
         if not pet_name:
-            lbl = QLabel("Select a pet to view abilities.")
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-style: italic;")
-            layout.addWidget(lbl)
+            self._pet_effects_label.setText("Select a pet to view abilities.")
+            self._pet_effects_label.setVisible(True)
+            if self._pet_grid_container:
+                self._pet_grid_container.setVisible(False)
+            outer.setUpdatesEnabled(True)
             return
 
         pets = self._entity_data.get("pets", [])
@@ -2290,13 +2589,24 @@ class LoadoutPage(QWidget):
         effects = (pet.get("Effects") or []) if pet else []
 
         if not effects:
-            lbl = QLabel("No abilities available for this pet.")
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-style: italic;")
-            layout.addWidget(lbl)
+            self._pet_effects_label.setText("No abilities available for this pet.")
+            self._pet_effects_label.setVisible(True)
+            if self._pet_grid_container:
+                self._pet_grid_container.setVisible(False)
+            outer.setUpdatesEnabled(True)
             return
 
-        grid = QGridLayout()
-        grid.setSpacing(4)
+        self._pet_effects_label.setVisible(False)
+
+        # Lazy-create grid container (kept in layout, shown/hidden)
+        if self._pet_grid_container is None:
+            self._pet_grid_container = QWidget()
+            grid = QGridLayout(self._pet_grid_container)
+            grid.setSpacing(4)
+            layout.addWidget(self._pet_grid_container)
+        self._pet_grid_container.setVisible(True)
+        grid = self._pet_grid_container.layout()
+
         cols = 3
         for i, effect in enumerate(effects):
             ename = effect.get("Name") or f"Effect {i + 1}"
@@ -2309,26 +2619,44 @@ class LoadoutPage(QWidget):
             effect_key = f"{ename}::{strength}"
 
             is_active = self._current_pet_effect in (effect_key, ename)
-            btn = QPushButton()
-            btn.setMinimumHeight(60)
             lines = [ename]
             lines.append(f"Strength: {strength}{unit}" if strength else "Strength: —")
             lines.append(f"Upkeep: {upkeep}/h" if upkeep is not None else "Upkeep: N/A")
             if level is not None:
                 lines.append(f"Unlock: Lv {level}")
-            btn.setText("\n".join(lines))
-            btn.setStyleSheet(
+            text = "\n".join(lines)
+            style = (
                 f"text-align: left; padding: 8px 8px; font-size: 11px; "
                 f"background-color: {ACCENT if is_active else SECONDARY}; "
                 f"color: {MAIN_DARK if is_active else TEXT};"
             )
-            btn.clicked.connect(lambda _, ek=effect_key: self._toggle_pet_effect(ek))
+
+            if i < len(pool):
+                btn = pool[i]
+                btn.setText(text)
+                btn.setStyleSheet(style)
+                try:
+                    btn.clicked.disconnect()
+                except TypeError:
+                    pass
+                btn.clicked.connect(lambda _, ek=effect_key: self._toggle_pet_effect(ek))
+                btn.setVisible(True)
+            else:
+                btn = QPushButton()
+                btn.setMinimumHeight(60)
+                btn.setText(text)
+                btn.setStyleSheet(style)
+                btn.clicked.connect(lambda _, ek=effect_key: self._toggle_pet_effect(ek))
+                pool.append(btn)
+
             r, c = divmod(i, cols)
             grid.addWidget(btn, r, c)
 
-        container = QWidget()
-        container.setLayout(grid)
-        layout.addWidget(container)
+        # Hide excess pool buttons
+        for i in range(len(effects), len(pool)):
+            pool[i].setVisible(False)
+
+        outer.setUpdatesEnabled(True)
 
     def _add_clothing_by_name(self, name: str):
         """Add clothing item by name, looking up its slot from entity data."""
@@ -2414,254 +2742,165 @@ class LoadoutPage(QWidget):
     # Stats display
     # ------------------------------------------------------------------
 
-    def _update_stats_display(self, stats):
-        if not stats:
-            return
+    def _apply_stats_display(self, display_data):
+        """Apply pre-computed display data to stat labels and effects.
 
-        # (attribute, suffix, formatter)
-        # Formatters: None = auto, "pec" = 4dp PEC, "pct" = ×100 %, "pct_raw" = raw %,
-        #             "hit" = X.X/10.0, "int" = integer, "str" = string as-is
-        STAT_DEFS: dict[str, tuple[str, str, str | None]] = {
-            # Tier-1
-            "Efficiency": ("efficiency", "%", "pct_raw"),
-            "DPS": ("dps", "", None),
-            "DPP": ("dpp", "", None),
-            # Offensive
-            "Total Damage": ("total_damage", "", None),
-            "Effective Damage": ("effective_damage", "", None),
-            "Crit Chance": ("crit_chance", "%", "pct"),
-            "Crit Damage": ("crit_damage", "%", "pct"),
-            "Range": ("range", " m", None),
-            "Reload": ("reload", " s", None),
-            "Cost": ("cost", " PEC", "pec"),
-            # Economy
-            "Decay": ("decay", " PEC", "pec"),
-            "Ammo Burn": ("ammo_burn", "", "int"),
-            "Weapon Cost": ("weapon_cost", " PEC", "pec"),
-            "Total Uses": ("lowest_total_uses", "", "int"),
-            # Defense
-            "Armor Defense": ("armor_defense", "", None),
-            "Plate Defense": ("plate_defense", "", None),
-            "Total Defense": ("total_defense", "", None),
-            "Top Types": ("top_defense_types", "", "str"),
-            "Total Absorption": ("total_absorption", " HP", None),
-            "Block Chance": ("block_chance", "%", "pct_raw"),
-            # Healing
-            "Total Heal": ("total_heal", "", None),
-            "Effective Heal": ("effective_heal", "", None),
-            "Instant Heal": ("_hot_instant", "", None),
-            "HoT Heal": ("_hot_heal", "", None),
-            "Heal Reload": ("heal_reload", " s", None),
-            "Heal Decay": ("heal_decay", " PEC", "pec"),
-            "Heal Ammo Burn": ("heal_ammo_burn", "", "int"),
-            "Heal Cost": ("heal_cost", " PEC", "pec"),
-            "HPS": ("hps", "", None),
-            "HoT HPS": ("_hot_hps", "", None),
-            "Lifesteal HPS": ("lifesteal_hps", "", None),
-            "Total HPS": ("_total_hps", "", None),
-            "HPP": ("hpp", "", None),
-            "Heal Total Uses": ("heal_total_uses", "", "int"),
-            # Skill
-            "Hit Ability": ("hit_ability", "/10.0", "hit"),
-            "Crit Ability": ("crit_ability", "/10.0", "hit"),
-        }
-
-        def _fmt(val, suffix, fmt):
-            if val is None:
-                return "-"
-            if fmt == "str":
-                return str(val) if val else "-"
-            if fmt == "int":
-                return f"{int(val)}{suffix}" if val else "-"
-            if fmt == "pec":
-                return f"{val:.4f}{suffix}" if val else "-"
-            if fmt == "pct":
-                return f"{val * 100:.1f}{suffix}" if val else "-"
-            if fmt == "pct_raw":
-                return f"{val:.1f}{suffix}" if val else "-"
-            if fmt == "hit":
-                return f"{val:.1f}{suffix}" if val else "-"
-            if isinstance(val, float):
-                return f"{val:.2f}{suffix}"
-            return f"{val}{suffix}"
+        All formatting is done in the background thread by _prepare_display_data.
+        This method only calls setText / setVisible on existing widgets.
+        """
+        stat_texts, effect_groups = display_data
 
         all_labels = (
             self._tier1_stats, self._off_stats, self._econ_stats,
             self._heal_stats, self._def_stats, self._skill_stats,
         )
-        # Compute derived HoT and total HPS values
-        hot = stats.hot_breakdown or {}
-        derived = {
-            "_hot_instant": hot.get("instantHeal"),
-            "_hot_heal": hot.get("hotHeal"),
-            "_hot_hps": hot.get("hotHPS"),
-            "_total_hps": None,
-        }
-        total_hps_parts = stats.hps or 0
-        if stats.lifesteal_hps:
-            total_hps_parts += stats.lifesteal_hps
-        if stats.lifesteal_hps or hot.get("hotHPS"):
-            derived["_total_hps"] = total_hps_parts
 
         for labels_dict in all_labels:
             for display_name, vlbl in labels_dict.items():
-                defn = STAT_DEFS.get(display_name)
-                if not defn:
-                    continue
-                attr, suffix, fmt = defn
-                if attr.startswith("_"):
-                    val = derived.get(attr)
-                else:
-                    val = getattr(stats, attr, None)
-                vlbl.setText(_fmt(val, suffix, fmt))
+                text = stat_texts.get(display_name)
+                if text is not None:
+                    vlbl.setText(text)
 
         try:
-            self._update_effects_display(stats)
+            self._apply_effects_display(effect_groups)
         except Exception as e:
             log.error("Effects display update failed: %s", e)
 
-    def _update_effects_display(self, stats):
-        """Rebuild the Active Effects section with collapsible cap breakdowns."""
+    def _apply_effects_display(self, effect_groups: list):
+        """Apply pre-computed effect data to the effects panel, reusing pooled widgets.
+
+        All HTML/style strings are pre-computed by _prepare_display_data.
+        """
         layout = self._effects_group_layout
+        container = layout.parentWidget()
+        if container:
+            container.setUpdatesEnabled(False)
 
-        # Clear previous content
+        # Detach all items from layout (widgets stay alive in pools)
         while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+            layout.takeAt(0)
 
-        categories = [
-            ("Offensive Effects", stats.offensive_effects),
-            ("Defensive Effects", stats.defensive_effects),
-            ("Utility Effects", stats.utility_effects),
-        ]
-        has_any = any(effects for _, effects in categories)
-
-        if not has_any:
-            empty = QLabel("No effects are active")
-            empty.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-style: italic; padding: 4px 0;"
-            )
-            layout.addWidget(empty)
+        if not effect_groups:
+            self._effect_empty_lbl.setVisible(True)
+            layout.addWidget(self._effect_empty_lbl)
+            for h in self._effect_header_pool:
+                h.setVisible(False)
+            for btn, _, cw, _ in self._effect_row_pool:
+                btn.setVisible(False)
+                cw.setVisible(False)
+            if container:
+                container.setUpdatesEnabled(True)
             return
 
-        for cat_name, effects in categories:
-            if not effects:
-                continue
+        self._effect_empty_lbl.setVisible(False)
 
-            # Category header
-            header = QLabel(cat_name)
-            header.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;"
-                f" padding: 4px 0 2px 0;"
-            )
+        header_idx = 0
+        row_idx = 0
+
+        for cat_name, rows in effect_groups:
+            # Reuse or create header
+            if header_idx < len(self._effect_header_pool):
+                header = self._effect_header_pool[header_idx]
+                header.setText(cat_name)
+            else:
+                header = QLabel(cat_name)
+                header.setStyleSheet(
+                    f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;"
+                    f" padding: 4px 0 2px 0;"
+                )
+                self._effect_header_pool.append(header)
+            header.setVisible(True)
             layout.addWidget(header)
+            header_idx += 1
 
-            for effect in effects:
-                self._add_effect_row(layout, effect)
+            for rd in rows:
+                self._apply_effect_row(layout, rd, row_idx)
+                row_idx += 1
 
-    def _add_effect_row(self, layout, effect):
-        """Add a single effect row, with collapsible caps if applicable."""
-        name = effect.get("name", "")
-        unit = effect.get("unit", "")
-        total = effect.get("signedTotal", 0)
-        polarity = effect.get("polarity")
-        capped_any = effect.get("cappedAny", False)
-        caps = effect.get("caps") or {}
-        has_caps = bool(caps.get("item") or caps.get("action") or caps.get("total"))
+        # Hide excess pool entries
+        for i in range(header_idx, len(self._effect_header_pool)):
+            self._effect_header_pool[i].setVisible(False)
+        for i in range(row_idx, len(self._effect_row_pool)):
+            btn, _, cw, _ = self._effect_row_pool[i]
+            btn.setVisible(False)
+            cw.setVisible(False)
 
-        value_text = f"{abs(total):.2f}{unit}"
-        if capped_any:
-            value_text = f"[{value_text}]"
+        if container:
+            container.setUpdatesEnabled(True)
 
-        if polarity == "positive":
-            color = ACCENT
-        elif polarity == "negative":
-            color = ERROR
+    def _apply_effect_row(self, layout, rd: dict, row_idx: int):
+        """Apply a single pre-computed effect row to a pooled widget slot."""
+        row_html = rd["row_html"]
+        btn_style = rd["btn_style"]
+        has_caps = rd["has_caps"]
+        effect_key = rd["effect_key"]
+        cap_htmls = rd["cap_htmls"]
+
+        if row_idx < len(self._effect_row_pool):
+            btn, row_label, cap_widget, cap_labels = self._effect_row_pool[row_idx]
+            row_label.setText(row_html)
+            btn.setStyleSheet(btn_style)
+            btn.setCursor(
+                Qt.CursorShape.PointingHandCursor if has_caps
+                else Qt.CursorShape.ArrowCursor
+            )
+            try:
+                btn.clicked.disconnect()
+            except TypeError:
+                pass
         else:
-            color = TEXT
+            btn = QPushButton()
+            btn.setText("")
+            btn.setStyleSheet(btn_style)
+            if has_caps:
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            row_label = QLabel(row_html)
+            row_label.setTextFormat(Qt.TextFormat.RichText)
+            row_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            inner = QVBoxLayout(btn)
+            inner.setContentsMargins(4, 2, 4, 2)
+            inner.setSpacing(0)
+            inner.addWidget(row_label)
 
-        row_html = (
-            f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            f'<td style="font-size:12px;">{name}</td>'
-            f'<td style="color:{color};font-size:12px;font-weight:600;"'
-            f' align="right">{value_text}</td>'
-            f'</tr></table>'
-        )
+            # Pre-create cap widget with 3 reusable labels
+            cap_widget = QWidget()
+            cap_widget.setStyleSheet(
+                f"background: {PRIMARY}; border: 1px solid {BORDER};"
+                f" border-top: none;"
+                f" border-left: 3px solid {ACCENT};"
+                f" border-bottom-left-radius: 4px;"
+                f" border-bottom-right-radius: 4px;"
+                f" padding: 4px 8px 6px;"
+            )
+            cap_inner = QVBoxLayout(cap_widget)
+            cap_inner.setContentsMargins(8, 4, 8, 6)
+            cap_inner.setSpacing(3)
+            cap_labels = []
+            for _ in range(3):
+                lbl = QLabel()
+                lbl.setTextFormat(Qt.TextFormat.RichText)
+                cap_inner.addWidget(lbl)
+                cap_labels.append(lbl)
 
-        # Use QPushButton for all rows to guarantee identical height
-        btn = QPushButton()
-        btn.setText("")
-        btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  background: transparent; border: none;"
-            f"  border-left: 3px solid transparent;"
-            f"  text-align: left; padding: 2px 4px; font-size: 12px;"
-            f"  border-radius: 3px;"
-            f"}}"
-            + (f"QPushButton:hover {{ background: {HOVER}; }}" if has_caps else "")
-        )
-        if has_caps:
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        row_label = QLabel(row_html)
-        row_label.setTextFormat(Qt.TextFormat.RichText)
-        row_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        btn_layout = QVBoxLayout(btn)
-        btn_layout.setContentsMargins(4, 2, 4, 2)
-        btn_layout.setSpacing(0)
-        btn_layout.addWidget(row_label)
+            self._effect_row_pool.append((btn, row_label, cap_widget, cap_labels))
+
+        btn.setVisible(True)
         layout.addWidget(btn)
 
         if not has_caps:
+            cap_widget.setVisible(False)
+            layout.addWidget(cap_widget)
             return
 
-        effect_key = f"{name}::{unit}"
         expanded = effect_key in self._expanded_effect_keys
 
-        # Cap breakdown container (collapsed by default)
-        cap_widget = QWidget()
-        cap_widget.setStyleSheet(
-            f"background: {PRIMARY}; border: 1px solid {BORDER};"
-            f" border-top: none;"
-            f" border-left: 3px solid {ACCENT};"
-            f" border-bottom-left-radius: 4px;"
-            f" border-bottom-right-radius: 4px;"
-            f" padding: 4px 8px 6px;"
-        )
-        cap_layout = QVBoxLayout(cap_widget)
-        cap_layout.setContentsMargins(8, 4, 8, 6)
-        cap_layout.setSpacing(3)
-
-        raw_item = effect.get("rawItem", 0)
-        raw_action = effect.get("rawAction", 0)
-        raw_bonus = effect.get("rawBonus", 0)
-        capped_item = effect.get("cappedItem", 0)
-        capped_action = effect.get("cappedAction", 0)
-
-        def _add_cap_row(parent_layout, label_text, raw_val, cap_val):
-            is_over = abs(raw_val) > cap_val + 0.0001
-            val_color = WARNING if is_over else TEXT_MUTED
-            row = QLabel(
-                f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-                f'<td style="color:{TEXT_MUTED};font-size:10px;'
-                f'font-weight:600;text-transform:uppercase;'
-                f'letter-spacing:0.3px;">{label_text}</td>'
-                f'<td style="color:{val_color};font-size:10px;"'
-                f' align="right">'
-                f'{raw_val:.2f}{unit} / {cap_val:.2f}{unit}</td>'
-                f'</tr></table>'
-            )
-            row.setTextFormat(Qt.TextFormat.RichText)
-            parent_layout.addWidget(row)
-
-        if caps.get("item"):
-            _add_cap_row(cap_layout, "Item", raw_item, caps["item"])
-        if caps.get("action"):
-            _add_cap_row(cap_layout, "Action", raw_action, caps["action"])
-        if caps.get("total"):
-            total_base = capped_item + capped_action + raw_bonus
-            _add_cap_row(cap_layout, "Total", total_base, caps["total"])
+        # Apply pre-computed cap HTML
+        for j, lbl in enumerate(cap_labels):
+            if j < len(cap_htmls):
+                lbl.setText(cap_htmls[j])
+                lbl.setVisible(True)
+            else:
+                lbl.setVisible(False)
 
         cap_widget.setVisible(expanded)
         layout.addWidget(cap_widget)

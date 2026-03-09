@@ -26,6 +26,7 @@ class AppConfig:
     ocr_idle_threshold: int = 50      # ticks with no change before entering idle mode
     ocr_idle_multiplier: int = 5      # poll interval multiplier in idle mode
     ocr_capture_backend: str = "auto"  # auto | printwindow | wgc
+    wgc_border_choice_made: bool = False  # one-time dialog about WGC yellow border
     ocr_auto_scan_enabled: bool = True
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
@@ -140,7 +141,7 @@ class AppConfig:
     dashboard_trade_blacklist: list[str] = field(default_factory=list)
 
     # Target lock detection
-    target_lock_enabled: bool = True
+    target_lock_enabled: bool = False
     target_lock_match_threshold: float = 0.90
     target_lock_roi_hp: dict = field(default_factory=lambda: {"dx": -89, "dy": -17, "w": 193, "h": 6})
     target_lock_roi_shared: dict = field(default_factory=lambda: {"dx": -125, "dy": -22, "w": 16, "h": 16})
@@ -162,7 +163,7 @@ class AppConfig:
     market_price_review_tutorial_shown: bool = False  # first-time tutorial has been displayed
 
     # Player status (heart) detection
-    player_status_enabled: bool = True
+    player_status_enabled: bool = False
     player_status_match_threshold: float = 0.90
     player_status_roi_health: dict = field(default_factory=lambda: {"dx": 30, "dy": -9, "w": 315, "h": 12})
     player_status_roi_reload: dict = field(default_factory=lambda: {"dx": 30, "dy": 5, "w": 315, "h": 3})
@@ -187,6 +188,7 @@ DEFAULTS = {
     "ocr_idle_threshold": 50,
     "ocr_idle_multiplier": 5,
     "ocr_capture_backend": "auto",
+    "wgc_border_choice_made": False,
     "ocr_auto_scan_enabled": True,
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},
@@ -258,7 +260,7 @@ DEFAULTS = {
     "dashboard_trade_blocklist": [],
     "dashboard_trade_planet_filter": [],
     "dashboard_trade_blacklist": [],
-    "target_lock_enabled": True,
+    "target_lock_enabled": False,
     "target_lock_match_threshold": 0.90,
     "target_lock_roi_hp": {"dx": -89, "dy": -17, "w": 193, "h": 6},
     "target_lock_roi_shared": {"dx": -125, "dy": -22, "w": 16, "h": 16},
@@ -276,7 +278,7 @@ DEFAULTS = {
     "market_price_text_threshold": 80,
     "market_price_review_enabled": True,
     "market_price_review_tutorial_shown": False,
-    "player_status_enabled": True,
+    "player_status_enabled": False,
     "player_status_match_threshold": 0.90,
     "player_status_roi_health": {"dx": 30, "dy": -9, "w": 315, "h": 12},
     "player_status_roi_reload": {"dx": 30, "dy": 5, "w": 315, "h": 3},

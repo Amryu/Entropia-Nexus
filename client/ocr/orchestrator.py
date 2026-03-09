@@ -13,6 +13,7 @@ except ImportError:
     cv2 = None
 
 from ..core.config import AppConfig
+from ..core.gil_yield import GilYielder
 from ..core.event_bus import EventBus
 from ..core.database import Database
 from ..core.logger import get_logger
@@ -128,12 +129,16 @@ class ScanOrchestrator:
         self._shutdown = False  # True only when app is shutting down (not on cancel)
         self._pause_until_window_reopen = False
 
-        # Use shared frame cache if provided, else create own capturer
-        self._frame_cache = frame_cache
-        if frame_cache is None:
+        # Use the FrameDistributor's capturer if available, else create own.
+        # This ensures a single ScreenCapturer is shared across the pipeline.
+        self._distributor = None
+        from .frame_distributor import FrameDistributor
+        if isinstance(frame_cache, FrameDistributor):
+            self._distributor = frame_cache
+            self._capturer = frame_cache.capturer
+        elif frame_cache is None:
             self._capturer = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         else:
-            # Detector still needs its own direct window captures for detect().
             self._capturer = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         self._tracer = OcrTracer()
         self._tracer.set_enabled(config.ocr_trace_enabled)
@@ -144,7 +149,8 @@ class ScanOrchestrator:
         self._bar_reader = ProgressBarReader()
         self._bar_reader.set_tracer(self._tracer)
         self._detector = SkillsWindowDetector(
-            self._capturer, event_bus=self._event_bus, config=config)
+            self._capturer, event_bus=self._event_bus, config=config,
+            frame_provider=self._distributor)
         self._detector.set_tracer(self._tracer)
         self._navigator = SkillsNavigator()
 
@@ -153,6 +159,14 @@ class ScanOrchestrator:
             s["name"] for s in self._all_skills
             if s["name"] not in EXCLUDED_SKILL_NAMES
         }
+        self._visible_skill_names: set[str] = {
+            s["name"] for s in self._all_skills
+            if s["name"] not in EXCLUDED_SKILL_NAMES
+            and not s.get("hidden", False)
+        }
+        self._hidden_skill_names: set[str] = (
+            self._expected_skill_names - self._visible_skill_names
+        )
         self._found_skill_names: set[str] = set()
         self._last_skill_readings: dict[str, SkillReading] = {}
 
@@ -189,7 +203,13 @@ class ScanOrchestrator:
         self._event_bus.unsubscribe(EVENT_OCR_CANCEL, self._on_cancel)
 
     def set_capture_backend(self, capture_backend: str) -> None:
-        """Apply window capture backend change at runtime."""
+        """Apply window capture backend change at runtime.
+
+        When using a FrameDistributor, the distributor owns the backend
+        setting — skip changing the shared capturer here.
+        """
+        if self._distributor is not None:
+            return  # distributor handles backend changes
         try:
             self._capturer.set_capture_backend(capture_backend)
         except Exception as e:
@@ -831,6 +851,8 @@ class ScanOrchestrator:
                 current_page=scan_count,
                 total_pages=0,
                 missing_names=missing[-10:] if len(missing) <= 10 else [],
+                total_visible_skills=len(self._visible_skill_names),
+                hidden_skill_names=self._hidden_skill_names,
             ))
 
             log.info("Scan #%d: %d/%d skills found",
@@ -880,6 +902,7 @@ class ScanOrchestrator:
         content_rows = 0
         miss_rows = 0
         self._pending_captures.clear()
+        yielder = GilYielder()
 
         for row_idx, row_image in enumerate(rows):
             _, row_w = row_image.shape[:2]
@@ -905,6 +928,8 @@ class ScanOrchestrator:
                 skills.append(skill)
             elif has_content:
                 miss_rows += 1
+
+            yielder.yield_if_needed()
 
         # If too many content rows failed, the window likely moved mid-capture.
         # Discard the entire page — don't persist, don't capture templates.

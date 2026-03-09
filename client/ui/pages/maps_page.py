@@ -540,8 +540,11 @@ def _closest_teleporters(loc: dict, all_locations: list[dict], count: int = 3) -
     coords = loc.get("Properties", {}).get("Coordinates")
     if not coords:
         return []
+    loc_id = loc.get("Id")
     tps = []
     for l in all_locations:
+        if l.get("Id") == loc_id:
+            continue
         p = l.get("Properties", {})
         if p.get("Type") == "Teleporter" and p.get("Coordinates"):
             d = _distance_meters(coords, p["Coordinates"])
@@ -697,69 +700,68 @@ class _LocationInfoPanel(QWidget):
                 self._add_separator()
 
         # --- Closest Teleporters ---
-        if loc_type != "Teleporter":
-            closest = _closest_teleporters(loc, all_locations, count=3)
-            if closest:
-                tp_header = QLabel("CLOSEST TELEPORTERS")
-                tp_header.setStyleSheet(
-                    f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 600;"
-                    f" background: transparent; margin-bottom: 4px;"
+        closest = _closest_teleporters(loc, all_locations, count=3)
+        if closest:
+            tp_header = QLabel("CLOSEST TELEPORTERS")
+            tp_header.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 600;"
+                f" background: transparent; margin-bottom: 4px;"
+            )
+            self._layout.addWidget(tp_header)
+
+            _TP_ROW_NORMAL = (
+                f"QWidget {{ background: {MAIN_DARK}; border: 1px solid {BORDER};"
+                f" border-radius: 4px; margin-bottom: 3px; }}"
+            )
+            _TP_ROW_HOVER = (
+                f"QWidget {{ background: {HOVER}; border: 1px solid {ACCENT};"
+                f" border-radius: 4px; margin-bottom: 3px; }}"
+            )
+
+            for tp, dist in closest:
+                tp_name = tp.get("Name", "TP")
+                dist_str = f"{dist / 1000:.1f} km" if dist >= 1000 else f"{dist:.0f} m"
+
+                row = QWidget()
+                row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+                row.setCursor(Qt.CursorShape.PointingHandCursor)
+                row.setFixedHeight(30)
+                row.setStyleSheet(_TP_ROW_NORMAL)
+                row_l = QHBoxLayout(row)
+                row_l.setContentsMargins(8, 0, 8, 0)
+                row_l.setSpacing(4)
+
+                name_part = QLabel(tp_name)
+                name_part.setStyleSheet(
+                    f"color: {TEXT}; font-size: 12px; background: transparent; border: none;"
                 )
-                self._layout.addWidget(tp_header)
-
-                _TP_ROW_NORMAL = (
-                    f"QWidget {{ background: {MAIN_DARK}; border: 1px solid {BORDER};"
-                    f" border-radius: 4px; margin-bottom: 3px; }}"
+                dist_part = QLabel(dist_str)
+                dist_part.setStyleSheet(
+                    f"color: {TEXT_MUTED}; font-size: 11px; background: transparent; border: none;"
                 )
-                _TP_ROW_HOVER = (
-                    f"QWidget {{ background: {HOVER}; border: 1px solid {ACCENT};"
-                    f" border-radius: 4px; margin-bottom: 3px; }}"
-                )
+                dist_part.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-                for tp, dist in closest:
-                    tp_name = tp.get("Name", "TP")
-                    dist_str = f"{dist / 1000:.1f} km" if dist >= 1000 else f"{dist:.0f} m"
+                row_l.addWidget(name_part, 1)
+                row_l.addWidget(dist_part, 0)
 
-                    row = QWidget()
-                    row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-                    row.setCursor(Qt.CursorShape.PointingHandCursor)
-                    row.setFixedHeight(30)
-                    row.setStyleSheet(_TP_ROW_NORMAL)
-                    row_l = QHBoxLayout(row)
-                    row_l.setContentsMargins(8, 0, 8, 0)
-                    row_l.setSpacing(4)
+                def _make_tp_handlers(r, t):
+                    def on_press(e):
+                        self.teleporter_clicked.emit(t)
+                    def on_enter(e):
+                        r.setStyleSheet(_TP_ROW_HOVER)
+                        self.teleporter_hovered.emit(t)
+                    def on_leave(e):
+                        r.setStyleSheet(_TP_ROW_NORMAL)
+                        self.teleporter_hovered.emit(None)
+                    return on_press, on_enter, on_leave
 
-                    name_part = QLabel(tp_name)
-                    name_part.setStyleSheet(
-                        f"color: {TEXT}; font-size: 12px; background: transparent; border: none;"
-                    )
-                    dist_part = QLabel(dist_str)
-                    dist_part.setStyleSheet(
-                        f"color: {TEXT_MUTED}; font-size: 11px; background: transparent; border: none;"
-                    )
-                    dist_part.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                _press, _enter, _leave = _make_tp_handlers(row, tp)
+                row.mousePressEvent = _press
+                row.enterEvent = _enter
+                row.leaveEvent = _leave
+                self._layout.addWidget(row)
 
-                    row_l.addWidget(name_part, 1)
-                    row_l.addWidget(dist_part, 0)
-
-                    def _make_tp_handlers(r, t):
-                        def on_press(e):
-                            self.teleporter_clicked.emit(t)
-                        def on_enter(e):
-                            r.setStyleSheet(_TP_ROW_HOVER)
-                            self.teleporter_hovered.emit(t)
-                        def on_leave(e):
-                            r.setStyleSheet(_TP_ROW_NORMAL)
-                            self.teleporter_hovered.emit(None)
-                        return on_press, on_enter, on_leave
-
-                    _press, _enter, _leave = _make_tp_handlers(row, tp)
-                    row.mousePressEvent = _press
-                    row.enterEvent = _enter
-                    row.leaveEvent = _leave
-                    self._layout.addWidget(row)
-
-                self._add_separator()
+            self._add_separator()
 
         # --- MobArea details ---
         if loc_type == "MobArea":

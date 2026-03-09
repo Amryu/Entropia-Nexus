@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt
 
 from ..core.config import save_config
+from ..platform import backend as _platform
 
 if TYPE_CHECKING:
     from .overlay_manager import OverlayManager
@@ -39,6 +40,7 @@ class OverlayWidget(QWidget):
         self._manager = manager
         self._drag_pos = None
         self._wants_visible = False
+        self._cloaked = False
 
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint
@@ -66,9 +68,27 @@ class OverlayWidget(QWidget):
             x, y = self._clamp_to_screens(pos[0], pos[1])
             self.move(x, y)
 
+        # Force native window (HWND) creation while hidden so the first
+        # show() doesn't both create and show the HWND (which causes a flash
+        # of a default-styled window before DWM composites the frameless/
+        # translucent styles).  DWM cloaking hides the window from the user
+        # while still compositing its styles; uncloak_window() in show()
+        # reveals it flash-free.
+        hwnd = int(self.winId())
+        _platform.cloak_window(hwnd)
+        self._cloaked = True
+
         # Register with manager
         if self._manager:
             self._manager.register(self)
+
+    # --- First-show uncloak ---
+
+    def show(self):
+        super().show()
+        if self._cloaked:
+            self._cloaked = False
+            _platform.uncloak_window(int(self.winId()))
 
     # --- Visibility coordination ---
 

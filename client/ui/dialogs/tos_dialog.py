@@ -33,10 +33,10 @@ TOS_HTML = """\
 </p>
 
 <h3>2. Screen Capture &amp; OCR</h3>
-<p>The Software captures screenshots of the <b>Entropia Universe game window only</b> using the
-  Windows <code>PrintWindow</code> API. These screenshots are processed <b>entirely on your local
-  machine</b> for optical character recognition (OCR) — for example, to read skill values or
-  item data from the game interface.</p>
+<p>The Software captures screenshots of the <b>Entropia Universe game window only</b> using
+  Windows Graphics Capture (WGC) or the <code>PrintWindow</code> API as a fallback.
+  These screenshots are processed <b>entirely on your local machine</b> for optical character
+  recognition (OCR) — for example, to read skill values or item data from the game interface.</p>
 <ul>
   <li>Screenshots are <b>never transmitted</b> to any server.</li>
   <li>No other windows or desktop content are captured.</li>

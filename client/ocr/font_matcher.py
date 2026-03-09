@@ -9,6 +9,7 @@ try:
 except ImportError:
     cv2 = None
 
+from ..core.gil_yield import GilYielder
 from ..core.logger import get_logger
 
 log = get_logger("FontMatcher")
@@ -1096,6 +1097,7 @@ class FontMatcher:
         best: Optional[tuple[str, float]] = None
         best_adjusted = 0.0
         best_raw = 0.0
+        yielder = GilYielder()
 
         for name, tpl in candidates:
             th, tw = tpl.shape
@@ -1117,6 +1119,8 @@ class FontMatcher:
                 if best is None or score > best_adjusted:
                     best = (name, score)
                     best_adjusted = score
+
+            yielder.yield_if_needed()
 
         if best is None and best_raw > 0:
             log.debug("Below threshold: best raw=%.3f (need %.2f), "
