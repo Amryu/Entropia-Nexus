@@ -6,6 +6,9 @@
 
   For armor sets, accepts a `pieces` prop to show a piece/gender
   selector, fetching per-piece market data by name.
+
+  For tierable entity types, shows a tier selector (0-10) that
+  filters market price data by tier.
 -->
 <script>
   //@ts-nocheck
@@ -14,6 +17,7 @@
   import { browser } from '$app/environment';
   import DataSection from './DataSection.svelte';
   import MarketPriceChart from './MarketPriceChart.svelte';
+  import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 
   const dispatch = createEventDispatcher();
 
@@ -33,6 +37,12 @@
    */
   export let pieces = null;
 
+  /**
+   * Entity type (e.g. "Weapon", "ArmorSet"). When tierable, a tier selector is shown.
+   * @type {string|null}
+   */
+  export let entityType = null;
+
   const PERIODS = [
     { key: '1d', label: '1 Day' },
     { key: '7d', label: '7 Days' },
@@ -42,6 +52,7 @@
   ];
 
   const SLOT_ORDER = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
+  const TIER_OPTIONS = Array.from({ length: 11 }, (_, i) => i); // 0-10
 
   let snapshot = null;
   let loading = true;
@@ -54,6 +65,12 @@
   // Piece selector state
   let selectedSlot = null;
   let selectedGender = 'male';
+
+  // Tier selector state
+  let selectedTier = 0;
+
+  // Determine if tier selector should be shown
+  $: showTierSelector = entityType && TIERABLE_TYPES.has(entityType) && !(itemName?.endsWith('(L)'));
 
   function toggleSection() {
     dispatch('toggle', { expanded });
@@ -117,7 +134,17 @@
     selectedGender = gender;
   }
 
+  function selectTier(tier) {
+    selectedTier = tier;
+  }
+
   // --- Data fetching ---
+
+  /** Build tier query string fragment */
+  function tierQuery() {
+    if (showTierSelector) return `&tier=${selectedTier}`;
+    return '';
+  }
 
   async function fetchLatest(id, name) {
     loading = true;
@@ -128,7 +155,7 @@
 
     try {
       if (id) {
-        const res = await fetch(`/api/market/prices/snapshots/latest?itemIds=${id}`);
+        const res = await fetch(`/api/market/prices/snapshots/latest?itemIds=${id}${tierQuery()}`);
         if (res.ok) {
           const rows = await res.json();
           if (rows.length > 0) {
@@ -140,7 +167,7 @@
       }
       // Fallback: try by name
       if (name) {
-        const res = await fetch(`/api/market/prices/snapshots/latest?name=${encodeURIComponent(name)}`);
+        const res = await fetch(`/api/market/prices/snapshots/latest?name=${encodeURIComponent(name)}${tierQuery()}`);
         if (res.ok) {
           const data = await res.json();
           // Name endpoint may return object or array
@@ -164,7 +191,7 @@
 
     historyLoading = true;
     try {
-      const res = await fetch(`/api/market/prices/snapshots/${id}?limit=750`);
+      const res = await fetch(`/api/market/prices/snapshots/${id}?limit=750${tierQuery()}`);
       if (res.ok) {
         historyData = await res.json();
       }
@@ -211,17 +238,34 @@
     return `${days}d ago`;
   }
 
-  // Reactive: fetch when piece or item changes (client-side only)
+  // Reactive: fetch when piece, item, or tier changes (client-side only)
+  // Reference selectedTier to track it as a dependency for refetch on tier change.
   $: if (browser && pieces && activePieceName) {
+    selectedTier;
     fetchLatest(null, activePieceName);
   }
   $: if (browser && !pieces && (itemId || itemName)) {
+    selectedTier;
     fetchLatest(itemId, itemName);
   }
 </script>
 
 <DataSection title="Market Prices" bind:expanded on:toggle={toggleSection}>
   <div class="mps-content">
+    {#if showTierSelector}
+      <div class="mps-tier-selector">
+        <div class="mps-tier-buttons">
+          {#each TIER_OPTIONS as tier}
+            <button
+              class="tier-btn"
+              class:active={selectedTier === tier}
+              on:click={() => selectTier(tier)}
+            >{tier}</button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     {#if piecesBySlot}
       <div class="mps-piece-selector">
         <div class="mps-slot-buttons">
@@ -263,7 +307,7 @@
     {#if loading}
       <div class="mps-loading">Loading market prices...</div>
     {:else if !snapshot}
-      <div class="mps-empty">No market price data available</div>
+      <div class="mps-empty">No market price data available{showTierSelector && selectedTier > 0 ? ` for Tier ${selectedTier}` : ''}</div>
     {:else}
       <table class="mps-table">
         <thead>
@@ -286,6 +330,9 @@
 
       <div class="mps-meta">
         <span class="mps-updated">Updated {timeAgo(snapshot.recorded_at)}</span>
+        {#if snapshot.tier != null && snapshot.tier > 0}
+          <span class="mps-tier-badge">Tier {snapshot.tier}</span>
+        {/if}
         {#if snapshot.confidence != null && snapshot.confidence < 0.5}
           <span class="mps-low-confidence" title="Low confidence — few submissions">Low confidence</span>
         {/if}
@@ -344,6 +391,43 @@
     color: var(--text-muted);
     font-size: 13px;
     padding: 8px 0;
+  }
+
+  /* Tier selector */
+  .mps-tier-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mps-tier-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .tier-btn {
+    background: var(--hover-color);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-width: 30px;
+    text-align: center;
+  }
+
+  .tier-btn:hover {
+    color: var(--text-color);
+    background: var(--border-color);
+  }
+
+  .tier-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
   }
 
   /* Piece selector (armor sets) */
@@ -460,6 +544,11 @@
     color: var(--text-muted);
   }
 
+  .mps-tier-badge {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
   .mps-low-confidence {
     color: var(--warning-color, #e8a838);
     font-weight: 500;
@@ -537,11 +626,11 @@
       font-size: 13px;
     }
 
-    .mps-slot-buttons {
+    .mps-slot-buttons, .mps-tier-buttons {
       gap: 3px;
     }
 
-    .slot-btn {
+    .slot-btn, .tier-btn {
       padding: 3px 8px;
       font-size: 11px;
     }

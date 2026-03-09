@@ -1014,6 +1014,7 @@
         <MarketPriceSection
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
+          entityType="MedicalTool"
           bind:expanded={panelStates.marketPrices}
           on:toggle={savePanelStates}
         />

@@ -708,6 +708,7 @@
         <MarketPriceSection
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
+          entityType="ArmorSet"
           pieces={flattenArmorPieces(activeEntity?.Armors)}
           bind:expanded={panelStates.marketPrices}
           on:toggle={savePanelStates}

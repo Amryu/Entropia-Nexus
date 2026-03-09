@@ -862,13 +862,16 @@ class NexusClient:
             self._handle_error(e, "get ingame prices")
             return None
 
-    def get_item_market_prices(self, item_id: int) -> list[dict] | None:
+    def get_item_market_prices(self, item_id: int, tier: int | None = None) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?itemIds={item_id} — latest snapshot for one item."""
         try:
+            params: dict = {"itemIds": str(item_id)}
+            if tier is not None:
+                params["tier"] = str(tier)
             resp = self._session.get(
                 self._url("/market/prices/snapshots/latest"),
                 headers=self._headers(),
-                params={"itemIds": str(item_id)},
+                params=params,
                 timeout=10,
             )
             resp.raise_for_status()
@@ -877,13 +880,16 @@ class NexusClient:
             self._handle_error(e, "get item market prices")
             return None
 
-    def get_item_market_prices_by_name(self, name: str) -> list[dict] | None:
+    def get_item_market_prices_by_name(self, name: str, tier: int | None = None) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?name={name} — latest snapshot by item name."""
         try:
+            params: dict = {"name": name}
+            if tier is not None:
+                params["tier"] = str(tier)
             resp = self._session.get(
                 self._url("/market/prices/snapshots/latest"),
                 headers=self._headers(),
-                params={"name": name},
+                params=params,
                 timeout=10,
             )
             resp.raise_for_status()

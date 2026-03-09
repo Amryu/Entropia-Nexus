@@ -10,7 +10,7 @@ import {
   parseRequestBody,
   maybeRunFraudDetection,
 } from '$lib/server/ingestion.js';
-import { resolveItemByName, resolveItemByPrefix, resolveItemByFuzzy } from '$lib/server/item-type-cache.js';
+import { resolveItemByName, resolveItemByPrefix, resolveItemByFuzzy, resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
 
 const MAX_BATCH_SIZE = 50;
 const RATE_LIMIT_MAX = 20;
@@ -87,20 +87,19 @@ export async function POST({ request, locals, fetch }) {
       return getResponse({ error: 'No valid entries in batch', details: errors }, 400);
     }
 
-    // Resolve item names → item_id via /items data API cache.
+    // Resolve item names → { itemId, type, name } via /items data API cache.
     // Tries: exact → case-insensitive → raw OCR variant → prefix match.
     // Game displays names in ALL CAPS so all matching is case-insensitive.
     const resolveItem = async (name, rawName) => {
-      const match = await resolveItemByName(name, fetch);
-      if (match) return match.itemId;
-      if (rawName && rawName !== name) {
-        const rawMatch = await resolveItemByName(rawName, fetch);
-        if (rawMatch) return rawMatch.itemId;
+      let match = await resolveItemByName(name, fetch);
+      if (!match && rawName && rawName !== name) {
+        match = await resolveItemByName(rawName, fetch);
       }
-      const prefix = await resolveItemByPrefix(name, fetch);
-      if (prefix) return prefix.itemId;
-      const fuzzy = await resolveItemByFuzzy(name, fetch);
-      return fuzzy?.itemId ?? null;
+      if (!match) match = await resolveItemByPrefix(name, fetch);
+      if (!match) match = await resolveItemByFuzzy(name, fetch);
+      if (!match) return null;
+      const types = await resolveItemTypesByItemId([match.itemId], fetch);
+      return { itemId: match.itemId, type: types[match.itemId]?.type ?? null, name: match.name };
     };
     const result = await ingestMarketPrices(user.id, validPrices, resolveItem);
     maybeRunFraudDetection();

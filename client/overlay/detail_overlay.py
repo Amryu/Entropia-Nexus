@@ -232,7 +232,7 @@ TAB_EFFECTS = "effects"
 TAB_MARKET_PRICES = "market_prices"
 
 # Entity types that support tiering (have tier materials)
-_TIERABLE_TYPES = {"Weapon", "ArmorSet", "MedicalTool", "Finder", "Excavator"}
+_TIERABLE_TYPES = {"Weapon", "Armor", "ArmorSet", "MedicalTool", "Finder", "Excavator"}
 
 
 def _get_tab_defs(entity_type: str, item_name: str = "") -> list[tuple[str, str, str]]:
@@ -432,6 +432,7 @@ class DetailOverlayWidget(OverlayWidget):
         self._mps_pieces: list[dict] = []
         self._mps_selected_slot: str = ""
         self._mps_selected_gender: str = "male"
+        self._mps_selected_tier: int = 0
         self._page_type_id: str = ""
         self._pinned = False
         self._expanded = False
@@ -770,6 +771,7 @@ class DetailOverlayWidget(OverlayWidget):
         self._mps_pieces = []
         self._mps_selected_slot = ""
         self._mps_selected_gender = "male"
+        self._mps_selected_tier = 0
         self._page_type_id = ""
         self._map_canvas = None
 
@@ -1058,6 +1060,12 @@ class DetailOverlayWidget(OverlayWidget):
 
     # --- Market prices ---
 
+    def _is_mps_tierable(self) -> bool:
+        """Check if current item supports tier filtering for market prices."""
+        entity_type = self._item.get("Type", "")
+        item_name = self._item.get("Name", "")
+        return entity_type in _TIERABLE_TYPES and not item_name.endswith("(L)")
+
     def _fetch_market_prices(self, piece_name: str | None = None):
         nc = self._nexus_client
         item = self._full_item or self._item
@@ -1092,18 +1100,21 @@ class DetailOverlayWidget(OverlayWidget):
         elif not fetch_name:
             fetch_id = item.get("ItemId") or item.get("Id")
 
-        log.warning("[mps] %s: fetch_name=%s, fetch_id=%s, item keys=%s",
-                    item_name, fetch_name, fetch_id, list(item.keys()))
+        # Tier filter for tierable items
+        tier = self._mps_selected_tier if self._is_mps_tierable() else None
+
+        log.warning("[mps] %s: fetch_name=%s, fetch_id=%s, tier=%s, item keys=%s",
+                    item_name, fetch_name, fetch_id, tier, list(item.keys()))
 
         def fetch():
             snapshot = None
             if fetch_name:
-                rows = nc.get_item_market_prices_by_name(fetch_name)
+                rows = nc.get_item_market_prices_by_name(fetch_name, tier=tier)
                 log.warning("[mps] by_name(%s) → %s", fetch_name, rows)
                 if rows:
                     snapshot = rows[0]
             elif fetch_id:
-                rows = nc.get_item_market_prices(fetch_id)
+                rows = nc.get_item_market_prices(fetch_id, tier=tier)
                 log.warning("[mps] by_id(%s) → %s", fetch_id, rows)
                 if rows:
                     snapshot = rows[0]
@@ -1146,6 +1157,15 @@ class DetailOverlayWidget(OverlayWidget):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(2)
+
+        # Tier selector for tierable items
+        if self._is_mps_tierable():
+            tier_items = [(str(t), str(t)) for t in range(11)]
+            layout.addWidget(self._mps_segmented_row(
+                items=tier_items,
+                selected=str(self._mps_selected_tier),
+                on_click=self._on_mps_tier_selected,
+            ))
 
         # Piece/gender selector for armor sets
         pieces = data.get("pieces", [])
@@ -1297,6 +1317,11 @@ class DetailOverlayWidget(OverlayWidget):
     def _on_mps_gender_selected(self, gender: str):
         self._mps_selected_gender = gender
         self._refetch_mps_for_piece()
+
+    def _on_mps_tier_selected(self, tier_str: str):
+        self._mps_selected_tier = int(tier_str)
+        self._market_prices_data = None
+        self._fetch_market_prices()
 
     def _refetch_mps_for_piece(self):
         """Re-fetch market prices for the currently selected piece."""

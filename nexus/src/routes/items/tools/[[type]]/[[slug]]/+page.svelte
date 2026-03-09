@@ -1193,6 +1193,7 @@
         <MarketPriceSection
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
+          entityType={getEntityType(additional.type)}
           bind:expanded={panelStates.marketPrices}
           on:toggle={savePanelStates}
         />

@@ -4963,8 +4963,8 @@ export function invalidateMarketPriceCache(itemId) {
   }
 }
 
-export async function getMarketPriceSnapshots(itemId, { from, to, limit = 100 } = {}) {
-  const cacheKey = `mps:${itemId}:${from || ''}:${to || ''}:${limit}`;
+export async function getMarketPriceSnapshots(itemId, { tier, from, to, limit = 100 } = {}) {
+  const cacheKey = `mps:${itemId}:${tier ?? ''}:${from || ''}:${to || ''}:${limit}`;
   const cached = mpsCacheGet(cacheKey);
   if (cached) return cached;
 
@@ -4972,6 +4972,11 @@ export async function getMarketPriceSnapshots(itemId, { from, to, limit = 100 } 
   const values = [itemId];
   let idx = 2;
 
+  if (tier != null) {
+    conditions.push(`tier = $${idx}`);
+    values.push(tier);
+    idx++;
+  }
   if (from) {
     conditions.push(`recorded_at >= $${idx}`);
     values.push(from);
@@ -4994,12 +4999,15 @@ export async function getMarketPriceSnapshots(itemId, { from, to, limit = 100 } 
   return rows;
 }
 
-export async function getLatestMarketPrices(itemIds) {
+export async function getLatestMarketPrices(itemIds, tier = null) {
   if (!itemIds.length) return [];
   const sorted = [...itemIds].sort((a, b) => a - b);
-  const cacheKey = `mps-latest:${sorted.join(',')}`;
+  const cacheKey = `mps-latest:${sorted.join(',')}:${tier ?? ''}`;
   const cached = mpsCacheGet(cacheKey);
   if (cached) return cached;
+
+  const tierCondition = tier != null ? 'AND tier = $2' : '';
+  const params = tier != null ? [sorted, tier] : [sorted];
 
   const { rows } = await pool.query(
     `SELECT DISTINCT ON (item_id)
@@ -5009,9 +5017,9 @@ export async function getLatestMarketPrices(itemIds) {
        markup_3650d, sales_3650d, recorded_at,
        confidence, finalized_at, submission_count, manually_reviewed
      FROM ONLY market_price_snapshots
-     WHERE item_id = ANY($1)
+     WHERE item_id = ANY($1) ${tierCondition}
      ORDER BY item_id, recorded_at DESC`,
-    [sorted]
+    params
   );
   mpsCacheSet(cacheKey, rows);
   return rows;
@@ -5020,11 +5028,15 @@ export async function getLatestMarketPrices(itemIds) {
 /**
  * Find latest snapshot by name (unresolved entries) or item_id (resolved).
  * Pass itemId when the caller can resolve name→id from the item cache.
+ * Pass tier to filter by specific tier (null = any tier).
  */
-export async function getLatestMarketPriceByName(name, itemId = null) {
-  const cacheKey = `mps-name:${name.toLowerCase()}:${itemId || ''}`;
+export async function getLatestMarketPriceByName(name, itemId = null, tier = null) {
+  const cacheKey = `mps-name:${name.toLowerCase()}:${itemId || ''}:${tier ?? ''}`;
   const cached = mpsCacheGet(cacheKey);
   if (cached !== undefined) return cached;
+
+  const tierCondition = tier != null ? 'AND tier = $3' : '';
+  const params = tier != null ? [name, itemId, tier] : [name, itemId];
 
   const { rows } = await pool.query(
     `SELECT * FROM ONLY market_price_snapshots
@@ -5032,9 +5044,10 @@ export async function getLatestMarketPriceByName(name, itemId = null) {
        ($2::int IS NOT NULL AND item_id = $2)
        OR (item_id IS NULL AND LOWER(item_name) = LOWER($1))
      )
+     ${tierCondition}
      ORDER BY recorded_at DESC
      LIMIT 1`,
-    [name, itemId]
+    params
   );
   const result = rows[0] || null;
   mpsCacheSet(cacheKey, result);
@@ -5058,7 +5071,7 @@ export async function getAllLatestMarketPrices() {
           markup_3650d, sales_3650d, recorded_at,
           confidence, finalized_at, submission_count, manually_reviewed
         FROM ONLY market_price_snapshots
-        WHERE item_id IS NOT NULL
+        WHERE item_id IS NOT NULL AND tier = 0
         ORDER BY item_id, recorded_at DESC)
        UNION ALL
        (SELECT DISTINCT ON (LOWER(item_name))
@@ -5068,7 +5081,7 @@ export async function getAllLatestMarketPrices() {
           markup_3650d, sales_3650d, recorded_at,
           confidence, finalized_at, submission_count, manually_reviewed
         FROM ONLY market_price_snapshots
-        WHERE item_id IS NULL AND item_name IS NOT NULL
+        WHERE item_id IS NULL AND item_name IS NOT NULL AND tier = 0
         ORDER BY LOWER(item_name), recorded_at DESC)
      ) combined
      ORDER BY recorded_at DESC

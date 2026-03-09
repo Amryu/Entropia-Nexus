@@ -16,7 +16,7 @@ from .wiki_detail import (
     build_market_prices_content,
 )
 from .fancy_table import ColumnDef
-from ..theme import TEXT_MUTED, ACCENT, BORDER, SECONDARY, DAMAGE_COLORS
+from ..theme import TEXT_MUTED, TEXT, ACCENT, BORDER, SECONDARY, HOVER, DAMAGE_COLORS
 from ...data.wiki_columns import (
     deep_get, get_item_name, armor_total_defense, _armor_total_absorption,
     _DAMAGE_TYPES, fmt_int, fmt_bool,
@@ -309,6 +309,11 @@ class ArmorSetDetailView(WikiDetailView):
         self._mps_selected_slot = self._mps_ordered_slots[0] if self._mps_ordered_slots else ""
         self._mps_selected_gender = "male"
 
+        # Tier state — armor sets are always tierable (unless (L))
+        item_name = self._item.get("Name", "")
+        self._mps_tierable = not item_name.endswith("(L)")
+        self._mps_selected_tier: int = 0
+
         self._mps_section = DataSection("Market Prices", expanded=True)
         self._mps_section.set_loading()
         self._add_article_section(self._mps_section)
@@ -335,8 +340,10 @@ class ArmorSetDetailView(WikiDetailView):
         if not piece_name:
             return
 
-        def fetch(name=piece_name):
-            rows = nc.get_item_market_prices_by_name(name)
+        tier = self._mps_selected_tier if getattr(self, "_mps_tierable", False) else None
+
+        def fetch(name=piece_name, t=tier):
+            rows = nc.get_item_market_prices_by_name(name, tier=t)
             self._market_prices_loaded.emit(rows[0] if rows else None)
 
         threading.Thread(
@@ -346,13 +353,15 @@ class ArmorSetDetailView(WikiDetailView):
     def _on_market_prices_loaded(self, snapshot):
         if not hasattr(self, "_mps_section"):
             return
-        # Build combined widget: piece selector + table
+        # Build combined widget: tier selector + piece selector + table
         wrapper = QWidget()
         wrapper.setStyleSheet("background: transparent;")
         wlayout = QVBoxLayout(wrapper)
         wlayout.setContentsMargins(0, 0, 0, 0)
         wlayout.setSpacing(8)
 
+        if getattr(self, "_mps_tierable", False):
+            wlayout.addWidget(self._build_mps_tier_selector())
         wlayout.addWidget(self._build_mps_piece_selector())
         wlayout.addWidget(build_market_prices_content(snapshot))
 
@@ -420,5 +429,44 @@ class ArmorSetDetailView(WikiDetailView):
 
     def _on_mps_gender_clicked(self, gender: str):
         self._mps_selected_gender = gender
+        self._mps_section.set_loading()
+        self._fetch_mps_for_current_piece()
+
+    # --- Tier selector for armor sets ---
+
+    def _build_mps_tier_selector(self) -> QWidget:
+        """Build tier buttons (0-10) for armor set market prices."""
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for t in range(11):
+            btn = QPushButton(str(t))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(24)
+            btn.setFixedWidth(30)
+            active = t == self._mps_selected_tier
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: {ACCENT if active else HOVER};"
+                f"  color: {'#fff' if active else TEXT_MUTED};"
+                f"  border: 1px solid {ACCENT if active else BORDER};"
+                f"  border-radius: 4px; font-size: 11px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  background: {ACCENT if active else BORDER};"
+                f"  color: {'#fff' if active else TEXT};"
+                f"}}"
+            )
+            btn.clicked.connect(
+                lambda checked=False, tier=t: self._on_mps_tier_clicked_armor(tier)
+            )
+            layout.addWidget(btn)
+        layout.addStretch(1)
+        return row
+
+    def _on_mps_tier_clicked_armor(self, tier: int):
+        self._mps_selected_tier = tier
         self._mps_section.set_loading()
         self._fetch_mps_for_current_piece()

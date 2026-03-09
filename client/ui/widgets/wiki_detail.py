@@ -21,6 +21,7 @@ from ..theme import (
     HOVER, DAMAGE_COLORS, TIER1_BLUE_START, TIER1_BLUE_END, SUCCESS,
 )
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get
+from ...exchange.order_utils import TIERABLE_TYPES
 from .fancy_table import FancyTable, ColumnDef
 
 # Defense types share the same 9 names as damage types
@@ -1434,12 +1435,22 @@ class WikiDetailView(QWidget):
         self._add_article_section(self._mps_section)
         self._market_prices_loaded.connect(self._on_market_prices_loaded)
 
+        # Tier state
+        entity_type = self._item.get("Type", "")
+        item_name = self._item.get("Name", "")
+        self._mps_tierable = (
+            entity_type in TIERABLE_TYPES and not item_name.endswith("(L)")
+        )
+        self._mps_selected_tier: int = 0
+
         item_id = self._item.get("Id")
         if not item_id:
             return
 
+        tier = self._mps_selected_tier if self._mps_tierable else None
+
         def fetch():
-            rows = nc.get_item_market_prices(item_id)
+            rows = nc.get_item_market_prices(item_id, tier=tier)
             self._market_prices_loaded.emit(rows[0] if rows else None)
 
         threading.Thread(
@@ -1449,7 +1460,70 @@ class WikiDetailView(QWidget):
     def _on_market_prices_loaded(self, snapshot):
         if not hasattr(self, "_mps_section"):
             return
-        self._mps_section.set_content(build_market_prices_content(snapshot))
+        content = self._build_mps_section_content(snapshot)
+        self._mps_section.set_content(content)
+
+    def _build_mps_section_content(self, snapshot) -> QWidget:
+        """Build market prices content with optional tier selector."""
+        if not getattr(self, "_mps_tierable", False):
+            return build_market_prices_content(snapshot)
+
+        # Wrap with tier selector
+        wrapper = QWidget()
+        wrapper.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        # Tier buttons row
+        tier_row = QWidget()
+        tier_row.setStyleSheet("background: transparent;")
+        tier_layout = QHBoxLayout(tier_row)
+        tier_layout.setContentsMargins(0, 0, 0, 0)
+        tier_layout.setSpacing(4)
+        for t in range(11):
+            btn = QPushButton(str(t))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(24)
+            btn.setFixedWidth(30)
+            active = t == self._mps_selected_tier
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: {ACCENT if active else HOVER};"
+                f"  color: {'#fff' if active else TEXT_MUTED};"
+                f"  border: 1px solid {ACCENT if active else BORDER};"
+                f"  border-radius: 4px; font-size: 11px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  background: {ACCENT if active else BORDER};"
+                f"  color: {'#fff' if active else TEXT};"
+                f"}}"
+            )
+            btn.clicked.connect(lambda checked=False, tier=t: self._on_mps_tier_changed(tier))
+            tier_layout.addWidget(btn)
+        tier_layout.addStretch(1)
+        layout.addWidget(tier_row)
+
+        layout.addWidget(build_market_prices_content(snapshot))
+        return wrapper
+
+    def _on_mps_tier_changed(self, tier: int):
+        self._mps_selected_tier = tier
+        nc = getattr(self, "_nexus_client", None)
+        if not nc:
+            return
+        item_id = self._item.get("Id")
+        if not item_id:
+            return
+        self._mps_section.set_loading()
+
+        def fetch():
+            rows = nc.get_item_market_prices(item_id, tier=tier)
+            self._market_prices_loaded.emit(rows[0] if rows else None)
+
+        threading.Thread(
+            target=fetch, daemon=True, name="wiki-detail-mps",
+        ).start()
 
     # --- Async image loading ---
 

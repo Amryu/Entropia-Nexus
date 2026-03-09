@@ -2,7 +2,8 @@
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getMarketPriceSnapshots } from '$lib/server/db.js';
-import { resolveItemDataByItemId } from '$lib/server/item-type-cache.js';
+import { resolveItemDataByItemId, resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
+import { TIERABLE_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
 
 const RATE_LIMIT_MAX = 30;
 const RATE_LIMIT_WINDOW = 60_000; // 30 requests per 60 seconds
@@ -12,6 +13,12 @@ const MAX_TIMESPAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 /**
  * GET /api/market/prices/snapshots/[itemId] — History of market price snapshots for an item.
  * Public (no auth required). Rate limited by IP.
+ *
+ * Query params:
+ *   ?tier=N   — filter by tier (0-10). Defaults to 0 for tierable items.
+ *   ?from=    — start date (ISO8601)
+ *   ?to=      — end date (ISO8601)
+ *   ?limit=   — max rows (default 100, max 750)
  */
 export async function GET({ params, url, locals, request, fetch }) {
   const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
@@ -24,6 +31,30 @@ export async function GET({ params, url, locals, request, fetch }) {
   if (!Number.isInteger(itemId) || itemId <= 0) {
     return getResponse({ error: 'Invalid itemId' }, 400);
   }
+
+  // Parse tier param
+  const tierRaw = url.searchParams.get('tier');
+  let tierParam = null;
+  if (tierRaw != null) {
+    tierParam = parseInt(tierRaw, 10);
+    if (!Number.isInteger(tierParam) || tierParam < 0 || tierParam > 10) {
+      return getResponse({ error: 'Invalid tier (must be 0-10)' }, 400);
+    }
+  }
+
+  // Resolve item type to validate tier usage
+  const itemData = await resolveItemDataByItemId([itemId], fetch);
+  const itemName = itemData[itemId]?.item?.Name ?? null;
+  const types = await resolveItemTypesByItemId([itemId], fetch);
+  const itemType = types[itemId]?.type ?? null;
+  const tierable = itemType && TIERABLE_TYPES.has(itemType) && !(itemName && isLimitedByName(itemName));
+
+  if (tierParam != null && !tierable) {
+    return getResponse({ error: 'Tier filter not supported for this item type' }, 400);
+  }
+
+  // Default to tier 0 for tierable items when no tier is specified
+  const effectiveTier = tierParam != null ? tierParam : (tierable ? 0 : null);
 
   const fromParam = url.searchParams.get('from');
   const toParam = url.searchParams.get('to');
@@ -50,6 +81,7 @@ export async function GET({ params, url, locals, request, fetch }) {
 
   try {
     const rows = await getMarketPriceSnapshots(itemId, {
+      tier: effectiveTier,
       from: from?.toISOString(),
       to: to?.toISOString(),
       limit
@@ -57,8 +89,7 @@ export async function GET({ params, url, locals, request, fetch }) {
 
     // Enrich resolved rows (item_name IS NULL) with name from Item table
     if (rows.length > 0 && rows.some(r => !r.item_name)) {
-      const itemData = await resolveItemDataByItemId([itemId], fetch);
-      const name = itemData[itemId]?.item?.Name;
+      const name = itemName || itemData[itemId]?.item?.Name;
       if (name) {
         for (const row of rows) {
           if (!row.item_name) row.item_name = name;

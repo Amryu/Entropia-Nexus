@@ -1347,6 +1347,7 @@
         <MarketPriceSection
           itemId={activeWeapon?.Id}
           itemName={activeWeapon?.Name}
+          entityType="Weapon"
           bind:expanded={panelStates.marketPrices}
           on:toggle={savePanelStates}
         />

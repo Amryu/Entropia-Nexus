@@ -4,6 +4,7 @@ import { pool, startTransaction, invalidateMarketPriceCache, getLatestMarketPric
 import { resolveUserGrants } from './grants.js';
 import { resolveMob } from './mobResolver.js';
 import { invalidateGlobalsCache } from './globals-cache.js';
+import { TIERABLE_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
 
 // --- Constants ---
 
@@ -1534,37 +1535,53 @@ async function computeOutlierScore(itemId, entry) {
  *
  * @param {bigint|string} userId
  * @param {Array} prices
- * @param {Function} resolveItem - async (name, rawName) => { itemId }|null
+ * @param {Function} resolveItem - async (name, rawName) => { itemId, type?, name? }|number|null
  * @returns {{ accepted: number, duplicates: number, rejected: number }}
  */
 export async function ingestMarketPrices(userId, prices, resolveItem) {
   userId = String(userId);
   let accepted = 0, duplicates = 0, rejected = 0;
-  const preliminaryPairs = new Map(); // "itemId:hour" → { itemId, bucketHour }
+  const preliminaryPairs = new Map(); // "itemId:tier:hour" → { itemId, tier, bucketHour }
 
   for (const entry of prices) {
     const ocrName = entry.item_name.trim();
     const rawName = entry.item_name_ocr?.trim() || entry.item_name_raw?.trim() || null;
 
     let itemId = null;
+    let itemType = null;
+    let resolvedName = null;
     if (resolveItem) {
       try {
-        itemId = await resolveItem(ocrName, rawName);
+        const resolved = await resolveItem(ocrName, rawName);
+        if (resolved && typeof resolved === 'object') {
+          itemId = resolved.itemId;
+          itemType = resolved.type ?? null;
+          resolvedName = resolved.name ?? null;
+        } else {
+          itemId = resolved;
+        }
       } catch {
         // Non-fatal
       }
     }
     if (!itemId) { rejected++; continue; }
 
+    // Force tier to 0 for non-tierable or limited items
+    if (entry.tier && entry.tier > 0) {
+      const isTierable = itemType && TIERABLE_TYPES.has(itemType) && !isLimitedByName(resolvedName || ocrName);
+      if (!isTierable) entry.tier = 0;
+    }
+
     // Bucket to the last full hour
     const entryTs = new Date(entry.timestamp);
     const bucketHour = new Date(entryTs);
     bucketHour.setMinutes(0, 0, 0);
 
-    // Insert submission — on conflict (same user+item+hour), replace with
+    // Insert submission — on conflict (same user+item+tier+hour), replace with
     // latest data. Manual review always overwrites; otherwise higher
     // confidence wins. Once the hour is finalized (snapshot exists),
     // submissions become read-only — only manual reviews can still update.
+    const entryTier = entry.tier ?? 0;
     const { rowCount } = await pool.query(
       `INSERT INTO market_price_submissions
        (item_id, tier, bucket_hour,
@@ -1573,9 +1590,8 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
         markup_3650d, sales_3650d,
         submitted_by, confidence, manually_reviewed)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       ON CONFLICT (item_id, submitted_by, bucket_hour)
+       ON CONFLICT (item_id, tier, submitted_by, bucket_hour)
        DO UPDATE SET
-         tier = EXCLUDED.tier,
          markup_1d = EXCLUDED.markup_1d, sales_1d = EXCLUDED.sales_1d,
          markup_7d = EXCLUDED.markup_7d, sales_7d = EXCLUDED.sales_7d,
          markup_30d = EXCLUDED.markup_30d, sales_30d = EXCLUDED.sales_30d,
@@ -1590,6 +1606,7 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
            NOT EXISTS (
              SELECT 1 FROM ONLY market_price_snapshots snap
              WHERE snap.item_id = EXCLUDED.item_id
+               AND snap.tier = EXCLUDED.tier
                AND snap.recorded_at = EXCLUDED.bucket_hour
                AND snap.finalized_at IS NOT NULL
            )
@@ -1598,7 +1615,7 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
        )`,
       [
         itemId,
-        entry.tier ?? null,
+        entryTier,
         bucketHour.toISOString(),
         entry.markup_1d ?? null, entry.sales_1d ?? null,
         entry.markup_7d ?? null, entry.sales_7d ?? null,
@@ -1613,9 +1630,9 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
 
     if (rowCount > 0) {
       accepted++;
-      const pairKey = `${itemId}:${bucketHour.toISOString()}`;
+      const pairKey = `${itemId}:${entryTier}:${bucketHour.toISOString()}`;
       if (!preliminaryPairs.has(pairKey)) {
-        preliminaryPairs.set(pairKey, { itemId, bucketHour: new Date(bucketHour) });
+        preliminaryPairs.set(pairKey, { itemId, tier: entryTier, bucketHour: new Date(bucketHour) });
       }
 
       // Compute outlier score against latest snapshot (non-blocking best-effort)
@@ -1624,8 +1641,8 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
         pool.query(
           `UPDATE market_price_submissions
            SET outlier_score = $1, fraud_flags = $2
-           WHERE item_id = $3 AND submitted_by = $4 AND bucket_hour = $5`,
-          [outlierScore, fraudFlags ? JSON.stringify(fraudFlags) : null, itemId, userId, bucketHour.toISOString()]
+           WHERE item_id = $3 AND tier = $4 AND submitted_by = $5 AND bucket_hour = $6`,
+          [outlierScore, fraudFlags ? JSON.stringify(fraudFlags) : null, itemId, entryTier, userId, bucketHour.toISOString()]
         ).catch(err => console.error('[ingestion] Failed to store outlier score:', err.message));
       }).catch(() => {});
     } else {
@@ -1637,7 +1654,7 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
       const currentBucket = new Date();
       currentBucket.setMinutes(0, 0, 0);
       if (bucketHour < currentBucket) {
-        try { await finalizeMarketPriceHour(itemId, bucketHour); } catch { /* non-fatal */ }
+        try { await finalizeMarketPriceHour(itemId, entryTier, bucketHour); } catch { /* non-fatal */ }
       }
     }
   }
@@ -1646,8 +1663,8 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
   // (bypasses global throttle since it's scoped to accepted items only)
   if (preliminaryPairs.size > 0) {
     void (async () => {
-      for (const { itemId: id, bucketHour: bh } of preliminaryPairs.values()) {
-        try { await finalizeMarketPriceHour(id, bh); } catch { /* non-fatal */ }
+      for (const { itemId: id, tier: t, bucketHour: bh } of preliminaryPairs.values()) {
+        try { await finalizeMarketPriceHour(id, t, bh); } catch { /* non-fatal */ }
       }
     })().catch(() => {});
   }
@@ -1661,17 +1678,17 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
 // --- Market Price Finalization ---
 
 /**
- * Finalize a single (item_id, bucket_hour) into an authoritative snapshot.
+ * Finalize a single (item_id, tier, bucket_hour) into an authoritative snapshot.
  *
  * For each value column, computes a confidence-weighted majority vote.
  * Manually reviewed submissions get a 1.5× confidence boost.
  * Result is upserted into market_price_snapshots.
  */
-async function finalizeMarketPriceHour(itemId, bucketHour) {
+async function finalizeMarketPriceHour(itemId, tier, bucketHour) {
   const { rows: submissions } = await pool.query(
     `SELECT * FROM market_price_submissions
-     WHERE item_id = $1 AND bucket_hour = $2`,
-    [itemId, bucketHour]
+     WHERE item_id = $1 AND tier = $2 AND bucket_hour = $3`,
+    [itemId, tier, bucketHour]
   );
 
   if (submissions.length === 0) return;
@@ -1698,22 +1715,6 @@ async function finalizeMarketPriceHour(itemId, bucketHour) {
       if (weight > bestWeight) { bestKey = key; bestWeight = weight; }
     }
     result[col] = parseFloat(bestKey);
-  }
-
-  // Tier: simple majority (integer)
-  const tierVotes = new Map();
-  for (const sub of submissions) {
-    if (sub.tier != null) {
-      const t = Number(sub.tier);
-      tierVotes.set(t, (tierVotes.get(t) || 0) + 1);
-    }
-  }
-  let bestTier = null;
-  if (tierVotes.size > 0) {
-    let maxCount = 0;
-    for (const [tier, count] of tierVotes) {
-      if (count > maxCount) { bestTier = tier; maxCount = count; }
-    }
   }
 
   // Best submitter = highest raw confidence
@@ -1743,9 +1744,8 @@ async function finalizeMarketPriceHour(itemId, bucketHour) {
       recorded_at, submitted_by, confidence, manually_reviewed,
       finalized_at, submission_count)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17)
-     ON CONFLICT (item_id, recorded_at) WHERE item_id IS NOT NULL
+     ON CONFLICT (item_id, tier, recorded_at) WHERE item_id IS NOT NULL
      DO UPDATE SET
-       tier = EXCLUDED.tier,
        markup_1d = EXCLUDED.markup_1d, sales_1d = EXCLUDED.sales_1d,
        markup_7d = EXCLUDED.markup_7d, sales_7d = EXCLUDED.sales_7d,
        markup_30d = EXCLUDED.markup_30d, sales_30d = EXCLUDED.sales_30d,
@@ -1757,7 +1757,7 @@ async function finalizeMarketPriceHour(itemId, bucketHour) {
        finalized_at = now(),
        submission_count = EXCLUDED.submission_count`,
     [
-      itemId, bestTier,
+      itemId, tier,
       result.markup_1d, result.sales_1d,
       result.markup_7d, result.sales_7d,
       result.markup_30d, result.sales_30d,
@@ -1781,33 +1781,36 @@ async function finalizeMarketPriceHour(itemId, bucketHour) {
  * for past hours. Re-finalizes any snapshot with newer submissions.
  */
 async function finalizeAllPendingHours() {
-  // Find (item_id, bucket_hour) pairs needing finalization
+  // Find (item_id, tier, bucket_hour) triples needing finalization
   const { rows: pending } = await pool.query(`
-    SELECT DISTINCT s.item_id, s.bucket_hour
+    SELECT DISTINCT s.item_id, s.tier, s.bucket_hour
     FROM market_price_submissions s
     WHERE s.bucket_hour <= date_trunc('hour', now())
       AND (
         NOT EXISTS (
           SELECT 1 FROM ONLY market_price_snapshots snap
-          WHERE snap.item_id = s.item_id AND snap.recorded_at = s.bucket_hour
+          WHERE snap.item_id = s.item_id AND snap.tier = s.tier
+            AND snap.recorded_at = s.bucket_hour
         )
         OR EXISTS (
           SELECT 1 FROM market_price_submissions s2
-          WHERE s2.item_id = s.item_id AND s2.bucket_hour = s.bucket_hour
+          WHERE s2.item_id = s.item_id AND s2.tier = s.tier
+            AND s2.bucket_hour = s.bucket_hour
             AND s2.submitted_at > (
               SELECT snap2.finalized_at FROM ONLY market_price_snapshots snap2
-              WHERE snap2.item_id = s.item_id AND snap2.recorded_at = s.bucket_hour
+              WHERE snap2.item_id = s.item_id AND snap2.tier = s.tier
+                AND snap2.recorded_at = s.bucket_hour
             )
         )
       )
     LIMIT 200
   `);
 
-  for (const { item_id, bucket_hour } of pending) {
+  for (const { item_id, tier, bucket_hour } of pending) {
     try {
-      await finalizeMarketPriceHour(item_id, bucket_hour);
+      await finalizeMarketPriceHour(item_id, tier, bucket_hour);
     } catch (err) {
-      console.error(`[ingestion] Failed to finalize market price hour item=${item_id} hour=${bucket_hour}:`, err.message);
+      console.error(`[ingestion] Failed to finalize market price hour item=${item_id} tier=${tier} hour=${bucket_hour}:`, err.message);
     }
   }
 }
