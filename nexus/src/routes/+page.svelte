@@ -475,8 +475,8 @@
   }
 
   .news-source.nexus {
-    background-color: rgba(59, 130, 246, 0.15);
-    color: var(--accent-color);
+    background-color: #000;
+    color: #fff;
   }
 
   .news-source.steam {
