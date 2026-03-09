@@ -35,7 +35,7 @@ async function computeDropsForSources(sourceNames) {
       `SELECT "Id", "Name", "Level", "DropRarity"
        FROM ONLY "Blueprints"
        WHERE "IsDroppable" = true
-         AND "Type" = ANY($1::text[])
+         AND "Type"::text = ANY($1)
          AND "Level" BETWEEN $2 AND $3
          AND "Id" != $4
        ORDER BY "Level", "Name"`,
@@ -86,7 +86,7 @@ async function computeSourcesForDrops(dropNames) {
     const { rows: sources } = await pool.query(
       `SELECT "Id", "Name", "Level"
        FROM ONLY "Blueprints"
-       WHERE "Type" = ANY($1::text[])
+       WHERE "Type"::text = ANY($1)
          AND "Level" BETWEEN $2 AND $3
          AND "Id" != $4
        ORDER BY "Level", "Name"`,
@@ -150,7 +150,7 @@ async function getBlueprintDropRows({ sources = null } = {}) {
       `SELECT "Id", "Name", "Level", "DropRarity"
        FROM ONLY "Blueprints"
        WHERE "IsDroppable" = true
-         AND "Type" = ANY($1::text[])
+         AND "Type"::text = ANY($1)
          AND "Level" BETWEEN $2 AND $3
          AND "Id" != $4
        ORDER BY "Level", "Name"`,

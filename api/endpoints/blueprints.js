@@ -66,7 +66,7 @@ async function computeDropsForBlueprint(level, type, id){
     `SELECT "Id", "Name", "Level", "DropRarity"
      FROM ONLY "Blueprints"
      WHERE "IsDroppable" = true
-       AND "Type" = ANY($1::text[])
+       AND "Type"::text = ANY($1)
        AND "Level" BETWEEN $2 AND $3
        AND "Id" != $4
      ORDER BY "Level", "Name"`,
