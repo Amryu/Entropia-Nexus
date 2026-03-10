@@ -344,9 +344,10 @@ class DataClient:
         for key, _ in by_age[: len(by_age) // 2]:
             del self._memory_cache[key]
 
-    def _get_cached(self, endpoint: str) -> list[dict]:
+    def _get_cached(self, endpoint: str):
         """Fetch data with SQLite disk caching.
 
+        Returns the original API response shape (list or dict).
         Callers hold their own references to the returned data, so keeping a
         second copy in memory just wastes RAM.
         """
@@ -361,10 +362,12 @@ class DataClient:
             data = resp.json()
 
             try:
-                self._cache_db.put(endpoint, data if isinstance(data, list) else [data])
+                is_list = isinstance(data, list)
+                items = data if is_list else [data]
+                self._cache_db.put(endpoint, items, is_list=is_list)
             except Exception as write_err:
                 log.debug("Could not write cache for %s: %s", endpoint, write_err)
-            return data if isinstance(data, list) else [data]
+            return data
 
         except Exception as e:
             log.error("Failed to fetch %s: %s", endpoint, e)

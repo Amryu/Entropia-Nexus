@@ -22,7 +22,8 @@ _HAS_JSONB = sqlite3.sqlite_version_info >= (3, 45, 0)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cache_meta (
     endpoint    TEXT PRIMARY KEY,
-    fetched_at  REAL NOT NULL
+    fetched_at  REAL NOT NULL,
+    is_list     INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS cache_items (
@@ -56,15 +57,31 @@ class CacheDB:
         self._conn.execute("PRAGMA cache_size=-8000")  # 8 MB page cache
         self._conn.executescript(SCHEMA)
         self._conn.commit()
+        self._migrate()
 
-    def get(self, endpoint: str, max_age: float) -> list[dict] | None:
-        """Return cached items for *endpoint* if fresher than *max_age* seconds.
+    def _migrate(self):
+        """Add columns that may be missing from older databases."""
+        try:
+            self._conn.execute(
+                "ALTER TABLE cache_meta ADD COLUMN is_list INTEGER NOT NULL DEFAULT 1"
+            )
+            # Column was missing — clear cache since dict endpoints were stored
+            # incorrectly before this column existed.
+            self._conn.execute("DELETE FROM cache_items")
+            self._conn.execute("DELETE FROM cache_meta")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
+    def get(self, endpoint: str, max_age: float) -> list | dict | None:
+        """Return cached data for *endpoint* if fresher than *max_age* seconds.
+
+        Returns the original response shape (list or dict).
         Returns ``None`` on cache miss or stale data.
         """
         with self._lock:
             row = self._conn.execute(
-                "SELECT fetched_at FROM cache_meta WHERE endpoint = ?",
+                "SELECT fetched_at, is_list FROM cache_meta WHERE endpoint = ?",
                 (endpoint,),
             ).fetchone()
             if row is None or (time.time() - row[0]) >= max_age:
@@ -73,7 +90,10 @@ class CacheDB:
                 "SELECT json(data) FROM cache_items WHERE endpoint = ?",
                 (endpoint,),
             ).fetchall()
-        return [json.loads(r[0]) for r in rows]
+        items = [json.loads(r[0]) for r in rows]
+        if not row[1] and len(items) == 1:
+            return items[0]  # Originally a dict, unwrap
+        return items
 
     def get_iter(self, endpoint: str, max_age: float) -> Iterator[dict] | None:
         """Like :meth:`get` but returns a lazy iterator over items.
@@ -96,14 +116,14 @@ class CacheDB:
         )
         return (json.loads(r[0]) for r in cursor)
 
-    def get_stale(self, endpoint: str) -> list[dict] | None:
-        """Return cached items regardless of age (fallback for API failures).
+    def get_stale(self, endpoint: str) -> list | dict | None:
+        """Return cached data regardless of age (fallback for API failures).
 
         Returns ``None`` if there is no data at all for *endpoint*.
         """
         with self._lock:
             row = self._conn.execute(
-                "SELECT fetched_at FROM cache_meta WHERE endpoint = ?",
+                "SELECT fetched_at, is_list FROM cache_meta WHERE endpoint = ?",
                 (endpoint,),
             ).fetchone()
             if row is None:
@@ -112,9 +132,12 @@ class CacheDB:
                 "SELECT json(data) FROM cache_items WHERE endpoint = ?",
                 (endpoint,),
             ).fetchall()
-        return [json.loads(r[0]) for r in rows]
+        items = [json.loads(r[0]) for r in rows]
+        if not row[1] and len(items) == 1:
+            return items[0]
+        return items
 
-    def put(self, endpoint: str, items: list[dict]) -> None:
+    def put(self, endpoint: str, items: list[dict], *, is_list: bool = True) -> None:
         """Store *items* for *endpoint*, replacing any existing data."""
         now = time.time()
         encode = "jsonb(?)" if _HAS_JSONB else "?"
@@ -130,9 +153,9 @@ class CacheDB:
                     [(endpoint, json.dumps(item)) for item in items],
                 )
                 cur.execute(
-                    "INSERT OR REPLACE INTO cache_meta (endpoint, fetched_at) "
-                    "VALUES (?, ?)",
-                    (endpoint, now),
+                    "INSERT OR REPLACE INTO cache_meta (endpoint, fetched_at, is_list) "
+                    "VALUES (?, ?, ?)",
+                    (endpoint, now, 1 if is_list else 0),
                 )
                 self._conn.commit()
             except Exception:
