@@ -213,7 +213,7 @@ export async function getAllClientsWithMetrics() {
        SELECT COUNT(*) AS active_refresh_tokens,
               MAX(created_at) AS refresh_last_used
        FROM oauth_refresh_tokens
-       WHERE client_id = c.id AND expires_at > NOW()
+       WHERE client_id = c.id AND expires_at > NOW() AND used = false
      ) rt ON true
      ORDER BY c.created_at DESC`
   );
