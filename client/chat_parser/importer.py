@@ -84,7 +84,7 @@ class HistoricalImporter:
         line_number = 0
         self._db.begin_batch()
         try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 while not self._cancel.is_set():
                     raw_line = f.readline()
                     if not raw_line:

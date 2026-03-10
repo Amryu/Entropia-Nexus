@@ -24,7 +24,7 @@ BATCH_COMMIT_INTERVAL = 5000  # Commit progress every N lines during catchup/rep
 def _file_fingerprint(path: str) -> str | None:
     """SHA-256 of the first FINGERPRINT_LINES lines of a file."""
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
             lines = []
             for _ in range(FINGERPRINT_LINES):
                 line = f.readline()
@@ -188,7 +188,7 @@ class ChatLogWatcher:
         self._line_buffer = ""
 
         try:
-            with open(self._file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(self._file_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 f.seek(self._byte_offset)
                 lines_in_batch = 0
 

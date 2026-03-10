@@ -201,9 +201,10 @@ class GlobalsHandler(BaseHandler):
         # Remove known suffixes from the end
         for suffix in [
             " A record has been added to the Hall of Fame!",
+            " A record has been added to the Hall of Fame.",
         ]:
             idx = loc.find(suffix)
             if idx != -1:
                 loc = loc[:idx]
-        loc = loc.rstrip("! ")
+        loc = loc.rstrip("!. ")
         return loc if loc else None
