@@ -3,16 +3,17 @@
  * Migration script: Upload all existing approved images to Cloudflare R2.
  *
  * Usage:
- *   node migrate-images-to-r2.mjs [--env <path>] [--dry-run] [--force]
+ *   node migrate-images-to-r2.mjs [--env <path>] [--uploads <path>] [--dry-run] [--force]
  *
  * Options:
- *   --env <path>  Load environment variables from a .env file (default: ./.env)
- *   --dry-run     Show what would be uploaded without actually uploading
- *   --force       Re-upload even if the object already exists in R2
+ *   --env <path>      Load environment variables from a .env file (default: ./.env)
+ *   --uploads <path>  Override UPLOAD_DIR (host path to uploads directory)
+ *   --dry-run         Show what would be uploaded without actually uploading
+ *   --force           Re-upload even if the object already exists in R2
  *
  * Environment variables (required):
  *   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME
- *   UPLOAD_DIR (optional, defaults to ./uploads)
+ *   UPLOAD_DIR (optional, defaults to ./uploads — overridden by --uploads flag)
  *
  * Can safely be run while the site is live — reads are local-only.
  */
@@ -52,7 +53,8 @@ const ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const BUCKET = process.env.R2_BUCKET_NAME;
-const UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
+const uploadsIdx = args.indexOf('--uploads');
+const UPLOAD_DIR = (uploadsIdx !== -1 && args[uploadsIdx + 1]) ? resolve(args[uploadsIdx + 1]) : (process.env.UPLOAD_DIR || './uploads');
 const APPROVED_DIR = join(UPLOAD_DIR, 'approved');
 
 const VARIANT_SIZES = [32, 48, 64, 128];
