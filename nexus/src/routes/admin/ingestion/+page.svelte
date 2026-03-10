@@ -4,6 +4,10 @@
 
   let stats = data.stats;
   let alerts = data.alerts;
+  let alertTotal = data.alertTotal || 0;
+  let alertPage = 1;
+  const ALERTS_PER_PAGE = 10;
+  let alertsLoading = false;
   let users = data.users;
   let allowedClients = data.allowedClients || [];
   let tradeChannels = data.tradeChannels || [];
@@ -46,6 +50,25 @@
   function formatPercent(part, total) {
     if (!total || total === '0') return '0%';
     return Math.round((parseInt(part) / parseInt(total)) * 100) + '%';
+  }
+
+  $: alertTotalPages = Math.max(1, Math.ceil(alertTotal / ALERTS_PER_PAGE));
+
+  async function loadAlertPage(page) {
+    alertsLoading = true;
+    try {
+      const res = await fetch(`/api/admin/ingestion/alerts?page=${page}&limit=${ALERTS_PER_PAGE}`);
+      if (res.ok) {
+        const d = await res.json();
+        alerts = d.rows;
+        alertTotal = d.total;
+        alertPage = page;
+      }
+    } catch (e) {
+      console.error('Failed to load alerts:', e);
+    } finally {
+      alertsLoading = false;
+    }
   }
 
   // --- Actions ---
@@ -160,7 +183,7 @@
     try {
       const [statsRes, alertsRes, usersRes, allowedRes, channelsRes] = await Promise.all([
         fetch('/api/admin/ingestion/stats'),
-        fetch('/api/admin/ingestion/alerts?limit=10'),
+        fetch(`/api/admin/ingestion/alerts?page=${alertPage}&limit=${ALERTS_PER_PAGE}`),
         fetch('/api/admin/ingestion/users?limit=20'),
         fetch('/api/admin/ingestion/allowed?limit=50'),
         fetch('/api/admin/ingestion/channels'),
@@ -168,6 +191,12 @@
       stats = await statsRes.json();
       const alertData = await alertsRes.json();
       alerts = alertData.rows;
+      alertTotal = alertData.total;
+      // If current page is now empty (e.g. resolved last alert on page), go back
+      if (alerts.length === 0 && alertPage > 1) {
+        alertPage = Math.min(alertPage, Math.max(1, Math.ceil(alertData.total / ALERTS_PER_PAGE)));
+        await loadAlertPage(alertPage);
+      }
       users = await usersRes.json();
       const allowedData = await allowedRes.json();
       allowedClients = allowedData.rows || [];
@@ -371,11 +400,11 @@
   <!-- Alerts Tab -->
   {#if activeTab === 'alerts'}
     <div class="section">
-      {#if alerts.length === 0}
+      {#if alerts.length === 0 && !alertsLoading}
         <p class="empty-state">No pending alerts</p>
       {:else}
         {#each alerts as alert}
-          <div class="alert-card">
+          <div class="alert-card" class:loading-fade={alertsLoading}>
             <div class="alert-header">
               <span class="alert-type"
                 class:badge-danger={alert.type === 'collusion_pattern' || alert.type === 'solo_fabrication'}
@@ -446,6 +475,18 @@
             </div>
           </div>
         {/each}
+
+        {#if alertTotalPages > 1}
+          <div class="pagination">
+            <button class="btn btn-small btn-secondary" disabled={alertPage <= 1 || alertsLoading} on:click={() => loadAlertPage(alertPage - 1)}>
+              Previous
+            </button>
+            <span class="pagination-info">Page {alertPage} of {alertTotalPages}</span>
+            <button class="btn btn-small btn-secondary" disabled={alertPage >= alertTotalPages || alertsLoading} on:click={() => loadAlertPage(alertPage + 1)}>
+              Next
+            </button>
+          </div>
+        {/if}
       {/if}
     </div>
   {/if}
@@ -1235,6 +1276,26 @@
     color: var(--text-muted);
     font-size: 12px;
     margin-top: 2px;
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 16px;
+    padding: 8px 0;
+  }
+
+  .pagination-info {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .loading-fade {
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   @media (max-width: 768px) {

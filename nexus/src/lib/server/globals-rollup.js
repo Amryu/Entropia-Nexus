@@ -61,7 +61,10 @@ async function rebuildDailyRange(startDate, endDate) {
               count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
        FROM ingested_globals
        WHERE confirmed = true AND event_timestamp >= $1 AND event_timestamp < $2
-       GROUP BY date_trunc('day', event_timestamp), global_type`,
+       GROUP BY date_trunc('day', event_timestamp), global_type
+       ON CONFLICT (granularity, period_start, global_type) DO UPDATE SET
+         event_count = EXCLUDED.event_count, sum_value = EXCLUDED.sum_value,
+         max_value = EXCLUDED.max_value, hof_count = EXCLUDED.hof_count, ath_count = EXCLUDED.ath_count`,
       [startDate, endDate]
     );
 
@@ -78,7 +81,10 @@ async function rebuildDailyRange(startDate, endDate) {
               count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
        FROM ingested_globals
        WHERE confirmed = true AND event_timestamp >= $1 AND event_timestamp < $2
-       GROUP BY date_trunc('day', event_timestamp), player_name, global_type`,
+       GROUP BY date_trunc('day', event_timestamp), player_name, global_type
+       ON CONFLICT (granularity, period_start, player_name, global_type) DO UPDATE SET
+         event_count = EXCLUDED.event_count, sum_value = EXCLUDED.sum_value,
+         max_value = EXCLUDED.max_value, hof_count = EXCLUDED.hof_count, ath_count = EXCLUDED.ath_count`,
       [startDate, endDate]
     );
 
@@ -96,7 +102,10 @@ async function rebuildDailyRange(startDate, endDate) {
        FROM ingested_globals
        WHERE confirmed = true AND event_timestamp >= $1 AND event_timestamp < $2
          AND target_name IS NOT NULL
-       GROUP BY date_trunc('day', event_timestamp), target_name, global_type`,
+       GROUP BY date_trunc('day', event_timestamp), target_name, global_type
+       ON CONFLICT (granularity, period_start, target_name, global_type) DO UPDATE SET
+         mob_id = EXCLUDED.mob_id, event_count = EXCLUDED.event_count, sum_value = EXCLUDED.sum_value,
+         max_value = EXCLUDED.max_value, hof_count = EXCLUDED.hof_count, ath_count = EXCLUDED.ath_count`,
       [startDate, endDate]
     );
 
@@ -144,7 +153,10 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
               SUM(event_count), SUM(sum_value), MAX(max_value), SUM(hof_count), SUM(ath_count)
        FROM globals_rollup
        WHERE granularity = 'daily'${coarseRangeFilter}
-       GROUP BY date_trunc('${truncUnit}', period_start), global_type`,
+       GROUP BY date_trunc('${truncUnit}', period_start), global_type
+       ON CONFLICT (granularity, period_start, global_type) DO UPDATE SET
+         event_count = EXCLUDED.event_count, sum_value = EXCLUDED.sum_value,
+         max_value = EXCLUDED.max_value, hof_count = EXCLUDED.hof_count, ath_count = EXCLUDED.ath_count`,
       [granularity]
     );
 
@@ -159,7 +171,10 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
               SUM(event_count), SUM(sum_value), MAX(max_value), SUM(hof_count), SUM(ath_count)
        FROM globals_rollup_player
        WHERE granularity = 'daily'${coarseRangeFilter}
-       GROUP BY date_trunc('${truncUnit}', period_start), player_name, global_type`,
+       GROUP BY date_trunc('${truncUnit}', period_start), player_name, global_type
+       ON CONFLICT (granularity, period_start, player_name, global_type) DO UPDATE SET
+         event_count = EXCLUDED.event_count, sum_value = EXCLUDED.sum_value,
+         max_value = EXCLUDED.max_value, hof_count = EXCLUDED.hof_count, ath_count = EXCLUDED.ath_count`,
       [granularity]
     );
 
@@ -174,7 +189,10 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
               SUM(event_count), SUM(sum_value), MAX(max_value), SUM(hof_count), SUM(ath_count)
        FROM globals_rollup_target
        WHERE granularity = 'daily'${coarseRangeFilter}
-       GROUP BY date_trunc('${truncUnit}', period_start), target_name, global_type`,
+       GROUP BY date_trunc('${truncUnit}', period_start), target_name, global_type
+       ON CONFLICT (granularity, period_start, target_name, global_type) DO UPDATE SET
+         mob_id = EXCLUDED.mob_id, event_count = EXCLUDED.event_count, sum_value = EXCLUDED.sum_value,
+         max_value = EXCLUDED.max_value, hof_count = EXCLUDED.hof_count, ath_count = EXCLUDED.ath_count`,
       [granularity]
     );
 
@@ -317,7 +335,14 @@ async function refreshSummaryTables() {
                 EXISTS(SELECT 1 FROM users u WHERE lower(u.eu_name) = lower(player_name) AND u.verified = true)
          FROM globals_rollup_player
          WHERE granularity = $2${periodFilter}
-         GROUP BY player_name`,
+         GROUP BY player_name
+         ON CONFLICT (period, player_name) DO UPDATE SET
+           event_count = EXCLUDED.event_count,
+           sum_value = EXCLUDED.sum_value,
+           max_value = EXCLUDED.max_value,
+           has_team = EXCLUDED.has_team,
+           has_solo = EXCLUDED.has_solo,
+           has_profile = EXCLUDED.has_profile`,
         [period, granularity]
       );
 
@@ -335,7 +360,13 @@ async function refreshSummaryTables() {
                  GROUP BY r2.global_type ORDER BY SUM(r2.event_count) DESC LIMIT 1)
          FROM globals_rollup_target
          WHERE granularity = $2${periodFilter}
-         GROUP BY target_name`,
+         GROUP BY target_name
+         ON CONFLICT (period, target_name) DO UPDATE SET
+           mob_id = EXCLUDED.mob_id,
+           event_count = EXCLUDED.event_count,
+           sum_value = EXCLUDED.sum_value,
+           max_value = EXCLUDED.max_value,
+           primary_type = EXCLUDED.primary_type`,
         [period, granularity]
       );
     }

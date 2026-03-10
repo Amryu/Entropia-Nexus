@@ -3,7 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getMarketPriceSnapshots } from '$lib/server/db.js';
 import { resolveItemDataByItemId, resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
-import { TIERABLE_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
+import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 
 const RATE_LIMIT_MAX = 30;
 const RATE_LIMIT_WINDOW = 60_000; // 30 requests per 60 seconds
@@ -47,7 +47,7 @@ export async function GET({ params, url, locals, request, fetch }) {
   const itemName = itemData[itemId]?.item?.Name ?? null;
   const types = await resolveItemTypesByItemId([itemId], fetch);
   const itemType = types[itemId]?.type ?? null;
-  const tierable = itemType && TIERABLE_TYPES.has(itemType) && !(itemName && isLimitedByName(itemName));
+  const tierable = itemType && TIERABLE_TYPES.has(itemType);
 
   if (tierParam != null && !tierable) {
     return getResponse({ error: 'Tier filter not supported for this item type' }, 400);

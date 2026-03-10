@@ -71,7 +71,8 @@ export async function GET({ params, url }) {
   // Helper for top individual loots query per category
   function topLootsQuery(typeCondition) {
     return pool.query(
-      `SELECT target_name, value, mob_id, is_hof, is_ath, event_timestamp
+      `SELECT id, target_name, value, mob_id, is_hof, is_ath, event_timestamp,
+              media_image_key, media_video_url
        FROM ingested_globals
        WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          AND ${typeCondition}
@@ -204,7 +205,8 @@ export async function GET({ params, url }) {
       pool.query(
         `SELECT id, global_type, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
-                mob_id, maturity_id, extra
+                mob_id, maturity_id, extra,
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          ORDER BY event_timestamp DESC
@@ -474,12 +476,15 @@ export async function GET({ params, url }) {
 
     function mapLootRows(rows) {
       return rows.map(r => ({
+        id: r.id,
         target: r.target_name,
         value: parseFloat(r.value),
         mob_id: r.mob_id,
         hof: r.is_hof,
         ath: r.is_ath,
         timestamp: r.event_timestamp,
+        media_image: r.media_image_key || null,
+        media_video: r.media_video_url || null,
       }));
     }
 
@@ -563,6 +568,8 @@ export async function GET({ params, url }) {
         mob_id: r.mob_id,
         maturity_id: r.maturity_id,
         extra: r.extra,
+        media_image: r.media_image_key || null,
+        media_video: r.media_video_url || null,
       })),
       achievements: discoveryResult.rows.map(r => ({
         type: r.global_type,

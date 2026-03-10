@@ -6,6 +6,7 @@ const { getMobLootsForItemsOrMobs } = require('./mobloots');
 const { getShopListings } = require('./shops');
 const { getItemCached } = require('./itemsCache');
 const { getBlueprintDropRows } = require('./blueprintdrops');
+const { getMissionRewardsForItems } = require('./missionrewards');
 
 async function hydrateShopItems(list) {
   const uniqueIds = Array.from(new Set(list.map(x => x.ItemId).filter(Boolean)));
@@ -40,12 +41,13 @@ function register(app){
       const raw = req.query.items || '';
       const items = parseItemList(raw);
       if (!items || items.length === 0) return res.status(400).send('Items cannot be empty');
-      const [blueprintList, lootList, offersList, recipesList, listings] = await Promise.all([
+      const [blueprintList, lootList, offersList, recipesList, listings, missionRewardList] = await Promise.all([
         blueprints.getBlueprints(items),
         getMobLootsForItemsOrMobs(items, null),
         vendoroffers.getVendorOffers(items),
         refining.getRefiningRecipes(items),
         getShopListings(items),
+        getMissionRewardsForItems(items),
       ]);
       const hydrated = await hydrateShopItems(listings);
       // If any requested items are blueprint names, also include their computed drop blueprints (Blueprint Discovery)
@@ -62,7 +64,7 @@ function register(app){
           }
         }
       } catch {}
-      res.status(200).json({ Blueprints: blueprintList, Loots: lootList, VendorOffers: offersList, RefiningRecipes: recipesList, ShopListings: hydrated, BlueprintDrops: blueprintDrops });
+      res.status(200).json({ Blueprints: blueprintList, Loots: lootList, VendorOffers: offersList, RefiningRecipes: recipesList, ShopListings: hydrated, BlueprintDrops: blueprintDrops, MissionRewards: missionRewardList });
     } catch (e){ next(e); }
   });
 

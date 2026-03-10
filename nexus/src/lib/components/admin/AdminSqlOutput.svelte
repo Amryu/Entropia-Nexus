@@ -76,12 +76,18 @@
       }
     }
 
-    return {
+    const body = {
       Id: change.action === 'edit' ? change.original?.Id : null,
       Name: mod.name,
       Properties: props,
       Planet: { Name: planet?.Name }
     };
+
+    if (mod.parentLocationName) {
+      body.ParentLocation = { Name: mod.parentLocationName };
+    }
+
+    return body;
   }
 
   async function directApplyAll() {

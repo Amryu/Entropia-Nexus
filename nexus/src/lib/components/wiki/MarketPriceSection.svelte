@@ -70,7 +70,7 @@
   let selectedTier = 0;
 
   // Determine if tier selector should be shown
-  $: showTierSelector = entityType && TIERABLE_TYPES.has(entityType) && !(itemName?.endsWith('(L)'));
+  $: showTierSelector = entityType && TIERABLE_TYPES.has(entityType);
 
   function toggleSection() {
     dispatch('toggle', { expanded });

@@ -185,7 +185,10 @@ export async function GET({ params, locals, fetch }) {
       biographyHtml: profileUser.biography_html || '',
       defaultTab: profileUser.default_profile_tab || 'General',
       showcaseLoadoutCode: profileUser.showcase_loadout_code || null,
-      rewardScore: parseFloat(profileUser.reward_score) || 0
+      rewardScore: parseFloat(profileUser.reward_score) || 0,
+      socialDiscord: profileUser.social_discord || null,
+      socialYoutube: profileUser.social_youtube || null,
+      socialTwitch: profileUser.social_twitch || null
     },
     scores: {
       total: scores.total,
@@ -241,12 +244,68 @@ export async function PATCH({ params, request, locals }) {
     return getResponse({ error: 'Invalid JSON in request body.' }, 400);
   }
 
+  // Sanitize social fields
+  const sanitizeText = (val, prev) => {
+    if (val === undefined) return prev ?? null;
+    if (!val) return null;
+    return String(val).trim().slice(0, 200) || null;
+  };
+
+  // Extract YouTube channel name/ID from URL or plain input
+  const extractYoutube = (val, prev) => {
+    if (val === undefined) return prev ?? null;
+    const s = String(val || '').trim();
+    if (!s) return null;
+    try {
+      const url = new URL(s.startsWith('http') ? s : `https://${s}`);
+      if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+        const parts = url.pathname.split('/').filter(Boolean);
+        // /@handle → handle (strip @)
+        if (parts[0]?.startsWith('@')) return parts[0].slice(1).slice(0, 200) || null;
+        // /channel/UCxxxx → UCxxxx
+        if (parts[0] === 'channel' && parts[1]) return parts[1].slice(0, 200);
+        // /c/name or /user/name → name
+        if ((parts[0] === 'c' || parts[0] === 'user') && parts[1]) return parts[1].slice(0, 200);
+        if (parts[0]) return parts[0].slice(0, 200);
+      }
+    } catch { /* not a URL, treat as plain name */ }
+    // Plain name — strip leading @
+    return s.replace(/^@/, '').slice(0, 200) || null;
+  };
+
+  // Extract Twitch username from URL or plain input
+  const extractTwitch = (val, prev) => {
+    if (val === undefined) return prev ?? null;
+    const s = String(val || '').trim();
+    if (!s) return null;
+    try {
+      const url = new URL(s.startsWith('http') ? s : `https://${s}`);
+      if (url.hostname.includes('twitch.tv')) {
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (parts[0]) return parts[0].slice(0, 200);
+      }
+    } catch { /* not a URL */ }
+    // Plain name — strip leading @
+    return s.replace(/^@/, '').slice(0, 200) || null;
+  };
+
+  // Discord: plain username, strip leading @
+  const sanitizeDiscord = (val, prev) => {
+    if (val === undefined) return prev ?? null;
+    const s = String(val || '').trim();
+    if (!s) return null;
+    return s.replace(/^@/, '').slice(0, 200) || null;
+  };
+
   const next = {
     biography_html: body.biographyHtml != null
       ? sanitizeRichText(body.biographyHtml || '')
       : (profileUser.biography_html ?? null),
     default_profile_tab: body.defaultTab ?? profileUser.default_profile_tab ?? 'General',
-    showcase_loadout_code: body.showcaseLoadoutCode ?? profileUser.showcase_loadout_code ?? null
+    showcase_loadout_code: body.showcaseLoadoutCode ?? profileUser.showcase_loadout_code ?? null,
+    social_discord: sanitizeDiscord(body.socialDiscord, profileUser.social_discord),
+    social_youtube: extractYoutube(body.socialYoutube, profileUser.social_youtube),
+    social_twitch: extractTwitch(body.socialTwitch, profileUser.social_twitch)
   };
 
   if (next.default_profile_tab && !['General', 'Avatar', 'Services', 'Shops', 'Orders', 'Rentals'].includes(next.default_profile_tab)) {
@@ -263,7 +322,10 @@ export async function PATCH({ params, request, locals }) {
       societyId: updated.society_id ?? null,
       biographyHtml: updated.biography_html || '',
       defaultTab: updated.default_profile_tab || 'General',
-      showcaseLoadoutCode: updated.showcase_loadout_code || null
+      showcaseLoadoutCode: updated.showcase_loadout_code || null,
+      socialDiscord: updated.social_discord || null,
+      socialYoutube: updated.social_youtube || null,
+      socialTwitch: updated.social_twitch || null
     }
   }, 200);
 }

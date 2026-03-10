@@ -136,12 +136,12 @@ export async function GET({ params, url }) {
       // Summary stats (rollup or raw)
       useRollup
         ? q(
-            `SELECT SUM(event_count) AS total_count,
-                    SUM(sum_value) AS total_value,
-                    SUM(sum_value) / NULLIF(SUM(event_count), 0) AS avg_value,
-                    MAX(max_value) AS max_value,
-                    SUM(hof_count) AS hof_count,
-                    SUM(ath_count) AS ath_count,
+            `SELECT COALESCE(SUM(event_count), 0) AS total_count,
+                    COALESCE(SUM(sum_value), 0) AS total_value,
+                    COALESCE(SUM(sum_value), 0) / NULLIF(COALESCE(SUM(event_count), 0), 0) AS avg_value,
+                    COALESCE(MAX(max_value), 0) AS max_value,
+                    COALESCE(SUM(hof_count), 0) AS hof_count,
+                    COALESCE(SUM(ath_count), 0) AS ath_count,
                     (SELECT global_type FROM globals_rollup_target
                      WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}
                      GROUP BY global_type ORDER BY SUM(event_count) DESC LIMIT 1) AS primary_type,
@@ -209,7 +209,8 @@ export async function GET({ params, url }) {
       q(
         `SELECT id, global_type, player_name, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
-                mob_id, maturity_id, extra
+                mob_id, maturity_id, extra,
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}${periodCond}
          ORDER BY event_timestamp DESC
@@ -326,6 +327,8 @@ export async function GET({ params, url }) {
         mob_id: r.mob_id,
         maturity_id: r.maturity_id,
         extra: r.extra,
+        media_image: r.media_image_key || null,
+        media_video: r.media_video_url || null,
       })),
     }), {
       status: 200,

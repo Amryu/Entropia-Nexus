@@ -61,6 +61,21 @@
   let societyActionStatus = '';
   let societySearchTimeout = null;
 
+  let discordFlash = false;
+  function copyDiscordName() {
+    if (!profile?.socialDiscord) return;
+    navigator.clipboard.writeText(profile.socialDiscord);
+    discordFlash = true;
+    setTimeout(() => { discordFlash = false; }, 600);
+  }
+
+  function youtubeUrl(name) {
+    if (!name) return '';
+    // Channel IDs start with UC
+    if (name.startsWith('UC') && name.length >= 20) return `https://youtube.com/channel/${name}`;
+    return `https://youtube.com/@${name}`;
+  }
+
   const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
   const isRingSlot = (slot) => /ring|finger/i.test(slot || '');
 
@@ -104,7 +119,10 @@
   let form = {
     biographyHtml: '',
     defaultTab: 'General',
-    showcaseLoadoutCode: ''
+    showcaseLoadoutCode: '',
+    socialDiscord: '',
+    socialYoutube: '',
+    socialTwitch: ''
   };
 
   // Reset UI state when navigating to a different profile
@@ -132,7 +150,10 @@
     form = {
       biographyHtml: profile?.biographyHtml || '',
       defaultTab: profile?.defaultTab || 'General',
-      showcaseLoadoutCode: profile?.showcaseLoadoutCode || ''
+      showcaseLoadoutCode: profile?.showcaseLoadoutCode || '',
+      socialDiscord: profile?.socialDiscord || '',
+      socialYoutube: profile?.socialYoutube || '',
+      socialTwitch: profile?.socialTwitch || ''
     };
   }
 
@@ -417,7 +438,10 @@
     form = {
       biographyHtml: profile.biographyHtml || '',
       defaultTab: profile.defaultTab || 'General',
-      showcaseLoadoutCode: profile.showcaseLoadoutCode || ''
+      showcaseLoadoutCode: profile.showcaseLoadoutCode || '',
+      socialDiscord: profile.socialDiscord || '',
+      socialYoutube: profile.socialYoutube || '',
+      socialTwitch: profile.socialTwitch || ''
     };
   }
 
@@ -431,7 +455,10 @@
         body: JSON.stringify({
           biographyHtml: form.biographyHtml,
           defaultTab: form.defaultTab,
-          showcaseLoadoutCode: form.showcaseLoadoutCode || null
+          showcaseLoadoutCode: form.showcaseLoadoutCode || null,
+          socialDiscord: form.socialDiscord || null,
+          socialYoutube: form.socialYoutube || null,
+          socialTwitch: form.socialTwitch || null
         })
       });
       const payload = await response.json();
@@ -442,7 +469,10 @@
         ...profile,
         biographyHtml: payload.profile.biographyHtml,
         defaultTab: payload.profile.defaultTab,
-        showcaseLoadoutCode: payload.profile.showcaseLoadoutCode
+        showcaseLoadoutCode: payload.profile.showcaseLoadoutCode,
+        socialDiscord: payload.profile.socialDiscord,
+        socialYoutube: payload.profile.socialYoutube,
+        socialTwitch: payload.profile.socialTwitch
       };
       let nextShowcase = null;
       if (payload.profile.showcaseLoadoutCode) {
@@ -785,6 +815,25 @@
     <div class="profile-info">
       <div class="profile-names">
         <h1>{profile.euName || profile.discordName}</h1>
+        {#if profile.socialDiscord || profile.socialYoutube || profile.socialTwitch}
+          <div class="social-icons">
+            {#if profile.socialDiscord}
+              <button class="social-link social-discord" class:discord-copied={discordFlash} title="Copy Discord: {profile.socialDiscord}" on:click={copyDiscordName}>
+                <svg viewBox="0 0 127.14 96.36" width="23" height="23"><path fill="currentColor" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0 105.89 105.89 0 0 0 19.39 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2.03a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2.03a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53.05s5-12.68 11.45-12.68S54 46.07 53.89 53.05 48.84 65.69 42.45 65.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53.05s5-12.68 11.44-12.68S96.23 46.07 96.12 53.05 91.08 65.69 84.69 65.69Z"/></svg>
+              </button>
+            {/if}
+            {#if profile.socialYoutube}
+              <a href={youtubeUrl(profile.socialYoutube)} target="_blank" rel="noopener noreferrer" class="social-link social-youtube" title="YouTube: {profile.socialYoutube}">
+                <svg viewBox="0 0 24 24" width="22" height="22"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              </a>
+            {/if}
+            {#if profile.socialTwitch}
+              <a href={`https://twitch.tv/${profile.socialTwitch}`} target="_blank" rel="noopener noreferrer" class="social-link social-twitch" title="Twitch: {profile.socialTwitch}">
+                <svg viewBox="0 0 24 24" width="21" height="21"><path fill="#9146FF" d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
+              </a>
+            {/if}
+          </div>
+        {/if}
       </div>
       <div class="profile-meta">
         <div class="meta-row">
@@ -872,6 +921,34 @@
       </section>
 
       {#if isEditing}
+        <section class="panel-section">
+          <h2>Social Links</h2>
+          <div class="social-edit-grid">
+            <div class="social-edit-row">
+              <label class="social-edit-label">
+                <svg viewBox="0 0 127.14 96.36" width="16" height="16"><path fill="#5865F2" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0 105.89 105.89 0 0 0 19.39 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2.03a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2.03a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53.05s5-12.68 11.45-12.68S54 46.07 53.89 53.05 48.84 65.69 42.45 65.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53.05s5-12.68 11.44-12.68S96.23 46.07 96.12 53.05 91.08 65.69 84.69 65.69Z"/></svg>
+                Discord
+              </label>
+              <input type="text" bind:value={form.socialDiscord} placeholder="username" maxlength="200" />
+            </div>
+            <div class="social-edit-row">
+              <label class="social-edit-label">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                YouTube
+              </label>
+              <input type="text" bind:value={form.socialYoutube} placeholder="channel name or URL" maxlength="200" />
+            </div>
+            <div class="social-edit-row">
+              <label class="social-edit-label">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="#9146FF" d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
+                Twitch
+              </label>
+              <input type="text" bind:value={form.socialTwitch} placeholder="username or URL" maxlength="200" />
+            </div>
+          </div>
+          <p class="hint">Discord username is copied to clipboard when clicked. YouTube and Twitch accept usernames or channel URLs.</p>
+        </section>
+
         <section class="panel-section">
           <h2>Default Tab</h2>
           <select bind:value={form.defaultTab}>
@@ -1421,92 +1498,92 @@
           </div>
 
           <!-- Category rankings -->
-          {#if globalsAthRankings.hunting.length > 0 || globalsAthRankings.mining.length > 0 || globalsAthRankings.crafting.length > 0}
-            <div class="globals-rankings">
-              <h3>All-Time High Rankings</h3>
-              <div class="globals-rankings-grid">
-                {#if globalsAthRankings.hunting.length > 0}
-                  <div class="globals-ranking-card">
-                    <div class="ranking-card-header hunting-color">Hunting</div>
-                    {#each globalsAthRankings.hunting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
-                      <div class="ranking-entry">
-                        <span class="ranking-target">{entry.target}</span>
-                        {#if entry.total_rank <= 10}
-                          <span class="ranking-badge">#{entry.total_rank} total</span>
-                        {/if}
-                        {#if entry.best_rank <= 10}
-                          <span class="ranking-badge best">#{entry.best_rank} best</span>
-                        {/if}
-                      </div>
-                    {/each}
+          <div class="globals-rankings">
+            <h3>Personal All Time High Rankings</h3>
+            <div class="globals-rankings-grid">
+              <div class="globals-ranking-card">
+                <div class="ranking-card-header hunting-color">Hunting</div>
+                {#each globalsAthRankings.hunting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                  <div class="ranking-entry">
+                    <span class="ranking-target">{entry.target}</span>
+                    {#if entry.total_rank <= 10}
+                      <span class="ranking-badge">#{entry.total_rank} total</span>
+                    {/if}
+                    {#if entry.best_rank <= 10}
+                      <span class="ranking-badge best">#{entry.best_rank} best</span>
+                    {/if}
                   </div>
-                {/if}
-                {#if globalsAthRankings.mining.length > 0}
-                  <div class="globals-ranking-card">
-                    <div class="ranking-card-header mining-color">Mining</div>
-                    {#each globalsAthRankings.mining.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
-                      <div class="ranking-entry">
-                        <span class="ranking-target">{entry.target}</span>
-                        {#if entry.total_rank <= 10}
-                          <span class="ranking-badge">#{entry.total_rank} total</span>
-                        {/if}
-                        {#if entry.best_rank <= 10}
-                          <span class="ranking-badge best">#{entry.best_rank} best</span>
-                        {/if}
-                      </div>
-                    {/each}
+                {:else}
+                  <div class="ranking-empty">No rankings yet</div>
+                {/each}
+              </div>
+              <div class="globals-ranking-card">
+                <div class="ranking-card-header mining-color">Mining</div>
+                {#each globalsAthRankings.mining.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                  <div class="ranking-entry">
+                    <span class="ranking-target">{entry.target}</span>
+                    {#if entry.total_rank <= 10}
+                      <span class="ranking-badge">#{entry.total_rank} total</span>
+                    {/if}
+                    {#if entry.best_rank <= 10}
+                      <span class="ranking-badge best">#{entry.best_rank} best</span>
+                    {/if}
                   </div>
-                {/if}
-                {#if globalsAthRankings.crafting.length > 0}
-                  <div class="globals-ranking-card">
-                    <div class="ranking-card-header crafting-color">Crafting</div>
-                    {#each globalsAthRankings.crafting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
-                      <div class="ranking-entry">
-                        <span class="ranking-target">{entry.target}</span>
-                        {#if entry.total_rank <= 10}
-                          <span class="ranking-badge">#{entry.total_rank} total</span>
-                        {/if}
-                        {#if entry.best_rank <= 10}
-                          <span class="ranking-badge best">#{entry.best_rank} best</span>
-                        {/if}
-                      </div>
-                    {/each}
+                {:else}
+                  <div class="ranking-empty">No rankings yet</div>
+                {/each}
+              </div>
+              <div class="globals-ranking-card">
+                <div class="ranking-card-header crafting-color">Crafting</div>
+                {#each globalsAthRankings.crafting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                  <div class="ranking-entry">
+                    <span class="ranking-target">{entry.target}</span>
+                    {#if entry.total_rank <= 10}
+                      <span class="ranking-badge">#{entry.total_rank} total</span>
+                    {/if}
+                    {#if entry.best_rank <= 10}
+                      <span class="ranking-badge best">#{entry.best_rank} best</span>
+                    {/if}
                   </div>
-                {/if}
+                {:else}
+                  <div class="ranking-empty">No rankings yet</div>
+                {/each}
               </div>
             </div>
-          {/if}
+          </div>
 
           <!-- Rare Items & Discoveries -->
-          {#if globalsRareItems.length > 0 || globalsDiscoveries.length > 0}
-            <div class="globals-highlights">
+          <div class="globals-highlights">
+            <div class="globals-highlight-card">
+              <h3>Rare Items</h3>
               {#if globalsRareItems.length > 0}
-                <div class="globals-highlight-card">
-                  <h3>Rare Items</h3>
-                  {#each globalsRareItems as item}
-                    <div class="highlight-row">
-                      <span class="highlight-name">{item.target}</span>
-                      <span class="highlight-value">{formatPedShort(item.value)} PED</span>
-                      {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
-                      <span class="highlight-time">{timeAgo(item.timestamp)}</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-              {#if globalsDiscoveries.length > 0}
-                <div class="globals-highlight-card">
-                  <h3>Discoveries</h3>
-                  {#each globalsDiscoveries as ach}
-                    <div class="highlight-row">
-                      <span class="highlight-name">{ach.target}</span>
-                      {#if ach.ath}<span class="highlight-badge ath">ATH</span>{:else if ach.hof}<span class="highlight-badge hof">HoF</span>{/if}
-                      <span class="highlight-time">{timeAgo(ach.timestamp)}</span>
-                    </div>
-                  {/each}
-                </div>
+                {#each globalsRareItems as item}
+                  <div class="highlight-row">
+                    <span class="highlight-name">{item.target}</span>
+                    <span class="highlight-value">{formatPedShort(item.value)} PED</span>
+                    {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                    <span class="highlight-time">{timeAgo(item.timestamp)}</span>
+                  </div>
+                {/each}
+              {:else}
+                <div class="ranking-empty">None recorded</div>
               {/if}
             </div>
-          {/if}
+            <div class="globals-highlight-card">
+              <h3>Discoveries</h3>
+              {#if globalsDiscoveries.length > 0}
+                {#each globalsDiscoveries as ach}
+                  <div class="highlight-row">
+                    <span class="highlight-name">{ach.target}</span>
+                    {#if ach.ath}<span class="highlight-badge ath">ATH</span>{:else if ach.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                    <span class="highlight-time">{timeAgo(ach.timestamp)}</span>
+                  </div>
+                {/each}
+              {:else}
+                <div class="ranking-empty">None recorded</div>
+              {/if}
+            </div>
+          </div>
 
           <!-- Type filter buttons -->
           <div class="globals-compact-filters">
@@ -1800,11 +1877,94 @@
     gap: 14px;
   }
 
+  .profile-names {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
   .profile-names h1 {
     margin: 0;
     font-size: 26px;
   }
 
+  .social-icons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .social-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    opacity: 0.85;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    cursor: pointer;
+  }
+
+  .social-link:hover {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+
+  button.social-link {
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .social-discord {
+    margin-right: 2px;
+    color: #5865F2;
+  }
+
+  .social-discord:hover {
+    background: none;
+  }
+
+  .social-discord.discord-copied {
+    animation: discord-flash 0.6s ease;
+  }
+
+  @keyframes discord-flash {
+    0% { color: #5865F2; }
+    20% { color: #16a34a; transform: scale(1.2); }
+    100% { color: #5865F2; transform: scale(1); }
+  }
+
+  .social-edit-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .social-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .social-edit-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    min-width: 100px;
+    color: var(--text-muted, #999);
+  }
+
+  .social-edit-row input {
+    flex: 1;
+    background: var(--bg-color, #111);
+    border: 1px solid var(--border-color, #444);
+    color: var(--text-color);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
 
   .society-link {
     color: var(--accent-color, #4a9eff);
@@ -2581,6 +2741,14 @@
       justify-content: flex-end;
     }
 
+    .profile-names {
+      justify-content: center;
+    }
+
+    .social-icons {
+      justify-content: center;
+    }
+
     .meta-row {
       justify-content: center;
     }
@@ -2747,6 +2915,13 @@
     gap: 8px;
     padding: 6px 12px;
     font-size: 0.8125rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .ranking-empty {
+    padding: 10px 12px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
     border-top: 1px solid var(--border-color);
   }
 

@@ -307,13 +307,13 @@
               <div class="table-cell col-material">
                 <a href="{getItemLink(material.Item)}">{matName || 'Unknown'}</a>
               </div>
-              <div class="table-cell col-tt mobile-hide">{clampDecimals(getLineTT(material), 2, 8)}</div>
+              <div class="table-cell col-tt mobile-hide">{clampDecimals(material.Item?.Properties?.Economy?.MaxTT || 0, 2, 8)}</div>
               <div class="table-cell col-amount">{material.Amount}</div>
               <div class="table-cell col-markup mobile-hide">
                 {#if markupSource === 'custom'}
                   <input type="text" class="markup-input" inputmode="decimal"
                     value={getMarkupInputValue(matName)}
-                    on:change={(e) => handleMarkupChange(matName, e.target.value)}
+                    on:input={(e) => handleMarkupChange(matName, e.target.value)}
                     on:blur={(e) => { e.target.value = getMarkupInputValue(matName); }} />
                 {:else}
                   {@const resolved = getResolvedMarkup(matName)}

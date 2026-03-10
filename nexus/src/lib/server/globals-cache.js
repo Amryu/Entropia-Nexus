@@ -295,8 +295,8 @@ async function rebuildAthLeaderboard() {
       const isIncremental = !!cutoff && !forceFullRebuild;
 
       if (!isIncremental) {
-        // Full rebuild needs a generous timeout (2M+ rows to aggregate)
-        await client.query('SET statement_timeout = 120000'); // 2 min
+        // Full rebuild needs a generous timeout (3M+ rows to aggregate)
+        await client.query('SET statement_timeout = 300000'); // 5 min
       } else {
         await client.query('SET statement_timeout = 30000'); // 30s for incremental
       }
@@ -342,27 +342,30 @@ async function rebuildAthLeaderboard() {
           // Only recompute ranks if there were changes
           if (rowCount === 0) continue;
         } else {
-          // Full rebuild: replace totals entirely
-          await client.query(
-            `INSERT INTO globals_ath_leaderboard
-               (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
-             SELECT $1, ${targetKeyExpr}, player_name,
-                    COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
-                    ${mobIdExpr}, ${bestTargetExpr},
-                    0, 0, now()
-             FROM ingested_globals
-             WHERE confirmed = true AND ${typeFilter}
-             GROUP BY player_name, ${targetKeyExpr}
-             ON CONFLICT (category, target_key, player_name)
-             DO UPDATE SET
-               total_value = EXCLUDED.total_value,
-               best_value = EXCLUDED.best_value,
-               count = EXCLUDED.count,
-               mob_id = EXCLUDED.mob_id,
-               best_target_name = EXCLUDED.best_target_name,
-               updated_at = now()`,
-            [category]
-          );
+          // Full rebuild: DELETE + INSERT is much faster than mass upsert
+          // (avoids PK conflict checking on every row)
+          await client.query('BEGIN');
+          try {
+            await client.query(
+              `DELETE FROM globals_ath_leaderboard WHERE category = $1`, [category]
+            );
+            await client.query(
+              `INSERT INTO globals_ath_leaderboard
+                 (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
+               SELECT $1, ${targetKeyExpr}, player_name,
+                      COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
+                      ${mobIdExpr}, ${bestTargetExpr},
+                      0, 0, now()
+               FROM ingested_globals
+               WHERE confirmed = true AND ${typeFilter}
+               GROUP BY player_name, ${targetKeyExpr}`,
+              [category]
+            );
+            await client.query('COMMIT');
+          } catch (e) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw e;
+          }
         }
 
         // Compute ranks

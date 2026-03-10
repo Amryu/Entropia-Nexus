@@ -4,7 +4,7 @@ import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getLatestMarketPrices, getLatestMarketPriceByName, getAllLatestMarketPrices } from '$lib/server/db.js';
 import { resolveItemByName, resolveItemDataByItemId, resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
 import { maybeRunMarketFinalization } from '$lib/server/ingestion.js';
-import { TIERABLE_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
+import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 
 const RATE_LIMIT_WINDOW = 60_000; // 60 seconds
 const PENDING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -50,8 +50,6 @@ async function isItemTierable(itemId, itemName, fetch) {
   const types = await resolveItemTypesByItemId([itemId], fetch);
   const type = types[itemId]?.type;
   if (!type || !TIERABLE_TYPES.has(type)) return false;
-  // Check (L) limited items — not tierable
-  if (itemName && isLimitedByName(itemName)) return false;
   return true;
 }
 

@@ -20,8 +20,34 @@
   import GlobalsTabNav from '$lib/components/globals/GlobalsTabNav.svelte';
   import { TYPE_FILTERS, TOP_LOOTS_TABS, getTypeConfig } from '$lib/data/globals-constants.js';
   import { formatPedShort, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
+  import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
+  import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
 
   export let data;
+
+  $: user = data?.session?.user || null;
+
+  // Media dialog state
+  let showMediaDialog = false;
+  let mediaDialogGlobal = null;
+
+  function openMediaDialog(g) {
+    mediaDialogGlobal = g;
+    showMediaDialog = true;
+  }
+
+  function onMediaUploaded(e) {
+    const { type, globalId } = e.detail;
+    // Update the global in our local arrays
+    const update = (arr) => arr.map(g => {
+      if (g.id === globalId) {
+        return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
+      }
+      return g;
+    });
+    globals = update(globals);
+    if (topLoots) topLoots = update(topLoots);
+  }
 
   const EMPTY_SUMMARY = {
     total_count: 0, total_value: 0, avg_value: 0, max_value: 0,
@@ -831,6 +857,7 @@
                   <th class="col-value right sortable" on:click={() => onTopLootsSort('value')}>Value{sortIcon(topLootsSort, 'value')}</th>
                 {/if}
                 <th class="col-badge"></th>
+                <th class="col-media"></th>
                 <th class="col-time sortable" on:click={() => onTopLootsSort('time')}>Time{sortIcon(topLootsSort, 'time')}</th>
               </tr>
             </thead>
@@ -856,6 +883,19 @@
                       <span class="badge-ath">ATH</span>
                     {:else if loot.hof}
                       <span class="badge-hof">HoF</span>
+                    {/if}
+                  </td>
+                  <td class="col-media">
+                    {#if loot.media_image || loot.media_video}
+                      <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                        {#if loot.media_image}
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                        {:else}
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        {/if}
+                      </button>
+                    {:else if user}
+                      <GlobalMediaUpload globalId={loot.id} playerName={loot.player} {user} on:uploaded={onMediaUploaded} />
                     {/if}
                   </td>
                   <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
@@ -900,6 +940,7 @@
               <th class="sortable right" on:click={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
               <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
               <th></th>
+              <th class="col-media"></th>
             </tr>
           </thead>
           <tbody>
@@ -928,6 +969,19 @@
                     <span class="badge-hof">HoF</span>
                   {/if}
                 </td>
+                <td class="col-media">
+                  {#if g.media_image || g.media_video}
+                    <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                      {#if g.media_image}
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                      {:else}
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      {/if}
+                    </button>
+                  {:else if user}
+                    <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} on:uploaded={onMediaUploaded} />
+                  {/if}
+                </td>
               </tr>
             {/each}
           </tbody>
@@ -944,6 +998,8 @@
   </div>
   {/if}
 </div>
+
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
 
 <style>
   .globals-page {
@@ -1678,5 +1734,29 @@
     .globals-table td:nth-child(6) {
       display: none;
     }
+  }
+
+  /* Media icon */
+  .col-media {
+    width: 28px;
+    text-align: center;
+  }
+
+  .media-icon-btn {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+
+  .media-icon-btn:hover {
+    opacity: 1;
   }
 </style>

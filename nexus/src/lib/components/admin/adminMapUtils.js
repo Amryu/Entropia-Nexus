@@ -77,8 +77,13 @@ export function generateInsertSql(location, planetId) {
   lines.push(`DO $$`);
   lines.push(`DECLARE new_id INTEGER;`);
   lines.push(`BEGIN`);
-  lines.push(`  INSERT INTO "Locations" ("Name", "Type", "PlanetId", "Longitude", "Latitude", "Altitude")`);
-  lines.push(`  VALUES (${name}, ${type}, ${planetId}, ${lon}, ${lat}, ${alt})`);
+  if (location.parentLocationName) {
+    lines.push(`  INSERT INTO "Locations" ("Name", "Type", "PlanetId", "Longitude", "Latitude", "Altitude", "ParentLocationId")`);
+    lines.push(`  VALUES (${name}, ${type}, ${planetId}, ${lon}, ${lat}, ${alt}, (SELECT "Id" FROM ONLY "Locations" WHERE "Name" = ${escSql(location.parentLocationName)}))`);
+  } else {
+    lines.push(`  INSERT INTO "Locations" ("Name", "Type", "PlanetId", "Longitude", "Latitude", "Altitude")`);
+    lines.push(`  VALUES (${name}, ${type}, ${planetId}, ${lon}, ${lat}, ${alt})`);
+  }
   lines.push(`  RETURNING "Id" INTO new_id;`);
 
   // Area insert
@@ -135,6 +140,15 @@ export function generateUpdateSql(original, modified) {
   }
   if (modified.altitude !== undefined && modified.altitude !== original.Properties?.Coordinates?.Altitude) {
     locSets.push(`"Altitude" = ${modified.altitude}`);
+  }
+  const origParent = original.ParentLocation?.Name || null;
+  const modParent = modified.parentLocationName || null;
+  if (modParent !== origParent) {
+    if (modParent) {
+      locSets.push(`"ParentLocationId" = (SELECT "Id" FROM ONLY "Locations" WHERE "Name" = ${escSql(modParent)})`);
+    } else {
+      locSets.push(`"ParentLocationId" = NULL`);
+    }
   }
 
   if (locSets.length) {

@@ -255,12 +255,12 @@
           <tr>
             <td><a href="{getItemLink(material.Item)}">{material.Item.Name}</a></td>
             <td class="text-right hide-mobile">{material.Amount}</td>
-            <td class="text-right">{clampDecimals(getLineTT(material), 2, 8)}</td>
+            <td class="text-right">{clampDecimals(material.Item?.Properties?.Economy?.MaxTT || 0, 2, 8)}</td>
             <td class="text-right">
               <input
                 type="text"
                 bind:value={markupInputs[index]}
-                on:change={(e) => handleMarkupChange(index, e.target.value)}
+                on:input={(e) => handleMarkupChange(index, e.target.value)}
                 on:blur={() => handleMarkupBlur(index)}
               />
             </td>

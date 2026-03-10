@@ -1,6 +1,6 @@
 /**
  * API endpoint for serving entity images.
- * Serves approved images with proper caching headers.
+ * Reads from Cloudflare R2 first, falls back to local filesystem.
  *
  * GET /api/img/:entityType/:entityId - Serves the icon image
  * GET /api/img/:entityType/:entityId?type=thumb - Serves the thumbnail
@@ -9,6 +9,7 @@
  */
 import { getApprovedImagePath, buildApprovedImagePath, isValidEntityType } from '$lib/server/imageProcessor.js';
 import { enhanceEntityImage } from '$lib/server/imageEnhancer.js';
+import { r2Enabled, getFromR2 } from '$lib/server/r2Storage.js';
 import { existsSync, statSync } from 'fs';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { dirname } from 'path';
@@ -52,68 +53,105 @@ export async function GET({ params, url }) {
   }
 
   const lowerType = entityType.toLowerCase();
+  const r2Prefix = `${lowerType}/${entityId}`;
 
-  // If size is requested, try to serve a cached resized version first
+  // --- Size variant request ---
   if (size) {
+    // Try R2 first for pre-generated variant
+    if (r2Enabled) {
+      const r2Buffer = await getFromR2(`${r2Prefix}/s${size}.webp`);
+      if (r2Buffer) {
+        return serveBuffer(r2Buffer, `"r2-s${size}-${r2Buffer.length}"`);
+      }
+    }
+
+    // Try local disk cache
     const cachedPath = buildApprovedImagePath(lowerType, entityId, `s${size}`);
     if (existsSync(cachedPath)) {
       return serveFile(cachedPath, size);
     }
-  }
 
-  // Get the source image path (use thumb as source for resizing — smaller file)
-  const sourceType = size ? 'thumb' : type;
-  const imagePath = getApprovedImagePath(lowerType, entityId, sourceType);
-
-  if (!imagePath || !existsSync(imagePath)) {
-    // If requesting a size and thumb doesn't exist, try icon as fallback
-    if (size) {
-      const iconPath = getApprovedImagePath(lowerType, entityId, 'icon');
-      if (iconPath && existsSync(iconPath)) {
-        return resizeAndServe(iconPath, lowerType, entityId, size);
-      }
+    // Generate on-demand from local source
+    const sourceType = 'thumb';
+    const thumbPath = getApprovedImagePath(lowerType, entityId, sourceType);
+    if (thumbPath && existsSync(thumbPath)) {
+      return resizeAndServe(thumbPath, lowerType, entityId, size);
     }
+    const iconPath = getApprovedImagePath(lowerType, entityId, 'icon');
+    if (iconPath && existsSync(iconPath)) {
+      return resizeAndServe(iconPath, lowerType, entityId, size);
+    }
+
     return new Response(null, { status: 204 });
   }
 
-  // If a specific size is requested, resize from source
-  if (size) {
-    return resizeAndServe(imagePath, lowerType, entityId, size);
+  // --- Icon/thumb request (possibly with mode enhancement) ---
+
+  // Try R2 first for the base image
+  let imageBuffer = null;
+  let etag = null;
+
+  if (r2Enabled) {
+    imageBuffer = await getFromR2(`${r2Prefix}/${type}.webp`);
+    if (imageBuffer) {
+      etag = `"r2-${type}-${imageBuffer.length}"`;
+    }
   }
 
-  try {
-    const stats = statSync(imagePath);
-    const imageBuffer = await readFile(imagePath);
-
-    // Apply enhancement pipeline for icons when mode is specified
-    let outputBuffer = imageBuffer;
-    if (mode && type === 'icon') {
-      try {
-        outputBuffer = await enhanceEntityImage(imageBuffer, mode);
-      } catch {
-        // Enhancement failed — serve original image
-        outputBuffer = imageBuffer;
-      }
+  // Fall back to local disk
+  if (!imageBuffer) {
+    const imagePath = getApprovedImagePath(lowerType, entityId, type);
+    if (!imagePath || !existsSync(imagePath)) {
+      return new Response(null, { status: 204 });
     }
 
-    // Include mode in ETag so CDN caches dark/light variants separately
-    const etagBase = `${stats.size}-${stats.mtimeMs}`;
-    const etag = mode ? `"${etagBase}-${mode}"` : `"${etagBase}"`;
-
-    return new Response(outputBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/webp',
-        'Content-Length': String(outputBuffer.length),
-        'Cache-Control': `public, max-age=${CACHE_MAX_AGE}`,
-        'ETag': etag,
-        'Last-Modified': stats.mtime.toUTCString()
-      }
-    });
-  } catch (error) {
-    console.error('Error serving image:', error);
-    return new Response('Error serving image', { status: 500 });
+    try {
+      const stats = statSync(imagePath);
+      imageBuffer = await readFile(imagePath);
+      etag = `"${stats.size}-${stats.mtimeMs}"`;
+    } catch (error) {
+      console.error('Error reading image:', error);
+      return new Response('Error serving image', { status: 500 });
+    }
   }
+
+  // Apply enhancement pipeline for icons when mode is specified
+  let outputBuffer = imageBuffer;
+  if (mode && type === 'icon') {
+    try {
+      outputBuffer = await enhanceEntityImage(imageBuffer, mode);
+    } catch {
+      // Enhancement failed — serve original image
+      outputBuffer = imageBuffer;
+    }
+    // Include mode in ETag so CDN caches dark/light variants separately
+    etag = mode ? `${etag.slice(0, -1)}-${mode}"` : etag;
+  }
+
+  return new Response(outputBuffer, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/webp',
+      'Content-Length': String(outputBuffer.length),
+      'Cache-Control': `public, max-age=${CACHE_MAX_AGE}`,
+      'ETag': etag
+    }
+  });
+}
+
+/**
+ * Serve a Buffer directly with cache headers.
+ */
+function serveBuffer(buffer, etag) {
+  return new Response(buffer, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/webp',
+      'Content-Length': String(buffer.length),
+      'Cache-Control': `public, max-age=${CACHE_MAX_AGE}`,
+      'ETag': etag
+    }
+  });
 }
 
 /**
@@ -134,14 +172,7 @@ async function resizeAndServe(sourcePath, entityType, entityId, size) {
       .then(() => writeFile(cachePath, resizedBuffer))
       .catch(() => {});
 
-    return new Response(resizedBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/webp',
-        'Content-Length': String(resizedBuffer.length),
-        'Cache-Control': `public, max-age=${CACHE_MAX_AGE}`,
-      }
-    });
+    return serveBuffer(resizedBuffer, `"gen-s${size}-${resizedBuffer.length}"`);
   } catch (error) {
     console.error('Error resizing image:', error);
     return new Response('Error resizing image', { status: 500 });

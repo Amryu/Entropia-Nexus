@@ -12,6 +12,7 @@ import {
   startUpload,
   endUpload
 } from '$lib/server/rateLimiter.js';
+import { r2Enabled, getFromR2 } from '$lib/server/r2Storage.js';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 
@@ -31,6 +32,24 @@ export async function GET({ params }) {
   }
 
   const type = entityType.toLowerCase();
+
+  // Try R2 first
+  if (r2Enabled) {
+    const r2Buffer = await getFromR2(`${type}/${entityId}/icon.webp`);
+    if (r2Buffer) {
+      return new Response(r2Buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/webp',
+          'Content-Length': String(r2Buffer.length),
+          'Cache-Control': `public, max-age=${CACHE_MAX_AGE}`,
+          'ETag': `"r2-${r2Buffer.length}"`
+        }
+      });
+    }
+  }
+
+  // Fall back to local disk
   const imagePath = getApprovedImagePath(type, entityId, 'icon');
   if (!imagePath || !existsSync(imagePath)) {
     return new Response(null, { status: 204 });

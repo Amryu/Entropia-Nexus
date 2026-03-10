@@ -64,8 +64,9 @@ export async function GET({ url }) {
         params
       ),
       pool.query(
-        `SELECT player_name AS player, target_name AS target, value, mob_id,
-                is_hof AS hof, is_ath AS ath, event_timestamp AS timestamp
+        `SELECT id, player_name AS player, target_name AS target, value, mob_id,
+                is_hof AS hof, is_ath AS ath, event_timestamp AS timestamp,
+                media_image_key, media_video_url
          FROM ingested_globals
          ${whereClause} AND global_type IN ${tabConfig.types}
          ORDER BY ${orderBy}
@@ -78,6 +79,7 @@ export async function GET({ url }) {
     const pages = Math.max(1, Math.ceil(total / limit));
 
     const items = dataResult.rows.map(r => ({
+      id: r.id,
       player: r.player,
       target: r.target,
       value: parseFloat(r.value),
@@ -85,6 +87,8 @@ export async function GET({ url }) {
       hof: r.hof,
       ath: r.ath,
       timestamp: r.timestamp,
+      media_image: r.media_image_key || null,
+      media_video: r.media_video_url || null,
     }));
 
     return new Response(JSON.stringify({ items, page, pages, total }), {

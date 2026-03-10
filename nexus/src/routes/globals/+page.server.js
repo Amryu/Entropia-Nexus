@@ -9,7 +9,8 @@ export async function load() {
       pool.query(
         `SELECT id, global_type, player_name, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
-                mob_id, maturity_id, extra
+                mob_id, maturity_id, extra,
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true
          ORDER BY event_timestamp DESC
@@ -40,6 +41,8 @@ export async function load() {
       mob_id: r.mob_id,
       maturity_id: r.maturity_id,
       extra: r.extra,
+      media_image: r.media_image_key || null,
+      media_video: r.media_video_url || null,
     }));
 
     const s = statsResult.rows[0];

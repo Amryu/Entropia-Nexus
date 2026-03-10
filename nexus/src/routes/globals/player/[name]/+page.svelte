@@ -17,8 +17,32 @@
   import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
   import { TYPE_CONFIG } from '$lib/data/globals-constants.js';
   import { formatPed, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
+  import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
+  import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
 
   export let data;
+
+  $: user = data?.session?.user || null;
+
+  // Media dialog state
+  let showMediaDialog = false;
+  let mediaDialogGlobal = null;
+
+  function openMediaDialog(g) {
+    mediaDialogGlobal = g;
+    showMediaDialog = true;
+  }
+
+  function onMediaUploaded(e) {
+    const { type, globalId } = e.detail;
+    const update = (arr) => arr.map(g => {
+      if (g.id === globalId) {
+        return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
+      }
+      return g;
+    });
+    if (playerData?.recent) playerData.recent = update(playerData.recent);
+  }
 
   let playerData = data.playerData;
   let playerName = data.playerName;
@@ -463,6 +487,7 @@
                       <th class="right">Value</th>
                       <th>Time</th>
                       <th></th>
+                      <th class="col-media"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -473,6 +498,19 @@
                         <td class="text-muted" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                         <td>
                           {#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}
+                        </td>
+                        <td class="col-media">
+                          {#if item.media_image || item.media_video}
+                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(item)}>
+                              {#if item.media_image}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                              {:else}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                              {/if}
+                            </button>
+                          {:else if user}
+                            <GlobalMediaUpload globalId={item.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          {/if}
                         </td>
                       </tr>
                     {/each}
@@ -527,6 +565,7 @@
                     <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'target')}>Target{sortIcon(recentSort, 'target')}</th>
                     <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                     <th></th>
+                    <th class="col-media"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -539,6 +578,19 @@
                       <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
                       <td>
                         {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
+                      </td>
+                      <td class="col-media">
+                        {#if g.media_image || g.media_video}
+                          <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                            {#if g.media_image}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                            {:else}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            {/if}
+                          </button>
+                        {:else if user}
+                          <GlobalMediaUpload globalId={g.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        {/if}
                       </td>
                     </tr>
                   {/each}
@@ -635,6 +687,7 @@
                       <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
                       <th class="sortable right" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
                       <th></th>
+                      <th class="col-media"></th>
                       <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
@@ -645,6 +698,19 @@
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-media">
+                          {#if loot.media_image || loot.media_video}
+                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                              {#if loot.media_image}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                              {:else}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                              {/if}
+                            </button>
+                          {:else if user}
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          {/if}
+                        </td>
                         <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -727,6 +793,7 @@
                       <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
                       <th class="sortable right" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
                       <th></th>
+                      <th class="col-media"></th>
                       <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
@@ -737,6 +804,19 @@
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-media">
+                          {#if loot.media_image || loot.media_video}
+                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                              {#if loot.media_image}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                              {:else}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                              {/if}
+                            </button>
+                          {:else if user}
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          {/if}
+                        </td>
                         <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -819,6 +899,7 @@
                       <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
                       <th class="sortable right" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
                       <th></th>
+                      <th class="col-media"></th>
                       <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
@@ -829,6 +910,19 @@
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-media">
+                          {#if loot.media_image || loot.media_video}
+                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                              {#if loot.media_image}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                              {:else}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                              {/if}
+                            </button>
+                          {:else if user}
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          {/if}
+                        </td>
                         <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -861,6 +955,7 @@
                     <th class="sortable right" on:click={() => rareFindSort = toggleSort(rareFindSort, 'value')}>Value{sortIcon(rareFindSort, 'value')}</th>
                     <th class="sortable" on:click={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
                     <th></th>
+                    <th class="col-media"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -871,6 +966,19 @@
                       <td class="text-muted" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                       <td>
                         {#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}
+                      </td>
+                      <td class="col-media">
+                        {#if item.media_image || item.media_video}
+                          <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(item)}>
+                            {#if item.media_image}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                            {:else}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            {/if}
+                          </button>
+                        {:else if user}
+                          <GlobalMediaUpload globalId={item.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        {/if}
                       </td>
                     </tr>
                   {/each}
@@ -937,6 +1045,7 @@
                   <tr>
                     <th class="sortable right" on:click={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
                     <th></th>
+                    <th class="col-media"></th>
                     <th class="sortable" on:click={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
                   </tr>
                 </thead>
@@ -946,6 +1055,19 @@
                       <td class="right font-weight-bold">{Math.round(g.value)} Kills</td>
                       <td>
                         {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
+                      </td>
+                      <td class="col-media">
+                        {#if g.media_image || g.media_video}
+                          <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                            {#if g.media_image}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                            {:else}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            {/if}
+                          </button>
+                        {:else if user}
+                          <GlobalMediaUpload globalId={g.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        {/if}
                       </td>
                       <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                     </tr>
@@ -965,7 +1087,7 @@
           <div class="ath-header">
             <h2 class="section-title-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              Top 10 Rankings
+              Personal ATH Rankings
             </h2>
             <div class="sort-toggle">
               {#each ATH_CATEGORIES as cat}
@@ -984,6 +1106,7 @@
                       <th class="col-rank">Rank</th>
                       <th class="right">Value</th>
                       <th></th>
+                      <th class="col-media"></th>
                       <th>Time</th>
                     </tr>
                   </thead>
@@ -993,6 +1116,19 @@
                         <td class="col-rank"><span class="rank-badge" class:rank-top3={entry.rank <= 3}>#{entry.rank}</span></td>
                         <td class="right font-weight-bold">{Math.round(entry.value)} Kills</td>
                         <td>{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-media">
+                          {#if entry.media_image || entry.media_video}
+                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(entry)}>
+                              {#if entry.media_image}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                              {:else}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                              {/if}
+                            </button>
+                          {:else if user}
+                            <GlobalMediaUpload globalId={entry.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          {/if}
+                        </td>
                         <td class="text-muted" title={new Date(entry.timestamp).toLocaleString()}>{timeAgo(entry.timestamp)}</td>
                       </tr>
                     {/each}
@@ -1079,6 +1215,8 @@
     </div>
   {/if}
 </div>
+
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
 
 <style>
   .player-page {
@@ -1717,5 +1855,28 @@
     .player-tab-nav {
       overflow-x: auto;
     }
+  }
+
+  .col-media {
+    width: 28px;
+    text-align: center;
+  }
+
+  .media-icon-btn {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+
+  .media-icon-btn:hover {
+    opacity: 1;
   }
 </style>

@@ -81,8 +81,11 @@ function configureDOMPurify() {
       const allowedHosts = [
         'www.youtube.com',
         'youtube.com',
+        'www.youtube-nocookie.com',
+        'youtube-nocookie.com',
         'player.vimeo.com',
-        'vimeo.com'
+        'vimeo.com',
+        'clips.twitch.tv',
       ];
 
       try {

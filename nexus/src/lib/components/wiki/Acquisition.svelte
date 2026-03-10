@@ -174,6 +174,38 @@
     if (row.rowLink) goto(row.rowLink);
   }
 
+  // Build mission reward data
+  $: missionRewardData = (() => {
+    if (!acquisition?.MissionRewards?.length) return [];
+    return acquisition.MissionRewards.map(mr => {
+      let qty = '';
+      if (mr.Quantity != null) qty = String(mr.Quantity);
+      else if (mr.MinQuantity != null && mr.MaxQuantity != null) qty = `${mr.MinQuantity}–${mr.MaxQuantity}`;
+      else if (mr.PedValue != null) qty = `${mr.PedValue} PED`;
+      return {
+        mission: mr.Mission.Name,
+        missionLink: getTypeLink(mr.Mission.Name, 'Mission'),
+        type: mr.Mission.Type ?? '',
+        planet: mr.Mission.Planet?.Name ?? '',
+        quantity: qty,
+        rarity: mr.Rarity ?? '',
+        isChoice: mr.IsChoice
+      };
+    });
+  })();
+
+  $: missionRewardColumns = [
+    { key: 'mission', header: 'Mission', main: true, formatter: (v, row) => {
+      let label = row.missionLink ? `<a href="${row.missionLink}">${v}</a>` : v;
+      if (row.isChoice) label += ' <span class="badge badge-subtle badge-accent">Choice</span>';
+      return label;
+    }},
+    { key: 'type', header: 'Type' },
+    { key: 'planet', header: 'Planet' },
+    { key: 'quantity', header: 'Qty' },
+    { key: 'rarity', header: 'Rarity' }
+  ];
+
   // Build blueprint data
   $: blueprintData = (() => {
     if (!acquisition?.Blueprints?.length) return [];
@@ -357,6 +389,7 @@
   && (!acquisition.RefiningRecipes || acquisition.RefiningRecipes.length === 0)
   && (!acquisition.Blueprints || acquisition.Blueprints.length === 0)
   && (!acquisition.BlueprintDrops || acquisition.BlueprintDrops.length === 0)
+  && (!acquisition.MissionRewards || acquisition.MissionRewards.length === 0)
   && !hasMarketData
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
   && (!acquisition.Events || acquisition.Events.length === 0)))}
@@ -397,6 +430,22 @@
             compact
             fitContent
             emptyMessage="No loot data"
+          />
+        </div>
+      {/if}
+
+      {#if acquisition.MissionRewards && acquisition.MissionRewards.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Mission Reward</h4>
+          <FancyTable
+            columns={missionRewardColumns}
+            data={missionRewardData}
+            rowHeight={32}
+            searchable={true}
+            sortable={true}
+            compact
+            fitContent
+            emptyMessage="No mission rewards"
           />
         </div>
       {/if}

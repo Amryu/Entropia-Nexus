@@ -1,11 +1,14 @@
 /**
  * Server-side image processing for entity icons.
  * Uses sharp library for image manipulation.
+ * Approved images are also uploaded to Cloudflare R2 when configured.
  */
 import sharp from 'sharp';
 import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { randomUUID, createHash } from 'crypto';
+import { r2Enabled, uploadBatchToR2, copyInR2, deleteR2Prefix } from './r2Storage.js';
+import { generateSizeVariants } from './imageVariants.js';
 
 // Image size configurations
 const ICON_SIZE = 320;
@@ -46,7 +49,9 @@ const VALID_ENTITY_TYPES = [
   'mob', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
   'user', 'guide-category', 'richtext', 'announcement',
   // Auction
-  'item-set'
+  'item-set',
+  // Globals media (player-uploaded screenshots)
+  'global'
 ];
 
 // Entity types that skip the approval workflow and use banner dimensions
@@ -289,11 +294,19 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
     const isBanner = GUIDE_ENTITY_TYPES.includes(entityType);
     const isRichtext = entityType === 'richtext';
     const isItemSet = entityType === 'item-set';
+    const isGlobal = entityType === 'global';
 
     // Process icon — banner types get wider dimensions, richtext preserves aspect ratio,
-    // item-sets fit within 320x480 (portrait), others get square
+    // item-sets fit within 320x480 (portrait), globals preserve aspect ratio (screenshots),
+    // others get square
     const iconPath = join(tempEntityPath, 'icon.webp');
-    if (isBanner) {
+    if (isGlobal) {
+      // Game screenshots — preserve aspect ratio, constrain to max 1920px wide
+      await image
+        .resize({ width: 1920, withoutEnlargement: true })
+        .webp({ quality: 90 })
+        .toFile(iconPath);
+    } else if (isBanner) {
       await image
         .resize({ width: BANNER_WIDTH, withoutEnlargement: true })
         .webp({ quality: 90 })
@@ -494,12 +507,72 @@ export async function approveImage(entityType, entityId) {
 
   // Update metadata
   const metadataPath = join(approvedPath, 'metadata.json');
+  let metadataJson = null;
   if (existsSync(metadataPath)) {
     const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf-8'));
-    await fs.writeFile(metadataPath, JSON.stringify({
+    metadataJson = JSON.stringify({
       ...metadata,
       approvedAt: new Date().toISOString()
-    }));
+    });
+    await fs.writeFile(metadataPath, metadataJson);
+  }
+
+  // Upload to R2 (non-blocking — failure doesn't prevent approval)
+  if (r2Enabled) {
+    uploadApprovedToR2(entityType, entityId, approvedPath, metadataJson)
+      .catch(err => console.error(`[R2] Background upload failed for ${entityType}/${entityId}:`, err?.message));
+  }
+}
+
+/**
+ * Upload an approved image and all its size variants to R2.
+ * Called as a background task after approval — failure is logged but non-fatal.
+ * @param {string} entityType
+ * @param {string|number} entityId
+ * @param {string} approvedPath - Local filesystem path to the approved directory
+ * @param {string|null} metadataJson - Serialized metadata JSON string
+ */
+async function uploadApprovedToR2(entityType, entityId, approvedPath, metadataJson) {
+  const fs = await import('fs/promises');
+  const prefix = `${entityType}/${entityId}`;
+  const files = [];
+
+  // Read icon and thumb
+  const iconPath = join(approvedPath, 'icon.webp');
+  const thumbPath = join(approvedPath, 'thumb.webp');
+
+  const iconBuffer = existsSync(iconPath) ? await fs.readFile(iconPath) : null;
+  const thumbBuffer = existsSync(thumbPath) ? await fs.readFile(thumbPath) : null;
+
+  if (iconBuffer) files.push({ key: `${prefix}/icon.webp`, buffer: iconBuffer });
+  if (thumbBuffer) files.push({ key: `${prefix}/thumb.webp`, buffer: thumbBuffer });
+
+  // Generate and include size variants
+  if (iconBuffer || thumbBuffer) {
+    try {
+      const variants = await generateSizeVariants(iconBuffer || thumbBuffer, thumbBuffer);
+      for (const [name, buffer] of Object.entries(variants)) {
+        files.push({ key: `${prefix}/${name}.webp`, buffer });
+      }
+    } catch (err) {
+      console.error(`[R2] Variant generation failed for ${prefix}:`, err?.message);
+    }
+  }
+
+  // Include metadata
+  if (metadataJson) {
+    files.push({
+      key: `${prefix}/metadata.json`,
+      buffer: Buffer.from(metadataJson),
+      contentType: 'application/json'
+    });
+  }
+
+  if (files.length > 0) {
+    const { succeeded, failed } = await uploadBatchToR2(files);
+    if (failed > 0) {
+      console.error(`[R2] Uploaded ${succeeded}/${files.length} files for ${prefix} (${failed} failed)`);
+    }
   }
 }
 
@@ -623,6 +696,12 @@ export async function deleteApprovedImage(entityType, entityId) {
 
   const fs = await import('fs/promises');
   await fs.rm(approvedPath, { recursive: true, force: true });
+
+  // Also remove from R2 (non-blocking)
+  if (r2Enabled) {
+    deleteR2Prefix(`${entityType}/${entityId}/`)
+      .catch(err => console.error(`[R2] Delete failed for ${entityType}/${entityId}:`, err?.message));
+  }
 }
 
 /**
@@ -659,7 +738,7 @@ export async function cleanupTempUploads() {
  * @returns {boolean}
  */
 export function isAutoApproveType(entityType) {
-  return GUIDE_ENTITY_TYPES.includes(entityType) || entityType === 'item-set';
+  return GUIDE_ENTITY_TYPES.includes(entityType) || entityType === 'item-set' || entityType === 'global';
 }
 
 /**
@@ -901,13 +980,29 @@ export async function createImageLink(entityType, entityId, sourceEntityType, so
   }
 
   // Write metadata recording the link
-  await fs.writeFile(join(targetDir, 'metadata.json'), JSON.stringify({
+  const metadataJson = JSON.stringify({
     entityType,
     entityId: String(entityId),
     linkedFrom: { entityType: sourceEntityType, entityId: String(sourceEntityId) },
     linkedBy: userId,
     linkedAt: new Date().toISOString()
-  }));
+  });
+  await fs.writeFile(join(targetDir, 'metadata.json'), metadataJson);
+
+  // Copy objects in R2 (non-blocking)
+  if (r2Enabled) {
+    const srcPrefix = `${sourceEntityType}/${sourceEntityId}`;
+    const dstPrefix = `${entityType}/${entityId}`;
+    const filesToCopy = ['icon.webp', 'thumb.webp', 's32.webp', 's48.webp', 's64.webp', 's128.webp'];
+    Promise.all([
+      ...filesToCopy.map(f => copyInR2(`${srcPrefix}/${f}`, `${dstPrefix}/${f}`)),
+      uploadBatchToR2([{
+        key: `${dstPrefix}/metadata.json`,
+        buffer: Buffer.from(metadataJson),
+        contentType: 'application/json'
+      }])
+    ]).catch(err => console.error(`[R2] Link copy failed for ${dstPrefix}:`, err?.message));
+  }
 }
 
 // --- Cached approved images for search ---

@@ -162,7 +162,10 @@ export async function getUserProfileById(userId) {
       biography_html,
       default_profile_tab,
       showcase_loadout_code,
-      reward_score
+      reward_score,
+      social_discord,
+      social_youtube,
+      social_twitch
     FROM users
     WHERE id = $1
   `;
@@ -185,7 +188,10 @@ export async function getUserProfileByEntropiaName(entropiaName) {
       biography_html,
       default_profile_tab,
       showcase_loadout_code,
-      reward_score
+      reward_score,
+      social_discord,
+      social_youtube,
+      social_twitch
     FROM users
     WHERE LOWER(eu_name) = LOWER($1)
   `;
@@ -482,7 +488,10 @@ export async function updateUserProfile(userId, updates = {}) {
     UPDATE users
     SET biography_html = $2,
         default_profile_tab = $3,
-        showcase_loadout_code = $4
+        showcase_loadout_code = $4,
+        social_discord = $5,
+        social_youtube = $6,
+        social_twitch = $7
     WHERE id = $1
     RETURNING
       id,
@@ -496,13 +505,19 @@ export async function updateUserProfile(userId, updates = {}) {
       society_id,
       biography_html,
       default_profile_tab,
-      showcase_loadout_code
+      showcase_loadout_code,
+      social_discord,
+      social_youtube,
+      social_twitch
   `;
   const values = [
     userId,
     updates.biography_html ?? null,
     updates.default_profile_tab ?? 'General',
-    updates.showcase_loadout_code ?? null
+    updates.showcase_loadout_code ?? null,
+    updates.social_discord ?? null,
+    updates.social_youtube ?? null,
+    updates.social_twitch ?? null
   ];
   const { rows } = await pool.query(query, values);
   return rows[0];

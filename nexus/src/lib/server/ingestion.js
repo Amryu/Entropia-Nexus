@@ -4,7 +4,7 @@ import { pool, startTransaction, invalidateMarketPriceCache, getLatestMarketPric
 import { resolveUserGrants } from './grants.js';
 import { resolveMob } from './mobResolver.js';
 import { invalidateGlobalsCache } from './globals-cache.js';
-import { TIERABLE_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
+import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 
 // --- Constants ---
 
@@ -1621,9 +1621,9 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
     }
     if (!itemId) { rejected++; continue; }
 
-    // Force tier to 0 for non-tierable or limited items
+    // Force tier to 0 for non-tierable items
     if (entry.tier && entry.tier > 0) {
-      const isTierable = itemType && TIERABLE_TYPES.has(itemType) && !isLimitedByName(resolvedName || ocrName);
+      const isTierable = itemType && TIERABLE_TYPES.has(itemType);
       if (!isTierable) entry.tier = 0;
     }
 

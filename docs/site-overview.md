@@ -369,6 +369,39 @@ User-generated content and sessions:
 - Events (community-submitted, admin-approved)
 - Content creators (whitelisted channels with API-enriched cached data)
 
+## Image Storage
+
+Entity images (icons, thumbnails) are stored with a dual-write strategy:
+
+- **Local filesystem**: Docker volume `nexus-uploads` mounted at `/app/uploads` — used for temp/pending uploads and as fallback
+- **Cloudflare R2**: S3-compatible object storage — primary source for approved images when configured
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `nexus/src/lib/server/imageProcessor.js` | Upload processing, approval workflow, R2 upload on approve |
+| `nexus/src/lib/server/imageEnhancer.js` | Dark/light mode enhancement pipeline |
+| `nexus/src/lib/server/r2Storage.js` | R2 client module (gracefully disabled when env vars unset) |
+| `nexus/src/lib/server/imageVariants.js` | Pre-generates resize variants (s32, s48, s64, s128) |
+| `nexus/src/routes/api/img/` | Serves images: R2 first, local disk fallback |
+| `nexus/src/routes/api/image/` | User profile images: same R2-first pattern |
+
+### Approval flow
+
+1. User uploads → sharp processes → saved to `uploads/temp/{uuid}/` (local only)
+2. Admin approves → moved to `uploads/approved/` (local) + uploaded to R2 with all size variants
+3. Serving reads from R2 first, falls back to local disk
+4. Enhancement (`?mode=dark|light`) runs server-side from R2/local source, cached by Cloudflare CDN
+
+### Configuration
+
+R2 is optional. Without `R2_*` env vars, the system operates on local filesystem only. See `nexus/.env.example` for required variables.
+
+### Migration
+
+Run `node nexus/migrate-images-to-r2.mjs` to upload existing approved images to R2. Supports `--dry-run` and `--force` flags. Safe to run while the site is live.
+
 ## Styling
 
 See `docs/ui-styling.md` for:
