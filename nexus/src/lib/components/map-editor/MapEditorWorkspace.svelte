@@ -71,6 +71,7 @@
     nextTempId = -1;
     changeCount = 0;
     if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
+    if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
   }
 
   // --- Reactive derivations ---
@@ -221,6 +222,7 @@
           pendingChanges.set(tempId, { action: 'add', original: null, modified });
           dbChangeIdMap.set(tempId, change.id);
           pendingChanges = pendingChanges;
+          if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
         }
         selectedId = tempId;
       } else if (change.type === 'Update' && data?.Id) {
@@ -241,6 +243,7 @@
           pendingChanges.set(data.Id, { action: 'edit', original: loc, modified });
           dbChangeIdMap.set(data.Id, change.id);
           pendingChanges = pendingChanges;
+          if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
           selectedId = data.Id;
         } else {
           // Location not found locally — fall back to read-only
@@ -360,6 +363,8 @@
     previewShape = null; // Clear afterimage
     // Force rebuild: _editingActive may block the reactive rebuildLayers
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
+    // Rebuild DB overlay so un-seeded changes reappear
+    if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
   }
 
   function handleRemovePendingAdd(e) {
@@ -372,6 +377,8 @@
       }
       // Force rebuild: _editingActive may block the reactive rebuildLayers
       if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
+      // Rebuild DB overlay so un-seeded changes reappear
+      if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
     }
   }
 

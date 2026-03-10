@@ -454,6 +454,30 @@
     return marker;
   }
 
+  /**
+   * Create a Leaflet shape layer from Entropia shape data.
+   * Shared by createShapeLayer, createPendingAddLayer, and rebuildDbChangesOverlay.
+   */
+  function createLeafletShape(shape, data, style) {
+    if (!data || !transforms || !L) return null;
+    if (shape === 'Circle' && data.x != null) {
+      const [lat, lng] = transforms.entropiaToLeaflet(data.x, data.y);
+      return L.circle([lat, lng], { ...style, radius: (data.radius || 0) / transforms.ratio });
+    } else if (shape === 'Rectangle' && data.x != null) {
+      const [lat1, lng1] = transforms.entropiaToLeaflet(data.x, data.y);
+      const [lat2, lng2] = transforms.entropiaToLeaflet(data.x + (data.width || 0), data.y + (data.height || 0));
+      return L.rectangle([[lat1, lng1], [lat2, lng2]], style);
+    } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
+      const latLngs = [];
+      for (let i = 0; i < data.vertices.length; i += 2) {
+        const [lat, lng] = transforms.entropiaToLeaflet(data.vertices[i], data.vertices[i + 1]);
+        latLngs.push([lat, lng]);
+      }
+      return L.polygon(latLngs, style);
+    }
+    return null;
+  }
+
   function createShapeLayer(loc, color, changeState) {
     const shape = loc.Properties.Shape;
     const data = loc.Properties.Data;
@@ -469,27 +493,7 @@
       dashArray: style.dashArray
     };
 
-    let layer;
-
-    if (shape === 'Circle') {
-      const [lat, lng] = transforms.entropiaToLeaflet(data.x, data.y);
-      const radius = data.radius / transforms.ratio;
-      layer = L.circle([lat, lng], { ...options, radius });
-    } else if (shape === 'Rectangle') {
-      const [lat1, lng1] = transforms.entropiaToLeaflet(data.x, data.y);
-      const [lat2, lng2] = transforms.entropiaToLeaflet(data.x + data.width, data.y + data.height);
-      layer = L.rectangle([[lat1, lng1], [lat2, lng2]], options);
-    } else if (shape === 'Polygon') {
-      const verts = data.vertices || [];
-      const latLngs = [];
-      for (let i = 0; i < verts.length; i += 2) {
-        const [lat, lng] = transforms.entropiaToLeaflet(verts[i], verts[i + 1]);
-        latLngs.push([lat, lng]);
-      }
-      if (latLngs.length < 3) return null;
-      layer = L.polygon(latLngs, options);
-    }
-
+    const layer = createLeafletShape(shape, data, options);
     if (layer) {
       const tooltipName = loc.Properties?.Type === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
       layer.bindTooltip(tooltipName, { sticky: true });
@@ -515,24 +519,7 @@
 
     const isAreaAdd = mod.locationType === 'Area' && mod.shape && mod.shapeData;
     if (isAreaAdd) {
-      const data = mod.shapeData;
-      let layer;
-      if (mod.shape === 'Circle') {
-        const [lat, lng] = transforms.entropiaToLeaflet(data.x, data.y);
-        const radius = data.radius / transforms.ratio;
-        layer = L.circle([lat, lng], { ...addStyle, radius });
-      } else if (mod.shape === 'Rectangle') {
-        const [lat1, lng1] = transforms.entropiaToLeaflet(data.x, data.y);
-        const [lat2, lng2] = transforms.entropiaToLeaflet(data.x + data.width, data.y + data.height);
-        layer = L.rectangle([[lat1, lng1], [lat2, lng2]], addStyle);
-      } else if (mod.shape === 'Polygon' && data.vertices?.length >= 6) {
-        const latLngs = [];
-        for (let i = 0; i < data.vertices.length; i += 2) {
-          const [lat, lng] = transforms.entropiaToLeaflet(data.vertices[i], data.vertices[i + 1]);
-          latLngs.push([lat, lng]);
-        }
-        layer = L.polygon(latLngs, addStyle);
-      }
+      const layer = createLeafletShape(mod.shape, mod.shapeData, addStyle);
       if (layer) layer.bindTooltip(mod.name || '(new)', { sticky: true });
       return layer;
     } else if (mod.longitude != null && mod.latitude != null) {
@@ -624,6 +611,8 @@
     for (const change of dbPendingChanges) {
       // Skip changes seeded into local pendingChanges (author/admin editable path)
       if (pendingChanges.has(-change.id)) continue;
+      // Skip Update-type changes seeded as pending edits (key = entity Id)
+      if (change.type === 'Update' && change.data?.Id && pendingChanges.has(change.data.Id)) continue;
 
       const data = change.data;
       if (!data?.Properties) continue;
@@ -644,26 +633,7 @@
 
       // Areas with shape data
       if (props.Shape && props.Data) {
-        const shapeData = props.Data;
-        let layer;
-
-        if (props.Shape === 'Circle' && shapeData.x != null) {
-          const [lat, lng] = transforms.entropiaToLeaflet(shapeData.x, shapeData.y);
-          const radius = (shapeData.radius || 0) / transforms.ratio;
-          layer = L.circle([lat, lng], { ...areaStyle, radius });
-        } else if (props.Shape === 'Rectangle' && shapeData.x != null) {
-          const [lat1, lng1] = transforms.entropiaToLeaflet(shapeData.x, shapeData.y);
-          const [lat2, lng2] = transforms.entropiaToLeaflet(shapeData.x + (shapeData.width || 0), shapeData.y + (shapeData.height || 0));
-          layer = L.rectangle([[lat1, lng1], [lat2, lng2]], areaStyle);
-        } else if (props.Shape === 'Polygon' && shapeData.vertices?.length >= 6) {
-          const latLngs = [];
-          for (let i = 0; i < shapeData.vertices.length; i += 2) {
-            const [lat, lng] = transforms.entropiaToLeaflet(shapeData.vertices[i], shapeData.vertices[i + 1]);
-            latLngs.push([lat, lng]);
-          }
-          layer = L.polygon(latLngs, areaStyle);
-        }
-
+        const layer = createLeafletShape(props.Shape, props.Data, areaStyle);
         if (layer) {
           layer._dbChangeId = dbChangeId;
           layer._dbChangeData = change;
@@ -1229,7 +1199,15 @@
             if (editingLayer.editing.latlngs) {
               editingLayer.editing.latlngs = [editingLayer._latlngs];
             }
-            try { editingLayer.editing.enable(); } catch {}
+            try { editingLayer.editing.enable(); } catch (e) {
+              console.warn('Failed to re-enable editing after drag:', e);
+            }
+            // Remove Leaflet-Draw's built-in move marker for Rectangles — we use our own custom handle.
+            // editing.enable() recreates it, so we must re-remove it after every drag.
+            if (loc.Properties.Shape === 'Rectangle' && editingLayer.editing?._moveMarker) {
+              editingLayer.editing._moveMarker.remove();
+              editingLayer.editing._moveMarker = null;
+            }
           }
         });
       }
@@ -1433,6 +1411,11 @@
   export function forceRebuild() {
     cleanupEditing();
     rebuildLayers();
+  }
+
+  /** Rebuild the DB pending changes overlay (call when seeding state changes). */
+  export function rebuildDbOverlay() {
+    rebuildDbChangesOverlay();
   }
 
   export function panToLocation(loc) {
