@@ -74,7 +74,7 @@
     padding: 3px 8px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: transparent;
+    background: rgba(0, 0, 0, 0.1);
     color: var(--text-muted);
     font-size: 0.6875rem;
     font-weight: 700;

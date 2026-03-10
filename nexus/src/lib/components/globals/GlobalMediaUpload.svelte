@@ -194,7 +194,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.5;
+    opacity: 0.75;
     transition: opacity 0.15s;
   }
 

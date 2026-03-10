@@ -1099,9 +1099,10 @@
       // Circles already have a built-in move handle from leaflet-draw.
       // Rectangles also get one (L.Edit.Rectangle extends L.Edit.SimpleShape),
       // so remove it to avoid a duplicate — our custom handle dispatches entropia coords.
+      // Hide Leaflet-Draw's built-in move marker for Rectangles — we use our own custom handle.
+      // Keep the reference (don't null it) so removeHooks() can safely unbind events.
       if (loc.Properties.Shape === 'Rectangle' && layer.editing?._moveMarker) {
         layer.editing._moveMarker.remove();
-        layer.editing._moveMarker = null;
       }
       if (loc.Properties.Shape !== 'Circle') {
         // Use the stored coordinates — these are the pole of inaccessibility,
@@ -1202,11 +1203,11 @@
             try { editingLayer.editing.enable(); } catch (e) {
               console.warn('Failed to re-enable editing after drag:', e);
             }
-            // Remove Leaflet-Draw's built-in move marker for Rectangles — we use our own custom handle.
+            // Hide Leaflet-Draw's built-in move marker for Rectangles — we use our own custom handle.
             // editing.enable() recreates it, so we must re-remove it after every drag.
+            // Keep the reference (don't null it) so removeHooks() can safely unbind events.
             if (loc.Properties.Shape === 'Rectangle' && editingLayer.editing?._moveMarker) {
               editingLayer.editing._moveMarker.remove();
-              editingLayer.editing._moveMarker = null;
             }
           }
         });

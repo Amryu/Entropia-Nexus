@@ -186,7 +186,7 @@
     const props = changeData.Properties;
     const coords = props.Coordinates || {};
     const isArea = props.Shape || String(props.Type || '').endsWith('Area');
-    return {
+    const modified = {
       name: changeData.Name || '',
       locationType: isArea ? 'Area' : (props.Type || 'Location'),
       longitude: coords.Longitude ?? 0,
@@ -197,6 +197,11 @@
       shapeData: props.Data || null,
       tempId
     };
+    // Restore mob data if persisted in the change
+    if (props.MobData || props.Density != null) {
+      modified.mobData = { density: props.Density ?? 4, maturities: props.MobData || [] };
+    }
+    return modified;
   }
 
   function buildLeafletFocusLocation(locLike) {

@@ -219,6 +219,10 @@
             parentLocationName: data?.ParentLocation?.Name || null,
             tempId
           };
+          // Restore mob data if persisted in the change
+          if (props.MobData || props.Density != null) {
+            modified.mobData = { density: props.Density ?? 4, maturities: props.MobData || [] };
+          }
           pendingChanges.set(tempId, { action: 'add', original: null, modified });
           dbChangeIdMap.set(tempId, change.id);
           pendingChanges = pendingChanges;

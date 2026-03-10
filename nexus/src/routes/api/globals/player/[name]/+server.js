@@ -15,7 +15,7 @@ import { isAthLeaderboardReady } from '$lib/server/globals-cache.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 const TOP_LOOTS_LIMIT = 100;
-const OVERVIEW_TOP_LIMIT = 3;
+const OVERVIEW_TOP_LIMIT = 10;
 const ATH_RANK_CUTOFF = 10;
 
 /** Wrap a query promise so timeout/errors return empty rows instead of crashing Promise.all */
@@ -218,7 +218,9 @@ export async function GET({ params, url }) {
 
       // Discovery + tier achievements
       pool.query(
-        `SELECT global_type, target_name, value, extra, event_timestamp, is_hof, is_ath
+        `SELECT id, global_type, target_name, value, extra, event_timestamp, is_hof, is_ath,
+                media_image_key, media_video_url,
+                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('discovery', 'tier')
@@ -228,7 +230,9 @@ export async function GET({ params, url }) {
 
       // Rare items
       pool.query(
-        `SELECT target_name, value, event_timestamp, is_hof, is_ath
+        `SELECT id, target_name, value, event_timestamp, is_hof, is_ath,
+                media_image_key, media_video_url,
+                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'rare_item'
@@ -238,7 +242,9 @@ export async function GET({ params, url }) {
 
       // PvP events
       pool.query(
-        `SELECT value, event_timestamp, is_hof, is_ath
+        `SELECT id, value, event_timestamp, is_hof, is_ath,
+                media_image_key, media_video_url,
+                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'pvp'
@@ -576,6 +582,7 @@ export async function GET({ params, url }) {
         gz_count: r.gz_count || 0,
       })),
       achievements: discoveryResult.rows.map(r => ({
+        id: r.id,
         type: r.global_type,
         target: r.target_name,
         value: parseFloat(r.value),
@@ -583,19 +590,30 @@ export async function GET({ params, url }) {
         timestamp: r.event_timestamp,
         hof: r.is_hof,
         ath: r.is_ath,
+        media_image: r.media_image_key || null,
+        media_video: r.media_video_url || null,
+        gz_count: r.gz_count || 0,
       })),
       rare_items: rareItemsResult.rows.map(r => ({
+        id: r.id,
         target: r.target_name,
         value: parseFloat(r.value),
         timestamp: r.event_timestamp,
         hof: r.is_hof,
         ath: r.is_ath,
+        media_image: r.media_image_key || null,
+        media_video: r.media_video_url || null,
+        gz_count: r.gz_count || 0,
       })),
       pvp_events: pvpResult.rows.map(r => ({
+        id: r.id,
         value: parseFloat(r.value),
         timestamp: r.event_timestamp,
         hof: r.is_hof,
         ath: r.is_ath,
+        media_image: r.media_image_key || null,
+        media_video: r.media_video_url || null,
+        gz_count: r.gz_count || 0,
       })),
       top_loots: {
         hunting: mapLootRows(topHuntingResult.rows),

@@ -73,6 +73,12 @@
         props.TaxRateShops = mod.taxRateShops ?? null;
         if (mod.landAreaOwner) props.LandAreaOwnerName = mod.landAreaOwner;
       }
+
+      // MobArea mob data (density + maturity selections)
+      if (mod.mobData) {
+        props.Density = mod.mobData.density ?? null;
+        props.MobData = mod.mobData.maturities ?? null;
+      }
     }
 
     const body = {

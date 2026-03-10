@@ -45,7 +45,8 @@
     {
       name: 'Linux',
       file: (v) => `/client/linux/entropia-nexus-${v}-linux.tar.gz`,
-      note: 'x86_64, glibc 2.31+'
+      note: 'Too Unstable - WIP',
+      disabled: true
     }
   ];
 
@@ -93,7 +94,8 @@
     <h2 class="section-title">Download <span class="version-tag">v{latestVersion} beta</span></h2>
     <div class="downloads-grid">
       {#each platforms as platform}
-        <a href={platform.file(latestVersion)} class="download-card" download>
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <svelte:element this={platform.disabled ? 'div' : 'a'} href={platform.disabled ? undefined : platform.file(latestVersion)} class="download-card" class:download-disabled={platform.disabled} download={platform.disabled ? undefined : ''}>
           <span class="download-icon">
             {#if platform.name === 'Windows'}
               <!-- Simple Icons — Windows (CC0) -->
@@ -112,7 +114,7 @@
             <span class="download-note">{platform.note}</span>
           </div>
           <span class="download-arrow">↓</span>
-        </a>
+        </svelte:element>
       {/each}
       <a href="https://github.com/Amryu/Entropia-Nexus" class="download-card" target="_blank" rel="noopener noreferrer">
         <span class="download-icon">
@@ -292,9 +294,15 @@
     transition: border-color 0.2s ease, background-color 0.2s ease;
   }
 
-  .download-card:hover {
+  .download-card:hover:not(.download-disabled) {
     border-color: var(--accent-color);
     background-color: var(--hover-color);
+  }
+
+  .download-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .download-icon {
