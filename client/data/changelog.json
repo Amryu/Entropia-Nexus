@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.3.0",
+    "date": "2026-03-10",
+    "changes": [
+      {"type": "feat", "text": "Screenshot capture: take screenshots with a hotkey, with optional blur regions and custom backgrounds"},
+      {"type": "feat", "text": "Video clip recording: record gameplay clips with game audio and microphone"},
+      {"type": "feat", "text": "Webcam overlay on recordings with chroma key (green screen) support"},
+      {"type": "feat", "text": "Microphone audio filters: noise suppression, noise gate, and compressor with live preview"},
+      {"type": "feat", "text": "Gallery page for browsing, replaying, and managing your screenshots and clips"},
+      {"type": "feat", "text": "Recording bar overlay with live timer, pause/resume, and status indicators"},
+      {"type": "feat", "text": "Configurable screenshot and clip output folders with daily subfolders"},
+      {"type": "feat", "text": "Per-tier market price filtering in wiki, overlay, and detail views"},
+      {"type": "fix", "text": "Improved recording stability and thread safety"},
+      {"type": "fix", "text": "Audio capture now follows default device changes automatically"},
+      {"type": "fix", "text": "Required components (media libraries, FFmpeg, noise models) are all downloaded upfront before recording"},
+      {"type": "fix", "text": "Reduced memory usage during long recordings"}
+    ]
+  },
+  {
     "version": "0.2.2",
     "date": "2026-03-09",
     "changes": [
