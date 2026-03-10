@@ -41,6 +41,14 @@ DIFF_ADDED = "#48b868"
 DIFF_CHANGED = "#d4a030"
 DIFF_REMOVED = "#e06060"
 
+# Gallery badges (global type, notes, upload)
+BADGE_HOF = "#eab308"             # gold — Hall of Fame
+BADGE_ATH = "#ef4444"             # red — All Time High
+BADGE_GLOBAL = "#60b0ff"          # blue accent — regular global
+BADGE_NOTES = "#9b59b6"           # purple — has notes
+BADGE_UPLOADED = "#2ecc71"        # green — uploaded to server
+BADGE_UPLOAD_PENDING = "#888888"  # grey — not yet uploaded
+
 # Tables
 TABLE_HEADER = "#222222"
 TABLE_ROW = "#444444"

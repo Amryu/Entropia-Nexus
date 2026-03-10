@@ -381,6 +381,48 @@ def build_acquisition_content(
             )
         layout.addWidget(table)
 
+    # --- Mission Rewards ---
+    mission_rewards = data.get("MissionRewards") or []
+    if mission_rewards:
+        has_any = True
+        layout.addWidget(section_title_label("Mission Reward"))
+        flat = []
+        for mr in mission_rewards:
+            mission = mr.get("Mission") or {}
+            qty = mr.get("Quantity")
+            if qty is not None:
+                qty_str = str(qty)
+            elif mr.get("MinQuantity") is not None and mr.get("MaxQuantity") is not None:
+                qty_str = f"{mr['MinQuantity']}–{mr['MaxQuantity']}"
+            elif mr.get("PedValue") is not None:
+                qty_str = f"{mr['PedValue']} PED"
+            else:
+                qty_str = ""
+            flat.append({
+                "mission": mission.get("Name", ""),
+                "type": mission.get("Type") or "",
+                "planet": deep_get(mission, "Planet", "Name") or "",
+                "qty": qty_str,
+                "rarity": mr.get("Rarity") or "",
+            })
+        table = make_section_table(
+            [
+                ColumnDef("mission", "Mission", main=True),
+                ColumnDef("type", "Type"),
+                ColumnDef("planet", "Planet"),
+                ColumnDef("qty", "Qty"),
+                ColumnDef("rarity", "Rarity"),
+            ],
+            flat,
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("mission", ""), "Type": "Mission"}
+                )
+            )
+        layout.addWidget(table)
+
     # --- Shop Listings (Market) ---
     shop_listings = data.get("ShopListings") or []
     if shop_listings:
@@ -1441,9 +1483,7 @@ class WikiDetailView(QWidget):
         # Tier state
         entity_type = self._item.get("Type", "")
         item_name = self._item.get("Name", "")
-        self._mps_tierable = (
-            entity_type in TIERABLE_TYPES and not item_name.endswith("(L)")
-        )
+        self._mps_tierable = entity_type in TIERABLE_TYPES
         self._mps_selected_tier: int = 0
 
         item_id = self._item.get("Id")

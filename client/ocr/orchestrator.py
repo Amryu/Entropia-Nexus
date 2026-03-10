@@ -1160,7 +1160,7 @@ class ScanOrchestrator:
             path = os.path.join(
                 out_dir, f"row_{row_idx:02d}_{safe_name}_{timestamp}.png")
             cv2.imwrite(path, canvas)
-            log.warning("Saved low-confidence OCR debug image: %s", path)
+            log.debug("Saved low-confidence OCR debug image: %s", path)
         except Exception as e:
             log.debug("Failed to save low-confidence debug image: %s", e)
 

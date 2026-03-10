@@ -309,9 +309,8 @@ class ArmorSetDetailView(WikiDetailView):
         self._mps_selected_slot = self._mps_ordered_slots[0] if self._mps_ordered_slots else ""
         self._mps_selected_gender = "male"
 
-        # Tier state — armor sets are always tierable (unless (L))
-        item_name = self._item.get("Name", "")
-        self._mps_tierable = not item_name.endswith("(L)")
+        # Tier state — armor sets are always tierable
+        self._mps_tierable = True
         self._mps_selected_tier: int = 0
 
         self._mps_section = DataSection("Market Prices", expanded=True)

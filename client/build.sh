@@ -31,9 +31,14 @@ BUNDLE_FILES=(
 # Hidden imports that PyInstaller may miss (conditional / lazy imports)
 HIDDEN_IMPORTS=(
     PyQt6.QtSvg
+    PyQt6.QtMultimedia
+    PyQt6.QtMultimediaWidgets
     keyring.backends
     keyring.backends.Windows
     keyring.backends.SecretService
+    sounddevice
+    _sounddevice_data
+    obsws_python
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -165,6 +170,7 @@ python -m PyInstaller \
     --workpath "$BUILD_DIR" \
     --specpath "${ROOT}/client" \
     --collect-all py_mini_racer \
+    --collect-all sounddevice \
     "${DATA_ARGS[@]}" \
     "${IMPORT_ARGS[@]}" \
     "${PLATFORM_ARGS[@]}" \
@@ -208,7 +214,7 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
         Quick Qml QmlModels QmlMeta QmlWorkerScript Positioning WebChannel
         OpenGL Quick3D RemoteObjects PrintSupport Pdf ShaderTools Sensors
         TextToSpeech WebSockets SpatialAudio XcbQpa EglFSDeviceIntegration
-        WaylandClient WlShellIntegration Concurrent DBus
+        WaylandClient WlShellIntegration Concurrent
     )
     FIND_QT6_ARGS=()
     for mod in "${STRIP_QT6_MODULES[@]}"; do
@@ -220,7 +226,7 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     # 2. Unused PyQt6 Python bindings (.pyd on Windows, .abi3.so on Linux)
     STRIP_PYQT_MODULES=(
         'QtPrintSupport*' 'QtRemoteObjects*' 'QtQuick*'
-        'QtQml*' 'QtPositioning*' 'QtOpenGL*' 'QtDBus*'
+        'QtQml*' 'QtPositioning*' 'QtOpenGL*'
     )
     FIND_PYQT_ARGS=()
     for pat in "${STRIP_PYQT_MODULES[@]}"; do
@@ -235,20 +241,9 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     # 4. Software OpenGL fallback (Windows only)
     find "$INTERNAL_CHECK" -name 'opengl32sw.dll' \( -type f -o -type l \) | strip_files
 
-    # 5. FFmpeg / video codecs — QSoundEffect plays WAV natively, no FFmpeg needed
-    find "$INTERNAL_CHECK" \( -type f -o -type l \) \( \
-        -name 'avcodec-*.dll' -o -name 'avformat-*.dll' \
-        -o -name 'avutil-*.dll' -o -name 'swresample-*.dll' \
-        -o -name 'libavcodec*.so*' -o -name 'libavformat*.so*' \
-        -o -name 'libavutil*.so*' -o -name 'libswresample*.so*' \
-        -o -name 'libswscale*.so*' -o -name 'libavfilter*.so*' \
-        -o -name 'libavdevice*.so*' \
-        -o -name 'libaom*.so*' -o -name 'libvpx*.so*' \
-        -o -name 'libavif*.so*' \
-        \) | strip_files
+    # 5. FFmpeg / video codecs — kept for QMediaPlayer (gallery) and cv2.VideoCapture (backgrounds)
 
-    # 6. OpenCV video I/O FFmpeg — OCR uses image ops only
-    find "$INTERNAL_CHECK" -name 'opencv_videoio_ffmpeg*' \( -type f -o -type l \) | strip_files
+    # 6. OpenCV video I/O FFmpeg — kept for cv2.VideoCapture (background video loading)
 
     # 7. Qt translations — English-only app
     find "$INTERNAL_CHECK" -path '*/Qt6/translations' -type d | strip_dirs
@@ -262,9 +257,7 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     # 10. Qt xcb GL integrations — not needed for overlay/headless use
     find "$INTERNAL_CHECK" -path '*/plugins/xcbglintegrations' -type d | strip_dirs
 
-    # 11. Qt FFmpeg multimedia plugin (Linux .so)
-    find "$INTERNAL_CHECK" -name 'libffmpegmediaplugin*' \( -type f -o -type l \) | strip_files
-    find "$INTERNAL_CHECK" -name 'libQt6FFmpegStub*' \( -type f -o -type l \) | strip_files
+    # 11. Qt FFmpeg multimedia plugin — kept for QMediaPlayer (gallery video playback)
 
     # 12. Font files — not licensed for distribution; STPK templates provide OCR matching
     find "$INTERNAL_CHECK" -name '*.ttf' \( -type f -o -type l \) | strip_files
@@ -344,7 +337,27 @@ dist_dir = sys.argv[1]
 version = sys.argv[2]
 platform = sys.argv[3]
 
+# Filename substrings that identify the 'video' optional group.
+# These provide video capture, audio recording, and gallery playback.
+# NOTE: QtMultimedia (without 'Widgets') is NOT included — needed for QSoundEffect (core).
+VIDEO_KEYWORDS = [
+    'avcodec', 'avformat', 'avutil', 'swresample', 'swscale',
+    'avfilter', 'avdevice',
+    'opencv_videoio_ffmpeg',
+    'ffmpegmediaplugin', 'Qt6FFmpegStub',
+    'sounddevice', '_sounddevice_data', 'portaudio',
+    'MultimediaWidgets',
+]
+
+def get_file_group(rel_path):
+    low = rel_path.lower()
+    for kw in VIDEO_KEYWORDS:
+        if kw.lower() in low:
+            return 'video'
+    return None
+
 files = {}
+group_sizes = {}
 for root, dirs, filenames in os.walk(dist_dir):
     for fname in filenames:
         full = os.path.join(root, fname)
@@ -357,15 +370,25 @@ for root, dirs, filenames in os.walk(dist_dir):
         with open(full, 'rb') as fh:
             for chunk in iter(lambda: fh.read(65536), b''):
                 h.update(chunk)
-        files[rel] = {
+        size = os.path.getsize(full)
+        entry = {
             'sha256': h.hexdigest(),
-            'size': os.path.getsize(full),
+            'size': size,
         }
+        group = get_file_group(rel)
+        if group:
+            entry['group'] = group
+            group_sizes[group] = group_sizes.get(group, 0) + size
+        files[rel] = entry
 
 manifest = {
     'version': version,
     'platform': platform,
     'build_date': datetime.now(timezone.utc).isoformat(),
+    'groups': {
+        name: {'description': 'Video capture, audio recording, and gallery playback', 'size': total}
+        for name, total in group_sizes.items()
+    },
     'files': files,
 }
 
@@ -373,7 +396,11 @@ out = os.path.join(dist_dir, 'manifest.json')
 with open(out, 'w') as f:
     json.dump(manifest, f, indent=2)
 
-print(f'  Manifest: {len(files)} files, version {version}')
+core_count = sum(1 for f in files.values() if 'group' not in f)
+for name, total in group_sizes.items():
+    count = sum(1 for f in files.values() if f.get('group') == name)
+    print(f'  Group \"{name}\": {count} files, {total / 1048576:.1f} MB')
+print(f'  Manifest: {len(files)} files ({core_count} core), version {version}')
 " "$MANIFEST_DIST_CHECK" "$VERSION" "$PLATFORM"
 
 # ── Post-build: copy config template ────────────────────────────────────────

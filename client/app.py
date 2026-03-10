@@ -20,10 +20,12 @@ import traceback
 from .core.config import load_config
 from .core.constants import (
     EVENT_AUTH_STATE_CHANGED,
+    EVENT_CLIP_SAVED,
     EVENT_CONFIG_CHANGED,
     EVENT_MARKET_PRICE_REVIEW,
     EVENT_MARKET_PRICE_SCAN,
     EVENT_OCR_MANUAL_TRIGGER,
+    EVENT_SCREENSHOT_SAVED,
 )
 from .core.event_bus import EventBus
 from .core.database import Database
@@ -340,6 +342,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     _map_overlay = None
     _exchange_overlay = None
     _notifications_overlay = None
+    _recording_bar = None
+    _gallery_overlay = None
 
     # Pre-import detail_overlay during splash — compiling this large module
     # takes ~0.6s and would freeze the main thread if deferred to _create_overlays.
@@ -419,14 +423,20 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     from .ocr.frame_distributor import FrameDistributor
     frame_distributor = FrameDistributor(capture_backend=config.ocr_capture_backend)
 
-    def _sync_capture_backend(updated_config):
+    def _sync_capture_settings(updated_config):
         if not updated_config:
             return
         frame_distributor.set_capture_backend(
             getattr(updated_config, "ocr_capture_backend", "auto"),
         )
+        frame_distributor.set_hdr_mode(
+            getattr(updated_config, "hdr_compatibility_mode", False),
+        )
 
-    event_bus.subscribe(EVENT_CONFIG_CHANGED, _sync_capture_backend)
+    event_bus.subscribe(EVENT_CONFIG_CHANGED, _sync_capture_settings)
+
+    # Apply initial HDR mode from config
+    frame_distributor.set_hdr_mode(getattr(config, "hdr_compatibility_mode", False))
 
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
@@ -442,6 +452,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     frame_distributor.start()
     workers.append(frame_distributor)
 
+    # Expose on main_window so dialogs can discover it via topLevelWidgets()
+    main_window._frame_distributor = frame_distributor
+
     # Capture manager — screenshot and video clip recording
     from .capture.capture_manager import CaptureManager
     capture_manager = CaptureManager(
@@ -450,6 +463,38 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     )
     capture_manager.start()
     workers.append(capture_manager)
+
+    # Register screenshots/clips in the local database
+    def _on_capture_saved(data):
+        from .core.database import compute_file_hash
+        file_type = "clip" if "duration" in data else "screenshot"
+        path = data.get("path", "")
+        ts = data.get("timestamp", "")
+        ge = data.get("global_event")
+        global_id = None
+        if ge:
+            global_id = db.find_recent_own_global(
+                ts or ge.get("timestamp", ""),
+                ge["player_name"], ge["target_name"],
+            )
+        # Compute hash for screenshots inline (small files).
+        # For clips, compute in a background thread (large files).
+        if file_type == "clip":
+            row_id = db.insert_screenshot(path, file_type, ts, global_id)
+            import threading
+            def _hash_clip():
+                fh = compute_file_hash(path)
+                if fh and row_id:
+                    db.update_screenshot_hash(row_id, fh)
+            threading.Thread(target=_hash_clip, daemon=True,
+                             name="clip-hash").start()
+        else:
+            fh = compute_file_hash(path)
+            db.insert_screenshot(path, file_type, ts, global_id,
+                                 file_hash=fh)
+
+    event_bus.subscribe(EVENT_SCREENSHOT_SAVED, _on_capture_saved)
+    event_bus.subscribe(EVENT_CLIP_SAVED, _on_capture_saved)
 
     # Defer overlay wiring so the main window renders first.
     # Heavy overlay widgets are created lazily on first use via _ensure_*_overlay().
@@ -563,11 +608,66 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             else:
                 overlay.set_wants_visible(False)
 
+        def _ensure_recording_bar():
+            nonlocal _recording_bar
+            if _recording_bar is not None:
+                return _recording_bar
+            from .overlay.recording_bar_overlay import RecordingBarOverlay
+            _recording_bar = RecordingBarOverlay(
+                config=config, config_path=config_path,
+                event_bus=event_bus, signals=signals,
+                capture_manager=capture_manager,
+                manager=overlay_manager,
+            )
+            _recording_bar.open_settings.connect(
+                main_window.open_video_settings
+            )
+            _recording_bar.open_gallery.connect(_toggle_gallery_overlay)
+            return _recording_bar
+
+        def _ensure_gallery_overlay():
+            nonlocal _gallery_overlay
+            if _gallery_overlay is not None:
+                return _gallery_overlay
+            from .overlay.gallery_overlay import GalleryOverlay
+            _gallery_overlay = GalleryOverlay(
+                config=config, config_path=config_path,
+                signals=signals, manager=overlay_manager,
+                db=db, nexus_client=nexus_client,
+            )
+            return _gallery_overlay
+
+        def _toggle_recording_bar():
+            overlay = _ensure_recording_bar()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
+            else:
+                overlay.set_wants_visible(False)
+
+        def _toggle_gallery_overlay():
+            overlay = _ensure_gallery_overlay()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
+            else:
+                overlay.set_wants_visible(False)
+
+        # Auto-show recording bar when recording starts
+        def _auto_show_recording_bar(data):
+            bar = _ensure_recording_bar()
+            if not bar.isVisible():
+                bar.set_wants_visible(True)
+                bar.raise_()
+        signals.recording_started.connect(_auto_show_recording_bar)
+
         overlay_manager.map_hotkey_pressed.connect(_toggle_map_overlay)
         overlay_manager.exchange_hotkey_pressed.connect(_toggle_exchange_overlay)
         overlay_manager.notifications_hotkey_pressed.connect(
             _toggle_notifications_overlay
         )
+        overlay_manager.recording_bar_hotkey_pressed.connect(_toggle_recording_bar)
+        overlay_manager.gallery_hotkey_pressed.connect(_toggle_gallery_overlay)
 
         # F2 toggles all overlay widgets (hides as if occluded)
         overlay_manager.overlay_toggle_hotkey_pressed.connect(
@@ -723,6 +823,10 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     _toggle_exchange_overlay()
                 elif action == "notifications":
                     _toggle_notifications_overlay()
+                elif action == "recording":
+                    _toggle_recording_bar()
+                elif action == "gallery":
+                    _toggle_gallery_overlay()
 
             _search_overlay.menu_action.connect(_on_search_menu_action)
 
@@ -999,7 +1103,7 @@ def _show_splash(app, oauth, event_bus):
         log.info("User closed splash — exiting")
         return True  # signal caller to exit
 
-    log.warning("Auth: %s", "authenticated" if oauth.is_authenticated() else "offline")
+    log.info("Auth: %s", "authenticated" if oauth.is_authenticated() else "offline")
     return splash_screen
 
 
@@ -1056,7 +1160,7 @@ def _show_splash_over_main(main_window, oauth, event_bus):
     splash.hide()
     event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, on_auth_changed)
 
-    log.warning("Splash dismissed — auth: %s",
+    log.info("Splash dismissed — auth: %s",
                 "authenticated" if oauth.is_authenticated() else "offline")
 
 
@@ -1087,7 +1191,7 @@ def _run_headless(config, event_bus, db):
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
 
-    log.warning("Running headless... Press Ctrl+C to stop.")
+    log.info("Running headless... Press Ctrl+C to stop.")
     sys.stdout.flush()
     try:
         while not shutdown_event.is_set():
@@ -1104,7 +1208,7 @@ def _run_headless(config, event_bus, db):
     kill_timer.daemon = True
     kill_timer.start()
 
-    log.warning("Shutting down...")
+    log.info("Shutting down...")
     _start_shutdown_watchdog()
     data_client.close()
     _cleanup_workers(workers)
@@ -1394,10 +1498,10 @@ def _run_batch_parse(config, event_bus, db):
     """Parse the entire chat.log file from current offset and exit."""
     from .chat_parser.watcher import ChatLogWatcher
 
-    log.warning("Batch parsing: %s", config.chat_log_path)
+    log.info("Batch parsing: %s", config.chat_log_path)
     watcher = ChatLogWatcher(config, event_bus, db)
     watcher.parse_file()
-    log.warning("Batch parse complete")
+    log.info("Batch parse complete")
 
 
 if __name__ == "__main__":

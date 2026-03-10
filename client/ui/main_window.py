@@ -323,7 +323,8 @@ class MainWindow(QWidget):
 
     def _create_gallery_page(self):
         from .pages.gallery_page import GalleryPage
-        return GalleryPage(config=self._config, signals=self._signals)
+        return GalleryPage(config=self._config, signals=self._signals, db=self._db,
+                           nexus_client=self._nexus_client)
 
     def _create_settings_page(self):
         from .pages.settings_page import SettingsPage
@@ -398,6 +399,14 @@ class MainWindow(QWidget):
         # Badge updates when read state changes in the notification center
         self._notification_center.read_state_changed.connect(self._update_badge)
 
+        # Track recording state to suppress sounds during recording
+        self._is_recording = False
+        self._signals.recording_started.connect(lambda _: setattr(self, "_is_recording", True))
+        self._signals.recording_stopped.connect(lambda _: setattr(self, "_is_recording", False))
+
+        # Capture feedback sounds
+        self._setup_capture_sounds()
+
         # Server notification poll timer (every 2 minutes)
         self._notif_poll_timer = QTimer(self)
         self._notif_poll_timer.timeout.connect(self._poll_server_notifications)
@@ -443,6 +452,14 @@ class MainWindow(QWidget):
         self._sidebar.set_active_no_emit(PAGE_SETTINGS)
         self._pages.setCurrentIndex(PAGE_SETTINGS)
 
+    def open_video_settings(self):
+        """Navigate to the settings page filtered to Video settings."""
+        page = self._ensure_page(PAGE_SETTINGS)
+        page.set_search("Video")
+        self._sidebar.set_active_no_emit(PAGE_SETTINGS)
+        self._pages.setCurrentIndex(PAGE_SETTINGS)
+        self.bring_to_front()
+
     def set_search_overlay(self, overlay):
         """Store reference to the search overlay for notification badge updates."""
         self._search_overlay = overlay
@@ -486,8 +503,8 @@ class MainWindow(QWidget):
                     5000,
                 )
 
-        # Notification sound
-        if getattr(self._config, "notification_sound_enabled", True):
+        # Notification sound (suppressed during recording)
+        if getattr(self._config, "notification_sound_enabled", True) and not self._is_recording:
             self._play_notification_sound()
 
     def _flash_taskbar(self):
@@ -517,6 +534,47 @@ class MainWindow(QWidget):
                 return
         if self._sound_effect:
             self._sound_effect.play()
+
+    def _setup_capture_sounds(self):
+        """Initialize QSoundEffects for screenshot and clip feedback."""
+        self._screenshot_sound = None
+        self._clip_sound = None
+        try:
+            from PyQt6.QtMultimedia import QSoundEffect
+            from PyQt6.QtCore import QUrl
+            import os
+
+            assets = os.path.join(os.path.dirname(__file__), "..", "assets")
+
+            ss_path = os.path.abspath(os.path.join(assets, "screenshot.wav"))
+            if os.path.exists(ss_path):
+                self._screenshot_sound = QSoundEffect()
+                self._screenshot_sound.setSource(QUrl.fromLocalFile(ss_path))
+                self._screenshot_sound.setVolume(0.5)
+
+            clip_path = os.path.abspath(os.path.join(assets, "clip_saved.wav"))
+            if os.path.exists(clip_path):
+                self._clip_sound = QSoundEffect()
+                self._clip_sound.setSource(QUrl.fromLocalFile(clip_path))
+                self._clip_sound.setVolume(0.5)
+        except ImportError:
+            pass
+
+        self._signals.screenshot_saved.connect(self._on_screenshot_sound)
+        self._signals.clip_saved.connect(self._on_clip_sound)
+        self._signals.recording_stopped.connect(self._on_clip_sound)
+
+    def _on_screenshot_sound(self, data):
+        if self._is_recording:
+            return
+        if self._config.screenshot_sound_enabled and self._screenshot_sound:
+            self._screenshot_sound.play()
+
+    def _on_clip_sound(self, data):
+        if self._is_recording:
+            return
+        if self._config.clip_sound_enabled and self._clip_sound:
+            self._clip_sound.play()
 
     def _poll_server_notifications(self):
         import threading

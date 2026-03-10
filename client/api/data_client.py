@@ -7,12 +7,22 @@ import time
 from pathlib import Path
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from ..core.logger import get_logger
 
 log = get_logger("DataAPI")
 
 CACHE_TTL_SECONDS = 1800  # 30 minutes
+
+# Retry on transient connection/SSL errors (common in VMs and flaky networks)
+_RETRY_STRATEGY = Retry(
+    total=3,
+    backoff_factor=0.5,           # 0s, 0.5s, 1s between retries
+    status_forcelist=[502, 503, 504],
+    allowed_methods=["GET"],
+)
 
 # In frozen (PyInstaller) builds the _internal/ tree may be read-only,
 # so place the disk cache in the user's data directory instead.
@@ -29,6 +39,9 @@ class DataClient:
         self._base_url = config.api_base_url
         self._frontend_url = config.nexus_base_url
         self._session = requests.Session()
+        adapter = HTTPAdapter(max_retries=_RETRY_STRATEGY)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
         self._memory_cache: dict[str, tuple[float, list]] = {}
         os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -254,7 +267,7 @@ class DataClient:
         """Fetch acquisition data for an item (vendors, loot, blueprints, etc.).
 
         Returns a dict with keys: Blueprints, Loots, VendorOffers,
-        RefiningRecipes, ShopListings, BlueprintDrops.
+        RefiningRecipes, ShopListings, BlueprintDrops, MissionRewards.
         """
         result = self._get_memory_cached(f"/acquisition?items={item_name}")
         return result if isinstance(result, dict) else {}

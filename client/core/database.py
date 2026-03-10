@@ -1,8 +1,21 @@
+import hashlib
 import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def compute_file_hash(file_path: str) -> str | None:
+    """Compute SHA-256 hash of a file. Returns hex digest or None on error."""
+    try:
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
 
 
 SCHEMA = """
@@ -302,6 +315,22 @@ CREATE TABLE IF NOT EXISTS custom_dailies (
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS screenshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL UNIQUE,
+    file_type TEXT NOT NULL DEFAULT 'screenshot',
+    created_at TEXT NOT NULL,
+    global_id INTEGER REFERENCES globals(id),
+    notes TEXT,
+    upload_status TEXT NOT NULL DEFAULT 'none',
+    server_global_id INTEGER,
+    uploaded_at TEXT,
+    video_url TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_screenshots_path ON screenshots(file_path);
+CREATE INDEX IF NOT EXISTS idx_screenshots_global ON screenshots(global_id);
 """
 
 # Indexes that depend on columns added by _migrate()
@@ -310,6 +339,7 @@ CREATE INDEX IF NOT EXISTS idx_skill_gains_covering ON skill_gains(ts, skill_id,
 CREATE INDEX IF NOT EXISTS idx_skill_snapshots_name_id ON skill_snapshots(skill_name, id);
 CREATE INDEX IF NOT EXISTS idx_mob_encounters_hunt ON mob_encounters(hunt_id);
 CREATE INDEX IF NOT EXISTS idx_trade_messages_timestamp ON trade_messages(timestamp);
+CREATE INDEX IF NOT EXISTS idx_screenshots_hash ON screenshots(file_hash);
 """
 
 # Drop old single-column skill_gains indexes superseded by the covering index.
@@ -362,6 +392,7 @@ class Database:
             ("mob_encounters", "merged_from", "TEXT"),  # JSON array of encounter IDs
             ("session_loadouts", "crit_damage", "REAL DEFAULT 1.0"),
             ("parser_state", "file_hash", "TEXT"),
+            ("screenshots", "file_hash", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -399,6 +430,15 @@ class Database:
                 self._conn.commit()
             except sqlite3.OperationalError:
                 pass
+
+        # Rename youtube_url → video_url (multi-platform video support)
+        try:
+            self._conn.execute(
+                "ALTER TABLE screenshots RENAME COLUMN youtube_url TO video_url"
+            )
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Already renamed or column doesn't exist
 
         self._migrate_skill_gains_v2()
 
@@ -1173,6 +1213,66 @@ class Database:
                         "username": r[2], "message": r[3],
                     }
 
+    def count_globals(self) -> int:
+        """Return the number of globals in the local DB."""
+        with self._lock:
+            cur = self._conn.execute("SELECT COUNT(*) FROM globals")
+            return cur.fetchone()[0]
+
+    def count_trades(self, max_age_hours: int = 0) -> int:
+        """Return the number of trade messages in the local DB."""
+        with self._lock:
+            if max_age_hours > 0:
+                cur = self._conn.execute(
+                    "SELECT COUNT(*) FROM trade_messages "
+                    "WHERE timestamp >= datetime('now', ? || ' hours')",
+                    (f"-{max_age_hours}",),
+                )
+            else:
+                cur = self._conn.execute("SELECT COUNT(*) FROM trade_messages")
+            return cur.fetchone()[0]
+
+    def fetch_globals_batch(self, limit: int = 500) -> list[dict]:
+        """Fetch up to *limit* globals ordered by id. Lock-safe (no cursor leak)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT timestamp, global_type, player_name, target_name, "
+                "value, value_unit, location, is_hof, is_ath "
+                "FROM globals ORDER BY id LIMIT ?",
+                (limit,),
+            )
+            rows = cur.fetchall()
+        return [
+            {"timestamp": r[0], "type": r[1], "player": r[2],
+             "target": r[3], "value": r[4], "unit": r[5],
+             "location": r[6], "hof": bool(r[7]), "ath": bool(r[8])}
+            for r in rows
+        ]
+
+    def fetch_trades_batch(self, limit: int = 500, max_age_hours: int = 0) -> list[dict]:
+        """Fetch up to *limit* trade messages ordered by id. Lock-safe."""
+        with self._lock:
+            if max_age_hours > 0:
+                cur = self._conn.execute(
+                    "SELECT timestamp, channel, username, message "
+                    "FROM trade_messages "
+                    "WHERE timestamp >= datetime('now', ? || ' hours') "
+                    "ORDER BY id LIMIT ?",
+                    (f"-{max_age_hours}", limit),
+                )
+            else:
+                cur = self._conn.execute(
+                    "SELECT timestamp, channel, username, message "
+                    "FROM trade_messages ORDER BY id LIMIT ?",
+                    (limit,),
+                )
+            rows = cur.fetchall()
+        return [
+            {"timestamp": r[0], "channel": r[1],
+             "username": r[2], "message": r[3]}
+            for r in rows
+        ]
+
     # Trade messages
     def insert_trade_message(self, timestamp: str, channel: str, username: str, message: str):
         with self._lock:
@@ -1940,3 +2040,178 @@ class Database:
             rows = [dict(r) for r in cur.fetchall()]
             self._conn.row_factory = None
             return rows
+
+    # ------------------------------------------------------------------
+    # Screenshots
+    # ------------------------------------------------------------------
+
+    def insert_screenshot(self, file_path: str, file_type: str, created_at: str,
+                          global_id: int | None = None,
+                          file_hash: str | None = None) -> int:
+        """Insert a screenshot/clip record. Returns the new row ID."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO screenshots "
+                "(file_path, file_type, created_at, global_id, file_hash) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (file_path, file_type, created_at, global_id, file_hash),
+            )
+            self._auto_commit()
+            return cur.lastrowid
+
+    def update_screenshot_notes(self, screenshot_id: int, notes: str) -> None:
+        """Update the notes for a screenshot."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE screenshots SET notes = ? WHERE id = ?",
+                (notes, screenshot_id),
+            )
+            self._auto_commit()
+
+    def update_screenshot_notes_by_path(self, file_path: str, notes: str) -> None:
+        """Update notes for a screenshot identified by file path."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE screenshots SET notes = ? WHERE file_path = ?",
+                (notes, file_path),
+            )
+            self._auto_commit()
+
+    def update_screenshot_upload(self, screenshot_id: int, status: str,
+                                 server_global_id: int | None = None) -> None:
+        """Update upload status and optional server-side global ID."""
+        with self._lock:
+            if server_global_id is not None:
+                self._conn.execute(
+                    "UPDATE screenshots SET upload_status = ?, server_global_id = ?, "
+                    "uploaded_at = ? WHERE id = ?",
+                    (status, server_global_id,
+                     datetime.now(timezone.utc).isoformat(), screenshot_id),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE screenshots SET upload_status = ? WHERE id = ?",
+                    (status, screenshot_id),
+                )
+            self._auto_commit()
+
+    def update_screenshot_video_url(self, screenshot_id: int, video_url: str) -> None:
+        """Update the video URL for a screenshot/clip record."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE screenshots SET video_url = ? WHERE id = ?",
+                (video_url, screenshot_id),
+            )
+            self._auto_commit()
+
+    def update_screenshot_hash(self, screenshot_id: int, file_hash: str) -> None:
+        """Set the file hash on an existing screenshot record."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE screenshots SET file_hash = ? WHERE id = ?",
+                (file_hash, screenshot_id),
+            )
+            self._auto_commit()
+
+    def get_uploaded_screenshot_by_hash(self, file_hash: str) -> dict | None:
+        """Find an uploaded screenshot with matching hash."""
+        if not file_hash:
+            return None
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT id, file_path, uploaded_at FROM screenshots "
+                "WHERE file_hash = ? AND upload_status = 'uploaded' LIMIT 1",
+                (file_hash,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"id": row[0], "file_path": row[1], "uploaded_at": row[2]}
+
+    def get_screenshot_by_path(self, file_path: str) -> dict | None:
+        """Get screenshot record by file path."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT s.id, s.file_path, s.file_type, s.created_at, "
+                "s.global_id, s.notes, s.upload_status, s.server_global_id, "
+                "s.uploaded_at, s.video_url, "
+                "g.global_type, g.is_hof, g.is_ath, g.player_name, g.target_name, g.value, "
+                "s.file_hash "
+                "FROM screenshots s "
+                "LEFT JOIN globals g ON s.global_id = g.id "
+                "WHERE s.file_path = ?",
+                (file_path,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row[0], "file_path": row[1], "file_type": row[2],
+                "created_at": row[3], "global_id": row[4], "notes": row[5],
+                "upload_status": row[6], "server_global_id": row[7],
+                "uploaded_at": row[8], "video_url": row[9],
+                "global_type": row[10], "is_hof": bool(row[11]) if row[11] is not None else False,
+                "is_ath": bool(row[12]) if row[12] is not None else False,
+                "player_name": row[13], "target_name": row[14], "value": row[15],
+                "file_hash": row[16],
+            }
+
+    def get_screenshot_info_batch(self, paths: list[str]) -> dict[str, dict]:
+        """Bulk fetch screenshot info keyed by file path.
+
+        Returns {path: {id, has_notes, global_type, is_hof, is_ath, upload_status, ...}}.
+        """
+        if not paths:
+            return {}
+        with self._lock:
+            placeholders = ",".join("?" for _ in paths)
+            cur = self._conn.execute(
+                f"SELECT s.file_path, s.id, s.notes, s.upload_status, "
+                f"s.server_global_id, s.global_id, "
+                f"g.global_type, g.is_hof, g.is_ath, s.video_url, s.file_hash "
+                f"FROM screenshots s "
+                f"LEFT JOIN globals g ON s.global_id = g.id "
+                f"WHERE s.file_path IN ({placeholders})",
+                tuple(paths),
+            )
+            result = {}
+            for row in cur.fetchall():
+                result[row[0]] = {
+                    "id": row[1],
+                    "has_notes": bool(row[2]),
+                    "global_type": row[6],
+                    "is_hof": bool(row[7]) if row[7] is not None else False,
+                    "is_ath": bool(row[8]) if row[8] is not None else False,
+                    "upload_status": row[3] or "none",
+                    "server_global_id": row[4],
+                    "global_id": row[5],
+                    "video_url": row[9],
+                    "file_hash": row[10],
+                }
+            return result
+
+    def find_recent_own_global(self, timestamp_iso: str, player_name: str,
+                               target_name: str, window_seconds: int = 30) -> int | None:
+        """Find a global matching the given criteria within a time window.
+
+        Returns the globals.id or None.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT id FROM globals "
+                "WHERE player_name = ? AND target_name = ? "
+                "AND abs(julianday(timestamp) - julianday(?)) * 86400 < ? "
+                "ORDER BY abs(julianday(timestamp) - julianday(?)) "
+                "LIMIT 1",
+                (player_name, target_name, timestamp_iso, window_seconds, timestamp_iso),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+    def delete_screenshot_by_path(self, file_path: str) -> None:
+        """Delete a screenshot record by file path."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM screenshots WHERE file_path = ?", (file_path,)
+            )
+            self._auto_commit()

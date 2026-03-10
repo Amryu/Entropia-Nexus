@@ -1,12 +1,18 @@
 """Settings page — all app configuration in organized sections."""
 
+import sys
+import threading
+import time
+
+import numpy as np
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSlider, QSpinBox, QDoubleSpinBox, QGroupBox, QFileDialog, QScrollArea,
-    QFrame, QCheckBox, QTextEdit, QGridLayout, QComboBox,
+    QFrame, QCheckBox, QTextEdit, QGridLayout, QComboBox, QMessageBox,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QCursor
+from PyQt6.QtCore import Qt, QTimer, QObject, QEvent
+from PyQt6.QtGui import QCursor, QPainter, QColor, QLinearGradient
 
 from ...core.config import save_config
 from ...core.constants import EVENT_CONFIG_CHANGED, EVENT_REPARSE_REQUESTED
@@ -16,22 +22,106 @@ from ..widgets.hotkey_input import HotkeyInput
 
 log = get_logger("Settings")
 
+# Max widths for input widgets to prevent full-width stretching
+_INPUT_MAX_W = 250       # QComboBox, QSpinBox, QDoubleSpinBox, HotkeyInput, QLineEdit (short)
+_SLIDER_MAX_W = 300      # QSlider (gain, opacity, etc.)
+_PATH_MAX_W = 400        # QLineEdit for file/directory paths
+
 # Overlay hotkey definitions: (display label, config_key, tooltip)
 _OVERLAY_HOTKEY_DEFS = [
+    ("Toggle Overlay", "hotkey_overlay_toggle", "Show/hide all overlays"),
     ("Search", "hotkey_search", "Open the search overlay"),
     ("Map", "hotkey_map", "Open the map overlay"),
     ("Exchange", "hotkey_exchange", "Open the exchange overlay"),
     ("Notifications", "hotkey_notifications", "Open the notifications overlay"),
     ("Debug Overlay", "hotkey_debug", "Toggle OCR/target lock debug overlay"),
+    ("Screenshot", "hotkey_screenshot", "Take a screenshot"),
+    ("Save Clip", "hotkey_save_clip", "Save a video clip from the buffer"),
+    ("Toggle Recording", "hotkey_toggle_recording", "Start/stop continuous recording"),
 ]
 
 _OVERLAY_HOTKEY_DEFAULTS = {
+    "hotkey_overlay_toggle": "f2",
     "hotkey_search": "ctrl+f",
     "hotkey_map": "ctrl+m",
     "hotkey_exchange": "ctrl+e",
     "hotkey_notifications": "ctrl+n",
     "hotkey_debug": "f3",
+    "hotkey_screenshot": "f12",
+    "hotkey_save_clip": "ctrl+shift+space",
+    "hotkey_toggle_recording": "ctrl+shift+r",
 }
+
+
+class _ScrollBlocker(QObject):
+    """Block wheel events on unfocused widgets to prevent accidental changes while scrolling."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Wheel and not obj.hasFocus():
+            return True
+        return False
+
+
+# Audio level meter constants
+_METER_HEIGHT = 10
+_METER_UPDATE_MS = 50  # ~20 fps
+_METER_SNAPSHOT_S = 0.05  # 50ms window for peak calculation
+
+# Colours: green → yellow → red
+_METER_GREEN = QColor(76, 175, 80)
+_METER_YELLOW = QColor(255, 193, 7)
+_METER_RED = QColor(244, 67, 54)
+_METER_BG = QColor(40, 40, 50)
+
+
+class _LevelBar(QWidget):
+    """Horizontal audio level bar."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._level = 0.0  # 0.0 – 1.0
+        self._peak = 0.0
+        self._peak_decay = 0.0
+        self.setFixedHeight(_METER_HEIGHT)
+        self.setFixedWidth(_SLIDER_MAX_W)
+
+    def set_level(self, level: float) -> None:
+        """Set the current level (0.0 – 1.0) and repaint."""
+        self._level = max(0.0, min(1.0, level))
+        if self._level >= self._peak:
+            self._peak = self._level
+            self._peak_decay = 0.0
+        else:
+            self._peak_decay += _METER_UPDATE_MS / 1000.0
+            if self._peak_decay > 0.5:
+                self._peak = max(self._level, self._peak - 0.02)
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(_METER_BG)
+        p.drawRoundedRect(0, 0, w, h, 3, 3)
+
+        fill_w = int(w * self._level)
+        if fill_w > 0:
+            grad = QLinearGradient(0, 0, w, 0)
+            grad.setColorAt(0.0, _METER_GREEN)
+            grad.setColorAt(0.6, _METER_YELLOW)
+            grad.setColorAt(1.0, _METER_RED)
+            p.setBrush(grad)
+            p.drawRoundedRect(0, 0, fill_w, h, 3, 3)
+
+        # Peak hold indicator (white line)
+        peak_x = int(w * self._peak)
+        if peak_x > 2:
+            p.setPen(QColor(255, 255, 255, 200))
+            p.drawLine(peak_x, 1, peak_x, h - 1)
+
+        p.end()
 
 
 class SettingsPage(QWidget):
@@ -48,6 +138,14 @@ class SettingsPage(QWidget):
         self._db = db
         self._on_show_changelog = on_show_changelog
         self._importer = None
+        self._audio_check = None  # AudioCheck instance (set in _build_video_section)
+
+        # Audio level meters (created in _build_video_section)
+        self._game_level_bar = None
+        self._mic_level_bar = None
+        self._game_meter_buf = None          # AudioBuffer (loopback)
+        self._mic_filtered_meter = None      # _FilteredMicMeter
+        self._meter_timer = None
 
         # Debounce timer for auto-saving settings
         self._save_timer = QTimer(self)
@@ -77,6 +175,15 @@ class SettingsPage(QWidget):
         self._build_advanced_section()
 
         self._layout.addStretch()
+
+        # Prevent scroll wheel from accidentally changing values on sliders,
+        # spinboxes, and comboboxes while scrolling the page.
+        self._scroll_blocker = _ScrollBlocker(self)
+        for w in content.findChildren(
+            (QSlider, QSpinBox, QDoubleSpinBox, QComboBox)
+        ):
+            w.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            w.installEventFilter(self._scroll_blocker)
 
         scroll.setWidget(content)
 
@@ -127,10 +234,16 @@ class SettingsPage(QWidget):
                 t = child.text()
                 if t:
                     texts.append(t)
+                tip = child.toolTip()
+                if tip:
+                    texts.append(tip)
             for child in section.findChildren(QPushButton):
                 t = child.text()
                 if t:
                     texts.append(t)
+                tip = child.toolTip()
+                if tip:
+                    texts.append(tip)
             self._section_texts[section] = texts
 
         # Connect auth state changes and apply current state
@@ -202,25 +315,37 @@ class SettingsPage(QWidget):
         group = QGroupBox("Chat Log")
         layout = QVBoxLayout(group)
 
+        # Grid for label+input pairs
+        grid = QGridLayout()
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 0)
+        grid.setColumnStretch(2, 1)
+        grid.setHorizontalSpacing(8)
+        row = 0
+
         # Chat log path
-        path_row = QHBoxLayout()
-        path_row.addWidget(QLabel("Chat log path:"))
+        grid.addWidget(QLabel("Chat log path:"), row, 0)
+        path_w = QWidget()
+        path_h = QHBoxLayout(path_w)
+        path_h.setContentsMargins(0, 0, 0, 0)
         self._chat_path = QLineEdit(self._config.chat_log_path)
-        path_row.addWidget(self._chat_path)
+        self._chat_path.setFixedWidth(_PATH_MAX_W)
+        path_h.addWidget(self._chat_path)
         browse_btn = QPushButton("Browse")
         browse_btn.clicked.connect(self._browse_chat_path)
-        path_row.addWidget(browse_btn)
-        layout.addLayout(path_row)
+        path_h.addWidget(browse_btn)
+        grid.addWidget(path_w, row, 1, 1, 2)
+        row += 1
 
         # Poll interval
-        poll_row = QHBoxLayout()
-        poll_row.addWidget(QLabel("Poll interval (ms):"))
+        grid.addWidget(QLabel("Poll interval (ms):"), row, 0)
         self._poll_interval = QSpinBox()
+        self._poll_interval.setFixedWidth(_INPUT_MAX_W)
         self._poll_interval.setRange(100, 2000)
         self._poll_interval.setValue(self._config.poll_interval_ms)
-        poll_row.addWidget(self._poll_interval)
-        poll_row.addStretch()
-        layout.addLayout(poll_row)
+        grid.addWidget(self._poll_interval, row, 1)
+
+        layout.addLayout(grid)
 
         # Re-parse button
         reparse_row = QHBoxLayout()
@@ -346,8 +471,13 @@ class SettingsPage(QWidget):
         layout.addWidget(globals_lbl)
 
         # Min value
-        min_row = QHBoxLayout()
-        min_row.addWidget(QLabel("Minimum value to display:"))
+        dash_grid = QGridLayout()
+        dash_grid.setColumnStretch(0, 0)
+        dash_grid.setColumnStretch(1, 0)
+        dash_grid.setColumnStretch(2, 1)
+        dash_grid.setHorizontalSpacing(8)
+
+        dash_grid.addWidget(QLabel("Minimum value to display:"), 0, 0)
         self._dash_globals_min = QDoubleSpinBox()
         self._dash_globals_min.setRange(0, 999999)
         self._dash_globals_min.setDecimals(0)
@@ -362,9 +492,8 @@ class SettingsPage(QWidget):
             "They are still processed for notifications."
         )
         self._dash_globals_min.valueChanged.connect(self._schedule_save)
-        min_row.addWidget(self._dash_globals_min)
-        min_row.addStretch()
-        layout.addLayout(min_row)
+        dash_grid.addWidget(self._dash_globals_min, 0, 1)
+        layout.addLayout(dash_grid)
 
         # Blocked types
         blocked_lbl = QLabel("Blocked global types:")
@@ -467,9 +596,15 @@ class SettingsPage(QWidget):
         general_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
         layout.addWidget(general_lbl)
 
-        backend_row = QHBoxLayout()
-        backend_row.addWidget(QLabel("Window capture backend:"))
+        gen_grid = QGridLayout()
+        gen_grid.setColumnStretch(0, 0)
+        gen_grid.setColumnStretch(1, 0)
+        gen_grid.setColumnStretch(2, 1)
+        gen_grid.setHorizontalSpacing(8)
+
+        gen_grid.addWidget(QLabel("Window capture backend:"), 0, 0)
         self._ocr_capture_backend = QComboBox()
+        self._ocr_capture_backend.setFixedWidth(_INPUT_MAX_W)
         self._ocr_capture_backend.addItem("Auto (recommended)", "auto")
         self._ocr_capture_backend.addItem("Windows Graphics Capture (HDR-safe)", "wgc")
         self._ocr_capture_backend.addItem("BitBlt (no flicker)", "bitblt")
@@ -485,10 +620,22 @@ class SettingsPage(QWidget):
         current_backend = getattr(self._config, "ocr_capture_backend", "auto")
         backend_index = self._ocr_capture_backend.findData(current_backend)
         self._ocr_capture_backend.setCurrentIndex(backend_index if backend_index >= 0 else 0)
-        self._ocr_capture_backend.currentIndexChanged.connect(self._schedule_save)
-        backend_row.addWidget(self._ocr_capture_backend)
-        backend_row.addStretch()
-        layout.addLayout(backend_row)
+        self._ocr_capture_backend.currentIndexChanged.connect(
+            self._on_capture_backend_changed,
+        )
+        gen_grid.addWidget(self._ocr_capture_backend, 0, 1)
+        layout.addLayout(gen_grid)
+
+        self._hdr_cb = QCheckBox("HDR Compatibility Mode")
+        self._hdr_cb.setToolTip(
+            "Applies tone correction (CLAHE) to captured frames to restore\n"
+            "contrast lost during HDR → SDR conversion.\n\n"
+            "Enable if your display uses HDR and OCR or screenshots\n"
+            "appear washed out."
+        )
+        self._hdr_cb.setChecked(getattr(self._config, "hdr_compatibility_mode", False))
+        self._hdr_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._hdr_cb)
 
         self._ocr_trace_cb = QCheckBox("Trace OCR")
         self._ocr_trace_cb.setToolTip(
@@ -554,8 +701,13 @@ class SettingsPage(QWidget):
         self._target_lock_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._target_lock_cb)
 
-        tl_thresh_row = QHBoxLayout()
-        tl_thresh_row.addWidget(QLabel("Match threshold:"))
+        tl_grid = QGridLayout()
+        tl_grid.setColumnStretch(0, 0)
+        tl_grid.setColumnStretch(1, 0)
+        tl_grid.setColumnStretch(2, 1)
+        tl_grid.setHorizontalSpacing(8)
+
+        tl_grid.addWidget(QLabel("Match threshold:"), 0, 0)
         self._target_lock_threshold = QDoubleSpinBox()
         self._target_lock_threshold.setRange(0.5, 1.0)
         self._target_lock_threshold.setDecimals(2)
@@ -567,9 +719,8 @@ class SettingsPage(QWidget):
             "Lower values detect dimmed icons but may cause false positives."
         )
         self._target_lock_threshold.valueChanged.connect(self._schedule_save)
-        tl_thresh_row.addWidget(self._target_lock_threshold)
-        tl_thresh_row.addStretch()
-        layout.addLayout(tl_thresh_row)
+        tl_grid.addWidget(self._target_lock_threshold, 0, 1)
+        layout.addLayout(tl_grid)
 
         tl_roi_row = QHBoxLayout()
         tl_roi_btn = QPushButton("Configure ROIs...")
@@ -595,8 +746,13 @@ class SettingsPage(QWidget):
         self._player_status_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._player_status_cb)
 
-        ps_thresh_row = QHBoxLayout()
-        ps_thresh_row.addWidget(QLabel("Match threshold:"))
+        ps_grid = QGridLayout()
+        ps_grid.setColumnStretch(0, 0)
+        ps_grid.setColumnStretch(1, 0)
+        ps_grid.setColumnStretch(2, 1)
+        ps_grid.setHorizontalSpacing(8)
+
+        ps_grid.addWidget(QLabel("Match threshold:"), 0, 0)
         self._player_status_threshold = QDoubleSpinBox()
         self._player_status_threshold.setRange(0.5, 1.0)
         self._player_status_threshold.setDecimals(2)
@@ -608,9 +764,8 @@ class SettingsPage(QWidget):
             "Lower values detect dimmed icons but may cause false positives."
         )
         self._player_status_threshold.valueChanged.connect(self._schedule_save)
-        ps_thresh_row.addWidget(self._player_status_threshold)
-        ps_thresh_row.addStretch()
-        layout.addLayout(ps_thresh_row)
+        ps_grid.addWidget(self._player_status_threshold, 0, 1)
+        layout.addLayout(ps_grid)
 
         ps_roi_row = QHBoxLayout()
         ps_roi_btn = QPushButton("Configure ROIs...")
@@ -650,8 +805,14 @@ class SettingsPage(QWidget):
         self._market_price_review_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._market_price_review_cb)
 
-        mp_thresh_row = QHBoxLayout()
-        mp_thresh_row.addWidget(QLabel("Match threshold:"))
+        mp_grid = QGridLayout()
+        mp_grid.setColumnStretch(0, 0)
+        mp_grid.setColumnStretch(1, 0)
+        mp_grid.setColumnStretch(2, 1)
+        mp_grid.setHorizontalSpacing(8)
+        mp_row = 0
+
+        mp_grid.addWidget(QLabel("Match threshold:"), mp_row, 0)
         self._market_price_threshold = QDoubleSpinBox()
         self._market_price_threshold.setRange(0.5, 1.0)
         self._market_price_threshold.setDecimals(2)
@@ -662,12 +823,10 @@ class SettingsPage(QWidget):
             "Minimum template matching confidence (0.5–1.0)."
         )
         self._market_price_threshold.valueChanged.connect(self._schedule_save)
-        mp_thresh_row.addWidget(self._market_price_threshold)
-        mp_thresh_row.addStretch()
-        layout.addLayout(mp_thresh_row)
+        mp_grid.addWidget(self._market_price_threshold, mp_row, 1)
+        mp_row += 1
 
-        mp_text_row = QHBoxLayout()
-        mp_text_row.addWidget(QLabel("Text brightness threshold:"))
+        mp_grid.addWidget(QLabel("Text brightness threshold:"), mp_row, 0)
         self._market_price_text_threshold = QSpinBox()
         self._market_price_text_threshold.setRange(20, 200)
         self._market_price_text_threshold.setSingleStep(5)
@@ -678,9 +837,8 @@ class SettingsPage(QWidget):
             "Raise if OCR picks up background bleed; lower if text is cut off."
         )
         self._market_price_text_threshold.valueChanged.connect(self._schedule_save)
-        mp_text_row.addWidget(self._market_price_text_threshold)
-        mp_text_row.addStretch()
-        layout.addLayout(mp_text_row)
+        mp_grid.addWidget(self._market_price_text_threshold, mp_row, 1)
+        layout.addLayout(mp_grid)
 
         mp_roi_row = QHBoxLayout()
         mp_roi_btn = QPushButton("Configure ROIs...")
@@ -769,18 +927,28 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(group)
 
         # Opacity
-        opacity_row = QHBoxLayout()
-        opacity_row.addWidget(QLabel("Opacity:"))
+        ov_grid = QGridLayout()
+        ov_grid.setColumnStretch(0, 0)
+        ov_grid.setColumnStretch(1, 0)
+        ov_grid.setColumnStretch(2, 1)
+        ov_grid.setHorizontalSpacing(8)
+
+        ov_grid.addWidget(QLabel("Opacity:"), 0, 0)
+        slider_w = QWidget()
+        slider_h = QHBoxLayout(slider_w)
+        slider_h.setContentsMargins(0, 0, 0, 0)
         self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opacity_slider.setFixedWidth(_SLIDER_MAX_W)
         self._opacity_slider.setRange(20, 100)
         self._opacity_slider.setValue(int(self._config.overlay_opacity * 100))
-        opacity_row.addWidget(self._opacity_slider)
+        slider_h.addWidget(self._opacity_slider)
         self._opacity_label = QLabel(f"{self._config.overlay_opacity:.0%}")
         self._opacity_slider.valueChanged.connect(
             lambda v: self._opacity_label.setText(f"{v}%")
         )
-        opacity_row.addWidget(self._opacity_label)
-        layout.addLayout(opacity_row)
+        slider_h.addWidget(self._opacity_label)
+        ov_grid.addWidget(slider_w, 0, 1)
+        layout.addLayout(ov_grid)
 
         # Auto-pin detail overlays
         self._auto_pin_cb = QCheckBox("Auto-pin detail overlays")
@@ -796,7 +964,7 @@ class SettingsPage(QWidget):
 
     # --- Overlay Shortcuts ---
     def _build_overlay_shortcuts_section(self):
-        group = QGroupBox("Overlay Shortcuts")
+        group = QGroupBox("Hotkeys")
         layout = QVBoxLayout(group)
 
         desc = QLabel(
@@ -822,6 +990,7 @@ class SettingsPage(QWidget):
             grid.addWidget(lbl, row_idx, 0)
 
             hk = HotkeyInput(getattr(self._config, config_key, ""))
+            hk.setMaximumWidth(_INPUT_MAX_W)
             hk.setToolTip(tooltip)
             hk.combo_changed.connect(self._schedule_save)
             self._hotkey_inputs[config_key] = hk
@@ -870,35 +1039,25 @@ class SettingsPage(QWidget):
         self._screenshot_enabled_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._screenshot_enabled_cb)
 
-        # Auto on global
+        # Auto on global + conditions button
+        auto_row = QHBoxLayout()
         self._screenshot_auto_cb = QCheckBox("Auto-capture on own global")
         self._screenshot_auto_cb.setChecked(self._config.screenshot_auto_on_global)
         self._screenshot_auto_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._screenshot_auto_cb)
+        auto_row.addWidget(self._screenshot_auto_cb)
+        ss_conditions_btn = QPushButton("Conditions...")
+        ss_conditions_btn.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        ss_conditions_btn.setToolTip("Configure which globals trigger auto-capture")
+        ss_conditions_btn.clicked.connect(lambda: self._open_capture_conditions(0))
+        auto_row.addWidget(ss_conditions_btn)
+        auto_row.addStretch()
+        layout.addLayout(auto_row)
 
-        # Delay
-        delay_row = QHBoxLayout()
-        delay_row.addWidget(QLabel("Delay after global (s):"))
-        self._screenshot_delay = QDoubleSpinBox()
-        self._screenshot_delay.setRange(0.5, 5.0)
-        self._screenshot_delay.setSingleStep(0.5)
-        self._screenshot_delay.setValue(self._config.screenshot_delay_s)
-        self._screenshot_delay.valueChanged.connect(self._schedule_save)
-        delay_row.addWidget(self._screenshot_delay)
-        delay_row.addStretch()
-        layout.addLayout(delay_row)
-
-        # Directory
-        dir_row = QHBoxLayout()
-        dir_row.addWidget(QLabel("Save directory:"))
-        self._screenshot_dir = QLineEdit(self._config.screenshot_directory)
-        self._screenshot_dir.setPlaceholderText("~/Pictures/Entropia Nexus Screenshots")
-        self._screenshot_dir.editingFinished.connect(self._schedule_save)
-        dir_row.addWidget(self._screenshot_dir)
-        browse_btn = QPushButton("Browse")
-        browse_btn.clicked.connect(self._browse_screenshot_dir)
-        dir_row.addWidget(browse_btn)
-        layout.addLayout(dir_row)
+        # Sound feedback
+        self._screenshot_sound_cb = QCheckBox("Play sound on capture")
+        self._screenshot_sound_cb.setChecked(self._config.screenshot_sound_enabled)
+        self._screenshot_sound_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._screenshot_sound_cb)
 
         # Daily subfolder
         self._screenshot_daily_cb = QCheckBox("Organize in daily subfolders")
@@ -906,38 +1065,75 @@ class SettingsPage(QWidget):
         self._screenshot_daily_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._screenshot_daily_cb)
 
-        # Hotkey
-        hotkey_row = QHBoxLayout()
-        hotkey_row.addWidget(QLabel("Screenshot hotkey:"))
-        self._screenshot_hotkey = HotkeyInput(self._config.hotkey_screenshot)
-        self._screenshot_hotkey.combo_changed.connect(self._schedule_save)
-        hotkey_row.addWidget(self._screenshot_hotkey)
-        clear_btn = QPushButton("X")
-        clear_btn.setFixedSize(28, 28)
-        clear_btn.setStyleSheet("padding: 0px;")
-        clear_btn.clicked.connect(self._screenshot_hotkey.clear_combo)
-        hotkey_row.addWidget(clear_btn)
-        hotkey_row.addStretch()
-        layout.addLayout(hotkey_row)
+        # Grid for label+input pairs
+        grid = QGridLayout()
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 0)
+        grid.setColumnStretch(2, 1)  # absorbs remaining space
+        grid.setHorizontalSpacing(8)
+        row = 0
+
+        # Screenshot size
+        grid.addWidget(QLabel("Screenshot size:"), row, 0)
+        self._screenshot_size = QComboBox()
+        self._screenshot_size.setFixedWidth(_INPUT_MAX_W)
+        for pct in (100, 75, 50, 25):
+            self._screenshot_size.addItem(f"{pct}%", pct)
+        cur_pct = self._config.screenshot_size_pct
+        idx = self._screenshot_size.findData(cur_pct)
+        self._screenshot_size.setCurrentIndex(idx if idx >= 0 else 0)
+        self._screenshot_size.currentIndexChanged.connect(self._schedule_save)
+        grid.addWidget(self._screenshot_size, row, 1)
+        row += 1
+
+        # Delay
+        grid.addWidget(QLabel("Delay after global (s):"), row, 0)
+        self._screenshot_delay = QDoubleSpinBox()
+        self._screenshot_delay.setFixedWidth(_INPUT_MAX_W)
+        self._screenshot_delay.setRange(0.5, 5.0)
+        self._screenshot_delay.setSingleStep(0.5)
+        self._screenshot_delay.setValue(self._config.screenshot_delay_s)
+        self._screenshot_delay.valueChanged.connect(self._schedule_save)
+        grid.addWidget(self._screenshot_delay, row, 1)
+        row += 1
+
+        # Directory
+        grid.addWidget(QLabel("Save directory:"), row, 0)
+        dir_w = QWidget()
+        dir_h = QHBoxLayout(dir_w)
+        dir_h.setContentsMargins(0, 0, 0, 0)
+        self._screenshot_dir = QLineEdit(self._config.screenshot_directory)
+        self._screenshot_dir.setFixedWidth(_PATH_MAX_W)
+        self._screenshot_dir.setPlaceholderText("~/Pictures/Entropia Nexus Screenshots")
+        self._screenshot_dir.editingFinished.connect(self._schedule_save)
+        dir_h.addWidget(self._screenshot_dir)
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self._browse_screenshot_dir)
+        dir_h.addWidget(browse_btn)
+        grid.addWidget(dir_w, row, 1, 1, 2)
+        row += 1
 
         # Character name
-        char_row = QHBoxLayout()
-        char_row.addWidget(QLabel("Character name:"))
+        grid.addWidget(QLabel("Character name:"), row, 0)
         self._character_name = QLineEdit(self._config.character_name)
+        self._character_name.setFixedWidth(_INPUT_MAX_W)
         self._character_name.setPlaceholderText("Auto-detected when logged in")
         self._character_name.setToolTip(
             "Your Entropia Universe character name.\n"
             "Used to detect your own globals. Auto-detected from your Nexus account."
         )
         self._character_name.editingFinished.connect(self._schedule_save)
-        char_row.addWidget(self._character_name)
-        char_row.addStretch()
-        layout.addLayout(char_row)
+        grid.addWidget(self._character_name, row, 1)
 
-        # Blur regions button
+        layout.addLayout(grid)
+
+        # Blur region config dialog
         blur_btn = QPushButton("Configure Blur Regions...")
-        blur_btn.setToolTip("Draw regions to blur in screenshots and video clips")
-        blur_btn.clicked.connect(self._open_blur_dialog)
+        blur_btn.setToolTip(
+            "Draw rectangles on a live game preview to define areas\n"
+            "that will be blurred in both screenshots and video clips."
+        )
+        blur_btn.clicked.connect(self._open_blur_region_dialog)
         blur_row = QHBoxLayout()
         blur_row.addWidget(blur_btn)
         blur_row.addStretch()
@@ -955,7 +1151,33 @@ class SettingsPage(QWidget):
             self._screenshot_dir.setText(path)
             self._schedule_save()
 
-    def _open_blur_dialog(self):
+    def _find_frame_distributor(self):
+        """Find the frame distributor from the main window."""
+        try:
+            app = __import__("PyQt6").QtWidgets.QApplication.instance()
+            for widget in app.topLevelWidgets():
+                fd = getattr(widget, "_frame_distributor", None)
+                if fd is not None:
+                    return fd
+        except Exception:
+            pass
+        return None
+
+    def _open_capture_conditions(self, tab_index: int = 0):
+        try:
+            from ..dialogs.capture_conditions_dialog import CaptureConditionsDialog
+            dialog = CaptureConditionsDialog(
+                config=self._config,
+                config_path=self._config_path,
+                event_bus=self._event_bus,
+                initial_tab=tab_index,
+                parent=self,
+            )
+            dialog.exec()
+        except Exception as e:
+            log.error("Failed to open capture conditions dialog: %s", e)
+
+    def _open_blur_region_dialog(self):
         try:
             from ..dialogs.blur_region_dialog import BlurRegionDialog
             dialog = BlurRegionDialog(
@@ -966,7 +1188,141 @@ class SettingsPage(QWidget):
             )
             dialog.exec()
         except Exception as e:
-            log.error("Failed to open blur dialog: %s", e)
+            log.error("Failed to open blur region dialog: %s", e)
+
+    def _open_video_config_dialog(self):
+        # Raise existing dialog if already open
+        if (hasattr(self, "_video_config_dialog")
+                and self._video_config_dialog is not None):
+            self._video_config_dialog.raise_()
+            self._video_config_dialog.activateWindow()
+            return
+        try:
+            from ..dialogs.video_config_dialog import VideoConfigDialog
+            fd = self._find_frame_distributor()
+            dialog = VideoConfigDialog(
+                config=self._config,
+                config_path=self._config_path,
+                event_bus=self._event_bus,
+                frame_distributor=fd,
+                parent=self,
+            )
+            dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            dialog.destroyed.connect(self._on_video_config_dialog_closed)
+            self._video_config_dialog = dialog
+            dialog.show()
+        except Exception as e:
+            log.error("Failed to open video config dialog: %s", e)
+
+    def _on_video_config_dialog_closed(self):
+        self._video_config_dialog = None
+
+    def _on_clip_enabled_changed(self, state):
+        if state == Qt.CheckState.Checked.value:
+            from ..dialogs.media_download_dialog import ensure_media_libraries
+            if not ensure_media_libraries(
+                self._config, self._event_bus, self._signals, parent=self,
+            ):
+                # User cancelled — revert the checkbox without re-triggering
+                self._clip_enabled_cb.blockSignals(True)
+                self._clip_enabled_cb.setChecked(False)
+                self._clip_enabled_cb.blockSignals(False)
+                return
+        self._update_obs_ui_state()
+        self._schedule_save()
+
+    def _on_obs_enabled_changed(self, state):
+        if state == Qt.CheckState.Checked.value:
+            self._maybe_ask_replay_buffer_management()
+        self._update_obs_ui_state()
+        self._schedule_save()
+
+    def _maybe_ask_replay_buffer_management(self):
+        """Ask the user once whether to auto-manage the OBS Replay Buffer."""
+        if self._config.obs_replay_buffer_asked:
+            return
+
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "Replay Buffer Management",
+            "Should this client automatically start and stop the OBS\n"
+            "Replay Buffer when Entropia Universe opens and closes?\n\n"
+            "You can change this later in the OBS settings.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        manage = reply == QMessageBox.StandardButton.Yes
+        self._obs_manage_replay_cb.setChecked(manage)
+
+    def _update_obs_ui_state(self):
+        """Enable/disable internal clip widgets based on OBS mode."""
+        obs_on = self._obs_enabled_cb.isChecked()
+        for w in getattr(self, "_internal_clip_widgets", []):
+            w.setEnabled(not obs_on)
+
+    @staticmethod
+    def _load_obs_password() -> str:
+        try:
+            import keyring
+            return keyring.get_password("EntropiaNexusClient", "obs_password") or ""
+        except Exception:
+            return ""
+
+    def _on_obs_password_changed(self):
+        """Save the OBS password to the system keyring."""
+        from ...capture.obs_client import save_obs_password
+        save_obs_password(self._obs_password.text())
+
+    def _test_obs_connection(self):
+        """Test OBS WebSocket connection with current settings."""
+        self._obs_status_label.setText("Connecting...")
+        self._obs_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+
+        host = self._obs_host.text() or "localhost"
+        port = self._obs_port.value()
+        password = self._obs_password.text()
+
+        def _test():
+            try:
+                import obsws_python as obsws
+            except ImportError:
+                self._obs_status_label.setText(
+                    "obsws-python not installed. Install with: pip install obsws-python"
+                )
+                return
+
+            try:
+                cl = obsws.ReqClient(
+                    host=host, port=port, password=password, timeout=5,
+                )
+                version = cl.get_version()
+                obs_ver = getattr(version, "obs_version", "?")
+                ws_ver = getattr(version, "obs_web_socket_version", "?")
+                cl.disconnect()
+                self._obs_status_label.setText(
+                    f"Connected! OBS {obs_ver}, WebSocket {ws_ver}"
+                )
+                self._obs_status_label.setStyleSheet(
+                    "color: #4caf50; font-size: 11px;"
+                )
+            except Exception as exc:
+                self._obs_status_label.setText(f"Connection failed: {exc}")
+                self._obs_status_label.setStyleSheet(
+                    "color: #ff6b6b; font-size: 11px;"
+                )
+
+        threading.Thread(target=_test, daemon=True, name="obs-test").start()
+
+    def _on_obs_connected(self, data):
+        host = data.get("host", "?")
+        port = data.get("port", "?")
+        self._obs_status_label.setText(f"Connected to {host}:{port}")
+        self._obs_status_label.setStyleSheet("color: #4caf50; font-size: 11px;")
+
+    def _on_obs_disconnected(self, data):
+        reason = data.get("reason", "unknown")
+        self._obs_status_label.setText(f"Disconnected: {reason}")
+        self._obs_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
 
     # --- Video ---
     def _build_video_section(self):
@@ -976,53 +1332,119 @@ class SettingsPage(QWidget):
         # Enable toggle
         self._clip_enabled_cb = QCheckBox("Enable video clip recording")
         self._clip_enabled_cb.setChecked(self._config.clip_enabled)
-        self._clip_enabled_cb.stateChanged.connect(self._schedule_save)
+        self._clip_enabled_cb.stateChanged.connect(self._on_clip_enabled_changed)
         layout.addWidget(self._clip_enabled_cb)
 
-        note = QLabel("Requires FFmpeg. Continuously buffers game footage for instant replay.")
-        note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        self._clip_note = QLabel(
+            "Requires FFmpeg. Continuously buffers game footage for instant replay."
+        )
+        self._clip_note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self._clip_note.setWordWrap(True)
+        layout.addWidget(self._clip_note)
 
-        # Auto on global
+        # --- OBS Studio integration ---
+        obs_sep = QLabel("OBS Studio")
+        obs_sep.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        layout.addWidget(obs_sep)
+
+        self._obs_enabled_cb = QCheckBox("Use OBS Studio for video capture")
+        self._obs_enabled_cb.setChecked(self._config.obs_enabled)
+        self._obs_enabled_cb.setToolTip(
+            "Delegate video recording and replay buffer to OBS Studio.\n"
+            "OBS must be running with obs-websocket enabled (built-in since OBS 28).\n"
+            "Screenshots will still be handled by Entropia Nexus."
+        )
+        self._obs_enabled_cb.stateChanged.connect(self._on_obs_enabled_changed)
+        layout.addWidget(self._obs_enabled_cb)
+
+        obs_note = QLabel(
+            "Requires OBS 28+ with Replay Buffer enabled. "
+            "Replaces internal video capture, audio, and webcam."
+        )
+        obs_note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        obs_note.setWordWrap(True)
+        layout.addWidget(obs_note)
+
+        obs_grid = QGridLayout()
+        obs_grid.setColumnStretch(0, 0)
+        obs_grid.setColumnStretch(1, 0)
+        obs_grid.setColumnStretch(2, 1)
+        obs_grid.setHorizontalSpacing(8)
+
+        obs_grid.addWidget(QLabel("Host:"), 0, 0)
+        self._obs_host = QLineEdit(self._config.obs_host)
+        self._obs_host.setFixedWidth(_INPUT_MAX_W)
+        self._obs_host.setPlaceholderText("localhost")
+        self._obs_host.editingFinished.connect(self._schedule_save)
+        obs_grid.addWidget(self._obs_host, 0, 1)
+
+        obs_grid.addWidget(QLabel("Port:"), 1, 0)
+        self._obs_port = QSpinBox()
+        self._obs_port.setFixedWidth(_INPUT_MAX_W)
+        self._obs_port.setRange(1, 65535)
+        self._obs_port.setValue(self._config.obs_port)
+        self._obs_port.valueChanged.connect(self._schedule_save)
+        obs_grid.addWidget(self._obs_port, 1, 1)
+
+        obs_grid.addWidget(QLabel("Password:"), 2, 0)
+        self._obs_password = QLineEdit(self._load_obs_password())
+        self._obs_password.setFixedWidth(_INPUT_MAX_W)
+        self._obs_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._obs_password.setPlaceholderText("(from OBS WebSocket settings)")
+        self._obs_password.editingFinished.connect(self._on_obs_password_changed)
+        obs_grid.addWidget(self._obs_password, 2, 1)
+
+        layout.addLayout(obs_grid)
+
+        # OBS status + test button
+        obs_status_row = QHBoxLayout()
+        self._obs_status_label = QLabel("")
+        self._obs_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        obs_status_row.addWidget(self._obs_status_label)
+        obs_status_row.addStretch()
+        self._obs_test_btn = QPushButton("Test Connection")
+        self._obs_test_btn.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self._obs_test_btn.clicked.connect(self._test_obs_connection)
+        obs_status_row.addWidget(self._obs_test_btn)
+        layout.addLayout(obs_status_row)
+
+        # Manage replay buffer checkbox
+        self._obs_manage_replay_cb = QCheckBox(
+            "Auto start/stop Replay Buffer with game")
+        self._obs_manage_replay_cb.setChecked(
+            self._config.obs_manage_replay_buffer)
+        self._obs_manage_replay_cb.setToolTip(
+            "Start the OBS Replay Buffer when Entropia Universe opens,\n"
+            "stop it when the game or this client exits.")
+        self._obs_manage_replay_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._obs_manage_replay_cb)
+
+        # Track OBS connection events for live status
+        self._signals.obs_connected.connect(self._on_obs_connected)
+        self._signals.obs_disconnected.connect(self._on_obs_disconnected)
+
+        # Collect internal-only widgets for enable/disable toggling
+        self._internal_clip_widgets = []  # populated below, disabled when OBS is on
+
+        # Auto on global + conditions button
+        clip_auto_row = QHBoxLayout()
         self._clip_auto_cb = QCheckBox("Auto-save clip on own global")
         self._clip_auto_cb.setChecked(self._config.clip_auto_on_global)
         self._clip_auto_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._clip_auto_cb)
+        clip_auto_row.addWidget(self._clip_auto_cb)
+        clip_conditions_btn = QPushButton("Conditions...")
+        clip_conditions_btn.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        clip_conditions_btn.setToolTip("Configure which globals trigger auto-capture")
+        clip_conditions_btn.clicked.connect(lambda: self._open_capture_conditions(1))
+        clip_auto_row.addWidget(clip_conditions_btn)
+        clip_auto_row.addStretch()
+        layout.addLayout(clip_auto_row)
 
-        # Buffer duration
-        buf_row = QHBoxLayout()
-        buf_row.addWidget(QLabel("Buffer duration (s):"))
-        self._clip_buffer = QSpinBox()
-        self._clip_buffer.setRange(5, 60)
-        self._clip_buffer.setValue(self._config.clip_buffer_seconds)
-        self._clip_buffer.valueChanged.connect(self._schedule_save)
-        buf_row.addWidget(self._clip_buffer)
-        buf_row.addStretch()
-        layout.addLayout(buf_row)
-
-        # Post-global delay
-        post_row = QHBoxLayout()
-        post_row.addWidget(QLabel("Save delay after global (s):"))
-        self._clip_post_global = QSpinBox()
-        self._clip_post_global.setRange(0, 15)
-        self._clip_post_global.setValue(self._config.clip_post_global_seconds)
-        self._clip_post_global.valueChanged.connect(self._schedule_save)
-        post_row.addWidget(self._clip_post_global)
-        post_row.addStretch()
-        layout.addLayout(post_row)
-
-        # Directory
-        cdir_row = QHBoxLayout()
-        cdir_row.addWidget(QLabel("Save directory:"))
-        self._clip_dir = QLineEdit(self._config.clip_directory)
-        self._clip_dir.setPlaceholderText("~/Videos/Entropia Nexus Clips")
-        self._clip_dir.editingFinished.connect(self._schedule_save)
-        cdir_row.addWidget(self._clip_dir)
-        cbrowse = QPushButton("Browse")
-        cbrowse.clicked.connect(self._browse_clip_dir)
-        cdir_row.addWidget(cbrowse)
-        layout.addLayout(cdir_row)
+        # Sound feedback
+        self._clip_sound_cb = QCheckBox("Play sound on save")
+        self._clip_sound_cb.setChecked(self._config.clip_sound_enabled)
+        self._clip_sound_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_sound_cb)
 
         # Daily subfolder
         self._clip_daily_cb = QCheckBox("Organize in daily subfolders")
@@ -1030,65 +1452,66 @@ class SettingsPage(QWidget):
         self._clip_daily_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._clip_daily_cb)
 
-        # FPS / Resolution / Bitrate row
-        quality_row = QHBoxLayout()
-        quality_row.addWidget(QLabel("FPS:"))
-        self._clip_fps = QComboBox()
-        for fps in (15, 24, 30, 60):
-            self._clip_fps.addItem(str(fps), fps)
-        idx = self._clip_fps.findData(self._config.clip_fps)
-        if idx >= 0:
-            self._clip_fps.setCurrentIndex(idx)
-        self._clip_fps.currentIndexChanged.connect(self._schedule_save)
-        quality_row.addWidget(self._clip_fps)
+        # Grid for label+input pairs
+        grid = QGridLayout()
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 0)
+        grid.setColumnStretch(2, 1)  # absorbs remaining space
+        grid.setHorizontalSpacing(8)
+        row = 0
 
-        quality_row.addWidget(QLabel("Resolution:"))
-        self._clip_resolution = QComboBox()
-        for res in ("source", "1080p", "720p", "480p"):
-            self._clip_resolution.addItem(res.capitalize() if res != "source" else "Source", res)
-        idx = self._clip_resolution.findData(self._config.clip_resolution)
-        if idx >= 0:
-            self._clip_resolution.setCurrentIndex(idx)
-        self._clip_resolution.currentIndexChanged.connect(self._schedule_save)
-        quality_row.addWidget(self._clip_resolution)
+        # Buffer duration
+        grid.addWidget(QLabel("Buffer duration (s):"), row, 0)
+        self._clip_buffer = QSpinBox()
+        self._clip_buffer.setFixedWidth(_INPUT_MAX_W)
+        self._clip_buffer.setRange(5, 60)
+        self._clip_buffer.setValue(self._config.clip_buffer_seconds)
+        self._clip_buffer.valueChanged.connect(self._schedule_save)
+        grid.addWidget(self._clip_buffer, row, 1)
+        row += 1
 
-        quality_row.addWidget(QLabel("Bitrate:"))
-        self._clip_bitrate = QComboBox()
-        for br in ("low", "medium", "high", "ultra"):
-            self._clip_bitrate.addItem(br.capitalize(), br)
-        idx = self._clip_bitrate.findData(self._config.clip_bitrate)
-        if idx >= 0:
-            self._clip_bitrate.setCurrentIndex(idx)
-        self._clip_bitrate.currentIndexChanged.connect(self._schedule_save)
-        quality_row.addWidget(self._clip_bitrate)
-        quality_row.addStretch()
-        layout.addLayout(quality_row)
+        # Post-global delay
+        grid.addWidget(QLabel("Save delay after global (s):"), row, 0)
+        self._clip_post_global = QSpinBox()
+        self._clip_post_global.setFixedWidth(_INPUT_MAX_W)
+        self._clip_post_global.setRange(0, 15)
+        self._clip_post_global.setValue(self._config.clip_post_global_seconds)
+        self._clip_post_global.valueChanged.connect(self._schedule_save)
+        grid.addWidget(self._clip_post_global, row, 1)
+        row += 1
 
-        # Clip hotkey
-        hotkey_row = QHBoxLayout()
-        hotkey_row.addWidget(QLabel("Save clip hotkey:"))
-        self._clip_hotkey = HotkeyInput(self._config.hotkey_save_clip)
-        self._clip_hotkey.combo_changed.connect(self._schedule_save)
-        hotkey_row.addWidget(self._clip_hotkey)
-        clear_btn = QPushButton("X")
-        clear_btn.setFixedSize(28, 28)
-        clear_btn.setStyleSheet("padding: 0px;")
-        clear_btn.clicked.connect(self._clip_hotkey.clear_combo)
-        hotkey_row.addWidget(clear_btn)
-        hotkey_row.addStretch()
-        layout.addLayout(hotkey_row)
+        # Directory
+        grid.addWidget(QLabel("Save directory:"), row, 0)
+        cdir_w = QWidget()
+        cdir_h = QHBoxLayout(cdir_w)
+        cdir_h.setContentsMargins(0, 0, 0, 0)
+        self._clip_dir = QLineEdit(self._config.clip_directory)
+        self._clip_dir.setFixedWidth(_PATH_MAX_W)
+        self._clip_dir.setPlaceholderText("~/Videos/Entropia Nexus Clips")
+        self._clip_dir.editingFinished.connect(self._schedule_save)
+        cdir_h.addWidget(self._clip_dir)
+        cbrowse = QPushButton("Browse")
+        cbrowse.clicked.connect(self._browse_clip_dir)
+        cdir_h.addWidget(cbrowse)
+        grid.addWidget(cdir_w, row, 1, 1, 2)
+        row += 1
 
         # FFmpeg path
-        ff_row = QHBoxLayout()
-        ff_row.addWidget(QLabel("FFmpeg path:"))
+        grid.addWidget(QLabel("FFmpeg path:"), row, 0)
+        ff_w = QWidget()
+        ff_h = QHBoxLayout(ff_w)
+        ff_h.setContentsMargins(0, 0, 0, 0)
         self._ffmpeg_path = QLineEdit(self._config.ffmpeg_path)
+        self._ffmpeg_path.setFixedWidth(_PATH_MAX_W)
         self._ffmpeg_path.setPlaceholderText("Auto-detected from PATH")
         self._ffmpeg_path.editingFinished.connect(self._schedule_save)
-        ff_row.addWidget(self._ffmpeg_path)
+        ff_h.addWidget(self._ffmpeg_path)
         ff_browse = QPushButton("Browse")
         ff_browse.clicked.connect(self._browse_ffmpeg)
-        ff_row.addWidget(ff_browse)
-        layout.addLayout(ff_row)
+        ff_h.addWidget(ff_browse)
+        grid.addWidget(ff_w, row, 1, 1, 2)
+
+        layout.addLayout(grid)
 
         # FFmpeg status
         self._ffmpeg_status = QLabel("")
@@ -1096,70 +1519,143 @@ class SettingsPage(QWidget):
         layout.addWidget(self._ffmpeg_status)
         self._update_ffmpeg_status()
 
-        # --- Audio sub-section ---
-        audio_label = QLabel("Audio")
-        audio_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        layout.addWidget(audio_label)
+        # --- System Audio sub-section ---
+        game_audio_label = QLabel("System Audio")
+        game_audio_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        layout.addWidget(game_audio_label)
 
         self._clip_audio_cb = QCheckBox("Record system audio")
         self._clip_audio_cb.setChecked(self._config.clip_audio_enabled)
+        self._clip_audio_cb.setToolTip(
+            "Captures audio from your output device via WASAPI loopback.\n"
+            "This includes all sounds playing through the selected device."
+        )
         self._clip_audio_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._clip_audio_cb)
 
-        dev_row = QHBoxLayout()
-        dev_row.addWidget(QLabel("Audio device:"))
+        audio_grid = QGridLayout()
+        audio_grid.setColumnStretch(0, 0)
+        audio_grid.setColumnStretch(1, 0)
+        audio_grid.setColumnStretch(2, 1)
+        audio_grid.setHorizontalSpacing(8)
+
+        audio_grid.addWidget(QLabel("Output device:"), 0, 0)
         self._clip_audio_device = QComboBox()
+        self._clip_audio_device.setFixedWidth(_INPUT_MAX_W)
         self._clip_audio_device.addItem("System Default", "")
-        self._populate_audio_devices()
-        self._clip_audio_device.currentIndexChanged.connect(self._schedule_save)
-        dev_row.addWidget(self._clip_audio_device)
-        dev_row.addStretch()
-        layout.addLayout(dev_row)
+        self._populate_output_devices()
+        self._clip_audio_device.currentIndexChanged.connect(self._on_audio_device_changed)
+        audio_grid.addWidget(self._clip_audio_device, 0, 1)
 
-        self._audio_noise_cb = QCheckBox("Noise suppression")
-        self._audio_noise_cb.setChecked(self._config.clip_audio_noise_suppression)
-        self._audio_noise_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._audio_noise_cb)
+        # System audio gain
+        audio_grid.addWidget(QLabel("Game volume:"), 1, 0)
+        game_gain_w = QWidget()
+        game_gain_h = QHBoxLayout(game_gain_w)
+        game_gain_h.setContentsMargins(0, 0, 0, 0)
+        self._game_gain_slider = QSlider(Qt.Orientation.Horizontal)
+        self._game_gain_slider.setFixedWidth(_SLIDER_MAX_W)
+        self._game_gain_slider.setRange(0, 300)
+        self._game_gain_slider.setValue(int(self._config.clip_audio_game_gain * 100))
+        self._game_gain_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._game_gain_slider.setTickInterval(50)
+        self._game_gain_slider.valueChanged.connect(self._on_game_gain_changed)
+        game_gain_h.addWidget(self._game_gain_slider)
+        self._game_gain_label = QLabel(f"{int(self._config.clip_audio_game_gain * 100)}%")
+        self._game_gain_label.setFixedWidth(40)
+        game_gain_h.addWidget(self._game_gain_label)
+        audio_grid.addWidget(game_gain_w, 1, 1)
 
-        self._audio_gate_cb = QCheckBox("Noise gate")
-        self._audio_gate_cb.setChecked(self._config.clip_audio_noise_gate)
-        self._audio_gate_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._audio_gate_cb)
+        # System audio level meter
+        audio_grid.addWidget(QLabel("Level:"), 2, 0)
+        self._game_level_bar = _LevelBar()
+        audio_grid.addWidget(self._game_level_bar, 2, 1)
 
-        self._audio_compressor_cb = QCheckBox("Compressor")
-        self._audio_compressor_cb.setChecked(self._config.clip_audio_compressor)
-        self._audio_compressor_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._audio_compressor_cb)
+        layout.addLayout(audio_grid)
 
-        # --- Webcam sub-section ---
-        webcam_label = QLabel("Webcam")
-        webcam_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        layout.addWidget(webcam_label)
+        # --- Microphone sub-section ---
+        mic_label = QLabel("Microphone")
+        mic_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        layout.addWidget(mic_label)
 
-        self._clip_webcam_cb = QCheckBox("Include webcam overlay")
-        self._clip_webcam_cb.setChecked(self._config.clip_webcam_enabled)
-        self._clip_webcam_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._clip_webcam_cb)
+        self._clip_mic_cb = QCheckBox("Record microphone")
+        self._clip_mic_cb.setChecked(self._config.clip_mic_enabled)
+        self._clip_mic_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._clip_mic_cb)
 
-        wcam_row = QHBoxLayout()
-        wcam_row.addWidget(QLabel("Webcam device:"))
-        self._clip_webcam_device = QSpinBox()
-        self._clip_webcam_device.setRange(0, 9)
-        self._clip_webcam_device.setValue(self._config.clip_webcam_device)
-        self._clip_webcam_device.valueChanged.connect(self._schedule_save)
-        wcam_row.addWidget(self._clip_webcam_device)
+        mic_grid = QGridLayout()
+        mic_grid.setColumnStretch(0, 0)
+        mic_grid.setColumnStretch(1, 0)
+        mic_grid.setColumnStretch(2, 1)
+        mic_grid.setHorizontalSpacing(8)
 
-        wcam_row.addWidget(QLabel("Position:"))
-        self._clip_webcam_pos = QComboBox()
-        for pos in ("top_left", "top_right", "bottom_left", "bottom_right"):
-            self._clip_webcam_pos.addItem(pos.replace("_", " ").title(), pos)
-        idx = self._clip_webcam_pos.findData(self._config.clip_webcam_position)
-        if idx >= 0:
-            self._clip_webcam_pos.setCurrentIndex(idx)
-        self._clip_webcam_pos.currentIndexChanged.connect(self._schedule_save)
-        wcam_row.addWidget(self._clip_webcam_pos)
-        wcam_row.addStretch()
-        layout.addLayout(wcam_row)
+        mic_grid.addWidget(QLabel("Microphone:"), 0, 0)
+        self._clip_mic_device = QComboBox()
+        self._clip_mic_device.setFixedWidth(_INPUT_MAX_W)
+        self._clip_mic_device.addItem("System Default", "")
+        self._populate_input_devices()
+        self._clip_mic_device.currentIndexChanged.connect(self._on_mic_device_changed)
+        mic_grid.addWidget(self._clip_mic_device, 0, 1)
+
+        # Mic gain
+        mic_grid.addWidget(QLabel("Mic volume:"), 1, 0)
+        mic_gain_w = QWidget()
+        mic_gain_h = QHBoxLayout(mic_gain_w)
+        mic_gain_h.setContentsMargins(0, 0, 0, 0)
+        self._mic_gain_slider = QSlider(Qt.Orientation.Horizontal)
+        self._mic_gain_slider.setFixedWidth(_SLIDER_MAX_W)
+        self._mic_gain_slider.setRange(0, 300)
+        self._mic_gain_slider.setValue(int(self._config.clip_audio_mic_gain * 100))
+        self._mic_gain_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._mic_gain_slider.setTickInterval(50)
+        self._mic_gain_slider.valueChanged.connect(self._on_mic_gain_changed)
+        mic_gain_h.addWidget(self._mic_gain_slider)
+        self._mic_gain_label = QLabel(f"{int(self._config.clip_audio_mic_gain * 100)}%")
+        self._mic_gain_label.setFixedWidth(40)
+        mic_gain_h.addWidget(self._mic_gain_label)
+        mic_grid.addWidget(mic_gain_w, 1, 1)
+
+        # Mic level meter
+        mic_grid.addWidget(QLabel("Level:"), 2, 0)
+        self._mic_level_bar = _LevelBar()
+        mic_grid.addWidget(self._mic_level_bar, 2, 1)
+
+        layout.addLayout(mic_grid)
+
+        # Mic filter settings button
+        filter_row = QHBoxLayout()
+        filter_btn = QPushButton("Filter Settings...")
+        filter_btn.setToolTip(
+            "Configure noise suppression, noise gate, and compressor\n"
+            "filters for the microphone track. Includes audio check."
+        )
+        filter_btn.clicked.connect(self._open_mic_filter_dialog)
+        filter_row.addWidget(filter_btn)
+        filter_row.addStretch()
+        layout.addLayout(filter_row)
+
+        # Video capture config dialog (resolution, webcam, blur, background)
+        config_btn = QPushButton("Configure Video Capture...")
+        config_btn.setToolTip(
+            "Open the video capture configuration dialog with live preview.\n"
+            "Set resolution, webcam overlay, blur regions, and background."
+        )
+        config_btn.clicked.connect(self._open_video_config_dialog)
+        config_row = QHBoxLayout()
+        config_row.addWidget(config_btn)
+        config_row.addStretch()
+        layout.addLayout(config_row)
+
+        # Internal-only widgets: disabled when OBS mode is active
+        self._internal_clip_widgets = [
+            self._clip_buffer, self._clip_post_global,
+            self._ffmpeg_path, self._ffmpeg_status,
+            self._clip_audio_cb, self._clip_audio_device,
+            self._game_gain_slider,
+            self._clip_mic_cb, self._clip_mic_device,
+            self._mic_gain_slider,
+            filter_btn, config_btn,
+        ]
+        self._update_obs_ui_state()
 
         self._sections.append(group)
         self._layout.addWidget(group)
@@ -1194,28 +1690,256 @@ class SettingsPage(QWidget):
                 self._ffmpeg_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
             else:
                 self._ffmpeg_status.setText(
-                    "FFmpeg not found. Video clips require FFmpeg — "
+                    "FFmpeg not found. Video clips require FFmpeg \u2014 "
                     "it will be downloaded automatically when needed."
                 )
                 self._ffmpeg_status.setStyleSheet("color: #ff6b6b; font-size: 11px;")
         except Exception:
             self._ffmpeg_status.setText("Could not check FFmpeg status")
 
-    def _populate_audio_devices(self):
+    # --- Audio device helpers ---
+
+    def _populate_output_devices(self):
+        """Populate the system audio output device dropdown."""
         try:
-            import sounddevice as sd
-            devices = sd.query_devices()
+            from ...capture.audio_buffer import AudioBuffer
+            devices = AudioBuffer.get_output_devices()
             current = self._config.clip_audio_device
-            for i, dev in enumerate(devices):
-                if dev.get("max_input_channels", 0) > 0 or dev.get("hostapi") == 0:
-                    name = dev.get("name", f"Device {i}")
-                    self._clip_audio_device.addItem(name, name)
-            # Select current
+            for dev in devices:
+                name = dev.get("name", f"Device {dev['index']}")
+                self._clip_audio_device.addItem(name, name)
             idx = self._clip_audio_device.findData(current)
             if idx >= 0:
                 self._clip_audio_device.setCurrentIndex(idx)
         except Exception:
-            pass  # sounddevice not installed or no devices
+            pass
+
+    def _populate_input_devices(self):
+        """Populate the microphone input device dropdown."""
+        try:
+            from ...capture.audio_buffer import AudioBuffer
+            devices = AudioBuffer.get_input_devices()
+            current = self._config.clip_mic_device
+            for dev in devices:
+                name = dev.get("name", f"Device {dev['index']}")
+                self._clip_mic_device.addItem(name, name)
+            idx = self._clip_mic_device.findData(current)
+            if idx >= 0:
+                self._clip_mic_device.setCurrentIndex(idx)
+        except Exception:
+            pass
+
+    # --- Gain slider handlers ---
+
+    def _on_game_gain_changed(self, value):
+        self._game_gain_label.setText(f"{value}%")
+        self._schedule_save()
+
+    def _on_mic_gain_changed(self, value):
+        self._mic_gain_label.setText(f"{value}%")
+        self._schedule_save()
+
+    def _on_audio_device_changed(self, _idx):
+        """Update system audio device and restart meter."""
+        self._schedule_save()
+        if self._game_meter_buf is not None:
+            self._restart_game_meter()
+
+    def _on_mic_device_changed(self, _idx):
+        """Update mic device immediately when the dropdown changes."""
+        self._schedule_save()
+        if self._mic_filtered_meter is not None:
+            self._restart_mic_meter()
+
+    # --- Audio level meters ---
+
+    def _build_mic_filter_dict(self) -> dict:
+        """Build mic filter dict from current config values."""
+        c = self._config
+        return {
+            "noise_suppression": getattr(c, "clip_audio_noise_suppression", False),
+            "noise_gate": getattr(c, "clip_audio_noise_gate", False),
+            "compressor": getattr(c, "clip_audio_compressor", False),
+            "ns_mix": getattr(c, "clip_audio_ns_mix", 1.0),
+            "gate_threshold": getattr(c, "clip_audio_gate_threshold", 0.01),
+            "gate_ratio": getattr(c, "clip_audio_gate_ratio", 10.0),
+            "gate_attack": getattr(c, "clip_audio_gate_attack", 5.0),
+            "gate_release": getattr(c, "clip_audio_gate_release", 200.0),
+            "comp_threshold": getattr(c, "clip_audio_comp_threshold", -20.0),
+            "comp_ratio": getattr(c, "clip_audio_comp_ratio", 4.0),
+            "comp_attack": getattr(c, "clip_audio_comp_attack", 5.0),
+            "comp_release": getattr(c, "clip_audio_comp_release", 100.0),
+        }
+
+    def _start_meters(self) -> None:
+        """Start audio level meter buffers and polling timer."""
+        if self._meter_timer is not None:
+            return  # already running
+
+        # Start buffers in background to avoid WASAPI device open lag
+        threading.Thread(
+            target=self._open_meter_buffers, daemon=True,
+            name="meter-start",
+        ).start()
+
+        self._meter_timer = QTimer(self)
+        self._meter_timer.setInterval(_METER_UPDATE_MS)
+        self._meter_timer.timeout.connect(self._update_meters)
+        self._meter_timer.start()
+
+    def _open_meter_buffers(self) -> None:
+        """Open audio meter buffers (runs in background thread)."""
+        from ...capture.audio_buffer import AudioBuffer
+
+        # System audio (loopback)
+        try:
+            device = self._clip_audio_device.currentData() or None
+            buf = AudioBuffer(device=device, loopback=True)
+            buf.start()
+            self._game_meter_buf = buf
+        except Exception as e:
+            log.debug("System audio meter failed: %s", e)
+
+        # Mic — filtered through FFmpeg pipeline
+        try:
+            from ..dialogs.audio_filter_dialogs import _FilteredMicMeter
+            mic_device = self._clip_mic_device.currentData() or None
+            mic_gain = self._config.clip_audio_mic_gain
+            meter = _FilteredMicMeter(
+                mic_device=mic_device,
+                mic_gain=mic_gain,
+                filters=self._build_mic_filter_dict(),
+                ffmpeg_path=self._config.ffmpeg_path,
+            )
+            meter.start()
+            self._mic_filtered_meter = meter
+        except Exception as e:
+            log.debug("Mic filtered meter failed: %s", e)
+
+    def _stop_meters(self) -> None:
+        """Stop audio level meters and release resources."""
+        if self._meter_timer is not None:
+            self._meter_timer.stop()
+            self._meter_timer = None
+
+        # Stop buffers in background to avoid WASAPI lag
+        game_buf = self._game_meter_buf
+        mic_meter = self._mic_filtered_meter
+        self._game_meter_buf = None
+        self._mic_filtered_meter = None
+
+        if game_buf or mic_meter:
+            def _stop():
+                for obj in (game_buf, mic_meter):
+                    if obj is not None:
+                        try:
+                            obj.stop()
+                        except Exception:
+                            pass
+            threading.Thread(target=_stop, daemon=True, name="meter-stop").start()
+
+        if self._game_level_bar:
+            self._game_level_bar.set_level(0.0)
+        if self._mic_level_bar:
+            self._mic_level_bar.set_level(0.0)
+
+    def _restart_game_meter(self) -> None:
+        """Restart system audio meter with the currently selected device."""
+        old = self._game_meter_buf
+        self._game_meter_buf = None
+
+        def _swap():
+            if old is not None:
+                try:
+                    old.stop()
+                except Exception:
+                    pass
+            try:
+                from ...capture.audio_buffer import AudioBuffer
+                device = self._clip_audio_device.currentData() or None
+                buf = AudioBuffer(device=device, loopback=True)
+                buf.start()
+                self._game_meter_buf = buf
+            except Exception as e:
+                log.debug("Could not restart game meter: %s", e)
+
+        threading.Thread(target=_swap, daemon=True, name="meter-game-restart").start()
+
+    def _restart_mic_meter(self) -> None:
+        """Restart filtered mic meter with current device and filters."""
+        old = self._mic_filtered_meter
+        self._mic_filtered_meter = None
+
+        def _swap():
+            if old is not None:
+                try:
+                    old.stop()
+                except Exception:
+                    pass
+            try:
+                from ..dialogs.audio_filter_dialogs import _FilteredMicMeter
+                mic_device = self._clip_mic_device.currentData() or None
+                mic_gain = self._config.clip_audio_mic_gain
+                meter = _FilteredMicMeter(
+                    mic_device=mic_device,
+                    mic_gain=mic_gain,
+                    filters=self._build_mic_filter_dict(),
+                    ffmpeg_path=self._config.ffmpeg_path,
+                )
+                meter.start()
+                self._mic_filtered_meter = meter
+            except Exception as e:
+                log.debug("Could not restart mic meter: %s", e)
+
+        threading.Thread(target=_swap, daemon=True, name="meter-mic-restart").start()
+
+    def _update_meters(self) -> None:
+        """Poll audio buffers and update level bars."""
+        now = time.monotonic()
+        start = now - _METER_SNAPSHOT_S
+
+        # System audio — uses AudioBuffer.snapshot()
+        buf = self._game_meter_buf
+        if buf is not None and self._game_level_bar is not None:
+            pcm = buf.snapshot(start, now)
+            if pcm is not None and len(pcm) > 0:
+                gain = self._game_gain_slider.value() / 100.0
+                peak = float(np.max(np.abs(pcm))) * gain
+                self._game_level_bar.set_level(min(1.0, peak))
+            else:
+                self._game_level_bar.set_level(0.0)
+
+        # Mic — uses _FilteredMicMeter.peak property
+        meter = self._mic_filtered_meter
+        if meter is not None and self._mic_level_bar is not None:
+            gain = self._mic_gain_slider.value() / 100.0
+            peak = meter.peak * gain
+            self._mic_level_bar.set_level(min(1.0, peak))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._start_meters()
+
+    def hideEvent(self, event):
+        self._stop_meters()
+        super().hideEvent(event)
+
+    # --- Mic filter dialog ---
+
+    def _open_mic_filter_dialog(self):
+        try:
+            from ..dialogs.audio_filter_dialogs import MicFilterDialog
+            dialog = MicFilterDialog(
+                config=self._config, config_path=self._config_path,
+                event_bus=self._event_bus, parent=self,
+            )
+            if dialog.exec():
+                # Sync mic gain slider — dialog may have changed it
+                self._mic_gain_slider.setValue(int(self._config.clip_audio_mic_gain * 100))
+            # Restart mic meter with potentially updated filters
+            self._restart_mic_meter()
+        except Exception as e:
+            log.error("Failed to open mic filter dialog: %s", e)
 
     # --- About ---
     def _build_about_section(self):
@@ -1276,30 +2000,43 @@ class SettingsPage(QWidget):
         self._advanced_group = QGroupBox("Advanced")
         layout = QVBoxLayout(self._advanced_group)
 
+        # Grid for label+input pairs
+        adv_grid = QGridLayout()
+        adv_grid.setColumnStretch(0, 0)
+        adv_grid.setColumnStretch(1, 0)
+        adv_grid.setColumnStretch(2, 1)
+        adv_grid.setHorizontalSpacing(8)
+        adv_row = 0
+
         # Database path
-        db_row = QHBoxLayout()
-        db_row.addWidget(QLabel("Database path:"))
+        adv_grid.addWidget(QLabel("Database path:"), adv_row, 0)
         self._db_path = QLineEdit(self._config.database_path)
+        self._db_path.setFixedWidth(_PATH_MAX_W)
         self._db_path.setReadOnly(True)
-        db_row.addWidget(self._db_path)
-        layout.addLayout(db_row)
+        adv_grid.addWidget(self._db_path, adv_row, 1)
+        adv_row += 1
 
         # JS utils path override
-        js_row = QHBoxLayout()
-        js_row.addWidget(QLabel("JS utils path (override):"))
+        adv_grid.addWidget(QLabel("JS utils path (override):"), adv_row, 0)
+        js_w = QWidget()
+        js_h = QHBoxLayout(js_w)
+        js_h.setContentsMargins(0, 0, 0, 0)
         self._js_path = QLineEdit(self._config.js_utils_path)
-        js_row.addWidget(self._js_path)
+        self._js_path.setFixedWidth(_PATH_MAX_W)
+        js_h.addWidget(self._js_path)
         js_browse = QPushButton("Browse")
         js_browse.clicked.connect(self._browse_js_path)
-        js_row.addWidget(js_browse)
-        layout.addLayout(js_row)
+        js_h.addWidget(js_browse)
+        adv_grid.addWidget(js_w, adv_row, 1, 1, 2)
+        adv_row += 1
 
         # OAuth client ID
-        oauth_row = QHBoxLayout()
-        oauth_row.addWidget(QLabel("OAuth Client ID:"))
+        adv_grid.addWidget(QLabel("OAuth Client ID:"), adv_row, 0)
         self._oauth_client_id = QLineEdit(self._config.oauth_client_id)
-        oauth_row.addWidget(self._oauth_client_id)
-        layout.addLayout(oauth_row)
+        self._oauth_client_id.setFixedWidth(_PATH_MAX_W)
+        adv_grid.addWidget(self._oauth_client_id, adv_row, 1)
+
+        layout.addLayout(adv_grid)
 
         self._advanced_group.setVisible(False)
         self._sections.append(self._advanced_group)
@@ -1382,6 +2119,42 @@ class SettingsPage(QWidget):
                 label.setTextFormat(Qt.TextFormat.PlainText)
                 label.setProperty("_orig_text", None)
 
+    # Windows build that introduced GraphicsCaptureSession.MinUpdateInterval
+    _WGC_MIN_UPDATE_INTERVAL_BUILD = 22621
+
+    def _on_capture_backend_changed(self, _index: int) -> None:
+        """Handle capture backend combo change — warn about WGC on older OS."""
+        backend = self._ocr_capture_backend.currentData()
+        if (backend == "wgc"
+                and sys.platform == "win32"
+                and sys.getwindowsversion().build < self._WGC_MIN_UPDATE_INTERVAL_BUILD):
+            dlg = QMessageBox(self)
+            dlg.setIcon(QMessageBox.Icon.Warning)
+            dlg.setWindowTitle("WGC Resource Warning")
+            dlg.setText(
+                "On this version of Windows, WGC runs continuously at your "
+                "display's refresh rate and cannot be throttled by the OS.\n\n"
+                "This causes significant CPU and GPU usage even when only "
+                "a few frames per second are needed (e.g. OCR-only mode).\n\n"
+                "BitBlt is recommended as a lightweight alternative.\n"
+                "It works well for most setups unless your game "
+                "window renders black with it."
+            )
+            switch_btn = dlg.addButton(
+                "Switch to BitBlt", QMessageBox.ButtonRole.AcceptRole,
+            )
+            dlg.addButton(
+                "Keep WGC", QMessageBox.ButtonRole.RejectRole,
+            )
+            dlg.setDefaultButton(switch_btn)
+            dlg.exec()
+            if dlg.clickedButton() == switch_btn:
+                idx = self._ocr_capture_backend.findData("bitblt")
+                if idx >= 0:
+                    self._ocr_capture_backend.setCurrentIndex(idx)
+                return  # setCurrentIndex triggers this handler again → save
+        self._schedule_save()
+
     def _schedule_save(self, *_args):
         """Schedule a debounced save (restarts the 300ms timer on each call)."""
         self._save_timer.start()
@@ -1396,6 +2169,7 @@ class SettingsPage(QWidget):
         self._config.ocr_capture_backend = (
             self._ocr_capture_backend.currentData() or "auto"
         )
+        self._config.hdr_compatibility_mode = self._hdr_cb.isChecked()
         self._config.ocr_trace_enabled = self._ocr_trace_cb.isChecked()
         self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
@@ -1445,33 +2219,39 @@ class SettingsPage(QWidget):
         self._config.screenshot_delay_s = self._screenshot_delay.value()
         self._config.screenshot_directory = self._screenshot_dir.text()
         self._config.screenshot_daily_subfolder = self._screenshot_daily_cb.isChecked()
-        self._config.hotkey_screenshot = self._screenshot_hotkey.combo
+        self._config.screenshot_size_pct = self._screenshot_size.currentData()
+        self._config.screenshot_sound_enabled = self._screenshot_sound_cb.isChecked()
         self._config.character_name = self._character_name.text()
 
-        # Video Clips
+        # OBS Studio
+        self._config.obs_enabled = self._obs_enabled_cb.isChecked()
+        self._config.obs_host = self._obs_host.text() or "localhost"
+        self._config.obs_port = self._obs_port.value()
+        self._config.obs_manage_replay_buffer = self._obs_manage_replay_cb.isChecked()
+        if self._config.obs_enabled:
+            self._config.obs_replay_buffer_asked = True
+        # Password saved to keyring in _on_obs_password_changed(), not in config
+
+        # Video Clips (resolution/fps/bitrate/webcam-enable/blur/background
+        # are saved by VideoConfigDialog directly)
         self._config.clip_enabled = self._clip_enabled_cb.isChecked()
         self._config.clip_auto_on_global = self._clip_auto_cb.isChecked()
         self._config.clip_buffer_seconds = self._clip_buffer.value()
         self._config.clip_post_global_seconds = self._clip_post_global.value()
         self._config.clip_directory = self._clip_dir.text()
         self._config.clip_daily_subfolder = self._clip_daily_cb.isChecked()
-        self._config.clip_fps = self._clip_fps.currentData() or 30
-        self._config.clip_resolution = self._clip_resolution.currentData() or "source"
-        self._config.clip_bitrate = self._clip_bitrate.currentData() or "medium"
-        self._config.hotkey_save_clip = self._clip_hotkey.combo
+        self._config.clip_sound_enabled = self._clip_sound_cb.isChecked()
         self._config.ffmpeg_path = self._ffmpeg_path.text()
 
-        # Audio
+        # System Audio
         self._config.clip_audio_enabled = self._clip_audio_cb.isChecked()
         self._config.clip_audio_device = self._clip_audio_device.currentData() or ""
-        self._config.clip_audio_noise_suppression = self._audio_noise_cb.isChecked()
-        self._config.clip_audio_noise_gate = self._audio_gate_cb.isChecked()
-        self._config.clip_audio_compressor = self._audio_compressor_cb.isChecked()
+        self._config.clip_audio_game_gain = self._game_gain_slider.value() / 100.0
 
-        # Webcam
-        self._config.clip_webcam_enabled = self._clip_webcam_cb.isChecked()
-        self._config.clip_webcam_device = self._clip_webcam_device.value()
-        self._config.clip_webcam_position = self._clip_webcam_pos.currentData() or "bottom_right"
+        # Microphone
+        self._config.clip_mic_enabled = self._clip_mic_cb.isChecked()
+        self._config.clip_mic_device = self._clip_mic_device.currentData() or ""
+        self._config.clip_audio_mic_gain = self._mic_gain_slider.value() / 100.0
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)

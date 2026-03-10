@@ -298,7 +298,7 @@ class HuntTracker:
         self._loadout_mgr.start_session(self._session)
 
         self._start_timeout_checker()
-        log.warning("Session started: %s", session_id)
+        log.info("Session started: %s", session_id)
 
     def _on_session_start(self, data):
         """Handle external session start request."""
@@ -350,7 +350,7 @@ class HuntTracker:
         self._active = False
         self._last_activity_time = None
         self._persisted_encounter_ids.clear()
-        log.warning("Session ended: %s", self._session.id)
+        log.info("Session ended: %s", self._session.id)
         self._session = None
         self._manager = None
         self._hunt_detector = None
@@ -377,7 +377,7 @@ class HuntTracker:
         if hunt:
             self._db.end_hunt(hunt.id, now.isoformat(), hunt.total_cost)
             self._event_bus.publish(EVENT_HUNT_ENDED, hunt.to_dict())
-            log.warning("Hunt manually ended: %s", hunt.id[:8])
+            log.info("Hunt manually ended: %s", hunt.id[:8])
 
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
 
@@ -1008,7 +1008,7 @@ class HuntTracker:
                 if self._last_activity_time:
                     elapsed = datetime.utcnow() - self._last_activity_time
                     if elapsed > self._auto_timeout:
-                        log.warning("Session auto-timeout after %s inactivity", elapsed)
+                        log.info("Session auto-timeout after %s inactivity", elapsed)
                         self._event_bus.publish(EVENT_SESSION_AUTO_TIMEOUT, {
                             "session_id": self._session.id,
                             "inactivity_seconds": elapsed.total_seconds(),

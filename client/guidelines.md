@@ -175,13 +175,13 @@ log = get_logger("ModuleName")
 
 log.error("Connection failed: %s", err)     # always shown
 log.warning("Retrying in %ds", delay)        # always shown
-log.info("Loaded %d items", count)           # verbose mode only
+log.info("Loaded %d items", count)           # always shown
 log.debug("Raw response: %s", resp)          # verbose mode only
 ```
 
 - Use `%s` formatting in log calls (deferred evaluation), not f-strings
 - Never let logging failures crash the app — the logger handles this internally
-- File log: `~/.entropia-nexus/client.log` — WARNING+ only, 256 KB rolling, 1-hour retention
+- File log: `~/.entropia-nexus/client.log` — INFO+ always, 256 KB rolling, 1-hour retention
 
 ---
 

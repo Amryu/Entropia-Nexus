@@ -4,6 +4,8 @@ import gzip
 import json
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from ..core.constants import EVENT_API_SCOPE_ERROR
 from ..core.logger import get_logger
@@ -31,6 +33,15 @@ class NexusClient:
         self._config = config
         self._oauth = oauth
         self._session = requests.Session()
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
         self._event_bus = event_bus
         self._scope_error_fired = False
 
@@ -1017,6 +1028,27 @@ class NexusClient:
             self._handle_error(e, f"delete profile image {user_id}")
             return False
 
+    # Global media
+
+    def submit_global_video(self, global_id: int, video_url: str) -> dict | None:
+        """POST /api/globals/{id}/media — submit a video link for a global."""
+        try:
+            headers = self._auth_headers(f"submit video for global {global_id}")
+            if headers is None:
+                return None
+            headers["Content-Type"] = "application/json"
+            resp = self._session.post(
+                self._url(f"/globals/{global_id}/media"),
+                headers=headers,
+                json={"video_url": video_url},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"submit video for global {global_id}")
+            return None
+
     # Societies
 
     def get_society(self, identifier: str) -> dict | None:
@@ -1082,6 +1114,52 @@ class NexusClient:
         except Exception as e:
             self._handle_error(e, f"fetch globals for {eu_name}")
             return None
+
+    # Globals Media
+
+    def get_upload_budget(self) -> dict | None:
+        """GET /api/globals/media/budget — monthly media upload budget."""
+        try:
+            headers = self._auth_headers("get upload budget")
+            if headers is None:
+                return None
+            resp = self._session.get(
+                self._url("/globals/media/budget"),
+                headers=headers, timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get upload budget")
+            return None
+
+    def upload_global_media(self, server_global_id: int, file_path: str) -> dict | None:
+        """POST /api/globals/{id}/media — upload screenshot to a global."""
+        try:
+            headers = self._auth_headers("upload global media")
+            if headers is None:
+                return None
+            with open(file_path, "rb") as f:
+                files = {"image": (file_path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1], f, "image/png")}
+                resp = self._session.post(
+                    self._url(f"/globals/{server_global_id}/media"),
+                    headers=headers,
+                    files=files,
+                    timeout=30,
+                )
+            if resp.status_code == 429:
+                raise RateLimitError(int(resp.headers.get("Retry-After", 60)))
+            resp.raise_for_status()
+            return resp.json()
+        except RateLimitError:
+            raise
+        except Exception as e:
+            self._handle_error(e, f"upload global media {server_global_id}")
+            return None
+
+    def link_youtube(self, server_global_id: int, youtube_url: str) -> dict | None:
+        """Backward-compatible alias for submit_global_video."""
+        return self.submit_global_video(server_global_id, youtube_url)
 
     # Streams
 

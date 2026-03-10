@@ -127,7 +127,7 @@ class ToastWidget(QWidget):
             f"color: {source_color}; font-size: 14px; font-weight: bold;"
             f" background: transparent; border: none;"
         )
-        src_lbl.setFixedWidth(46)
+        src_lbl.setFixedWidth(src_lbl.fontMetrics().horizontalAdvance(src_lbl.text()) + 4)
         top_row.addWidget(src_lbl)
 
         title_lbl = QLabel(notif.title)
@@ -136,10 +136,6 @@ class ToastWidget(QWidget):
             f" background: transparent; border: none;"
         )
         title_lbl.setWordWrap(True)
-        fm = title_lbl.fontMetrics()
-        title_lbl.setText(
-            fm.elidedText(notif.title, Qt.TextElideMode.ElideRight, TOAST_WIDTH - 100)
-        )
         top_row.addWidget(title_lbl, stretch=1)
 
         close_btn = QPushButton("\u00d7")  # ×

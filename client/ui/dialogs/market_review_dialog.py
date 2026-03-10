@@ -301,6 +301,18 @@ class MarketReviewDialog(QDialog):
             self.skipped.emit(review_request.get("data", {}))
             return
 
+        # Dedup: don't queue if the same item+tier is already queued or active
+        req_name = review_request.get("data", {}).get("item_name")
+        req_tier = review_request.get("data", {}).get("tier")
+        if self._current:
+            cur = self._current.get("data", {})
+            if cur.get("item_name") == req_name and cur.get("tier") == req_tier:
+                return
+        for queued in self._queue:
+            qd = queued.get("data", {})
+            if qd.get("item_name") == req_name and qd.get("tier") == req_tier:
+                return
+
         self._queue.append(review_request)
 
         if not self.isVisible():

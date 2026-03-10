@@ -39,6 +39,8 @@ class OverlayManager(QObject):
     notifications_hotkey_pressed = pyqtSignal()
     debug_overlay_hotkey_pressed = pyqtSignal()
     overlay_toggle_hotkey_pressed = pyqtSignal()
+    recording_bar_hotkey_pressed = pyqtSignal()
+    gallery_hotkey_pressed = pyqtSignal()
     game_focus_changed = pyqtSignal(bool)  # True when game is focused/visible
     opacity_changed = pyqtSignal(float)
 
@@ -50,6 +52,8 @@ class OverlayManager(QObject):
         "hotkey_notifications": "notifications_hotkey_pressed",
         "hotkey_debug": "debug_overlay_hotkey_pressed",
         "hotkey_overlay_toggle": "overlay_toggle_hotkey_pressed",
+        "hotkey_recording_bar": "recording_bar_hotkey_pressed",
+        "hotkey_gallery": "gallery_hotkey_pressed",
     }
 
     def __init__(self, *, config, event_bus=None, parent: QObject | None = None):

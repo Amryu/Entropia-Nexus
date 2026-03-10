@@ -155,10 +155,13 @@ class MarketPriceDetector:
         # STPK entries (loaded lazily, None = not loaded, [] = loaded but empty)
         self._digit_entries: list[dict] | None = None
         self._text_entries: list[dict] | None = None
+        self._tier_entries: list[dict] | None = None
         self._digit_grid_w = 0
         self._digit_grid_h = 0
         self._text_grid_w = 0
         self._text_grid_h = 0
+        self._tier_grid_w = 0
+        self._tier_grid_h = 0
 
         # Print dedup: {item_name: (monotonic_time, values_tuple)}
         self._print_seen: dict[str, tuple[float, tuple]] = {}
@@ -253,6 +256,22 @@ class MarketPriceDetector:
                 log.warning("Failed to load text STPK %s: %s", text_path, e)
         else:
             log.info("Text STPK not found: %s (name reading disabled)", text_path)
+
+        tier_path = STPK_DIR / "market_tiers.stpk"
+        if tier_path.exists():
+            try:
+                header, entries = read_stpk(tier_path)
+                for e in entries:
+                    g = e.get("grid")
+                    if g is not None:
+                        e["grid"] = np.where(g >= grid_4bit_threshold, g, 0).astype(np.uint8)
+                self._tier_entries = entries
+                self._tier_grid_w = header.get("grid_w", 0)
+                self._tier_grid_h = header.get("grid_h", 0)
+                log.info("Tier STPK loaded: %d entries (%dx%d grid)",
+                         len(entries), self._tier_grid_w, self._tier_grid_h)
+            except Exception as e:
+                log.warning("Failed to load tier STPK %s: %s", tier_path, e)
 
     def set_tracer(self, tracer):
         """Attach an OcrTracer for debug logging and image output."""
@@ -443,6 +462,13 @@ class MarketPriceDetector:
             # Find previous tracked window near this position
             prev = self._find_tracked_near(pos)
             prev_data = prev["data"] if prev else None
+            review_sent = prev.get("review_sent", False) if prev else False
+
+            # Reset flag if the user opened a different item in this window
+            if review_sent and prev_data is not None:
+                if (data.get("item_name") != prev_data.get("item_name")
+                        or data.get("tier") != prev_data.get("tier")):
+                    review_sent = False
 
             values_changed = prev_data is None or self._data_changed(data, prev_data)
             confidence_improved = (
@@ -455,9 +481,15 @@ class MarketPriceDetector:
                 # Check if manual review is needed (overflow / ambiguity)
                 review = self._build_review_request(data)
                 if review:
-                    # Hold data — dialog will publish SCAN after user acts
-                    self._event_bus.publish(
-                        EVENT_MARKET_PRICE_REVIEW, review)
+                    if values_changed and not review_sent:
+                        # Hold data — dialog will publish SCAN after user acts.
+                        # Only queue on actual data change; confidence-only
+                        # improvements would duplicate the same review entry.
+                        # Once sent, suppress further reviews for this window
+                        # until the item identity changes.
+                        self._event_bus.publish(
+                            EVENT_MARKET_PRICE_REVIEW, review)
+                        review_sent = True
                 else:
                     self._event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
 
@@ -469,7 +501,10 @@ class MarketPriceDetector:
                     self._trace_save_window(
                         image, x, y, data.get("item_name", ""))
 
-            new_tracked.append({"pos": pos, "pixels": pixels, "data": data})
+            new_tracked.append({
+                "pos": pos, "pixels": pixels, "data": data,
+                "review_sent": review_sent,
+            })
 
         # Emit lost event if we went from having windows to none
         had_windows = len(self._tracked_windows) > 0
@@ -890,7 +925,7 @@ class MarketPriceDetector:
         if roi_tier:
             region = self._get_roi_region(image, tx, ty, roi_tier)
             if region is not None and region.size > 0:
-                tier_val, _tier_conf = self._read_cell_number(region)
+                tier_val, _tier_conf = self._read_tier(region)
                 if tier_val is not None:
                     try:
                         data["tier"] = int(tier_val)
@@ -1164,6 +1199,40 @@ class MarketPriceDetector:
                 return self._parse_cell_value(text), conf
 
         # Fallback: no STPK available
+        return None, 0.0
+
+    def _read_tier(self, region: np.ndarray) -> tuple[float | None, float]:
+        """Read a tier value from the tier region (BGR).
+
+        Uses the dedicated tier STPK (market_tiers.stpk) when available,
+        falling back to the digit STPK otherwise.
+        Returns (numeric_value, confidence).
+        """
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        threshold = getattr(
+            self._config, "market_price_text_threshold",
+            TEXT_BRIGHTNESS_THRESHOLD,
+        )
+        if int(np.max(gray)) < threshold:
+            return None, 1.0
+
+        # Prefer tier-specific STPK
+        if self._tier_entries and self._tier_grid_w > 0:
+            text, scores, _blob_texts = self._match_stpk_blobs(
+                region, self._tier_entries,
+                self._tier_grid_w, self._tier_grid_h,
+                right_align=True,
+            )
+            if text:
+                conf = min(scores) if scores else 0.0
+                return self._parse_cell_value(text), conf
+
+        # Fallback to digit STPK
+        if self._digit_entries:
+            text, conf, _worst = self._match_stpk_digits(region)
+            if text:
+                return self._parse_cell_value(text), conf
+
         return None, 0.0
 
     def _read_cell(

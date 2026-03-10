@@ -203,7 +203,7 @@ class OAuthClient:
             self._tokens = None
         self._token_store.clear()
         self._update_auth_state(AuthState())
-        log.warning("Logged out")
+        log.info("Logged out")
 
     def _build_auth_url(self, code_challenge: str, state: str, redirect_uri: str) -> str:
         base_url = self._config.nexus_base_url
@@ -243,7 +243,7 @@ class OAuthClient:
                 self._tokens = tokens
             self._token_store.save(tokens)
             self._refresh_user_info()
-            log.warning("Login successful")
+            log.info("Login successful")
             return True
 
         except requests.HTTPError as e:

@@ -27,6 +27,7 @@ class AppConfig:
     ocr_idle_multiplier: int = 5      # poll interval multiplier in idle mode
     ocr_capture_backend: str = "auto"  # auto | bitblt | printwindow | wgc
     capture_backend_choice_made: bool = False  # one-time capture backend dialog
+    hdr_compatibility_mode: bool = False  # CLAHE tone correction for HDR displays
     ocr_auto_scan_enabled: bool = True
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
@@ -50,6 +51,10 @@ class AppConfig:
     exchange_overlay_position: tuple[int, int] = (100, 100)
     exchange_overlay_size: tuple[int, int] = (700, 500)
     notifications_overlay_position: tuple[int, int] = (100, 100)
+    recording_bar_overlay_position: tuple[int, int] = (50, 150)
+    recording_bar_setup_shown: bool = False
+    gallery_overlay_position: tuple[int, int] = (100, 100)
+    gallery_overlay_size: tuple[int, int] = (350, 500)
     map_overlay_size: int = 1  # 0=Small, 1=Medium, 2=Large
     overlay_opacity: float = 0.85
     overlay_enabled: bool = True
@@ -89,6 +94,8 @@ class AppConfig:
     hotkey_notifications: str = "ctrl+n"
     hotkey_debug: str = "f3"
     hotkey_overlay_toggle: str = "f2"
+    hotkey_recording_bar: str = "ctrl+r"
+    hotkey_gallery: str = "ctrl+g"
 
     # UI
     main_window_screen_center: list | None = None
@@ -185,35 +192,102 @@ class AppConfig:
     screenshot_delay_s: float = 1.0
     screenshot_directory: str = ""          # empty = ~/Pictures/Entropia Nexus Screenshots
     screenshot_daily_subfolder: bool = True
-    hotkey_screenshot: str = ""
+    screenshot_size_pct: int = 100          # 25, 50, 75, or 100 (% of source resolution)
+    hotkey_screenshot: str = "f12"
+
+    # Auto-screenshot conditions (checked when own global detected)
+    screenshot_min_ped: float = 0.0                 # 0 = no minimum
+    screenshot_global_types: list[str] = field(      # empty = all types
+        default_factory=list)
+    screenshot_hof_only: bool = False
+    screenshot_cooldown_s: float = 0.0              # 0 = no cooldown
+    screenshot_sound_enabled: bool = True           # play shutter sound on screenshot
 
     # Video clips
     clip_enabled: bool = False              # off by default (needs FFmpeg + resources)
     clip_auto_on_global: bool = True
     clip_buffer_seconds: int = 15
     clip_post_global_seconds: int = 5
+
+    # Auto-clip conditions (checked when own global detected)
+    clip_min_ped: float = 0.0                       # 0 = no minimum
+    clip_global_types: list[str] = field(            # empty = all types
+        default_factory=list)
+    clip_hof_only: bool = False
+    clip_cooldown_s: float = 0.0                    # 0 = no cooldown
+    clip_sound_enabled: bool = True                 # play chime on clip/recording save
     clip_directory: str = ""                # empty = ~/Videos/Entropia Nexus Clips
     clip_daily_subfolder: bool = True
+    clip_capture_backend: str = "auto"      # auto | bitblt | wgc
     clip_fps: int = 30
     clip_resolution: str = "source"         # source | 1080p | 720p | 480p
     clip_bitrate: str = "medium"            # low | medium | high | ultra
-    hotkey_save_clip: str = ""
+    clip_scaling: str = "cubic"             # lanczos | linear | cubic | area | nearest
+    hotkey_save_clip: str = "ctrl+shift+space"
+    hotkey_toggle_recording: str = "ctrl+shift+r"
     ffmpeg_path: str = ""                   # manual override for FFmpeg binary
 
-    # Audio (for video clips)
+    # Audio — Game/system audio (for video clips)
     clip_audio_enabled: bool = False
     clip_audio_device: str = ""             # empty = system default loopback
+    clip_audio_game_gain: float = 1.0       # 0.0 to 3.0 (1.0 = unity)
     clip_audio_noise_suppression: bool = True
     clip_audio_noise_gate: bool = True
     clip_audio_compressor: bool = True
 
+    # Audio filter parameters — Noise Suppression (arnndn / RNNoise)
+    clip_audio_ns_mix: float = 1.0                  # 0.0 = bypass, 1.0 = fully denoised
+
+    # Audio filter parameters — Noise Gate (agate)
+    clip_audio_gate_threshold: float = 0.01
+    clip_audio_gate_ratio: float = 2.0
+    clip_audio_gate_attack: float = 10.0            # ms
+    clip_audio_gate_release: float = 100.0          # ms
+
+    # Audio filter parameters — Compressor (acompressor)
+    clip_audio_comp_threshold: float = -20.0        # dB
+    clip_audio_comp_ratio: float = 4.0
+    clip_audio_comp_attack: float = 5.0             # ms
+    clip_audio_comp_release: float = 100.0          # ms
+
+    # Audio — Microphone
+    clip_mic_enabled: bool = False
+    clip_mic_device: str = ""               # empty = system default
+    clip_audio_mic_gain: float = 1.0        # 0.0 to 3.0
+
     # Webcam (for video clips)
     clip_webcam_enabled: bool = False
     clip_webcam_device: int = 0
-    clip_webcam_position: str = "bottom_right"  # top_left|top_right|bottom_left|bottom_right
+    clip_webcam_fps: int = 0               # webcam capture FPS (0 = match output)
+    clip_webcam_keep_ready: bool = False   # keep webcam open (claimed) even when not recording
+    clip_webcam_scale: float = 0.2          # webcam size as fraction of frame width
+    clip_webcam_position_x: float = 0.88    # normalized center X (0.0-1.0)
+    clip_webcam_position_y: float = 0.85    # normalized center Y (0.0-1.0)
+
+    # Webcam crop (normalized 0.0-1.0 within the webcam frame)
+    clip_webcam_crop_x: float = 0.0
+    clip_webcam_crop_y: float = 0.0
+    clip_webcam_crop_w: float = 1.0         # 1.0 = full width (no crop)
+    clip_webcam_crop_h: float = 1.0         # 1.0 = full height (no crop)
+
+    # Webcam chroma key (green screen removal)
+    clip_webcam_chroma_enabled: bool = False
+    clip_webcam_chroma_color: str = "#00ff00"   # hex color to key out
+    clip_webcam_chroma_threshold: int = 40      # color distance threshold (0-255)
+    clip_webcam_chroma_smoothing: int = 5       # edge smoothing kernel size
+
+    # OBS Studio integration (delegates capture/encoding to OBS)
+    obs_enabled: bool = False               # use OBS instead of internal capture
+    obs_host: str = "localhost"             # obs-websocket host
+    obs_port: int = 4455                    # obs-websocket port (default for OBS 28+)
+    obs_manage_replay_buffer: bool = False  # auto start/stop replay buffer with EU client
+    obs_replay_buffer_asked: bool = False  # whether the user was asked about replay management
 
     # Blur/privacy regions for captures
     capture_blur_regions: list[dict] = field(default_factory=list)  # [{x, y, w, h}] normalized 0.0-1.0
+
+    # Blur dialog background image/video (stretched to fill when no game frame)
+    capture_preview_background: str = ""    # path to image or video file
 
 
 DEFAULTS = {
@@ -228,7 +302,9 @@ DEFAULTS = {
     "ocr_idle_multiplier": 5,
     "ocr_capture_backend": "auto",
     "capture_backend_choice_made": False,
+    "hdr_compatibility_mode": False,
     "ocr_auto_scan_enabled": True,
+    "ocr_trace_enabled": False,
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},
     "scan_roi_version": 0,
@@ -241,6 +317,10 @@ DEFAULTS = {
     "exchange_overlay_position": [100, 100],
     "exchange_overlay_size": [700, 500],
     "notifications_overlay_position": [100, 100],
+    "recording_bar_overlay_position": [50, 150],
+    "recording_bar_setup_shown": False,
+    "gallery_overlay_position": [100, 100],
+    "gallery_overlay_size": [350, 500],
     "map_overlay_position": [100, 100],
     "scan_summary_overlay_position": [100, 200],
     "confirm_overlay_position": [100, 200],
@@ -273,6 +353,8 @@ DEFAULTS = {
     "hotkey_notifications": "ctrl+n",
     "hotkey_debug": "f3",
     "hotkey_overlay_toggle": "f2",
+    "hotkey_recording_bar": "ctrl+r",
+    "hotkey_gallery": "ctrl+g",
     "main_window_screen_center": None,
     "active_loadout_id": None,
     "overamp_mode": "percent",
@@ -294,6 +376,8 @@ DEFAULTS = {
     "trade_chat_keywords": [],
     "stream_notifications_enabled": True,
     "stream_exclude_list": [],
+    "tracker_missions": [],
+    "tracker_event_reminders": [],
     "dashboard_globals_min_value": 0.0,
     "dashboard_globals_blocked_types": [],
     "dashboard_trade_blocklist": [],
@@ -333,27 +417,67 @@ DEFAULTS = {
     "screenshot_delay_s": 1.0,
     "screenshot_directory": "",
     "screenshot_daily_subfolder": True,
-    "hotkey_screenshot": "",
+    "hotkey_screenshot": "f12",
+    "screenshot_min_ped": 0.0,
+    "screenshot_global_types": [],
+    "screenshot_hof_only": False,
+    "screenshot_cooldown_s": 0.0,
+    "screenshot_size_pct": 100,
+    "screenshot_sound_enabled": True,
     "clip_enabled": False,
     "clip_auto_on_global": True,
     "clip_buffer_seconds": 15,
     "clip_post_global_seconds": 5,
+    "clip_min_ped": 0.0,
+    "clip_global_types": [],
+    "clip_hof_only": False,
+    "clip_cooldown_s": 0.0,
+    "clip_sound_enabled": True,
     "clip_directory": "",
     "clip_daily_subfolder": True,
+    "clip_capture_backend": "auto",
     "clip_fps": 30,
     "clip_resolution": "source",
     "clip_bitrate": "medium",
-    "hotkey_save_clip": "",
+    "clip_scaling": "cubic",
+    "hotkey_save_clip": "ctrl+shift+space",
+    "hotkey_toggle_recording": "ctrl+shift+r",
     "ffmpeg_path": "",
     "clip_audio_enabled": False,
     "clip_audio_device": "",
+    "clip_audio_game_gain": 1.0,
     "clip_audio_noise_suppression": True,
     "clip_audio_noise_gate": True,
     "clip_audio_compressor": True,
+    "clip_audio_ns_mix": 1.0,
+    "clip_audio_gate_threshold": 0.01,
+    "clip_audio_gate_ratio": 2.0,
+    "clip_audio_gate_attack": 10.0,
+    "clip_audio_gate_release": 100.0,
+    "clip_audio_comp_threshold": -20.0,
+    "clip_audio_comp_ratio": 4.0,
+    "clip_audio_comp_attack": 5.0,
+    "clip_audio_comp_release": 100.0,
+    "clip_mic_enabled": False,
+    "clip_mic_device": "",
+    "clip_audio_mic_gain": 1.0,
     "clip_webcam_enabled": False,
     "clip_webcam_device": 0,
-    "clip_webcam_position": "bottom_right",
+    "clip_webcam_fps": 0,
+    "clip_webcam_keep_ready": False,
+    "clip_webcam_scale": 0.2,
+    "clip_webcam_position_x": 0.88,
+    "clip_webcam_position_y": 0.85,
+    "clip_webcam_crop_x": 0.0,
+    "clip_webcam_crop_y": 0.0,
+    "clip_webcam_crop_w": 1.0,
+    "clip_webcam_crop_h": 1.0,
+    "clip_webcam_chroma_enabled": False,
+    "clip_webcam_chroma_color": "#00ff00",
+    "clip_webcam_chroma_threshold": 40,
+    "clip_webcam_chroma_smoothing": 5,
     "capture_blur_regions": [],
+    "capture_preview_background": "",
 }
 
 
@@ -402,6 +526,25 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         merged["trade_chat_cooldown_minutes"] = max(1, secs // 60)
     merged.pop("trade_chat_cooldown_seconds", None)
 
+    # Migrate clip_webcam_position (corner enum) → clip_webcam_position_x/y
+    if "clip_webcam_position" in user_config and "clip_webcam_position_x" not in user_config:
+        _pos_map = {
+            "top_left": (0.12, 0.15),
+            "top_right": (0.88, 0.15),
+            "bottom_left": (0.12, 0.85),
+            "bottom_right": (0.88, 0.85),
+        }
+        old_pos = user_config["clip_webcam_position"]
+        px, py = _pos_map.get(old_pos, (0.88, 0.85))
+        merged["clip_webcam_position_x"] = px
+        merged["clip_webcam_position_y"] = py
+    merged.pop("clip_webcam_position", None)
+
+    # Migrate clip_audio_ns_level (afftdn) → clip_audio_ns_mix (arnndn)
+    if "clip_audio_ns_level" in user_config and "clip_audio_ns_mix" not in user_config:
+        merged["clip_audio_ns_mix"] = 1.0  # arnndn default (fully denoised)
+    merged.pop("clip_audio_ns_level", None)
+
     # Reset stale ROI overrides when defaults change
     if merged.get("scan_roi_version", 0) < SCAN_ROI_VERSION:
         merged["scan_roi_overrides"] = {}
@@ -424,6 +567,8 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         "map_overlay_position", "scan_summary_overlay_position",
         "confirm_overlay_position", "profile_overlay_position",
         "society_overlay_position",
+        "recording_bar_overlay_position", "gallery_overlay_position",
+        "gallery_overlay_size",
         "mob_name_region", "tool_name_region",
     ):
         val = merged.get(key)
@@ -493,10 +638,23 @@ def validate_config(config: AppConfig) -> list[str]:
     if not 0.0 <= config.ocr_confidence_threshold <= 1.0:
         errors.append(f"ocr_confidence_threshold must be 0.0-1.0, got {config.ocr_confidence_threshold}")
 
-    if config.ocr_capture_backend not in {"auto", "bitblt", "printwindow", "wgc"}:
+    _valid_backends = {"auto", "bitblt", "printwindow", "wgc"}
+    if config.ocr_capture_backend not in _valid_backends:
         errors.append(
             "ocr_capture_backend must be one of: auto, bitblt, printwindow, wgc "
             f"(got {config.ocr_capture_backend})",
+        )
+    _valid_clip_backends = {"auto", "bitblt", "wgc"}
+    if config.clip_capture_backend not in _valid_clip_backends:
+        errors.append(
+            "clip_capture_backend must be one of: auto, bitblt, wgc "
+            f"(got {config.clip_capture_backend})",
+        )
+    _valid_scaling = {"lanczos", "linear", "cubic", "area", "nearest"}
+    if getattr(config, "clip_scaling", "lanczos") not in _valid_scaling:
+        errors.append(
+            f"clip_scaling must be one of: {', '.join(sorted(_valid_scaling))} "
+            f"(got {config.clip_scaling})",
         )
 
     return errors

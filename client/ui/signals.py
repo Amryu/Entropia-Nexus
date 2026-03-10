@@ -48,6 +48,16 @@ from ..core.constants import (
     EVENT_CLIP_SAVED,
     EVENT_CAPTURE_ERROR,
     EVENT_OWN_GLOBAL,
+    EVENT_RECORDING_STARTED,
+    EVENT_RECORDING_STOPPED,
+    EVENT_CLIP_ENCODING_STARTED,
+    EVENT_CLIP_ENCODING_PROGRESS,
+    EVENT_OBS_CONNECTED,
+    EVENT_OBS_DISCONNECTED,
+    EVENT_OBS_ERROR,
+    EVENT_GROUP_DOWNLOAD_PROGRESS,
+    EVENT_GROUP_DOWNLOAD_COMPLETE,
+    EVENT_GROUP_DOWNLOAD_ERROR,
 )
 
 
@@ -130,11 +140,25 @@ class AppSignals(QObject):
     # Inventory
     inventory_open_wiki = pyqtSignal(int, str, str)  # (item_id, item_type, item_name)
 
-    # Capture (screenshots / video clips)
+    # Capture (screenshots / video clips / recording)
     screenshot_saved = pyqtSignal(object)   # {"path": str, "timestamp": str}
     clip_saved = pyqtSignal(object)         # {"path": str, "duration": float}
     capture_error = pyqtSignal(object)      # {"error": str}
     own_global = pyqtSignal(object)         # GlobalEvent for own player
+    recording_started = pyqtSignal(object)  # {"path": str}
+    recording_stopped = pyqtSignal(object)  # {"path": str, "duration": float}
+    clip_encoding_started = pyqtSignal(object)   # {"path": str, "frames": int}
+    clip_encoding_progress = pyqtSignal(object)  # {"path": str, "written": int, "total": int}
+
+    # OBS integration
+    obs_connected = pyqtSignal(object)       # {"host": str, "port": int}
+    obs_disconnected = pyqtSignal(object)    # {"reason": str}
+    obs_error = pyqtSignal(object)           # {"error": str}
+
+    # Optional component groups (on-demand downloads)
+    group_download_progress = pyqtSignal(object)  # {"group", "downloaded", "total", "current_file"}
+    group_download_complete = pyqtSignal(object)  # {"group"}
+    group_download_error = pyqtSignal(object)     # {"group", "error"}
 
     # Open entity in detail overlay (dict with Name, Type)
     open_entity_overlay = pyqtSignal(dict)
@@ -188,6 +212,16 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_CLIP_SAVED: signals.clip_saved,
         EVENT_CAPTURE_ERROR: signals.capture_error,
         EVENT_OWN_GLOBAL: signals.own_global,
+        EVENT_RECORDING_STARTED: signals.recording_started,
+        EVENT_RECORDING_STOPPED: signals.recording_stopped,
+        EVENT_CLIP_ENCODING_STARTED: signals.clip_encoding_started,
+        EVENT_CLIP_ENCODING_PROGRESS: signals.clip_encoding_progress,
+        EVENT_OBS_CONNECTED: signals.obs_connected,
+        EVENT_OBS_DISCONNECTED: signals.obs_disconnected,
+        EVENT_OBS_ERROR: signals.obs_error,
+        EVENT_GROUP_DOWNLOAD_PROGRESS: signals.group_download_progress,
+        EVENT_GROUP_DOWNLOAD_COMPLETE: signals.group_download_complete,
+        EVENT_GROUP_DOWNLOAD_ERROR: signals.group_download_error,
     }
 
     for event_name, signal in _WIRING.items():

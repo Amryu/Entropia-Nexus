@@ -43,11 +43,13 @@ _FREQUENCY_COLORS = {
 }
 
 # Density labels/colors (matching web MobLocations.svelte)
-_DENSITY_LABELS = {1: "Low", 2: "Medium", 3: "High"}
+_DENSITY_LABELS = {1: "Very Low", 2: "Low", 3: "Medium", 4: "High", 5: "Very High"}
 _DENSITY_COLORS = {
-    1: ("#eab308", "rgba(202, 138, 4, 0.25)"),
-    2: ("#22c55e", "rgba(22, 163, 74, 0.25)"),
-    3: ("#ef4444", "rgba(220, 38, 38, 0.25)"),
+    1: ("#94a3b8", "rgba(148, 163, 184, 0.25)"),
+    2: ("#eab308", "rgba(202, 138, 4, 0.25)"),
+    3: ("#22c55e", "rgba(22, 163, 74, 0.25)"),
+    4: ("#ef4444", "rgba(220, 38, 38, 0.25)"),
+    5: ("#a855f7", "rgba(168, 85, 247, 0.25)"),
 }
 
 # Difficulty bands (matching mapUtil.js / maps_page.py)

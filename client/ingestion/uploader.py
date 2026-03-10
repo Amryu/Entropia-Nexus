@@ -23,7 +23,6 @@ from datetime import datetime, timedelta
 from ..api.nexus_client import RateLimitError, ServerError
 from ..chat_parser.models import GlobalEvent
 from ..core.constants import EVENT_CATCHUP_COMPLETE, EVENT_GLOBAL, EVENT_HISTORICAL_IMPORT_COMPLETE, EVENT_INGESTION_STATUS, EVENT_MARKET_PRICE_SCAN, EVENT_REPARSE_COMPLETE, EVENT_TRADE_CHAT
-from ..core.gil_yield import GilYielder
 from ..core.logger import get_logger
 
 log = get_logger("Ingestion.Upload")
@@ -83,6 +82,11 @@ class IngestionUploader:
 
         # Occurrence tracking: base_hash -> list of event timestamps (within 5-min window)
         self._recent_hashes: dict[str, list[datetime]] = {}
+
+        # DB drain state: stream globals/trades from SQLite instead of loading into memory
+        self._db_drain_pending = threading.Event()
+        self._db_drain_total: int = 0
+        self._db_drain_uploaded: int = 0
 
         # Load any pending items from a previous session (crash recovery)
         if db:
@@ -259,69 +263,213 @@ class IngestionUploader:
         self._emit_status()
 
     def _on_catchup_complete(self, _data):
-        """After initial catchup — re-buffer from DB and enable real-time flush."""
+        """After initial catchup — request DB drain and enable real-time flush."""
         if self._live:
             return  # Ignore reparse's secondary EVENT_CATCHUP_COMPLETE
         self._live = True
         log.info("Catchup complete, real-time flush enabled (delay=%ds)", REALTIME_FLUSH_DELAY)
-        self._rebuffer_from_db()
+        self._request_db_drain()
 
     def _on_reparse_complete(self, _data):
-        """After a manual reparse — re-buffer globals/trades from DB for re-upload."""
-        self._rebuffer_from_db()
+        """After a manual reparse — drain globals/trades from DB for re-upload."""
+        self._request_db_drain()
 
     def _on_historical_import_complete(self, _data):
-        """After historical log import — re-buffer globals/trades from DB for upload."""
-        self._rebuffer_from_db()
+        """After historical log import — drain globals/trades from DB for upload."""
+        self._request_db_drain()
 
-    def _rebuffer_from_db(self):
-        """Re-buffer globals and trades from the local DB for upload.
+    def _request_db_drain(self):
+        """Signal the upload thread to drain globals/trades from the local DB.
 
-        During catchup/reparse, EventBus events are suppressed so globals and
-        trades are only written to the local DB. This method reads them back
-        and queues them for upload. Clears occurrence tracker and buffers
-        first to avoid double-counting.
+        Called after catchup, reparse, or historical import. Instead of loading
+        all items into memory, we set a flag and let the flush loop stream them
+        in MAX_BATCH_SIZE chunks directly from SQLite.
         """
         if not self._db:
             return
 
-        def _rebuffer():
+        with self._lock:
+            self._global_buffer.clear()
+            self._trade_buffer.clear()
+            self._recent_hashes.clear()
+
+        global_count = self._db.count_globals()
+        trade_count = self._db.count_trades(max_age_hours=24)
+        self._db_drain_total = global_count + trade_count
+        self._db_drain_uploaded = 0
+
+        log.info("DB drain requested: %d globals, %d trades to upload",
+                 global_count, trade_count)
+
+        if self._db_drain_total > 0:
+            self._db_drain_pending.set()
+            self._flush_requested.set()
+
+        self._emit_status()
+
+    # ------------------------------------------------------------------
+    # DB drain — streaming upload from SQLite
+    # ------------------------------------------------------------------
+
+    def _drain_db_chunk(self) -> tuple[bool, bool]:
+        """Upload one chunk of globals and/or trades from the local DB.
+
+        Returns (has_more, made_progress). Called by _flush() when
+        _db_drain_pending is set. Only re-trigger immediate flush when
+        progress was made — avoids busy-spinning when rate-limited.
+        """
+        if not self._db or not self._nexus_client.is_authenticated():
+            return False, False
+
+        g_more, g_progress = self._drain_db_globals_chunk()
+        t_more, t_progress = self._drain_db_trades_chunk()
+
+        has_more = g_more or t_more
+        made_progress = g_progress or t_progress
+        if not has_more:
+            self._db_drain_pending.clear()
+            self._db_drain_total = 0
+            self._db_drain_uploaded = 0
+            log.info("DB drain complete")
+
+        self._emit_status()
+        return has_more, made_progress
+
+    def _drain_db_globals_chunk(self) -> tuple[bool, bool]:
+        """Read up to MAX_BATCH_SIZE globals from DB, upload, delete confirmed.
+
+        Returns (has_more, made_progress).
+        """
+        if self._stop_event.is_set():
+            return False, False
+
+        allowed, wait_s = self._reserve_rate_limit_slot("global")
+        if not allowed:
+            log.debug("DB drain globals: rate-limited, retry in %ds", wait_s)
+            return True, False
+
+        chunk = self._db.fetch_globals_batch(limit=MAX_BATCH_SIZE)
+        if not chunk:
+            return False, False
+
+        with self._lock:
+            for item in chunk:
+                ts = datetime.fromisoformat(item["timestamp"])
+                item["occurrence"] = self._assign_occurrence(item, ts)
+
+        try:
+            result = self._nexus_client.ingest_globals(chunk)
+            if result:
+                self._db_drain_uploaded += len(chunk)
+                log.debug(
+                    "DB drain globals chunk: %d accepted, %d dup, %d invalid",
+                    result.get("accepted", 0),
+                    result.get("duplicates", 0),
+                    result.get("invalid", 0),
+                )
+                try:
+                    self._db.delete_ingested_globals(chunk)
+                except Exception as e:
+                    log.warning("Failed to delete drained globals from DB: %s", e)
+                return True, True
+            else:
+                # 4xx client error — data rejected, delete to avoid infinite retry
+                self._log_failed_batch("global", chunk)
+                try:
+                    self._db.delete_ingested_globals(chunk)
+                except Exception as e:
+                    log.warning("Failed to delete rejected globals from DB: %s", e)
+                return True, True
+        except RateLimitError as e:
             with self._lock:
-                self._global_buffer.clear()
-                self._trade_buffer.clear()
-                self._recent_hashes.clear()
+                self._rate_limit_until["global"] = (
+                    datetime.now() + timedelta(seconds=e.retry_after)
+                )
+            log.warning("DB drain globals rate-limited (retry in %ds)", e.retry_after)
+            return True, False
+        except ServerError as e:
+            log.warning("DB drain globals server error: %s", e)
+            return True, False
+        except Exception as e:
+            log.warning("DB drain globals failed: %s", e)
+            self._log_failed_batch("global", chunk)
+            return True, False
 
-            # Stream globals from DB — never hold entire table in RAM.
-            global_count = 0
-            yielder = GilYielder()
-            for g in self._db.iter_globals():
-                occurrence = self._assign_occurrence(g, datetime.fromisoformat(g["timestamp"]))
-                g["occurrence"] = occurrence
-                with self._lock:
-                    self._global_buffer.append(g)
-                global_count += 1
-                yielder.yield_if_needed()
+    def _drain_db_trades_chunk(self) -> tuple[bool, bool]:
+        """Read up to MAX_BATCH_SIZE trades from DB, upload, delete confirmed.
 
-            # Stream trades — filter inline, append matches directly.
-            trade_count = 0
-            now = datetime.now()
-            for t in self._db.iter_trades(max_age_hours=24):
-                if not (TRADE_KEYWORDS_RE.search(t["message"]) or ITEM_LINK_RE.search(t["message"])):
-                    continue
-                if now - datetime.fromisoformat(t["timestamp"]) > MAX_TRADE_AGE:
-                    continue
-                with self._lock:
-                    self._trade_buffer.append(t)
-                trade_count += 1
-                yielder.yield_if_needed()
+        Returns (has_more, made_progress).
+        """
+        if self._stop_event.is_set():
+            return False, False
 
-            log.info("Re-buffered %d globals and %d trades from local DB for upload",
-                     global_count, trade_count)
-            self._emit_status()
-            if global_count or trade_count:
-                self._flush_requested.set()
+        allowed, wait_s = self._reserve_rate_limit_slot("trade")
+        if not allowed:
+            log.debug("DB drain trades: rate-limited, retry in %ds", wait_s)
+            return True, False
 
-        threading.Thread(target=_rebuffer, daemon=True, name="ingestion-rebuffer").start()
+        chunk = self._db.fetch_trades_batch(limit=MAX_BATCH_SIZE, max_age_hours=24)
+        if not chunk:
+            return False, False
+
+        # Filter for trade keywords/item links — delete non-matching from DB
+        filtered = []
+        rejected = []
+        for item in chunk:
+            if self._trade_filter(item):
+                filtered.append(item)
+            else:
+                rejected.append(item)
+        if rejected:
+            try:
+                self._db.delete_ingested_trades(rejected)
+            except Exception as e:
+                log.warning("Failed to delete filtered trades from DB: %s", e)
+        if not filtered:
+            return True, True  # Filtered items deleted = progress
+
+        try:
+            result = self._nexus_client.ingest_trades(filtered)
+            if result:
+                self._db_drain_uploaded += len(filtered)
+                log.debug(
+                    "DB drain trades chunk: %d accepted, %d dup, %d invalid",
+                    result.get("accepted", 0),
+                    result.get("duplicates", 0),
+                    result.get("invalid", 0),
+                )
+                try:
+                    self._db.delete_ingested_trades(filtered)
+                except Exception as e:
+                    log.warning("Failed to delete drained trades from DB: %s", e)
+                return True, True
+            else:
+                self._log_failed_batch("trade", filtered)
+                try:
+                    self._db.delete_ingested_trades(filtered)
+                except Exception as e:
+                    log.warning("Failed to delete rejected trades from DB: %s", e)
+                return True, True
+        except RateLimitError as e:
+            with self._lock:
+                self._rate_limit_until["trade"] = (
+                    datetime.now() + timedelta(seconds=e.retry_after)
+                )
+            log.warning("DB drain trades rate-limited (retry in %ds)", e.retry_after)
+            return True, False
+        except ServerError as e:
+            log.warning("DB drain trades server error: %s", e)
+            return True, False
+        except Exception as e:
+            log.warning("DB drain trades failed: %s", e)
+            self._log_failed_batch("trade", filtered)
+            return True, False
+
+    @staticmethod
+    def _trade_filter(item: dict) -> bool:
+        """Return True if a trade message passes the keyword/item-link filter."""
+        msg = item.get("message", "")
+        return bool(TRADE_KEYWORDS_RE.search(msg) or ITEM_LINK_RE.search(msg))
 
     # ------------------------------------------------------------------
     # Occurrence tracking
@@ -437,18 +585,26 @@ class IngestionUploader:
 
             if self._flush_requested.is_set():
                 self._flush_requested.clear()
-                # Brief delay to batch nearby events (e.g. multiple globals in rapid succession)
-                self._stop_event.wait(timeout=REALTIME_FLUSH_DELAY)
-                if self._stop_event.is_set():
-                    break
+                # Only apply batching delay for real-time events, not DB drain
+                if not self._db_drain_pending.is_set():
+                    self._stop_event.wait(timeout=REALTIME_FLUSH_DELAY)
+                    if self._stop_event.is_set():
+                        break
 
             self._flush()
 
     def _emit_status(self):
         """Publish pending buffer count for UI status display."""
         with self._lock:
-            pending = len(self._global_buffer) + len(self._trade_buffer) + len(self._market_price_buffer)
-        self._event_bus.publish(EVENT_INGESTION_STATUS, {"pending": pending})
+            buffer_pending = len(self._global_buffer) + len(self._trade_buffer) + len(self._market_price_buffer)
+
+        db_remaining = 0
+        if self._db_drain_pending.is_set():
+            db_remaining = max(0, self._db_drain_total - self._db_drain_uploaded)
+
+        self._event_bus.publish(EVENT_INGESTION_STATUS, {
+            "pending": buffer_pending + db_remaining,
+        })
 
     def _flush(self):
         """Drain buffers and send to server in chunks of MAX_BATCH_SIZE."""
@@ -460,13 +616,12 @@ class IngestionUploader:
         with self._lock:
             self._cleanup_occurrence_tracker()
 
+        # 1. Flush real-time buffers (small, latency-sensitive)
         g_sent, g_processed = self._flush_type(self._global_buffer, "global", self._nexus_client.ingest_globals)
         t_sent, t_processed = self._flush_type(self._trade_buffer, "trade", self._nexus_client.ingest_trades)
         mp_sent, mp_processed = self._flush_type(self._market_price_buffer, "market_price", self._nexus_client.ingest_market_prices)
 
         # Delete only the specific items confirmed processed by the server.
-        # Items still in the buffer (re-queued from rate limiting) stay in the DB
-        # so they survive a restart via _rebuffer_from_db().
         changed = g_processed or t_processed or mp_processed
         if self._db and changed:
             try:
@@ -481,6 +636,13 @@ class IngestionUploader:
         # Avoids expensive full-buffer rewrite every cycle when rate-limited.
         if changed:
             self._persist_buffers()
+
+        # 2. Stream from DB if drain is pending
+        if self._db_drain_pending.is_set():
+            has_more, made_progress = self._drain_db_chunk()
+            if has_more and made_progress and not self._stop_event.is_set():
+                self._flush_requested.set()  # Continue draining without waiting
+
         self._emit_status()
 
     def _flush_type(self, buffer, type_name, send_fn) -> tuple[int, list[dict]]:
@@ -630,9 +792,3 @@ class IngestionUploader:
             self._db.save_pending_ingestion("trade", trades_list)
         else:
             self._db.clear_pending_ingestion("trade")
-
-
-def _chunked(items: list, size: int):
-    """Yield successive chunks of *size* from *items*."""
-    for i in range(0, len(items), size):
-        yield items[i:i + size]

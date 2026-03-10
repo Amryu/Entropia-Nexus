@@ -77,6 +77,11 @@ EVENT_UPDATE_READY = "update_ready"
 EVENT_UPDATE_ERROR = "update_error"
 EVENT_UPDATE_APPLY = "update_apply"
 
+# Event names — Optional component groups (on-demand downloads)
+EVENT_GROUP_DOWNLOAD_PROGRESS = "group_download_progress"
+EVENT_GROUP_DOWNLOAD_COMPLETE = "group_download_complete"
+EVENT_GROUP_DOWNLOAD_ERROR = "group_download_error"
+
 # Event names — Target lock detection
 EVENT_TARGET_LOCK_UPDATE = "target_lock_update"
 EVENT_TARGET_LOCK_LOST = "target_lock_lost"
@@ -92,11 +97,20 @@ EVENT_MARKET_PRICE_REVIEW = "market_price_review"  # needs manual review (overfl
 EVENT_PLAYER_STATUS_UPDATE = "player_status_update"
 EVENT_PLAYER_STATUS_LOST = "player_status_lost"
 
-# Event names — Capture (screenshots / video clips)
+# Event names — Capture (screenshots / video clips / recording)
 EVENT_SCREENSHOT_SAVED = "screenshot_saved"
 EVENT_CLIP_SAVED = "clip_saved"
 EVENT_CAPTURE_ERROR = "capture_error"
 EVENT_OWN_GLOBAL = "own_global"
+EVENT_RECORDING_STARTED = "recording_started"
+EVENT_RECORDING_STOPPED = "recording_stopped"
+EVENT_CLIP_ENCODING_STARTED = "clip_encoding_started"
+EVENT_CLIP_ENCODING_PROGRESS = "clip_encoding_progress"
+
+# Event names — OBS integration
+EVENT_OBS_CONNECTED = "obs_connected"
+EVENT_OBS_DISCONNECTED = "obs_disconnected"
+EVENT_OBS_ERROR = "obs_error"
 
 # Debug events
 EVENT_DEBUG_REGIONS = "debug_regions"      # Window/sidebar/table/pagination bounds

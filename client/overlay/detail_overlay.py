@@ -1076,7 +1076,7 @@ class DetailOverlayWidget(OverlayWidget):
         """Check if current item supports tier filtering for market prices."""
         entity_type = self._item.get("Type", "")
         item_name = self._item.get("Name", "")
-        return entity_type in _TIERABLE_TYPES and not item_name.endswith("(L)")
+        return entity_type in _TIERABLE_TYPES
 
     def _fetch_market_prices(self, piece_name: str | None = None):
         nc = self._nexus_client
@@ -1115,23 +1115,23 @@ class DetailOverlayWidget(OverlayWidget):
         # Tier filter for tierable items
         tier = self._mps_selected_tier if self._is_mps_tierable() else None
 
-        log.warning("[mps] %s: fetch_name=%s, fetch_id=%s, tier=%s, item keys=%s",
+        log.debug("[mps] %s: fetch_name=%s, fetch_id=%s, tier=%s, item keys=%s",
                     item_name, fetch_name, fetch_id, tier, list(item.keys()))
 
         def fetch():
             snapshot = None
             if fetch_name:
                 rows = nc.get_item_market_prices_by_name(fetch_name, tier=tier)
-                log.warning("[mps] by_name(%s) → %s", fetch_name, rows)
+                log.debug("[mps] by_name(%s) → %s", fetch_name, rows)
                 if rows:
                     snapshot = rows[0]
             elif fetch_id:
                 rows = nc.get_item_market_prices(fetch_id, tier=tier)
-                log.warning("[mps] by_id(%s) → %s", fetch_id, rows)
+                log.debug("[mps] by_id(%s) → %s", fetch_id, rows)
                 if rows:
                     snapshot = rows[0]
             else:
-                log.warning("[mps] no fetch_name or fetch_id for %s", item_name)
+                log.debug("[mps] no fetch_name or fetch_id for %s", item_name)
             self._market_prices_loaded.emit({
                 "_item_name": item_name,
                 "snapshot": snapshot,

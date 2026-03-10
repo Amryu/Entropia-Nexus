@@ -90,6 +90,9 @@ This document describes the Missions feature implementation including UI, routin
 
 // HandIn - Deliver items to NPC
 { "npcLocationId": number, "items": [{ "itemId": number, "quantity": number, "pedValue": number }] }
+
+// Collect - Collect a quantity of an item
+{ "itemId": number, "quantity": number }
 ```
 
 #### MissionRewards
@@ -264,6 +267,7 @@ Missions and chains are included in global search (`/search`):
 | Explore | WaypointInput (planet, coordinates) |
 | Interact | Target location (SearchableSelect) |
 | HandIn | NPC location, Items array with quantity/TT/PED |
+| Collect | Item (SearchInput), Quantity |
 
 ### MissionMapEmbed Component
 

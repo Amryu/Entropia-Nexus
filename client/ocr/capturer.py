@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from typing import Optional
 
@@ -39,6 +40,10 @@ WGC_MAX_FAIL_STREAK = 5
 # Windows build that introduced GraphicsCaptureSession.IsBorderRequired
 _WGC_BORDERLESS_MIN_BUILD = 20348
 
+# Windows build that introduced GraphicsCaptureSession.MinUpdateInterval
+# (Windows 11 22H2).  On older builds the parameter is silently ignored.
+_WGC_MIN_UPDATE_INTERVAL_BUILD = 22621
+
 
 @contextmanager
 def _thread_per_monitor_dpi():
@@ -65,6 +70,47 @@ def _thread_per_monitor_dpi():
                 pass
 
 
+def get_monitor_refresh_rate() -> int:
+    """Return the primary monitor's refresh rate in Hz.
+
+    Uses Qt's QScreen API which handles DPI-awareness, multi-monitor, and
+    variable-refresh-rate correctly.  Falls back to 60 if unavailable.
+    """
+    try:
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:
+            screen = app.primaryScreen()
+            if screen is not None:
+                hz = screen.refreshRate()
+                if hz and hz > 1:
+                    return int(round(hz))
+    except Exception:
+        pass
+    return 60
+
+
+def resolve_clip_backend(preference: str, clip_fps: int) -> str:
+    """Resolve 'auto' clip capture backend to a concrete backend.
+
+    Auto logic: Use WGC when the clip FPS matches (or exceeds) the monitor
+    refresh rate, since WGC inherently captures at the display's refresh rate.
+    For lower FPS, BitBlt is more efficient because WGC cannot be throttled on
+    older Windows builds and wastes GPU on frames that will be dropped.
+
+    Returns 'wgc' or 'bitblt'.
+    """
+    if preference == "wgc":
+        return "wgc"
+    if preference == "bitblt":
+        return "bitblt"
+    # auto: WGC only when FPS matches display rate
+    monitor_hz = get_monitor_refresh_rate()
+    if clip_fps >= monitor_hz:
+        return "wgc"
+    return "bitblt"
+
+
 # ---------------------------------------------------------------------------
 # Persistent WGC session (wraps windows-capture)
 # ---------------------------------------------------------------------------
@@ -75,30 +121,49 @@ class _WgcPersistentSession:
     The session runs on its own thread (via ``start_free_threaded``).
     ``on_frame_arrived`` stores the latest BGR frame; callers retrieve it
     with :meth:`get_frame`.
+
+    *min_interval* (seconds) throttles ``_on_frame`` so the expensive
+    numpy copy is skipped when a new frame arrives too soon.
+    *update_interval_ms* is passed to the OS via ``minimum_update_interval``
+    to reduce GPU-side frame delivery (Windows 11 22H2+).
     """
 
-    def __init__(self, window_name: str, draw_border: bool | None):
+    def __init__(
+        self,
+        window_name: str,
+        draw_border: bool | None,
+        min_interval: float = 0.0,
+        update_interval_ms: int | None = None,
+    ):
         self._latest_frame: np.ndarray | None = None
         self._lock = threading.Lock()
         self._control = None
         self._closed = False
+        self._min_interval = min_interval
+        self._last_frame_time = 0.0
 
         from windows_capture.windows_capture import NativeWindowsCapture
 
         native = NativeWindowsCapture(
             self._on_frame,
             self._on_closed,
-            False,           # cursor_capture
+            False,                # cursor_capture
             draw_border,
-            None,            # secondary_window
-            None,            # minimum_update_interval
-            None,            # dirty_region
-            None,            # monitor_index
+            None,                 # secondary_window
+            update_interval_ms,   # minimum_update_interval (milliseconds)
+            None,                 # dirty_region
+            None,                 # monitor_index
             window_name,
         )
         self._control = native.start_free_threaded()
 
     def _on_frame(self, buf, buf_len, width, height, stop_list, timespan):
+        # Software throttle: skip the expensive numpy copy if too soon
+        now = time.monotonic()
+        if self._min_interval > 0 and (now - self._last_frame_time) < self._min_interval:
+            return
+        self._last_frame_time = now
+
         row_pitch = buf_len // height
         if row_pitch == width * 4:
             arr = np.ctypeslib.as_array(
@@ -117,6 +182,10 @@ class _WgcPersistentSession:
 
     def _on_closed(self):
         self._closed = True
+
+    def set_min_interval(self, interval: float) -> None:
+        """Update the software throttle interval (seconds)."""
+        self._min_interval = interval
 
     def get_frame(self) -> np.ndarray | None:
         with self._lock:
@@ -165,6 +234,9 @@ class ScreenCapturer:
         self._wgc_session_hwnd: Optional[int] = None
         self._wgc_draw_border: bool | None = None  # False = borderless, None = OS default
         self._wgc_available = False
+        self._wgc_min_interval: float = 0.0        # software throttle (seconds)
+        self._wgc_update_interval_ms: int | None = None  # OS-level throttle (ms)
+        self._wgc_suspended = False                      # True → session torn down, use BitBlt
 
         if sys.platform == "win32":
             self._init_windows_backend()
@@ -172,6 +244,7 @@ class ScreenCapturer:
     def set_capture_backend(self, capture_backend: str | None) -> None:
         """Update backend preference at runtime."""
         self._stop_wgc_session()
+        self._wgc_suspended = False
         self._capture_backend_preference = self._normalize_backend_name(
             capture_backend or DEFAULT_CAPTURE_BACKEND,
         )
@@ -216,15 +289,20 @@ class ScreenCapturer:
         elif pref == "bitblt":
             self._active_window_backend = "bitblt"
         elif pref in {"auto", "wgc"}:
-            if self._is_wgc_available() and self._is_borderless_supported():
+            wgc_ok = self._is_wgc_available()
+            borderless = wgc_ok and self._is_borderless_supported()
+            can_throttle = self._os_supports_min_update_interval()
+
+            if pref == "auto" and borderless and can_throttle:
+                # Auto: only use WGC when the OS can throttle it
                 self._wgc_available = True
                 self._wgc_draw_border = False
                 self._active_window_backend = "wgc"
             elif pref == "wgc":
-                # Explicit WGC request — use it even with yellow border
-                if self._is_wgc_available():
+                # Explicit WGC request — honour it (warning shown in settings)
+                if wgc_ok:
                     self._wgc_available = True
-                    self._wgc_draw_border = None
+                    self._wgc_draw_border = False if borderless else None
                     self._active_window_backend = "wgc"
                 else:
                     log.warning("WGC requested but unavailable, falling back to BitBlt")
@@ -243,7 +321,7 @@ class ScreenCapturer:
             if backend == "wgc":
                 border = "borderless" if self._wgc_draw_border is False else "with border"
                 name = f"{name} ({border})"
-            log.warning("Window capture backend: %s", name)
+            log.info("Window capture backend: %s", name)
             ScreenCapturer._logged_backend = backend
 
     @staticmethod
@@ -329,8 +407,13 @@ class ScreenCapturer:
             log.warning("WGC session start failed: could not get window title for hwnd %s", hwnd)
             return False
         draw_border = self._wgc_draw_border
+        min_iv = self._wgc_min_interval
+        update_ms = self._wgc_update_interval_ms
         try:
-            self._wgc_session = _WgcPersistentSession(title, draw_border)
+            self._wgc_session = _WgcPersistentSession(
+                title, draw_border,
+                min_interval=min_iv, update_interval_ms=update_ms,
+            )
             self._wgc_session_hwnd = hwnd
             return True
         except Exception as e:
@@ -340,7 +423,10 @@ class ScreenCapturer:
                 log.warning("Borderless WGC not supported; retrying with OS default border")
                 self._wgc_draw_border = None
                 try:
-                    self._wgc_session = _WgcPersistentSession(title, None)
+                    self._wgc_session = _WgcPersistentSession(
+                        title, None,
+                        min_interval=min_iv, update_interval_ms=update_ms,
+                    )
                     self._wgc_session_hwnd = hwnd
                     return True
                 except Exception as e2:
@@ -357,6 +443,65 @@ class ScreenCapturer:
             self._wgc_session.stop()
             self._wgc_session = None
             self._wgc_session_hwnd = None
+
+    @staticmethod
+    def _os_supports_min_update_interval() -> bool:
+        """True if the OS supports ``MinUpdateInterval`` (Win 11 22H2+)."""
+        return (sys.platform == "win32"
+                and sys.getwindowsversion().build >= _WGC_MIN_UPDATE_INTERVAL_BUILD)
+
+    def set_wgc_throttle(self, interval_s: float, boosted: bool = False) -> None:
+        """Control WGC session lifecycle based on capture rate.
+
+        When *boosted* (video clips active), keeps the WGC session alive
+        with a software throttle and OS-level ``minimum_update_interval``.
+
+        When not boosted (OCR-only):
+        - On Windows 11 22H2+ where ``MinUpdateInterval`` is supported,
+          keeps WGC alive but throttled via the OS — low GPU overhead.
+        - On older Windows where the parameter is ignored, **suspends**
+          the WGC session entirely and falls through to BitBlt.
+        """
+        new_ms = max(1, int(interval_s * 1000)) if interval_s > 0 else None
+        old_ms = self._wgc_update_interval_ms
+
+        self._wgc_min_interval = interval_s
+        self._wgc_update_interval_ms = new_ms
+
+        if not boosted and not self._os_supports_min_update_interval():
+            # OS can't throttle WGC — suspend to free GPU resources.
+            # capture_window() will fall through to BitBlt.
+            if not self._wgc_suspended:
+                self._wgc_suspended = True
+                if self._wgc_session is not None:
+                    log.info("WGC suspended (OS lacks MinUpdateInterval, %.1f Hz) "
+                             "— using BitBlt",
+                             1.0 / interval_s if interval_s > 0 else 0)
+                    self._stop_wgc_session()
+            return
+
+        # OS supports MinUpdateInterval, or we're boosted — keep WGC alive.
+        if self._wgc_suspended:
+            self._wgc_suspended = False
+            log.info("WGC resumed (%.1f Hz, update_interval=%sms)",
+                     1.0 / interval_s if interval_s > 0 else 0, new_ms)
+            # Session will be started lazily on next capture_window() call
+            return
+
+        # Already running — update software throttle and restart if
+        # OS-level interval changed significantly
+        if self._wgc_session is not None:
+            self._wgc_session.set_min_interval(interval_s)
+
+            if old_ms and new_ms:
+                ratio = new_ms / old_ms
+                if ratio > 2.0 or ratio < 0.5:
+                    hwnd = self._wgc_session_hwnd
+                    log.info("WGC throttle changed %dms → %dms, restarting session",
+                             old_ms, new_ms)
+                    self._stop_wgc_session()
+                    if hwnd:
+                        self._start_wgc_session(hwnd)
 
     # ------------------------------------------------------------------
     # Public capture API
@@ -411,11 +556,12 @@ class ScreenCapturer:
                     log.debug("WGC session returned no frame; using BitBlt fallback")
                 if self._wgc_fail_streak >= WGC_MAX_FAIL_STREAK:
                     log.warning(
-                        "WGC returned no frames %d times in a row; disabling WGC for this session",
+                        "WGC returned no frames %d times in a row; "
+                        "stopping session (will retry on next call)",
                         self._wgc_fail_streak,
                     )
                     self._stop_wgc_session()
-                    self._active_window_backend = "bitblt"
+                    self._wgc_fail_streak = 0
             if self._active_window_backend == "bitblt":
                 return self._capture_window_bitblt(hwnd)
             if self._active_window_backend == "printwindow":
@@ -433,8 +579,12 @@ class ScreenCapturer:
         """Get the latest frame from the persistent WGC session.
 
         Starts a new session if needed, restarts if the HWND changed or
-        the session closed.
+        the session closed.  Returns None immediately when the session
+        is suspended (low-Hz mode uses BitBlt instead to save GPU).
         """
+        if self._wgc_suspended:
+            return None
+
         # Restart session if HWND changed or session died
         if (self._wgc_session_hwnd != hwnd
                 or self._wgc_session is None

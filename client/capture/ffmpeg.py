@@ -24,6 +24,14 @@ _FFMPEG_DOWNLOAD_URL = (
     "latest/ffmpeg-master-latest-win64-gpl.zip"
 )
 
+# RNNoise model for voice noise suppression (arnndn filter).
+# "bd" = beguiling-drafter: trained on voice signal + recording noise.
+_RNNOISE_MODEL_NAME = "bd.rnnn"
+_RNNOISE_MODEL_URL = (
+    "https://raw.githubusercontent.com/richardpl/arnndn-models/"
+    "master/bd.rnnn"
+)
+
 
 def find_ffmpeg(config_path: str = "") -> str | None:
     """Find the FFmpeg binary.
@@ -146,6 +154,57 @@ def ensure_ffmpeg(config_path: str = "", progress_callback=None) -> str | None:
 
     # Attempt auto-download
     return download_ffmpeg(progress_callback)
+
+
+def find_rnnoise_model() -> str | None:
+    """Find the RNNoise model file.
+
+    Search order:
+    1. User bin directory (~/.entropia-nexus/bin/)
+    2. Bundled location (client/bin/)
+
+    Returns the path to the model file, or None if not found.
+    """
+    for directory in (_USER_BIN_DIR, _BUNDLED_DIR):
+        path = directory / _RNNOISE_MODEL_NAME
+        if path.is_file():
+            return str(path)
+    return None
+
+
+def download_rnnoise_model() -> str | None:
+    """Download the RNNoise model to the user bin directory.
+
+    Returns the path to the downloaded model, or None on failure.
+    """
+    import requests
+
+    target_dir = _USER_BIN_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / _RNNOISE_MODEL_NAME
+
+    log.info("Downloading RNNoise model from %s", _RNNOISE_MODEL_URL)
+
+    try:
+        resp = requests.get(_RNNOISE_MODEL_URL, timeout=30)
+        resp.raise_for_status()
+        target_path.write_bytes(resp.content)
+        log.info("RNNoise model downloaded to %s", target_path)
+        return str(target_path)
+    except Exception as e:
+        log.error("Failed to download RNNoise model: %s", e)
+        return None
+
+
+def ensure_rnnoise_model() -> str | None:
+    """Find or download the RNNoise model.
+
+    Returns the path to the model file, or None if unavailable.
+    """
+    path = find_rnnoise_model()
+    if path:
+        return path
+    return download_rnnoise_model()
 
 
 def _is_executable(path: str) -> bool:

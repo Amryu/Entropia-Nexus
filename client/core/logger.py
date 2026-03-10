@@ -6,7 +6,7 @@ Usage:
 
     log.error("Something broke: %s", err)     # Always shown
     log.warning("File truncated")              # Always shown
-    log.info("Started watching %s", path)      # Verbose only
+    log.info("Started watching %s", path)      # Always shown
     log.debug("Byte offset: %d", offset)       # Verbose only
 
 Log file:
@@ -98,9 +98,9 @@ def init(verbose: bool = False) -> None:
     root = logging.getLogger("Nexus")
     root.addHandler(console)
     root.addHandler(_recent_handler)
-    root.setLevel(logging.DEBUG if verbose else logging.WARNING)
+    root.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-    # File handler — always captures WARNING+ regardless of verbose flag
+    # File handler — always captures INFO+ regardless of verbose flag
     try:
         _LOG_DIR.mkdir(parents=True, exist_ok=True)
         _prune_old_entries(_LOG_FILE)
@@ -109,7 +109,7 @@ def init(verbose: bool = False) -> None:
             encoding="utf-8",
         )
         file_handler.setFormatter(file_fmt)
-        file_handler.setLevel(logging.WARNING)
+        file_handler.setLevel(logging.INFO)
         root.addHandler(file_handler)
         _log_path = str(_LOG_FILE)
     except Exception:

@@ -781,7 +781,7 @@ class _LocationInfoPanel(QWidget):
                 dr, dg, db = _difficulty_color(diff[0])
                 self._add_stat_row_colored("Difficulty", diff[1], f"rgb({dr}, {dg}, {db})")
             if density is not None:
-                density_map = {1: "Low", 2: "Medium", 3: "High"}
+                density_map = {1: "Very Low", 2: "Low", 3: "Medium", 4: "High", 5: "Very High"}
                 self._add_stat_row("Density", density_map.get(density, str(density)))
             if shared is not None:
                 self._add_stat_row("Shared", "Yes" if shared else "No")

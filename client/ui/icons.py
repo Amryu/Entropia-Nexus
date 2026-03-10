@@ -153,6 +153,120 @@ UPDATE = (
     '<path d="M19 19H5v-2h14v2z"/>'
 )
 
+# Picture / landscape (image file indicator)
+IMAGE = (
+    '<path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2'
+    'h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>'
+)
+
+# Viewfinder / crosshair (screenshot)
+SCREENSHOT = (
+    # Corner brackets
+    '<path d="M3 8V5a2 2 0 0 1 2-2h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    '<path d="M16 3h3a2 2 0 0 1 2 2v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    '<path d="M21 16v3a2 2 0 0 1-2 2h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    '<path d="M8 21H5a2 2 0 0 1-2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    # Center dot
+    '<circle cx="12" cy="12" r="2"/>'
+)
+CAMERA = SCREENSHOT  # backward compat alias
+
+# Film clip (save clip)
+CLIP = (
+    '<path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 '
+    '.9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>'
+)
+
+# Record circle
+RECORD_CIRCLE = '<circle cx="12" cy="12" r="8"/>'
+
+# Stop square
+STOP_SQUARE = '<rect x="6" y="6" width="12" height="12" rx="1"/>'
+
+# Play triangle
+PLAY = '<path d="M8 5v14l11-7z"/>'
+
+# Pause bars
+PAUSE = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'
+
+# Volume speaker
+VOLUME = (
+    '<path d="M3 9v6h4l5 5V4L7 9H3z"/>'
+    '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>'
+)
+
+# Seek forward (double right triangles)
+SEEK_FORWARD = (
+    '<path d="M4 18l8.5-6L4 6v12z"/>'
+    '<path d="M11.5 18l8.5-6-8.5-6v12z"/>'
+)
+
+# Seek backward (double left triangles)
+SEEK_BACKWARD = (
+    '<path d="M20 18V6l-8.5 6 8.5 6z"/>'
+    '<path d="M12.5 18V6L4 12l8.5 6z"/>'
+)
+
+# Frame forward (play + bar)
+FRAME_FORWARD = (
+    '<path d="M6 18l8.5-6L6 6v12z"/>'
+    '<rect x="16" y="6" width="2.5" height="12"/>'
+)
+
+# Frame backward (bar + play reversed)
+FRAME_BACKWARD = (
+    '<rect x="5.5" y="6" width="2.5" height="12"/>'
+    '<path d="M18 18l-8.5-6L18 6v12z"/>'
+)
+
+# Close X
+CLOSE_X = (
+    '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59'
+    ' 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>'
+)
+
+# Cloud upload arrow
+UPLOAD = (
+    '<path d="M19.35 10.04C18.67 6.59 15.64 4 12 4'
+    ' 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14'
+    'c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5'
+    ' 0-2.64-2.05-4.78-4.65-4.96z'
+    'M14 13v4h-4v-4H7l5-5 5 5h-3z"/>'
+)
+
+# Chain link (external link)
+LINK = (
+    '<path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7'
+    'c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7'
+    'c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2z'
+    'm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1'
+    's-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>'
+)
+
+# Document with lines (notes)
+NOTES = (
+    '<path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12'
+    'c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2z'
+    'M13 9V3.5L18.5 9H13z"/>'
+)
+
+# Globe (global event)
+GLOBE = (
+    '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10'
+    ' 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93'
+    ' 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z'
+    'M17.9 17.39c-.26-.81-1-1.39-1.9-1.39h-1v-3'
+    'c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2'
+    'c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41'
+    ' 0 2.08-.8 3.97-2.1 5.39z"/>'
+)
+
+# Star (HoF / ATH)
+STAR = (
+    '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77'
+    'l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'
+)
+
 
 _icon_cache: dict[tuple[str, str, int], QIcon] = {}
 

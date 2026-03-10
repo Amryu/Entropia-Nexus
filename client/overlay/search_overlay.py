@@ -51,6 +51,8 @@ _MENU_ITEMS = [
     {"label": "Map", "shortcut": "Ctrl+M", "action": "map"},
     {"label": "Exchange", "shortcut": "Ctrl+E", "action": "exchange"},
     {"label": "Notifications", "shortcut": "Ctrl+N", "action": "notifications"},
+    {"label": "Recording", "shortcut": "Ctrl+R", "action": "recording"},
+    {"label": "Gallery", "shortcut": "Ctrl+G", "action": "gallery"},
 ]
 
 _ROW_STYLE = (

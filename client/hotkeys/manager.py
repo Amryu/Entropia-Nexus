@@ -15,6 +15,7 @@ HOTKEY_ACTIONS = {
     # "hotkey_ocr_scan": "ocr_scan",
     "hotkey_screenshot": "screenshot",
     "hotkey_save_clip": "save_clip",
+    "hotkey_toggle_recording": "toggle_recording",
 }
 
 

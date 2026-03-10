@@ -63,6 +63,11 @@ class FrameDistributor:
     For detectors that keep their own thread (orchestrator), the pull API
     ``get_latest_frame()`` / ``get_frame()`` / ``get_frame_gray()`` is
     available.
+
+    **Boost mode**: When video buffering or a live preview is active, call
+    ``boost()`` to override the base Hz, disable foreground gating, and
+    force WGC backend.  Call ``unboost()`` to revert.  Boost callers are
+    reference-counted so multiple boosts / unboosts nest correctly.
     """
 
     def __init__(self, capture_backend: str | None = None):
@@ -76,6 +81,11 @@ class FrameDistributor:
         self._base_hz: float = DEFAULT_BASE_HZ
         self._base_interval: float = 1.0 / DEFAULT_BASE_HZ
 
+        # Boost mode: {caller_id: min_hz}
+        self._boosts: dict[str, float] = {}
+        self._boost_backends: dict[str, str] = {}  # {caller_id: backend}
+        self._pre_boost_backend: Optional[str] = None
+
         # Game window state (updated by capture loop)
         self._game_hwnd: Optional[int] = None
         self._game_geometry: Optional[tuple[int, int, int, int]] = None
@@ -85,6 +95,10 @@ class FrameDistributor:
         self._gray: Optional[np.ndarray] = None
         self._frame_time: float = 0.0
         self._frame_lock = threading.Lock()
+
+        # HDR compatibility mode: CLAHE on L-channel (LAB)
+        self._hdr_mode = False
+        self._clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if cv2 else None
 
     # ------------------------------------------------------------------
     # Properties
@@ -162,18 +176,95 @@ class FrameDistributor:
     def _recompute_timing(self):
         """Recompute base rate and divisors from current subscriptions.
 
-        The base rate equals the fastest subscriber's Hz.  Each subscriber's
-        divisor is ``round(base_hz / sub.hz)``, clamped to >= 1.
+        The base rate equals the fastest subscriber's Hz (or the highest
+        boost Hz, whichever is greater).  Each subscriber's divisor is
+        ``round(base_hz / sub.hz)``, clamped to >= 1.
         """
-        if not self._subscriptions:
-            self._base_hz = DEFAULT_BASE_HZ
-        else:
-            self._base_hz = max(sub.hz for sub in self._subscriptions)
+        sub_max = max((sub.hz for sub in self._subscriptions), default=DEFAULT_BASE_HZ)
+        boost_max = max(self._boosts.values(), default=0.0)
+        self._base_hz = max(sub_max, boost_max)
 
         self._base_interval = 1.0 / self._base_hz
 
         for sub in self._subscriptions:
             sub.divisor = max(1, round(self._base_hz / sub.hz))
+
+        # When boosted (clips active), keep WGC alive with throttle.
+        # When not boosted (OCR-only), suspend WGC to save GPU and use BitBlt.
+        self._capturer.set_wgc_throttle(self._base_interval, boosted=self.boosted)
+
+    # ------------------------------------------------------------------
+    # Boost mode (video buffering / live preview)
+    # ------------------------------------------------------------------
+
+    @property
+    def boosted(self) -> bool:
+        """True if at least one boost caller is active."""
+        return bool(self._boosts)
+
+    def boost(
+        self,
+        caller_id: str,
+        min_hz: float,
+        capture_backend: str | None = None,
+    ) -> None:
+        """Activate boost mode: raise FPS, disable foreground gate.
+
+        Multiple callers can boost simultaneously (reference-counted by id).
+        The effective boost Hz is the max across all active callers.
+
+        Args:
+            caller_id: Unique identifier (e.g. ``"capture_manager"``).
+            min_hz: Minimum capture rate while boosted.
+            capture_backend: If set, switch to this backend while boosted
+                (reverts to the OCR backend when the last booster leaves).
+        """
+        first_boost = not self._boosts
+        self._boosts[caller_id] = float(min_hz)
+        if capture_backend:
+            self._boost_backends[caller_id] = capture_backend
+        self._recompute_timing()
+
+        # Save the pre-boost backend once so we can restore it later
+        if first_boost:
+            self._pre_boost_backend = self._capturer.active_window_backend
+
+        # Switch backend only when explicitly requested and different
+        if capture_backend and self._capturer.active_window_backend != capture_backend:
+            self._capturer.set_capture_backend(capture_backend)
+            log.info("Boost: switched backend to %s",
+                     self._capturer.active_window_backend)
+
+        log.info("Boost activated by '%s' (%.0f Hz, base=%.1f Hz, boosters=%d)",
+                 caller_id, min_hz, self._base_hz, len(self._boosts))
+
+    def unboost(self, caller_id: str) -> None:
+        """Deactivate boost mode for a caller.
+
+        When the last booster unboosts, foreground gating is restored and
+        the backend reverts to its pre-boost setting.  When other boosters
+        remain, their requested backend takes precedence.
+        """
+        self._boosts.pop(caller_id, None)
+        self._boost_backends.pop(caller_id, None)
+        self._recompute_timing()
+
+        if not self._boosts and self._pre_boost_backend is not None:
+            if self._capturer.active_window_backend != self._pre_boost_backend:
+                self._capturer.set_capture_backend(self._pre_boost_backend)
+                log.info("Boost: reverted backend to %s",
+                         self._capturer.active_window_backend)
+            self._pre_boost_backend = None
+        elif self._boost_backends:
+            # Other boosters remain — switch to the last remaining backend
+            remaining_backend = list(self._boost_backends.values())[-1]
+            if self._capturer.active_window_backend != remaining_backend:
+                self._capturer.set_capture_backend(remaining_backend)
+                log.info("Boost: switched backend to %s (after '%s' left)",
+                         self._capturer.active_window_backend, caller_id)
+
+        log.info("Boost deactivated by '%s' (base=%.1f Hz, boosters=%d)",
+                 caller_id, self._base_hz, len(self._boosts))
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -193,6 +284,9 @@ class FrameDistributor:
     def stop(self):
         """Stop the capture thread and wait for it to finish."""
         self._running = False
+        self._boosts.clear()
+        self._boost_backends.clear()
+        self._pre_boost_backend = None
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
@@ -204,12 +298,34 @@ class FrameDistributor:
     # ------------------------------------------------------------------
 
     def set_capture_backend(self, capture_backend: str | None) -> None:
-        """Update capture backend at runtime and clear cached frames."""
-        with self._frame_lock:
-            self._capturer.set_capture_backend(capture_backend)
-            self._frame = None
-            self._gray = None
-            self._frame_time = 0.0
+        """Update capture backend at runtime and clear cached frames.
+
+        If boost mode is active, the request is stored as the pre-boost
+        backend and applied when the last booster unboosts.
+        """
+        if self._boosts:
+            # Don't change the actual backend while boosted; remember for later
+            self._pre_boost_backend = capture_backend or "auto"
+        else:
+            with self._frame_lock:
+                self._capturer.set_capture_backend(capture_backend)
+                self._frame = None
+                self._gray = None
+                self._frame_time = 0.0
+
+    def set_hdr_mode(self, enabled: bool) -> None:
+        """Enable or disable HDR compatibility tone correction."""
+        self._hdr_mode = enabled
+        log.info("HDR compatibility mode %s", "enabled" if enabled else "disabled")
+
+    def _apply_hdr_correction(self, frame: np.ndarray) -> np.ndarray:
+        """Apply CLAHE on the L-channel of LAB to restore contrast."""
+        if self._clahe is None:
+            return frame
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        l = self._clahe.apply(l)
+        return cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
 
     # ------------------------------------------------------------------
     # Pull API (backward-compatible with SharedFrameCache)
@@ -292,13 +408,19 @@ class FrameDistributor:
                     self._sleep_remainder(tick_start, IDLE_INTERVAL_S)
                     continue
 
-            # Foreground gating: skip capture when game is not active
-            try:
-                if _platform.get_foreground_window_id() != self._game_hwnd:
-                    self._sleep_remainder(tick_start, IDLE_INTERVAL_S)
-                    continue
-            except Exception:
-                pass
+            # Foreground gating: skip capture when game is not active.
+            # Disabled when boosted (video recording needs frames regardless).
+            if not self._boosts:
+                try:
+                    if _platform.get_foreground_window_id() != self._game_hwnd:
+                        self._sleep_remainder(tick_start, IDLE_INTERVAL_S)
+                        continue
+                except Exception:
+                    pass
+
+            # Refresh geometry periodically (every ~1s worth of ticks)
+            if self._tick_count % max(1, int(self._base_hz)) == 0:
+                self._game_geometry = _platform.get_window_geometry(self._game_hwnd)
 
             # Capture
             frame = self._capturer.capture_window(
@@ -307,6 +429,9 @@ class FrameDistributor:
             if frame is None:
                 self._sleep_remainder(tick_start, self._base_interval)
                 continue
+
+            if self._hdr_mode:
+                frame = self._apply_hdr_correction(frame)
 
             now = time.monotonic()
             with self._frame_lock:

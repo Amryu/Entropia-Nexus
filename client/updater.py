@@ -17,6 +17,9 @@ from .core.constants import (
     EVENT_UPDATE_PROGRESS,
     EVENT_UPDATE_READY,
     EVENT_UPDATE_ERROR,
+    EVENT_GROUP_DOWNLOAD_PROGRESS,
+    EVENT_GROUP_DOWNLOAD_COMPLETE,
+    EVENT_GROUP_DOWNLOAD_ERROR,
 )
 from .core.logger import get_logger
 
@@ -94,19 +97,27 @@ def load_manifest(path: Path) -> dict | None:
         return None
 
 
-def compare_manifests(local: dict, remote: dict) -> dict:
+def compare_manifests(
+    local: dict, remote: dict, skip_groups: set[str] | None = None,
+) -> dict:
     """Compare two manifests and return file-level changes.
 
     Returns dict with keys: added, changed, removed (lists of relative paths)
     and download_size (total bytes to fetch).
+
+    If *skip_groups* is provided, files whose ``"group"`` value is in that set
+    are excluded from all change lists (added, changed, removed).
     """
     local_files = local.get("files", {})
     remote_files = remote.get("files", {})
+    skip = skip_groups or set()
 
     added, changed, removed = [], [], []
     download_size = 0
 
     for path, info in remote_files.items():
+        if info.get("group") in skip:
+            continue
         if path not in local_files:
             added.append(path)
             download_size += info.get("size", 0)
@@ -114,8 +125,12 @@ def compare_manifests(local: dict, remote: dict) -> dict:
             changed.append(path)
             download_size += info.get("size", 0)
 
-    for path in local_files:
+    for path, info in local_files.items():
         if path not in remote_files:
+            # Don't remove files in a skipped group — they may still be
+            # locally installed from a previous version or on-demand download.
+            if info.get("group") in skip:
+                continue
             removed.append(path)
 
     return {
@@ -162,6 +177,7 @@ class UpdateChecker:
         self._remote_manifest = None
         self._diff = None
         self._download_complete = False
+        self._skip_groups: set[str] = set()
 
         event_bus.subscribe(EVENT_UPDATE_APPLY, self._on_apply_requested)
 
@@ -297,7 +313,15 @@ class UpdateChecker:
             log.info("Already up to date (v%s)", local_version)
             return False
 
-        self._diff = compare_manifests(local_manifest, self._remote_manifest)
+        # Skip optional groups the user hasn't enabled to save bandwidth
+        self._skip_groups = set()
+        if not getattr(self._config, "clip_enabled", False):
+            self._skip_groups.add("video")
+
+        self._diff = compare_manifests(
+            local_manifest, self._remote_manifest,
+            skip_groups=self._skip_groups,
+        )
         update_files = self._diff["added"] + self._diff["changed"]
 
         if not update_files and not self._diff["removed"]:
@@ -305,7 +329,7 @@ class UpdateChecker:
                      local_version, remote_version)
             return False
 
-        log.warning("Update available: v%s -> v%s (%d files, %s)",
+        log.info("Update available: v%s -> v%s (%d files, %s)",
                      local_version, remote_version,
                      len(update_files),
                      _format_size(self._diff["download_size"]))
@@ -401,13 +425,41 @@ class UpdateChecker:
             with open(staging_dir / "_removals.json", "w") as f:
                 json.dump(self._diff["removed"], f)
 
-        # Write remote manifest to staging (replaces local one during apply)
+        # Write manifest to staging.  For skipped groups, preserve existing
+        # local entries so the manifest still tracks files that are physically
+        # present but were not updated in this delta.
+        stored_manifest = {
+            k: v for k, v in self._remote_manifest.items() if k != "files"
+        }
+        stored_files = {
+            path: info
+            for path, info in self._remote_manifest.get("files", {}).items()
+            if info.get("group") not in self._skip_groups
+        }
+        if self._skip_groups:
+            local_manifest = load_manifest(self._app_dir / "manifest.json") or {}
+            remote_files = self._remote_manifest.get("files", {})
+            for path, info in local_manifest.get("files", {}).items():
+                if path in stored_files:
+                    continue
+                # Preserve local entry if it belongs to a skipped group.
+                # Check both the local tag and the remote tag (handles
+                # upgrade from old manifests that didn't have group tags).
+                local_group = info.get("group")
+                remote_group = remote_files.get(path, {}).get("group")
+                if local_group in self._skip_groups or remote_group in self._skip_groups:
+                    preserved = info.copy()
+                    # Backfill group tag from remote if local is untagged
+                    if remote_group and not local_group:
+                        preserved["group"] = remote_group
+                    stored_files[path] = preserved
+        stored_manifest["files"] = stored_files
         with open(staging_dir / "manifest.json", "w") as f:
-            json.dump(self._remote_manifest, f, indent=2)
+            json.dump(stored_manifest, f, indent=2)
 
         self._download_complete = True
         version = self._remote_manifest.get("version", "?")
-        log.warning("Update v%s downloaded and ready to apply", version)
+        log.info("Update v%s downloaded and ready to apply", version)
 
         self._event_bus.publish(EVENT_UPDATE_READY, {"version": version})
 
@@ -509,7 +561,7 @@ echo [%date% %time%] Apply script finished >> "%LOG%"
                 close_fds=True,
                 cwd=str(app_dir),
             )
-            log.warning("Apply script spawned — exiting for update")
+            log.info("Apply script spawned — exiting for update")
             return True
         except Exception as e:
             log.error("Failed to spawn apply script: %s", e)
@@ -583,8 +635,169 @@ exit 0
                 close_fds=True,
                 cwd=str(app_dir),
             )
-            log.warning("Apply script spawned — exiting for update")
+            log.info("Apply script spawned — exiting for update")
             return True
         except Exception as e:
             log.error("Failed to spawn apply script: %s", e)
             return False
+
+    # --- Optional component groups ---
+
+    def is_group_installed(self, group_name: str) -> bool:
+        """Check whether an optional group's files are present in the local manifest."""
+        if not self._app_dir:
+            return True  # not frozen — pip packages cover it
+        manifest = load_manifest(self._app_dir / "manifest.json")
+        if manifest is None:
+            return False
+        # Old manifests (pre-groups era) included all files unconditionally.
+        # Treat them as having all groups installed.
+        if "groups" not in manifest:
+            return True
+        files = manifest.get("files", {})
+        return any(info.get("group") == group_name for info in files.values())
+
+    def get_group_download_size(self, group_name: str) -> int:
+        """Return bytes needed to install/update a group, fetching remote manifest if needed.
+
+        Returns 0 if all files are up to date or the remote manifest is unavailable.
+        """
+        remote = self._remote_manifest
+        if remote is None:
+            remote = self._fetch_remote_manifest()
+            if remote is None:
+                return 0
+
+        local = load_manifest(self._app_dir / "manifest.json") if self._app_dir else None
+        local_files = (local or {}).get("files", {})
+        remote_files = remote.get("files", {})
+
+        total = 0
+        for path, info in remote_files.items():
+            if info.get("group") != group_name:
+                continue
+            if path in local_files and local_files[path].get("sha256") == info.get("sha256"):
+                continue
+            total += info.get("size", 0)
+        return total
+
+    def download_group(self, group_name: str) -> None:
+        """Download files for an optional group in a background thread."""
+        if not self._app_dir:
+            return
+        threading.Thread(
+            target=self._download_group_worker,
+            args=(group_name,),
+            daemon=True,
+            name=f"download-group-{group_name}",
+        ).start()
+
+    def _fetch_remote_manifest(self) -> dict | None:
+        """Fetch the remote manifest from the server."""
+        base_url = self._config.nexus_base_url.rstrip("/")
+        url = f"{base_url}/client/{self._platform}/manifest.json"
+        try:
+            resp = self._session.get(url, timeout=_MANIFEST_TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            log.warning("Failed to fetch remote manifest: %s", e)
+            return None
+
+    def _download_group_worker(self, group_name: str) -> None:
+        """Background worker to download a specific group's files."""
+        remote = self._remote_manifest
+        if remote is None:
+            remote = self._fetch_remote_manifest()
+        if remote is None:
+            self._event_bus.publish(EVENT_GROUP_DOWNLOAD_ERROR, {
+                "group": group_name,
+                "error": "Could not reach the update server.",
+            })
+            return
+
+        local = load_manifest(self._app_dir / "manifest.json") or {"files": {}}
+        local_files = local.get("files", {})
+        remote_files = remote.get("files", {})
+
+        # Find files in target group that need downloading
+        to_download = []
+        for path, info in remote_files.items():
+            if info.get("group") != group_name:
+                continue
+            if path in local_files and local_files[path].get("sha256") == info.get("sha256"):
+                continue
+            to_download.append(path)
+
+        if not to_download:
+            self._event_bus.publish(EVENT_GROUP_DOWNLOAD_COMPLETE, {
+                "group": group_name,
+            })
+            return
+
+        base_url = self._config.nexus_base_url.rstrip("/")
+        total = len(to_download)
+
+        for i, rel_path in enumerate(to_download):
+            self._event_bus.publish(EVENT_GROUP_DOWNLOAD_PROGRESS, {
+                "group": group_name,
+                "downloaded": i,
+                "total": total,
+                "current_file": rel_path,
+            })
+
+            file_url = f"{base_url}/client/{self._platform}/{rel_path}"
+            dest = self._app_dir / rel_path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            expected_hash = remote_files.get(rel_path, {}).get("sha256")
+
+            try:
+                resp = self._session.get(file_url, timeout=_DOWNLOAD_TIMEOUT, stream=True)
+                resp.raise_for_status()
+
+                tmp_path = dest.with_suffix(dest.suffix + ".tmp")
+                h = hashlib.sha256()
+                with open(tmp_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=_CHUNK_SIZE):
+                        f.write(chunk)
+                        h.update(chunk)
+
+                actual_hash = h.hexdigest()
+                if expected_hash and actual_hash != expected_hash:
+                    tmp_path.unlink(missing_ok=True)
+                    raise ValueError(
+                        f"Hash mismatch for {rel_path}: "
+                        f"expected {expected_hash[:12]}..., got {actual_hash[:12]}..."
+                    )
+
+                if dest.exists():
+                    dest.unlink()
+                tmp_path.rename(dest)
+
+            except Exception as e:
+                log.error("Group download failed for %s: %s", rel_path, e)
+                self._event_bus.publish(EVENT_GROUP_DOWNLOAD_ERROR, {
+                    "group": group_name,
+                    "error": f"Failed to download {rel_path}: {e}",
+                })
+                return
+
+        # Update local manifest with the new group files
+        local = load_manifest(self._app_dir / "manifest.json") or {
+            "version": get_local_version(), "files": {},
+        }
+        for path in to_download:
+            local["files"][path] = remote_files[path]
+        # Also copy group metadata
+        if "groups" not in local:
+            local["groups"] = {}
+        for gname, ginfo in remote.get("groups", {}).items():
+            local["groups"][gname] = ginfo
+        with open(self._app_dir / "manifest.json", "w") as f:
+            json.dump(local, f, indent=2)
+
+        log.info("Group '%s' downloaded: %d files", group_name, total)
+        self._event_bus.publish(EVENT_GROUP_DOWNLOAD_COMPLETE, {
+            "group": group_name,
+        })
