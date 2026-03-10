@@ -567,6 +567,8 @@ class MainWindow(QWidget):
     def _on_screenshot_sound(self, data):
         if self._is_recording:
             return
+        if self._config.clip_enabled and self._config.clip_audio_enabled:
+            return
         if self._config.screenshot_sound_enabled and self._screenshot_sound:
             self._screenshot_sound.play()
 
