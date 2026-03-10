@@ -48,6 +48,7 @@ from .constants import (
     DEFAULT_SCREENSHOT_DIR,
     FILENAME_TIMESTAMP_FMT,
     RESOLUTION_PRESETS,
+    SUBPROCESS_FLAGS,
     get_ffmpeg_scale_flag,
     get_interpolation,
 )
@@ -1199,6 +1200,7 @@ class CaptureManager:
             self._rec_proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                **SUBPROCESS_FLAGS,
             )
         except Exception as e:
             self._event_bus.publish(EVENT_CAPTURE_ERROR,
@@ -1623,7 +1625,8 @@ class CaptureManager:
             str(self._rec_output),
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, timeout=120,
+                                    **SUBPROCESS_FLAGS)
             if result.returncode != 0:
                 log.warning("Timing remux failed, using uncorrected video")
                 self._rec_temp_video.rename(self._rec_output)
@@ -1720,7 +1723,8 @@ class CaptureManager:
             # Set cwd to model directory so arnndn can find the model by filename
             # (Windows drive-letter colon breaks FFmpeg filter path parsing).
             ffmpeg_cwd = os.path.dirname(rnnoise_model) if rnnoise_model else None
-            result = subprocess.run(cmd, capture_output=True, timeout=300, cwd=ffmpeg_cwd)
+            result = subprocess.run(cmd, capture_output=True, timeout=300,
+                                    cwd=ffmpeg_cwd, **SUBPROCESS_FLAGS)
             if result.returncode != 0:
                 err = result.stderr.decode("utf-8", errors="replace")[-500:]
                 raise RuntimeError(f"Audio mux failed: {err}")

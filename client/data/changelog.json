@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.3.1",
+    "date": "2026-03-10",
+    "changes": [
+      {"type": "fix", "text": "FFmpeg no longer opens a visible console window in release builds"}
+    ]
+  },
+  {
     "version": "0.3.0",
     "date": "2026-03-10",
     "changes": [

@@ -71,9 +71,11 @@ def find_ffmpeg(config_path: str = "") -> str | None:
 def get_version(ffmpeg_path: str) -> str | None:
     """Return the FFmpeg version string, or None on failure."""
     try:
+        from .constants import SUBPROCESS_FLAGS
         result = subprocess.run(
             [ffmpeg_path, "-version"],
             capture_output=True, text=True, timeout=5,
+            **SUBPROCESS_FLAGS,
         )
         if result.returncode == 0:
             first_line = result.stdout.split("\n")[0]

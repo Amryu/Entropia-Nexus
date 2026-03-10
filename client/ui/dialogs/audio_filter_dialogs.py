@@ -190,12 +190,14 @@ class _FilteredMicMeter:
         ]
 
         try:
+            from ...capture.constants import SUBPROCESS_FLAGS
             self._ffmpeg_proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=ffmpeg_cwd,
+                **SUBPROCESS_FLAGS,
             )
         except Exception as e:
             log.debug("FFmpeg for meter failed: %s", e)

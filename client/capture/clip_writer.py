@@ -303,12 +303,14 @@ def write_clip(
         # background thread to prevent pipe-buffer deadlock — writing raw
         # frames to stdin in a tight loop can fill the stderr pipe buffer
         # if FFmpeg's progress output backs up, causing both sides to block.
+        from .constants import SUBPROCESS_FLAGS
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=ffmpeg_cwd,
+            **SUBPROCESS_FLAGS,
         )
 
         stderr_chunks: list[bytes] = []

@@ -145,12 +145,14 @@ class AudioCheck:
         ffmpeg_cwd = os.path.dirname(rnnoise_model) if rnnoise_model else None
 
         try:
+            from .constants import SUBPROCESS_FLAGS
             self._ffmpeg_proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=ffmpeg_cwd,
+                **SUBPROCESS_FLAGS,
             )
         except Exception as e:
             log.warning("Failed to start FFmpeg for audio check: %s", e)

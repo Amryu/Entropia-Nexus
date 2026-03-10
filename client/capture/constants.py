@@ -1,7 +1,14 @@
 """Capture system constants — presets, defaults, bitrate tables."""
 
+import subprocess
 import sys
 from pathlib import Path
+
+# Prevent FFmpeg (and other subprocesses) from opening a visible console
+# window when the app is built as a windowed executable on Windows.
+SUBPROCESS_FLAGS = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+)
 
 # Default output directories
 if sys.platform == "win32":
