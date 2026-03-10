@@ -39,6 +39,7 @@
     { value: 'MiningCycle', label: 'Mining (Cycle)' },
     { value: 'MiningClaim', label: 'Mining (Claim)' },
     { value: 'MiningPoints', label: 'Mining (Points)' },
+    { value: 'Collect', label: 'Collect' },
     { value: 'AIKillCycle', label: 'AI Kill Cycle' },
     { value: 'AIHandIn', label: 'AI Hand In' }
   ];
@@ -56,6 +57,7 @@
     MiningCycle: { totalCountRequired: null },
     MiningClaim: { totalCountRequired: null, minClaimValue: null },
     MiningPoints: { totalCountRequired: null },
+    Collect: { itemId: null, quantity: null },
     AIKillCycle: { pedToCycle: null, mobSpecies: [] },
     AIHandIn: { items: [] }
   };
@@ -428,6 +430,37 @@
     updateHandInItem(stepIndex, objIndex, itemIndex, 'itemId', item?.Id ?? null);
   }
 
+  // ===== Collect Functions =====
+
+  function getCollectDraftKey(stepIndex, objIndex) {
+    return `collect-${stepIndex}-${objIndex}`;
+  }
+
+  function getCollectDisplayName(itemId, stepIndex, objIndex) {
+    const key = getCollectDraftKey(stepIndex, objIndex);
+    if (Object.prototype.hasOwnProperty.call(itemNameDrafts, key)) {
+      return itemNameDrafts[key];
+    }
+    if (itemId != null && itemsIndex && itemsIndex[itemId]) {
+      return itemsIndex[itemId];
+    }
+    return itemId != null ? `#${itemId}` : '';
+  }
+
+  function handleCollectItemChange(stepIndex, objIndex, value) {
+    const key = getCollectDraftKey(stepIndex, objIndex);
+    setItemDraft(key, value);
+    if (value.trim().length === 0) {
+      updateObjectivePayload(stepIndex, objIndex, { itemId: null });
+    }
+  }
+
+  function handleCollectItemSelect(stepIndex, objIndex, item) {
+    const key = getCollectDraftKey(stepIndex, objIndex);
+    setItemDraft(key, item?.Name || '');
+    updateObjectivePayload(stepIndex, objIndex, { itemId: item?.Id ?? null });
+  }
+
   // ===== AIKillCycle Functions =====
 
   function addAISpeciesEntry(stepIndex, objIndex) {
@@ -560,7 +593,7 @@
           <RichTextEditor
             content={step.Description ?? ''}
             placeholder="Step description"
-            on:change={(e) => updateStepField(stepIndex, 'Description', e.detail.content)}
+            on:change={(e) => updateStepField(stepIndex, 'Description', e.detail)}
           />
         </div>
 
@@ -606,7 +639,7 @@
                           <RichTextEditor
                             content={payload.dialogText ?? ''}
                             placeholder="Dialog cue"
-                            on:change={(e) => updateObjectivePayload(stepIndex, objIndex, { dialogText: e.detail.content })}
+                            on:change={(e) => updateObjectivePayload(stepIndex, objIndex, { dialogText: e.detail })}
                           />
                         </div>
                       </div>
@@ -769,6 +802,31 @@
                           {/each}
                           <button type="button" class="btn-add" on:click={() => addHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
                         </div>
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'Collect'}
+                    <div class="objective-grid">
+                      <div class="objective-field">
+                        <label>Item</label>
+                        <SearchInput
+                          value={getCollectDisplayName(payload.itemId, stepIndex, objIndex)}
+                          placeholder="Search item..."
+                          apiEndpoint="/search/items"
+                          displayFn={(item) => item?.Name || ''}
+                          on:change={(e) => handleCollectItemChange(stepIndex, objIndex, e.detail.value)}
+                          on:select={(e) => handleCollectItemSelect(stepIndex, objIndex, e.detail.data)}
+                        />
+                      </div>
+                      <div class="objective-field">
+                        <label>Quantity</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Amount"
+                          value={payload.quantity ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { quantity: toNumber(e.target.value) })}
+                        />
                       </div>
                     </div>
                   {:else if objective.Type === 'AIKillCycle'}

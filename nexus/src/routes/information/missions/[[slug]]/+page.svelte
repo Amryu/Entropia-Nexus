@@ -459,9 +459,9 @@
     }
 
     if (Type === 'Collect') {
-      const item = Payload?.itemName || 'items';
-      const amount = Payload?.amount || 1;
-      return `Collect ${amount}× ${item}`;
+      const itemName = (Payload?.itemId && itemsIndex[Payload.itemId]) || 'items';
+      const amount = Payload?.quantity ?? 1;
+      return `Collect ${amount}\u00d7 ${itemName}`;
     }
 
     if (Type === 'CraftSuccess') {
@@ -611,6 +611,16 @@
             : item.minQuantity ?? item.maxQuantity ?? '?';
           details.push({ label: name, value: `Qty: ${range}` });
         }
+      }
+    }
+
+    if (Type === 'Collect') {
+      if (Payload?.itemId) {
+        const name = itemsIndex[Payload.itemId] || `Item #${Payload.itemId}`;
+        details.push({ label: 'Item', value: name });
+      }
+      if (Payload?.quantity != null) {
+        details.push({ label: 'Quantity', value: String(Payload.quantity) });
       }
     }
 

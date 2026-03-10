@@ -101,6 +101,7 @@
     MiningCycle: '#d97706',   // Amber
     MiningClaim: '#d97706',   // Amber
     MiningPoints: '#d97706',  // Amber
+    Collect: '#10b981',       // Emerald
     default: '#ffffff'        // White
   };
 
