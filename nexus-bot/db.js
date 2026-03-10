@@ -148,12 +148,15 @@ export async function setChangeState(id, state) {
 }
 
 // Reward functions
-export async function getMatchingRewardRules(entity, changeType, dataKeys) {
+export async function getMatchingRewardRules(entity, changeType, dataKeys, subType) {
   const { rows } = await poolUsers.query(
     'SELECT * FROM reward_rules WHERE active = true ORDER BY sort_order, id'
   );
   return rows.filter(rule => {
-    if (rule.entities && !rule.entities.includes(entity)) return false;
+    if (rule.entities) {
+      const matchesEntity = rule.entities.includes(entity) || (subType && rule.entities.includes(subType));
+      if (!matchesEntity) return false;
+    }
     if (rule.change_type && rule.change_type !== changeType) return false;
     if (rule.data_fields?.length) {
       if (!Array.isArray(dataKeys) || !rule.data_fields.some(f => dataKeys.includes(f))) return false;

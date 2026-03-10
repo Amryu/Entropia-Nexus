@@ -55,11 +55,13 @@
   let nextTempId = -1;
   let lastAppliedFocusKey = null;
   let selectedDbChange = null; // DB pending change selected for read-only viewing
+  let modifiedDbChanges = new Set(); // DB-seeded changes that have been locally modified
 
   // --- Exported method ---
   export function reset() {
     pendingChanges = new Map();
     dbChangeIdMap = new Map();
+    modifiedDbChanges = new Set();
     selectedId = null;
     selectedDbChange = null;
     isNewLocation = false;
@@ -164,7 +166,8 @@
     && !pendingChanges.has(selectedId)
     && selectedId > 0);
 
-  $: changeCount = pendingChanges.size;
+  // Only count changes that aren't pristine DB-seeded entries (already submitted, not locally modified)
+  $: changeCount = [...pendingChanges.entries()].filter(([key]) => !dbChangeIdMap.has(key) || modifiedDbChanges.has(key)).length;
 
   $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
     if (focusLocation._dbChange) {
@@ -352,6 +355,8 @@
       // Show afterimage of original for committed edits
       showAfterimageForOriginal(original.Id);
     }
+    // Track that this DB-seeded change was locally modified
+    if (dbChangeIdMap.has(original.Id)) { modifiedDbChanges.add(original.Id); modifiedDbChanges = modifiedDbChanges; }
     pendingChanges = pendingChanges;
     // Force rebuild so the map reflects the saved state even when _editingActive blocks the reactive
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
@@ -365,7 +370,10 @@
 
   function handleRevertLocation(e) {
     const loc = e.detail;
-    if (loc?.Id) pendingChanges.delete(loc.Id);
+    if (loc?.Id) {
+      pendingChanges.delete(loc.Id);
+      if (modifiedDbChanges.delete(loc.Id)) modifiedDbChanges = modifiedDbChanges;
+    }
     pendingChanges = pendingChanges;
     previewShape = null; // Clear afterimage
     // Force rebuild: _editingActive may block the reactive rebuildLayers
@@ -378,6 +386,8 @@
     const tempId = e.detail;
     if (tempId != null) {
       pendingChanges.delete(tempId);
+      dbChangeIdMap.delete(tempId);
+      modifiedDbChanges.delete(tempId);
       pendingChanges = pendingChanges;
       if (selectedId === tempId) {
         selectedId = null;
@@ -386,6 +396,34 @@
       if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
       // Rebuild DB overlay so un-seeded changes reappear
       if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
+    }
+  }
+
+  async function handleDeleteDbChange(e) {
+    const tempId = e.detail;
+    const dbId = dbChangeIdMap.get(tempId);
+    if (!dbId) return;
+    if (!confirm('Delete this submitted change? This cannot be undone.')) return;
+
+    try {
+      const { apiDelete } = await import('$lib/util.js');
+      const res = await apiDelete(fetch, `/api/changes/${dbId}`);
+      if (!res?.error) {
+        pendingChanges.delete(tempId);
+        dbChangeIdMap.delete(tempId);
+        modifiedDbChanges.delete(tempId);
+        pendingChanges = pendingChanges;
+        if (selectedId === tempId) {
+          selectedId = null;
+        }
+        if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
+        if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
+        const { addToast } = await import('$lib/stores/toasts.js');
+        addToast('Change deleted', { type: 'success' });
+      }
+    } catch (err) {
+      const { addToast } = await import('$lib/stores/toasts.js');
+      addToast(`Delete failed: ${err.message}`, { type: 'error' });
     }
   }
 
@@ -475,6 +513,7 @@
         modified.shape = entropiaData.shape;
         modified.shapeData = entropiaData.data;
       }
+      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
       pendingChanges.set(locId, existing);
       pendingChanges = pendingChanges;
     } else if (loc) {
@@ -496,6 +535,7 @@
         modified.shapeData = entropiaData.data;
       }
 
+      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
       pendingChanges.set(locId, { action: 'edit', original: loc, modified });
       pendingChanges = pendingChanges;
 
@@ -690,11 +730,13 @@
         {isAdmin}
         lockedBy={selectedLocation?.Id ? lockedLocationMap.get(selectedLocation.Id) : null}
         allLocations={locations}
+        isDbChange={selectedId != null && dbChangeIdMap.has(selectedId)}
         on:add={handleAddLocation}
         on:edit={handleEditLocation}
         on:delete={handleDeleteLocation}
         on:revert={handleRevertLocation}
         on:removePendingAdd={handleRemovePendingAdd}
+        on:deleteDbChange={handleDeleteDbChange}
         on:editMobArea={handleEditMobArea}
         on:preview={handlePreview}
       />

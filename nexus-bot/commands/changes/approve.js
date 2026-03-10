@@ -103,7 +103,8 @@ async function handleReward(interaction, thread, change, preChangeEntity = null)
       return false;
     }
 
-    const rules = await getMatchingRewardRules(change.entity, change.type, changedKeys);
+    const subType = change.data?.Properties?.Type || null;
+    const rules = await getMatchingRewardRules(change.entity, change.type, changedKeys, subType);
     if (!rules.length) return false;
 
     const promptRules = [];

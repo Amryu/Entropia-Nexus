@@ -50,8 +50,6 @@
     if (!mod) return null;
 
     const isArea = mod.locationType === 'Area';
-
-    // Always submit as Location entity — Areas are Location extensions
     const props = {
       Type: isArea ? 'Area' : (mod.locationType || 'Teleporter'),
       Coordinates: {
@@ -112,6 +110,7 @@
       }
 
       const existingChangeId = dbChangeIdMap.get(key);
+      const entityType = body ? getEntityType(change) : 'Location';
       let result;
       if (existingChangeId) {
         // Update existing change via PUT
@@ -123,7 +122,7 @@
       } else {
         result = await apiPost(
           fetch,
-          `/api/changes?type=${changeType}&entity=Location&state=Pending`,
+          `/api/changes?type=${changeType}&entity=${entityType}&state=Pending`,
           body
         );
       }
@@ -189,6 +188,7 @@
         }
 
         const existingChangeId = dbChangeIdMap.get(key);
+        const entityType = body ? getEntityType(change) : 'Location';
         let result;
         if (existingChangeId) {
           result = await apiPut(
@@ -199,7 +199,7 @@
         } else {
           result = await apiPost(
             fetch,
-            `/api/changes?type=${changeType}&entity=Location&state=DirectApply`,
+            `/api/changes?type=${changeType}&entity=${entityType}&state=DirectApply`,
             body
           );
         }
@@ -274,6 +274,12 @@
     if (action === 'edit') return '#f97316';
     if (action === 'delete') return '#94a3b8';
     return '#6b7280';
+  }
+
+  function getEntityType(change) {
+    const mod = change.modified;
+    if (!mod) return 'Location';
+    return mod.locationType === 'Area' ? 'Area' : 'Location';
   }
 
   function getStatusIcon(key) {

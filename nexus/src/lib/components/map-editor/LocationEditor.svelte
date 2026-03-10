@@ -24,6 +24,8 @@
   export let lockedBy = null;
   /** All locations on current planet (for parent picker) */
   export let allLocations = [];
+  /** Whether this pending add has a corresponding DB change (submitted, not local-only) */
+  export let isDbChange = false;
 
   $: isLocked = !!lockedBy && !isAdmin;
 
@@ -112,6 +114,7 @@
   let loadedDrawnShapeRef = null;
   let _lastShapeDataRef = null;
   let _lastCoordsRef = null;
+  let _populatingForm = false; // suppress auto-save during programmatic form population
 
   // Parent location options for SearchInput (areas only)
   $: parentOptions = allLocations
@@ -120,6 +123,8 @@
 
   // Populate form from location or drawn data — only when the actual location changes
   $: if (location && !isNew && location.Id !== loadedLocationId) {
+    _populatingForm = true;
+    clearTimeout(autoSaveTimer);
     loadedLocationId = location.Id;
     loadedDrawnShapeRef = null;
     name = location.Name || '';
@@ -155,6 +160,8 @@
     // Reset related data when location changes
     relatedMissions = null;
     relatedExpanded = false;
+    // Allow DOM to settle before re-enabling auto-save (prevents spurious change events)
+    setTimeout(() => { _populatingForm = false; }, 0);
   }
 
   // Update shape fields when shape data changes externally (e.g., map drag/resize)
@@ -197,6 +204,8 @@
   }
 
   $: if (isNew && drawnShapeData && drawnShapeData !== loadedDrawnShapeRef) {
+    _populatingForm = true;
+    clearTimeout(autoSaveTimer);
     loadedDrawnShapeRef = drawnShapeData;
     loadedLocationId = null;
     name = '';
@@ -222,6 +231,7 @@
     } else {
       shapeDataJson = drawnData ? JSON.stringify(drawnData, null, 2) : '';
     }
+    setTimeout(() => { _populatingForm = false; }, 0);
   }
 
   // Build shape data object from current form state
@@ -286,7 +296,7 @@
   let autoSaveTimer;
 
   function scheduleAutoSave() {
-    if (readOnly || isLocked) return;
+    if (readOnly || isLocked || _populatingForm) return;
     clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(dispatchAutoSave, 300);
   }
@@ -331,7 +341,11 @@
 
   function handleRemovePendingAdd() {
     if (!location) return;
-    dispatch('removePendingAdd', location.Id);
+    if (isDbChange) {
+      dispatch('deleteDbChange', location.Id);
+    } else {
+      dispatch('removePendingAdd', location.Id);
+    }
   }
 
   function handleRevert() {
@@ -599,11 +613,13 @@
 
     <div class="field-group">
       <span class="field-label">Type</span>
-      <select class="field-input" bind:value={locationType} disabled={readOnly}>
+      <select class="field-input" bind:value={locationType} disabled={readOnly || (!isNew && isAreaType)}>
         {#each LOCATION_TYPES as t}
           <option value={t}>{t}</option>
         {/each}
-        <option value="Area">Area</option>
+        {#if isNew || isAreaType}
+          <option value="Area">Area</option>
+        {/if}
       </select>
     </div>
 
@@ -630,7 +646,7 @@
 
       <div class="field-group">
         <span class="field-label">Shape</span>
-        <select class="field-input" bind:value={shape} disabled={readOnly}>
+        <select class="field-input" bind:value={shape} disabled={readOnly || !isNew}>
           {#each SHAPES as s}
             <option value={s}>{s}</option>
           {/each}
@@ -758,7 +774,7 @@
       <div class="actions">
         {#if !isNew && location?._isPendingAdd}
           <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
-            Remove
+            {isDbChange ? 'Delete submitted change' : 'Remove'}
           </button>
         {:else if !isNew}
           <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
