@@ -7,6 +7,7 @@ Uses the shared FrameDistributor for capture (boost mode) so only
 one capture thread serves both OCR detectors and video recording.
 """
 
+import copy
 import os
 import subprocess
 import tempfile
@@ -47,6 +48,7 @@ from .constants import (
     DEFAULT_SCREENSHOT_DIR,
     FILENAME_TIMESTAMP_FMT,
     RESOLUTION_PRESETS,
+    get_ffmpeg_scale_flag,
     get_interpolation,
 )
 from .ffmpeg import ensure_ffmpeg
@@ -113,6 +115,7 @@ class CaptureManager:
         self._rec_ffmpeg: str = ""
         self._rec_frame_count = 0
         self._rec_fps: int = 30
+        self._rec_audio_lock = threading.Lock()
         self._rec_game_chunks: list[np.ndarray] = []
         self._rec_mic_chunks: list[np.ndarray] = []
         self._rec_last_drain: float = 0
@@ -120,12 +123,17 @@ class CaptureManager:
         self._rec_audio_thread: threading.Thread | None = None
         self._rec_stderr_chunks: list[bytes] = []
         self._rec_stderr_thread: threading.Thread | None = None
+        self._rec_write_queue = None
+        self._rec_writer_thread: threading.Thread | None = None
+        self._rec_cfg: dict = {}
+        self._rec_bg: np.ndarray | None = None
 
         # Background image for compositing (loaded lazily)
         self._background: np.ndarray | None = None
         self._load_background()
 
         # Snapshot of buffer-affecting settings for change detection
+        self._prev_obs_enabled = config.obs_enabled
         self._prev_clip_enabled = config.clip_enabled
         self._prev_clip_fps = config.clip_fps
         self._prev_clip_buffer_seconds = config.clip_buffer_seconds
@@ -165,11 +173,11 @@ class CaptureManager:
             return
         self._running = True
 
-        if self._config.obs_enabled:
+        if self._config.clip_enabled and self._config.obs_enabled:
             # OBS mode — no internal frame/audio/webcam capture
             self._start_obs()
         elif self._config.clip_enabled:
-            # Only subscribe for frames if clip recording is enabled
+            # Internal capture mode
             self._start_frame_subscription()
             self._start_audio()
             self._start_mic()
@@ -228,8 +236,9 @@ class CaptureManager:
     def _on_capture_frame(self, frame: np.ndarray, timestamp: float) -> None:
         """Callback from FrameDistributor — push frame into the rolling buffer."""
         webcam_frame = None
-        if self._webcam_capture:
-            webcam_frame = self._webcam_capture.get_latest_frame()
+        wc = self._webcam_capture  # snapshot ref (main thread may set to None)
+        if wc is not None:
+            webcam_frame = wc.get_latest_frame()
         self._frame_buffer.push(frame, timestamp, webcam_frame)
         if self._recording:
             self._write_recording_frame(frame.copy())
@@ -446,9 +455,9 @@ class CaptureManager:
 
         cfg = config
 
-        # --- obs_enabled toggle ---
+        # --- obs_enabled toggle (requires clip_enabled as master gate) ---
         if cfg.obs_enabled != self._prev_obs_enabled:
-            if cfg.obs_enabled:
+            if cfg.obs_enabled and cfg.clip_enabled:
                 log.info("OBS mode enabled — stopping internal capture")
                 if self._pending_clip_timer:
                     self._pending_clip_timer.cancel()
@@ -472,12 +481,42 @@ class CaptureManager:
             self._update_config_snapshot(config)
             return
 
+        # --- clip_enabled toggle (master gate for all capture) ---
+        if cfg.clip_enabled != self._prev_clip_enabled:
+            if cfg.clip_enabled:
+                if cfg.obs_enabled:
+                    log.info("Clip recording enabled — starting OBS mode")
+                    self._start_obs()
+                else:
+                    log.info("Clip recording enabled — starting internal capture")
+                    self._start_frame_subscription()
+                    self._start_audio()
+                    self._start_mic()
+                    self._start_webcam()
+            else:
+                log.info("Clip recording disabled — stopping all capture")
+                if self._pending_clip_timer:
+                    self._pending_clip_timer.cancel()
+                    self._pending_clip_timer = None
+                self._stop_obs()
+                self._stop_frame_subscription()
+                self._stop_audio()
+                self._stop_mic()
+                self._release_webcam_if_not_needed()
+                self._frame_buffer.clear()
+            self._update_config_snapshot(config)
+            return
+
         # If OBS mode is active, handle OBS-specific config changes
-        if cfg.obs_enabled:
+        if cfg.clip_enabled and cfg.obs_enabled:
             if self._obs_client and self._obs_client.connected:
                 new_dir = cfg.clip_directory
                 if new_dir:
                     self._obs_client.update_record_directory(new_dir)
+                if cfg.clip_buffer_seconds != self._prev_clip_buffer_seconds:
+                    self._obs_client.update_replay_buffer_duration(
+                        cfg.clip_buffer_seconds,
+                    )
 
             # Replay buffer management toggled
             if cfg.obs_manage_replay_buffer and not self._obs_game_poll_timer:
@@ -488,27 +527,6 @@ class CaptureManager:
             elif not cfg.obs_manage_replay_buffer and self._obs_game_poll_timer:
                 self._stop_obs_game_poll()
 
-            self._update_config_snapshot(config)
-            return
-
-        # --- clip_enabled toggle ---
-        if cfg.clip_enabled != self._prev_clip_enabled:
-            if cfg.clip_enabled:
-                log.info("Clip recording enabled")
-                self._start_frame_subscription()
-                self._start_audio()
-                self._start_mic()
-                self._start_webcam()
-            else:
-                log.info("Clip recording disabled")
-                if self._pending_clip_timer:
-                    self._pending_clip_timer.cancel()
-                    self._pending_clip_timer = None
-                self._stop_frame_subscription()
-                self._stop_audio()
-                self._stop_mic()
-                self._release_webcam_if_not_needed()
-                self._frame_buffer.clear()
             self._update_config_snapshot(config)
             return
 
@@ -695,9 +713,8 @@ class CaptureManager:
                     args=(event,),
                 ).start()
 
-        # Video clip (internal or OBS)
-        clip_active = cfg.clip_enabled or cfg.obs_enabled
-        if clip_active and cfg.clip_auto_on_global:
+        # Video clip (internal or OBS — clip_enabled is the master gate)
+        if cfg.clip_enabled and cfg.clip_auto_on_global:
             if self._check_conditions(
                 event,
                 min_ped=cfg.clip_min_ped,
@@ -737,11 +754,15 @@ class CaptureManager:
         if action == "screenshot":
             self._take_manual_screenshot()
         elif action == "save_clip":
+            if not self._config.clip_enabled:
+                return
             if self._config.obs_enabled:
                 self._save_manual_clip_obs()
             else:
                 self._save_manual_clip()
         elif action == "toggle_recording":
+            if not self._config.clip_enabled:
+                return
             if self._config.obs_enabled:
                 self._toggle_recording_obs()
             elif self._recording:
@@ -954,11 +975,54 @@ class CaptureManager:
         filename = "_".join(parts) + ".mp4"
         output_path = base / filename
 
+        # Snapshot config on the main thread so the encode thread doesn't
+        # race with live settings changes.
+        cfg = self._config
+        clip_cfg = {
+            "fps": cfg.clip_fps,
+            "resolution": cfg.clip_resolution,
+            "bitrate": cfg.clip_bitrate,
+            "blur_regions": copy.deepcopy(cfg.capture_blur_regions),
+            "mic_filters": {
+                "noise_suppression": cfg.clip_audio_noise_suppression,
+                "noise_gate": cfg.clip_audio_noise_gate,
+                "compressor": cfg.clip_audio_compressor,
+                "ns_mix": cfg.clip_audio_ns_mix,
+                "gate_threshold": cfg.clip_audio_gate_threshold,
+                "gate_ratio": cfg.clip_audio_gate_ratio,
+                "gate_attack": cfg.clip_audio_gate_attack,
+                "gate_release": cfg.clip_audio_gate_release,
+                "comp_threshold": cfg.clip_audio_comp_threshold,
+                "comp_ratio": cfg.clip_audio_comp_ratio,
+                "comp_attack": cfg.clip_audio_comp_attack,
+                "comp_release": cfg.clip_audio_comp_release,
+            },
+            "webcam_position_x": cfg.clip_webcam_position_x,
+            "webcam_position_y": cfg.clip_webcam_position_y,
+            "webcam_scale": cfg.clip_webcam_scale,
+            "webcam_crop": {
+                "x": cfg.clip_webcam_crop_x,
+                "y": cfg.clip_webcam_crop_y,
+                "w": cfg.clip_webcam_crop_w,
+                "h": cfg.clip_webcam_crop_h,
+            },
+            "webcam_chroma": {
+                "enabled": cfg.clip_webcam_chroma_enabled,
+                "color": cfg.clip_webcam_chroma_color,
+                "threshold": cfg.clip_webcam_chroma_threshold,
+                "smoothing": cfg.clip_webcam_chroma_smoothing,
+            },
+            "ffmpeg_path": cfg.ffmpeg_path,
+            "game_gain": cfg.clip_audio_game_gain,
+            "mic_gain": cfg.clip_audio_mic_gain,
+            "scaling": getattr(cfg, "clip_scaling", "lanczos"),
+        }
+
         # Encode in background thread (webcam frames are stored per-frame in the buffer)
         threading.Thread(
             target=self._encode_clip,
             args=(frames, audio_data, mic_data, output_path, global_event,
-                  thumb_time),
+                  thumb_time, clip_cfg),
             daemon=True,
             name="clip-encode",
         ).start()
@@ -971,8 +1035,13 @@ class CaptureManager:
         output_path: Path,
         global_event: dict | None = None,
         thumb_time: float = 0,
+        clip_cfg: dict | None = None,
     ) -> None:
-        """Encode a clip via FFmpeg (runs in background thread)."""
+        """Encode a clip via FFmpeg (runs in background thread).
+
+        *clip_cfg* is a config snapshot taken on the main thread so we
+        don't read mutable Config attributes from this background thread.
+        """
         path_str = str(output_path)
         total_frames = len(frames)
 
@@ -999,52 +1068,29 @@ class CaptureManager:
             from .clip_writer import write_clip
 
             duration = frames[-1][0] - frames[0][0] if len(frames) > 1 else 0
-            cfg = self._config
+            c = clip_cfg or {}
 
             write_clip(
                 frames=frames,
                 audio_pcm=audio_data,
                 output_path=output_path,
-                fps=cfg.clip_fps,
-                resolution=cfg.clip_resolution,
-                bitrate=cfg.clip_bitrate,
-                blur_regions=cfg.capture_blur_regions,
+                fps=c.get("fps", 30),
+                resolution=c.get("resolution", "source"),
+                bitrate=c.get("bitrate", "medium"),
+                blur_regions=c.get("blur_regions"),
                 thumb_time=thumb_time,
-                mic_filters={
-                    "noise_suppression": cfg.clip_audio_noise_suppression,
-                    "noise_gate": cfg.clip_audio_noise_gate,
-                    "compressor": cfg.clip_audio_compressor,
-                    "ns_mix": cfg.clip_audio_ns_mix,
-                    "gate_threshold": cfg.clip_audio_gate_threshold,
-                    "gate_ratio": cfg.clip_audio_gate_ratio,
-                    "gate_attack": cfg.clip_audio_gate_attack,
-                    "gate_release": cfg.clip_audio_gate_release,
-                    "comp_threshold": cfg.clip_audio_comp_threshold,
-                    "comp_ratio": cfg.clip_audio_comp_ratio,
-                    "comp_attack": cfg.clip_audio_comp_attack,
-                    "comp_release": cfg.clip_audio_comp_release,
-                },
-                webcam_position_x=cfg.clip_webcam_position_x,
-                webcam_position_y=cfg.clip_webcam_position_y,
-                webcam_scale=cfg.clip_webcam_scale,
-                webcam_crop={
-                    "x": cfg.clip_webcam_crop_x,
-                    "y": cfg.clip_webcam_crop_y,
-                    "w": cfg.clip_webcam_crop_w,
-                    "h": cfg.clip_webcam_crop_h,
-                },
-                webcam_chroma={
-                    "enabled": cfg.clip_webcam_chroma_enabled,
-                    "color": cfg.clip_webcam_chroma_color,
-                    "threshold": cfg.clip_webcam_chroma_threshold,
-                    "smoothing": cfg.clip_webcam_chroma_smoothing,
-                },
-                ffmpeg_path=cfg.ffmpeg_path,
+                mic_filters=c.get("mic_filters"),
+                webcam_position_x=c.get("webcam_position_x", 0.88),
+                webcam_position_y=c.get("webcam_position_y", 0.85),
+                webcam_scale=c.get("webcam_scale", 0.2),
+                webcam_crop=c.get("webcam_crop"),
+                webcam_chroma=c.get("webcam_chroma"),
+                ffmpeg_path=c.get("ffmpeg_path", ""),
                 mic_pcm=mic_data,
-                game_gain=cfg.clip_audio_game_gain,
-                mic_gain=cfg.clip_audio_mic_gain,
+                game_gain=c.get("game_gain", 1.0),
+                mic_gain=c.get("mic_gain", 1.0),
                 background=self._background,
-                scaling=getattr(cfg, "clip_scaling", "lanczos"),
+                scaling=c.get("scaling", "lanczos"),
                 on_progress=_on_progress,
             )
 
@@ -1073,7 +1119,7 @@ class CaptureManager:
 
     @property
     def is_recording(self) -> bool:
-        if self._obs_client and self._config.obs_enabled:
+        if self._obs_client and self._config.clip_enabled and self._config.obs_enabled:
             return self._obs_client.is_recording()
         return self._recording
 
@@ -1136,9 +1182,10 @@ class CaptureManager:
         vf_parts = []
         if target_res and not compose_bg:
             tw, th = target_res
+            scaling = getattr(self._config, "clip_scaling", "lanczos")
             vf_parts.append(
                 f"scale='min({tw},iw)':'min({th},ih)'"
-                f":force_original_aspect_ratio=decrease:flags=lanczos"
+                f":force_original_aspect_ratio=decrease:flags={get_ffmpeg_scale_flag(scaling)}"
             )
             vf_parts.append(f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:color=black")
         if vf_parts:
@@ -1160,6 +1207,8 @@ class CaptureManager:
 
         # Drain stderr in background to prevent pipe-buffer deadlock
         # during long recordings where FFmpeg status output accumulates.
+        # Only keep the tail (last ~64 KB) for error reporting.
+        _REC_STDERR_MAX_CHUNKS = 16  # 16 × 4096 = 64 KB
         self._rec_stderr_chunks: list[bytes] = []
 
         def _drain_rec_stderr(proc_ref=self._rec_proc):
@@ -1169,6 +1218,8 @@ class CaptureManager:
                     if not chunk:
                         break
                     self._rec_stderr_chunks.append(chunk)
+                    if len(self._rec_stderr_chunks) > _REC_STDERR_MAX_CHUNKS:
+                        self._rec_stderr_chunks = self._rec_stderr_chunks[-_REC_STDERR_MAX_CHUNKS:]
             except Exception:
                 pass
 
@@ -1184,6 +1235,15 @@ class CaptureManager:
         self._rec_frame_count = 0
         self._rec_fps = fps
 
+        # Bounded queue + writer thread so pipe writes don't block capture.
+        # Max 3 frames (~18 MB at 1080p) — if FFmpeg can't keep up we drop.
+        import queue as _queue
+        self._rec_write_queue: _queue.Queue = _queue.Queue(maxsize=3)
+        self._rec_writer_thread = threading.Thread(
+            target=self._rec_writer_loop, daemon=True, name="rec-writer",
+        )
+        self._rec_writer_thread.start()
+
         # Audio drain setup
         self._rec_game_chunks = []
         self._rec_mic_chunks = []
@@ -1196,6 +1256,42 @@ class CaptureManager:
                 daemon=True, name="rec-audio-drain",
             )
             self._rec_audio_thread.start()
+
+        # Snapshot config + background for background threads so they
+        # don't read the mutable main-thread config object.
+        cfg = self._config
+        self._rec_bg = self._background.copy() if self._background is not None else None
+        self._rec_cfg = {
+            # _write_recording_frame
+            "clip_scaling": getattr(cfg, "clip_scaling", "lanczos"),
+            "capture_blur_regions": copy.deepcopy(cfg.capture_blur_regions),
+            "clip_webcam_position_x": cfg.clip_webcam_position_x,
+            "clip_webcam_position_y": cfg.clip_webcam_position_y,
+            "clip_webcam_crop_x": cfg.clip_webcam_crop_x,
+            "clip_webcam_crop_y": cfg.clip_webcam_crop_y,
+            "clip_webcam_crop_w": cfg.clip_webcam_crop_w,
+            "clip_webcam_crop_h": cfg.clip_webcam_crop_h,
+            "clip_webcam_chroma_enabled": cfg.clip_webcam_chroma_enabled,
+            "clip_webcam_chroma_color": cfg.clip_webcam_chroma_color,
+            "clip_webcam_chroma_threshold": cfg.clip_webcam_chroma_threshold,
+            "clip_webcam_chroma_smoothing": cfg.clip_webcam_chroma_smoothing,
+            "clip_webcam_scale": cfg.clip_webcam_scale,
+            # _mux_recording_audio
+            "clip_audio_game_gain": cfg.clip_audio_game_gain,
+            "clip_audio_mic_gain": cfg.clip_audio_mic_gain,
+            "clip_audio_noise_suppression": cfg.clip_audio_noise_suppression,
+            "clip_audio_noise_gate": cfg.clip_audio_noise_gate,
+            "clip_audio_compressor": cfg.clip_audio_compressor,
+            "clip_audio_ns_mix": cfg.clip_audio_ns_mix,
+            "clip_audio_gate_threshold": cfg.clip_audio_gate_threshold,
+            "clip_audio_gate_ratio": cfg.clip_audio_gate_ratio,
+            "clip_audio_gate_attack": cfg.clip_audio_gate_attack,
+            "clip_audio_gate_release": cfg.clip_audio_gate_release,
+            "clip_audio_comp_threshold": cfg.clip_audio_comp_threshold,
+            "clip_audio_comp_ratio": cfg.clip_audio_comp_ratio,
+            "clip_audio_comp_attack": cfg.clip_audio_comp_attack,
+            "clip_audio_comp_release": cfg.clip_audio_comp_release,
+        }
 
         self._recording = True
         self._event_bus.publish(EVENT_RECORDING_STARTED, {
@@ -1210,6 +1306,17 @@ class CaptureManager:
         self._recording = False
 
         rec_end = time.monotonic()
+
+        # Flush the writer queue — sentinel tells it to exit after
+        # draining remaining frames so we don't lose them.
+        q = getattr(self, "_rec_write_queue", None)
+        if q is not None:
+            q.put(self._REC_WRITE_SENTINEL)
+        wt = getattr(self, "_rec_writer_thread", None)
+        if wt is not None:
+            wt.join(timeout=10)
+            self._rec_writer_thread = None
+        self._rec_write_queue = None
 
         # Stop audio drain thread
         if self._rec_audio_stop:
@@ -1250,6 +1357,10 @@ class CaptureManager:
         """
         rec_end = time.monotonic()
 
+        # Writer thread exits on pipe break, just clean up references
+        self._rec_write_queue = None
+        self._rec_writer_thread = None
+
         # Stop audio drain thread
         if self._rec_audio_stop:
             self._rec_audio_stop.set()
@@ -1278,21 +1389,26 @@ class CaptureManager:
             self._release_webcam_if_not_needed()
 
     def _write_recording_frame(self, frame_bgr: np.ndarray) -> None:
-        """Process and pipe a single frame to the recording FFmpeg process."""
-        proc = self._rec_proc
-        if not proc or not proc.stdin:
+        """Process a frame and queue it for the writer thread.
+
+        Runs on the capture thread.  The actual pipe write is offloaded
+        to ``_rec_writer_loop`` so a slow FFmpeg doesn't block capture.
+        """
+        q = getattr(self, "_rec_write_queue", None)
+        if q is None:
             return
 
         w, h = self._rec_frame_size
-        cfg = self._config
+        c = self._rec_cfg  # snapshot taken at recording start
+        bg = self._rec_bg
 
         # Background compositing
-        if self._rec_compose_bg and self._background is not None:
-            frame_bgr = compose_on_background(frame_bgr, self._background, w, h,
-                                                  scaling=getattr(cfg, "clip_scaling", "lanczos"))
+        if self._rec_compose_bg and bg is not None:
+            frame_bgr = compose_on_background(frame_bgr, bg, w, h,
+                                                  scaling=c.get("clip_scaling", "lanczos"))
 
         # Blur regions
-        blur = cfg.capture_blur_regions
+        blur = c.get("capture_blur_regions")
         if blur:
             frame_bgr = apply_blur_regions(frame_bgr, blur)
 
@@ -1303,35 +1419,52 @@ class CaptureManager:
                 from .clip_writer import _composite_webcam
                 frame_bgr = _composite_webcam(
                     frame_bgr, wf,
-                    cfg.clip_webcam_position_x, cfg.clip_webcam_position_y,
-                    crop={"x": cfg.clip_webcam_crop_x, "y": cfg.clip_webcam_crop_y,
-                          "w": cfg.clip_webcam_crop_w, "h": cfg.clip_webcam_crop_h},
-                    chroma={"enabled": cfg.clip_webcam_chroma_enabled,
-                            "color": cfg.clip_webcam_chroma_color,
-                            "threshold": cfg.clip_webcam_chroma_threshold,
-                            "smoothing": cfg.clip_webcam_chroma_smoothing},
-                    scale=cfg.clip_webcam_scale,
-                    scaling=getattr(cfg, "clip_scaling", "lanczos"),
+                    c.get("clip_webcam_position_x", 0), c.get("clip_webcam_position_y", 0),
+                    crop={"x": c.get("clip_webcam_crop_x", 0), "y": c.get("clip_webcam_crop_y", 0),
+                          "w": c.get("clip_webcam_crop_w", 0), "h": c.get("clip_webcam_crop_h", 0)},
+                    chroma={"enabled": c.get("clip_webcam_chroma_enabled", False),
+                            "color": c.get("clip_webcam_chroma_color", "#00FF00"),
+                            "threshold": c.get("clip_webcam_chroma_threshold", 40),
+                            "smoothing": c.get("clip_webcam_chroma_smoothing", 5)},
+                    scale=c.get("clip_webcam_scale", 1.0),
+                    scaling=c.get("clip_scaling", "lanczos"),
                 )
 
         # Ensure consistent frame size
         fh, fw = frame_bgr.shape[:2]
         if (fw != w or fh != h) and cv2 is not None:
-            frame_bgr = cv2.resize(frame_bgr, (w, h), interpolation=get_interpolation(getattr(cfg, "clip_scaling", "lanczos")))
+            frame_bgr = cv2.resize(frame_bgr, (w, h), interpolation=get_interpolation(c.get("clip_scaling", "lanczos")))
 
+        raw = frame_bgr.tobytes()
         try:
-            proc.stdin.write(frame_bgr.tobytes())
-            self._rec_frame_count += 1
-        except (BrokenPipeError, OSError, ValueError):
-            log.error("Recording pipe broken — stopping")
-            # Schedule cleanup on a background thread (can't call
-            # _stop_recording directly — it joins the audio thread
-            # and we're on the capture thread).
-            self._recording = False
-            threading.Thread(
-                target=self._emergency_stop_recording,
-                daemon=True, name="rec-pipe-break-stop",
-            ).start()
+            q.put_nowait(raw)
+        except Exception:
+            # Queue full — FFmpeg can't keep up; drop this frame.
+            log.debug("Recording frame dropped (queue full)")
+
+    _REC_WRITE_SENTINEL = object()
+
+    def _rec_writer_loop(self) -> None:
+        """Drain the write queue into FFmpeg stdin (runs in dedicated thread)."""
+        q = self._rec_write_queue
+        while True:
+            raw = q.get()
+            if raw is self._REC_WRITE_SENTINEL:
+                break
+            proc = self._rec_proc
+            if not proc or not proc.stdin:
+                continue
+            try:
+                proc.stdin.write(raw)
+                self._rec_frame_count += 1
+            except (BrokenPipeError, OSError, ValueError):
+                log.error("Recording pipe broken — stopping")
+                self._recording = False
+                threading.Thread(
+                    target=self._emergency_stop_recording,
+                    daemon=True, name="rec-pipe-break-stop",
+                ).start()
+                break
 
     # ------------------------------------------------------------------
     # Recording audio drain
@@ -1346,18 +1479,27 @@ class CaptureManager:
                 break
             self._rec_drain_audio(time.monotonic())
 
+    _REC_AUDIO_CONSOLIDATE_THRESHOLD = 12  # consolidate every ~60s
+
     def _rec_drain_audio(self, now: float) -> None:
         """Snapshot new audio since last drain and accumulate."""
-        last = self._rec_last_drain
-        if self._audio_buffer:
-            data = self._audio_buffer.snapshot(last, now)
-            if data is not None:
-                self._rec_game_chunks.append(data)
-        if self._mic_buffer:
-            data = self._mic_buffer.snapshot(last, now)
-            if data is not None:
-                self._rec_mic_chunks.append(data)
-        self._rec_last_drain = now
+        with self._rec_audio_lock:
+            last = self._rec_last_drain
+            if self._audio_buffer:
+                data = self._audio_buffer.snapshot(last, now)
+                if data is not None:
+                    self._rec_game_chunks.append(data)
+            if self._mic_buffer:
+                data = self._mic_buffer.snapshot(last, now)
+                if data is not None:
+                    self._rec_mic_chunks.append(data)
+            self._rec_last_drain = now
+            # Periodically consolidate many small arrays into one to
+            # reduce fragmentation and speed up final concatenation.
+            if len(self._rec_game_chunks) >= self._REC_AUDIO_CONSOLIDATE_THRESHOLD:
+                self._rec_game_chunks = [np.concatenate(self._rec_game_chunks, axis=0)]
+            if len(self._rec_mic_chunks) >= self._REC_AUDIO_CONSOLIDATE_THRESHOLD:
+                self._rec_mic_chunks = [np.concatenate(self._rec_mic_chunks, axis=0)]
 
     # ------------------------------------------------------------------
     # Recording finalization (runs in background thread)
@@ -1401,11 +1543,16 @@ class CaptureManager:
                     self._rec_frame_count, actual_duration,
                 )
 
-            # Prepare audio
-            game_pcm = (np.concatenate(self._rec_game_chunks, axis=0)
-                        if self._rec_game_chunks else None)
-            mic_pcm = (np.concatenate(self._rec_mic_chunks, axis=0)
-                       if self._rec_mic_chunks else None)
+            # Prepare audio — take ownership of chunks under lock
+            with self._rec_audio_lock:
+                game_chunks = list(self._rec_game_chunks)
+                mic_chunks = list(self._rec_mic_chunks)
+                self._rec_game_chunks.clear()
+                self._rec_mic_chunks.clear()
+            game_pcm = (np.concatenate(game_chunks, axis=0)
+                        if game_chunks else None)
+            mic_pcm = (np.concatenate(mic_chunks, axis=0)
+                       if mic_chunks else None)
             has_audio = game_pcm is not None or mic_pcm is not None
 
             if has_audio:
@@ -1461,8 +1608,10 @@ class CaptureManager:
                 except OSError:
                     pass
         finally:
-            self._rec_game_chunks.clear()
-            self._rec_mic_chunks.clear()
+            # Chunks are already moved out under lock above; clear as safety net
+            with self._rec_audio_lock:
+                self._rec_game_chunks.clear()
+                self._rec_mic_chunks.clear()
 
     def _remux_video_timing(self, itsscale: float) -> None:
         """Remux temp video with corrected timing (no audio, no re-encode)."""
@@ -1508,10 +1657,10 @@ class CaptureManager:
             has_game = game_pcm is not None and len(game_pcm) > 0
             has_mic = mic_pcm is not None and len(mic_pcm) > 0
 
-            cfg = self._config
+            c = self._rec_cfg  # config snapshot from recording start
 
             if has_game:
-                game_pcm = _apply_gain(game_pcm, cfg.clip_audio_game_gain)
+                game_pcm = _apply_gain(game_pcm, c.get("clip_audio_game_gain", 0.0))
                 tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                 _write_wav(game_pcm, tmp.name)
                 tmp.close()
@@ -1519,7 +1668,7 @@ class CaptureManager:
                 cmd.extend(["-i", tmp.name])
 
             if has_mic:
-                mic_pcm = _apply_gain(mic_pcm, cfg.clip_audio_mic_gain)
+                mic_pcm = _apply_gain(mic_pcm, c.get("clip_audio_mic_gain", 0.0))
                 tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                 _write_wav(mic_pcm, tmp.name)
                 tmp.close()
@@ -1529,20 +1678,20 @@ class CaptureManager:
             cmd.extend(["-c:v", "copy",
                         "-shortest"])  # trim to shorter of video/audio
 
-            rnnoise_model = ensure_rnnoise_model() if cfg.clip_audio_noise_suppression else None
+            rnnoise_model = ensure_rnnoise_model() if c.get("clip_audio_noise_suppression") else None
             mic_af = _build_mic_filter({
-                "noise_suppression": cfg.clip_audio_noise_suppression,
-                "noise_gate": cfg.clip_audio_noise_gate,
-                "compressor": cfg.clip_audio_compressor,
-                "ns_mix": cfg.clip_audio_ns_mix,
-                "gate_threshold": cfg.clip_audio_gate_threshold,
-                "gate_ratio": cfg.clip_audio_gate_ratio,
-                "gate_attack": cfg.clip_audio_gate_attack,
-                "gate_release": cfg.clip_audio_gate_release,
-                "comp_threshold": cfg.clip_audio_comp_threshold,
-                "comp_ratio": cfg.clip_audio_comp_ratio,
-                "comp_attack": cfg.clip_audio_comp_attack,
-                "comp_release": cfg.clip_audio_comp_release,
+                "noise_suppression": c.get("clip_audio_noise_suppression", False),
+                "noise_gate": c.get("clip_audio_noise_gate", False),
+                "compressor": c.get("clip_audio_compressor", False),
+                "ns_mix": c.get("clip_audio_ns_mix", 1.0),
+                "gate_threshold": c.get("clip_audio_gate_threshold", -40),
+                "gate_ratio": c.get("clip_audio_gate_ratio", 2),
+                "gate_attack": c.get("clip_audio_gate_attack", 5),
+                "gate_release": c.get("clip_audio_gate_release", 100),
+                "comp_threshold": c.get("clip_audio_comp_threshold", -20),
+                "comp_ratio": c.get("clip_audio_comp_ratio", 4),
+                "comp_attack": c.get("clip_audio_comp_attack", 5),
+                "comp_release": c.get("clip_audio_comp_release", 100),
             }, rnnoise_model=rnnoise_model)
 
             if has_game and has_mic:

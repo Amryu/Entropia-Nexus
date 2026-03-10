@@ -38,12 +38,13 @@ def load_background_image(path: str) -> np.ndarray | None:
         video_exts = {".mp4", ".avi", ".mkv", ".mov", ".webm", ".wmv", ".flv"}
         if p.suffix.lower() in video_exts:
             cap = cv2.VideoCapture(str(p))
-            if cap.isOpened():
-                ok, frame = cap.read()
+            try:
+                if cap.isOpened():
+                    ok, frame = cap.read()
+                    return frame if ok else None
+                return None
+            finally:
                 cap.release()
-                return frame if ok else None
-            cap.release()
-            return None
         # Image file
         return cv2.imread(str(p))
     except Exception:

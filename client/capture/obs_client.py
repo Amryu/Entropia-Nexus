@@ -169,13 +169,22 @@ class OBSClient:
             self._evt = evt
             self._connected = True
 
-        # Set recording directory so OBS saves where the user expects
+        # Push client settings to OBS so directory and buffer match
         clip_dir = self._config.clip_directory
         if clip_dir:
             try:
                 req.set_record_directory(clip_dir)
             except Exception as exc:
                 log.debug("Could not set OBS record directory: %s", exc)
+
+        buf_secs = getattr(self._config, "clip_buffer_seconds", 0)
+        if buf_secs > 0:
+            try:
+                category = self._get_output_category(req)
+                req.set_profile_parameter(category, "RecRBTime", str(buf_secs))
+                log.info("OBS replay buffer duration set to %ds on connect", buf_secs)
+            except Exception as exc:
+                log.debug("Could not set OBS replay buffer duration: %s", exc)
 
         # Sync local state caches with OBS
         self._sync_state(req)
@@ -372,6 +381,9 @@ class OBSClient:
 
         with self._pending_lock:
             self._pending_globals.append(global_event)
+            # Cap to prevent unbounded growth if OBS never fires saved events
+            if len(self._pending_globals) > 50:
+                self._pending_globals = self._pending_globals[-50:]
 
         # Publish encoding-started so the UI shows the progress placeholder
         self._event_bus.publish(EVENT_CLIP_ENCODING_STARTED, {
@@ -492,8 +504,17 @@ class OBSClient:
             self._recording = False
 
     # ------------------------------------------------------------------
-    # Directory management
+    # Directory & replay buffer configuration
     # ------------------------------------------------------------------
+
+    def _get_output_category(self, req) -> str:
+        """Return the profile parameter category for the current output mode."""
+        try:
+            resp = req.get_profile_parameter("Output", "Mode")
+            mode = getattr(resp, "parameter_value", "Simple") or "Simple"
+        except Exception:
+            mode = "Simple"
+        return "SimpleOutput" if mode == "Simple" else "AdvOut"
 
     def update_record_directory(self, directory: str) -> None:
         """Update the OBS recording output directory."""
@@ -505,3 +526,16 @@ class OBSClient:
             req.set_record_directory(directory)
         except Exception as exc:
             log.debug("Could not update OBS record directory: %s", exc)
+
+    def update_replay_buffer_duration(self, seconds: int) -> None:
+        """Set the OBS replay buffer maximum replay time (seconds)."""
+        with self._lock:
+            req = self._req
+        if not req or not self._connected:
+            return
+        try:
+            category = self._get_output_category(req)
+            req.set_profile_parameter(category, "RecRBTime", str(seconds))
+            log.info("OBS replay buffer duration set to %ds (%s)", seconds, category)
+        except Exception as exc:
+            log.debug("Could not set OBS replay buffer duration: %s", exc)

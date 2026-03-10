@@ -19,6 +19,7 @@ from .constants import (
     BITRATE_TABLE,
     RESOLUTION_PRESETS,
     WEBCAM_OVERLAY_SCALE,
+    get_ffmpeg_scale_flag,
     get_interpolation,
 )
 from .ffmpeg import ensure_ffmpeg, ensure_rnnoise_model
@@ -35,6 +36,8 @@ def _write_wav(pcm: np.ndarray, path: str, sample_rate: int = AUDIO_SAMPLE_RATE,
     from *pcm*'s shape so the WAV header always matches the data (important
     when WASAPI loopback negotiates a different count than the default).
     """
+    if pcm.size == 0:
+        return
     actual_channels = pcm.shape[1] if pcm.ndim > 1 else 1
     # Convert float32 [-1, 1] to int16
     int16_data = np.clip(pcm * np.float32(32767), -32768, 32767).astype(np.int16)
@@ -52,36 +55,46 @@ def _apply_gain(pcm: np.ndarray, gain: float) -> np.ndarray:
     return np.clip(pcm * gain, -1.0, 1.0).astype(np.float32)
 
 
+def _safe_float(val, default: float) -> float:
+    """Coerce to float, falling back to *default* on any failure."""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def _build_mic_filter(filters: dict, rnnoise_model: str | None = None) -> str:
     """Build FFmpeg audio filter chain for the microphone track.
 
     Accepts a dict with boolean toggles and parameter values.
+    All numeric parameters are coerced to float to prevent injection
+    of arbitrary FFmpeg filter options via config values.
     """
     parts = []
     if filters.get("noise_suppression") and rnnoise_model:
-        mix = filters.get("ns_mix", 1.0)
+        mix = _safe_float(filters.get("ns_mix"), 1.0)
         # Use just the filename — FFmpeg cwd must be set to the model directory
         # because Windows drive letters contain ':' which FFmpeg's filter parser
         # treats as an option separator and cannot be escaped.
         model_name = os.path.basename(rnnoise_model)
-        parts.append(f"arnndn=m={model_name}:mix={mix}")
+        parts.append(f"arnndn=m={model_name}:mix={mix:.4f}")
     if filters.get("noise_gate"):
-        thresh = filters.get("gate_threshold", 0.01)
-        ratio = filters.get("gate_ratio", 2.0)
-        attack = filters.get("gate_attack", 10.0)
-        release = filters.get("gate_release", 100.0)
+        thresh = _safe_float(filters.get("gate_threshold"), 0.01)
+        ratio = _safe_float(filters.get("gate_ratio"), 2.0)
+        attack = _safe_float(filters.get("gate_attack"), 10.0)
+        release = _safe_float(filters.get("gate_release"), 100.0)
         parts.append(
-            f"agate=threshold={thresh}:ratio={ratio}"
-            f":attack={attack}:release={release}"
+            f"agate=threshold={thresh:.6f}:ratio={ratio:.2f}"
+            f":attack={attack:.2f}:release={release:.2f}"
         )
     if filters.get("compressor"):
-        thresh = filters.get("comp_threshold", -20.0)
-        ratio = filters.get("comp_ratio", 4.0)
-        attack = filters.get("comp_attack", 5.0)
-        release = filters.get("comp_release", 100.0)
+        thresh = _safe_float(filters.get("comp_threshold"), -20.0)
+        ratio = _safe_float(filters.get("comp_ratio"), 4.0)
+        attack = _safe_float(filters.get("comp_attack"), 5.0)
+        release = _safe_float(filters.get("comp_release"), 100.0)
         parts.append(
-            f"acompressor=threshold={thresh}dB:ratio={ratio}"
-            f":attack={attack}:release={release}"
+            f"acompressor=threshold={thresh:.2f}dB:ratio={ratio:.2f}"
+            f":attack={attack:.2f}:release={release:.2f}"
         )
     return ",".join(parts) if parts else ""
 
@@ -232,7 +245,7 @@ def write_clip(
             tw, th = target_res
             vf_parts.append(
                 f"scale='min({tw},iw)':'min({th},ih)'"
-                f":force_original_aspect_ratio=decrease:flags=lanczos"
+                f":force_original_aspect_ratio=decrease:flags={get_ffmpeg_scale_flag(scaling)}"
             )
             vf_parts.append(f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:color=black")
         if vf_parts:
@@ -350,6 +363,10 @@ def write_clip(
         ahead = workers * 2  # max frames in flight to limit memory
         total_frames = len(frames)
         pipe_broken = False
+        # Pre-allocate a black frame for decode failures so we maintain
+        # the expected frame count and keep A/V sync intact.
+        black_frame_bytes = b'\x00' * (frame_w * frame_h * 3)
+
         with ThreadPoolExecutor(max_workers=workers) as pool:
             # Sliding window: keep at most `ahead` futures in flight so we
             # don't decode all frames into RAM at once (~6MB each at 1080p).
@@ -374,21 +391,24 @@ def write_clip(
             while pending:
                 idx, future = pending.popleft()
                 try:
-                    frame_bgr = future.result()
+                    frame_bgr = future.result(timeout=30)
                 except Exception:
-                    log.warning("Frame %d processing failed, skipping", idx)
-                    _submit_next()
-                    continue
-                if frame_bgr is not None:
-                    try:
-                        proc.stdin.write(frame_bgr.tobytes())
-                        written += 1
-                        if on_progress is not None:
+                    log.warning("Frame %d processing failed, inserting black frame", idx)
+                    frame_bgr = None
+
+                raw = frame_bgr.tobytes() if frame_bgr is not None else black_frame_bytes
+                try:
+                    proc.stdin.write(raw)
+                    written += 1
+                    if on_progress is not None:
+                        try:
                             on_progress(written, total_frames)
-                    except (BrokenPipeError, OSError, ValueError):
-                        log.error("FFmpeg pipe broke after %d frames — process likely crashed", written)
-                        pipe_broken = True
-                        break
+                        except Exception:
+                            pass
+                except (BrokenPipeError, OSError, ValueError):
+                    log.error("FFmpeg pipe broke after %d frames — process likely crashed", written)
+                    pipe_broken = True
+                    break
                 # Refill window
                 _submit_next()
 
@@ -564,7 +584,7 @@ def _composite_webcam(
         alpha_3 = alpha_f[:, :, np.newaxis]
         roi = frame[y:y + target_h, x:x + target_w].astype(np.float32)
         blended = roi * (1.0 - alpha_3) + resized.astype(np.float32) * alpha_3
-        frame[y:y + target_h, x:x + target_w] = blended.astype(np.uint8)
+        frame[y:y + target_h, x:x + target_w] = np.clip(blended, 0, 255).astype(np.uint8)
     else:
         frame[y:y + target_h, x:x + target_w] = resized
 

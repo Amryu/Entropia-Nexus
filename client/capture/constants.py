@@ -93,7 +93,9 @@ def get_bitrate(resolution_key: str, quality: str) -> str:
     *resolution_key* is a RESOLUTION_PRESETS key (``"source"``, ``"1920x1080"``, etc.).
     *quality* is one of ``"low"`` / ``"medium"`` / ``"high"`` / ``"ultra"``.
     """
-    ref_bps = _QUALITY_BPS.get(quality, _QUALITY_BPS["medium"])
+    ref_bps = _QUALITY_BPS.get(quality)
+    if ref_bps is None:
+        ref_bps = _QUALITY_BPS["medium"]
     dims = RESOLUTION_PRESETS.get(resolution_key)
     if dims is None:
         # "source" or unknown — use 1080p reference as-is
@@ -139,11 +141,26 @@ DEFAULT_SCALING_ALGORITHM = "cubic"
 
 
 def get_interpolation(key: str) -> int:
-    """Return the cv2 interpolation constant for *key*, defaulting to Lanczos."""
+    """Return the cv2 interpolation constant for *key*, defaulting to cubic."""
     entry = SCALING_ALGORITHMS.get(key)
     if entry is None:
         entry = SCALING_ALGORITHMS[DEFAULT_SCALING_ALGORITHM]
     return entry[0]
+
+
+# FFmpeg sws_flags equivalents for the user's scaling preference
+_FFMPEG_SCALE_FLAGS = {
+    "lanczos": "lanczos",
+    "linear":  "bilinear",
+    "cubic":   "bicubic",
+    "area":    "area",
+    "nearest": "neighbor",
+}
+
+
+def get_ffmpeg_scale_flag(key: str) -> str:
+    """Return FFmpeg sws scale flag name for *key*, defaulting to bicubic."""
+    return _FFMPEG_SCALE_FLAGS.get(key, "bicubic")
 
 
 # Webcam overlay size relative to video frame

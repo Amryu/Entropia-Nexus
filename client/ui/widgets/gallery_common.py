@@ -30,9 +30,13 @@ THUMB_COLS = 4
 
 
 class ThumbnailLoader(QThread):
-    """Background thread that scans directories and generates thumbnails."""
+    """Background thread that scans directories and generates thumbnails.
 
-    loaded = pyqtSignal(list)  # list of {path, pixmap, type, mtime, screenshot_info}
+    Produces QImage (thread-safe), not QPixmap.  The main-thread handler
+    must call ``QPixmap.fromImage()`` before assigning to a widget.
+    """
+
+    loaded = pyqtSignal(list)  # list of {path, qimage, type, mtime, ...}
 
     def __init__(self, screenshot_dir: str, clip_dir: str, filter_type: str,
                  thumb_width: int = THUMB_WIDTH, thumb_height: int = THUMB_HEIGHT,
@@ -84,7 +88,7 @@ class ThumbnailLoader(QThread):
 
     def _make_item(self, path: str, file_type: str) -> dict:
         mtime = os.path.getmtime(path)
-        pixmap = None
+        qimage = None
         pending = False
         tw, th = self._thumb_width, self._thumb_height
         if file_type == "screenshot" and cv2 is not None:
@@ -96,8 +100,8 @@ class ThumbnailLoader(QThread):
                     sw, sh = int(w * scale), int(h * scale)
                     thumb = cv2.resize(img, (sw, sh), interpolation=cv2.INTER_AREA)
                     rgb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-                    qimg = QImage(rgb.data, sw, sh, sw * 3, QImage.Format.Format_RGB888)
-                    pixmap = QPixmap.fromImage(qimg.copy())
+                    qimage = QImage(rgb.data, sw, sh, sw * 3,
+                                    QImage.Format.Format_RGB888).copy()
             except Exception:
                 pass
         elif file_type == "clip" and cv2 is not None:
@@ -120,11 +124,11 @@ class ThumbnailLoader(QThread):
                     sw, sh = int(w * scale), int(h * scale)
                     thumb = cv2.resize(source, (sw, sh), interpolation=cv2.INTER_AREA)
                     rgb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-                    qimg = QImage(rgb.data, sw, sh, sw * 3, QImage.Format.Format_RGB888)
-                    pixmap = QPixmap.fromImage(qimg.copy())
+                    qimage = QImage(rgb.data, sw, sh, sw * 3,
+                                    QImage.Format.Format_RGB888).copy()
             except Exception:
                 pending = True
-        return {"path": path, "pixmap": pixmap, "type": file_type, "mtime": mtime,
+        return {"path": path, "qimage": qimage, "type": file_type, "mtime": mtime,
                 "pending": pending}
 
 
@@ -283,8 +287,10 @@ class ThumbnailWidget(QWidget):
         self._no_preview_style = (
             self._img_label.styleSheet() + f" color: {TEXT_MUTED}; font-size: 11px;"
         )
-        if item.get("pixmap"):
-            self._img_label.setPixmap(item["pixmap"])
+        # Convert QImage → QPixmap on the main thread (thread-safe)
+        qimg = item.get("qimage")
+        if qimg is not None and not qimg.isNull():
+            self._img_label.setPixmap(QPixmap.fromImage(qimg))
         elif self._pending:
             self._img_label.setText("Loading...")
             self._img_label.setStyleSheet(self._no_preview_style)

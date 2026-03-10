@@ -1,6 +1,7 @@
 """Rolling audio ring buffer using PyAudioWPatch for WASAPI loopback capture."""
 
 import threading
+import time
 from collections import deque
 
 import numpy as np
@@ -58,6 +59,7 @@ class AudioBuffer:
         max_chunks = int(MAX_AUDIO_BUFFER_S * sample_rate / BLOCK_SIZE) + 1
         self._buffer: deque[tuple[float, np.ndarray]] = deque(maxlen=max_chunks)
         self._lock = threading.Lock()
+        self._stream_lock = threading.Lock()  # protects stream open/close
 
         # Device monitoring
         self._monitor_thread: threading.Thread | None = None
@@ -79,7 +81,8 @@ class AudioBuffer:
             return
         self._running = True
         self._pa = pyaudio.PyAudio()
-        self._open_stream()
+        with self._stream_lock:
+            self._open_stream()
         self._start_device_monitor()
         mode = "loopback" if self._loopback else "input"
         log.info("Audio capture started (%s, device=%s, rate=%d, ch=%d)",
@@ -89,16 +92,17 @@ class AudioBuffer:
     def stop(self) -> None:
         """Stop audio capture and release resources."""
         self._running = False
-        self._close_stream()
         if self._monitor_thread:
             self._monitor_thread.join(timeout=2)
             self._monitor_thread = None
-        if self._pa:
-            try:
-                self._pa.terminate()
-            except Exception:
-                pass
-            self._pa = None
+        with self._stream_lock:
+            self._close_stream()
+            if self._pa:
+                try:
+                    self._pa.terminate()
+                except Exception:
+                    pass
+                self._pa = None
         log.info("Audio capture stopped")
 
     # ------------------------------------------------------------------
@@ -184,7 +188,8 @@ class AudioBuffer:
             self._sample_rate = sample_rate
             # Resize buffer for actual sample rate
             max_chunks = int(MAX_AUDIO_BUFFER_S * sample_rate / BLOCK_SIZE) + 1
-            self._buffer = deque(self._buffer, maxlen=max_chunks)
+            with self._lock:
+                self._buffer = deque(self._buffer, maxlen=max_chunks)
         except Exception as e:
             mode = "loopback" if self._loopback else "input"
             log.warning("Failed to open %s stream on '%s': %s",
@@ -204,7 +209,6 @@ class AudioBuffer:
         """Called by PyAudioWPatch on the audio thread with new PCM data."""
         if status_flags:
             log.debug("Audio status flags: %d", status_flags)
-        import time
         ts = time.monotonic()
         chunk = np.frombuffer(in_data, dtype=np.float32).reshape(
             -1, self._channels,
@@ -255,6 +259,7 @@ class AudioBuffer:
         """
         if pyaudio is None:
             return []
+        p = None
         try:
             p = pyaudio.PyAudio()
             result = []
@@ -270,10 +275,15 @@ class AudioBuffer:
                     "name": dev["name"],
                     "max_output_channels": dev["maxOutputChannels"],
                 })
-            p.terminate()
             return result
         except Exception:
             return []
+        finally:
+            if p is not None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
 
     @staticmethod
     def get_input_devices() -> list[dict]:
@@ -283,6 +293,7 @@ class AudioBuffer:
         """
         if pyaudio is None:
             return []
+        p = None
         try:
             p = pyaudio.PyAudio()
             result = []
@@ -298,10 +309,15 @@ class AudioBuffer:
                     "name": dev["name"],
                     "max_input_channels": dev["maxInputChannels"],
                 })
-            p.terminate()
             return result
         except Exception:
             return []
+        finally:
+            if p is not None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
 
     @staticmethod
     def get_devices() -> list[dict]:
@@ -311,6 +327,7 @@ class AudioBuffer:
         """
         if pyaudio is None:
             return []
+        p = None
         try:
             p = pyaudio.PyAudio()
             result = []
@@ -325,10 +342,15 @@ class AudioBuffer:
                     "max_input_channels": dev["maxInputChannels"],
                     "max_output_channels": dev["maxOutputChannels"],
                 })
-            p.terminate()
             return result
         except Exception:
             return []
+        finally:
+            if p is not None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # sounddevice helpers (for audio_check / audio_filter_dialogs)
@@ -394,15 +416,16 @@ class AudioBuffer:
         """Switch to a different audio device (restarts stream)."""
         self._device = device
         if self._running:
-            self._close_stream()
-            # Reinitialize PyAudio to refresh the device list
-            if self._pa:
-                try:
-                    self._pa.terminate()
-                except Exception:
-                    pass
-            self._pa = pyaudio.PyAudio()
-            self._open_stream()
+            with self._stream_lock:
+                self._close_stream()
+                # Reinitialize PyAudio to refresh the device list
+                if self._pa:
+                    try:
+                        self._pa.terminate()
+                    except Exception:
+                        pass
+                self._pa = pyaudio.PyAudio()
+                self._open_stream()
 
     def _start_device_monitor(self) -> None:
         """Start a thread that monitors for default device changes."""
@@ -418,7 +441,6 @@ class AudioBuffer:
         Uses sounddevice (lightweight) to check the current default,
         then reinitializes the PyAudioWPatch stream if it changed.
         """
-        import time
         kind = "output" if self._loopback else "input"
         while self._running:
             try:
@@ -429,14 +451,15 @@ class AudioBuffer:
                             and current_name != self._last_default_device):
                         log.info("Default %s device changed to: %s",
                                  kind, current_name)
-                        self._close_stream()
-                        if self._pa:
-                            try:
-                                self._pa.terminate()
-                            except Exception:
-                                pass
-                        self._pa = pyaudio.PyAudio()
-                        self._open_stream()
+                        with self._stream_lock:
+                            self._close_stream()
+                            if self._pa:
+                                try:
+                                    self._pa.terminate()
+                                except Exception:
+                                    pass
+                            self._pa = pyaudio.PyAudio()
+                            self._open_stream()
                     self._last_default_device = current_name
             except Exception:
                 pass

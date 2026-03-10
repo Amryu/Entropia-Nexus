@@ -62,6 +62,7 @@ class FrameBuffer:
             return
         ok, jpeg = cv2.imencode(".jpg", frame_bgr, self._encode_params)
         if not ok:
+            log.debug("JPEG encode failed for frame (shape=%s)", frame_bgr.shape)
             return
         jpeg_bytes = jpeg.tobytes()
         webcam_jpeg: bytes | None = None
@@ -69,6 +70,8 @@ class FrameBuffer:
             ok_w, jpeg_w = cv2.imencode(".jpg", webcam_bgr, self._encode_params)
             if ok_w:
                 webcam_jpeg = jpeg_w.tobytes()
+            else:
+                log.debug("Webcam JPEG encode failed (shape=%s)", webcam_bgr.shape)
         with self._lock:
             self._buffer.append((timestamp, jpeg_bytes, webcam_jpeg))
 

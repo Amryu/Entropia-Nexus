@@ -412,10 +412,16 @@ class RecordingBarOverlay(OverlayWidget):
             self._webcam_timer = None
             self._time_label.setText("Webcam timeout")
             self._webcam_callback = None
-            QTimer.singleShot(3000, lambda: (
-                self._time_label.setText("")
-                if self._time_label.text() == "Webcam timeout" else None
-            ))
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.setInterval(3000)
+            t.timeout.connect(self._clear_webcam_timeout)
+            t.start()
+
+    def _clear_webcam_timeout(self):
+        """Clear the webcam timeout label if it hasn't been overwritten."""
+        if self._time_label.text() == "Webcam timeout":
+            self._time_label.setText("")
 
     # ------------------------------------------------------------------
     # Recording state signals
@@ -580,3 +586,19 @@ class RecordingBarOverlay(OverlayWidget):
         # Refresh idle display (bitrate/resolution may have changed)
         if not self._capture_manager.is_recording:
             self._update_idle_display()
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+
+    def closeEvent(self, event):
+        """Stop timers and unsubscribe from event bus on close."""
+        self._rec_timer.stop()
+        self._idle_timer.stop()
+        self._pulse_timer.stop()
+        if self._webcam_timer is not None:
+            self._webcam_timer.stop()
+            self._webcam_timer = None
+        self._webcam_callback = None
+        self._event_bus.unsubscribe(EVENT_CONFIG_CHANGED, self._on_config_changed)
+        super().closeEvent(event)

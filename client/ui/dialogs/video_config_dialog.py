@@ -675,6 +675,7 @@ class VideoConfigDialog(QDialog):
         self._bg_path: str = config.capture_preview_background
         self._webcam_capture = None  # WebcamCapture for live preview
         self._webcam_borrowed = False  # True when reusing background capture
+        self._closed = False  # Set by _cleanup to prevent post-close init
         self._frame_sub = None       # FrameSubscription for sync'd delivery
         self._pending_frame = None   # latest frame from capture thread
         self._webcam_devices_ready.connect(self._update_webcam_combo)
@@ -1288,6 +1289,8 @@ class VideoConfigDialog(QDialog):
 
     def _update_webcam_combo(self, devices):
         """Update webcam device combo with probed results (main thread)."""
+        if self._closed:
+            return
         self._webcam_device_combo.blockSignals(True)
         self._webcam_device_combo.clear()
         if not devices:
@@ -1416,6 +1419,8 @@ class VideoConfigDialog(QDialog):
         selected device matches, avoiding a second cv2.VideoCapture
         that would conflict on MSMF.
         """
+        if self._closed:
+            return
         self._stop_webcam_preview()
         dev_idx = self._webcam_device_combo.currentData()
         if dev_idx is None or dev_idx == -1:
@@ -1693,6 +1698,7 @@ class VideoConfigDialog(QDialog):
         super().reject()
 
     def _cleanup(self):
+        self._closed = True
         self._bg_timer.stop()
         self._count_timer.stop()
         self._stop_webcam_preview()

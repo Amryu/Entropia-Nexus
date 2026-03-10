@@ -315,6 +315,16 @@ class GalleryPage(QWidget):
     # ------------------------------------------------------------------
 
     def _reload(self):
+        # Disconnect old loader to prevent stale results; wait briefly for cleanup
+        if self._loader is not None:
+            try:
+                self._loader.loaded.disconnect(self._on_loaded)
+            except TypeError:
+                pass  # already disconnected
+            if self._loader.isRunning():
+                self._loader.wait(3000)
+            self._loader = None
+
         ss_dir = self._config.screenshot_directory or DEFAULT_SCREENSHOT_DIR
         clip_dir = self._config.clip_directory or DEFAULT_CLIP_DIR
         filter_type = self._filter.currentData() or "all"
@@ -709,3 +719,14 @@ class GalleryPage(QWidget):
             subprocess.Popen(["open", path])
         else:
             subprocess.Popen(["xdg-open", path])
+
+    def closeEvent(self, event):
+        if self._loader is not None:
+            try:
+                self._loader.loaded.disconnect(self._on_loaded)
+            except TypeError:
+                pass
+            if self._loader.isRunning():
+                self._loader.wait(3000)
+            self._loader = None
+        super().closeEvent(event)

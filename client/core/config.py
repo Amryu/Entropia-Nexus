@@ -478,6 +478,11 @@ DEFAULTS = {
     "clip_webcam_chroma_smoothing": 5,
     "capture_blur_regions": [],
     "capture_preview_background": "",
+    "obs_enabled": False,
+    "obs_host": "localhost",
+    "obs_port": 4455,
+    "obs_manage_replay_buffer": False,
+    "obs_replay_buffer_asked": False,
 }
 
 

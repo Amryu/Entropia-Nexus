@@ -1255,10 +1255,15 @@ class SettingsPage(QWidget):
         self._obs_manage_replay_cb.setChecked(manage)
 
     def _update_obs_ui_state(self):
-        """Enable/disable internal clip widgets based on OBS mode."""
+        """Enable/disable widgets based on clip_enabled (master) and OBS mode."""
+        clip_on = self._clip_enabled_cb.isChecked()
         obs_on = self._obs_enabled_cb.isChecked()
+        # OBS section requires clip recording to be enabled
+        for w in getattr(self, "_obs_widgets", []):
+            w.setEnabled(clip_on)
+        # Internal clip widgets disabled when OBS is active (or clip is off)
         for w in getattr(self, "_internal_clip_widgets", []):
-            w.setEnabled(not obs_on)
+            w.setEnabled(clip_on and not obs_on)
 
     @staticmethod
     def _load_obs_password() -> str:
@@ -1418,6 +1423,13 @@ class SettingsPage(QWidget):
             "stop it when the game or this client exits.")
         self._obs_manage_replay_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._obs_manage_replay_cb)
+
+        # OBS widgets — disabled when clip recording is off
+        self._obs_widgets = [
+            self._obs_enabled_cb, self._obs_host, self._obs_port,
+            self._obs_password, self._obs_test_btn,
+            self._obs_manage_replay_cb,
+        ]
 
         # Track OBS connection events for live status
         self._signals.obs_connected.connect(self._on_obs_connected)

@@ -112,12 +112,15 @@ class WebcamCapture:
         self._thread.start()
 
     def stop(self) -> None:
-        """Signal the capture thread to stop. Non-blocking.
+        """Signal the capture thread to stop and wait for it to exit.
 
-        The background thread releases the camera when it exits.
+        The background thread releases the camera before returning.
+        Blocks for at most 5 seconds (camera release is usually instant).
         """
         self._running = False
         self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
         self._thread = None
 
     def get_latest_frame(self) -> np.ndarray | None:
