@@ -39,6 +39,7 @@ Items-only search with optional type filtering.
 | `fuzzy` | string | Set to `true` or `1` for fuzzy matching |
 | `type` | string | Filter to a specific item type (optional) |
 | `limit` | integer | Max results (default 50) |
+| `armorParts` | string | Set to `true` to return individual armor pieces instead of armor sets |
 
 **Valid types:** `Weapon`, `Armor`, `Clothing`, `Tool`, `Material`, `Blueprint`, `Component`, `Furniture`, `Enhancer`, `Attachment`, `ArmorSet`, `Consumable`, `Mining`, `Amplifier`, `Vehicle`
 
