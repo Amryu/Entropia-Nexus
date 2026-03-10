@@ -30,6 +30,7 @@
   export let rightPanel = 'editor'; // 'editor' | 'mobEditor' | <any other value shows output slot>
   export let mapComponent = undefined;
   export let changeCount = 0;
+  export let dbChangeIdMap = new Map();
 
   // --- Locked locations (active changes from other users) ---
   $: lockedLocationMap = (() => {
@@ -58,6 +59,7 @@
   // --- Exported method ---
   export function reset() {
     pendingChanges = new Map();
+    dbChangeIdMap = new Map();
     selectedId = null;
     selectedDbChange = null;
     isNewLocation = false;
@@ -84,6 +86,7 @@
           ...loc,
           Name: mod.name ?? loc.Name,
           _hasPendingEdit: true,
+          ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
           Properties: {
             ...loc.Properties,
             Type: mod.locationType ? (mod.locationType === 'Area' ? 'Area' : mod.locationType) : loc.Properties?.Type,
@@ -191,8 +194,70 @@
 
   function handleSelectDbChange(e) {
     const change = e.detail;
-    selectedDbChange = change;
-    selectedId = `db-${change.id}`;
+    const isOwnChange = change.author_id === currentUserId;
+
+    if (isOwnChange || isAdmin) {
+      // Seed into local pending changes so the author/admin can edit
+      const data = change.data;
+      const props = data?.Properties || {};
+      const isAreaType = props.Shape || String(props.Type || '').endsWith('Area');
+
+      if (change.type === 'Create') {
+        // Seed as a pending add
+        const tempId = -change.id;
+        if (!pendingChanges.has(tempId)) {
+          const modified = {
+            name: data?.Name || '',
+            locationType: isAreaType ? 'Area' : (props.Type || 'Location'),
+            longitude: props.Coordinates?.Longitude ?? 0,
+            latitude: props.Coordinates?.Latitude ?? 0,
+            altitude: props.Coordinates?.Altitude ?? null,
+            areaType: isAreaType ? (props.AreaType || props.Type || 'MobArea') : null,
+            shape: props.Shape || null,
+            shapeData: props.Data || null,
+            parentLocationName: data?.ParentLocation?.Name || null,
+            tempId
+          };
+          pendingChanges.set(tempId, { action: 'add', original: null, modified });
+          dbChangeIdMap.set(tempId, change.id);
+          pendingChanges = pendingChanges;
+        }
+        selectedId = tempId;
+      } else if (change.type === 'Update' && data?.Id) {
+        // Seed as a pending edit for the existing location
+        const loc = locations.find(l => l.Id === data.Id);
+        if (loc) {
+          const modified = {
+            name: data.Name ?? loc.Name,
+            locationType: isAreaType ? 'Area' : (props.Type || loc.Properties?.Type || 'Location'),
+            longitude: props.Coordinates?.Longitude ?? loc.Properties?.Coordinates?.Longitude ?? 0,
+            latitude: props.Coordinates?.Latitude ?? loc.Properties?.Coordinates?.Latitude ?? 0,
+            altitude: props.Coordinates?.Altitude ?? loc.Properties?.Coordinates?.Altitude ?? null,
+            areaType: isAreaType ? (props.AreaType || props.Type || loc.Properties?.AreaType || 'MobArea') : null,
+            shape: props.Shape ?? loc.Properties?.Shape ?? null,
+            shapeData: props.Data ?? loc.Properties?.Data ?? null,
+            parentLocationName: data.ParentLocation?.Name || loc.ParentLocation?.Name || null,
+          };
+          pendingChanges.set(data.Id, { action: 'edit', original: loc, modified });
+          dbChangeIdMap.set(data.Id, change.id);
+          pendingChanges = pendingChanges;
+          selectedId = data.Id;
+        } else {
+          // Location not found locally — fall back to read-only
+          selectedDbChange = change;
+          selectedId = `db-${change.id}`;
+        }
+      } else {
+        // Delete or unrecognized — show read-only
+        selectedDbChange = change;
+        selectedId = `db-${change.id}`;
+      }
+    } else {
+      // Other user's change — read-only
+      selectedDbChange = change;
+      selectedId = `db-${change.id}`;
+    }
+
     isNewLocation = false;
     drawnShapeData = null;
     previewShape = null;

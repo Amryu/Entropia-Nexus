@@ -118,8 +118,8 @@
               value={loot.Item?.Name || ''}
               placeholder="Search item..."
               apiEndpoint="/search/items"
+              apiParams={{ armorParts: 'true' }}
               displayFn={(item) => item?.Name || ''}
-              filterFn={(item) => item.Type !== 'ArmorSet'}
               validValues={itemNamesSet}
               on:change={(e) => updateLootField(index, 'Item.Name', e.detail.value)}
               on:select={(e) => updateLootField(index, 'Item.Name', e.detail.data?.Name || e.detail.value)}

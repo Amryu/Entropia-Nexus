@@ -4,11 +4,12 @@
  * Approved images are also uploaded to Cloudflare R2 when configured.
  */
 import sharp from 'sharp';
-import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { randomUUID, createHash } from 'crypto';
 import { r2Enabled, uploadBatchToR2, copyInR2, deleteR2Prefix } from './r2Storage.js';
 import { generateSizeVariants } from './imageVariants.js';
+import { hasTransparency } from './imageEnhancer.js';
 
 // Image size configurations
 const ICON_SIZE = 320;
@@ -324,13 +325,21 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
         .webp({ quality: 90 })
         .toFile(iconPath);
     } else {
-      await image
-        .resize(ICON_SIZE, ICON_SIZE, {
-          fit: 'cover',
-          position: 'center'
-        })
-        .webp({ quality: 90 })
-        .toFile(iconPath);
+      // Non-transparent images (photos, screenshots) are saved as-is without resize/crop
+      var transparent = await hasTransparency(imageBuffer);
+      if (transparent) {
+        await image
+          .resize(ICON_SIZE, ICON_SIZE, {
+            fit: 'cover',
+            position: 'center'
+          })
+          .webp({ quality: 90 })
+          .toFile(iconPath);
+      } else {
+        await image
+          .webp({ quality: 90 })
+          .toFile(iconPath);
+      }
     }
 
     // Process thumbnail (128x128)
@@ -350,6 +359,8 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
       entityType,
       entityId: String(entityId),
       ...(entityName ? { entityName } : {}),
+      // Cache transparency check so the enhancer can skip pixel analysis at serve time
+      ...(transparent !== undefined ? { transparent } : {}),
       uploaderId,
       uploadedAt: new Date().toISOString(),
       tempId
@@ -632,6 +643,24 @@ export function getApprovedImagePath(entityType, entityId, type = 'icon') {
  */
 export function buildApprovedImagePath(entityType, entityId, type) {
   return join(getEntityPath(APPROVED_DIR, entityType, entityId), `${type}.webp`);
+}
+
+/**
+ * Read the cached transparency flag from an approved image's metadata.
+ * Returns true/false if cached, undefined if unknown (legacy images without the field).
+ * @param {string} entityType
+ * @param {string|number} entityId
+ * @returns {boolean|undefined}
+ */
+export function getImageTransparency(entityType, entityId) {
+  const metadataPath = join(getEntityPath(APPROVED_DIR, entityType, entityId), 'metadata.json');
+  if (!existsSync(metadataPath)) return undefined;
+  try {
+    const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+    return metadata.transparent;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -1037,6 +1066,7 @@ export default {
   denyImage,
   deleteApprovedImage,
   getApprovedImagePath,
+  getImageTransparency,
   isAutoApproveType,
   cleanupTempUploads,
   computeImageHash,

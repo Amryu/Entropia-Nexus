@@ -310,10 +310,10 @@ export const Mob = {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "Density": { 
+              "Density": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 3
+                "maximum": 5
               },
               "IsShared": { "type": "boolean" },
               "IsEvent": { "type": "boolean" },

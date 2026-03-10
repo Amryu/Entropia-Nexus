@@ -3,11 +3,12 @@
  * Migration script: Upload all existing approved images to Cloudflare R2.
  *
  * Usage:
- *   node migrate-images-to-r2.mjs [--dry-run] [--force]
+ *   node migrate-images-to-r2.mjs [--env <path>] [--dry-run] [--force]
  *
  * Options:
- *   --dry-run   Show what would be uploaded without actually uploading
- *   --force     Re-upload even if the object already exists in R2
+ *   --env <path>  Load environment variables from a .env file (default: ./.env)
+ *   --dry-run     Show what would be uploaded without actually uploading
+ *   --force       Re-upload even if the object already exists in R2
  *
  * Environment variables (required):
  *   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME
@@ -15,9 +16,29 @@
  *
  * Can safely be run while the site is live — reads are local-only.
  */
-import { existsSync, readdirSync, statSync } from 'fs';
+import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
+
+// --- Load .env file ---
+const args = process.argv.slice(2);
+const envIdx = args.indexOf('--env');
+const envPath = resolve(envIdx !== -1 && args[envIdx + 1] ? args[envIdx + 1] : '.env');
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const val = trimmed.slice(eq + 1).trim();
+    if (!process.env[key]) process.env[key] = val;
+  }
+  console.log(`Loaded env from ${envPath}`);
+} else if (envIdx !== -1) {
+  console.error(`Env file not found: ${envPath}`);
+  process.exit(1);
+}
 import sharp from 'sharp';
 import {
   S3Client,
@@ -36,7 +57,6 @@ const APPROVED_DIR = join(UPLOAD_DIR, 'approved');
 
 const VARIANT_SIZES = [32, 48, 64, 128];
 
-const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const FORCE = args.includes('--force');
 

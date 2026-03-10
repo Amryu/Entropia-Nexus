@@ -1,35 +1,11 @@
 /**
  * Image enhancement utility for entity icons.
- * Provides auto-trim, upscaling, and contrast backdrop for better visibility.
+ * Adds an on-demand contrast backdrop for better visibility in dark/light themes.
  *
  * Used by the /api/img endpoint when ?mode=dark|light is specified.
  * Cloudflare CDN caches the result, so processing only happens once per unique URL.
  */
 import sharp from 'sharp';
-
-// Output canvas size (must match ICON_SIZE in imageProcessor.js)
-const CANVAS_SIZE = 320;
-
-// Padding around scaled content (percentage of canvas)
-const PADDING_RATIO = 0.08;
-
-// Maximum upscale factor to prevent pixelation
-const MAX_SCALE_FACTOR = 3.0;
-
-// Minimum trimmed content dimension — skip enhancement if content is smaller
-const MIN_CONTENT_SIZE = 8;
-
-// Skip trim+scale when content already fills this fraction of the canvas (0–1)
-const MIN_TRIM_RATIO = 0.75;
-
-// Extra pixels to preserve around trimmed content (protects anti-aliased edges)
-const TRIM_MARGIN = 2;
-
-// Mild sharpen applied after upscaling to recover detail
-// sigma controls radius; flat/jagged control thresholds for flat vs textured areas
-const SHARPEN_SIGMA = 0.8;
-const SHARPEN_FLAT = 1.0;
-const SHARPEN_JAGGED = 1.5;
 
 // Brightness classification thresholds (0–255 luminance)
 const BRIGHTNESS_DARK_THRESHOLD = 80;
@@ -39,6 +15,37 @@ const BRIGHTNESS_LIGHT_THRESHOLD = 180;
 const BACKDROP_RADIUS_RATIO = 0.42;
 const BACKDROP_OPACITY_DARK = 0.07;   // Light backdrop on dark mode
 const BACKDROP_OPACITY_LIGHT = 0.06;  // Dark backdrop on light mode
+
+// Transparency detection
+const TRANSPARENCY_SAMPLE_SIZE = 64;
+const TRANSPARENCY_PIXEL_THRESHOLD = 0.01; // 1% of sampled pixels must be transparent
+
+/**
+ * Detect whether an image has meaningful transparency (e.g. a transparent background).
+ * Downsamples to 64x64 for performance, then checks if more than 1% of pixels
+ * have alpha below 250.
+ *
+ * @param {Buffer} imageBuffer
+ * @returns {Promise<boolean>}
+ */
+export async function hasTransparency(imageBuffer) {
+  const metadata = await sharp(imageBuffer).metadata();
+  if (!metadata.hasAlpha) return false;
+
+  const { data } = await sharp(imageBuffer)
+    .resize(TRANSPARENCY_SAMPLE_SIZE, TRANSPARENCY_SAMPLE_SIZE, { fit: 'inside' })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let transparentPixels = 0;
+  const totalPixels = data.length / 4;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 250) transparentPixels++;
+  }
+
+  return transparentPixels > totalPixels * TRANSPARENCY_PIXEL_THRESHOLD;
+}
 
 /**
  * Analyze the average brightness of non-transparent pixels.
@@ -118,149 +125,45 @@ function createBackdropSvg(type, size) {
 }
 
 /**
- * Main enhancement pipeline: trim transparent borders, scale up content,
- * and optionally add a contrast backdrop.
+ * On-demand backdrop enhancement for entity icons.
+ * Adds a subtle radial gradient behind transparent images for contrast
+ * against the user's theme. Non-transparent images are returned as-is.
  *
- * @param {Buffer} imageBuffer - Original 320x320 WebP icon
+ * @param {Buffer} imageBuffer - WebP icon buffer
  * @param {'dark'|'light'} mode - User's display theme
+ * @param {boolean} [transparent] - Cached transparency flag (skips pixel analysis if provided)
  * @returns {Promise<Buffer>} Enhanced WebP buffer
  */
-export async function enhanceEntityImage(imageBuffer, mode) {
-  const padding = Math.round(CANVAS_SIZE * PADDING_RATIO);
-  const availableSize = CANVAS_SIZE - padding * 2;
-
-  // Step 1: Trim transparent borders, then optionally re-extract with margin to preserve AA edges
-  let trimmedBuffer, contentWidth = 0, contentHeight = 0;
-  try {
-    const trimResult = await sharp(imageBuffer)
-      .ensureAlpha()
-      .trim({ threshold: 10 })
-      .toBuffer({ resolveWithObject: true });
-
-    const { width: tw, height: th, trimOffsetLeft, trimOffsetTop } = trimResult.info;
-
-    // Only attempt margin re-extraction if sharp provided valid offset info
-    if (typeof trimOffsetLeft === 'number' && typeof trimOffsetTop === 'number'
-        && tw > 0 && th > 0) {
-      const origMeta = await sharp(imageBuffer).metadata();
-      if (origMeta.width && origMeta.height) {
-        // sharp 0.33+ returns negative offsets (e.g. -50 means 50px trimmed from that edge)
-        const absLeft = Math.abs(trimOffsetLeft);
-        const absTop = Math.abs(trimOffsetTop);
-        const left = Math.max(0, absLeft - TRIM_MARGIN);
-        const top = Math.max(0, absTop - TRIM_MARGIN);
-        const right = Math.min(origMeta.width, absLeft + tw + TRIM_MARGIN);
-        const bottom = Math.min(origMeta.height, absTop + th + TRIM_MARGIN);
-        contentWidth = right - left;
-        contentHeight = bottom - top;
-
-        // Sanity check: extracted region must be valid and smaller than original
-        if (contentWidth >= MIN_CONTENT_SIZE && contentHeight >= MIN_CONTENT_SIZE
-            && contentWidth <= origMeta.width && contentHeight <= origMeta.height) {
-          trimmedBuffer = await sharp(imageBuffer)
-            .ensureAlpha()
-            .extract({ left, top, width: contentWidth, height: contentHeight })
-            .toBuffer();
-        }
-      }
-    }
-
-    // Fall back to sharp's own trim output if margin extraction was skipped or invalid
-    if (!trimmedBuffer) {
-      trimmedBuffer = trimResult.data;
-      contentWidth = tw;
-      contentHeight = th;
-    }
-  } catch {
-    // Trim can fail on fully uniform images — return original
+export async function enhanceEntityImage(imageBuffer, mode, transparent) {
+  // Use cached value or compute on-the-fly (fallback for legacy images)
+  const isTransparent = transparent ?? await hasTransparency(imageBuffer);
+  if (!isTransparent) {
     return imageBuffer;
   }
 
-  if (contentWidth < MIN_CONTENT_SIZE || contentHeight < MIN_CONTENT_SIZE) {
-    return imageBuffer;
-  }
-
-  // Step 2: Check if content already fills most of the canvas — skip trim/scale if so
-  const origMeta2 = await sharp(imageBuffer).metadata();
-  const canvasArea = (origMeta2.width || CANVAS_SIZE) * (origMeta2.height || CANVAS_SIZE);
-  const trimRatio = (contentWidth * contentHeight) / canvasArea;
-  const skipScale = trimRatio > MIN_TRIM_RATIO;
-
-  // Step 3: Brightness analysis and backdrop decision (always needed)
-  const brightness = await analyzeBrightness(skipScale ? imageBuffer : trimmedBuffer);
+  // Determine if a contrast backdrop is needed based on image brightness vs theme
+  const brightness = await analyzeBrightness(imageBuffer);
   const backdropType = getBackdropType(mode, brightness);
 
-  // Step 4: If content fills the canvas, only apply backdrop (if needed) on the original
-  if (skipScale) {
-    if (!backdropType) return imageBuffer;
+  if (!backdropType) return imageBuffer;
 
-    // Composite backdrop behind original image
-    return sharp({
-      create: {
-        width: origMeta2.width || CANVAS_SIZE,
-        height: origMeta2.height || CANVAS_SIZE,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 }
-      }
-    })
-      .composite([
-        { input: createBackdropSvg(backdropType, origMeta2.width || CANVAS_SIZE), top: 0, left: 0 },
-        { input: imageBuffer, top: 0, left: 0 }
-      ])
-      .webp({ quality: 90 })
-      .toBuffer();
-  }
-
-  // Step 5: Calculate scale factor and resize
-  const maxDim = Math.max(contentWidth, contentHeight);
-  const scaleFactor = Math.min(MAX_SCALE_FACTOR, availableSize / maxDim);
-
-  const newWidth = Math.round(contentWidth * scaleFactor);
-  const newHeight = Math.round(contentHeight * scaleFactor);
-
-  let scaledContent;
-  try {
-    let scaleOp = sharp(trimmedBuffer)
-      .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fit: 'fill' });
-
-    if (scaleFactor > 1.05) {
-      scaleOp = scaleOp.sharpen({ sigma: SHARPEN_SIGMA, m1: SHARPEN_FLAT, m2: SHARPEN_JAGGED });
-    }
-
-    scaledContent = await scaleOp.toBuffer();
-  } catch {
-    // If sharpening fails, retry without it
-    scaledContent = await sharp(trimmedBuffer)
-      .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fit: 'fill' })
-      .toBuffer();
-  }
-
-  // Step 6: Composite onto transparent canvas
-  const layers = [];
-
-  if (backdropType) {
-    layers.push({
-      input: createBackdropSvg(backdropType, CANVAS_SIZE),
-      top: 0,
-      left: 0
-    });
-  }
-
-  layers.push({
-    input: scaledContent,
-    top: Math.round((CANVAS_SIZE - newHeight) / 2),
-    left: Math.round((CANVAS_SIZE - newWidth) / 2)
-  });
+  // Composite backdrop behind the original image
+  const meta = await sharp(imageBuffer).metadata();
+  const width = meta.width || 320;
+  const height = meta.height || 320;
 
   return sharp({
     create: {
-      width: CANVAS_SIZE,
-      height: CANVAS_SIZE,
+      width,
+      height,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 0 }
     }
   })
-    .composite(layers)
+    .composite([
+      { input: createBackdropSvg(backdropType, Math.max(width, height)), top: 0, left: 0 },
+      { input: imageBuffer, top: 0, left: 0 }
+    ])
     .webp({ quality: 90 })
     .toBuffer();
 }

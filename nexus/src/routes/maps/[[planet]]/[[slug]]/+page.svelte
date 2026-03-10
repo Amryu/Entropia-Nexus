@@ -96,8 +96,22 @@
   let editorPendingChanges = new Map();
   let editorRightPanel = 'editor';
   let editorChangeCount = 0;
+  let editorDbChangeIdMap = new Map();
   let allMobs = [];
   let seededChangeId = null;
+  let planetPendingOverride = null;
+
+  async function handleChangesSubmitted() {
+    editorPendingChanges = new Map();
+    editorDbChangeIdMap = new Map();
+    seededChangeId = null;
+    try {
+      const res = await fetch(`/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(currentPlanet.Name)}&limit=100`);
+      planetPendingOverride = res.ok ? await res.json() : [];
+    } catch {
+      planetPendingOverride = [];
+    }
+  }
 
   async function activateEditMode() {
     if (leafletEditMode || activatingLeaflet) return;
@@ -730,9 +744,11 @@
   }
 
   function formatDensity(value) {
-    if (value === 1 || value === '1') return 'Low';
-    if (value === 2 || value === '2') return 'Medium';
-    if (value === 3 || value === '3') return 'High';
+    if (value === 1 || value === '1') return 'Very Low';
+    if (value === 2 || value === '2') return 'Low';
+    if (value === 3 || value === '3') return 'Medium';
+    if (value === 4 || value === '4') return 'High';
+    if (value === 5 || value === '5') return 'Very High';
     return value ?? 'N/A';
   }
 
@@ -1401,7 +1417,7 @@
         {allMobs}
         editMode={true}
         mode="public"
-        dbPendingChanges={data.planetPendingChanges || []}
+        dbPendingChanges={planetPendingOverride ?? data.planetPendingChanges ?? []}
         currentUserId={user?.id}
         isAdmin={user?.grants?.includes('wiki.approve') || false}
         focusLocation={leafletFocusLocation}
@@ -1409,13 +1425,16 @@
         bind:pendingChanges={editorPendingChanges}
         bind:rightPanel={editorRightPanel}
         bind:changeCount={editorChangeCount}
+        bind:dbChangeIdMap={editorDbChangeIdMap}
       >
         <svelte:fragment slot="output">
           <svelte:component this={ChangesSummary}
             pendingChanges={editorPendingChanges}
             planet={currentPlanet}
             isAdmin={user?.grants?.includes('admin.panel') || user?.administrator || false}
-            on:clear={() => { editorPendingChanges = new Map(); }}
+            dbChangeIdMap={editorDbChangeIdMap}
+            on:clear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
+            on:submitted={handleChangesSubmitted}
           />
         </svelte:fragment>
       </svelte:component>

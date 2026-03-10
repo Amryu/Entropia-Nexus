@@ -52,11 +52,13 @@
     return getLowestMaturityLevel(a.Maturities, mobName) - getLowestMaturityLevel(b.Maturities, mobName);
   });
 
-  const densityLabels = { 1: 'Low', 2: 'Medium', 3: 'High' };
+  const densityLabels = { 1: 'Very Low', 2: 'Low', 3: 'Medium', 4: 'High', 5: 'Very High' };
   const densityColors = {
-    1: { bg: 'rgba(202, 138, 4, 0.25)', color: '#eab308' },
-    2: { bg: 'rgba(22, 163, 74, 0.25)', color: '#22c55e' },
-    3: { bg: 'rgba(220, 38, 38, 0.25)', color: '#ef4444' }
+    1: { bg: 'rgba(148, 163, 184, 0.25)', color: '#94a3b8' },
+    2: { bg: 'rgba(202, 138, 4, 0.25)', color: '#eab308' },
+    3: { bg: 'rgba(22, 163, 74, 0.25)', color: '#22c55e' },
+    4: { bg: 'rgba(220, 38, 38, 0.25)', color: '#ef4444' },
+    5: { bg: 'rgba(168, 85, 247, 0.25)', color: '#a855f7' }
   };
 
   function getDensityStyle(density) {

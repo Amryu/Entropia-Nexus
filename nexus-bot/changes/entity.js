@@ -1910,7 +1910,7 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
           SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5
           WHERE "LocationId" = $6
         `, [
-          spawn.Properties.Density || 2,
+          spawn.Properties.Density || 3,
           spawn.Properties.IsShared ? 1 : 0,
           spawn.Properties.IsEvent ? 1 : 0,
           derivedName || null,
@@ -1966,7 +1966,7 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
             "Description" = EXCLUDED."Description"
         `, [
           areaId,
-          spawn.Properties.Density || 2,
+          spawn.Properties.Density || 3,
           spawn.Properties.IsShared ? 1 : 0,
           spawn.Properties.IsEvent ? 1 : 0,
           derivedName || null,

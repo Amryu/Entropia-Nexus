@@ -499,7 +499,7 @@ const VALID_ITEM_TYPES = ['Weapon', 'Armor', 'Clothing', 'Tool', 'Material', 'Bl
 async function searchItems(query, fuzzy = false, options = {}){
   query = query.trim(); // Trim whitespace to avoid matching issues
   const useFuzzy = fuzzy && await checkTrgmAvailable();
-  let { type: filterType, limit: resultLimit = 50 } = options;
+  let { type: filterType, limit: resultLimit = 50, armorParts = false } = options;
 
   // Validate type filter to prevent SQL injection
   if (filterType && !VALID_ITEM_TYPES.includes(filterType)) {
@@ -578,6 +578,15 @@ async function searchItems(query, fuzzy = false, options = {}){
       LIMIT ${parseInt(resultLimit) || 50}`;
   } else {
     // Original behavior with per-category limiting
+    // When armorParts is true, return individual Armor pieces instead of ArmorSets
+    const armorExclude = armorParts ? `"Items"."Type" != 'ArmorSet'` : `"Items"."Type" != 'Armor'`;
+    const armorSetUnion = armorParts ? '' : `
+          UNION ALL
+          SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
+            ${armorMatchedPieceSubquery} AS "MatchedName"
+          FROM ONLY "ArmorSets"
+          WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
+            OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))`;
     sql = `
       SELECT * FROM (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY "Type" ${orderClause}) as rn
@@ -590,13 +599,7 @@ async function searchItems(query, fuzzy = false, options = {}){
           FROM ONLY "Items"
           LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
           LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
-          WHERE "Items"."Type" != 'Armor'
-          UNION ALL
-          SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
-            ${armorMatchedPieceSubquery} AS "MatchedName"
-          FROM ONLY "ArmorSets"
-          WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
-            OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
+          WHERE ${armorExclude}${armorSetUnion}
         )
         ${whereClause}
       ) x
@@ -856,7 +859,8 @@ function register(app){
     const fuzzy = req.query.fuzzy === 'true' || req.query.fuzzy === '1';
     const options = {
       type: req.query.type,
-      limit: parseInt(req.query.limit) || 50
+      limit: parseInt(req.query.limit) || 50,
+      armorParts: req.query.armorParts === 'true'
     };
     res.json(await searchItems(req.query.query, fuzzy, options));
   });

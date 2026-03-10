@@ -29,9 +29,11 @@
   const DEFAULT_SPAWN_RADIUS = 100;
   const SHAPE_OPTIONS = ['Point', 'Circle', 'Rectangle', 'Polygon'];
   const DENSITY_OPTIONS = [
-    { value: 1, label: 'Low' },
-    { value: 2, label: 'Medium' },
-    { value: 3, label: 'High' }
+    { value: 1, label: 'Very Low' },
+    { value: 2, label: 'Low' },
+    { value: 3, label: 'Medium' },
+    { value: 4, label: 'High' },
+    { value: 5, label: 'Very High' }
   ];
 
   // Track which spawn panels are expanded
@@ -47,7 +49,7 @@
   function createSpawn() {
     return {
       Properties: {
-        Density: 2,
+        Density: 3,
         IsShared: false,
         IsEvent: false,
         Shape: 'Point',
@@ -442,7 +444,7 @@
           <span class="expand-icon">{expandedSpawns[spawnIndex] ? '▼' : '▶'}</span>
           <span class="spawn-name">{getSpawnLabel(spawn, spawnIndex)}</span>
           <span class="spawn-summary">
-            <span class="density-badge density-{spawn.Properties?.Density || 2}">
+            <span class="density-badge density-{spawn.Properties?.Density || 3}">
               {getDensityLabel(spawn.Properties?.Density)}
             </span>
             {#if spawn.Properties?.IsEvent}
@@ -482,7 +484,7 @@
                 <label class="field">
                   <span class="field-label">Density</span>
                   <select
-                    value={spawn.Properties?.Density || 2}
+                    value={spawn.Properties?.Density || 3}
                     on:change={(e) => updateSpawnField(spawnIndex, 'Properties.Density', parseInt(e.target.value))}
                   >
                     {#each DENSITY_OPTIONS as opt}
@@ -835,18 +837,28 @@
   }
 
   .density-badge.density-1 {
+    background-color: rgba(148, 163, 184, 0.25);
+    color: #94a3b8;
+  }
+
+  .density-badge.density-2 {
     background-color: rgba(202, 138, 4, 0.25);
     color: #eab308;
   }
 
-  .density-badge.density-2 {
+  .density-badge.density-3 {
     background-color: rgba(22, 163, 74, 0.25);
     color: #22c55e;
   }
 
-  .density-badge.density-3 {
+  .density-badge.density-4 {
     background-color: rgba(220, 38, 38, 0.25);
     color: #ef4444;
+  }
+
+  .density-badge.density-5 {
+    background-color: rgba(168, 85, 247, 0.25);
+    color: #a855f7;
   }
 
   .event-badge {

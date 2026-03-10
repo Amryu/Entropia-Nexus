@@ -67,6 +67,9 @@
   /** @type {string|null} Filter to a specific item type (e.g., 'Blueprint'). Removes per-category limit. */
   export let typeFilter = null;
 
+  /** @type {Object|null} Additional query parameters to pass to the API */
+  export let apiParams = null;
+
   /** @type {boolean} Whether to clear the input after selecting an option */
   export let clearOnSelect = false;
 
@@ -257,6 +260,13 @@
       // Add type filter if specified (removes per-category limit in API)
       if (typeFilter) {
         params.set('type', typeFilter);
+      }
+
+      // Add any extra API parameters
+      if (apiParams) {
+        for (const [key, val] of Object.entries(apiParams)) {
+          params.set(key, val);
+        }
       }
 
       const response = await fetch(

@@ -15,7 +15,7 @@
   let mobSearch = '';
   let mobSearchResults = [];
   let selectedMobs = [];  // [{ mobId, mobName, maturities: [{ id, name, health, level, boss, selected, isRare }] }]
-  let density = 3;
+  let density = 4;
   let autoName = '';
   let nameOverride = '';
   let maturityDialog = null; // { mobId } when dialog is open
@@ -63,7 +63,7 @@
     for (const mob of selectedMobs) {
       sortMaturities(mob.maturities);
     }
-    density = location.Properties?.Density ?? 3;
+    density = location.Properties?.Density ?? 4;
     nameOverride = location.Name || '';
   }
 
@@ -121,7 +121,7 @@
     for (const mob of selectedMobs) {
       sortMaturities(mob.maturities);
     }
-    density = pendingMobData.density ?? location.Properties?.Density ?? 3;
+    density = pendingMobData.density ?? location.Properties?.Density ?? 4;
     nameOverride = location.Name || '';
   }
 
@@ -662,9 +662,11 @@
   <div class="field-group">
     <span class="field-label">Density</span>
     <div class="density-row">
-      <button class="density-btn" class:active={density === 1} on:click={() => density = 1}>1 Low</button>
-      <button class="density-btn" class:active={density === 2} on:click={() => density = 2}>2 Med</button>
-      <button class="density-btn" class:active={density === 3} on:click={() => density = 3}>3 High</button>
+      <button class="density-btn" class:active={density === 1} on:click={() => density = 1}>Very Low</button>
+      <button class="density-btn" class:active={density === 2} on:click={() => density = 2}>Low</button>
+      <button class="density-btn" class:active={density === 3} on:click={() => density = 3}>Medium</button>
+      <button class="density-btn" class:active={density === 4} on:click={() => density = 4}>High</button>
+      <button class="density-btn" class:active={density === 5} on:click={() => density = 5}>Very High</button>
     </div>
   </div>
 

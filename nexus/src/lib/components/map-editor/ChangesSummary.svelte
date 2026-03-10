@@ -1,13 +1,15 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
-  import { apiPost, apiPut } from '$lib/util.js';
+  import { apiPost, apiPut, apiDelete } from '$lib/util.js';
   import { addToast } from '$lib/stores/toasts.js';
   import { getEffectiveType } from './mapEditorUtils.js';
 
   export let pendingChanges = new Map();
   export let planet = null;
   export let isAdmin = false;
+  /** Maps local pending change key → DB change ID for PUT updates */
+  export let dbChangeIdMap = new Map();
 
   const dispatch = createEventDispatcher();
 
@@ -73,12 +75,18 @@
       }
     }
 
-    return {
+    const body = {
       Id: change.action === 'edit' ? change.original?.Id : null,
       Name: mod.name,
       Properties: props,
       Planet: { Name: planet?.Name }
     };
+
+    if (mod.parentLocationName) {
+      body.ParentLocation = { Name: mod.parentLocationName };
+    }
+
+    return body;
   }
 
   async function submitChange(change) {
@@ -96,11 +104,22 @@
         return false;
       }
 
-      const result = await apiPost(
-        fetch,
-        `/api/changes?type=${changeType}&entity=Location&state=Pending`,
-        body
-      );
+      const existingChangeId = dbChangeIdMap.get(key);
+      let result;
+      if (existingChangeId) {
+        // Update existing change via PUT
+        result = await apiPut(
+          fetch,
+          `/api/changes/${existingChangeId}`,
+          body
+        );
+      } else {
+        result = await apiPost(
+          fetch,
+          `/api/changes?type=${changeType}&entity=Location&state=Pending`,
+          body
+        );
+      }
 
       if (result?.id) {
         changeStatuses[key] = 'success';
@@ -136,6 +155,7 @@
 
     if (successCount > 0) {
       addToast(`Submitted ${successCount} change(s) for review`, { type: 'success' });
+      dispatch('submitted');
     }
   }
 
@@ -161,11 +181,21 @@
           continue;
         }
 
-        const result = await apiPost(
-          fetch,
-          `/api/changes?type=${changeType}&entity=Location&state=DirectApply`,
-          body
-        );
+        const existingChangeId = dbChangeIdMap.get(key);
+        let result;
+        if (existingChangeId) {
+          result = await apiPut(
+            fetch,
+            `/api/changes/${existingChangeId}?state=DirectApply`,
+            body
+          );
+        } else {
+          result = await apiPost(
+            fetch,
+            `/api/changes?type=${changeType}&entity=Location&state=DirectApply`,
+            body
+          );
+        }
 
         if (result?.id) {
           changeStatuses[key] = 'success';
@@ -185,12 +215,44 @@
 
     if (successCount > 0) {
       addToast(`Directly applied ${successCount} change(s)`, { type: 'success' });
+      dispatch('submitted');
     }
   }
 
   function clearAll() {
     dispatch('clear');
     changeStatuses = {};
+  }
+
+  async function deleteDbChange(key) {
+    const dbId = dbChangeIdMap.get(key);
+    if (!dbId) return;
+    if (!confirm('Delete this submitted change? This cannot be undone.')) return;
+
+    changeStatuses[key] = 'submitting';
+    changeStatuses = changeStatuses;
+
+    try {
+      const res = await apiDelete(fetch, `/api/changes/${dbId}`);
+      if (!res?.error) {
+        // 204 No Content → apiDelete returns null on success
+        pendingChanges.delete(key);
+        dbChangeIdMap.delete(key);
+        pendingChanges = pendingChanges;
+        delete changeStatuses[key];
+        changeStatuses = changeStatuses;
+        addToast('Change deleted', { type: 'success' });
+        dispatch('submitted');
+      } else {
+        changeStatuses[key] = 'error';
+        changeStatuses = changeStatuses;
+        addToast(`Delete failed: ${res.error}`, { type: 'error' });
+      }
+    } catch (e) {
+      changeStatuses[key] = 'error';
+      changeStatuses = changeStatuses;
+      addToast(`Delete error: ${e.message}`, { type: 'error' });
+    }
   }
 
   function getActionLabel(action) {
@@ -359,6 +421,28 @@
     color: var(--text-muted);
     padding: 0 12px 4px;
   }
+
+  .row-delete-btn,
+  .row-remove-btn {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .row-delete-btn { color: #ef4444; border-color: #ef4444; }
+  .row-delete-btn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); }
+  .row-delete-btn:disabled { opacity: 0.5; cursor: default; }
+  .row-remove-btn { color: var(--text-muted); }
+  .row-remove-btn:hover { background: var(--hover-color); color: var(--text-color); }
 </style>
 
 {#if changeList.length === 0}
@@ -387,12 +471,18 @@
         {@const name = change.modified?.name || change.original?.Name || 'Unknown'}
         {@const type = change.action === 'delete' ? getEffectiveType(change.original) : (change.modified?.areaType || change.modified?.locationType || '')}
         {@const statusKey = changeStatuses[change.key]}
+        {@const hasDbChange = dbChangeIdMap.has(change.key)}
         <div class="change-row">
           <span class="action-indicator" style="color: {getActionColor(change.action)}">{getActionLabel(change.action)}</span>
           <span class="change-name">{name}</span>
           <span class="change-type">{type}</span>
           {#if statusKey}
             <span class="status-indicator {statusKey}">{getStatusIcon(change.key)}</span>
+          {/if}
+          {#if hasDbChange}
+            <button class="row-delete-btn" title="Delete submitted change" on:click={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
+          {:else}
+            <button class="row-remove-btn" title="Remove" on:click={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; }}>×</button>
           {/if}
         </div>
       {/each}

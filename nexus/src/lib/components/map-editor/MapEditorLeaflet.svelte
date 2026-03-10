@@ -622,8 +622,6 @@
     dbChangesLayerGroup.clearLayers();
 
     for (const change of dbPendingChanges) {
-      // Skip own changes (they're already shown via pendingChanges or the location itself)
-      if (change.author_id === currentUserId) continue;
       // Skip changes seeded into local pendingChanges (author/admin editable path)
       if (pendingChanges.has(-change.id)) continue;
 

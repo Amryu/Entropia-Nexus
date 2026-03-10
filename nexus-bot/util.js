@@ -63,9 +63,9 @@ export function getTypeLink(name, type, subType = null) {
     case 'Mob':
       return `/information/mobs/${encodeURIComponentSafe(name)}`;
     case 'Location':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
+      return `/maps/${(subType || '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     case 'Area':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
+      return `/maps/${(subType || '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     case 'Skill':
       return `/information/skills/${encodeURIComponentSafe(name)}`;
     case 'Profession':
@@ -83,25 +83,9 @@ export function getTypeLink(name, type, subType = null) {
     case 'Shop':
       return `/market/shops/${encodeURIComponentSafe(name)}`;
     case 'Apartment':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
+      return `/maps/${(subType || '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     default:
       return null;
-  }
-}
-
-export function getMainPlanetName(planetName) {
-  if (planetName === 'Asteroid F.O.M.A.' || planetName === 'Crystal Palace' || planetName === 'Space' || planetName === 'Setesh') {
-    return 'Calypso';
-  } else if (planetName === 'Arkadia Moon' || planetName === 'Arkadia Underground') {
-    return 'Arkadia';
-  } else if (planetName === 'HELL' || planetName === 'Secret Island' || planetName === 'Hunt The THING') {
-    return 'ROCKtropia';
-  } else if (planetName === 'Ancient Greece') {
-    return 'Next Island';
-  } else if (planetName === 'DSEC9') {
-    return 'Monria';
-  } else {
-    return planetName;
   }
 }
 

@@ -368,8 +368,8 @@ test.describe('Mobs Wiki Page - Data Sections', () => {
         await page.waitForTimeout(TIMEOUT_INSTANT);
       }
 
-      // Look for density badges (Low, Medium, High) - optional
-      const densityBadge = page.locator('.badge:has-text("High"), .badge:has-text("Medium"), .badge:has-text("Low")');
+      // Look for density badges (Very Low, Low, Medium, High, Very High) - optional
+      const densityBadge = page.locator('.badge:has-text("Very High"), .badge:has-text("High"), .badge:has-text("Medium"), .badge:has-text("Low"), .badge:has-text("Very Low")');
       try {
         await expect(densityBadge.first()).toBeVisible({ timeout: TIMEOUT_SHORT });
       } catch {

@@ -228,22 +228,17 @@
     }, 150);
   }
 
-  function handleSave() {
-    let shapeData = null;
-    if (locationType === 'Area') {
-      if (shape === 'Circle') {
-        shapeData = { x: Number(circleX), y: Number(circleY), radius: Number(circleRadius) };
-      } else if (shape === 'Rectangle') {
-        shapeData = { x: Number(rectX), y: Number(rectY), width: Number(rectWidth), height: Number(rectHeight) };
-      } else {
-        try {
-          if (shapeDataJson.trim()) shapeData = JSON.parse(shapeDataJson);
-        } catch (e) {
-          addToast('Invalid shape data JSON', { type: 'error' });
-          return;
-        }
-      }
-    }
+  // Auto-save: dispatch edit when form fields change via user interaction
+  let autoSaveTimer;
+
+  function scheduleAutoSave() {
+    if (readOnly || isLocked) return;
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(dispatchAutoSave, 300);
+  }
+
+  function dispatchAutoSave() {
+    if (readOnly || isLocked || !location) return;
 
     const modified = {
       name,
@@ -253,7 +248,7 @@
       altitude: Number(altitude) || null,
       areaType: locationType === 'Area' ? areaType : null,
       shape: locationType === 'Area' ? shape : null,
-      shapeData: locationType === 'Area' ? shapeData : null,
+      shapeData: locationType === 'Area' ? buildShapeData(shape) : null,
       parentLocationName: parentLocationName || null,
       landAreaOwner: (isLandArea && landAreaOwner) ? landAreaOwner : null,
       taxRateHunting: isLandArea ? taxRateHunting : null,
@@ -261,11 +256,7 @@
       taxRateShops: isLandArea ? taxRateShops : null
     };
 
-    if (isNew) {
-      dispatch('add', modified);
-    } else {
-      dispatch('edit', { original: location, modified });
-    }
+    dispatch('edit', { original: location, modified });
   }
 
   function handleDelete() {
@@ -510,7 +501,7 @@
     Select a location on the map or in the list, or draw a new shape to edit.
   </div>
 {:else}
-  <div class="editor-container">
+  <div class="editor-container" on:input={scheduleAutoSave} on:change={scheduleAutoSave}>
     <h3 class="editor-title">{isNew ? 'New Location' : readOnly ? (location?.Name || '') : `Edit: ${location?.Name || ''}`}</h3>
 
     <div class="field-group">
@@ -629,8 +620,8 @@
           placeholder="Search parent area..."
           limit={15}
           disabled={readOnly}
-          on:change={(e) => parentLocationName = e.detail.value}
-          on:select={(e) => parentLocationName = e.detail.data?.label || e.detail.value}
+          on:change={(e) => { parentLocationName = e.detail.value; scheduleAutoSave(); }}
+          on:select={(e) => { parentLocationName = e.detail.data?.label || e.detail.value; scheduleAutoSave(); }}
         />
       {:else}
         <input class="field-input" type="text" bind:value={parentLocationName} placeholder="Parent area name" disabled={readOnly} />
@@ -651,9 +642,6 @@
 
     {#if !readOnly}
       <div class="actions">
-        <button class="btn btn-primary" on:click={handleSave} disabled={isLocked}>
-          {isNew ? 'Add Location' : 'Save Changes'}
-        </button>
         {#if !isNew && location?._isPendingAdd}
           <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
             Remove

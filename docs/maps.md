@@ -72,7 +72,7 @@ SVG asset loader for map images.
 
 ### Shared Map Editor Components (`$lib/components/map-editor/`)
 
-Reusable Leaflet-based editing components shared between admin (`/admin/map`) and public edit mode. Both pages consume a single `MapEditorWorkspace` wrapper that owns all shared state and event handlers, preventing code drift.
+Reusable Leaflet-based editing components used by the public map edit mode. A `MapEditorWorkspace` wrapper owns all shared state and event handlers.
 
 | Component | Description |
 |-----------|-------------|
@@ -84,19 +84,13 @@ Reusable Leaflet-based editing components shared between admin (`/admin/map`) an
 | `ChangesSummary.svelte` | Public mode: submit pending changes via wiki changes API |
 | `mapEditorUtils.js` | Shared constants, coordinate transforms, color helpers |
 
-Admin-only files:
-| File | Description |
-|------|-------------|
-| `admin/adminMapUtils.js` | SQL generation (`generateDeleteSql`, `generateInsertSql`, `generateUpdateSql`, `generateAllSql`); re-exports shared utils |
-| `admin/AdminSqlOutput.svelte` | Admin right panel showing generated SQL for direct DB operations |
-
 ---
 
 ## Map Editor Component Reference
 
 ### MapEditorWorkspace.svelte
 
-Consolidation wrapper that owns the 3-column editor layout, all shared state, and all 17 event handlers. Both the admin page and the public edit mode consume this single component, eliminating code drift.
+Wrapper that owns the 3-column editor layout, all shared state, and all event handlers.
 
 **Props:**
 | Prop | Type | Default | Description |
@@ -120,7 +114,7 @@ Consolidation wrapper that owns the 3-column editor layout, all shared state, an
 - `reset()` — Clears all internal state: pendingChanges, selectedId, isNewLocation, drawnShapeData, rightPanel, previewShape, mobEditorContext, filteredIds, nextTempId, changeCount
 
 **Slot:**
-- `output` — Renders when `rightPanel` is not `'editor'` or `'mobEditor'`. Admin passes `AdminSqlOutput`; public passes `ChangesSummary`.
+- `output` — Renders when `rightPanel` is not `'editor'` or `'mobEditor'`. Public passes `ChangesSummary`.
 
 **Internal state (not exported):**
 `selectedId`, `isNewLocation`, `drawnShapeData`, `previewShape`, `mobEditorContext`, `filteredLocationIds`, `nextTempId`
@@ -134,20 +128,7 @@ Consolidation wrapper that owns the 3-column editor layout, all shared state, an
 
 **Layout:** 3-column flex — left sidebar (280px, LocationList), center (flex:1, MapEditorLeaflet), right panel (320px, conditional content).
 
-**Admin usage:**
-```svelte
-<MapEditorWorkspace
-  bind:this={workspace}
-  planet={selectedPlanet} {locations} {allMobs} {editMode} {loading} mode="admin"
-  bind:pendingChanges bind:rightPanel bind:mapComponent bind:changeCount
->
-  <svelte:fragment slot="output">
-    <AdminSqlOutput {pendingChanges} planetId={selectedPlanet?.Id} />
-  </svelte:fragment>
-</MapEditorWorkspace>
-```
-
-**Public usage (dynamic import via `svelte:component`):**
+**Usage (dynamic import via `svelte:component`):**
 ```svelte
 <svelte:component this={MapEditorWorkspace}
   planet={currentPlanet} {locations} {allMobs} editMode={true} mode="public"
@@ -368,29 +349,6 @@ Both admin and public pages use a `Map<id, change>` for pending changes:
 
 ---
 
-## Admin Map Page (`/admin/map`)
-
-Full-screen admin map editor with direct SQL generation. Uses `MapEditorWorkspace` for all editor layout and logic.
-
-### Layout
-- **Toolbar** (admin-owned): Planet selector, edit mode toggle, SQL output toggle with change badge
-- **MapEditorWorkspace** (3-column): LocationList | MapEditorLeaflet | right panel
-
-### Right Panel States
-| Panel | Trigger | Description |
-|-------|---------|-------------|
-| `editor` | Default, location selected | LocationEditor form |
-| `mobEditor` | "Edit Mob Spawns" button | MobAreaEditor overlay |
-| `sql` | Toolbar "SQL Output" toggle | AdminSqlOutput with generated SQL |
-
-### Admin-Only Features
-- **SQL generation**: `generateAllSql()` produces organized DELETE/INSERT/UPDATE SQL with proper `ONLY` keywords
-- **Direct deletion**: "Mark for Deletion" adds to pending changes, generates DELETE SQL
-- **Mass delete**: Multi-select in LocationList marks multiple for deletion
-- Edit mode always available (no activation button)
-
----
-
 ## Public Edit Mode
 
 Verified users see an "Edit Mode" button (bottom-right, desktop only) on planet map pages.
@@ -433,26 +391,10 @@ Changes are submitted via the wiki changes API (`POST /api/changes`) with `state
 - EDIT: Creates update change entries for admin review
 - DELETE: Info-only (copied to clipboard for admin action)
 
----
+After successful submission, pending changes are automatically re-fetched from the server so the submitted changes appear as DB pending changes on the map. Admins with the `admin.panel` grant can also "Direct Apply" changes, bypassing the review queue.
 
-## Admin vs Public Parity
-
-| Feature | Admin | Public |
-|---------|-------|--------|
-| Map rendering | MapEditorLeaflet | MapEditorLeaflet |
-| Location list | LocationList (`mode=admin`) | LocationList (`mode=public`) |
-| Location editor | LocationEditor (`mode=admin`) | LocationEditor (`mode=public`) |
-| Mob area editor | MobAreaEditor | MobAreaEditor |
-| Shape controls | Circle/Rectangle inputs, Polygon JSON | Same |
-| Parent location picker | SearchInput with area filtering | Same |
-| LandArea fields | Owner name, tax rate | Same |
-| Related entities | Lazy-loaded missions | Same |
-| Delete action | "Mark for Deletion" → pending changes | "Copy Delete Info" → clipboard |
-| Mass delete | Multi-select → marks for deletion | Multi-select → copies info |
-| Output/Submit | AdminSqlOutput (SQL generation) | ChangesSummary (API submission) |
-| Edit mode activation | Always on (toolbar toggle) | Button, desktop-only, verified users |
-| Clone (right-click) | Creates offset copy as pending add | Same |
-| Preview overlay | Cyan dashed shape from form edits | Same |
+### Auto-Save
+Location edits are saved locally (to `pendingChanges`) automatically as the user modifies form fields. There is no explicit "Save" button. The "Revert Changes" button undoes local edits for existing locations.
 
 ## Data Sources
 
