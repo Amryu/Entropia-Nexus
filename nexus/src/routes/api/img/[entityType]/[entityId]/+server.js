@@ -7,7 +7,7 @@
  * GET /api/img/:entityType/:entityId?size=32|48|64|128|320 - Resized thumbnail (cached to disk)
  * GET /api/img/:entityType/:entityId?mode=dark|light - Enhanced icon with trim/scale/backdrop
  */
-import { getApprovedImagePath, buildApprovedImagePath, isValidEntityType } from '$lib/server/imageProcessor.js';
+import { getApprovedImagePath, buildApprovedImagePath, isValidEntityType, getImageTransparency } from '$lib/server/imageProcessor.js';
 import { enhanceEntityImage } from '$lib/server/imageEnhancer.js';
 import { r2Enabled, getFromR2 } from '$lib/server/r2Storage.js';
 import { existsSync, statSync } from 'fs';
@@ -118,14 +118,18 @@ export async function GET({ params, url }) {
   // Apply enhancement pipeline for icons when mode is specified
   let outputBuffer = imageBuffer;
   if (mode && type === 'icon') {
-    try {
-      outputBuffer = await enhanceEntityImage(imageBuffer, mode);
-    } catch {
-      // Enhancement failed — serve original image
-      outputBuffer = imageBuffer;
+    // Read cached transparency from metadata (avoids pixel analysis on every request)
+    const transparent = getImageTransparency(lowerType, entityId);
+    if (transparent !== false) {
+      try {
+        outputBuffer = await enhanceEntityImage(imageBuffer, mode, transparent);
+      } catch {
+        // Enhancement failed — serve original image
+        outputBuffer = imageBuffer;
+      }
     }
     // Include mode in ETag so CDN caches dark/light variants separately
-    etag = mode ? `${etag.slice(0, -1)}-${mode}"` : etag;
+    etag = `${etag.slice(0, -1)}-${mode}"`;
   }
 
   return new Response(outputBuffer, {
