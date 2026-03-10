@@ -22,7 +22,7 @@ from .constants import (
     get_ffmpeg_scale_flag,
     get_interpolation,
 )
-from .ffmpeg import ensure_ffmpeg, ensure_rnnoise_model
+from .ffmpeg import ensure_ffmpeg, find_rnnoise_model
 from .screenshot import apply_blur_regions, compose_on_background
 
 log = get_logger("ClipWriter")
@@ -259,7 +259,9 @@ def write_clip(
         ])
 
         # Audio encoding — filters apply to mic only
-        rnnoise_model = ensure_rnnoise_model() if (mic_filters or {}).get("noise_suppression") else None
+        rnnoise_model = find_rnnoise_model() if (mic_filters or {}).get("noise_suppression") else None
+        if (mic_filters or {}).get("noise_suppression") and not rnnoise_model:
+            log.warning("Noise suppression requested but RNNoise model not found — skipping")
         mic_af = _build_mic_filter(mic_filters or {}, rnnoise_model=rnnoise_model)
 
         if has_game and has_mic:

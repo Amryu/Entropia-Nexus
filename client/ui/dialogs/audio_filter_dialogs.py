@@ -135,7 +135,7 @@ class _FilteredMicMeter:
         self._running = True
         self._mic_channels = self._query_mic_channels()
 
-        from ...capture.ffmpeg import ensure_ffmpeg, ensure_rnnoise_model
+        from ...capture.ffmpeg import ensure_ffmpeg, find_rnnoise_model
         ffmpeg = ensure_ffmpeg(self._ffmpeg_path)
         if not ffmpeg:
             self._start_direct()
@@ -144,7 +144,7 @@ class _FilteredMicMeter:
         # Build filter chain
         rnnoise_model = None
         if self._filters.get("noise_suppression"):
-            rnnoise_model = ensure_rnnoise_model()
+            rnnoise_model = find_rnnoise_model()
 
         af_parts = []
         if self._mic_gain != 1.0:

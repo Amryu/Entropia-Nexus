@@ -1640,7 +1640,7 @@ class CaptureManager:
     ) -> None:
         """Mux recorded video with audio tracks via a second FFmpeg pass (copy video)."""
         from .clip_writer import _write_wav, _apply_gain, _build_mic_filter
-        from .ffmpeg import ensure_rnnoise_model
+        from .ffmpeg import find_rnnoise_model
 
         temp_files: list[str] = []
         try:
@@ -1678,7 +1678,9 @@ class CaptureManager:
             cmd.extend(["-c:v", "copy",
                         "-shortest"])  # trim to shorter of video/audio
 
-            rnnoise_model = ensure_rnnoise_model() if c.get("clip_audio_noise_suppression") else None
+            rnnoise_model = find_rnnoise_model() if c.get("clip_audio_noise_suppression") else None
+            if c.get("clip_audio_noise_suppression") and not rnnoise_model:
+                log.warning("Noise suppression requested but RNNoise model not found — skipping")
             mic_af = _build_mic_filter({
                 "noise_suppression": c.get("clip_audio_noise_suppression", False),
                 "noise_gate": c.get("clip_audio_noise_gate", False),

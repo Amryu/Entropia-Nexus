@@ -11,7 +11,7 @@ import numpy as np
 
 from ..core.logger import get_logger
 from .constants import AUDIO_CHANNELS, AUDIO_DTYPE, AUDIO_SAMPLE_RATE
-from .ffmpeg import ensure_ffmpeg, ensure_rnnoise_model
+from .ffmpeg import ensure_ffmpeg, find_rnnoise_model
 
 log = get_logger("AudioCheck")
 
@@ -89,7 +89,9 @@ class AudioCheck:
         # Resolve RNNoise model if noise suppression is enabled
         rnnoise_model = None
         if self._filters.get("noise_suppression"):
-            rnnoise_model = ensure_rnnoise_model()
+            rnnoise_model = find_rnnoise_model()
+            if not rnnoise_model:
+                log.warning("Noise suppression requested but RNNoise model not found — skipping")
 
         # Build FFmpeg filter chain
         af_parts = []

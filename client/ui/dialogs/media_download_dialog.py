@@ -452,4 +452,14 @@ def ensure_media_libraries(config, event_bus, signals, parent=None) -> bool:
             checker._session.close()
 
     # Ensure FFmpeg is available (needed for clip encoding in all modes)
-    return _ensure_ffmpeg(config, parent=parent)
+    if not _ensure_ffmpeg(config, parent=parent):
+        return False
+
+    # Pre-download the RNNoise noise-suppression model (~2 MB).
+    # Done here so clip writing never needs a network call.
+    from ...capture.ffmpeg import find_rnnoise_model, download_rnnoise_model
+    if not find_rnnoise_model():
+        log.info("Pre-downloading RNNoise model...")
+        download_rnnoise_model()
+
+    return True
