@@ -273,9 +273,12 @@ export async function POST({ request, params, locals, url }) {
       return getResponse({ error: 'Cannot create an entity with a set Id.' }, 400);
     }
 
-    errorResponse = await checkDuplicates(body.Name, entity);
-    if (errorResponse) {
-      return errorResponse;
+    // Location and Area entities allow duplicate names (e.g. multiple teleporters named "Camp")
+    if (entity !== 'Location' && entity !== 'Area' && entity !== 'Apartment') {
+      errorResponse = await checkDuplicates(body.Name, entity);
+      if (errorResponse) {
+        return errorResponse;
+      }
     }
   }
   else if (type === 'Update') {
