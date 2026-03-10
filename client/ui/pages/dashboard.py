@@ -27,6 +27,7 @@ from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
 NEWS_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
 NEWS_LIMIT = 500
 MAX_TICKER_LINES = 200
+_TRIM_BUFFER = 30  # let ticker grow this far before bulk trim
 _MAX_GLOBAL_FINGERPRINTS = 500
 
 
@@ -810,6 +811,7 @@ class DashboardPage(QWidget):
         self._global_events: deque[GlobalEvent] = deque(maxlen=MAX_TICKER_LINES)
         self._global_fingerprints: OrderedDict[tuple, None] = OrderedDict()
         self._trade_lines = 0
+        self._trade_html: deque[str] = deque(maxlen=MAX_TICKER_LINES)
         self._fetcher = None
         self._article_fetcher = None
         self._item_lookup: dict[str, str] = {}
@@ -1087,16 +1089,10 @@ class DashboardPage(QWidget):
     # --- Ticker helpers ---
 
     @staticmethod
-    def _append_line(text_edit: QTextEdit, text: str, line_count: int) -> int:
+    def _append_line(text_edit: QTextEdit, text: str) -> None:
+        text_edit.setUpdatesEnabled(False)
         text_edit.append(text)
-        line_count += 1
-        if line_count > MAX_TICKER_LINES:
-            cursor = text_edit.textCursor()
-            cursor.movePosition(cursor.MoveOperation.Start)
-            cursor.movePosition(cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor, 1)
-            cursor.removeSelectedText()
-            line_count -= 1
-        return line_count
+        text_edit.setUpdatesEnabled(True)
 
     def _on_catchup_complete(self, _data):
         self._live = True
@@ -1209,9 +1205,10 @@ class DashboardPage(QWidget):
         html = self._global_to_html(data)
         if html is None:
             return
-        self._global_lines = self._append_line(
-            self._global_log, html, self._global_lines
-        )
+        self._append_line(self._global_log, html)
+        self._global_lines += 1
+        if self._global_lines > MAX_TICKER_LINES + _TRIM_BUFFER:
+            self._rebuild_globals()
 
     def _rebuild_globals(self):
         """Re-render all stored globals with current viewport width."""
@@ -1225,6 +1222,12 @@ class DashboardPage(QWidget):
             rows = rows[-MAX_TICKER_LINES:]
         self._global_log.setHtml("".join(rows))
         self._global_lines = len(rows)
+
+    def _rebuild_trades(self):
+        """Bulk-replace trade ticker HTML from the stored deque."""
+        rows = list(self._trade_html)
+        self._trade_log.setHtml("".join(rows))
+        self._trade_lines = len(rows)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1273,9 +1276,11 @@ class DashboardPage(QWidget):
             data.message, self._config.nexus_base_url, self._item_lookup
         )
         html = prefix + body
-        self._trade_lines = self._append_line(
-            self._trade_log, html, self._trade_lines
-        )
+        self._trade_html.append(html)
+        self._append_line(self._trade_log, html)
+        self._trade_lines += 1
+        if self._trade_lines > MAX_TICKER_LINES + _TRIM_BUFFER:
+            self._rebuild_trades()
 
     def _on_trade_link(self, url: QUrl):
         """Handle clicks on waypoint / item links in the trade ticker."""

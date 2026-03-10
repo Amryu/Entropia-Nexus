@@ -1,6 +1,5 @@
 """Read-only data API client for api.entropianexus.com — no auth required."""
 
-import json
 import os
 import sys
 import time
@@ -11,6 +10,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..core.logger import get_logger
+from .cache_db import CacheDB
 
 log = get_logger("DataAPI")
 
@@ -32,6 +32,9 @@ else:
     CACHE_DIR = Path(__file__).parent.parent / "data" / "cache"
 
 
+_MAX_MEMORY_ENTRIES = 30  # cap for memory-only cache (small per-item lookups)
+
+
 class DataClient:
     """Fetches entity data (weapons, armor, etc.) from the public Nexus API."""
 
@@ -42,12 +45,18 @@ class DataClient:
         adapter = HTTPAdapter(max_retries=_RETRY_STRATEGY)
         self._session.mount("https://", adapter)
         self._session.mount("http://", adapter)
-        self._memory_cache: dict[str, tuple[float, list]] = {}
-        os.makedirs(CACHE_DIR, exist_ok=True)
+        # Memory-only cache for small per-item lookups (acquisition, usage,
+        # events, mob globals).  Disk-backed endpoints (_get_cached) do NOT
+        # use this — callers already hold references to the returned data,
+        # so duplicating it here just wastes RAM.
+        self._memory_cache: dict[str, tuple[float, list | dict]] = {}
+        self._cache_db = CacheDB(CACHE_DIR / "cache.db")
+        self._migrate_json_cache()
 
     def close(self):
-        """Close the underlying HTTP session, aborting any in-flight requests."""
+        """Close the underlying HTTP session and cache database."""
         self._session.close()
+        self._cache_db.close()
 
     def get_weapons(self) -> list[dict]:
         return self._get_cached("/weapons")
@@ -148,6 +157,7 @@ class DataClient:
             resp = self._session.get(f"{self._frontend_url}{endpoint}", timeout=15)
             resp.raise_for_status()
             data = resp.json()
+            self._evict_memory_cache()
             self._memory_cache[endpoint] = (now, data)
             return data
         except Exception as e:
@@ -255,6 +265,7 @@ class DataClient:
             )
             resp.raise_for_status()
             data = resp.json()
+            self._evict_memory_cache()
             self._memory_cache[endpoint] = (now, data)
             return data
         except Exception as e:
@@ -301,7 +312,11 @@ class DataClient:
             return []
 
     def _get_memory_cached(self, endpoint: str):
-        """Fetch data with memory-only caching (no disk persistence)."""
+        """Fetch data with memory-only caching (no disk persistence).
+
+        Used for small per-item lookups (acquisition, usage) that don't
+        warrant disk persistence.  Bounded to _MAX_MEMORY_ENTRIES.
+        """
         now = time.time()
         if endpoint in self._memory_cache:
             cached_time, cached_data = self._memory_cache[endpoint]
@@ -311,6 +326,7 @@ class DataClient:
             resp = self._session.get(f"{self._base_url}{endpoint}", timeout=15)
             resp.raise_for_status()
             data = resp.json()
+            self._evict_memory_cache()
             self._memory_cache[endpoint] = (now, data)
             return data
         except Exception as e:
@@ -319,29 +335,24 @@ class DataClient:
                 return self._memory_cache[endpoint][1]
             return []
 
+    def _evict_memory_cache(self) -> None:
+        """Evict oldest entries if memory cache exceeds the size limit."""
+        if len(self._memory_cache) < _MAX_MEMORY_ENTRIES:
+            return
+        # Remove oldest half
+        by_age = sorted(self._memory_cache.items(), key=lambda kv: kv[1][0])
+        for key, _ in by_age[: len(by_age) // 2]:
+            del self._memory_cache[key]
+
     def _get_cached(self, endpoint: str) -> list[dict]:
-        """Fetch data with memory + disk caching."""
-        now = time.time()
+        """Fetch data with SQLite disk caching.
 
-        # Check memory cache
-        if endpoint in self._memory_cache:
-            cached_time, cached_data = self._memory_cache[endpoint]
-            if now - cached_time < CACHE_TTL_SECONDS:
-                return cached_data
-
-        # Check disk cache
-        safe_name = endpoint.strip('/').replace('/', '_').replace('?', '_').replace('=', '_')
-        cache_file = CACHE_DIR / f"{safe_name}.json"
-        if cache_file.exists():
-            file_age = now - cache_file.stat().st_mtime
-            if file_age < CACHE_TTL_SECONDS:
-                try:
-                    with open(cache_file, "r") as f:
-                        data = json.load(f)
-                    self._memory_cache[endpoint] = (now, data)
-                    return data
-                except (json.JSONDecodeError, IOError):
-                    pass
+        Callers hold their own references to the returned data, so keeping a
+        second copy in memory just wastes RAM.
+        """
+        cached = self._cache_db.get(endpoint, CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
 
         # Fetch from API
         try:
@@ -349,39 +360,37 @@ class DataClient:
             resp.raise_for_status()
             data = resp.json()
 
-            # Persist to disk and memory
-            with open(cache_file, "w") as f:
-                json.dump(data, f)
-            self._memory_cache[endpoint] = (now, data)
-            return data
+            try:
+                self._cache_db.put(endpoint, data if isinstance(data, list) else [data])
+            except Exception as write_err:
+                log.debug("Could not write cache for %s: %s", endpoint, write_err)
+            return data if isinstance(data, list) else [data]
 
         except Exception as e:
             log.error("Failed to fetch %s: %s", endpoint, e)
-            # Return stale cache if available
-            if endpoint in self._memory_cache:
-                return self._memory_cache[endpoint][1]
-            if cache_file.exists():
-                try:
-                    with open(cache_file, "r") as f:
-                        return json.load(f)
-                except (json.JSONDecodeError, IOError):
-                    pass
-            return []
+            stale = self._cache_db.get_stale(endpoint)
+            return stale if stale is not None else []
 
     def invalidate_cache(self, endpoint: str | None = None) -> None:
         """Clear cache for a specific endpoint or all endpoints."""
         if endpoint:
             self._memory_cache.pop(endpoint, None)
-            safe_name = endpoint.strip('/').replace('/', '_').replace('?', '_').replace('=', '_')
-            cache_file = CACHE_DIR / f"{safe_name}.json"
-            try:
-                cache_file.unlink(missing_ok=True)
-            except PermissionError:
-                pass  # file locked by another thread, will be refreshed on next fetch
+            self._cache_db.delete(endpoint)
         else:
             self._memory_cache.clear()
-            for f in CACHE_DIR.glob("*.json"):
-                try:
-                    f.unlink()
-                except PermissionError:
-                    pass  # file locked by another thread
+            self._cache_db.clear()
+
+    def _migrate_json_cache(self) -> None:
+        """One-time cleanup: remove old JSON cache files after SQLite migration."""
+        old_files = list(CACHE_DIR.glob("*.json"))
+        if not old_files:
+            return
+        removed = 0
+        for f in old_files:
+            try:
+                f.unlink()
+                removed += 1
+            except (PermissionError, OSError):
+                pass
+        if removed:
+            log.info("Migrated cache: removed %d old JSON file(s)", removed)
