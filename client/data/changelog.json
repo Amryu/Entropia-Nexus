@@ -3,7 +3,8 @@
     "version": "0.3.1",
     "date": "2026-03-10",
     "changes": [
-      {"type": "fix", "text": "FFmpeg no longer opens a visible console window in release builds"}
+      {"type": "fix", "text": "FFmpeg no longer opens a visible console window in release builds"},
+      {"type": "fix", "text": "Removed first-launch capture backend choice dialog — defaults to auto detection"}
     ]
   },
   {

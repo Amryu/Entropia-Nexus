@@ -248,17 +248,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         config.tos_accepted_version = TOS_VERSION
         save_config(config, config_path)
 
-    # Capture backend choice (one-time)
-    if sys.platform == "win32" and not config.capture_backend_choice_made:
-        from .ocr.capturer import ScreenCapturer
-        from .ui.dialogs.capture_backend_dialog import CaptureBackendDialog
-        borderless = ScreenCapturer._is_borderless_supported()
-        dlg = CaptureBackendDialog(borderless_supported=borderless)
-        dlg.exec()
-        config.ocr_capture_backend = dlg.chosen_backend
-        config.capture_backend_choice_made = True
-        save_config(config, config_path)
-
     # Init auth early (needed to decide whether to show splash)
     token_store = TokenStore()
     oauth = OAuthClient(config, event_bus, token_store)
