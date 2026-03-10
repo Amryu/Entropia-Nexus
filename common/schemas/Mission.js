@@ -17,7 +17,7 @@ export const Mission = {
           "additionalProperties": false,
           "properties": {
             "Id": { "type": ["integer", "null"], "description": "Chain ID (read-only from API)" },
-            "Name": { "type": "string", "description": "Chain name - used to find or create the chain" },
+            "Name": { "type": ["string", "null"], "description": "Chain name - used to find or create the chain" },
             "Planet": {
               "anyOf": [
                 { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
