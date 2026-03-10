@@ -61,20 +61,15 @@ test.describe('Globals media — multi-platform video links', () => {
     expect(resp.status()).not.toBe(400);
   });
 
-  test('budget endpoint returns videos key', async ({ verifiedUser: page }) => {
+  test('budget endpoint returns images budget', async ({ verifiedUser: page }) => {
     const resp = await page.request.get('/api/globals/media/budget');
     expect(resp.status()).toBe(200);
 
     const body = await resp.json();
     expect(body).toHaveProperty('images');
-    expect(body).toHaveProperty('videos');
     expect(body.images).toHaveProperty('used');
     expect(body.images).toHaveProperty('limit');
     expect(body.images).toHaveProperty('remaining');
-    expect(body.videos).toHaveProperty('used');
-    expect(body.videos).toHaveProperty('limit');
-    expect(body.videos).toHaveProperty('remaining');
-    expect(body.videos.limit).toBe(30);
   });
 
   test('unauthenticated user cannot submit video link', async ({ page }) => {

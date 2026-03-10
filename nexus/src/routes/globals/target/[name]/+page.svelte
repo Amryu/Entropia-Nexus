@@ -20,6 +20,7 @@
   import { formatPed, formatPedShort, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
+  import GzButton from '$lib/components/globals/GzButton.svelte';
 
   export let data;
 
@@ -41,6 +42,18 @@
       }
       return g;
     });
+  }
+
+  function onMediaDeleted(e) {
+    const { globalId } = e.detail;
+    if (recent) {
+      recent = recent.map(g => {
+        if (g.id === globalId) return { ...g, media_image: null, media_video: null };
+        return g;
+      });
+    }
+    showMediaDialog = false;
+    mediaDialogGlobal = null;
   }
 
   $: ({ targetData: initialData, targetName } = data);
@@ -498,6 +511,7 @@
                   <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                   <th></th>
                   <th class="col-media"></th>
+                  <th class="col-gz"></th>
                   <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
                 </tr>
               </thead>
@@ -525,6 +539,7 @@
                         <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} on:uploaded={onMediaUploaded} />
                       {/if}
                     </td>
+                    <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
                     <td class="text-muted">{timeAgo(g.timestamp)}</td>
                   </tr>
                 {/each}
@@ -591,7 +606,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} on:deleted={onMediaDeleted} />
 
 <style>
   .target-page {
@@ -1092,6 +1107,11 @@
 
   .col-media {
     width: 28px;
+    text-align: center;
+  }
+
+  .col-gz {
+    width: 50px;
     text-align: center;
   }
 
