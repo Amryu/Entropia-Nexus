@@ -1126,7 +1126,13 @@
       }
 
       // Add center drag handle for moving entire shapes
-      // (Circles already have a built-in move handle from leaflet-draw)
+      // Circles already have a built-in move handle from leaflet-draw.
+      // Rectangles also get one (L.Edit.Rectangle extends L.Edit.SimpleShape),
+      // so remove it to avoid a duplicate — our custom handle dispatches entropia coords.
+      if (loc.Properties.Shape === 'Rectangle' && layer.editing?._moveMarker) {
+        layer.editing._moveMarker.remove();
+        layer.editing._moveMarker = null;
+      }
       if (loc.Properties.Shape !== 'Circle') {
         // Use the stored coordinates — these are the pole of inaccessibility,
         // guaranteed to be inside the shape and far from edges
