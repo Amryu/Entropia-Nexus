@@ -19,7 +19,6 @@ import {
 import { parseVideoUrl, SUPPORTED_PLATFORM_NAMES } from '$lib/utils/videoEmbed.js';
 
 const MONTHLY_IMAGE_LIMIT = 100;
-const MONTHLY_VIDEO_LIMIT = 30;
 const MAX_REQUEST_SIZE = 5 * 1024 * 1024; // 5MB for screenshots
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 minutes
@@ -155,21 +154,6 @@ export async function POST({ params, request, locals }) {
       }, 400);
     }
 
-    // Monthly budget check
-    const { rows: budgetRows } = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM ingested_globals
-       WHERE media_uploaded_by = $1 AND media_video_url IS NOT NULL
-       AND date_trunc('month', media_uploaded_at) = date_trunc('month', NOW())`,
-      [userId]
-    );
-    const videoCount = parseInt(budgetRows[0].cnt);
-    if (videoCount >= MONTHLY_VIDEO_LIMIT) {
-      return getResponse({
-        error: `Monthly video link limit reached (${MONTHLY_VIDEO_LIMIT}).`,
-        budget: { videos: { used: videoCount, limit: MONTHLY_VIDEO_LIMIT } },
-      }, 429);
-    }
-
     try {
       await pool.query(
         `UPDATE ingested_globals
@@ -182,7 +166,6 @@ export async function POST({ params, request, locals }) {
         success: true,
         media_type: 'video',
         platform: parsed.platform,
-        budget_remaining: MONTHLY_VIDEO_LIMIT - videoCount - 1,
       }, 200);
     } catch (err) {
       console.error('[api/globals/media] Video link error:', err);

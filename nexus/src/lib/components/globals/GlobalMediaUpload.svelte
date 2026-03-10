@@ -28,9 +28,16 @@
   let videoUrl = '';
   let uploading = false;
   let fileInput;
+  let btnEl;
+  let menuEl;
+  let menuPos = { top: 0, right: 0 };
 
   function toggleMenu() {
     if (uploading) return;
+    if (!showMenu && btnEl) {
+      const rect = btnEl.getBoundingClientRect();
+      menuPos = { top: rect.bottom + 4, right: window.innerWidth - rect.right };
+    }
     showMenu = !showMenu;
     showVideoInput = false;
     videoUrl = '';
@@ -40,6 +47,13 @@
     showMenu = false;
     showVideoInput = false;
     videoUrl = '';
+  }
+
+  function handleClickOutside(e) {
+    if (!showMenu) return;
+    if (btnEl && btnEl.contains(e.target)) return;
+    if (menuEl && menuEl.contains(e.target)) return;
+    closeMenu();
   }
 
   async function handleFileSelect(e) {
@@ -79,7 +93,8 @@
   }
 
   async function submitVideo() {
-    if (!videoUrl.trim()) return;
+    const url = videoUrl.trim();
+    if (!url) return;
 
     uploading = true;
     closeMenu();
@@ -88,7 +103,7 @@
       const res = await fetch(`/api/globals/${globalId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: videoUrl.trim() }),
+        body: JSON.stringify({ video_url: url }),
       });
 
       const data = await res.json();
@@ -107,6 +122,8 @@
   }
 </script>
 
+<svelte:body on:mousedown={handleClickOutside} />
+
 {#if canUpload}
   <div class="media-upload-wrapper">
     <button
@@ -115,6 +132,7 @@
       title="Add media to this global"
       on:click={toggleMenu}
       disabled={uploading}
+      bind:this={btnEl}
     >
       {#if uploading}
         <span class="spinner"></span>
@@ -126,7 +144,7 @@
     </button>
 
     {#if showMenu}
-      <div class="upload-menu">
+      <div class="upload-menu" bind:this={menuEl} style="top: {menuPos.top}px; right: {menuPos.right}px;">
         {#if !showVideoInput}
           <button class="menu-item" on:click={() => fileInput?.click()}>
             Upload Screenshot
@@ -204,9 +222,7 @@
   }
 
   .upload-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
+    position: fixed;
     z-index: 100;
     background: var(--secondary-color);
     border: 1px solid var(--border-color);
@@ -214,7 +230,6 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     min-width: 180px;
     padding: 4px;
-    margin-top: 4px;
   }
 
   .menu-item {

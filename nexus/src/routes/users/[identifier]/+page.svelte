@@ -1503,15 +1503,11 @@
             <div class="globals-rankings-grid">
               <div class="globals-ranking-card">
                 <div class="ranking-card-header hunting-color">Hunting</div>
-                {#each globalsAthRankings.hunting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                {#each globalsAthRankings.hunting.filter(e => e.best_rank <= 10).slice(0, 10) as entry}
                   <div class="ranking-entry">
                     <span class="ranking-target">{entry.target}</span>
-                    {#if entry.total_rank <= 10}
-                      <span class="ranking-badge">#{entry.total_rank} total</span>
-                    {/if}
-                    {#if entry.best_rank <= 10}
-                      <span class="ranking-badge best">#{entry.best_rank} best</span>
-                    {/if}
+                    <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
+                    <span class="ranking-badge">#{entry.best_rank}</span>
                   </div>
                 {:else}
                   <div class="ranking-empty">No rankings yet</div>
@@ -1519,15 +1515,11 @@
               </div>
               <div class="globals-ranking-card">
                 <div class="ranking-card-header mining-color">Mining</div>
-                {#each globalsAthRankings.mining.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                {#each globalsAthRankings.mining.filter(e => e.best_rank <= 10).slice(0, 10) as entry}
                   <div class="ranking-entry">
                     <span class="ranking-target">{entry.target}</span>
-                    {#if entry.total_rank <= 10}
-                      <span class="ranking-badge">#{entry.total_rank} total</span>
-                    {/if}
-                    {#if entry.best_rank <= 10}
-                      <span class="ranking-badge best">#{entry.best_rank} best</span>
-                    {/if}
+                    <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
+                    <span class="ranking-badge">#{entry.best_rank}</span>
                   </div>
                 {:else}
                   <div class="ranking-empty">No rankings yet</div>
@@ -1535,15 +1527,11 @@
               </div>
               <div class="globals-ranking-card">
                 <div class="ranking-card-header crafting-color">Crafting</div>
-                {#each globalsAthRankings.crafting.filter(e => e.total_rank <= 10 || e.best_rank <= 10).slice(0, 3) as entry}
+                {#each globalsAthRankings.crafting.filter(e => e.best_rank <= 10).slice(0, 10) as entry}
                   <div class="ranking-entry">
                     <span class="ranking-target">{entry.target}</span>
-                    {#if entry.total_rank <= 10}
-                      <span class="ranking-badge">#{entry.total_rank} total</span>
-                    {/if}
-                    {#if entry.best_rank <= 10}
-                      <span class="ranking-badge best">#{entry.best_rank} best</span>
-                    {/if}
+                    <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
+                    <span class="ranking-badge">#{entry.best_rank}</span>
                   </div>
                 {:else}
                   <div class="ranking-empty">No rankings yet</div>
@@ -1793,7 +1781,7 @@
 
 <style>
   .profile-page {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 24px 20px 60px;
     display: flex;
@@ -2934,20 +2922,24 @@
     font-weight: 500;
   }
 
+  .ranking-value {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
   .ranking-badge {
     flex-shrink: 0;
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 0.625rem;
     font-weight: 700;
-    background: rgba(96, 176, 255, 0.15);
-    color: var(--accent-color);
-    white-space: nowrap;
-  }
-
-  .ranking-badge.best {
     background: rgba(234, 179, 8, 0.15);
     color: #eab308;
+    white-space: nowrap;
   }
 
   /* Globals tab — rare items & discoveries */

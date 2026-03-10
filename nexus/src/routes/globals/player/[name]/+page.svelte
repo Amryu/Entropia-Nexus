@@ -19,6 +19,7 @@
   import { formatPed, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
+  import GzButton from '$lib/components/globals/GzButton.svelte';
 
   export let data;
 
@@ -42,6 +43,21 @@
       return g;
     });
     if (playerData?.recent) playerData.recent = update(playerData.recent);
+  }
+
+  function onMediaDeleted(e) {
+    const { globalId } = e.detail;
+    const update = (arr) => arr ? arr.map(g => {
+      if (g.id === globalId) return { ...g, media_image: null, media_video: null };
+      return g;
+    }) : arr;
+    if (playerData?.hunting_loots) playerData.hunting_loots = update(playerData.hunting_loots);
+    if (playerData?.mining_loots) playerData.mining_loots = update(playerData.mining_loots);
+    if (playerData?.crafting_loots) playerData.crafting_loots = update(playerData.crafting_loots);
+    if (playerData?.recent) playerData.recent = update(playerData.recent);
+    if (playerData?.rare_items_loots) playerData.rare_items_loots = update(playerData.rare_items_loots);
+    showMediaDialog = false;
+    mediaDialogGlobal = null;
   }
 
   let playerData = data.playerData;
@@ -488,6 +504,7 @@
                       <th>Time</th>
                       <th></th>
                       <th class="col-media"></th>
+                      <th class="col-gz"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -512,6 +529,7 @@
                             <GlobalMediaUpload globalId={item.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                           {/if}
                         </td>
+                        <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
                       </tr>
                     {/each}
                   </tbody>
@@ -566,6 +584,7 @@
                     <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                     <th></th>
                     <th class="col-media"></th>
+                    <th class="col-gz"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -592,6 +611,7 @@
                           <GlobalMediaUpload globalId={g.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                         {/if}
                       </td>
+                      <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
                     </tr>
                   {/each}
                 </tbody>
@@ -688,6 +708,7 @@
                       <th class="sortable right" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
                       <th></th>
                       <th class="col-media"></th>
+                      <th class="col-gz"></th>
                       <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
@@ -711,6 +732,7 @@
                             <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                           {/if}
                         </td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
                         <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -794,6 +816,7 @@
                       <th class="sortable right" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
                       <th></th>
                       <th class="col-media"></th>
+                      <th class="col-gz"></th>
                       <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
@@ -817,6 +840,7 @@
                             <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                           {/if}
                         </td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
                         <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -900,6 +924,7 @@
                       <th class="sortable right" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
                       <th></th>
                       <th class="col-media"></th>
+                      <th class="col-gz"></th>
                       <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
@@ -923,6 +948,7 @@
                             <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                           {/if}
                         </td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
                         <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -956,6 +982,7 @@
                     <th class="sortable" on:click={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
                     <th></th>
                     <th class="col-media"></th>
+                    <th class="col-gz"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -980,6 +1007,7 @@
                           <GlobalMediaUpload globalId={item.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                         {/if}
                       </td>
+                      <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
                     </tr>
                   {/each}
                 </tbody>
@@ -1046,6 +1074,7 @@
                     <th class="sortable right" on:click={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
                     <th></th>
                     <th class="col-media"></th>
+                    <th class="col-gz"></th>
                     <th class="sortable" on:click={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
                   </tr>
                 </thead>
@@ -1069,6 +1098,7 @@
                           <GlobalMediaUpload globalId={g.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                         {/if}
                       </td>
+                      <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
                       <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                     </tr>
                   {/each}
@@ -1107,6 +1137,7 @@
                       <th class="right">Value</th>
                       <th></th>
                       <th class="col-media"></th>
+                      <th class="col-gz"></th>
                       <th>Time</th>
                     </tr>
                   </thead>
@@ -1129,6 +1160,7 @@
                             <GlobalMediaUpload globalId={entry.id} {playerName} {user} on:uploaded={onMediaUploaded} />
                           {/if}
                         </td>
+                        <td class="col-gz"><GzButton globalId={entry.id} count={entry.gz_count || 0} {user} compact /></td>
                         <td class="text-muted" title={new Date(entry.timestamp).toLocaleString()}>{timeAgo(entry.timestamp)}</td>
                       </tr>
                     {/each}
@@ -1216,7 +1248,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} on:deleted={onMediaDeleted} />
 
 <style>
   .player-page {
@@ -1859,6 +1891,11 @@
 
   .col-media {
     width: 28px;
+    text-align: center;
+  }
+
+  .col-gz {
+    width: 50px;
     text-align: center;
   }
 

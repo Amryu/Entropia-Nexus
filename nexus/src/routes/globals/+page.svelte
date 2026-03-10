@@ -22,6 +22,7 @@
   import { formatPedShort, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
+  import GzButton from '$lib/components/globals/GzButton.svelte';
 
   export let data;
 
@@ -38,7 +39,6 @@
 
   function onMediaUploaded(e) {
     const { type, globalId } = e.detail;
-    // Update the global in our local arrays
     const update = (arr) => arr.map(g => {
       if (g.id === globalId) {
         return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
@@ -47,6 +47,20 @@
     });
     globals = update(globals);
     if (topLoots) topLoots = update(topLoots);
+  }
+
+  function onMediaDeleted(e) {
+    const { globalId } = e.detail;
+    const update = (arr) => arr.map(g => {
+      if (g.id === globalId) {
+        return { ...g, media_image: null, media_video: null };
+      }
+      return g;
+    });
+    globals = update(globals);
+    if (topLoots) topLoots = update(topLoots);
+    showMediaDialog = false;
+    mediaDialogGlobal = null;
   }
 
   const EMPTY_SUMMARY = {
@@ -858,6 +872,7 @@
                 {/if}
                 <th class="col-badge"></th>
                 <th class="col-media"></th>
+                <th class="col-gz"></th>
                 <th class="col-time sortable" on:click={() => onTopLootsSort('time')}>Time{sortIcon(topLootsSort, 'time')}</th>
               </tr>
             </thead>
@@ -898,6 +913,7 @@
                       <GlobalMediaUpload globalId={loot.id} playerName={loot.player} {user} on:uploaded={onMediaUploaded} />
                     {/if}
                   </td>
+                  <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
                   <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                 </tr>
               {/each}
@@ -941,6 +957,7 @@
               <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
               <th></th>
               <th class="col-media"></th>
+              <th class="col-gz"></th>
             </tr>
           </thead>
           <tbody>
@@ -982,6 +999,7 @@
                     <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} on:uploaded={onMediaUploaded} />
                   {/if}
                 </td>
+                <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
               </tr>
             {/each}
           </tbody>
@@ -999,7 +1017,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} on:deleted={onMediaDeleted} />
 
 <style>
   .globals-page {
@@ -1739,6 +1757,11 @@
   /* Media icon */
   .col-media {
     width: 28px;
+    text-align: center;
+  }
+
+  .col-gz {
+    width: 50px;
     text-align: center;
   }
 

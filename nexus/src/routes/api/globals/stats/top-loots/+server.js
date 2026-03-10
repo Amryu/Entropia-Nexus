@@ -66,7 +66,8 @@ export async function GET({ url }) {
       pool.query(
         `SELECT id, player_name AS player, target_name AS target, value, mob_id,
                 is_hof AS hof, is_ath AS ath, event_timestamp AS timestamp,
-                media_image_key, media_video_url
+                media_image_key, media_video_url,
+                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
          FROM ingested_globals
          ${whereClause} AND global_type IN ${tabConfig.types}
          ORDER BY ${orderBy}
@@ -89,6 +90,7 @@ export async function GET({ url }) {
       timestamp: r.timestamp,
       media_image: r.media_image_key || null,
       media_video: r.media_video_url || null,
+      gz_count: r.gz_count || 0,
     }));
 
     return new Response(JSON.stringify({ items, page, pages, total }), {

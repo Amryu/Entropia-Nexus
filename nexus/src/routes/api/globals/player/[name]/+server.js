@@ -72,7 +72,8 @@ export async function GET({ params, url }) {
   function topLootsQuery(typeCondition) {
     return pool.query(
       `SELECT id, target_name, value, mob_id, is_hof, is_ath, event_timestamp,
-              media_image_key, media_video_url
+              media_image_key, media_video_url,
+              (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
        FROM ingested_globals
        WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          AND ${typeCondition}
@@ -206,7 +207,8 @@ export async function GET({ params, url }) {
         `SELECT id, global_type, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
                 mob_id, maturity_id, extra,
-                media_image_key, media_video_url
+                media_image_key, media_video_url,
+                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          ORDER BY event_timestamp DESC
@@ -485,6 +487,7 @@ export async function GET({ params, url }) {
         timestamp: r.event_timestamp,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
+        gz_count: r.gz_count || 0,
       }));
     }
 
@@ -570,6 +573,7 @@ export async function GET({ params, url }) {
         extra: r.extra,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
+        gz_count: r.gz_count || 0,
       })),
       achievements: discoveryResult.rows.map(r => ({
         type: r.global_type,

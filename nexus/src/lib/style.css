@@ -28,6 +28,9 @@
   --success-color-hover: #059669;
   --accent-color-bg: #1a2a4a;
   --main-color: #1a1a1a;
+  /* Semantic highlight colors for HoF/ATH badges, GZ, and destructive actions */
+  --color-gold: #eab308;
+  --color-danger: #ef4444;
   /* Button hover colors - darker for better contrast with white text */
   --button-accent-hover: #1e40af;
   --button-success-hover: #047857;
