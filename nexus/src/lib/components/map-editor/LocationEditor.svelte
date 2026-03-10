@@ -55,6 +55,48 @@
   let relatedMissions = null;
   let relatedLoading = false;
 
+  /**
+   * Parse a pasted waypoint string.
+   * Supports: [Planet, x, y, z, Name] or simple x, y, z
+   */
+  function parseWaypoint(str) {
+    // Full waypoint: [Planet, x, y, z, Name]
+    const fullMatch = str.match(/\[([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,\]]+)(?:,\s*([^\]]*))?\]/);
+    if (fullMatch) {
+      return {
+        x: parseFloat(fullMatch[2]) || 0,
+        y: parseFloat(fullMatch[3]) || 0,
+        z: parseFloat(fullMatch[4]) || 0,
+        name: fullMatch[5]?.trim() || null
+      };
+    }
+    // Simple: x, y, z (with or without brackets)
+    const simpleMatch = str.match(/^\[?\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\]?$/);
+    if (simpleMatch) {
+      return {
+        x: parseFloat(simpleMatch[1]) || 0,
+        y: parseFloat(simpleMatch[2]) || 0,
+        z: parseFloat(simpleMatch[3]) || 0,
+        name: null
+      };
+    }
+    return null;
+  }
+
+  function handleCoordPaste(event) {
+    const text = event.clipboardData?.getData('text') || '';
+    const parsed = parseWaypoint(text);
+    if (!parsed) return;
+    event.preventDefault();
+    longitude = parsed.x;
+    latitude = parsed.y;
+    altitude = parsed.z;
+    if (parsed.name && !name) {
+      name = parsed.name;
+    }
+    scheduleAutoSave();
+  }
+
   // Track which location is loaded to avoid resetting form when same location re-renders
   let loadedLocationId = null;
   let loadedDrawnShapeRef = null;
@@ -376,6 +418,16 @@
     gap: 4px;
   }
 
+  .field-hint {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    margin-left: 6px;
+    color: var(--accent-color);
+    opacity: 0.65;
+  }
+
   .lock-notice {
     display: flex;
     align-items: flex-start;
@@ -506,7 +558,7 @@
 
     <div class="field-group">
       <span class="field-label">Name</span>
-      <input class="field-input" type="text" bind:value={name} placeholder="Location name" disabled={readOnly} />
+      <input class="field-input" type="text" bind:value={name} placeholder="Location name" disabled={readOnly || isMobArea} title={isMobArea ? 'Mob area names are auto-generated — edit via Mob Spawns' : ''} />
     </div>
 
     <div class="field-group">
@@ -520,11 +572,11 @@
     </div>
 
     <div class="field-group">
-      <span class="field-label">Coordinates</span>
+      <span class="field-label">Coordinates <span class="field-hint">paste waypoint</span></span>
       <div class="coord-row">
-        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" disabled={readOnly} />
-        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" disabled={readOnly} />
-        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" disabled={readOnly} />
+        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" disabled={readOnly} on:paste={handleCoordPaste} />
+        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" disabled={readOnly} on:paste={handleCoordPaste} />
+        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" disabled={readOnly} on:paste={handleCoordPaste} />
       </div>
     </div>
 
