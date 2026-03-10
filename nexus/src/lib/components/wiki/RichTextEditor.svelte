@@ -50,6 +50,9 @@
   /** @type {boolean} Show image upload button */
   export let showImages = true;
 
+  /** @type {boolean} Show waypoint insert button */
+  export let showWaypoints = false;
+
   /** @type {boolean} Auto-detect and convert markdown pastes to rich text */
   export let handleMarkdownPaste = false;
 
@@ -248,6 +251,52 @@
     }
   });
 
+  // Inline waypoint element — clickable chip that copies /wp <waypoint> to clipboard
+  const WaypointInline = Node.create({
+    name: 'waypointInline',
+    inline: true,
+    group: 'inline',
+    atom: true,
+
+    addAttributes() {
+      return {
+        waypoint: { default: '' },
+        label: { default: null }
+      };
+    },
+
+    parseHTML() {
+      return [{
+        tag: 'span[data-waypoint]',
+        getAttrs: dom => ({
+          waypoint: dom.getAttribute('data-waypoint') || '',
+          label: dom.getAttribute('data-label') || null
+        })
+      }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      const { waypoint, label } = HTMLAttributes;
+      return ['span', mergeAttributes({
+        'data-waypoint': waypoint,
+        ...(label ? { 'data-label': label } : {}),
+        class: 'waypoint-inline',
+        title: `Click to copy: /wp ${waypoint}`
+      }), label || waypoint];
+    },
+
+    addCommands() {
+      return {
+        setWaypointInline: (options) => ({ commands }) => {
+          return commands.insertContent({
+            type: this.name,
+            attrs: options
+          });
+        }
+      };
+    }
+  });
+
   // Extract YouTube video ID from various URL formats
   function extractYouTubeId(url) {
     if (!url) return null;
@@ -404,6 +453,7 @@
 
     if (showVideo) extensions.push(VideoEmbed);
     if (showImages) extensions.push(ResizableImage);
+    if (showWaypoints) extensions.push(WaypointInline);
 
     editor = new Editor({
       element: editorElement,
@@ -441,6 +491,21 @@
     // Allow TipTap's initial content normalization to complete before accepting changes
     await tick();
     initialized = true;
+
+    // Click-to-copy for inline waypoints
+    if (showWaypoints) {
+      const { copyToClipboard } = await import('$lib/util.js');
+      editorElement.addEventListener('click', (e) => {
+        const wpSpan = e.target.closest('.waypoint-inline');
+        if (!wpSpan) return;
+        const waypoint = wpSpan.getAttribute('data-waypoint');
+        if (waypoint) {
+          copyToClipboard(`/wp ${waypoint}`);
+          wpSpan.classList.add('copied');
+          setTimeout(() => wpSpan.classList.remove('copied'), 1500);
+        }
+      });
+    }
   });
 
   onDestroy(() => {
@@ -630,6 +695,33 @@
 
   function isActive(name, attrs = {}) {
     return editor?.isActive(name, attrs) || false;
+  }
+
+  // Waypoint modal state
+  let isWaypointModalOpen = false;
+  let waypointString = '';
+  let waypointLabel = '';
+
+  function openWaypointModal() {
+    waypointString = '';
+    waypointLabel = '';
+    isWaypointModalOpen = true;
+  }
+
+  function insertWaypoint() {
+    if (waypointString.trim()) {
+      editor?.chain().focus().setWaypointInline({
+        waypoint: waypointString.trim(),
+        label: waypointLabel.trim() || null
+      }).run();
+    }
+    closeWaypointModal();
+  }
+
+  function closeWaypointModal() {
+    isWaypointModalOpen = false;
+    waypointString = '';
+    waypointLabel = '';
   }
 </script>
 
@@ -844,6 +936,19 @@
             {/if}
           </button>
         {/if}
+        {#if showWaypoints}
+          <button
+            type="button"
+            class="toolbar-btn"
+            on:click={openWaypointModal}
+            title="Insert Waypoint"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+          </button>
+        {/if}
       </div>
     </div>
   {/if}
@@ -952,6 +1057,45 @@
             disabled={!detectVideoProvider(videoUrl)}
           >
             Embed Video
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if showWaypoints && isWaypointModalOpen}
+    <div class="link-modal-overlay" role="presentation" on:click={closeWaypointModal} on:keydown={(e) => e.key === 'Escape' && closeWaypointModal()}>
+      <div class="link-modal" role="dialog" on:click|stopPropagation>
+        <h4>Insert Waypoint</h4>
+        <div class="link-field">
+          <label for="waypoint-string">Waypoint</label>
+          <input
+            id="waypoint-string"
+            type="text"
+            bind:value={waypointString}
+            placeholder="[Calypso, 123, 456, 100, Name]"
+          />
+          <p class="field-hint">Paste a full waypoint string</p>
+        </div>
+        <div class="link-field">
+          <label for="waypoint-label">Label (optional)</label>
+          <input
+            id="waypoint-label"
+            type="text"
+            bind:value={waypointLabel}
+            placeholder="Display text for this waypoint"
+          />
+          <p class="field-hint">Leave empty to show the coordinates</p>
+        </div>
+        <div class="link-actions">
+          <button type="button" class="btn-secondary" on:click={closeWaypointModal}>Cancel</button>
+          <button
+            type="button"
+            class="btn-primary"
+            on:click={insertWaypoint}
+            disabled={!waypointString.trim()}
+          >
+            Insert
           </button>
         </div>
       </div>
@@ -1291,6 +1435,38 @@
   :global(.tiptap-content .pending-image-placeholder.ProseMirror-selectednode) {
     outline: 2px solid var(--accent-color, #4a9eff);
     outline-offset: 2px;
+  }
+
+  /* Inline waypoint chip */
+  :global(.tiptap-content .waypoint-inline) {
+    display: inline;
+    background-color: rgba(74, 158, 255, 0.12);
+    border: 1px solid var(--accent-color, #4a9eff);
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 0.85em;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: var(--accent-color, #4a9eff);
+    cursor: pointer;
+    vertical-align: baseline;
+    line-height: inherit;
+    white-space: nowrap;
+  }
+
+  :global(.tiptap-content .waypoint-inline:hover) {
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  :global(.tiptap-content .waypoint-inline.ProseMirror-selectednode) {
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: 1px;
+  }
+
+  :global(.tiptap-content .waypoint-inline.copied) {
+    background-color: var(--success-color, #28a745);
+    border-color: var(--success-color, #28a745);
+    color: white;
   }
 
   /* Link Modal */

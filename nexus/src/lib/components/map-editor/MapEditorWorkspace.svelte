@@ -94,6 +94,7 @@
             AreaType: mod.areaType !== undefined ? mod.areaType : loc.Properties?.AreaType,
             Shape: mod.shape ?? loc.Properties?.Shape,
             Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
+            Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
             Coordinates: {
               ...loc.Properties?.Coordinates,
               ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
@@ -118,6 +119,7 @@
           Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
           Shape: mod.shape || null,
           Data: mod.shapeData || null,
+          Description: mod.description || null,
         }
       };
     }
@@ -217,6 +219,7 @@
             shape: props.Shape || null,
             shapeData: props.Data || null,
             parentLocationName: data?.ParentLocation?.Name || null,
+            description: props.Description || null,
             tempId
           };
           // Restore mob data if persisted in the change

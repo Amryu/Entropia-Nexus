@@ -58,7 +58,8 @@
         Longitude: mod.longitude ?? null,
         Latitude: mod.latitude ?? null,
         Altitude: mod.altitude ?? null
-      }
+      },
+      Description: mod.description || null
     };
 
     if (isArea) {

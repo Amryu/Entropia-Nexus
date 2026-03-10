@@ -995,3 +995,24 @@ export function getResponse(response, status) {
     }
   });
 }
+
+/**
+ * Svelte use:action — click-to-copy for inline waypoint elements in rendered rich text.
+ * Attach to any container that renders HTML with .waypoint-inline spans.
+ */
+export function waypointClickHandler(node) {
+  function handleClick(e) {
+    const wpSpan = e.target.closest('.waypoint-inline[data-waypoint]');
+    if (!wpSpan) return;
+    const waypoint = wpSpan.getAttribute('data-waypoint');
+    if (waypoint) {
+      copyToClipboard(`/wp ${waypoint}`);
+      wpSpan.classList.add('copied');
+      setTimeout(() => wpSpan.classList.remove('copied'), 1500);
+    }
+  }
+  node.addEventListener('click', handleClick);
+  return {
+    destroy() { node.removeEventListener('click', handleClick); }
+  };
+}

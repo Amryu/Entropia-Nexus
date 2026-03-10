@@ -1,10 +1,17 @@
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { apiCall } from '$lib/util.js';
   import { LOCATION_TYPES, AREA_TYPES, SHAPES, isArea, getEffectiveType } from './mapEditorUtils.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+
+  /** @type {typeof import('$lib/components/wiki/RichTextEditor.svelte').default|null} */
+  let RichTextEditor = null;
+  onMount(async () => {
+    const mod = await import('$lib/components/wiki/RichTextEditor.svelte');
+    RichTextEditor = mod.default;
+  });
 
   export let location = null;  // The selected location object (or null)
   export let isNew = false;    // Whether this is a newly drawn shape
@@ -40,6 +47,9 @@
   let rectY = 0;
   let rectWidth = 100;
   let rectHeight = 100;
+
+  // Description (rich text)
+  let description = '';
 
   // Parent location state
   let parentLocationName = '';
@@ -135,6 +145,7 @@
       shapeDataJson = existingData ? JSON.stringify(existingData, null, 2) : '';
     }
     parentLocationName = location.ParentLocation?.Name || '';
+    description = location.Properties?.Description || '';
     landAreaOwner = location.Properties?.LandAreaOwnerName || '';
     taxRateHunting = location.Properties?.TaxRateHunting ?? null;
     taxRateMining = location.Properties?.TaxRateMining ?? null;
@@ -189,6 +200,7 @@
     loadedDrawnShapeRef = drawnShapeData;
     loadedLocationId = null;
     name = '';
+    description = '';
     locationType = drawnShapeData.isMarker ? 'Teleporter' : 'Area';
     longitude = drawnShapeData.center?.x ?? 0;
     latitude = drawnShapeData.center?.y ?? 0;
@@ -292,6 +304,7 @@
       shape: locationType === 'Area' ? shape : null,
       shapeData: locationType === 'Area' ? buildShapeData(shape) : null,
       parentLocationName: parentLocationName || null,
+      description: description || null,
       landAreaOwner: (isLandArea && landAreaOwner) ? landAreaOwner : null,
       taxRateHunting: isLandArea ? taxRateHunting : null,
       taxRateMining: isLandArea ? taxRateMining : null,
@@ -327,6 +340,11 @@
 
   function handleEditMobArea() {
     dispatch('editMobArea', { location, isNew });
+  }
+
+  function handleDescriptionChange(e) {
+    description = e.detail;
+    scheduleAutoSave();
   }
 
   $: isAreaType = locationType === 'Area';
@@ -482,6 +500,24 @@
     color: #eab308;
   }
   .btn-mob:hover { background: rgba(234, 179, 8, 0.15); }
+
+  .description-editor :global(.rich-text-editor) {
+    font-size: 13px;
+  }
+  .description-editor :global(.editor-container) {
+    min-height: 80px;
+    max-height: 200px;
+  }
+  .description-editor :global(.tiptap-content) {
+    min-height: 60px;
+    font-size: 13px;
+  }
+  .description-preview {
+    font-size: 13px;
+    color: var(--text-color);
+    line-height: 1.5;
+    padding: 4px 0;
+  }
 
   .section-divider {
     border-top: 1px solid var(--border-color);
@@ -677,6 +713,32 @@
         />
       {:else}
         <input class="field-input" type="text" bind:value={parentLocationName} placeholder="Parent area name" disabled={readOnly} />
+      {/if}
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- Description (rich text) -->
+    <div class="field-group">
+      <span class="field-label">Description</span>
+      {#if RichTextEditor && !readOnly && !isLocked}
+        <div class="description-editor">
+          <svelte:component
+            this={RichTextEditor}
+            content={description}
+            placeholder="Describe this location..."
+            showHeadings={false}
+            showCodeBlock={false}
+            showVideo={false}
+            showImages={false}
+            showWaypoints={true}
+            on:change={handleDescriptionChange}
+          />
+        </div>
+      {:else if description}
+        <div class="description-preview description-content">{@html description}</div>
+      {:else}
+        <span class="field-hint" style="margin-left:0">No description</span>
       {/if}
     </div>
 

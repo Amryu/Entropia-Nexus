@@ -26,7 +26,9 @@ const ALLOWED_TAGS = [
   // Video embeds (custom TipTap extension)
   'div', 'iframe',
   // Images (resizable, uploaded via entity-image endpoint)
-  'img'
+  'img',
+  // Inline waypoint elements
+  'span'
 ];
 
 /**
@@ -38,7 +40,8 @@ const ALLOWED_ATTR = [
   'data-type', 'data-provider', 'data-src', 'class',  // Video embed wrapper
   'data-width', 'data-pending', 'data-alt', 'style',  // Resizable media
   'src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen',  // Iframe
-  'alt'  // Images
+  'alt',  // Images
+  'data-waypoint', 'data-label', 'title'  // Inline waypoint elements
 ];
 
 /**
@@ -73,6 +76,17 @@ function configureDOMPurify() {
       if (!src.startsWith('/api/img/')) {
         node.remove();
       }
+    }
+
+    // Only allow span tags that are waypoint elements — strip arbitrary spans
+    if (node.tagName === 'SPAN') {
+      if (!node.hasAttribute('data-waypoint')) {
+        // Unwrap: replace the span with its text content
+        node.replaceWith(...node.childNodes);
+        return;
+      }
+      // Force the waypoint-inline class for consistent styling
+      node.setAttribute('class', 'waypoint-inline');
     }
 
     // Validate iframe sources (only allow YouTube and Vimeo)

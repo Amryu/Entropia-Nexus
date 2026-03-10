@@ -16,13 +16,15 @@ const SANITIZE_CONFIG = {
     'blockquote', 'pre', 'hr',
     'a',
     'div', 'iframe',
-    'img'
+    'img',
+    'span'
   ],
   allowedAttributes: {
     'a': ['href', 'target', 'rel'],
     'div': ['data-type', 'data-provider', 'data-src', 'data-width', 'data-pending', 'data-alt', 'data-video-embed', 'class', 'style'],
     'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen', 'class'],
-    'img': ['src', 'alt', 'data-width', 'data-pending', 'style']
+    'img': ['src', 'alt', 'data-width', 'data-pending', 'style'],
+    'span': ['data-waypoint', 'data-label', 'class']
   },
   allowedStyles: {
     '*': { 'width': [/^\d+px$/], 'max-width': [/^\d+(%|px)$/] }
@@ -42,6 +44,20 @@ const SANITIZE_CONFIG = {
         return { tagName: '', attribs: {} };
       }
       return { tagName: 'img', attribs };
+    },
+    // Only allow span tags that are waypoint elements — strip arbitrary spans
+    'span': (tagName, attribs) => {
+      if (!attribs['data-waypoint']) {
+        return { tagName: '', attribs: {} };
+      }
+      return {
+        tagName: 'span',
+        attribs: {
+          'data-waypoint': attribs['data-waypoint'],
+          ...(attribs['data-label'] ? { 'data-label': attribs['data-label'] } : {}),
+          class: 'waypoint-inline'
+        }
+      };
     }
   }
 };

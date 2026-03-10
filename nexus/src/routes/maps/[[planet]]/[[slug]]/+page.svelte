@@ -195,6 +195,7 @@
       areaType: isArea ? (props.AreaType || props.Type || 'MobArea') : null,
       shape: props.Shape || null,
       shapeData: props.Data || null,
+      description: props.Description || null,
       tempId
     };
     // Restore mob data if persisted in the change
