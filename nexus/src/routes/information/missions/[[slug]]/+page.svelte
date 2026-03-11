@@ -464,6 +464,12 @@
       return `Collect ${amount}\u00d7 ${itemName}`;
     }
 
+    if (Type === 'CollectValue') {
+      const itemName = (Payload?.itemId && itemsIndex[Payload.itemId]) || 'items';
+      const ped = Payload?.pedValue;
+      return ped ? `Collect ${ped} PED worth of ${itemName}` : `Collect ${itemName} (by value)`;
+    }
+
     if (Type === 'CraftSuccess') {
       const total = Payload?.totalCountRequired;
       return total ? `Craft ${total} successfully` : 'Craft successfully';
@@ -621,6 +627,16 @@
       }
       if (Payload?.quantity != null) {
         details.push({ label: 'Quantity', value: String(Payload.quantity) });
+      }
+    }
+
+    if (Type === 'CollectValue') {
+      if (Payload?.itemId) {
+        const name = itemsIndex[Payload.itemId] || `Item #${Payload.itemId}`;
+        details.push({ label: 'Item', value: name });
+      }
+      if (Payload?.pedValue != null) {
+        details.push({ label: 'Value', value: `${Payload.pedValue} PED` });
       }
     }
 
@@ -1187,7 +1203,7 @@
           </div>
         </div>
 
-        <div class="stats-section">
+        <div class="stats-section details-grid">
           <h4 class="section-title">Details</h4>
           <div class="stat-row">
             <span class="stat-label">Planet</span>
@@ -1269,7 +1285,7 @@
                   <div class="chain-input-row" class:has-error={!isValidChain}>
                     <SearchInput
                       value={activeMission?.MissionChain?.Name || ''}
-                      placeholder="Search chains..."
+                      placeholder="Chain..."
                       options={chainOptions}
                       on:change={(e) => updateField('MissionChain.Name', e.detail.value || null)}
                       on:select={(e) => updateField('MissionChain.Name', e.detail.value || null)}
@@ -1881,19 +1897,21 @@
     color: white;
   }
 
-  .stat-value.chain-value {
-    flex: 1;
+  /* Details grid: align labels and values into a consistent two-column grid */
+  .details-grid :global(.stat-row) {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .details-grid :global(.stat-value) {
     min-width: 0;
     text-align: right;
   }
 
-  .stat-value.start-location-value {
-    flex: 1;
-    min-width: 0;
-    text-align: right;
-  }
-
-  .stat-value.start-location-value :global(.searchable-select) {
+  .details-grid :global(.stat-value) :global(.searchable-select),
+  .details-grid :global(.stat-value) :global(.local-search-input) {
     width: 100%;
   }
 

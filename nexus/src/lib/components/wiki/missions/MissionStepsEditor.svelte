@@ -39,7 +39,8 @@
     { value: 'MiningCycle', label: 'Mining (Cycle)' },
     { value: 'MiningClaim', label: 'Mining (Claim)' },
     { value: 'MiningPoints', label: 'Mining (Points)' },
-    { value: 'Collect', label: 'Collect' },
+    { value: 'Collect', label: 'Collect (Amount)' },
+    { value: 'CollectValue', label: 'Collect (Value)' },
     { value: 'AIKillCycle', label: 'AI Kill Cycle' },
     { value: 'AIHandIn', label: 'AI Hand In' }
   ];
@@ -58,6 +59,7 @@
     MiningClaim: { totalCountRequired: null, minClaimValue: null },
     MiningPoints: { totalCountRequired: null },
     Collect: { itemId: null, quantity: null },
+    CollectValue: { itemId: null, pedValue: null },
     AIKillCycle: { pedToCycle: null, mobSpecies: [] },
     AIHandIn: { items: [] }
   };
@@ -826,6 +828,31 @@
                           placeholder="Amount"
                           value={payload.quantity ?? ''}
                           on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { quantity: toNumber(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'CollectValue'}
+                    <div class="objective-grid">
+                      <div class="objective-field">
+                        <label>Item</label>
+                        <SearchInput
+                          value={getCollectDisplayName(payload.itemId, stepIndex, objIndex)}
+                          placeholder="Search item..."
+                          apiEndpoint="/search/items"
+                          displayFn={(item) => item?.Name || ''}
+                          on:change={(e) => handleCollectItemChange(stepIndex, objIndex, e.detail.value)}
+                          on:select={(e) => handleCollectItemSelect(stepIndex, objIndex, e.detail.data)}
+                        />
+                      </div>
+                      <div class="objective-field">
+                        <label>Value (PED)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="PED"
+                          value={payload.pedValue ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedValue: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>

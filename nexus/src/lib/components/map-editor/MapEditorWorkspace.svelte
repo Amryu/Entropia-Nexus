@@ -550,6 +550,10 @@
         modified.shape = entropiaData.shape;
         modified.shapeData = entropiaData.data;
       }
+      // Preserve altitude from original when not already in modified (drag doesn't change altitude)
+      if (modified.altitude === undefined) {
+        modified.altitude = loc.Properties?.Coordinates?.Altitude ?? 100;
+      }
 
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
       pendingChanges.set(locId, { action: 'edit', original: loc, modified });

@@ -91,8 +91,11 @@ This document describes the Missions feature implementation including UI, routin
 // HandIn - Deliver items to NPC
 { "npcLocationId": number, "items": [{ "itemId": number, "quantity": number, "pedValue": number }] }
 
-// Collect - Collect a quantity of an item
+// Collect (Amount) - Collect a quantity of an item
 { "itemId": number, "quantity": number }
+
+// CollectValue (Value) - Collect items worth a PED value
+{ "itemId": number, "pedValue": number }
 ```
 
 #### MissionRewards

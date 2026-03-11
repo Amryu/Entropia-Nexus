@@ -49,15 +49,20 @@
     const mod = change.modified;
     if (!mod) return null;
 
+    // For edits, fall back to original data for fields not present in modified
+    const orig = change.action === 'edit' ? change.original : null;
+    const origProps = orig?.Properties;
+    const origCoords = origProps?.Coordinates;
+
     const isArea = mod.locationType === 'Area';
     const props = {
       Type: isArea ? 'Area' : (mod.locationType || 'Teleporter'),
       Coordinates: {
-        Longitude: mod.longitude ?? null,
-        Latitude: mod.latitude ?? null,
-        Altitude: mod.altitude ?? null
+        Longitude: mod.longitude ?? origCoords?.Longitude ?? null,
+        Latitude: mod.latitude ?? origCoords?.Latitude ?? null,
+        Altitude: mod.altitude !== undefined ? mod.altitude : (origCoords?.Altitude ?? 100)
       },
-      Description: mod.description || null
+      Description: mod.description !== undefined ? (mod.description || null) : (origProps?.Description || null)
     };
 
     if (isArea) {
@@ -67,10 +72,11 @@
 
       // LandArea extension fields
       if (mod.areaType === 'LandArea') {
-        props.TaxRateHunting = mod.taxRateHunting ?? null;
-        props.TaxRateMining = mod.taxRateMining ?? null;
-        props.TaxRateShops = mod.taxRateShops ?? null;
-        if (mod.landAreaOwner) props.LandAreaOwnerName = mod.landAreaOwner;
+        props.TaxRateHunting = mod.taxRateHunting !== undefined ? mod.taxRateHunting : (origProps?.TaxRateHunting ?? null);
+        props.TaxRateMining = mod.taxRateMining !== undefined ? mod.taxRateMining : (origProps?.TaxRateMining ?? null);
+        props.TaxRateShops = mod.taxRateShops !== undefined ? mod.taxRateShops : (origProps?.TaxRateShops ?? null);
+        const ownerName = mod.landAreaOwner !== undefined ? mod.landAreaOwner : origProps?.LandAreaOwnerName;
+        if (ownerName) props.LandAreaOwnerName = ownerName;
       }
 
       // MobArea mob data (density + maturity selections)
@@ -87,8 +93,9 @@
       Planet: { Name: planet?.Name }
     };
 
-    if (mod.parentLocationName) {
-      body.ParentLocation = { Name: mod.parentLocationName };
+    const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : orig?.ParentLocation?.Name;
+    if (parentName) {
+      body.ParentLocation = { Name: parentName };
     }
 
     return body;
