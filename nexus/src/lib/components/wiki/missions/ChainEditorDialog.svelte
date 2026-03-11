@@ -362,6 +362,7 @@
               content={newChainDescription}
               placeholder="Enter chain description..."
               on:change={(e) => newChainDescription = e.detail}
+              showWaypoints={true}
             />
           </div>
           <div class="form-actions">
@@ -409,6 +410,7 @@
                     editChainDescription = e.detail;
                     handleChainDescriptionChange();
                   }}
+                  showWaypoints={true}
                 />
               </div>
             </div>

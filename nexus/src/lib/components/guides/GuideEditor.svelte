@@ -193,7 +193,7 @@
 
       {#if editingId === paragraph.id && RichTextEditor}
         <div class="editor-wrapper">
-          <svelte:component this={RichTextEditor} content={editContent} on:change={handleEditorChange} placeholder="Write paragraph content..." />
+          <svelte:component this={RichTextEditor} content={editContent} on:change={handleEditorChange} placeholder="Write paragraph content..." showWaypoints={true} />
           <div class="editor-actions">
             <button class="btn-cancel" on:click={cancelEdit} disabled={saving}>Cancel</button>
             <button class="btn-save" on:click={() => saveParagraph(paragraph.id)} disabled={saving}>

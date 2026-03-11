@@ -561,6 +561,7 @@
               content={activeSkill?.Properties?.Description || ''}
               on:change={(e) => updateField('Properties.Description', e.detail)}
               placeholder="Enter a description for this skill..."
+              showWaypoints={true}
             />
           {:else if activeSkill?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeSkill.Properties.Description)}</div>

@@ -421,6 +421,7 @@
               content={activeEntity?.Description || ''}
               on:change={(e) => updateField('Description', e.detail)}
               placeholder="Enter profession description..."
+              showWaypoints={true}
             />
           {:else if activeEntity?.Description}
             <div class="description-content">{@html sanitizeHtml(activeEntity.Description)}</div>

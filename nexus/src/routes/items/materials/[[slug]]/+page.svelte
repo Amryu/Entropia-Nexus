@@ -385,6 +385,7 @@
               content={activeMaterial?.Properties?.Description || ''}
               on:change={(e) => updateField('Properties.Description', e.detail)}
               placeholder="Enter a description for this material..."
+              showWaypoints={true}
             />
           {:else if activeMaterial?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeMaterial.Properties.Description)}</div>

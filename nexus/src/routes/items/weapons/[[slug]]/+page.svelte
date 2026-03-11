@@ -1320,6 +1320,7 @@
               content={activeWeapon.Properties?.Description || ''}
               placeholder="Enter weapon description..."
               on:change={(e) => updateField('Properties.Description', e.detail)}
+              showWaypoints={true}
             />
           {:else if activeWeapon.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeWeapon.Properties.Description)}</div>

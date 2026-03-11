@@ -1495,6 +1495,7 @@
               content={activeEntity?.Properties?.Description || ''}
               on:change={(e) => updateField('Properties.Description', e.detail)}
               placeholder={isChainView ? 'Describe this mission chain...' : 'Describe this mission...'}
+              showWaypoints={true}
             />
           {:else if hasActualText(activeEntity?.Properties?.Description)}
             <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>

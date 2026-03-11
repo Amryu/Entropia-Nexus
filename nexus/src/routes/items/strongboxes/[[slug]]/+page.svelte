@@ -339,6 +339,7 @@
               content={activeStrongbox?.Properties?.Description || ''}
               on:change={(e) => updateField('Properties.Description', e.detail)}
               placeholder="Enter a description for this strongbox..."
+              showWaypoints={true}
             />
           {:else if activeStrongbox?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeStrongbox.Properties.Description)}</div>

@@ -666,6 +666,7 @@
               content={activeEntity?.Properties?.Description || ''}
               on:change={(e) => updateField('Properties.Description', e.detail)}
               placeholder="Enter armor set description..."
+              showWaypoints={true}
             />
           {:else if activeEntity?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>

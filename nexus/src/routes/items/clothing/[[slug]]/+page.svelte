@@ -549,6 +549,7 @@
               content={activeClothing?.Properties?.Description || ''}
               on:change={handleDescriptionChange}
               placeholder="Enter a description for this clothing item..."
+              showWaypoints={true}
             />
           {:else if activeClothing?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeClothing.Properties.Description)}</div>

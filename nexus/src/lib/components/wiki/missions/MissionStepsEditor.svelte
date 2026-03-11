@@ -596,6 +596,7 @@
             content={step.Description ?? ''}
             placeholder="Step description"
             on:change={(e) => updateStepField(stepIndex, 'Description', e.detail)}
+            showWaypoints={true}
           />
         </div>
 
@@ -642,6 +643,7 @@
                             content={payload.dialogText ?? ''}
                             placeholder="Dialog cue"
                             on:change={(e) => updateObjectivePayload(stepIndex, objIndex, { dialogText: e.detail })}
+                            showWaypoints={true}
                           />
                         </div>
                       </div>

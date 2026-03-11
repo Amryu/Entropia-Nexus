@@ -1368,6 +1368,7 @@
               content={activeMob?.Properties?.Description || ''}
               on:change={handleDescriptionChange}
               placeholder="Enter a description for this mob..."
+              showWaypoints={true}
             />
           {:else if activeMob?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeMob.Properties.Description)}</div>

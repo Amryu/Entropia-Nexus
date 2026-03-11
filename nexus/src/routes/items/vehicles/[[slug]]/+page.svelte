@@ -670,6 +670,7 @@
               content={activeVehicle?.Properties?.Description || ''}
               on:change={handleDescriptionChange}
               placeholder="Enter a description for this vehicle..."
+              showWaypoints={true}
             />
           {:else if activeVehicle?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeVehicle.Properties.Description)}</div>

@@ -1385,6 +1385,7 @@
                 content={activeLocation?.Properties?.Description || ''}
                 on:change={(e) => updateField('Properties.Description', e.detail)}
                 placeholder="Describe this location..."
+                showWaypoints={true}
               />
             {:else}
               <div class="description-content">{@html sanitizeHtml(activeLocation.Properties.Description)}</div>

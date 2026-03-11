@@ -478,6 +478,7 @@
               content={activeVendor?.Properties?.Description || ''}
               on:change={handleDescriptionChange}
               placeholder="Enter a description for this vendor..."
+              showWaypoints={true}
             />
           {:else if activeVendor?.Properties?.Description}
             <div class="description-content">{@html sanitizeHtml(activeVendor.Properties.Description)}</div>
