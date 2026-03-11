@@ -57,7 +57,7 @@ client/.wsl-build-tmp.sh
 # Development scripts and test data
 /scripts/*
 !/scripts/captured_glyphs.json
-client/market_price_examples/
+client/ocr_dev_samples/
 client/assets/stpk/*_preview.png
 client/assets/stpk/*.orig
 nexus-crash-*.txt

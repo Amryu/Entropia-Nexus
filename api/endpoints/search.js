@@ -346,6 +346,13 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
         WHERE "Locations"."Type" != 'Vendor'`;
   }
 
+  // Planets with maps (X IS NOT NULL means map data exists)
+  optionalUnions += `
+      UNION ALL
+      SELECT "Planets"."Id" + 12000000000 AS "Id", "Planets"."Name" AS "Name", 'Map' AS "Type", NULL AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
+      FROM ONLY "Planets"
+      WHERE "Planets"."X" IS NOT NULL`;
+
   // Build WHERE clause for armor piece name matching (used in EXISTS subquery)
   // This allows searching for individual armor piece names but returning the parent set
   const armorPieceWhereClause = useFuzzy
