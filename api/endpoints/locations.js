@@ -13,7 +13,7 @@ const LOCATION_TYPES = {
   Outpost: 'Outpost',
   Camp: 'Camp',
   City: 'City',
-  WaveEvent: 'WaveEvent',
+
   RevivalPoint: 'RevivalPoint',
   InstanceEntrance: 'InstanceEntrance',
   Vendor: 'Vendor'
@@ -156,7 +156,7 @@ function formatLocation(x, add = {}) {
     result.Properties.MaxGuests = x.EstateMaxGuests;
   }
 
-  if (x.Type === 'WaveEvent' && add.waves) {
+  if (x.AreaType === 'WaveEvent' && add.waves) {
     result.Waves = add.waves;
   }
 
@@ -217,7 +217,7 @@ async function getLocations(options = {}) {
   }
 
   // Fetch wave event waves for WaveEvent locations
-  const waveEventIds = filteredRows.filter(r => r.Type === 'WaveEvent').map(r => r.Id);
+  const waveEventIds = filteredRows.filter(r => r.AreaType === 'WaveEvent').map(r => r.Id);
   const wavesMap = await _fetchWaveEventWaves(waveEventIds);
 
   return filteredRows.map(x => formatLocation(x, {
@@ -239,7 +239,7 @@ async function getLocation(idOrName) {
     const locationIds = rows.map(r => r.Id);
     const [facilitiesMap, wavesMap] = await Promise.all([
       _fetchFacilities(locationIds),
-      _fetchWaveEventWaves(rows.filter(r => r.Type === 'WaveEvent').map(r => r.Id))
+      _fetchWaveEventWaves(rows.filter(r => r.AreaType === 'WaveEvent').map(r => r.Id))
     ]);
 
     return {
@@ -254,7 +254,7 @@ async function getLocation(idOrName) {
   const location = rows[0];
   const [facilities, waves] = await Promise.all([
     _fetchFacilities([location.Id]),
-    location.Type === 'WaveEvent' ? _fetchWaveEventWaves([location.Id]) : Promise.resolve({})
+    location.AreaType === 'WaveEvent' ? _fetchWaveEventWaves([location.Id]) : Promise.resolve({})
   ]);
 
   return formatLocation(location, {
@@ -296,7 +296,7 @@ function register(app) {
    *        name: Type
    *        schema:
    *          type: string
-   *        description: Location type to filter by (Teleporter, Npc, Interactable, Area, Estate, Outpost, Camp, City, WaveEvent)
+   *        description: Location type to filter by (Teleporter, Npc, Interactable, Area, Estate, Outpost, Camp, City)
    *      - in: query
    *        name: Types
    *        schema:

@@ -356,6 +356,10 @@
     dispatch('editMobArea', { location, isNew });
   }
 
+  function handleEditWaveArea() {
+    dispatch('editWaveArea', { location, isNew });
+  }
+
   function handleDescriptionChange(e) {
     description = e.detail;
     scheduleAutoSave();
@@ -364,6 +368,7 @@
   $: isAreaType = locationType === 'Area';
   $: isMobArea = isAreaType && areaType === 'MobArea';
   $: isLandArea = isAreaType && areaType === 'LandArea';
+  $: isWaveEvent = isAreaType && areaType === 'WaveEvent';
 
   async function fetchRelatedEntities() {
     if (!location?.Id || location._isPendingAdd || relatedLoading) return;
@@ -719,6 +724,14 @@
         {#if !readOnly}
           <button class="btn btn-mob" on:click={handleEditMobArea}>
             Edit Mob Spawns
+          </button>
+        {/if}
+      {/if}
+
+      {#if isWaveEvent}
+        {#if !readOnly}
+          <button class="btn btn-mob" on:click={handleEditWaveArea}>
+            Edit Wave Spawns
           </button>
         {/if}
       {/if}

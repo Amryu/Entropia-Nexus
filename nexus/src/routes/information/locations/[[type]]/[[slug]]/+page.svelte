@@ -96,16 +96,25 @@
 
   // Filter locations based on selected filter (client-side filtering)
   $: isOtherFilter = selectedFilter === 'other';
-  $: selectedFilterTypes = selectedFilter ? getTypesFromSlug(selectedFilter) : null;
+  $: selectedFilterBtn = selectedFilter ? NAV_TYPE_BUTTONS.find(b => b.slug === selectedFilter) : null;
+  $: selectedFilterTypes = selectedFilterBtn?.types ?? (selectedFilter ? getTypesFromSlug(selectedFilter) : null);
+  $: selectedFilterAreaTypes = selectedFilterBtn?.areaTypes ?? null;
   $: locationsList = isOtherFilter
     ? allLocations.filter(loc => {
         const locType = loc.Properties?.Type;
         return !locType || !CATEGORIZED_TYPES.has(locType);
       })
-    : selectedFilterTypes
+    : (selectedFilterTypes || selectedFilterAreaTypes)
       ? allLocations.filter(loc => {
           const locType = loc.Properties?.Type;
-          return locType && selectedFilterTypes.includes(locType);
+          const locAreaType = loc.Properties?.AreaType;
+          if (selectedFilterAreaTypes && selectedFilterTypes) {
+            return selectedFilterTypes.includes(locType) && selectedFilterAreaTypes.includes(locAreaType);
+          } else if (selectedFilterAreaTypes) {
+            return selectedFilterAreaTypes.includes(locAreaType);
+          } else {
+            return locType && selectedFilterTypes.includes(locType);
+          }
         })
       : allLocations;
 
@@ -128,7 +137,6 @@
     { value: 'Outpost', label: 'Outpost' },
     { value: 'Camp', label: 'Camp' },
     { value: 'City', label: 'City' },
-    { value: 'WaveEvent', label: 'Wave Event' },
     { value: 'Vendor', label: 'Vendor' }
   ];
 
@@ -139,7 +147,7 @@
     { slug: 'areas', label: 'Areas', types: ['Area'] },
     { slug: 'estates', label: 'Estates', types: ['Estate'] },
     { slug: 'settlements', label: 'Settlements', types: ['Outpost', 'Camp', 'City'] },
-    { slug: 'waveevents', label: 'Wave Events', types: ['WaveEvent'] },
+    { slug: 'waveevents', label: 'Wave Events', types: ['Area'], areaTypes: ['WaveEvent'] },
     { slug: 'instances', label: 'Instances', types: ['InstanceEntrance'] },
     { slug: 'vendors', label: 'Vendors', types: ['Vendor'] },
     { slug: 'other', label: 'Other', types: null } // Catches types not in other categories
@@ -177,6 +185,7 @@
     { value: 'PvpLootArea', label: 'PvP Loot Area' },
     { value: 'MobArea', label: 'Mob Area' },
     { value: 'LandArea', label: 'Land Area' },
+    { value: 'WaveEvent', label: 'Wave Event' },
     { value: 'ZoneArea', label: 'Zone Area' },
     { value: 'CityArea', label: 'City Area' },
     { value: 'EstateArea', label: 'Estate Area' },
@@ -279,7 +288,10 @@
       : entity;
 
   $: activeLocation = activeEntity;
-  $: locationType = activeLocation?.Properties?.Type || 'Teleporter';
+  // WaveEvent locations now have Type='Area' and AreaType='WaveEvent'
+  $: locationType = activeLocation?.Properties?.AreaType === 'WaveEvent'
+    ? 'WaveEvent'
+    : (activeLocation?.Properties?.Type || 'Teleporter');
 
   // Settlement types that have facilities
   const SETTLEMENT_TYPES = ['Outpost', 'Camp', 'City'];
@@ -307,10 +319,17 @@
         const changeType = change.data?.Properties?.Type;
         return !changeType || !CATEGORIZED_TYPES.has(changeType);
       })
-    : selectedFilterTypes
+    : (selectedFilterTypes || selectedFilterAreaTypes)
       ? (userPendingCreates || []).filter(change => {
           const changeType = change.data?.Properties?.Type;
-          return changeType && selectedFilterTypes.includes(changeType);
+          const changeAreaType = change.data?.Properties?.AreaType;
+          if (selectedFilterAreaTypes && selectedFilterTypes) {
+            return selectedFilterTypes.includes(changeType) && selectedFilterAreaTypes.includes(changeAreaType);
+          } else if (selectedFilterAreaTypes) {
+            return selectedFilterAreaTypes.includes(changeAreaType);
+          } else {
+            return changeType && selectedFilterTypes.includes(changeType);
+          }
         })
       : userPendingCreates || [];
 
@@ -336,7 +355,9 @@
 
   function getSidebarHref(item, basePath) {
     const slug = encodeURIComponentSafe(item.Name);
-    const typeSlug = getTypeSlug(item.Properties?.Type);
+    const typeSlug = item.Properties?.AreaType === 'WaveEvent'
+      ? 'waveevents'
+      : getTypeSlug(item.Properties?.Type);
     const baseUrl = typeSlug
       ? `/information/locations/${typeSlug}/${slug}`
       : `/information/locations/${slug}`;
@@ -365,7 +386,7 @@
     || `${activeLocation?.Name || 'Location'} reference data for Entropia Universe.`;
 
   $: canonicalUrl = activeEntity?.Name
-    ? `https://entropianexus.com/information/locations/${getTypeSlug(activeLocation?.Properties?.Type) || ''}/${encodeURIComponentSafe(activeEntity.Name)}`
+    ? `https://entropianexus.com/information/locations/${activeLocation?.Properties?.AreaType === 'WaveEvent' ? 'waveevents' : (getTypeSlug(activeLocation?.Properties?.Type) || '')}/${encodeURIComponentSafe(activeEntity.Name)}`
     : 'https://entropianexus.com/information/locations';
 
   const seoColumns = [

@@ -97,6 +97,11 @@
       Planet: { Name: planet?.Name }
     };
 
+    // WaveEvent wave data (stored at body level, not in Properties)
+    if (mod.areaType === 'WaveEvent' && mod.waveData) {
+      body.Waves = mod.waveData.waves ?? [];
+    }
+
     const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : orig?.ParentLocation?.Name;
     if (parentName) {
       body.ParentLocation = { Name: parentName };

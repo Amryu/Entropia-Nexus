@@ -96,7 +96,6 @@ LOCATION_TYPE_NAMES: dict[str, str] = {
     "Outpost": "Outpost",
     "Camp": "Camp",
     "City": "City",
-    "WaveEvent": "Wave Event",
     "RevivalPoint": "Revival Point",
     "InstanceEntrance": "Instance",
 }

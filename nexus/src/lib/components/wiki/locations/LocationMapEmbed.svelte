@@ -94,11 +94,16 @@
     Outpost: '#ef4444',      // Red
     Camp: '#22c55e',         // Emerald
     City: '#6366f1',         // Indigo
-    WaveEvent: '#ec4899',    // Pink
     default: '#ffffff'       // White
   };
 
-  $: markerColor = typeColors[location?.Properties?.Type] || typeColors.default;
+  const areaTypeColors = {
+    WaveEvent: '#ec4899'     // Pink
+  };
+
+  $: markerColor = (location?.Properties?.Type === 'Area' && areaTypeColors[location?.Properties?.AreaType])
+    || typeColors[location?.Properties?.Type]
+    || typeColors.default;
 
   // Convert game (entropia) coordinates to image coordinates
   // Uses the same logic as Map.svelte's entropiaCoordsToImageCoords

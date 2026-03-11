@@ -4162,14 +4162,14 @@ def _build_location_details(item: dict, page_type: str, on_entity=None) -> QWidg
         owner = deep_get(item, "Owner", "Name")
         if owner:
             layout.addWidget(_stat_row("Owner", owner))
-    elif loc_type == "WaveEvent":
-        waves = item.get("Waves") or []
-        if waves:
-            layout.addWidget(_stat_row("Waves", str(len(waves))))
     elif loc_type == "Area":
         area_type = deep_get(item, "Properties", "AreaType")
         if area_type:
             layout.addWidget(_stat_row("Area Type", area_type))
+        if area_type == "WaveEvent":
+            waves = item.get("Waves") or []
+            if waves:
+                layout.addWidget(_stat_row("Waves", str(len(waves))))
 
     # Facilities
     facilities = item.get("Facilities") or []

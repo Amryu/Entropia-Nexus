@@ -4,6 +4,7 @@
   import LocationList from './LocationList.svelte';
   import LocationEditor from './LocationEditor.svelte';
   import MobAreaEditor from './MobAreaEditor.svelte';
+  import WaveEventEditor from './WaveEventEditor.svelte';
   import { isArea } from './mapEditorUtils.js';
 
   // --- Required props ---
@@ -54,6 +55,7 @@
   let filteredLocationIds = null;
   let nextTempId = -1;
   let lastAppliedFocusKey = null;
+  let waveEditorContext = null;
   let selectedDbChange = null; // DB pending change selected for read-only viewing
   let modifiedDbChanges = new Set(); // DB-seeded changes that have been locally modified
 
@@ -69,6 +71,7 @@
     rightPanel = 'editor';
     previewShape = null;
     mobEditorContext = null;
+    waveEditorContext = null;
     filteredLocationIds = null;
     nextTempId = -1;
     changeCount = 0;
@@ -229,6 +232,10 @@
           // Restore mob data if persisted in the change
           if (props.MobData || props.Density != null) {
             modified.mobData = { density: props.Density ?? 4, maturities: props.MobData || [] };
+          }
+          // Restore wave data if persisted in the change
+          if (data?.Waves) {
+            modified.waveData = { waves: data.Waves };
           }
           pendingChanges.set(tempId, { action: 'add', original: null, modified });
           dbChangeIdMap.set(tempId, change.id);
@@ -569,6 +576,35 @@
     rightPanel = 'mobEditor';
   }
 
+  function handleEditWaveArea(e) {
+    waveEditorContext = e.detail;
+    rightPanel = 'waveEditor';
+  }
+
+  function handleWaveSave(e) {
+    const waveData = e.detail;
+    if (waveEditorContext?.location) {
+      const loc = waveEditorContext.location;
+      const existing = pendingChanges.get(loc.Id);
+      if (existing?.action === 'add') {
+        existing.modified.waveData = { waves: waveData.waves };
+        pendingChanges.set(loc.Id, existing);
+      } else {
+        const modified = existing?.modified || {};
+        modified.waveData = { waves: waveData.waves };
+        pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
+      }
+    }
+    pendingChanges = pendingChanges;
+    rightPanel = 'editor';
+    waveEditorContext = null;
+  }
+
+  function handleWaveCancel() {
+    rightPanel = 'editor';
+    waveEditorContext = null;
+  }
+
   function handleMobSave(e) {
     const mobData = e.detail;
     if (mobEditorContext?.location) {
@@ -742,6 +778,15 @@
         on:save={handleMobSave}
         on:cancel={handleMobCancel}
       />
+    {:else if rightPanel === 'waveEditor'}
+      <WaveEventEditor
+        mobs={allMobs}
+        location={waveEditorContext?.location}
+        isNew={waveEditorContext?.isNew || false}
+        pendingWaveData={waveEditorContext?.location ? pendingChanges.get(waveEditorContext.location.Id)?.modified?.waveData : null}
+        on:save={handleWaveSave}
+        on:cancel={handleWaveCancel}
+      />
     {:else if rightPanel === 'editor'}
       <LocationEditor
         location={selectedLocation}
@@ -760,6 +805,7 @@
         on:removePendingAdd={handleRemovePendingAdd}
         on:deleteDbChange={handleDeleteDbChange}
         on:editMobArea={handleEditMobArea}
+        on:editWaveArea={handleEditWaveArea}
         on:preview={handlePreview}
       />
     {:else}

@@ -76,7 +76,8 @@ _LAYER_DEFS: list[tuple[str, str, set[str], bool]] = [
     ("LA",  "#4ade80", {"LandArea"}, True),
     ("MA",  "#facc15", {"MobArea", "Creature"}, False),
     ("PVP", "#ef4444", {"PvpArea", "PvpLootArea"}, False),
-    ("OTH", "#a78bfa", {"ZoneArea", "EventArea", "WaveEventArea", "OtherArea", "OtherLocation"}, False),
+    ("WE",  "#da70d6", {"WaveEvent"}, False),
+    ("OTH", "#a78bfa", {"ZoneArea", "EventArea", "OtherArea", "OtherLocation"}, False),
 ]
 
 _IMAGE_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "cache", "maps")

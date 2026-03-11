@@ -20,7 +20,7 @@ The system consolidates previously separate location entities into a single unif
 | `Outpost` | Outpost locations |
 | `Camp` | Camp locations |
 | `City` | City locations |
-| `WaveEvent` | Wave-based event locations (has wave data) |
+| `WaveEvent` | Wave-based event areas — stored as `Type='Area'` with `AreaType='WaveEvent'` |
 
 ## Database Schema
 
@@ -33,7 +33,7 @@ The core table containing all location records.
 |--------|------|-------------|
 | `Id` | SERIAL | Primary key |
 | `Name` | TEXT | Location name |
-| `Type` | LocationType | Enum: Teleporter, RevivalPoint, Npc, Interactable, InstanceEntrance, Area, Estate, Outpost, Camp, City, WaveEvent |
+| `Type` | LocationType | Enum: Teleporter, RevivalPoint, Npc, Interactable, InstanceEntrance, Area, Estate, Outpost, Camp, City |
 | `Description` | TEXT | Optional description |
 | `PlanetId` | INTEGER | FK to Planets |
 | `Longitude` | INTEGER | X coordinate |
@@ -48,7 +48,7 @@ Additional data for locations with `Type = 'Area'`.
 | Column | Type | Description |
 |--------|------|-------------|
 | `LocationId` | INTEGER | PK, FK to Locations |
-| `Type` | AreaType | Enum: PvpArea, PvpLootArea, MobArea, LandArea, ZoneArea, CityArea, EstateArea, EventArea |
+| `Type` | AreaType | Enum: PvpArea, PvpLootArea, MobArea, LandArea, WaveEvent, ZoneArea, CityArea, EstateArea, EventArea |
 | `Shape` | Shape | Enum: Point, Circle, Rectangle, Polygon |
 | `Data` | JSONB | Shape-specific data (radius, bounds, polygon points) |
 
@@ -107,7 +107,7 @@ Links locations to their available facilities.
 ### Wave Events
 
 #### WaveEventWaves
-Wave definitions for WaveEvent type locations.
+Wave definitions for WaveEvent area locations (`Type='Area'`, `AreaType='WaveEvent'`).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -262,7 +262,7 @@ Key schema properties:
 - `Properties.Shape` - For Area type (Point, Circle, Rectangle, Polygon)
 - `Facilities[]` - Array of facility references
 - `Sections[]` - For Estate type (estate sections)
-- `Waves[]` - For WaveEvent type (wave definitions)
+- `Waves[]` - For WaveEvent area type (wave definitions, at body level)
 
 ## Migration Notes
 

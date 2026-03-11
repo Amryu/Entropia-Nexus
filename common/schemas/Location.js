@@ -18,7 +18,7 @@ export const Location = {
           "enum": [
             "Teleporter", "Npc", "Interactable",
             "Area", "Estate",
-            "Outpost", "Camp", "City", "WaveEvent",
+            "Outpost", "Camp", "City",
             "RevivalPoint", "InstanceEntrance",
             "Vendor"
           ]
@@ -44,7 +44,7 @@ export const Location = {
         // Area-specific properties (when Type = 'Area')
         "AreaType": {
           "type": ["string", "null"],
-          "enum": ["PvpArea", "PvpLootArea", "MobArea", "LandArea", "ZoneArea", "CityArea", "EstateArea", "EventArea", null],
+          "enum": ["PvpArea", "PvpLootArea", "MobArea", "LandArea", "ZoneArea", "CityArea", "EstateArea", "EventArea", "WaveEvent", null],
           "default": null
         },
         "Shape": {
