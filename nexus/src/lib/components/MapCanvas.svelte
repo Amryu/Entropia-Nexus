@@ -256,7 +256,7 @@
   // Layer visibility toggles
   let showTeleporters = true;
   let showLandAreas = true;
-  let showMobAreas = false;  // Off by default - there are many mob areas
+  let showMobAreas = true;
   let showPvpAreas = true;
   let showOtherAreas = false;
 
