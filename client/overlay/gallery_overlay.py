@@ -155,6 +155,7 @@ class GalleryOverlay(OverlayWidget):
         self._nexus_client = nexus_client
         self._loader = None
         self._all_items: list[dict] = []
+        self._items_by_path: dict[str, dict] = {}
         self._thumb_widgets_by_path: dict[str, ThumbnailWidget] = {}
         self._selected_month: tuple[int, int] | None = None
         self._click_origin = None
@@ -680,6 +681,7 @@ class GalleryOverlay(OverlayWidget):
                 self._loader.wait(3000)
             self._loader = None
 
+        self._items_by_path = {}
         self._thumb_widgets_by_path = {}
 
         ss_dir = self._config.screenshot_directory or DEFAULT_SCREENSHOT_DIR
@@ -704,11 +706,17 @@ class GalleryOverlay(OverlayWidget):
     def _on_items_ready(self, items: list[dict]):
         """Phase 1: file list arrived — show placeholders immediately."""
         self._all_items = items
+        self._items_by_path = {it["path"]: it for it in items}
         self._pending_thumbs = []
         self._populate_sidebar()
 
     def _on_thumbnail_ready(self, path: str, qimage):
         """Phase 2: a single thumbnail arrived — update its widget."""
+        # Backfill item dict so future _show_month calls (resize/month switch)
+        # create widgets with the already-loaded image instead of "Loading..."
+        item = self._items_by_path.get(path)
+        if item is not None:
+            item["qimage"] = qimage
         widget = self._thumb_widgets_by_path.get(path)
         if widget is not None:
             from PyQt6.QtGui import QPixmap
@@ -736,6 +744,9 @@ class GalleryOverlay(OverlayWidget):
             )
             if pixmap:
                 widget.set_pixmap(pixmap)
+                item = self._items_by_path.get(path)
+                if item is not None:
+                    item["qimage"] = pixmap.toImage()
             else:
                 still_pending.append((path, widget, count + 1))
         self._pending_thumbs = still_pending

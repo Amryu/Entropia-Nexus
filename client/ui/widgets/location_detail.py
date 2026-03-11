@@ -100,7 +100,7 @@ class LocationDetailView(WikiDetailView):
                 if shape:
                     area_section.add_row(StatRow("Shape", shape))
                 self._add_section(area_section)
-            if area_type == "WaveEvent":
+            if area_type == "WaveEventArea":
                 waves = item.get("Waves") or []
                 if waves:
                     wave_section = InfoboxSection("Wave Event")
@@ -130,7 +130,7 @@ class LocationDetailView(WikiDetailView):
 
         # --- Waves table (for wave events) ---
         area_type_for_waves = deep_get(item, "Properties", "AreaType")
-        if loc_type == "Area" and area_type_for_waves == "WaveEvent":
+        if loc_type == "Area" and area_type_for_waves == "WaveEventArea":
             waves = item.get("Waves") or []
             if waves:
                 wave_section = DataSection("Waves", expanded=True)

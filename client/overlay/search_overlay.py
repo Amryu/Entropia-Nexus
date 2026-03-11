@@ -53,6 +53,7 @@ _MENU_ITEMS = [
     {"label": "Notifications", "shortcut": "Ctrl+N", "action": "notifications"},
     {"label": "Recording", "shortcut": "Ctrl+R", "action": "recording"},
     {"label": "Gallery", "shortcut": "Ctrl+G", "action": "gallery"},
+    {"label": "Custom Grid", "shortcut": "", "action": "custom_grid"},
 ]
 
 _ROW_STYLE = (

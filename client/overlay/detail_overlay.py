@@ -4166,7 +4166,7 @@ def _build_location_details(item: dict, page_type: str, on_entity=None) -> QWidg
         area_type = deep_get(item, "Properties", "AreaType")
         if area_type:
             layout.addWidget(_stat_row("Area Type", area_type))
-        if area_type == "WaveEvent":
+        if area_type == "WaveEventArea":
             waves = item.get("Waves") or []
             if waves:
                 layout.addWidget(_stat_row("Waves", str(len(waves))))

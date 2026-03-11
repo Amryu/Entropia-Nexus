@@ -60,6 +60,13 @@ class AppConfig:
     overlay_enabled: bool = True
     auto_pin_detail_overlay: bool = False
 
+    # Custom grid overlay
+    custom_grid_overlay_position: tuple[int, int] = (200, 200)
+    custom_grid_overlay_cols: int = 6       # number of tile columns (1-20)
+    custom_grid_overlay_rows: int = 4       # number of tile rows (1-20)
+    custom_grid_overlay_tile_size: int = 0  # 0=S(20px), 1=M(30px), 2=L(40px)
+    custom_grid_overlay_widgets: list = field(default_factory=list)
+
     # Auth
     nexus_base_url: str = "https://entropianexus.com"
     api_base_url: str = "https://api.entropianexus.com"
@@ -203,7 +210,10 @@ class AppConfig:
     screenshot_cooldown_s: float = 0.0              # 0 = no cooldown
     screenshot_sound_enabled: bool = True           # play shutter sound on screenshot
 
-    # Video clips
+    # Video capture (master gate for all capture infrastructure)
+    capture_enabled: bool = False           # gates frame subscription, audio, webcam, OBS, recording
+
+    # Video clips (sub-gate: clipping button, hotkey, replay buffer, auto-clip)
     clip_enabled: bool = False              # off by default (needs FFmpeg + resources)
     clip_auto_on_global: bool = True
     clip_buffer_seconds: int = 15
@@ -425,6 +435,7 @@ DEFAULTS = {
     "screenshot_cooldown_s": 0.0,
     "screenshot_size_pct": 100,
     "screenshot_sound_enabled": True,
+    "capture_enabled": False,
     "clip_enabled": False,
     "clip_auto_on_global": True,
     "clip_buffer_seconds": 15,

@@ -1218,18 +1218,22 @@ class SettingsPage(QWidget):
     def _on_video_config_dialog_closed(self):
         self._video_config_dialog = None
 
-    def _on_clip_enabled_changed(self, state):
+    def _on_capture_enabled_changed(self, state):
         if state == Qt.CheckState.Checked.value:
             from ..dialogs.media_download_dialog import ensure_media_libraries
             if not ensure_media_libraries(
                 self._config, self._event_bus, self._signals, parent=self,
             ):
                 # User cancelled — revert the checkbox without re-triggering
-                self._clip_enabled_cb.blockSignals(True)
-                self._clip_enabled_cb.setChecked(False)
-                self._clip_enabled_cb.blockSignals(False)
+                self._capture_enabled_cb.blockSignals(True)
+                self._capture_enabled_cb.setChecked(False)
+                self._capture_enabled_cb.blockSignals(False)
                 return
-        self._update_obs_ui_state()
+        self._update_capture_ui_state()
+        self._schedule_save()
+
+    def _on_clip_enabled_changed(self, state):
+        self._update_capture_ui_state()
         self._schedule_save()
 
     def _on_obs_enabled_changed(self, state):
@@ -1256,15 +1260,23 @@ class SettingsPage(QWidget):
         self._obs_manage_replay_cb.setChecked(manage)
 
     def _update_obs_ui_state(self):
-        """Enable/disable widgets based on clip_enabled (master) and OBS mode."""
+        """Alias kept for any external callers; delegates to _update_capture_ui_state."""
+        self._update_capture_ui_state()
+
+    def _update_capture_ui_state(self):
+        """Enable/disable widgets based on capture_enabled (master), clip_enabled, and OBS mode."""
+        capture_on = self._capture_enabled_cb.isChecked()
         clip_on = self._clip_enabled_cb.isChecked()
         obs_on = self._obs_enabled_cb.isChecked()
-        # OBS section requires clip recording to be enabled
+        # OBS section requires capture to be enabled
         for w in getattr(self, "_obs_widgets", []):
+            w.setEnabled(capture_on)
+        # Internal capture widgets disabled when OBS is active or capture is off
+        for w in getattr(self, "_internal_capture_widgets", []):
+            w.setEnabled(capture_on and not obs_on)
+        # Clip-specific widgets enabled when clip is on
+        for w in getattr(self, "_clip_only_widgets", []):
             w.setEnabled(clip_on)
-        # Internal clip widgets disabled when OBS is active (or clip is off)
-        for w in getattr(self, "_internal_clip_widgets", []):
-            w.setEnabled(clip_on and not obs_on)
 
     @staticmethod
     def _load_obs_password() -> str:
@@ -1332,17 +1344,37 @@ class SettingsPage(QWidget):
 
     # --- Video ---
     def _build_video_section(self):
-        group = QGroupBox("Video Clips")
+        group = QGroupBox("Video")
         layout = QVBoxLayout(group)
 
-        # Enable toggle
-        self._clip_enabled_cb = QCheckBox("Enable video clip recording")
+        # Capture enable toggle (master gate for all capture infrastructure)
+        self._capture_enabled_cb = QCheckBox("Enable Video Capture")
+        self._capture_enabled_cb.setChecked(
+            getattr(self._config, "capture_enabled", False))
+        self._capture_enabled_cb.stateChanged.connect(self._on_capture_enabled_changed)
+        layout.addWidget(self._capture_enabled_cb)
+
+        self._capture_note = QLabel(
+            "Requires FFmpeg. Enables internal recording, OBS integration, "
+            "audio capture, and webcam overlay."
+        )
+        self._capture_note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self._capture_note.setWordWrap(True)
+        layout.addWidget(self._capture_note)
+
+        # Clip enable toggle (sub-gate for clipping only)
+        self._clip_enabled_cb = QCheckBox("Enable Clipping (Replay Buffering)")
         self._clip_enabled_cb.setChecked(self._config.clip_enabled)
+        self._clip_enabled_cb.setToolTip(
+            "Enables the clip button, clip hotkey, auto-clip on global, "
+            "and OBS replay buffer management.\n"
+            "Requires Video Capture to be enabled for internal clipping."
+        )
         self._clip_enabled_cb.stateChanged.connect(self._on_clip_enabled_changed)
         layout.addWidget(self._clip_enabled_cb)
 
         self._clip_note = QLabel(
-            "Requires FFmpeg. Continuously buffers game footage for instant replay."
+            "Continuously buffers game footage so clips can be saved on demand or on global."
         )
         self._clip_note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         self._clip_note.setWordWrap(True)
@@ -1425,7 +1457,7 @@ class SettingsPage(QWidget):
         self._obs_manage_replay_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._obs_manage_replay_cb)
 
-        # OBS widgets — disabled when clip recording is off
+        # OBS widgets — disabled when capture is off
         self._obs_widgets = [
             self._obs_enabled_cb, self._obs_host, self._obs_port,
             self._obs_password, self._obs_test_btn,
@@ -1436,10 +1468,12 @@ class SettingsPage(QWidget):
         self._signals.obs_connected.connect(self._on_obs_connected)
         self._signals.obs_disconnected.connect(self._on_obs_disconnected)
 
-        # Collect internal-only widgets for enable/disable toggling
-        self._internal_clip_widgets = []  # populated below, disabled when OBS is on
+        # Internal-only widgets (populated below) — disabled when OBS is on or capture is off
+        self._internal_capture_widgets = []
+        # Clip-only widgets — disabled when clip_enabled is off
+        self._clip_only_widgets = []
 
-        # Auto on global + conditions button
+        # Auto on global + conditions button (clip-specific)
         clip_auto_row = QHBoxLayout()
         self._clip_auto_cb = QCheckBox("Auto-save clip on own global")
         self._clip_auto_cb.setChecked(self._config.clip_auto_on_global)
@@ -1452,12 +1486,14 @@ class SettingsPage(QWidget):
         clip_auto_row.addWidget(clip_conditions_btn)
         clip_auto_row.addStretch()
         layout.addLayout(clip_auto_row)
+        self._clip_only_widgets += [self._clip_auto_cb, clip_conditions_btn]
 
-        # Sound feedback
-        self._clip_sound_cb = QCheckBox("Play sound on save")
+        # Sound feedback (clip-specific)
+        self._clip_sound_cb = QCheckBox("Play sound on clip save")
         self._clip_sound_cb.setChecked(self._config.clip_sound_enabled)
         self._clip_sound_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._clip_sound_cb)
+        self._clip_only_widgets.append(self._clip_sound_cb)
 
         # Daily subfolder
         self._clip_daily_cb = QCheckBox("Organize in daily subfolders")
@@ -1681,9 +1717,13 @@ class SettingsPage(QWidget):
         config_row.addStretch()
         layout.addLayout(config_row)
 
-        # Internal-only widgets: disabled when OBS mode is active
-        self._internal_clip_widgets = [
-            self._clip_buffer, self._clip_post_global,
+        # Clip-only widgets: buffer and post-global delay (not needed for recording)
+        self._clip_only_widgets += [self._clip_buffer, self._clip_post_global]
+
+        # Internal capture widgets: disabled when OBS is active (OBS handles these)
+        self._internal_capture_widgets = [
+            self._clip_dir, cbrowse,
+            self._clip_daily_cb,
             self._encode_priority,
             self._ffmpeg_path, self._ffmpeg_status,
             self._clip_audio_cb, self._clip_audio_device,
@@ -1692,7 +1732,7 @@ class SettingsPage(QWidget):
             self._mic_gain_slider,
             filter_btn, config_btn,
         ]
-        self._update_obs_ui_state()
+        self._update_capture_ui_state()
 
         self._sections.append(group)
         self._layout.addWidget(group)
@@ -2269,8 +2309,9 @@ class SettingsPage(QWidget):
             self._config.obs_replay_buffer_asked = True
         # Password saved to keyring in _on_obs_password_changed(), not in config
 
-        # Video Clips (resolution/fps/bitrate/webcam-enable/blur/background
+        # Video Capture + Clips (resolution/fps/bitrate/webcam-enable/blur/background
         # are saved by VideoConfigDialog directly)
+        self._config.capture_enabled = self._capture_enabled_cb.isChecked()
         self._config.clip_enabled = self._clip_enabled_cb.isChecked()
         self._config.clip_auto_on_global = self._clip_auto_cb.isChecked()
         self._config.clip_buffer_seconds = self._clip_buffer.value()

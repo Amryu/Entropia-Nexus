@@ -250,7 +250,7 @@ class BlurRegionDialog(QDialog):
 
         # Frame source
         self._frame_distributor = None
-        self._live_mode = config.clip_enabled
+        self._live_mode = getattr(config, "capture_enabled", False)
         self._refresh_btn.setVisible(not self._live_mode)
 
         # Live preview refresh timer (~2fps when live, background video at ~15fps)

@@ -97,6 +97,11 @@ EVENT_MARKET_PRICE_REVIEW = "market_price_review"  # needs manual review (overfl
 EVENT_PLAYER_STATUS_UPDATE = "player_status_update"
 EVENT_PLAYER_STATUS_LOST = "player_status_lost"
 
+# Event names — Radar coordinate detection
+EVENT_RADAR_COORDINATES = "radar_coordinates"  # {lon, lat, confidence, scale}
+EVENT_RADAR_LOST        = "radar_lost"          # {}
+EVENT_RADAR_DEBUG       = "radar_debug"         # debug dict (e.g. needs_recalibrate)
+
 # Event names — Capture (screenshots / video clips / recording)
 EVENT_SCREENSHOT_SAVED = "screenshot_saved"
 EVENT_CLIP_SAVED = "clip_saved"

@@ -43,7 +43,7 @@ _TYPE_COLORS: dict[str, QColor] = {
     "MobArea":        QColor(255, 255, 0),    # yellow
     "Creature":       QColor(255, 255, 0),    # yellow
     "EventArea":      QColor(255, 255, 255),  # white
-    "WaveEvent":      QColor(218, 112, 214),  # orchid
+    "WaveEventArea":      QColor(218, 112, 214),  # orchid
 }
 
 _DEFAULT_COLOR = QColor(255, 255, 255)

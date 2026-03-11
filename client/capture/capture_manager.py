@@ -135,6 +135,7 @@ class CaptureManager:
 
         # Snapshot of buffer-affecting settings for change detection
         self._prev_obs_enabled = config.obs_enabled
+        self._prev_capture_enabled = getattr(config, "capture_enabled", False)
         self._prev_clip_enabled = config.clip_enabled
         self._prev_clip_fps = config.clip_fps
         self._prev_clip_buffer_seconds = config.clip_buffer_seconds
@@ -174,21 +175,24 @@ class CaptureManager:
             return
         self._running = True
 
-        if self._config.clip_enabled and self._config.obs_enabled:
+        capture_on = getattr(self._config, "capture_enabled", False)
+        if capture_on and self._config.obs_enabled:
             # OBS mode — no internal frame/audio/webcam capture
             self._start_obs()
-        elif self._config.clip_enabled:
+        elif capture_on:
             # Internal capture mode
             self._start_frame_subscription()
             self._start_audio()
             self._start_mic()
-            self._start_webcam()
+            # Webcam: only pre-warm when clipping is on (buffer needs it ready)
+            # or keep-ready is set; otherwise started on demand when recording begins
+            self._start_webcam_if_clip_active()
         elif self._config.clip_webcam_keep_ready and self._config.clip_webcam_enabled:
             self._start_webcam()
 
-        log.info("Capture manager started (screenshot=%s, clip=%s, obs=%s)",
-                    self._config.screenshot_enabled, self._config.clip_enabled,
-                    self._config.obs_enabled)
+        log.info("Capture manager started (screenshot=%s, capture=%s, clip=%s, obs=%s)",
+                    self._config.screenshot_enabled, capture_on,
+                    self._config.clip_enabled, self._config.obs_enabled)
 
     def stop(self) -> None:
         """Stop the capture manager and clean up subscriptions."""
@@ -259,8 +263,8 @@ class CaptureManager:
         if not connected:
             log.warning("OBS connection failed — will retry in background")
 
-        # Start game window polling for replay buffer management
-        if self._config.obs_manage_replay_buffer:
+        # Start game window polling for replay buffer management (clip_enabled gates buffer)
+        if self._config.obs_manage_replay_buffer and self._config.clip_enabled:
             self._start_obs_game_poll()
             # Start replay buffer immediately if game is already running
             if connected and self._frame_distributor.game_hwnd:
@@ -313,8 +317,10 @@ class CaptureManager:
         self._obs_game_poll_timer.start()
 
     def _on_obs_connected(self, _data) -> None:
-        """Handle OBS (re)connection — start replay buffer if game is running."""
+        """Handle OBS (re)connection — start replay buffer if game is running and clipping enabled."""
         if not self._obs_client or not self._config.obs_manage_replay_buffer:
+            return
+        if not self._config.clip_enabled:
             return
         if self._frame_distributor.game_hwnd:
             self._obs_game_was_running = True
@@ -342,9 +348,12 @@ class CaptureManager:
             self._audio_buffer = None
 
     def _stop_audio(self) -> None:
-        if self._audio_buffer:
-            self._audio_buffer.stop()
-            self._audio_buffer = None
+        buf = self._audio_buffer
+        self._audio_buffer = None
+        if buf:
+            threading.Thread(
+                target=buf.stop, daemon=True, name="audio-stop",
+            ).start()
 
     # ------------------------------------------------------------------
     # Microphone
@@ -368,9 +377,12 @@ class CaptureManager:
             self._mic_buffer = None
 
     def _stop_mic(self) -> None:
-        if self._mic_buffer:
-            self._mic_buffer.stop()
-            self._mic_buffer = None
+        buf = self._mic_buffer
+        self._mic_buffer = None
+        if buf:
+            threading.Thread(
+                target=buf.stop, daemon=True, name="mic-stop",
+            ).start()
 
     # ------------------------------------------------------------------
     # Webcam
@@ -396,10 +408,21 @@ class CaptureManager:
             log.warning("Webcam capture unavailable: %s", e)
             self._webcam_capture = None
 
+    def _start_webcam_if_clip_active(self) -> None:
+        """Start webcam proactively only when the clip buffer or keep-ready mode needs it.
+
+        During recording-only usage the webcam is started on demand by
+        _start_recording(), so we do not claim the device unnecessarily.
+        """
+        if self._config.clip_enabled or self._config.clip_webcam_keep_ready:
+            self._start_webcam()
+
     def _release_webcam_if_not_needed(self) -> None:
-        """Stop the webcam unless keep-ready mode wants it to stay running."""
+        """Stop the webcam unless keep-ready mode or active clipping needs it."""
+        if self._config.clip_enabled and self._config.clip_webcam_enabled:
+            return  # clipping needs the webcam warm at all times
         if self._config.clip_webcam_keep_ready and self._config.clip_webcam_enabled:
-            return  # keep running for instant availability
+            return  # explicit keep-ready
         self._stop_webcam()
 
     def _stop_webcam(self) -> None:
@@ -424,6 +447,7 @@ class CaptureManager:
     def _update_config_snapshot(self, cfg) -> None:
         """Update the stored snapshot of buffer-affecting config values."""
         self._prev_obs_enabled = cfg.obs_enabled
+        self._prev_capture_enabled = getattr(cfg, "capture_enabled", False)
         self._prev_clip_enabled = cfg.clip_enabled
         self._prev_clip_fps = cfg.clip_fps
         self._prev_clip_buffer_seconds = cfg.clip_buffer_seconds
@@ -455,10 +479,38 @@ class CaptureManager:
             return
 
         cfg = config
+        capture_on = getattr(cfg, "capture_enabled", False)
+        prev_capture_on = self._prev_capture_enabled
 
-        # --- obs_enabled toggle (requires clip_enabled as master gate) ---
+        # --- capture_enabled toggle (master gate for all capture infrastructure) ---
+        if capture_on != prev_capture_on:
+            if capture_on:
+                if cfg.obs_enabled:
+                    log.info("Video capture enabled — starting OBS mode")
+                    self._start_obs()
+                else:
+                    log.info("Video capture enabled — starting internal capture")
+                    self._start_frame_subscription()
+                    self._start_audio()
+                    self._start_mic()
+                    self._start_webcam_if_clip_active()
+            else:
+                log.info("Video capture disabled — stopping all capture")
+                if self._pending_clip_timer:
+                    self._pending_clip_timer.cancel()
+                    self._pending_clip_timer = None
+                self._stop_obs()
+                self._stop_frame_subscription()
+                self._stop_audio()
+                self._stop_mic()
+                self._release_webcam_if_not_needed()
+                self._frame_buffer.clear()
+            self._update_config_snapshot(config)
+            return
+
+        # --- obs_enabled toggle (requires capture_enabled as master gate) ---
         if cfg.obs_enabled != self._prev_obs_enabled:
-            if cfg.obs_enabled and cfg.clip_enabled:
+            if cfg.obs_enabled and capture_on:
                 log.info("OBS mode enabled — stopping internal capture")
                 if self._pending_clip_timer:
                     self._pending_clip_timer.cancel()
@@ -472,44 +524,18 @@ class CaptureManager:
             else:
                 log.info("OBS mode disabled — stopping OBS client")
                 self._stop_obs()
-                if cfg.clip_enabled:
+                if capture_on:
                     self._start_frame_subscription()
                     self._start_audio()
                     self._start_mic()
-                    self._start_webcam()
+                    self._start_webcam_if_clip_active()
                 elif cfg.clip_webcam_keep_ready and cfg.clip_webcam_enabled:
                     self._start_webcam()
             self._update_config_snapshot(config)
             return
 
-        # --- clip_enabled toggle (master gate for all capture) ---
-        if cfg.clip_enabled != self._prev_clip_enabled:
-            if cfg.clip_enabled:
-                if cfg.obs_enabled:
-                    log.info("Clip recording enabled — starting OBS mode")
-                    self._start_obs()
-                else:
-                    log.info("Clip recording enabled — starting internal capture")
-                    self._start_frame_subscription()
-                    self._start_audio()
-                    self._start_mic()
-                    self._start_webcam()
-            else:
-                log.info("Clip recording disabled — stopping all capture")
-                if self._pending_clip_timer:
-                    self._pending_clip_timer.cancel()
-                    self._pending_clip_timer = None
-                self._stop_obs()
-                self._stop_frame_subscription()
-                self._stop_audio()
-                self._stop_mic()
-                self._release_webcam_if_not_needed()
-                self._frame_buffer.clear()
-            self._update_config_snapshot(config)
-            return
-
         # If OBS mode is active, handle OBS-specific config changes
-        if cfg.clip_enabled and cfg.obs_enabled:
+        if capture_on and cfg.obs_enabled:
             if self._obs_client and self._obs_client.connected:
                 new_dir = cfg.clip_directory
                 if new_dir:
@@ -519,20 +545,23 @@ class CaptureManager:
                         cfg.clip_buffer_seconds,
                     )
 
-            # Replay buffer management toggled
-            if cfg.obs_manage_replay_buffer and not self._obs_game_poll_timer:
+            # Replay buffer management toggled (clip_enabled gates the replay buffer)
+            want_replay_mgmt = cfg.obs_manage_replay_buffer and cfg.clip_enabled
+            if want_replay_mgmt and not self._obs_game_poll_timer:
                 self._start_obs_game_poll()
                 if self._obs_client and self._obs_client.connected \
                         and self._frame_distributor.game_hwnd:
                     self._obs_client.start_replay_buffer()
-            elif not cfg.obs_manage_replay_buffer and self._obs_game_poll_timer:
+            elif not want_replay_mgmt and self._obs_game_poll_timer:
                 self._stop_obs_game_poll()
+                if self._obs_client:
+                    self._obs_client.stop_replay_buffer()
 
             self._update_config_snapshot(config)
             return
 
-        # If clips are not enabled, handle keep-ready webcam changes only
-        if not cfg.clip_enabled:
+        # If capture is not enabled, handle keep-ready webcam changes only
+        if not capture_on:
             self._handle_webcam_keep_ready_change(cfg)
             self._update_config_snapshot(config)
             return
@@ -553,14 +582,24 @@ class CaptureManager:
             self._start_frame_subscription()
 
         # --- Webcam ---
+        clip_toggled = cfg.clip_enabled != self._prev_clip_enabled
         webcam_toggled = cfg.clip_webcam_enabled != self._prev_clip_webcam_enabled
         webcam_dev_changed = cfg.clip_webcam_device != self._prev_clip_webcam_device
         webcam_fps_changed = cfg.clip_webcam_fps != self._prev_clip_webcam_fps
 
-        if webcam_toggled:
+        if clip_toggled and cfg.clip_webcam_enabled:
+            # clip_enabled changed: re-evaluate whether webcam should be running
+            if cfg.clip_enabled:
+                log.info("Clipping enabled — starting webcam for clip buffer")
+                if not self._webcam_capture:
+                    self._start_webcam()
+            else:
+                log.info("Clipping disabled — releasing webcam if not keep-ready")
+                self._release_webcam_if_not_needed()
+        elif webcam_toggled:
             if cfg.clip_webcam_enabled:
                 log.info("Webcam enabled")
-                self._start_webcam()
+                self._start_webcam_if_clip_active()
             else:
                 log.info("Webcam disabled")
                 self._stop_webcam()
@@ -714,8 +753,8 @@ class CaptureManager:
                     args=(event,),
                 ).start()
 
-        # Video clip (internal or OBS — clip_enabled is the master gate)
-        if cfg.clip_enabled and cfg.clip_auto_on_global:
+        # Video clip (requires capture infrastructure + clip_enabled for the clipping feature)
+        if getattr(cfg, "capture_enabled", False) and cfg.clip_enabled and cfg.clip_auto_on_global:
             if self._check_conditions(
                 event,
                 min_ped=cfg.clip_min_ped,
@@ -762,7 +801,7 @@ class CaptureManager:
             else:
                 self._save_manual_clip()
         elif action == "toggle_recording":
-            if not self._config.clip_enabled:
+            if not getattr(self._config, "capture_enabled", False):
                 return
             if self._config.obs_enabled:
                 self._toggle_recording_obs()
@@ -1146,7 +1185,8 @@ class CaptureManager:
 
     @property
     def is_recording(self) -> bool:
-        if self._obs_client and self._config.clip_enabled and self._config.obs_enabled:
+        if self._obs_client and getattr(self._config, "capture_enabled", False) \
+                and self._config.obs_enabled:
             return self._obs_client.is_recording()
         return self._recording
 
@@ -1372,12 +1412,8 @@ class CaptureManager:
         log.info("Recording stopped (%.1fs, %d frames) — finalizing...",
                  rec_end - self._rec_start, self._rec_frame_count)
 
-        # If clips are disabled, tear down the subscription we started
-        if not self._config.clip_enabled:
-            self._stop_frame_subscription()
-            self._stop_audio()
-            self._stop_mic()
-            self._release_webcam_if_not_needed()
+        # Capture infrastructure stays up while capture_enabled is on
+        # (it was started by start(), not by _start_recording)
 
     def _emergency_stop_recording(self) -> None:
         """Clean up recording after a pipe break (called from background thread).
@@ -1412,11 +1448,7 @@ class CaptureManager:
         log.info("Recording emergency stop (%.1fs, %d frames) — finalizing...",
                  rec_end - self._rec_start, self._rec_frame_count)
 
-        if not self._config.clip_enabled:
-            self._stop_frame_subscription()
-            self._stop_audio()
-            self._stop_mic()
-            self._release_webcam_if_not_needed()
+        # Capture infrastructure stays up while capture_enabled is on
 
     def _write_recording_frame(self, frame_bgr: np.ndarray, timestamp: float) -> None:
         """Process a frame and queue it for the writer thread.

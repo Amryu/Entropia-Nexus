@@ -21,6 +21,7 @@ from ..core.constants import (
     EVENT_MARKET_PRICE_DEBUG, EVENT_MARKET_PRICE_LOST,
     EVENT_PLAYER_STATUS_UPDATE, EVENT_PLAYER_STATUS_LOST,
     EVENT_SKILLS_TEMPLATE_DEBUG,
+    EVENT_RADAR_COORDINATES, EVENT_RADAR_LOST, EVENT_RADAR_DEBUG,
     GAME_TITLE_PREFIX,
 )
 from ..core.logger import get_logger
@@ -89,6 +90,13 @@ PS_ROI_BUFF_SMALL = QColor(150, 100, 255, 140) # Light purple for small buff bar
 PS_ROI_TOOL_NAME = QColor(255, 255, 100, 140)  # Yellow for tool name
 PS_LABEL_FONT = QFont("Consolas", 7)
 
+# Radar overlay colors
+RADAR_COLOR      = QColor(255, 165,   0, 200)  # Orange border (radar circle)
+RADAR_FILL       = QColor(255, 165,   0,  18)  # Faint orange fill
+RADAR_WARN       = QColor(255,  80,  80, 220)  # Red for recalibration warning
+RADAR_LABEL_FONT = QFont("Consolas", 7)
+RADAR_COORD_FONT = QFont("Consolas", 9, QFont.Weight.Bold)
+
 
 class ScanHighlightOverlay(QWidget):
     """Click-through Qt overlay that highlights scanned skill rows.
@@ -114,6 +122,9 @@ class ScanHighlightOverlay(QWidget):
     _skills_template_signal = pyqtSignal(object)
     _player_status_signal = pyqtSignal(object)
     _player_status_lost_signal = pyqtSignal()
+    _radar_signal = pyqtSignal(object)
+    _radar_lost_signal = pyqtSignal()
+    _radar_debug_signal = pyqtSignal(object)
 
     def __init__(self, *, config: AppConfig, event_bus: EventBus,
                  manager: OverlayManager | None = None):
@@ -143,6 +154,10 @@ class ScanHighlightOverlay(QWidget):
 
         # State — player status
         self._player_status_data: dict | None = None  # Last player status update
+
+        # State — radar
+        self._radar_data: dict | None = None           # Last radar coordinate update
+        self._radar_needs_recal: bool = False          # Recalibration requested
 
         # Qt window setup: full-screen, frameless, transparent, always-on-top
         self.setWindowFlags(
@@ -196,6 +211,9 @@ class ScanHighlightOverlay(QWidget):
         self._skills_template_signal.connect(self._on_skills_template_debug)
         self._player_status_signal.connect(self._on_player_status_update)
         self._player_status_lost_signal.connect(self._on_player_status_lost)
+        self._radar_signal.connect(self._on_radar_update)
+        self._radar_lost_signal.connect(self._on_radar_lost)
+        self._radar_debug_signal.connect(self._on_radar_debug)
 
         # Subscribe to EventBus (store references for unsubscribe)
         self._cb_regions = lambda d: self._regions_signal.emit(d)
@@ -211,6 +229,9 @@ class ScanHighlightOverlay(QWidget):
         self._cb_skills_template = lambda d: self._skills_template_signal.emit(d)
         self._cb_player_status = lambda d: self._player_status_signal.emit(d)
         self._cb_player_status_lost = lambda d: self._player_status_lost_signal.emit()
+        self._cb_radar = lambda d: self._radar_signal.emit(d)
+        self._cb_radar_lost = lambda d: self._radar_lost_signal.emit()
+        self._cb_radar_debug = lambda d: self._radar_debug_signal.emit(d)
         event_bus.subscribe(EVENT_DEBUG_REGIONS, self._cb_regions)
         event_bus.subscribe(EVENT_DEBUG_ROW, self._cb_row)
         event_bus.subscribe(EVENT_OCR_PAGE_CHANGED, self._cb_page)
@@ -224,6 +245,9 @@ class ScanHighlightOverlay(QWidget):
         event_bus.subscribe(EVENT_SKILLS_TEMPLATE_DEBUG, self._cb_skills_template)
         event_bus.subscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_player_status)
         event_bus.subscribe(EVENT_PLAYER_STATUS_LOST, self._cb_player_status_lost)
+        event_bus.subscribe(EVENT_RADAR_COORDINATES, self._cb_radar)
+        event_bus.subscribe(EVENT_RADAR_LOST, self._cb_radar_lost)
+        event_bus.subscribe(EVENT_RADAR_DEBUG, self._cb_radar_debug)
 
         # Focus polling timer
         self._focus_timer = QTimer(self)
@@ -311,7 +335,8 @@ class ScanHighlightOverlay(QWidget):
                           or self._target_lock_data is not None
                           or len(self._market_price_windows) > 0
                           or self._player_status_data is not None
-                          or self._skills_template_data is not None)
+                          or self._skills_template_data is not None
+                          or self._radar_data is not None)
             if focused and has_content:
                 self.show()
             elif not focused:
@@ -368,13 +393,17 @@ class ScanHighlightOverlay(QWidget):
             self._market_price_windows.clear()
         if not getattr(config, "player_status_enabled", True):
             self._player_status_data = None
+        if not getattr(config, "radar_enabled", True):
+            self._radar_data = None
+            self._radar_needs_recal = False
 
         self.update()
         # Hide if nothing to show
         if (self._regions is None and self._target_lock_data is None
                 and len(self._market_price_windows) == 0
                 and self._player_status_data is None
-                and self._skills_template_data is None):
+                and self._skills_template_data is None
+                and self._radar_data is None):
             self.hide()
 
     def _on_target_lock_update(self, data: dict) -> None:
@@ -458,6 +487,32 @@ class ScanHighlightOverlay(QWidget):
                 and len(self._market_price_windows) == 0):
             self.hide()
 
+    def _on_radar_update(self, data: dict) -> None:
+        """Radar coordinates received — store and repaint."""
+        self._radar_data = data
+        self._radar_needs_recal = False
+        self._update_game_origin(data)
+        if self._game_focused:
+            if not self.isVisible():
+                self.show()
+            self.update()
+
+    def _on_radar_lost(self) -> None:
+        """Radar circle lost — clear and repaint."""
+        self._radar_data = None
+        self._radar_needs_recal = False
+        self.update()
+        if (self._regions is None and self._target_lock_data is None
+                and len(self._market_price_windows) == 0
+                and self._player_status_data is None):
+            self.hide()
+
+    def _on_radar_debug(self, data: dict) -> None:
+        """Radar debug event — handle recalibration request."""
+        if data.get("needs_recalibrate"):
+            self._radar_needs_recal = True
+            self.update()
+
     def _on_complete(self) -> None:
         """Scan complete — auto-hide after a delay."""
         if self._hide_timer:
@@ -511,12 +566,13 @@ class ScanHighlightOverlay(QWidget):
         painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
         painter.end()
 
-        has_scan = self._regions is not None
-        has_lock = self._target_lock_data is not None
-        has_mp = len(self._market_price_windows) > 0
-        has_ps = self._player_status_data is not None
-        has_st = self._skills_template_data is not None
-        if not has_scan and not has_lock and not has_mp and not has_ps and not has_st:
+        has_scan  = self._regions is not None
+        has_lock  = self._target_lock_data is not None
+        has_mp    = len(self._market_price_windows) > 0
+        has_ps    = self._player_status_data is not None
+        has_st    = self._skills_template_data is not None
+        has_radar = self._radar_data is not None
+        if not has_scan and not has_lock and not has_mp and not has_ps and not has_st and not has_radar:
             return
 
         painter = QPainter(self)
@@ -546,6 +602,10 @@ class ScanHighlightOverlay(QWidget):
         # Draw player status indicator
         if has_ps:
             self._paint_player_status(painter)
+
+        # Draw radar circle and coordinates
+        if has_radar:
+            self._paint_radar(painter)
 
         painter.end()
 
@@ -987,6 +1047,47 @@ class ScanHighlightOverlay(QWidget):
             painter.setFont(PS_LABEL_FONT)
             painter.drawText(rx + 2, ry - 2, label)
 
+    # ── Radar ────────────────────────────────────────────────────────
+
+    def _paint_radar(self, painter: QPainter) -> None:
+        """Draw radar circle outline, coordinates, and optional warnings."""
+        data = self._radar_data
+        if not data:
+            return
+
+        cx = data.get("circle_cx", 0)
+        cy = data.get("circle_cy", 0)
+        r  = data.get("circle_r",  0)
+        if r <= 0:
+            return
+
+        # Radar circle
+        painter.setPen(QPen(RADAR_COLOR, 2))
+        painter.setBrush(QBrush(RADAR_FILL))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.drawEllipse(cx - r, cy - r, 2 * r, 2 * r)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+        # Coordinates below circle
+        lon  = data.get("lon", 0)
+        lat  = data.get("lat", 0)
+        conf = data.get("confidence", 0.0)
+        painter.setFont(RADAR_COORD_FONT)
+        painter.setPen(QPen(RADAR_COLOR))
+        painter.drawText(cx - r, cy + r + 4, f"{lon}, {lat}")
+
+        # Debug line: confidence + scale
+        if self._debug:
+            scale = data.get("scale", 0.0)
+            painter.setFont(RADAR_LABEL_FONT)
+            painter.drawText(cx - r, cy + r + 20, f"conf={conf:.2f} scale={scale:.2f}")
+
+        # Recalibration warning above circle
+        if self._radar_needs_recal:
+            painter.setFont(RADAR_LABEL_FONT)
+            painter.setPen(QPen(RADAR_WARN))
+            painter.drawText(cx - r, cy - r - 4, "RADAR MOVED — press recalibrate")
+
     # ── Cleanup ────────────────────────────────────────────────────────
 
     def stop(self) -> None:
@@ -1007,4 +1108,7 @@ class ScanHighlightOverlay(QWidget):
         self._event_bus.unsubscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_player_status)
         self._event_bus.unsubscribe(EVENT_PLAYER_STATUS_LOST, self._cb_player_status_lost)
         self._event_bus.unsubscribe(EVENT_SKILLS_TEMPLATE_DEBUG, self._cb_skills_template)
+        self._event_bus.unsubscribe(EVENT_RADAR_COORDINATES, self._cb_radar)
+        self._event_bus.unsubscribe(EVENT_RADAR_LOST, self._cb_radar_lost)
+        self._event_bus.unsubscribe(EVENT_RADAR_DEBUG, self._cb_radar_debug)
         self.close()

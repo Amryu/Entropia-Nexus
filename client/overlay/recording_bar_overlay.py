@@ -291,6 +291,12 @@ class RecordingBarOverlay(OverlayWidget):
             self._event_bus.publish(EVENT_HOTKEY_TRIGGERED, "toggle_recording")
             return
 
+        capture_on = getattr(self._config, "capture_enabled", False)
+        if not capture_on and not self._config.obs_enabled:
+            # Neither mode active — open settings so user can enable one
+            self.open_settings.emit()
+            return
+
         if self._config.obs_enabled:
             # OBS mode — no media/webcam checks needed
             self._do_start_recording()
@@ -324,20 +330,38 @@ class RecordingBarOverlay(OverlayWidget):
     # ------------------------------------------------------------------
 
     def _update_clip_button_state(self):
-        """Update clip button appearance based on clip_enabled / obs_enabled."""
-        enabled = self._config.clip_enabled or self._config.obs_enabled
-        if enabled:
+        """Update clip and record button appearances based on enabled state."""
+        clip_active = self._config.clip_enabled or self._config.obs_enabled
+        capture_on = getattr(self._config, "capture_enabled", False)
+        capture_active = capture_on or self._config.obs_enabled
+
+        # Clip button
+        if clip_active:
             tip = "Save clip (OBS)" if self._config.obs_enabled else "Save clip"
             self._clip_btn.setToolTip(tip)
             self._clip_btn.setStyleSheet(_BTN_STYLE)
-            # Start pulsing accent to indicate buffer is active
-            self._start_pulse_if_needed()
+            # Constant blue glow when buffer is active; pulse only while encoding
             self._set_clip_icon_bright(True)
+            if self._encoding_pct > 0:
+                self._start_pulse_if_needed()
+            else:
+                self._stop_pulse_if_unneeded()
         else:
             self._clip_btn.setIcon(svg_icon(CLIP, DISABLED_COLOR, 16))
             self._clip_btn.setToolTip("Clip buffer disabled — click to configure")
             self._clip_btn.setStyleSheet(_BTN_DISABLED_STYLE)
             self._stop_pulse_if_unneeded()
+
+        # Record button
+        if not self._capture_manager.is_recording:
+            if capture_active:
+                self._rec_btn.setIcon(svg_icon(RECORD_CIRCLE, TEXT_COLOR, 16))
+                self._rec_btn.setToolTip("Start recording")
+                self._rec_btn.setStyleSheet(_BTN_STYLE)
+            else:
+                self._rec_btn.setIcon(svg_icon(RECORD_CIRCLE, DISABLED_COLOR, 16))
+                self._rec_btn.setToolTip("Video capture disabled — click to configure")
+                self._rec_btn.setStyleSheet(_BTN_DISABLED_STYLE)
 
     def _set_clip_icon_bright(self, bright: bool):
         """Set clip icon to accent (bright) or dim."""
@@ -345,20 +369,20 @@ class RecordingBarOverlay(OverlayWidget):
         self._clip_btn.setIcon(svg_icon(CLIP, color, 16))
 
     # ------------------------------------------------------------------
-    # Pulse animation (shared timer for record + clip icons)
+    # Pulse animation (for record icon while recording, clip icon while encoding)
     # ------------------------------------------------------------------
 
     def _start_pulse_if_needed(self):
-        """Start the pulse timer if recording is active or clip buffer is on."""
+        """Start the pulse timer if recording is active or clip is encoding."""
         if not self._pulse_timer.isActive():
             self._pulse_bright = True
             self._pulse_timer.start()
 
     def _stop_pulse_if_unneeded(self):
-        """Stop the pulse timer if neither recording nor clip buffer needs it."""
+        """Stop the pulse timer if neither recording nor clip encoding is active."""
         is_recording = self._capture_manager.is_recording
-        clip_active = self._config.clip_enabled or self._config.obs_enabled
-        if not is_recording and not clip_active:
+        is_encoding = self._encoding_pct > 0
+        if not is_recording and not is_encoding:
             self._pulse_timer.stop()
 
     def _on_pulse_tick(self):
@@ -370,8 +394,8 @@ class RecordingBarOverlay(OverlayWidget):
             color = RECORD_RED if self._pulse_bright else "#8b1a1a"
             self._rec_btn.setIcon(svg_icon(RECORD_CIRCLE, color, 16))
 
-        # Pulse clip icon accent while buffer is active
-        if self._config.clip_enabled or self._config.obs_enabled:
+        # Pulse clip icon while encoding (constant blue otherwise)
+        if self._encoding_pct > 0:
             self._set_clip_icon_bright(self._pulse_bright)
 
     # ------------------------------------------------------------------
@@ -437,7 +461,7 @@ class RecordingBarOverlay(OverlayWidget):
         self._last_remaining_text = ""
         self._idle_timer.stop()
         self._rec_timer.start()
-        self._start_pulse_if_needed()
+        self._start_pulse_if_needed()  # pulse for record icon
         self._update_rec_display()
 
         # Auto-show the bar when recording starts
@@ -446,12 +470,11 @@ class RecordingBarOverlay(OverlayWidget):
             self.raise_()
 
     def _on_recording_stopped(self, data):
-        self._rec_btn.setIcon(svg_icon(RECORD_CIRCLE, TEXT_COLOR, 16))
-        self._rec_btn.setToolTip("Start recording")
-        self._rec_btn.setStyleSheet(_BTN_STYLE)
         self._rec_timer.stop()
         self._last_remaining_text = ""
         self._stop_pulse_if_unneeded()
+        # Restore record button to correct state based on capture_enabled
+        self._update_clip_button_state()
         # Restore idle display and restart idle timer
         self._update_idle_display()
         self._idle_timer.start()
@@ -553,18 +576,24 @@ class RecordingBarOverlay(OverlayWidget):
     # ------------------------------------------------------------------
 
     def _on_encoding_started(self, data):
-        self._encoding_pct = 0
+        self._encoding_pct = 1  # non-zero to trigger pulse
+        self._start_pulse_if_needed()
         self._update_idle_display()
 
     def _on_encoding_progress(self, data):
         total = data.get("total", 1)
         written = data.get("written", 0)
-        self._encoding_pct = min(100, int(written * 100 / total)) if total else 0
+        self._encoding_pct = min(100, int(written * 100 / total)) if total else 1
         if not self._capture_manager.is_recording:
             self._update_idle_display()
 
     def _on_encoding_done(self, data):
         self._encoding_pct = 0
+        self._stop_pulse_if_unneeded()
+        # Restore steady blue if clip buffer is still active
+        clip_active = self._config.clip_enabled or self._config.obs_enabled
+        if clip_active:
+            self._set_clip_icon_bright(True)
         if not self._capture_manager.is_recording:
             self._update_idle_display()
 
@@ -581,8 +610,8 @@ class RecordingBarOverlay(OverlayWidget):
         self._update_idle_display()
 
     def _on_config_changed(self, config):
-        """React to config changes — update clip button state."""
-        self._update_clip_button_state()
+        """React to config changes — update button states."""
+        self._update_clip_button_state()  # updates both clip and record buttons
         # Refresh idle display (bitrate/resolution may have changed)
         if not self._capture_manager.is_recording:
             self._update_idle_display()

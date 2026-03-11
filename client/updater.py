@@ -315,7 +315,7 @@ class UpdateChecker:
 
         # Skip optional groups the user hasn't enabled to save bandwidth
         self._skip_groups = set()
-        if not getattr(self._config, "clip_enabled", False):
+        if not getattr(self._config, "capture_enabled", False):
             self._skip_groups.add("video")
 
         self._diff = compare_manifests(

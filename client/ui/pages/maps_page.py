@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QFontMetrics
 
 import requests
 
@@ -76,7 +76,7 @@ _LAYER_DEFS: list[tuple[str, str, set[str], bool]] = [
     ("LA",  "#4ade80", {"LandArea"}, True),
     ("MA",  "#facc15", {"MobArea", "Creature"}, False),
     ("PVP", "#ef4444", {"PvpArea", "PvpLootArea"}, False),
-    ("WE",  "#da70d6", {"WaveEvent"}, False),
+    ("WE",  "#da70d6", {"WaveEventArea"}, False),
     ("OTH", "#a78bfa", {"ZoneArea", "EventArea", "OtherArea", "OtherLocation"}, False),
 ]
 
@@ -346,6 +346,49 @@ _MAX_SEARCH_RESULTS = 20
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+class _ElidedLabel(QLabel):
+    """QLabel that truncates text with '…' when it doesn't fit its width."""
+
+    def __init__(self, text: str = '', parent=None):
+        super().__init__(parent)
+        self._full_text = text
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        super().setText(text)
+
+    def setText(self, text: str):
+        self._full_text = text
+        self._elide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self):
+        elided = QFontMetrics(self.font()).elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, max(self.width(), 1)
+        )
+        super().setText(elided)
+
+
+class _ClickableElidedLabel(_ElidedLabel):
+    """_ElidedLabel that emits a clicked signal on left mouse press."""
+    clicked = pyqtSignal()
+
+    def __init__(self, text: str = '', parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+# ---------------------------------------------------------------------------
 # _SearchResultsList
 # ---------------------------------------------------------------------------
 
@@ -468,8 +511,12 @@ class _SearchResultsList(QWidget):
             self._rows.append(row)
 
         if results:
-            max_h = min(len(results) * 28 + 8, 400)
-            self.setFixedHeight(max_h)
+            desired_h = min(len(results) * 28 + 8, 400)
+            # Clamp to available vertical space below the dropdown
+            if self.parent():
+                avail = self.parent().height() - self.pos().y() - 16
+                desired_h = max(min(desired_h, avail), 28)
+            self.setFixedHeight(desired_h)
             self.show()
             self.raise_()
         else:
@@ -736,7 +783,7 @@ class _LocationInfoPanel(QWidget):
                 row_l.setContentsMargins(8, 0, 8, 0)
                 row_l.setSpacing(4)
 
-                name_part = QLabel(tp_name)
+                name_part = _ElidedLabel(tp_name)
                 name_part.setStyleSheet(
                     f"color: {TEXT}; font-size: 12px; background: transparent; border: none;"
                 )
@@ -806,31 +853,26 @@ class _LocationInfoPanel(QWidget):
                 for entry in mob_entries:
                     mob_row = QWidget()
                     mob_row.setStyleSheet("background: transparent;")
-                    mob_row_l = QHBoxLayout(mob_row)
+                    mob_row_l = QVBoxLayout(mob_row)
                     mob_row_l.setContentsMargins(0, 2, 0, 2)
-                    mob_row_l.setSpacing(4)
+                    mob_row_l.setSpacing(1)
 
-                    mob_link = QPushButton(entry["mob"])
-                    mob_link.setCursor(Qt.CursorShape.PointingHandCursor)
+                    mob_link = _ClickableElidedLabel(entry["mob"])
                     mob_link.setStyleSheet(
-                        f"QPushButton {{ color: {ACCENT}; font-size: 12px;"
-                        f" background: transparent; border: none; padding: 0;"
-                        f" text-align: left; }}"
-                        f"QPushButton:hover {{ color: {ACCENT_HOVER}; }}"
+                        f"color: {ACCENT}; font-size: 12px; background: transparent;"
                     )
                     mob_link.clicked.connect(
-                        lambda _, m=entry["mob"]: self._navigate_to_mob(m)
+                        lambda m=entry["mob"]: self._navigate_to_mob(m)
                     )
                     mob_row_l.addWidget(mob_link)
 
                     if entry["display"]:
-                        mat_lbl = QLabel(f"- {entry['display']}")
+                        mat_lbl = _ElidedLabel(entry["display"])
                         mat_lbl.setStyleSheet(
-                            f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;"
+                            f"color: {TEXT_MUTED}; font-size: 11px; background: transparent;"
                         )
                         mob_row_l.addWidget(mat_lbl)
 
-                    mob_row_l.addStretch()
                     self._layout.addWidget(mob_row)
 
             if notes:
@@ -927,6 +969,7 @@ class _LocationInfoPanel(QWidget):
         right_l = QVBoxLayout(right)
         right_l.setContentsMargins(0, 0, 0, 0)
         right_l.setSpacing(1)
+        right_l.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         if boss_label:
             badge = QLabel(boss_label)
@@ -966,15 +1009,17 @@ class _LocationInfoPanel(QWidget):
                 background: rgba(255, 255, 255, 25);
                 border-radius: 3px;
                 border: none;
+                min-height: 7px;
+                max-height: 7px;
             }}
             QProgressBar::chunk {{
                 background: {chunk_bg};
                 border-radius: 3px;
             }}
         """)
-        right_l.addWidget(bar)
+        right_l.addWidget(bar, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        row_l.addWidget(right, 0)
+        row_l.addWidget(right, 0, Qt.AlignmentFlag.AlignVCenter)
         self._layout.addWidget(row)
 
     @staticmethod
@@ -1119,6 +1164,7 @@ class MapsPage(QWidget):
         self._info_panel.teleporter_hovered.connect(self._on_teleporter_hovered)
         self._info_panel.mob_clicked.connect(self._on_mob_clicked)
         self._selected_location: dict | None = None
+        self._search_keyboard_loc: dict | None = None  # last result navigated to via keyboard
 
         # --- Signals ---
         self._planet_combo.currentIndexChanged.connect(self._on_planet_selected)
@@ -1153,6 +1199,11 @@ class MapsPage(QWidget):
         drop_y = margin + self._top_overlay.height() + 4
         self._search_dropdown.move(drop_x, drop_y)
         self._search_dropdown.setFixedWidth(self._top_overlay.width())
+        # Clamp dropdown height if it's open and would overflow the window
+        if self._search_dropdown.isVisible():
+            avail_h = max(self.height() - drop_y - 16, 28)
+            if self._search_dropdown.height() > avail_h:
+                self._search_dropdown.setFixedHeight(avail_h)
         # Info panel on right side — match search panel width
         panel_w = self._top_overlay.width()
         self._info_panel.setFixedWidth(panel_w)
@@ -1400,6 +1451,7 @@ class MapsPage(QWidget):
                     self._search_dropdown.select_index(idx + 1, scroll=True)
                     result = self._search_dropdown.current_result()
                     if result:
+                        self._search_keyboard_loc = result
                         self._canvas.set_hovered(result.get("Id"))
                         self._canvas.pan_to(result)
                 return True
@@ -1409,6 +1461,7 @@ class MapsPage(QWidget):
                     self._search_dropdown.select_index(idx - 1, scroll=True)
                     result = self._search_dropdown.current_result()
                     if result:
+                        self._search_keyboard_loc = result
                         self._canvas.set_hovered(result.get("Id"))
                         self._canvas.pan_to(result)
                 return True
@@ -1448,6 +1501,7 @@ class MapsPage(QWidget):
 
     def _clear_search(self):
         """Clear the search input (triggers _on_search_changed)."""
+        self._search_keyboard_loc = None
         self._search_input.clear()
         self._search_input.setFocus()
 
@@ -1480,7 +1534,8 @@ class MapsPage(QWidget):
         ids = {loc["Id"] for loc in results}
         self._canvas.set_search_results(ids)
 
-        # Update dropdown
+        # Update dropdown (new query resets keyboard selection)
+        self._search_keyboard_loc = None
         self._search_dropdown.set_results(results)
         self._position_overlays()
 
@@ -1499,6 +1554,10 @@ class MapsPage(QWidget):
             self._canvas.pan_to(loc)
         else:
             self._canvas.set_hovered(None)
+            # Snap back to the last keyboard-selected result, or the previously selected location
+            snap = self._search_keyboard_loc or self._selected_location
+            if snap:
+                self._canvas.pan_to(snap)
 
     def _on_canvas_location_hovered(self, loc: object):
         """When hovering a location on the map, highlight the matching search result."""

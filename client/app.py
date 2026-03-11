@@ -333,6 +333,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     _notifications_overlay = None
     _recording_bar = None
     _gallery_overlay = None
+    _custom_grid_overlay = None
 
     # Pre-import detail_overlay during splash — compiling this large module
     # takes ~0.6s and would freeze the main thread if deferred to _create_overlays.
@@ -626,6 +627,29 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             )
             return _gallery_overlay
 
+        def _ensure_custom_grid_overlay():
+            nonlocal _custom_grid_overlay
+            if _custom_grid_overlay is not None:
+                return _custom_grid_overlay
+            from .overlay.custom_grid_overlay import CustomGridOverlay
+            _custom_grid_overlay = CustomGridOverlay(
+                config=config, config_path=config_path,
+                event_bus=event_bus,
+                data_client=data_client,
+                exchange_store=_exchange_store,
+                hunt_tracker=None,
+                manager=overlay_manager,
+            )
+            return _custom_grid_overlay
+
+        def _toggle_custom_grid_overlay():
+            overlay = _ensure_custom_grid_overlay()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
+            else:
+                overlay.set_wants_visible(False)
+
         def _toggle_recording_bar():
             overlay = _ensure_recording_bar()
             if not overlay.isVisible():
@@ -827,6 +851,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     _toggle_recording_bar()
                 elif action == "gallery":
                     _toggle_gallery_overlay()
+                elif action == "custom_grid":
+                    _toggle_custom_grid_overlay()
 
             _search_overlay.menu_action.connect(_on_search_menu_action)
 
