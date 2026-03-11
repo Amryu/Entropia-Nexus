@@ -1178,10 +1178,11 @@ class ProfileOverlayWidget(OverlayWidget):
         layout.setContentsMargins(4, 3, 4, 3)
         layout.setSpacing(1)
 
-        # Top line: item name + markup
+        # Top line: item name (with qty suffix) + markup
         top = QHBoxLayout()
         top.setSpacing(6)
-        name_lbl = QLabel(name)
+        display_name = f"{name}  x{qty}" if qty > 1 else name
+        name_lbl = QLabel(display_name)
         clickable = item_id is not None
         color = ACCENT if clickable else TEXT_COLOR
         name_lbl.setStyleSheet(
@@ -1192,17 +1193,13 @@ class ProfileOverlayWidget(OverlayWidget):
             name_lbl.mousePressEvent = lambda _ev, iid=item_id: self.open_exchange.emit(iid)
         top.addWidget(name_lbl, 1)
 
-        # Right side: quantity + markup
-        right_parts = []
-        if qty > 1:
-            right_parts.append(f"x{qty}")
-        right_parts.append(f"{markup}%")
-        right_lbl = QLabel("  ".join(right_parts))
-        right_lbl.setStyleSheet(
+        # Markup only (quantity moved to name)
+        mu_lbl = QLabel(f"{markup}%")
+        mu_lbl.setStyleSheet(
             f"color: {TEXT_COLOR}; font-size: 11px; background: transparent;"
         )
-        right_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        top.addWidget(right_lbl)
+        mu_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        top.addWidget(mu_lbl)
         layout.addLayout(top)
 
         # Bottom line: type + planet + status

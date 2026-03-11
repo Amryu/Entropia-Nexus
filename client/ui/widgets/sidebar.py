@@ -2,9 +2,9 @@
 
 import requests
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QStyleOption, QStyle
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QStyleOption, QStyle
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QThread
-from PyQt6.QtGui import QPixmap, QPainter, QPainterPath
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 
 from ..theme import (
     SIDEBAR_WIDTH, SIDEBAR_INDICATOR_WIDTH,
@@ -186,6 +186,7 @@ class IconSidebar(QWidget):
 
     page_changed = pyqtSignal(int)
     notification_clicked = pyqtSignal()
+    profile_clicked = pyqtSignal()
 
     def __init__(self, *, signals=None, config=None, parent=None):
         super().__init__(parent)
@@ -226,14 +227,29 @@ class IconSidebar(QWidget):
         self._buttons.append(settings_btn)
         self._icon_data.append(SETTINGS_ENTRY[0])
 
-        # User avatar (below settings)
-        self._avatar_label = QLabel()
-        self._avatar_label.setFixedSize(SIDEBAR_WIDTH, SIDEBAR_WIDTH)
-        self._avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._avatar_label.setToolTip("Not logged in")
-        self._avatar_label.setStyleSheet("background: transparent; border: none;")
-        self._avatar_label.hide()
-        layout.addWidget(self._avatar_label)
+        # User avatar (below settings) — clickable to open profile
+        self._avatar_btn = QPushButton()
+        self._avatar_btn.setFixedSize(SIDEBAR_WIDTH, SIDEBAR_WIDTH)
+        self._avatar_btn.setToolTip("Not logged in")
+        self._avatar_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
+                min-width: {SIDEBAR_WIDTH}px;
+                max-width: {SIDEBAR_WIDTH}px;
+                min-height: {SIDEBAR_WIDTH}px;
+                max-height: {SIDEBAR_WIDTH}px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {HOVER};
+            }}
+        """)
+        self._avatar_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._avatar_btn.clicked.connect(self._on_avatar_clicked)
+        self._avatar_btn.hide()
+        layout.addWidget(self._avatar_btn)
 
         # Initial active state
         self._apply_styles()
@@ -280,17 +296,17 @@ class IconSidebar(QWidget):
         if state.authenticated and state.user_id:
             # Show fallback icon while loading
             fallback = svg_pixmap(USER, TEXT_MUTED, AVATAR_SIZE)
-            self._avatar_label.setPixmap(_make_round_pixmap(fallback, AVATAR_SIZE))
-            self._avatar_label.setToolTip(state.username or "User")
-            self._avatar_label.show()
+            self._set_avatar_pixmap(_make_round_pixmap(fallback, AVATAR_SIZE))
+            self._avatar_btn.setToolTip(state.username or "User")
+            self._avatar_btn.show()
             # Start background download
             self._load_avatar(
                 str(state.user_id),
                 state.avatar_url,  # Discord avatar hash
             )
         else:
-            self._avatar_label.hide()
-            self._avatar_label.setToolTip("Not logged in")
+            self._avatar_btn.hide()
+            self._avatar_btn.setToolTip("Not logged in")
 
     def _load_avatar(self, user_id: str, avatar_hash: str | None):
         if self._avatar_loader and self._avatar_loader.isRunning():
@@ -302,11 +318,20 @@ class IconSidebar(QWidget):
         self._avatar_loader.finished.connect(self._on_avatar_loaded)
         self._avatar_loader.start()
 
+    def _on_avatar_clicked(self):
+        """Avatar button clicked — open own profile."""
+        self.profile_clicked.emit()
+
+    def _set_avatar_pixmap(self, pixmap: QPixmap):
+        """Set the avatar button icon from a pixmap."""
+        self._avatar_btn.setIcon(QIcon(pixmap))
+        self._avatar_btn.setIconSize(QSize(AVATAR_SIZE, AVATAR_SIZE))
+
     def _on_avatar_loaded(self, pixmap: QPixmap):
         if pixmap.isNull():
             # Keep the SVG fallback already set
             return
-        self._avatar_label.setPixmap(_make_round_pixmap(pixmap, AVATAR_SIZE))
+        self._set_avatar_pixmap(_make_round_pixmap(pixmap, AVATAR_SIZE))
 
     def paintEvent(self, event):
         """Required for QWidget subclasses to honour stylesheet backgrounds."""

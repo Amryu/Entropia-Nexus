@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.3.2",
+    "date": "2026-03-11",
+    "changes": [
+      {"type": "fix", "text": "Reduced RAM usage by ~30 MB: shared memory cache eliminates duplicate data across wiki, loadout, and calculator"},
+      {"type": "fix", "text": "Wiki warmup only stores data for visited categories instead of all 32 endpoints"},
+      {"type": "fix", "text": "Skills sync runs in background during startup instead of blocking the splash screen"},
+      {"type": "fix", "text": "Exchange detail caches use LRU eviction (max 100 entries) to bound memory"},
+      {"type": "fix", "text": "Wiki view cache limited to 10 most-recently visited categories"},
+      {"type": "fix", "text": "Ingestion upload buffers bounded to prevent unbounded memory growth on network issues"},
+      {"type": "fix", "text": "OCR debug images only saved when trace logging is active"}
+    ]
+  },
+  {
     "version": "0.3.1",
     "date": "2026-03-10",
     "changes": [

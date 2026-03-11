@@ -240,10 +240,11 @@ export async function getOpenChangeByEntityId(entity, id, type = null) {
 }
 
 export async function updateChange(id, data, state) {
-  const query = 'UPDATE changes SET data = $2, state = $3 WHERE id = $1';
+  const query = 'UPDATE changes SET data = $2, state = $3 WHERE id = $1 RETURNING id, content_updated_at';
   const values = [id, data, state];
 
-  await pool.query(query, values);
+  const { rows } = await pool.query(query, values);
+  return rows[0];
 }
 
 export async function deleteChange(id) {
@@ -4689,7 +4690,7 @@ export async function getMatchingRules(entity, changeType, dataKeys, subType) {
   const result = await pool.query(
     'SELECT * FROM reward_rules WHERE active = true ORDER BY sort_order, id'
   );
-  return result.rows.filter(rule => {
+  const allMatching = result.rows.filter(rule => {
     if (rule.entities) {
       const matchesEntity = rule.entities.includes(entity) || (subType && rule.entities.includes(subType));
       if (!matchesEntity) return false;
@@ -4700,6 +4701,14 @@ export async function getMatchingRules(entity, changeType, dataKeys, subType) {
     }
     return true;
   });
+
+  // If any property-specific rules matched, drop generic wildcard rules —
+  // but always keep Create-type rules (they always apply alongside specifics).
+  const specific = allMatching.filter(r => r.data_fields?.length > 0);
+  if (specific.length > 0) {
+    return allMatching.filter(r => r.data_fields?.length > 0 || r.change_type === 'Create');
+  }
+  return allMatching;
 }
 
 export async function getChangeRewards(changeId) {

@@ -46,10 +46,12 @@ class DataClient:
         self._session.mount("https://", adapter)
         self._session.mount("http://", adapter)
         # Memory-only cache for small per-item lookups (acquisition, usage,
-        # events, mob globals).  Disk-backed endpoints (_get_cached) do NOT
-        # use this — callers already hold references to the returned data,
-        # so duplicating it here just wastes RAM.
+        # events, mob globals).  Disk-backed endpoints use _list_cache instead.
         self._memory_cache: dict[str, tuple[float, list | dict]] = {}
+        # Shared references for disk-backed list endpoints.  Returns the SAME
+        # list object to all callers, eliminating duplication when multiple
+        # consumers (wiki, loadout, calc) load the same endpoint.
+        self._list_cache: dict[str, tuple[float, list | dict]] = {}
         self._cache_db = CacheDB(CACHE_DIR / "cache.db")
         self._migrate_json_cache()
 
@@ -345,17 +347,27 @@ class DataClient:
             del self._memory_cache[key]
 
     def _get_cached(self, endpoint: str):
-        """Fetch data with SQLite disk caching.
+        """Fetch data with shared memory + SQLite disk caching.
 
         Returns the original API response shape (list or dict).
-        Callers hold their own references to the returned data, so keeping a
-        second copy in memory just wastes RAM.
+        The same Python object is returned to all callers within the TTL
+        window, so consumers sharing endpoints (wiki, loadout, calc) avoid
+        duplicate RAM usage.
         """
+        now = time.time()
+
+        # 1. Shared in-memory reference (same object for all callers)
+        entry = self._list_cache.get(endpoint)
+        if entry is not None and (now - entry[0]) < CACHE_TTL_SECONDS:
+            return entry[1]
+
+        # 2. SQLite disk cache
         cached = self._cache_db.get(endpoint, CACHE_TTL_SECONDS)
         if cached is not None:
+            self._list_cache[endpoint] = (now, cached)
             return cached
 
-        # Fetch from API
+        # 3. Fetch from API
         try:
             resp = self._session.get(f"{self._base_url}{endpoint}", timeout=15)
             resp.raise_for_status()
@@ -367,6 +379,7 @@ class DataClient:
                 self._cache_db.put(endpoint, items, is_list=is_list)
             except Exception as write_err:
                 log.debug("Could not write cache for %s: %s", endpoint, write_err)
+            self._list_cache[endpoint] = (now, data)
             return data
 
         except Exception as e:
@@ -378,9 +391,11 @@ class DataClient:
         """Clear cache for a specific endpoint or all endpoints."""
         if endpoint:
             self._memory_cache.pop(endpoint, None)
+            self._list_cache.pop(endpoint, None)
             self._cache_db.delete(endpoint)
         else:
             self._memory_cache.clear()
+            self._list_cache.clear()
             self._cache_db.clear()
 
     def _migrate_json_cache(self) -> None:

@@ -7,7 +7,7 @@ import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedCha
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
-import { getTypeLink } from './util.js';
+import { getTypeLink, getStateLabel } from './util.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 import { checkAuctions, refreshAuctionColors } from './auctions.js';
 import { collectEuName } from './commands/verification/setEuName.js';
@@ -355,7 +355,7 @@ client.on(Events.InteractionCreate, async interaction => {
           return interaction.reply({ content: 'You are not the author of this change.', flags: 64 });
         }
         if (change.state !== 'ApplyFailed' && change.state !== 'DirectApply') {
-          return interaction.update({ content: `This change is no longer pending (state: ${change.state}).`, components: [] });
+          return interaction.update({ content: `This change is no longer pending (state: ${getStateLabel(change.state)}).`, components: [] });
         }
 
         if (action === 'retry') {
@@ -745,7 +745,7 @@ async function checkChanges() {
 
     if (!thread) {
       thread = await channel.threads.create({
-        name: `[${change.state}] ${change.type}: ${change.data.Name.substring(0, 80)}`,
+        name: `[${getStateLabel(change.state)}] ${change.type}: ${change.data.Name.substring(0, 80)}`,
         autoArchiveDuration: 10080,
         reason: `Change thread created for change ${change.id}`,
         permissionOverwrites: [
@@ -795,7 +795,7 @@ async function checkChanges() {
     }
     else {
       try {
-        await thread.setName(`[${change.state}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+        await thread.setName(`[${getStateLabel(change.state)}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
       } catch (e) {
         console.error(`Failed to update thread name ${thread.id} (${change.data.Name}): ${e.message}`);
       }
@@ -858,7 +858,7 @@ async function checkChanges() {
     }
 
     try {
-      await thread.setName(`[${change.state}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+      await thread.setName(`[${getStateLabel(change.state)}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
     }
     catch (e) {
       console.error(`Failed to update deleted change thread name ${thread.id} (${change.data.Name}): ${e.message}`);

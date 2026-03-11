@@ -29,7 +29,7 @@ from .capturer import ScreenCapturer
 from .preprocessor import ImagePreprocessor
 from .skill_parser import SkillMatcher, RankVerifier
 from .progress_bar import ProgressBarReader
-from .detector import SkillsWindowDetector, SAVE_DEBUG_IMAGES, DEBUG_DIR
+from .detector import SkillsWindowDetector, DEBUG_DIR
 from .font_matcher import (
     FontMatcher, _detect_orange, _orange_grayscale,
 )
@@ -869,8 +869,8 @@ class ScanOrchestrator:
             elif verified is False:
                 log.warning("Points total does NOT match in-game display")
 
-            # Update detection debug image after each scan
-            if SAVE_DEBUG_IMAGES:
+            # Update detection debug image after each scan (ocr-trace only)
+            if self._tracer.enabled:
                 gox, goy = self._detector._game_origin or (0, 0)
                 self._detector.save_debug_image(game_image, gox, goy, window_bounds)
 
@@ -1367,7 +1367,7 @@ class ScanOrchestrator:
         # Read rank bar (bottom of rank cell) — for cross-verification
         rank_progress = self._bar_reader.read_progress(rank_bar_img)
 
-        if low_confidence_fallback:
+        if low_confidence_fallback and self._tracer.enabled:
             self._save_low_confidence_debug(
                 row_idx=row_idx,
                 row_image=row_image,
@@ -1383,8 +1383,8 @@ class ScanOrchestrator:
                 points_progress=progress,
             )
 
-        # Save per-row debug images
-        if SAVE_DEBUG_IMAGES:
+        # Save per-row debug images (ocr-trace only)
+        if self._tracer.enabled:
             self._save_row_debug(row_idx, row_image,
                 cells={
                     "name_end": name_end, "rank_start": rank_start,

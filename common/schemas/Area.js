@@ -21,6 +21,10 @@ export const Area = {
           "type": ["string", "null"],
           "default": null
         },
+        "AreaType": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Shape": {
           "type": ["string", "null"],
           "default": null
@@ -52,6 +56,31 @@ export const Area = {
             "Latitude",
             "Altitude"
           ]
+        },
+        "Density": {
+          "type": ["integer", "null"],
+          "default": null
+        },
+        "MobData": {
+          "type": ["array", "null"],
+          "default": null,
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "TaxRateHunting": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "TaxRateMining": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "TaxRateShops": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "LandAreaOwnerName": {
+          "type": ["string", "null"],
+          "default": null
         }
       },
       "required": [
@@ -62,7 +91,13 @@ export const Area = {
         "Coordinates"
       ]
     },
-    "Planet": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" }
+    "Planet": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+    "ParentLocation": {
+      "anyOf": [
+        { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+        { "type": "null" }
+      ]
+    }
   },
   "required": [
     "Name",

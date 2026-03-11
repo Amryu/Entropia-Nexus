@@ -48,6 +48,7 @@
   let queuedPanTarget = null;
   let _clickedLayer = false;
   let _editingActive = false;
+  let _rebuildDeferred = false; // true when rebuildLayers was skipped due to _editingActive
   let _editDebounceTimer = null;
 
   // Context menu state
@@ -74,7 +75,13 @@
     }
   ];
 
-  $: if (map && locations && pendingChanges !== undefined && !_editingActive) rebuildLayers();
+  $: if (map && locations && pendingChanges !== undefined) {
+    if (!_editingActive) {
+      rebuildLayers();
+    } else {
+      _rebuildDeferred = true;
+    }
+  }
   $: if (map && dbPendingChanges && transforms) rebuildDbChangesOverlay();
   $: if (map && filteredLocationIds !== undefined) updateVisibility();
   $: if (map && selectedId !== undefined) updateSelection();
@@ -352,6 +359,7 @@
 
   function rebuildLayers() {
     if (!map || !transforms || !L) return;
+    _rebuildDeferred = false;
 
     cleanupEditing();
     // Remove temporary drawn layer — pending add now renders via createPendingAddLayer
@@ -676,6 +684,12 @@
 
   function updateSelection() {
     cleanupEditing();
+
+    // If a rebuildLayers was deferred while editing was active, run it now
+    if (_rebuildDeferred) {
+      rebuildLayers();
+      return; // rebuildLayers calls updateSelection internally
+    }
 
     layerGroup.eachLayer(layer => {
       const locId = layer._locId;

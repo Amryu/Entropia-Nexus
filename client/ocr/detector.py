@@ -49,9 +49,8 @@ from ..platform import backend as _platform
 
 log = get_logger("Detector")
 
-# Debug image output directory
+# Debug image output directory (only used when ocr-trace is active)
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "..", "debug_output")
-SAVE_DEBUG_IMAGES = True
 
 GAME_WINDOW_TITLE_PREFIX = "Entropia Universe Client"
 
@@ -1089,7 +1088,7 @@ class SkillsWindowDetector:
 
         Draws the same regions the overlay uses: template match and resolved ROIs.
         """
-        if not SAVE_DEBUG_IMAGES:
+        if not (self._tracer and self._tracer.enabled):
             return
         try:
             os.makedirs(DEBUG_DIR, exist_ok=True)

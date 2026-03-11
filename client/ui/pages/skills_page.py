@@ -1087,13 +1087,37 @@ class SkillsPage(QWidget):
         QTimer.singleShot(0, self._on_data_loaded)
 
     def prewarm_data(self):
-        """Load skills data synchronously. Called from app.py during splash."""
+        """Load skills data during splash — fast parts synchronous, network in background.
+
+        Metadata comes from the SQLite disk cache (fast). Local skill values
+        come from the local DB (fast). Remote sync is deferred to a background
+        thread so the splash doesn't hang on network timeouts.
+        """
         try:
-            self._do_data_load()
+            # Fast: metadata + rank thresholds (disk-cached API data)
+            self._manager.refresh_metadata()
+            self._load_rank_thresholds()
+            # Fast: local DB values — enough to build the card grid
+            self._manager.load_from_local()
+            self._synced = False
             self._data_prewarmed = True
             self._on_data_loaded(sync=True)
         except Exception:
             log.exception("Skills data prewarm failed — will retry on timer")
+            return
+
+        # Slow: network sync in background (merges remote + uploads dirty)
+        if self._oauth.is_authenticated():
+            import threading
+            def _bg_sync():
+                try:
+                    synced = self._manager.sync_from_nexus()
+                    self._synced = synced
+                    if synced:
+                        QTimer.singleShot(0, self._on_data_loaded)
+                except Exception:
+                    log.exception("Background skills sync failed")
+            threading.Thread(target=_bg_sync, daemon=True, name="skills-sync").start()
 
     def flush_prewarm(self):
         """Build deferred grids synchronously. Call after show() while splash

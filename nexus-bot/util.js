@@ -92,3 +92,10 @@ export function getTypeLink(name, type, subType = null) {
 function encodeURIComponentSafe(str) {
   return encodeURIComponent(str.replace(/ /g, '~'));
 }
+
+/** Map internal change state to user-facing display label. */
+const STATE_LABELS = { Pending: 'In Review' };
+
+export function getStateLabel(state) {
+  return STATE_LABELS[state] || state;
+}

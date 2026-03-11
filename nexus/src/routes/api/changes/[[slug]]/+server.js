@@ -186,6 +186,19 @@ export async function PUT({ params, request, locals, url }) {
     return getResponse({ error: 'This change was already finalized. You cannot edit it anymore. Please create a new change.' }, 400);
   }
 
+  // Optimistic locking: reject if the change was modified since the client last loaded it
+  const expectedUpdatedAt = url.searchParams.get('content_updated_at');
+  if (expectedUpdatedAt && change.content_updated_at) {
+    const dbValue = change.content_updated_at instanceof Date
+      ? change.content_updated_at.toISOString()
+      : String(change.content_updated_at);
+    if (dbValue !== expectedUpdatedAt) {
+      return getResponse({
+        error: 'This change was modified by someone else since you loaded it. Please refresh the page to see the latest version.'
+      }, 409);
+    }
+  }
+
   let entity = change.entity;
 
   // Enhancers are generated in the database and cannot be edited
@@ -220,9 +233,9 @@ export async function PUT({ params, request, locals, url }) {
     return getResponse({ error: 'Invalid state. Must be one of the following values: Draft, Pending' }, 400);
   }
 
-  await updateChange(params.slug, body, state);
+  const result = await updateChange(params.slug, body, state);
 
-  return getResponse(204);
+  return getResponse(result, 200);
 }
 
 // CREATE

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,8 @@ SORT_BUY = "buy"
 SORT_ORDERS = "orders"        # sell + buy combined (overlay S/B column)
 SORT_MARKUP = "markup"
 SORT_UPDATED = "updated"
+
+_MAX_DETAIL_CACHE = 100  # Max items in per-item order/price caches
 
 
 class ExchangeStore(QObject):
@@ -58,8 +61,8 @@ class ExchangeStore(QObject):
         self._my_orders: list[dict] = []
         self._inventory: list[dict] = []
         self._trade_requests: list[dict] = []
-        self._item_orders_cache: dict[int, dict] = {}
-        self._exchange_prices_cache: dict[int, dict] = {}
+        self._item_orders_cache: OrderedDict[int, dict] = OrderedDict()
+        self._exchange_prices_cache: OrderedDict[int, dict] = OrderedDict()
         self._initial_trade_load = True
 
         # Polling
@@ -100,11 +103,17 @@ class ExchangeStore(QObject):
 
     def get_item_orders(self, item_id: int) -> dict | None:
         """Get cached order book for an item."""
-        return self._item_orders_cache.get(item_id)
+        data = self._item_orders_cache.get(item_id)
+        if data is not None:
+            self._item_orders_cache.move_to_end(item_id)
+        return data
 
     def get_exchange_prices(self, item_id: int) -> dict | None:
         """Get cached exchange price data for an item."""
-        return self._exchange_prices_cache.get(item_id)
+        data = self._exchange_prices_cache.get(item_id)
+        if data is not None:
+            self._exchange_prices_cache.move_to_end(item_id)
+        return data
 
     def is_loading(self, what: str) -> bool:
         return self._loading.get(what, False)
@@ -237,6 +246,8 @@ class ExchangeStore(QObject):
                     buy = enrich_orders(data.get('buy', []), self._item_lookup)
                     sell = enrich_orders(data.get('sell', []), self._item_lookup)
                     self._item_orders_cache[item_id] = {'buy': buy, 'sell': sell}
+                    if len(self._item_orders_cache) > _MAX_DETAIL_CACHE:
+                        self._item_orders_cache.popitem(last=False)
                 self._set_loading(f"item_orders_{item_id}", False)
                 self.item_orders_changed.emit(item_id)
             except Exception as e:
@@ -253,6 +264,8 @@ class ExchangeStore(QObject):
                 data = self._client.get_exchange_prices(item_id)
                 if data is not None:
                     self._exchange_prices_cache[item_id] = data
+                    if len(self._exchange_prices_cache) > _MAX_DETAIL_CACHE:
+                        self._exchange_prices_cache.popitem(last=False)
                 self.exchange_prices_changed.emit(item_id)
             except Exception as e:
                 log.error("Failed to load exchange prices %s: %s", item_id, e)

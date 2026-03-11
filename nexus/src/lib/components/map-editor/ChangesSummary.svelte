@@ -495,7 +495,7 @@
           {#if hasDbChange}
             <button class="row-delete-btn" title="Delete submitted change" on:click={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
           {:else}
-            <button class="row-remove-btn" title="Remove" on:click={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; }}>×</button>
+            <button class="row-remove-btn" title="Revert" on:click={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; }}>×</button>
           {/if}
         </div>
       {/each}

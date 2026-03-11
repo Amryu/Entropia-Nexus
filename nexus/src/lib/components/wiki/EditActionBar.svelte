@@ -19,7 +19,8 @@
     getChangeForSubmission,
     cancelEdit,
     markSaved,
-    setFieldError
+    setFieldError,
+    setViewingPendingChange
   } from '$lib/stores/wikiEditState.js';
   import { apiPost, apiPut, encodeURIComponentSafe } from '$lib/util';
 
@@ -68,6 +69,14 @@
     (!$existingPendingChange && user.verified)
   );
 
+  function buildPutUrl(changeId, state) {
+    let url = `/api/changes/${changeId}?state=${state}`;
+    if ($changeMetadata.content_updated_at) {
+      url += `&content_updated_at=${encodeURIComponent($changeMetadata.content_updated_at)}`;
+    }
+    return url;
+  }
+
   async function handleSaveDraft() {
     // Check for Name in create mode
     if (nameIsEmpty) {
@@ -103,8 +112,7 @@
         let response;
         if ($changeMetadata.id) {
           // Update existing change, preserving its state
-          response = await apiPut(fetch, `/api/changes/${$changeMetadata.id}?state=${currentState}`, change.data);
-          // Check for error response
+          response = await apiPut(fetch, buildPutUrl($changeMetadata.id, currentState), change.data);
           if (response?.error) {
             throw new Error(response.error);
           }
@@ -112,18 +120,22 @@
           // Create new draft: POST /api/changes?type={type}&entity={entity}&state=Draft
           const type = change.data.Id ? 'Update' : 'Create';
           response = await apiPost(fetch, `/api/changes?type=${type}&entity=${change.entity}&state=Draft`, change.data);
-          // Check for error response
           if (response?.error) {
             throw new Error(response.error);
           }
         }
 
-        if (response?.id) {
-          changeMetadata.update(m => ({ ...m, id: response.id }));
+        const changeId = response?.id || $changeMetadata.id;
+        if (changeId) {
+          changeMetadata.update(m => ({
+            ...m,
+            id: changeId,
+            content_updated_at: response?.content_updated_at || m.content_updated_at
+          }));
           markSaved();
           if (browser) {
             await invalidateAll();
-            if ($isCreateMode) {
+            if ($isCreateMode && response?.id) {
               await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
                 replaceState: true,
                 noScroll: true
@@ -179,8 +191,7 @@
         let response;
         if ($changeMetadata.id) {
           // Update to Pending: PUT /api/changes/{id}?state=Pending
-          response = await apiPut(fetch, `/api/changes/${$changeMetadata.id}?state=Pending`, change.data);
-          // Check for error response
+          response = await apiPut(fetch, buildPutUrl($changeMetadata.id, 'Pending'), change.data);
           if (response?.error) {
             throw new Error(response.error);
           }
@@ -188,17 +199,23 @@
           // Create as Pending: POST /api/changes?type={type}&entity={entity}&state=Pending
           const type = change.data.Id ? 'Update' : 'Create';
           response = await apiPost(fetch, `/api/changes?type=${type}&entity=${change.entity}&state=Pending`, change.data);
-          // Check for error response
           if (response?.error) {
             throw new Error(response.error);
           }
         }
 
-        if (response?.id) {
-          changeMetadata.update(m => ({ ...m, id: response.id, state: 'Pending' }));
+        const changeId = response?.id || $changeMetadata.id;
+        if (changeId) {
+          changeMetadata.update(m => ({
+            ...m,
+            id: changeId,
+            state: 'Pending',
+            content_updated_at: response?.content_updated_at || m.content_updated_at
+          }));
+          markSaved();
           if (browser) {
             await invalidateAll();
-            if ($isCreateMode) {
+            if ($isCreateMode && response?.id) {
               await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
                 replaceState: true,
                 noScroll: true
@@ -211,10 +228,11 @@
       statusMessage = 'Changes submitted for review!';
       statusType = 'success';
 
-      // Exit edit mode after successful submit (not in create mode — no view state exists)
+      // Exit edit mode but keep viewing the submitted changes
       if (!$isCreateMode) {
         setTimeout(() => {
           cancelEdit();
+          setViewingPendingChange(true);
         }, 1500);
       }
     } catch (error) {
@@ -254,7 +272,7 @@
 
       let response;
       if ($changeMetadata.id) {
-        response = await apiPut(fetch, `/api/changes/${$changeMetadata.id}?state=DirectApply`, change.data);
+        response = await apiPut(fetch, buildPutUrl($changeMetadata.id, 'DirectApply'), change.data);
         if (response?.error) {
           throw new Error(response.error);
         }
@@ -268,7 +286,12 @@
 
       const changeId = response?.id || $changeMetadata.id;
       if (changeId) {
-        changeMetadata.update(m => ({ ...m, id: changeId, state: 'DirectApply' }));
+        changeMetadata.update(m => ({
+          ...m,
+          id: changeId,
+          state: 'DirectApply',
+          content_updated_at: response?.content_updated_at || m.content_updated_at
+        }));
         markSaved();
 
         statusMessage = 'Applying changes...';

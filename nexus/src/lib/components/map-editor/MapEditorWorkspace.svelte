@@ -204,6 +204,7 @@
 
     if (isOwnChange || isAdmin) {
       // Seed into local pending changes so the author/admin can edit
+      selectedDbChange = null; // Clear read-only state from any previous DB change selection
       const data = change.data;
       const props = data?.Properties || {};
       const isAreaType = props.Shape || String(props.Type || '').endsWith('Area');
@@ -342,6 +343,12 @@
     const { original, modified } = e.detail;
     // Block editing if locked by another user (unless admin)
     if (!isAdmin && original?.Id && lockedLocationMap.has(original.Id)) return;
+    // Admin editing a location with an existing pending change from another user:
+    // seed the DB change ID so submission uses PUT (update) instead of POST (new).
+    if (isAdmin && original?.Id && !dbChangeIdMap.has(original.Id) && lockedLocationMap.has(original.Id)) {
+      const existingDbChange = lockedLocationMap.get(original.Id);
+      dbChangeIdMap.set(original.Id, existingDbChange.id);
+    }
     const existingChange = pendingChanges.get(original.Id);
     if (existingChange?.action === 'add') {
       // Editing a pending add: merge into the existing add entry, don't overwrite with 'edit'
@@ -412,6 +419,9 @@
         pendingChanges.delete(tempId);
         dbChangeIdMap.delete(tempId);
         modifiedDbChanges.delete(tempId);
+        // Remove from dbPendingChanges so the overlay doesn't re-render it
+        const idx = dbPendingChanges.findIndex(c => c.id === dbId);
+        if (idx !== -1) { dbPendingChanges.splice(idx, 1); dbPendingChanges = dbPendingChanges; }
         pendingChanges = pendingChanges;
         if (selectedId === tempId) {
           selectedId = null;
@@ -499,6 +509,12 @@
     const { locId, entropiaData } = e.detail;
     // Block shape editing if locked by another user (unless admin)
     if (!isAdmin && lockedLocationMap.has(locId)) return;
+    // Admin editing a location with an existing pending change from another user:
+    // seed the DB change ID so submission uses PUT (update) instead of POST (new).
+    if (isAdmin && !dbChangeIdMap.has(locId) && lockedLocationMap.has(locId)) {
+      const existingDbChange = lockedLocationMap.get(locId);
+      dbChangeIdMap.set(locId, existingDbChange.id);
+    }
     const loc = locations.find(l => l.Id === locId);
     const existing = pendingChanges.get(locId);
 
@@ -642,6 +658,8 @@
     border-left: 1px solid var(--border-color);
     background: var(--secondary-color);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .loading-overlay {

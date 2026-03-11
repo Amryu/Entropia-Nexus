@@ -68,6 +68,8 @@ PAGE_EXCHANGE = 6
 PAGE_TRACKER = 7
 PAGE_GALLERY = 8
 PAGE_SETTINGS = 9
+PAGE_PROFILE = 10   # User profile (not in sidebar — opened via search/links)
+PAGE_SOCIETY = 11   # Society (not in sidebar — opened via search/links)
 
 
 @dataclass
@@ -100,6 +102,8 @@ class MainWindow(QWidget):
         self._data_client = data_client
 
         self._wiki_page = None
+        self._profile_page = None
+        self._society_page = None
         self._markup_resolver = None
         self._exchange_store = None
         self._favourites_store = None
@@ -156,6 +160,7 @@ class MainWindow(QWidget):
         # Sidebar
         self._sidebar = IconSidebar(signals=signals, config=config)
         self._sidebar.page_changed.connect(self._on_page_changed)
+        self._sidebar.profile_clicked.connect(self._on_sidebar_profile_clicked)
         middle.addWidget(self._sidebar)
 
         # Stacked pages
@@ -181,8 +186,8 @@ class MainWindow(QWidget):
         dashboard.open_notifications.connect(self._show_notification_rules)
         self._pages.addWidget(dashboard)
         self._page_created: set[int] = {PAGE_DASHBOARD}
-        for _ in range(PAGE_SETTINGS - PAGE_DASHBOARD):
-            self._pages.addWidget(QWidget())  # placeholders for indices 1–7
+        for _ in range(PAGE_SOCIETY - PAGE_DASHBOARD):
+            self._pages.addWidget(QWidget())  # placeholders for indices 1–11
 
         self._page_factories: dict[int, callable] = {
             PAGE_WIKI: self._create_wiki_page,
@@ -194,6 +199,8 @@ class MainWindow(QWidget):
             PAGE_TRACKER: self._create_tracker_page,
             PAGE_GALLERY: self._create_gallery_page,
             PAGE_SETTINGS: self._create_settings_page,
+            PAGE_PROFILE: self._create_profile_page,
+            PAGE_SOCIETY: self._create_society_page,
         }
 
         # Listen for API scope errors (403 from missing OAuth scopes)
@@ -213,8 +220,11 @@ class MainWindow(QWidget):
         Called from app.py while the loading splash (separate process)
         covers the screen, so the user never sees an unfinished window.
         """
+        # Profile/society pages are demand-loaded (need an identifier), skip them
+        skip = {PAGE_PROFILE, PAGE_SOCIETY}
         for idx in list(self._page_factories):
-            self._ensure_page(idx)
+            if idx not in skip:
+                self._ensure_page(idx)
 
     def _refresh_markup_caches(self):
         """Refresh exchange and inventory markup caches (runs in background)."""
@@ -332,6 +342,57 @@ class MainWindow(QWidget):
                             event_bus=self._event_bus, signals=self._signals,
                             oauth=self._oauth, db=self._db,
                             on_show_changelog=self.open_changelog_dialog)
+
+    def _create_profile_page(self):
+        from .pages.profile_page import ProfilePage
+        page = ProfilePage(signals=self._signals, nexus_client=self._nexus_client)
+        page.navigation_changed.connect(self._on_profile_nav_changed)
+        page.open_society.connect(self.navigate_to_society)
+        page.open_profile.connect(self.navigate_to_profile)
+        self._profile_page = page
+        return page
+
+    def _create_society_page(self):
+        from .pages.society_page import SocietyPage
+        page = SocietyPage(signals=self._signals, nexus_client=self._nexus_client)
+        page.navigation_changed.connect(self._on_society_nav_changed)
+        page.open_profile.connect(self.navigate_to_profile)
+        self._society_page = page
+        return page
+
+    # --- Profile / Society navigation ---
+
+    def navigate_to_profile(self, identifier: str):
+        """Navigate the main window to a user profile."""
+        # Profile page disabled — open on website instead
+        import webbrowser
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+        from urllib.parse import quote
+        webbrowser.open(f"{base}/users/{quote(identifier)}")
+
+    def navigate_to_society(self, identifier: str):
+        """Navigate the main window to a society page."""
+        # Society page disabled — open on website instead
+        import webbrowser
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+        from urllib.parse import quote
+        webbrowser.open(f"{base}/societies/{quote(identifier)}")
+
+    def _on_profile_nav_changed(self, identifier):
+        if not self._applying_nav:
+            self._push_navigation(NavState(page=PAGE_PROFILE, sub_state=identifier))
+
+    def _on_society_nav_changed(self, identifier):
+        if not self._applying_nav:
+            self._push_navigation(NavState(page=PAGE_SOCIETY, sub_state=identifier))
+
+    def _on_sidebar_profile_clicked(self):
+        """Sidebar avatar clicked — open own profile."""
+        auth_state = self._oauth.auth_state if self._oauth else None
+        if auth_state and auth_state.authenticated:
+            name = auth_state.eu_name or auth_state.username
+            if name:
+                self.navigate_to_profile(name)
 
     def _on_update_restart(self):
         """User clicked the update restart button in the status bar."""
@@ -657,10 +718,12 @@ class MainWindow(QWidget):
         if not item_name:
             return
 
-        if item_type in ("User", "Society"):
-            prefix = "/users/" if item_type == "User" else "/societies/"
-            url = self._config.nexus_base_url + prefix + url_quote(item_name)
-            webbrowser.open(url)
+        if item_type == "User":
+            self.navigate_to_profile(item_name)
+            return
+
+        if item_type == "Society":
+            self.navigate_to_society(item_name)
             return
 
         # MobMaturity → navigate to the parent mob

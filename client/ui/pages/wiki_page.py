@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections import OrderedDict
 from urllib.parse import quote as _url_quote
 
 from PyQt6.QtWidgets import (
@@ -83,6 +84,7 @@ INFO_CATEGORIES: list[tuple[str, str, str, list | None]] = [
 ]
 
 GRID_COLUMNS = 3
+_MAX_CACHED_VIEWS = 10  # Keep only the N most-recently visited category views
 
 # Map category title → section name for breadcrumbs
 _SECTION_FOR_CATEGORY: dict[str, str] = {}
@@ -655,8 +657,8 @@ class WikiPage(QWidget):
         self._leaf_items: dict[str, list[dict]] = {}  # title → fetched items
         self._precomputed_data: dict[str, tuple[list, list, list]] = {}  # title → (items, cache, numeric)
         self._precomputed_subsets: dict[str, tuple] = {}  # title → (col_defs, cache, numeric)
-        self._cached_leaf_views: dict[str, QWidget] = {}    # title → container
-        self._cached_table_refs = {}                         # title → WikiTableView
+        self._cached_leaf_views: OrderedDict[str, QWidget] = OrderedDict()
+        self._cached_table_refs: OrderedDict = OrderedDict()
         self._toggle_states: dict[str, str] = {}             # title → "a" or "b"
         self._alt_table_refs: dict[str, object] = {}         # title → alt WikiTableView
         self._alt_items: dict[str, list[dict]] = {}          # title → alt items
@@ -862,6 +864,8 @@ class WikiPage(QWidget):
     def _show_leaf(self, title: str):
         # 1. Cached table widget — show with preserved state
         if title in self._cached_leaf_views:
+            self._cached_leaf_views.move_to_end(title)
+            self._cached_table_refs.move_to_end(title)
             # Restore correct _current_table_view based on toggle state
             if self._toggle_states.get(title) == "b" and title in self._alt_table_refs:
                 self._current_table_view = self._alt_table_refs[title]
@@ -889,13 +893,12 @@ class WikiPage(QWidget):
 
         leaf_title = title
         ptid = page_type_id
-        prefetched = self._leaf_items.get(title)
         column_prefs = (self._config.wiki_column_prefs or {}) if self._config else {}
 
         def fetch():
             from ..widgets.wiki_table import build_column_cache, build_subset_cache
 
-            items = prefetched if prefetched else getattr(self._data_client, method_name)()
+            items = getattr(self._data_client, method_name)()
             all_defs = COLUMN_DEFS.get(ptid, {})
             col_defs_list = list(all_defs.values())
             cache, numeric = build_column_cache(items, col_defs_list)
@@ -959,8 +962,23 @@ class WikiPage(QWidget):
 
         self._cached_leaf_views[title] = container
         self._cached_table_refs[title] = table_view
+        self._evict_view_cache()
         self._current_table_view = table_view
         self._swap_content(container)
+
+    def _evict_view_cache(self):
+        """Remove oldest cached category views when the limit is exceeded."""
+        while len(self._cached_leaf_views) > _MAX_CACHED_VIEWS:
+            evicted_title, evicted_widget = self._cached_leaf_views.popitem(last=False)
+            self._cached_table_refs.pop(evicted_title, None)
+            self._leaf_items.pop(evicted_title, None)
+            self._precomputed_data.pop(evicted_title, None)
+            self._precomputed_subsets.pop(evicted_title, None)
+            self._toggle_states.pop(evicted_title, None)
+            self._alt_table_refs.pop(evicted_title, None)
+            self._alt_items.pop(evicted_title, None)
+            # Schedule widget deletion so Qt cleans up native resources
+            evicted_widget.deleteLater()
 
     def _show_placeholder(self, title: str):
         """Show 'Coming soon' for unmapped categories."""
@@ -1466,44 +1484,56 @@ class WikiPage(QWidget):
         Column caches are built lazily when the user navigates to a category
         (in _show_leaf), keeping startup fast by avoiding CPU-bound work that
         contends with the UI thread via the GIL.
+
+        Only stores items in ``_leaf_items`` for categories with active tables
+        (ones the user has visited).  Other endpoints are still fetched to
+        populate the DataClient shared cache so navigation is instant.
         """
         import time
         from ..widgets.wiki_table import build_column_cache, build_subset_cache
 
         stop = self._warmup_stop
+        first_cycle = True
         while not stop.is_set():
+            # Invalidate at START so _list_cache stays populated between
+            # cycles for other consumers (loadout, calc).  Skip on first
+            # cycle since caches are empty at startup.
+            if not first_cycle:
+                self._data_client.invalidate_cache()
+            first_cycle = False
+
             column_prefs = (self._config.wiki_column_prefs or {}) if self._config else {}
             for title, (method_name, page_type_id) in LEAF_DATA_MAP.items():
                 if stop.is_set():
                     return
                 try:
                     items = getattr(self._data_client, method_name)()
-                    old_items = self._leaf_items.get(title)
-                    self._leaf_items[title] = items
 
-                    # Revalidation: if data changed AND table already built, rebuild cache
-                    if old_items is not None and title in self._cached_table_refs:
-                        if len(old_items) != len(items) or old_items != items:
-                            all_defs = COLUMN_DEFS.get(page_type_id, {})
-                            col_defs_list = list(all_defs.values())
-                            cache, numeric = build_column_cache(items, col_defs_list)
-                            self._precomputed_data[title] = (items, cache, numeric)
-                            # Pre-compute subset for the active columns
-                            prefs = column_prefs.get(page_type_id)
-                            active_keys = list(prefs) if prefs else list(DEFAULT_COLUMNS.get(page_type_id, []))
-                            all_type_keys = list(all_defs.keys())
-                            self._precomputed_subsets[title] = build_subset_cache(
-                                cache, numeric, all_type_keys, active_keys, all_defs,
-                            )
-                            self._data_loaded.emit(title, items, cache, numeric)
+                    # Only track items + revalidate for categories with
+                    # active tables.  Non-active categories are still
+                    # fetched above (populates DataClient._list_cache),
+                    # so navigating to them later is instant.
+                    if title in self._cached_table_refs:
+                        old_items = self._leaf_items.get(title)
+                        self._leaf_items[title] = items
+
+                        if old_items is not None:
+                            if len(old_items) != len(items) or old_items != items:
+                                all_defs = COLUMN_DEFS.get(page_type_id, {})
+                                col_defs_list = list(all_defs.values())
+                                cache, numeric = build_column_cache(items, col_defs_list)
+                                self._precomputed_data[title] = (items, cache, numeric)
+                                prefs = column_prefs.get(page_type_id)
+                                active_keys = list(prefs) if prefs else list(DEFAULT_COLUMNS.get(page_type_id, []))
+                                all_type_keys = list(all_defs.keys())
+                                self._precomputed_subsets[title] = build_subset_cache(
+                                    cache, numeric, all_type_keys, active_keys, all_defs,
+                                )
+                                self._data_loaded.emit(title, items, cache, numeric)
                 except Exception:
                     pass
                 # Yield GIL between entity fetches so the UI thread stays responsive.
-                # Each fetch involves HTTP I/O + JSON parsing that can hold the GIL.
                 time.sleep(0)
-
-            # Invalidate data_client cache so next cycle fetches fresh data
-            self._data_client.invalidate_cache()
 
             stop.wait(timeout=900)  # 15 minutes
 

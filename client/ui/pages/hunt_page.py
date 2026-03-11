@@ -1,6 +1,7 @@
 """Hunt page — tabbed interface for hunt tracking, analytics, history, and settings."""
 
 import math
+import threading
 import uuid
 from datetime import datetime, timedelta
 
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QScrollArea, QMessageBox,
     QTextEdit, QComboBox, QLineEdit, QMenu, QInputDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QAction
 
 from ...core.constants import (
@@ -815,6 +816,7 @@ class HuntPage(QWidget):
 
         agg = aggregate_loot(temp_encounters, self._markup_resolver)
 
+        table.setUpdatesEnabled(False)
         table.setRowCount(0)
 
         for entry in agg:
@@ -844,6 +846,8 @@ class HuntPage(QWidget):
             table.setItem(row, 2, tt_item)
             table.setItem(row, 3, mu_item)
             table.setItem(row, 4, source_item)
+
+        table.setUpdatesEnabled(True)
 
     def _get_hunt_loot_mu_total(self) -> float:
         """Get the total MU value from the hunt loot table."""
@@ -926,6 +930,7 @@ class HuntPage(QWidget):
 
     def _update_kill_log(self):
         """Rebuild the kill log table from accumulated encounters (newest first)."""
+        self._kill_log_table.setUpdatesEnabled(False)
         self._kill_log_table.setRowCount(0)
         total = len(self._hunt_encounters)
         for i, enc in enumerate(reversed(self._hunt_encounters)):
@@ -954,6 +959,8 @@ class HuntPage(QWidget):
             if global_marker:
                 item.setForeground(QColor("#FFD700"))  # gold for globals
             self._kill_log_table.setItem(row, self.GLOBAL_COL, item)
+
+        self._kill_log_table.setUpdatesEnabled(True)
 
     def _check_multi_mob(self):
         """Detect if the current hunt has mixed mob types."""
@@ -990,6 +997,7 @@ class HuntPage(QWidget):
 
         # Tool breakdown — from in-memory encounter data
         tool_stats = enc.get("tool_stats", {})
+        self._tool_detail_table.setUpdatesEnabled(False)
         self._tool_detail_table.setRowCount(0)
         for tool_name, stats in tool_stats.items():
             r = self._tool_detail_table.rowCount()
@@ -998,8 +1006,10 @@ class HuntPage(QWidget):
             self._tool_detail_table.setItem(r, 1, QTableWidgetItem(str(stats.get("shots", 0))))
             self._tool_detail_table.setItem(r, 2, QTableWidgetItem(f"{stats.get('damage', 0):.2f}"))
             self._tool_detail_table.setItem(r, 3, QTableWidgetItem(str(stats.get("crits", 0))))
+        self._tool_detail_table.setUpdatesEnabled(True)
 
         # Loot items — from in-memory encounter data or DB fallback
+        self._loot_items_table.setUpdatesEnabled(False)
         self._loot_items_table.setRowCount(0)
         loot_items = enc.get("loot_items", [])
         if not loot_items and enc_id:
@@ -1043,28 +1053,41 @@ class HuntPage(QWidget):
                 table_item = QTableWidgetItem("Unknown")
                 table_item.setForeground(QColor("#FFD700"))
             self._loot_items_table.setItem(r, 4, table_item)
+        self._loot_items_table.setUpdatesEnabled(True)
 
-        # Combat log — fetch from DB if encounter has an id
+        # Combat log — fetch from DB in background thread
         self._combat_log_table.setRowCount(0)
         if enc_id:
-            events = self._db.get_encounter_combat_events(enc_id)
-            for ev in events:
-                r = self._combat_log_table.rowCount()
-                self._combat_log_table.insertRow(r)
-                ts = ev.get("timestamp", "")
-                if isinstance(ts, str) and len(ts) > 19:
-                    ts = ts[11:19]  # extract HH:MM:SS from ISO
-                elif isinstance(ts, str) and len(ts) > 11:
-                    ts = ts[11:19]
-                self._combat_log_table.setItem(r, 0, QTableWidgetItem(str(ts)))
-                self._combat_log_table.setItem(r, 1, QTableWidgetItem(ev.get("event_type", "")))
-                amount = ev.get("amount", 0)
-                self._combat_log_table.setItem(r, 2, QTableWidgetItem(
-                    f"{amount:.2f}" if amount else "-"
-                ))
-                self._combat_log_table.setItem(r, 3, QTableWidgetItem(ev.get("tool_name") or "-"))
+            def _fetch_combat_log():
+                events = self._db.get_encounter_combat_events(enc_id)
+                QTimer.singleShot(0, lambda: self._apply_combat_log(enc_id, events))
+            threading.Thread(target=_fetch_combat_log, daemon=True, name="combat-log").start()
 
         self._detail_group.setVisible(True)
+
+    def _apply_combat_log(self, enc_id: str, events: list):
+        """Populate combat log table on main thread after background fetch."""
+        # Ignore stale results if user clicked a different encounter
+        if self._selected_encounter_id != enc_id:
+            return
+        self._combat_log_table.setUpdatesEnabled(False)
+        self._combat_log_table.setRowCount(0)
+        for ev in events:
+            r = self._combat_log_table.rowCount()
+            self._combat_log_table.insertRow(r)
+            ts = ev.get("timestamp", "")
+            if isinstance(ts, str) and len(ts) > 19:
+                ts = ts[11:19]
+            elif isinstance(ts, str) and len(ts) > 11:
+                ts = ts[11:19]
+            self._combat_log_table.setItem(r, 0, QTableWidgetItem(str(ts)))
+            self._combat_log_table.setItem(r, 1, QTableWidgetItem(ev.get("event_type", "")))
+            amount = ev.get("amount", 0)
+            self._combat_log_table.setItem(r, 2, QTableWidgetItem(
+                f"{amount:.2f}" if amount else "-"
+            ))
+            self._combat_log_table.setItem(r, 3, QTableWidgetItem(ev.get("tool_name") or "-"))
+        self._combat_log_table.setUpdatesEnabled(True)
 
     def _on_global_event(self, data):
         """Handle global event signal — retroactively mark matching encounter in kill log."""
@@ -1125,10 +1148,32 @@ class HuntPage(QWidget):
     # ------------------------------------------------------------------ #
 
     def _load_history(self):
-        """Load recent sessions from the database."""
+        """Load recent sessions from the database in a background thread."""
+        def _fetch():
+            """Collect all session/hunt/encounter data off the main thread."""
+            tree_data = []
+            sessions = self._db.get_recent_sessions(limit=50)
+            for sess in sessions:
+                hunts_data = []
+                hunts = self._db.get_session_hunts(sess["id"])
+                for i, hunt in enumerate(hunts):
+                    encounters = self._db.get_hunt_encounters(hunt["id"])
+                    hunts_data.append((i, hunt, encounters))
+
+                all_encounters = self._db.get_session_encounters(sess["id"])
+                orphans = [e for e in all_encounters if not e.get("hunt_id")]
+                tree_data.append((sess, hunts_data, orphans))
+
+            QTimer.singleShot(0, lambda: self._apply_history(tree_data))
+
+        threading.Thread(target=_fetch, daemon=True, name="hunt-history").start()
+
+    def _apply_history(self, tree_data: list):
+        """Build QTreeWidgetItems on main thread from pre-fetched data."""
+        self._history_tree.setUpdatesEnabled(False)
         self._history_tree.clear()
-        sessions = self._db.get_recent_sessions(limit=50)
-        for sess in sessions:
+
+        for sess, hunts_data, orphans in tree_data:
             session_item = QTreeWidgetItem([
                 f"Session: {sess['id'][:8]}...",
                 sess.get("primary_mob", "-") or "-",
@@ -1142,9 +1187,7 @@ class HuntPage(QWidget):
                 "type": "session", "id": sess["id"]
             })
 
-            # Load hunts for this session
-            hunts = self._db.get_session_hunts(sess["id"])
-            for i, hunt in enumerate(hunts):
+            for i, hunt, encounters in hunts_data:
                 hunt_item = QTreeWidgetItem([
                     f"Hunt {i + 1}",
                     hunt.get("primary_mob", "-") or "-",
@@ -1159,8 +1202,6 @@ class HuntPage(QWidget):
                     "session_id": sess["id"],
                 })
 
-                # Load encounters for this hunt
-                encounters = self._db.get_hunt_encounters(hunt["id"])
                 for enc in encounters:
                     enc_item = QTreeWidgetItem([
                         enc.get("mob_name", "?"),
@@ -1175,12 +1216,9 @@ class HuntPage(QWidget):
 
                 session_item.addChild(hunt_item)
 
-            # Also load encounters without a hunt (from before the update)
-            all_encounters = self._db.get_session_encounters(sess["id"])
-            orphan_encounters = [e for e in all_encounters if not e.get("hunt_id")]
-            if orphan_encounters:
+            if orphans:
                 orphan_item = QTreeWidgetItem(["Ungrouped Encounters", "", "", "", "", "", ""])
-                for enc in orphan_encounters:
+                for enc in orphans:
                     enc_item = QTreeWidgetItem([
                         enc.get("mob_name", "?"),
                         enc.get("mob_name_source", "?"),
@@ -1194,6 +1232,8 @@ class HuntPage(QWidget):
                 session_item.addChild(orphan_item)
 
             self._history_tree.addTopLevelItem(session_item)
+
+        self._history_tree.setUpdatesEnabled(True)
 
     def _on_history_selection_changed(self):
         """Enable/disable merge/split/delete based on selection."""

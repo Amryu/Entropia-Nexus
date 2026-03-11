@@ -30,7 +30,8 @@ export const changeMetadata = writable({
   state: 'Draft', // Draft, Pending, Approved, Rejected
   type: 'Update', // Create, Update, Delete
   entity: null,
-  author_id: null
+  author_id: null,
+  content_updated_at: null // optimistic locking token
 });
 
 // === Pending Change Viewing ===
@@ -247,7 +248,8 @@ export function initEditState(entity, entityType, createMode = false, existingCh
     state: existingChange?.state || 'Draft',
     type: createMode ? 'Create' : 'Update',
     entity: entityType,
-    author_id: existingChange?.author_id || null
+    author_id: existingChange?.author_id || null,
+    content_updated_at: existingChange?.content_updated_at || null
   });
 
   // Auto-start edit mode in create mode
@@ -338,7 +340,8 @@ export function resetEditState() {
     state: 'Draft',
     type: 'Update',
     entity: null,
-    author_id: null
+    author_id: null,
+    content_updated_at: null
   });
   existingPendingChange.set(null);
   viewingPendingChange.set(false);

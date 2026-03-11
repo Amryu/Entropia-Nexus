@@ -63,9 +63,9 @@ class IngestionUploader:
         self._config = config
         self._db = db
 
-        self._global_buffer: deque[dict] = deque()
-        self._trade_buffer: deque[dict] = deque()
-        self._market_price_buffer: deque[dict] = deque()
+        self._global_buffer: deque[dict] = deque(maxlen=10_000)
+        self._trade_buffer: deque[dict] = deque(maxlen=10_000)
+        self._market_price_buffer: deque[dict] = deque(maxlen=10_000)
         self._market_price_last_seen: dict[str, tuple[datetime, float]] = {}  # 1hr dedup: name -> (time, confidence)
         self._lock = threading.Lock()
 
