@@ -12,7 +12,7 @@ export const LOCATION_TYPES = [
 ];
 
 export const AREA_TYPES = [
-  'MobArea', 'LandArea', 'WaveEvent', 'PvpArea', 'PvpLootArea',
+  'MobArea', 'LandArea', 'WaveEventArea', 'PvpArea', 'PvpLootArea',
   'ZoneArea', 'CityArea', 'EstateArea', 'EventArea'
 ];
 
@@ -32,7 +32,7 @@ export const TYPE_COLORS = {
   Vendor:         '#ffa07a',
   Estate:         '#deb887',
   // Area types
-  WaveEvent:      '#da70d6',
+  WaveEventArea:  '#da70d6',
   LandArea:       '#00ff00',
   MobArea:        '#ffff00',
   PvpArea:        '#ffa500',

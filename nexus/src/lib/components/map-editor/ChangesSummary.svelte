@@ -98,7 +98,7 @@
     };
 
     // WaveEvent wave data (stored at body level, not in Properties)
-    if (mod.areaType === 'WaveEvent' && mod.waveData) {
+    if (mod.areaType === 'WaveEventArea' && mod.waveData) {
       body.Waves = mod.waveData.waves ?? [];
     }
 

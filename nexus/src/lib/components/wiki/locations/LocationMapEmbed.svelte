@@ -98,7 +98,7 @@
   };
 
   const areaTypeColors = {
-    WaveEvent: '#ec4899'     // Pink
+    WaveEventArea: '#ec4899'  // Pink
   };
 
   $: markerColor = (location?.Properties?.Type === 'Area' && areaTypeColors[location?.Properties?.AreaType])

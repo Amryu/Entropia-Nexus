@@ -1,7 +1,7 @@
 -- Migration: Convert WaveEvent from LocationType to AreaType
 -- Description: WaveEvent locations are conceptually areas (like MobArea/LandArea).
 --   This migration moves them from Locations.Type='WaveEvent' to
---   Locations.Type='Area' + Areas.Type='WaveEvent', so they share the Area
+--   Locations.Type='Area' + Areas.Type='WaveEventArea', so they share the Area
 --   extension table and can have polygon shapes on the map.
 --   The WaveEventWaves table and its FK are unchanged.
 --   'WaveEvent' is intentionally left in the LocationType enum — removing a
@@ -12,8 +12,8 @@
 
 BEGIN;
 
--- Step 1: Add 'WaveEvent' to the AreaType enum
-ALTER TYPE "AreaType" ADD VALUE IF NOT EXISTS 'WaveEvent';
+-- Step 1: Add 'WaveEventArea' to the AreaType enum
+ALTER TYPE "AreaType" ADD VALUE IF NOT EXISTS 'WaveEventArea';
 
 -- Step 2: Migrate Locations.Type = 'WaveEvent' → 'Area'
 UPDATE ONLY "Locations"
@@ -22,7 +22,7 @@ UPDATE ONLY "Locations"
 
 -- Step 3: Create Areas rows for the migrated locations (idempotent via ON CONFLICT)
 INSERT INTO "Areas" ("LocationId", "Type", "Shape", "Data")
-SELECT l."Id", 'WaveEvent'::"AreaType", 'Point'::"Shape", '{}'::jsonb
+SELECT l."Id", 'WaveEventArea'::"AreaType", 'Point'::"Shape", '{}'::jsonb
 FROM ONLY "Locations" l
 WHERE l."Type" = 'Area'
   AND NOT EXISTS (

@@ -1343,9 +1343,9 @@ async function applyLocationExtensionChanges(client, locationId, x) {
     }
   }
 
-  // Handle WaveEventWaves for WaveEvent area type
+  // Handle WaveEventWaves for WaveEventArea area type
   const areaType = x.Properties?.AreaType;
-  if (locationType === 'Area' && areaType === 'WaveEvent' && Array.isArray(x.Waves)) {
+  if (locationType === 'Area' && areaType === 'WaveEventArea' && Array.isArray(x.Waves)) {
     await applyWaveEventWavesChanges(client, locationId, x.Waves);
   }
 }

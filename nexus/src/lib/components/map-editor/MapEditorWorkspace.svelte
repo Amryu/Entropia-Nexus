@@ -92,6 +92,7 @@
           ...loc,
           Name: mod.name ?? loc.Name,
           _hasPendingEdit: true,
+          ...(mod.waveData ? { Waves: mod.waveData.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
           ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
           Properties: {
             ...loc.Properties,
@@ -118,6 +119,7 @@
         Id: selectedId,
         Name: mod.name || '',
         _isPendingAdd: true,
+        ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
         Properties: {
           Type: mod.locationType === 'Area' ? (mod.areaType || 'MobArea') : (mod.locationType || 'Area'),
           AreaType: mod.areaType || null,

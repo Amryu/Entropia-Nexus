@@ -44,7 +44,7 @@ export const Location = {
         // Area-specific properties (when Type = 'Area')
         "AreaType": {
           "type": ["string", "null"],
-          "enum": ["PvpArea", "PvpLootArea", "MobArea", "LandArea", "ZoneArea", "CityArea", "EstateArea", "EventArea", "WaveEvent", null],
+          "enum": ["PvpArea", "PvpLootArea", "MobArea", "LandArea", "ZoneArea", "CityArea", "EstateArea", "EventArea", "WaveEventArea", null],
           "default": null
         },
         "Shape": {

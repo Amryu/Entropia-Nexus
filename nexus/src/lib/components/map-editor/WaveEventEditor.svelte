@@ -16,7 +16,7 @@
   // mob maturity cache: mobId → [{ Id, Name, Health, Level, Boss }]
   let mobMaturityCache = {};
   // per-wave maturity search
-  let maturitySearchQuery = '';
+  let waveSearchQueries = [];  // one search string per wave index
   let maturitySearchWaveIdx = null;
   let maturitySearchResults = [];
 
@@ -30,6 +30,7 @@
         TimeToComplete: w.TimeToComplete ?? null,
         MobMaturities: [...(w.MobMaturities ?? [])]
       }));
+      waveSearchQueries = waves.map(() => '');
     }
   }
 
@@ -83,11 +84,14 @@
       ? Math.max(...waves.map(w => w.WaveIndex)) + 1
       : 1;
     waves = [...waves, { Id: null, WaveIndex: nextIndex, TimeToComplete: null, MobMaturities: [] }];
+    waveSearchQueries = [...waveSearchQueries, ''];
     expandedWaves = new Set([...expandedWaves, waves.length - 1]);
   }
 
   function removeWave(idx) {
     waves = waves.filter((_, i) => i !== idx);
+    waveSearchQueries = waveSearchQueries.filter((_, i) => i !== idx);
+    if (maturitySearchWaveIdx === idx) { maturitySearchWaveIdx = null; maturitySearchResults = []; }
     expandedWaves.delete(idx);
     expandedWaves = new Set(expandedWaves);
   }
@@ -113,7 +117,7 @@
 
   async function handleMaturitySearch(waveIdx) {
     maturitySearchWaveIdx = waveIdx;
-    const query = maturitySearchQuery.trim().toLowerCase();
+    const query = (waveSearchQueries[waveIdx] ?? '').trim().toLowerCase();
     if (query.length < 2) { maturitySearchResults = []; return; }
 
     // Search mobs by name
@@ -135,7 +139,8 @@
     waves = waves.map((w, i) =>
       i === waveIdx ? { ...w, MobMaturities: [...w.MobMaturities, matId] } : w
     );
-    maturitySearchQuery = '';
+    waveSearchQueries[waveIdx] = '';
+    waveSearchQueries = waveSearchQueries;
     maturitySearchResults = [];
     maturitySearchWaveIdx = null;
   }
@@ -187,7 +192,6 @@
   .wave-item {
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    overflow: hidden;
   }
 
   .wave-header {
@@ -198,6 +202,7 @@
     cursor: pointer;
     background: var(--secondary-color);
     user-select: none;
+    border-radius: 3px 3px 0 0;
   }
 
   .wave-header:hover {
@@ -246,6 +251,7 @@
     gap: 8px;
     border-top: 1px solid var(--border-color);
     background: var(--primary-color);
+    border-radius: 0 0 3px 3px;
   }
 
   .field-group {
@@ -463,7 +469,7 @@
                   class="field-input"
                   type="text"
                   placeholder="Search mob name to add..."
-                  bind:value={maturitySearchQuery}
+                  bind:value={waveSearchQueries[idx]}
                   on:input={() => handleMaturitySearch(idx)}
                   on:focus={() => { maturitySearchWaveIdx = idx; }}
                 />

@@ -5,6 +5,7 @@
   import { apiCall } from '$lib/util.js';
   import { LOCATION_TYPES, AREA_TYPES, SHAPES, isArea, getEffectiveType } from './mapEditorUtils.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+  import JsonTreeNode from '$lib/components/JsonTreeNode.svelte';
 
   /** @type {typeof import('$lib/components/wiki/RichTextEditor.svelte').default|null} */
   let RichTextEditor = null;
@@ -36,7 +37,7 @@
   let locationType = 'Area';
   let longitude = 0;
   let latitude = 0;
-  let altitude = 0;
+  let altitude = 100;
   let areaType = 'MobArea';
   let shape = 'Polygon';
   let shapeDataJson = '';
@@ -213,7 +214,7 @@
     locationType = drawnShapeData.isMarker ? 'Teleporter' : 'Area';
     longitude = drawnShapeData.center?.x ?? 0;
     latitude = drawnShapeData.center?.y ?? 0;
-    altitude = 0;
+    altitude = 100;
     areaType = 'MobArea';
     shape = drawnShapeData.shape || 'Polygon';
     const drawnData = drawnShapeData.data;
@@ -368,7 +369,7 @@
   $: isAreaType = locationType === 'Area';
   $: isMobArea = isAreaType && areaType === 'MobArea';
   $: isLandArea = isAreaType && areaType === 'LandArea';
-  $: isWaveEvent = isAreaType && areaType === 'WaveEvent';
+  $: isWaveEvent = isAreaType && areaType === 'WaveEventArea';
 
   async function fetchRelatedEntities() {
     if (!location?.Id || location._isPendingAdd || relatedLoading) return;
@@ -388,6 +389,67 @@
     if (relatedExpanded && relatedMissions === null) {
       fetchRelatedEntities();
     }
+  }
+
+  // Raw JSON dialog
+  let showRawJson = false;
+  let jsonCollapsedPaths = new Set();
+
+  // Always reflects current form state — used by the JSON dialog
+  $: currentJson = (location || isNew) ? (() => {
+    const effectiveAreaType = locationType === 'Area' ? areaType : null;
+    return {
+      ...(location?.Id != null ? { Id: location.Id } : {}),
+      Name: name,
+      Properties: {
+        Type: locationType,
+        ...(effectiveAreaType ? { AreaType: effectiveAreaType } : {}),
+        Description: description || null,
+        Coordinates: {
+          Longitude: Number(longitude),
+          Latitude: Number(latitude),
+          Altitude: Number(altitude) || null
+        },
+        ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
+        ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
+        ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {})
+      },
+      ...(location?.Planet ? { Planet: location.Planet } : {}),
+      ParentLocation: parentLocationName ? { Name: parentLocationName } : null,
+      Facilities: location?.Facilities ?? [],
+      ...(location?.Waves ? { Waves: location.Waves } : {})
+    };
+  })() : null;
+
+  function collectArrayPaths(obj, path = '') {
+    if (obj === null || typeof obj !== 'object') return [];
+    const paths = [];
+    if (Array.isArray(obj)) {
+      if (path) paths.push(path);
+      obj.forEach((item, i) => paths.push(...collectArrayPaths(item, `${path}[${i}]`)));
+    } else {
+      Object.entries(obj).forEach(([k, v]) => {
+        const p = path ? `${path}.${k}` : k;
+        paths.push(...collectArrayPaths(v, p));
+      });
+    }
+    return paths;
+  }
+
+  function openRawJson() {
+    jsonCollapsedPaths = new Set(collectArrayPaths(currentJson));
+    showRawJson = true;
+  }
+
+  function closeRawJson() { showRawJson = false; }
+
+  function toggleJsonCollapse(path) {
+    if (jsonCollapsedPaths.has(path)) {
+      jsonCollapsedPaths.delete(path);
+    } else {
+      jsonCollapsedPaths.add(path);
+    }
+    jsonCollapsedPaths = new Set(jsonCollapsedPaths);
   }
 </script>
 
@@ -600,6 +662,81 @@
     padding: 2px 0;
   }
   .related-item:hover { text-decoration: underline; }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .title-row .editor-title { flex: 1; }
+  .btn-json {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: monospace;
+    padding: 1px 5px;
+    line-height: 1.4;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .btn-json:hover { border-color: var(--accent-color); color: var(--accent-color); }
+
+  .json-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .json-dialog {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 560px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    font-size: 12px;
+  }
+  .json-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+  .json-dialog-header h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-color); }
+  .json-dialog-close {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .json-dialog-close:hover { background: var(--hover-color); }
+  .json-dialog-body {
+    overflow: auto;
+    padding: 12px 14px;
+    font-family: 'Consolas', 'Menlo', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
 </style>
 
 {#if !location && !isNew}
@@ -608,7 +745,12 @@
   </div>
 {:else}
   <div class="editor-container" on:input={scheduleAutoSave} on:change={scheduleAutoSave}>
-    <h3 class="editor-title">{isNew ? 'New Location' : readOnly ? (location?.Name || '') : `Edit: ${location?.Name || ''}`}</h3>
+    <div class="title-row">
+      <h3 class="editor-title">{isNew ? 'New Location' : readOnly ? (location?.Name || '') : `Edit: ${location?.Name || ''}`}</h3>
+      {#if location}
+        <button class="btn-json" on:click={openRawJson} title="View raw JSON">&#123;&#125;</button>
+      {/if}
+    </div>
 
     {#if isLocked}
       <div class="lock-notice">
@@ -827,5 +969,27 @@
         </div>
       {/if}
     {/if}
+  </div>
+{/if}
+
+<svelte:window on:keydown={e => { if (e.key === 'Escape' && showRawJson) closeRawJson(); }} />
+
+{#if showRawJson}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="json-dialog-overlay" on:click|self={closeRawJson}>
+    <div class="json-dialog">
+      <div class="json-dialog-header">
+        <h3>{location?.Name || 'Raw JSON'}</h3>
+        <button class="json-dialog-close" on:click={closeRawJson}>×</button>
+      </div>
+      <div class="json-dialog-body">
+        <JsonTreeNode
+          data={currentJson}
+          path=""
+          collapsedPaths={jsonCollapsedPaths}
+          toggleCollapse={toggleJsonCollapse}
+        />
+      </div>
+    </div>
   </div>
 {/if}

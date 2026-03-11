@@ -147,7 +147,7 @@
     { slug: 'areas', label: 'Areas', types: ['Area'] },
     { slug: 'estates', label: 'Estates', types: ['Estate'] },
     { slug: 'settlements', label: 'Settlements', types: ['Outpost', 'Camp', 'City'] },
-    { slug: 'waveevents', label: 'Wave Events', types: ['Area'], areaTypes: ['WaveEvent'] },
+    { slug: 'waveevents', label: 'Wave Events', types: ['Area'], areaTypes: ['WaveEventArea'] },
     { slug: 'instances', label: 'Instances', types: ['InstanceEntrance'] },
     { slug: 'vendors', label: 'Vendors', types: ['Vendor'] },
     { slug: 'other', label: 'Other', types: null } // Catches types not in other categories
@@ -185,7 +185,7 @@
     { value: 'PvpLootArea', label: 'PvP Loot Area' },
     { value: 'MobArea', label: 'Mob Area' },
     { value: 'LandArea', label: 'Land Area' },
-    { value: 'WaveEvent', label: 'Wave Event' },
+    { value: 'WaveEventArea', label: 'Wave Event' },
     { value: 'ZoneArea', label: 'Zone Area' },
     { value: 'CityArea', label: 'City Area' },
     { value: 'EstateArea', label: 'Estate Area' },
@@ -288,9 +288,9 @@
       : entity;
 
   $: activeLocation = activeEntity;
-  // WaveEvent locations now have Type='Area' and AreaType='WaveEvent'
-  $: locationType = activeLocation?.Properties?.AreaType === 'WaveEvent'
-    ? 'WaveEvent'
+  // WaveEventArea locations have Type='Area' and AreaType='WaveEventArea'
+  $: locationType = activeLocation?.Properties?.AreaType === 'WaveEventArea'
+    ? 'WaveEventArea'
     : (activeLocation?.Properties?.Type || 'Teleporter');
 
   // Settlement types that have facilities
@@ -355,7 +355,7 @@
 
   function getSidebarHref(item, basePath) {
     const slug = encodeURIComponentSafe(item.Name);
-    const typeSlug = item.Properties?.AreaType === 'WaveEvent'
+    const typeSlug = item.Properties?.AreaType === 'WaveEventArea'
       ? 'waveevents'
       : getTypeSlug(item.Properties?.Type);
     const baseUrl = typeSlug
@@ -386,7 +386,7 @@
     || `${activeLocation?.Name || 'Location'} reference data for Entropia Universe.`;
 
   $: canonicalUrl = activeEntity?.Name
-    ? `https://entropianexus.com/information/locations/${activeLocation?.Properties?.AreaType === 'WaveEvent' ? 'waveevents' : (getTypeSlug(activeLocation?.Properties?.Type) || '')}/${encodeURIComponentSafe(activeEntity.Name)}`
+    ? `https://entropianexus.com/information/locations/${activeLocation?.Properties?.AreaType === 'WaveEventArea' ? 'waveevents' : (getTypeSlug(activeLocation?.Properties?.Type) || '')}/${encodeURIComponentSafe(activeEntity.Name)}`
     : 'https://entropianexus.com/information/locations';
 
   const seoColumns = [
@@ -1283,7 +1283,7 @@
         {/if}
 
         <!-- Waves (for WaveEvent type) -->
-        {#if locationType === 'WaveEvent'}
+        {#if locationType === 'WaveEventArea'}
           <DataSection title="Waves" subtitle="{activeLocation?.Waves?.length || 0} waves" icon="" allowOverflow={$editMode}>
             {#if $editMode}
               <div class="waves-editor">

@@ -1433,7 +1433,7 @@
         return { color: 'yellow', pattern: null };
       case 'EventArea':
         return { color: 'white', pattern: null };
-      case 'WaveEvent':
+      case 'WaveEventArea':
         return { color: '#da70d6', pattern: null };
       case 'MobArea': {
         // Use difficulty color if available, otherwise yellow

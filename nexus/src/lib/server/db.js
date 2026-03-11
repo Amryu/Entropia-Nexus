@@ -4773,7 +4773,7 @@ export async function getContributorBalances(page = 1, limit = 50, search = null
       COALESCE((SELECT COUNT(*) FROM contributor_rewards cr WHERE cr.user_id = u.id), 0) as rewarded_count,
       COALESCE((SELECT SUM(cr.amount) FROM contributor_rewards cr WHERE cr.user_id = u.id), 0) as total_earned,
       COALESCE((SELECT SUM(cr.contribution_score) FROM contributor_rewards cr WHERE cr.user_id = u.id), 0) as total_score,
-      COALESCE((SELECT SUM(cp.amount) FROM contributor_payouts cp WHERE cp.user_id = u.id), 0) as total_paid
+      COALESCE((SELECT SUM(cp.amount) FROM contributor_payouts cp WHERE cp.user_id = u.id AND NOT cp.is_bonus), 0) as total_paid
     FROM users u
     WHERE (
       EXISTS (SELECT 1 FROM changes c3 WHERE c3.author_id = u.id AND c3.state = 'Approved')
@@ -5119,7 +5119,7 @@ export async function getRewardsSummary() {
   const result = await pool.query(`
     SELECT
       COALESCE((SELECT SUM(amount) FROM contributor_rewards), 0) as total_earned,
-      COALESCE((SELECT SUM(amount) FROM contributor_payouts), 0) as total_paid,
+      COALESCE((SELECT SUM(amount) FROM contributor_payouts WHERE NOT is_bonus), 0) as total_paid,
       COALESCE((SELECT SUM(amount) FROM contributor_payouts WHERE status = 'pending'), 0) as total_pending,
       COALESCE((SELECT COUNT(*) FROM contributor_rewards), 0) as reward_count,
       COALESCE((SELECT COUNT(*) FROM contributor_payouts WHERE status = 'pending'), 0) as pending_payout_count,
