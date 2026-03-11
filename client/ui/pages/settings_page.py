@@ -1090,8 +1090,9 @@ class SettingsPage(QWidget):
         grid.addWidget(QLabel("Delay after global (s):"), row, 0)
         self._screenshot_delay = QDoubleSpinBox()
         self._screenshot_delay.setFixedWidth(_INPUT_MAX_W)
-        self._screenshot_delay.setRange(0.5, 5.0)
-        self._screenshot_delay.setSingleStep(0.5)
+        self._screenshot_delay.setDecimals(4)
+        self._screenshot_delay.setRange(0.0, 5.0)
+        self._screenshot_delay.setSingleStep(0.1)
         self._screenshot_delay.setValue(self._config.screenshot_delay_s)
         self._screenshot_delay.valueChanged.connect(self._schedule_save)
         grid.addWidget(self._screenshot_delay, row, 1)
@@ -1484,9 +1485,11 @@ class SettingsPage(QWidget):
 
         # Post-global delay
         grid.addWidget(QLabel("Save delay after global (s):"), row, 0)
-        self._clip_post_global = QSpinBox()
+        self._clip_post_global = QDoubleSpinBox()
         self._clip_post_global.setFixedWidth(_INPUT_MAX_W)
-        self._clip_post_global.setRange(0, 15)
+        self._clip_post_global.setDecimals(4)
+        self._clip_post_global.setRange(0.0, 15.0)
+        self._clip_post_global.setSingleStep(0.1)
         self._clip_post_global.setValue(self._config.clip_post_global_seconds)
         self._clip_post_global.valueChanged.connect(self._schedule_save)
         grid.addWidget(self._clip_post_global, row, 1)
@@ -1506,6 +1509,27 @@ class SettingsPage(QWidget):
         cbrowse.clicked.connect(self._browse_clip_dir)
         cdir_h.addWidget(cbrowse)
         grid.addWidget(cdir_w, row, 1, 1, 2)
+        row += 1
+
+        # Encoding priority
+        grid.addWidget(QLabel("Encoding priority:"), row, 0)
+        self._encode_priority = QComboBox()
+        self._encode_priority.setFixedWidth(_INPUT_MAX_W)
+        self._encode_priority.addItem("Normal — fastest encoding", "normal")
+        self._encode_priority.addItem("Below Normal — yields to game (recommended)", "below_normal")
+        self._encode_priority.addItem("Idle — only encodes when CPU is free", "idle")
+        _ep = getattr(self._config, "clip_encode_priority", "below_normal")
+        _ep_idx = self._encode_priority.findData(_ep)
+        if _ep_idx >= 0:
+            self._encode_priority.setCurrentIndex(_ep_idx)
+        self._encode_priority.setToolTip(
+            "Controls how much CPU the encoder is allowed to use while the game is running.\n"
+            "Below Normal lets the OS automatically back off encoding whenever the game\n"
+            "requests CPU — no polling needed, the scheduler handles it.\n"
+            "Idle only encodes during truly idle moments (slowest but least intrusive)."
+        )
+        self._encode_priority.currentIndexChanged.connect(self._schedule_save)
+        grid.addWidget(self._encode_priority, row, 1)
         row += 1
 
         # FFmpeg path
@@ -1660,6 +1684,7 @@ class SettingsPage(QWidget):
         # Internal-only widgets: disabled when OBS mode is active
         self._internal_clip_widgets = [
             self._clip_buffer, self._clip_post_global,
+            self._encode_priority,
             self._ffmpeg_path, self._ffmpeg_status,
             self._clip_audio_cb, self._clip_audio_device,
             self._game_gain_slider,
@@ -2253,6 +2278,7 @@ class SettingsPage(QWidget):
         self._config.clip_directory = self._clip_dir.text()
         self._config.clip_daily_subfolder = self._clip_daily_cb.isChecked()
         self._config.clip_sound_enabled = self._clip_sound_cb.isChecked()
+        self._config.clip_encode_priority = self._encode_priority.currentData() or "below_normal"
         self._config.ffmpeg_path = self._ffmpeg_path.text()
 
         # System Audio

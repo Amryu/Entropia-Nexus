@@ -2168,7 +2168,8 @@ class Database:
             cur = self._conn.execute(
                 f"SELECT s.file_path, s.id, s.notes, s.upload_status, "
                 f"s.server_global_id, s.global_id, "
-                f"g.global_type, g.is_hof, g.is_ath, s.video_url, s.file_hash "
+                f"g.global_type, g.is_hof, g.is_ath, s.video_url, s.file_hash, "
+                f"g.target_name, g.value "
                 f"FROM screenshots s "
                 f"LEFT JOIN globals g ON s.global_id = g.id "
                 f"WHERE s.file_path IN ({placeholders})",
@@ -2187,6 +2188,8 @@ class Database:
                     "global_id": row[5],
                     "video_url": row[9],
                     "file_hash": row[10],
+                    "target_name": row[11],
+                    "value": row[12],
                 }
             return result
 

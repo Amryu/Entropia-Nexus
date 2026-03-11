@@ -10,6 +10,28 @@ SUBPROCESS_FLAGS = (
     {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 )
 
+# Windows process priority classes (combined with CREATE_NO_WINDOW).
+# Below-normal lets the game preempt encoding without any polling — the OS
+# scheduler automatically backs off FFmpeg whenever the game needs CPU.
+_BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+_IDLE_PRIORITY_CLASS = 0x00000040
+
+
+def get_ffmpeg_flags(priority: str = "normal") -> dict:
+    """Return subprocess kwargs for FFmpeg with the requested CPU priority.
+
+    ``priority`` is one of ``"normal"``, ``"below_normal"``, or ``"idle"``.
+    On non-Windows platforms this is a no-op (returns the same base flags).
+    """
+    if sys.platform != "win32":
+        return {}
+    flags = subprocess.CREATE_NO_WINDOW
+    if priority == "below_normal":
+        flags |= _BELOW_NORMAL_PRIORITY_CLASS
+    elif priority == "idle":
+        flags |= _IDLE_PRIORITY_CLASS
+    return {"creationflags": flags}
+
 # Default output directories
 if sys.platform == "win32":
     _PICTURES = Path("~/Pictures").expanduser()

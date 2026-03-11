@@ -19,6 +19,7 @@ from .constants import (
     BITRATE_TABLE,
     RESOLUTION_PRESETS,
     WEBCAM_OVERLAY_SCALE,
+    get_ffmpeg_flags,
     get_ffmpeg_scale_flag,
     get_interpolation,
 )
@@ -121,6 +122,7 @@ def write_clip(
     thumb_time: float = 0,
     scaling: str = "lanczos",
     on_progress=None,
+    encode_priority: str = "normal",
 ) -> None:
     """Encode a video clip from buffered frames + optional audio.
 
@@ -303,14 +305,13 @@ def write_clip(
         # background thread to prevent pipe-buffer deadlock — writing raw
         # frames to stdin in a tight loop can fill the stderr pipe buffer
         # if FFmpeg's progress output backs up, causing both sides to block.
-        from .constants import SUBPROCESS_FLAGS
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=ffmpeg_cwd,
-            **SUBPROCESS_FLAGS,
+            **get_ffmpeg_flags(encode_priority),
         )
 
         stderr_chunks: list[bytes] = []

@@ -48,7 +48,7 @@ from .constants import (
     DEFAULT_SCREENSHOT_DIR,
     FILENAME_TIMESTAMP_FMT,
     RESOLUTION_PRESETS,
-    SUBPROCESS_FLAGS,
+    get_ffmpeg_flags,
     get_ffmpeg_scale_flag,
     get_interpolation,
 )
@@ -242,7 +242,7 @@ class CaptureManager:
             webcam_frame = wc.get_latest_frame()
         self._frame_buffer.push(frame, timestamp, webcam_frame)
         if self._recording:
-            self._write_recording_frame(frame.copy())
+            self._write_recording_frame(frame.copy(), timestamp)
 
     # ------------------------------------------------------------------
     # OBS integration
@@ -817,7 +817,11 @@ class CaptureManager:
             })
 
     def _take_manual_screenshot(self) -> None:
-        """Capture a screenshot immediately via hotkey."""
+        """Capture a screenshot immediately via hotkey.
+
+        Frame grab happens synchronously (fast) so timing is accurate,
+        then encoding + disk I/O is offloaded to a background thread.
+        """
         frame = self._grab_frame()
         if frame is None:
             self._event_bus.publish(EVENT_CAPTURE_ERROR,
@@ -829,12 +833,32 @@ class CaptureManager:
             daily_subfolder=self._config.screenshot_daily_subfolder,
         )
 
+        # Snapshot config values to avoid race conditions
+        blur_regions = self._config.capture_blur_regions
+        background = self._background
+        target_resolution = RESOLUTION_PRESETS.get(self._config.clip_resolution)
+        size_pct = self._config.screenshot_size_pct
+        scaling = getattr(self._config, "clip_scaling", "lanczos")
+
+        threading.Thread(
+            target=self._save_manual_screenshot,
+            args=(frame, path, blur_regions, background,
+                  target_resolution, size_pct, scaling),
+            daemon=True,
+            name="screenshot-save",
+        ).start()
+
+    def _save_manual_screenshot(
+        self, frame, path, blur_regions, background,
+        target_resolution, size_pct, scaling,
+    ) -> None:
+        """Encode and write a manual screenshot in a background thread."""
         ok = save_screenshot(
-            frame, path, self._config.capture_blur_regions,
-            background=self._background,
-            target_resolution=RESOLUTION_PRESETS.get(self._config.clip_resolution),
-            size_pct=self._config.screenshot_size_pct,
-            scaling=getattr(self._config, "clip_scaling", "lanczos"),
+            frame, path, blur_regions,
+            background=background,
+            target_resolution=target_resolution,
+            size_pct=size_pct,
+            scaling=scaling,
         )
         if ok:
             self._event_bus.publish(EVENT_SCREENSHOT_SAVED, {
@@ -1017,6 +1041,7 @@ class CaptureManager:
             "game_gain": cfg.clip_audio_game_gain,
             "mic_gain": cfg.clip_audio_mic_gain,
             "scaling": getattr(cfg, "clip_scaling", "lanczos"),
+            "encode_priority": getattr(cfg, "clip_encode_priority", "normal"),
         }
 
         # Encode in background thread (webcam frames are stored per-frame in the buffer)
@@ -1093,6 +1118,7 @@ class CaptureManager:
                 background=self._background,
                 scaling=c.get("scaling", "lanczos"),
                 on_progress=_on_progress,
+                encode_priority=c.get("encode_priority", "normal"),
             )
 
             payload = {
@@ -1200,7 +1226,7 @@ class CaptureManager:
             self._rec_proc = subprocess.Popen(
                 cmd, stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                **SUBPROCESS_FLAGS,
+                **get_ffmpeg_flags(getattr(self._config, "clip_encode_priority", "normal")),
             )
         except Exception as e:
             self._event_bus.publish(EVENT_CAPTURE_ERROR,
@@ -1238,9 +1264,11 @@ class CaptureManager:
         self._rec_fps = fps
 
         # Bounded queue + writer thread so pipe writes don't block capture.
-        # Max 3 frames (~18 MB at 1080p) — if FFmpeg can't keep up we drop.
+        # 10 frames (~60 MB at 1080p) gives ~333ms headroom at 30fps before
+        # drops occur; the writer repeats the last frame on drops, so audio
+        # never drifts even if occasional frames are queued late.
         import queue as _queue
-        self._rec_write_queue: _queue.Queue = _queue.Queue(maxsize=3)
+        self._rec_write_queue: _queue.Queue = _queue.Queue(maxsize=10)
         self._rec_writer_thread = threading.Thread(
             target=self._rec_writer_loop, daemon=True, name="rec-writer",
         )
@@ -1390,11 +1418,13 @@ class CaptureManager:
             self._stop_mic()
             self._release_webcam_if_not_needed()
 
-    def _write_recording_frame(self, frame_bgr: np.ndarray) -> None:
+    def _write_recording_frame(self, frame_bgr: np.ndarray, timestamp: float) -> None:
         """Process a frame and queue it for the writer thread.
 
         Runs on the capture thread.  The actual pipe write is offloaded
         to ``_rec_writer_loop`` so a slow FFmpeg doesn't block capture.
+        The timestamp is passed so the writer can detect drops and repeat
+        the last frame to preserve correct video duration.
         """
         q = getattr(self, "_rec_write_queue", None)
         if q is None:
@@ -1439,26 +1469,83 @@ class CaptureManager:
 
         raw = frame_bgr.tobytes()
         try:
-            q.put_nowait(raw)
+            q.put_nowait((timestamp, raw))
         except Exception:
             # Queue full — FFmpeg can't keep up; drop this frame.
+            # The writer thread detects the gap via timestamps and repeats
+            # the last frame, so the video duration stays correct.
             log.debug("Recording frame dropped (queue full)")
 
     _REC_WRITE_SENTINEL = object()
 
     def _rec_writer_loop(self) -> None:
-        """Drain the write queue into FFmpeg stdin (runs in dedicated thread)."""
+        """Drain the write queue into FFmpeg stdin (runs in dedicated thread).
+
+        Each queue item is ``(timestamp, raw_bytes)``.  When a frame was
+        dropped (queue full on the capture side), the timestamp gap reveals
+        the missing frames and the last known frame is repeated to fill them.
+        This keeps the video duration in sync with wall-clock audio without
+        needing post-hoc itsscale correction.
+        """
         q = self._rec_write_queue
+        last_raw: bytes | None = None
+        expected_frame_idx: int = 0
+        # Cap repeated-frame fill at 5s to avoid blocking the writer on extreme
+        # freezes; itsscale handles any residual drift beyond the cap.
+        max_gap = int(self._rec_fps * 5)
+
         while True:
-            raw = q.get()
-            if raw is self._REC_WRITE_SENTINEL:
+            item = q.get()
+            if item is self._REC_WRITE_SENTINEL:
                 break
+
+            ts, raw = item
             proc = self._rec_proc
             if not proc or not proc.stdin:
+                last_raw = raw
                 continue
+
+            # How many frames should have been written by this timestamp?
+            target_idx = round((ts - self._rec_start) * self._rec_fps)
+            # Never go backwards (jitter can make ts slightly early).
+            target_idx = max(target_idx, expected_frame_idx)
+            gap = target_idx - expected_frame_idx
+            if gap > 0 and last_raw is not None:
+                if gap > max_gap:
+                    log.warning(
+                        "Frame gap too large (%d frames, %.1fs) — capping repeat at %d frames",
+                        gap, gap / self._rec_fps, max_gap,
+                    )
+                    expected_frame_idx = target_idx - max_gap
+                    gap = max_gap
+                elif gap > self._rec_fps * 2:
+                    log.warning(
+                        "Large frame gap: %d frames (%.1fs) — repeating last frame to fill",
+                        gap, gap / self._rec_fps,
+                    )
+                pipe_broken = False
+                for _ in range(gap):
+                    try:
+                        proc.stdin.write(last_raw)
+                        self._rec_frame_count += 1
+                        expected_frame_idx += 1
+                    except (BrokenPipeError, OSError, ValueError):
+                        log.error("Recording pipe broken during gap fill — stopping")
+                        self._recording = False
+                        threading.Thread(
+                            target=self._emergency_stop_recording,
+                            daemon=True, name="rec-pipe-break-stop",
+                        ).start()
+                        pipe_broken = True
+                        break
+                if pipe_broken:
+                    break
+
             try:
                 proc.stdin.write(raw)
                 self._rec_frame_count += 1
+                expected_frame_idx += 1
+                last_raw = raw
             except (BrokenPipeError, OSError, ValueError):
                 log.error("Recording pipe broken — stopping")
                 self._recording = False
@@ -1626,7 +1713,7 @@ class CaptureManager:
         ]
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=120,
-                                    **SUBPROCESS_FLAGS)
+                                    **get_ffmpeg_flags(getattr(self._config, "clip_encode_priority", "normal")))
             if result.returncode != 0:
                 log.warning("Timing remux failed, using uncorrected video")
                 self._rec_temp_video.rename(self._rec_output)
@@ -1724,7 +1811,7 @@ class CaptureManager:
             # (Windows drive-letter colon breaks FFmpeg filter path parsing).
             ffmpeg_cwd = os.path.dirname(rnnoise_model) if rnnoise_model else None
             result = subprocess.run(cmd, capture_output=True, timeout=300,
-                                    cwd=ffmpeg_cwd, **SUBPROCESS_FLAGS)
+                                    cwd=ffmpeg_cwd, **get_ffmpeg_flags(getattr(self._config, "clip_encode_priority", "normal")))
             if result.returncode != 0:
                 err = result.stderr.decode("utf-8", errors="replace")[-500:]
                 raise RuntimeError(f"Audio mux failed: {err}")

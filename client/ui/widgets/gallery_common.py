@@ -1,8 +1,10 @@
 """Shared thumbnail loader and widget for gallery page and gallery overlay."""
 
 import os
+import sqlite3
 import subprocess
 import sys
+import threading
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QMenu, QMessageBox
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -29,14 +31,178 @@ THUMB_HEIGHT = 130
 THUMB_COLS = 4
 
 
-class ThumbnailLoader(QThread):
-    """Background thread that scans directories and generates thumbnails.
+# ------------------------------------------------------------------
+# Thumbnail cache (SQLite)
+# ------------------------------------------------------------------
 
-    Produces QImage (thread-safe), not QPixmap.  The main-thread handler
-    must call ``QPixmap.fromImage()`` before assigning to a widget.
+class ThumbnailCache:
+    """SQLite-backed thumbnail cache.
+
+    Stores JPEG-compressed thumbnail bytes keyed by (path, mtime, width, height).
+    Thread-safe: each thread gets its own connection via thread-local storage.
     """
 
-    loaded = pyqtSignal(list)  # list of {path, qimage, type, mtime, ...}
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._local = threading.local()
+        # Create table using a temporary connection
+        conn = self._get_conn()
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS thumbnails ("
+            "  path TEXT NOT NULL,"
+            "  mtime REAL NOT NULL,"
+            "  width INTEGER NOT NULL,"
+            "  height INTEGER NOT NULL,"
+            "  img_width INTEGER NOT NULL,"
+            "  img_height INTEGER NOT NULL,"
+            "  data BLOB NOT NULL,"
+            "  PRIMARY KEY (path, width, height)"
+            ")"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_thumbs_path ON thumbnails (path)"
+        )
+        conn.commit()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn = conn
+        return conn
+
+    def get(self, path: str, mtime: float,
+            width: int, height: int) -> tuple[bytes, int, int] | None:
+        """Return (jpeg_bytes, img_width, img_height) or None on miss."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT data, img_width, img_height FROM thumbnails "
+            "WHERE path = ? AND width = ? AND height = ? AND mtime = ?",
+            (path, width, height, mtime),
+        ).fetchone()
+        return (row[0], row[1], row[2]) if row else None
+
+    def put(self, path: str, mtime: float,
+            width: int, height: int,
+            img_width: int, img_height: int,
+            data: bytes) -> None:
+        """Store a thumbnail."""
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO thumbnails "
+            "(path, mtime, width, height, img_width, img_height, data) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (path, mtime, width, height, img_width, img_height, data),
+        )
+        conn.commit()
+
+    def prune(self, existing_paths: set[str]) -> None:
+        """Remove entries for files that no longer exist."""
+        conn = self._get_conn()
+        all_paths = {r[0] for r in conn.execute(
+            "SELECT DISTINCT path FROM thumbnails"
+        ).fetchall()}
+        stale = all_paths - existing_paths
+        if stale:
+            conn.executemany(
+                "DELETE FROM thumbnails WHERE path = ?",
+                [(p,) for p in stale],
+            )
+            conn.commit()
+
+
+# Singleton cache instance (lazily initialized)
+_thumb_cache: ThumbnailCache | None = None
+_thumb_cache_lock = threading.Lock()
+
+
+def get_thumbnail_cache() -> ThumbnailCache | None:
+    """Return the global thumbnail cache, creating it if necessary."""
+    global _thumb_cache
+    if _thumb_cache is not None:
+        return _thumb_cache
+    with _thumb_cache_lock:
+        if _thumb_cache is not None:
+            return _thumb_cache
+        try:
+            db_dir = os.path.join(".", "data")
+            os.makedirs(db_dir, exist_ok=True)
+            _thumb_cache = ThumbnailCache(os.path.join(db_dir, "thumbs.db"))
+        except Exception as e:
+            log.warning("Failed to create thumbnail cache: %s", e)
+        return _thumb_cache
+
+
+# ------------------------------------------------------------------
+# Thumbnail generation helpers
+# ------------------------------------------------------------------
+
+def _generate_thumbnail_bytes(
+    path: str, file_type: str, tw: int, th: int,
+) -> tuple[bytes, int, int] | None:
+    """Generate a JPEG thumbnail and return (jpeg_bytes, width, height).
+
+    Returns None if the source cannot be read.
+    """
+    if cv2 is None:
+        return None
+
+    source = None
+    if file_type == "screenshot":
+        source = cv2.imread(path)
+    elif file_type == "clip":
+        # Try cached .thumb.jpg sidecar first
+        thumb_path = os.path.splitext(path)[0] + ".thumb.jpg"
+        if os.path.isfile(thumb_path):
+            source = cv2.imread(thumb_path)
+        if source is None:
+            cap = cv2.VideoCapture(path)
+            ret, source = cap.read()
+            cap.release()
+            if not ret:
+                source = None
+    if source is None:
+        return None
+
+    h, w = source.shape[:2]
+    scale = min(tw / w, th / h)
+    sw, sh = int(w * scale), int(h * scale)
+    thumb = cv2.resize(source, (sw, sh), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not ok:
+        return None
+    return (bytes(buf), sw, sh)
+
+
+def _jpeg_to_qimage(data: bytes, width: int, height: int) -> QImage | None:
+    """Convert JPEG bytes to a QImage."""
+    qimg = QImage()
+    if qimg.loadFromData(data, "JPEG"):
+        return qimg
+    return None
+
+
+# ------------------------------------------------------------------
+# Two-phase thumbnail loader
+# ------------------------------------------------------------------
+
+class ThumbnailLoader(QThread):
+    """Background thread that scans directories and loads thumbnails.
+
+    Phase 1: Scans directories, emits ``items_ready`` with file metadata
+    (no thumbnails) so the UI can show placeholders immediately.
+
+    Phase 2: Generates/loads thumbnails from the cache, emitting
+    ``thumbnail_ready`` for each item so the UI updates progressively.
+
+    The legacy ``loaded`` signal is still emitted at the end with all
+    items (including qimages) for backwards compatibility.
+    """
+
+    items_ready = pyqtSignal(list)      # Phase 1: [{path, type, mtime, ...}]
+    thumbnail_ready = pyqtSignal(str, object)  # Phase 2: (path, QImage)
+    loaded = pyqtSignal(list)           # Legacy: all items with qimages
 
     def __init__(self, screenshot_dir: str, clip_dir: str, filter_type: str,
                  thumb_width: int = THUMB_WIDTH, thumb_height: int = THUMB_HEIGHT,
@@ -48,18 +214,22 @@ class ThumbnailLoader(QThread):
         self._thumb_width = thumb_width
         self._thumb_height = thumb_height
         self._db = db
+        self._cancelled = False
+
+    def cancel(self):
+        """Request cancellation (checked between thumbnail generations)."""
+        self._cancelled = True
 
     def run(self):
+        # Phase 1: scan directories (fast — no image I/O)
         items = []
-        # Scan screenshots
         if self._filter_type in ("all", "screenshots"):
             items.extend(self._scan_dir(self._screenshot_dir, "screenshot"))
-        # Scan clips
         if self._filter_type in ("all", "clips"):
             items.extend(self._scan_dir(self._clip_dir, "clip"))
-        # Sort by modification time, newest first
         items.sort(key=lambda x: x["mtime"], reverse=True)
-        # Enrich with screenshot DB info if available
+
+        # Enrich with screenshot DB info
         if self._db and items:
             try:
                 paths = [it["path"] for it in items]
@@ -68,7 +238,71 @@ class ThumbnailLoader(QThread):
                     item["screenshot_info"] = info_map.get(item["path"])
             except Exception:
                 pass
-        self.loaded.emit(items)
+
+        # Emit file list immediately (no thumbnails)
+        self.items_ready.emit(items)
+
+        if self._cancelled:
+            return
+
+        # Phase 2: generate thumbnails (using cache)
+        cache = get_thumbnail_cache()
+        tw, th = self._thumb_width, self._thumb_height
+        existing_paths = set()
+
+        for item in items:
+            if self._cancelled:
+                break
+
+            path = item["path"]
+            mtime = item["mtime"]
+            file_type = item["type"]
+            existing_paths.add(path)
+
+            # Try cache first
+            if cache:
+                cached = cache.get(path, mtime, tw, th)
+                if cached:
+                    jpeg_bytes, iw, ih = cached
+                    qimg = _jpeg_to_qimage(jpeg_bytes, iw, ih)
+                    if qimg:
+                        item["qimage"] = qimg
+                        self.thumbnail_ready.emit(path, qimg)
+                        continue
+
+            # Cache miss — generate
+            try:
+                result = _generate_thumbnail_bytes(path, file_type, tw, th)
+                if result:
+                    jpeg_bytes, sw, sh = result
+                    # Store in cache
+                    if cache:
+                        try:
+                            cache.put(path, mtime, tw, th, sw, sh, jpeg_bytes)
+                        except Exception:
+                            pass
+                    qimg = _jpeg_to_qimage(jpeg_bytes, sw, sh)
+                    if qimg:
+                        item["qimage"] = qimg
+                        self.thumbnail_ready.emit(path, qimg)
+                        continue
+                # Generation failed — mark pending for clips (might still be encoding)
+                if file_type == "clip":
+                    item["pending"] = True
+            except Exception:
+                if file_type == "clip":
+                    item["pending"] = True
+
+        # Prune stale cache entries (non-critical, skip on cancel)
+        if cache and not self._cancelled and existing_paths:
+            try:
+                cache.prune(existing_paths)
+            except Exception:
+                pass
+
+        # Legacy signal with all items
+        if not self._cancelled:
+            self.loaded.emit(items)
 
     def _scan_dir(self, base_dir: str, file_type: str) -> list[dict]:
         if not base_dir or not os.path.isdir(base_dir):
@@ -77,7 +311,7 @@ class ThumbnailLoader(QThread):
         for root, dirs, files in os.walk(base_dir):
             for fname in files:
                 if fname.startswith(".") or fname.endswith(".thumb.jpg"):
-                    continue  # Skip temp/encoding files and cached thumbnails
+                    continue
                 fpath = os.path.join(root, fname)
                 ext = fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
                 if file_type == "screenshot" and ext in ("png", "jpg", "jpeg"):
@@ -87,49 +321,14 @@ class ThumbnailLoader(QThread):
         return items
 
     def _make_item(self, path: str, file_type: str) -> dict:
-        mtime = os.path.getmtime(path)
-        qimage = None
-        pending = False
-        tw, th = self._thumb_width, self._thumb_height
-        if file_type == "screenshot" and cv2 is not None:
-            try:
-                img = cv2.imread(path)
-                if img is not None:
-                    h, w = img.shape[:2]
-                    scale = min(tw / w, th / h)
-                    sw, sh = int(w * scale), int(h * scale)
-                    thumb = cv2.resize(img, (sw, sh), interpolation=cv2.INTER_AREA)
-                    rgb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-                    qimage = QImage(rgb.data, sw, sh, sw * 3,
-                                    QImage.Format.Format_RGB888).copy()
-            except Exception:
-                pass
-        elif file_type == "clip" and cv2 is not None:
-            try:
-                # Try cached .thumb.jpg first (saved alongside the clip)
-                thumb_path = os.path.splitext(path)[0] + ".thumb.jpg"
-                source = None
-                if os.path.isfile(thumb_path):
-                    source = cv2.imread(thumb_path)
-                if source is None:
-                    cap = cv2.VideoCapture(path)
-                    ret, source = cap.read()
-                    cap.release()
-                    if not ret or source is None:
-                        source = None
-                        pending = True
-                if source is not None:
-                    h, w = source.shape[:2]
-                    scale = min(tw / w, th / h)
-                    sw, sh = int(w * scale), int(h * scale)
-                    thumb = cv2.resize(source, (sw, sh), interpolation=cv2.INTER_AREA)
-                    rgb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-                    qimage = QImage(rgb.data, sw, sh, sw * 3,
-                                    QImage.Format.Format_RGB888).copy()
-            except Exception:
-                pending = True
-        return {"path": path, "qimage": qimage, "type": file_type, "mtime": mtime,
-                "pending": pending}
+        """Create item dict with metadata only (no thumbnail yet)."""
+        return {
+            "path": path,
+            "qimage": None,
+            "type": file_type,
+            "mtime": os.path.getmtime(path),
+            "pending": False,
+        }
 
 
 def generate_clip_thumbnail(
@@ -295,12 +494,19 @@ class ThumbnailWidget(QWidget):
             self._img_label.setText("Loading...")
             self._img_label.setStyleSheet(self._no_preview_style)
         else:
-            self._img_label.setText("No Preview")
+            self._img_label.setText("Loading...")
             self._img_label.setStyleSheet(self._no_preview_style)
         layout.addWidget(self._img_label)
 
-        # Filename label
-        name = os.path.basename(self._path)
+        # Label: show "<value> PEDd - <mob>" for global-associated captures,
+        # otherwise show the filename.
+        info = self._screenshot_info
+        if (info and info.get("global_type")
+                and info.get("target_name")
+                and info.get("value") is not None):
+            name = f"{int(info['value'])} PEDd - {info['target_name']}"
+        else:
+            name = os.path.basename(self._path)
         max_chars = max(12, thumb_width // 7)
         if len(name) > max_chars:
             name = name[:max_chars - 3] + "..."
@@ -318,6 +524,9 @@ class ThumbnailWidget(QWidget):
         """Update the thumbnail image (e.g. after a pending clip finishes encoding)."""
         self._img_label.setText("")
         self._img_label.setPixmap(pixmap)
+        self._img_label.setStyleSheet(
+            f"background: {SECONDARY}; border: 1px solid {BORDER}; border-radius: 4px;"
+        )
         self._pending = False
 
     def set_no_preview(self) -> None:

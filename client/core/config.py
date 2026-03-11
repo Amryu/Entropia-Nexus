@@ -207,7 +207,7 @@ class AppConfig:
     clip_enabled: bool = False              # off by default (needs FFmpeg + resources)
     clip_auto_on_global: bool = True
     clip_buffer_seconds: int = 15
-    clip_post_global_seconds: int = 5
+    clip_post_global_seconds: float = 5.0
 
     # Auto-clip conditions (checked when own global detected)
     clip_min_ped: float = 0.0                       # 0 = no minimum
@@ -223,6 +223,7 @@ class AppConfig:
     clip_resolution: str = "source"         # source | 1080p | 720p | 480p
     clip_bitrate: str = "medium"            # low | medium | high | ultra
     clip_scaling: str = "cubic"             # lanczos | linear | cubic | area | nearest
+    clip_encode_priority: str = "below_normal"  # normal | below_normal | idle
     hotkey_save_clip: str = "ctrl+shift+space"
     hotkey_toggle_recording: str = "ctrl+shift+r"
     ffmpeg_path: str = ""                   # manual override for FFmpeg binary
@@ -427,7 +428,7 @@ DEFAULTS = {
     "clip_enabled": False,
     "clip_auto_on_global": True,
     "clip_buffer_seconds": 15,
-    "clip_post_global_seconds": 5,
+    "clip_post_global_seconds": 5.0,
     "clip_min_ped": 0.0,
     "clip_global_types": [],
     "clip_hof_only": False,
