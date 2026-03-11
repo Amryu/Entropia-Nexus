@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.3.4",
+    "date": "2026-03-11",
+    "changes": [
+      {"type": "feat", "text": "Search results now navigate to planet maps when a Map type result is selected"},
+      {"type": "feat", "text": "Gallery thumbnails now load progressively — placeholders appear immediately while images decode in the background"},
+      {"type": "fix", "text": "Gallery reload no longer stacks signal handlers — previous loader is cancelled and disconnected before starting a new one"}
+    ]
+  },
+  {
     "version": "0.3.3",
     "date": "2026-03-11",
     "changes": [

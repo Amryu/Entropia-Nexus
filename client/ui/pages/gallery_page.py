@@ -201,6 +201,7 @@ class GalleryPage(QWidget):
         self._nexus_client = nexus_client
         self._loader = None
         self._all_items: list[dict] = []
+        self._thumb_widgets_by_path: dict[str, ThumbnailWidget] = {}
         self._selected_month: tuple[int, int] | None = None
 
         outer = QVBoxLayout(self)
@@ -317,13 +318,24 @@ class GalleryPage(QWidget):
     def _reload(self):
         # Disconnect old loader to prevent stale results; wait briefly for cleanup
         if self._loader is not None:
+            self._loader.cancel()
+            try:
+                self._loader.items_ready.disconnect(self._on_items_ready)
+            except TypeError:
+                pass
+            try:
+                self._loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
+            except TypeError:
+                pass
             try:
                 self._loader.loaded.disconnect(self._on_loaded)
             except TypeError:
-                pass  # already disconnected
+                pass
             if self._loader.isRunning():
                 self._loader.wait(3000)
             self._loader = None
+
+        self._thumb_widgets_by_path = {}
 
         ss_dir = self._config.screenshot_directory or DEFAULT_SCREENSHOT_DIR
         clip_dir = self._config.clip_directory or DEFAULT_CLIP_DIR
@@ -331,14 +343,16 @@ class GalleryPage(QWidget):
 
         self._sidebar._status.setText("Loading...")
         self._loader = ThumbnailLoader(ss_dir, clip_dir, filter_type, db=self._db)
+        self._loader.items_ready.connect(self._on_items_ready)
+        self._loader.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._loader.loaded.connect(self._on_loaded)
         self._loader.start()
 
-    def _on_loaded(self, items: list[dict]):
+    def _on_items_ready(self, items: list[dict]):
+        """Phase 1: file list arrived — show placeholders immediately."""
         self._all_items = items
         self._pending_thumbs = []
 
-        # Build month list from all items
         month_counts: dict[tuple[int, int], int] = defaultdict(int)
         for it in items:
             dt = datetime.fromtimestamp(it["mtime"])
@@ -355,7 +369,6 @@ class GalleryPage(QWidget):
             )
             return
 
-        # Keep selection if still valid, otherwise select newest
         if self._selected_month and self._selected_month in month_counts:
             sel = self._selected_month
         else:
@@ -364,6 +377,22 @@ class GalleryPage(QWidget):
         self._selected_month = sel
         self._sidebar.set_months(month_list, selected=sel)
         self._show_month(sel[0], sel[1])
+
+    def _on_thumbnail_ready(self, path: str, qimage):
+        """Phase 2: a single thumbnail arrived — update its widget."""
+        widget = self._thumb_widgets_by_path.get(path)
+        if widget is not None:
+            widget.set_pixmap(QPixmap.fromImage(qimage))
+
+    def _on_loaded(self, items: list[dict]):
+        """Phase 2 complete — update pending state for clips that failed."""
+        for item in items:
+            if item.get("pending"):
+                widget = self._thumb_widgets_by_path.get(item["path"])
+                if widget:
+                    self._pending_thumbs.append((item["path"], widget, 0))
+        if self._pending_thumbs:
+            self._pending_timer.start()
 
     def _on_month_selected(self, year: int, month: int):
         self._selected_month = (year, month)
@@ -452,6 +481,7 @@ class GalleryPage(QWidget):
                 widget.upload_clicked.connect(self._on_upload_clicked)
                 row, col = divmod(i, THUMB_COLS)
                 grid.addWidget(widget, row, col)
+                self._thumb_widgets_by_path[item["path"]] = widget
                 if item.get("pending"):
                     self._pending_thumbs.append((item["path"], widget, 0))
 
@@ -722,6 +752,15 @@ class GalleryPage(QWidget):
 
     def closeEvent(self, event):
         if self._loader is not None:
+            self._loader.cancel()
+            try:
+                self._loader.items_ready.disconnect(self._on_items_ready)
+            except TypeError:
+                pass
+            try:
+                self._loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
+            except TypeError:
+                pass
             try:
                 self._loader.loaded.disconnect(self._on_loaded)
             except TypeError:

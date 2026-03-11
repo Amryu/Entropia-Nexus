@@ -752,6 +752,17 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 _current_profile_overlay = overlay
                 return
 
+            # Route Map type to map overlay
+            if item.get("Type") == "Map":
+                import re
+                overlay = _ensure_map_overlay()
+                overlay._ensure_expanded()
+                overlay.set_wants_visible(True)
+                overlay.raise_()
+                slug = re.sub(r'[^0-9a-zA-Z]', '', item.get("Name", "")).lower()
+                overlay.navigate_to_planet(slug)
+                return
+
             # Navigate in-place if there's an active unpinned overlay
             if (not force_new
                     and _current_detail_overlay

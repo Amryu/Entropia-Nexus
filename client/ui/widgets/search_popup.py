@@ -60,6 +60,7 @@ TYPE_NAMES: dict[str, str] = {
     "User": "User",
     "Society": "Society",
     "Strongbox": "Strongbox",
+    "Map": "Maps",
 }
 
 

@@ -480,7 +480,6 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 8px;
   }
 
   .btn {
@@ -605,6 +604,35 @@
 {:else}
   <div class="editor-container" on:input={scheduleAutoSave} on:change={scheduleAutoSave}>
     <h3 class="editor-title">{isNew ? 'New Location' : readOnly ? (location?.Name || '') : `Edit: ${location?.Name || ''}`}</h3>
+
+    {#if isLocked}
+      <div class="lock-notice">
+        <span class="lock-icon">&#x1F512;</span>
+        <div>
+          <div class="lock-title">Locked by another user</div>
+          <div class="lock-detail">{lockedBy.author_name || lockedBy.author_eu_name || 'Another user'} has a pending {lockedBy.state?.toLowerCase() || ''} change for this location.</div>
+        </div>
+      </div>
+    {/if}
+
+    {#if !readOnly}
+      <div class="actions">
+        {#if !isNew && location?._isPendingAdd}
+          <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
+            {isDbChange ? 'Delete submitted change' : 'Remove'}
+          </button>
+        {:else if !isNew}
+          <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
+            title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
+          >
+            {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
+          </button>
+          <button class="btn" on:click={handleRevert}>Revert Changes</button>
+        {/if}
+      </div>
+    {/if}
+
+    <div class="section-divider"></div>
 
     <div class="field-group">
       <span class="field-label">Name</span>
@@ -757,35 +785,6 @@
         <span class="field-hint" style="margin-left:0">No description</span>
       {/if}
     </div>
-
-    <div class="section-divider"></div>
-
-    {#if isLocked}
-      <div class="lock-notice">
-        <span class="lock-icon">&#x1F512;</span>
-        <div>
-          <div class="lock-title">Locked by another user</div>
-          <div class="lock-detail">{lockedBy.author_name || lockedBy.author_eu_name || 'Another user'} has a pending {lockedBy.state?.toLowerCase() || ''} change for this location.</div>
-        </div>
-      </div>
-    {/if}
-
-    {#if !readOnly}
-      <div class="actions">
-        {#if !isNew && location?._isPendingAdd}
-          <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
-            {isDbChange ? 'Delete submitted change' : 'Remove'}
-          </button>
-        {:else if !isNew}
-          <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
-            title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
-          >
-            {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
-          </button>
-          <button class="btn" on:click={handleRevert}>Revert Changes</button>
-        {/if}
-      </div>
-    {/if}
 
     <!-- Related Entities (read-only, collapsible) -->
     {#if !isNew && location?.Id}

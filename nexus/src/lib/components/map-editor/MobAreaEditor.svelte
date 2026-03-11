@@ -287,8 +287,10 @@
     gap: 10px;
     padding: 12px;
     flex: 1;
+    height: 100%;
     min-height: 0;
     overflow-y: auto;
+    box-sizing: border-box;
   }
 
   .editor-title {
@@ -366,6 +368,7 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     overflow: hidden;
+    flex-shrink: 0;
   }
 
   .mob-entry-header {

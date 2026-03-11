@@ -787,6 +787,15 @@ class MapOverlay(OverlayWidget):
                 self._canvas.center_on_smart(loc)
                 self._show_info_panel(loc)
 
+    def navigate_to_planet(self, slug: str):
+        """Navigate to a planet map by its URL slug (used by search)."""
+        if slug == self._current_slug and not self._loading:
+            return
+        for i in range(self._planet_combo.count()):
+            if self._planet_combo.itemData(i) == slug:
+                self._planet_combo.setCurrentIndex(i)
+                break
+
     def navigate_to_location(self, planet_name: str, location_id: int):
         """Navigate to a specific location on a planet."""
         slug = _planet_slug(planet_name)

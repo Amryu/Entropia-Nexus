@@ -2,8 +2,6 @@
   //@ts-nocheck
 
 
-  // --- No spatial grid or offscreen canvas optimizations ---
-
   function drawShape(ctx, loc, isHovered, isSelected) {
     const type = loc.Properties.Shape;
     ctx.save();
@@ -61,6 +59,7 @@
       }
     } else {
       // Draw as point
+      if (!loc._imgPoint) { ctx.restore(); return; }
       const pt = imageCoordsToCanvasCoords(loc._imgPoint.x, loc._imgPoint.y);
       if (loc.Properties.Type === 'Teleporter') {
         ctx.beginPath();
@@ -132,6 +131,7 @@
       }
     } else {
       // Point location
+      if (!loc._imgPoint) { ctx.restore(); return; }
       const pt = imageCoordsToCanvasCoords(loc._imgPoint.x, loc._imgPoint.y);
       ctx.globalAlpha = 0.5;
       ctx.beginPath();
@@ -212,6 +212,7 @@
       }
     } else {
       // Point locations — very faint
+      if (!loc._imgPoint) { ctx.restore(); return; }
       const pt = imageCoordsToCanvasCoords(loc._imgPoint.x, loc._imgPoint.y);
       ctx.globalAlpha = 0.15;
       ctx.beginPath();
@@ -475,7 +476,10 @@
       zoom = imageTileSize / Math.max(img.width, img.height);
       targetZoom = zoom;
 
+      // Invalidate image-space cache (planet/ratio changed)
+      for (const loc of (locations ?? [])) loc._imgCacheRatio = null;
       $mapLoadedStore = true;
+      markDirty();
       // Re-init canvas after image load
       if (canvasElement) {
         initCanvas();
@@ -894,7 +898,6 @@
       return bb.x1 >= viewX0 && bb.x0 <= viewX1 && bb.y1 >= viewY0 && bb.y0 <= viewY1;
     };
 
-    // Draw all shapes (no spatial grid, no offscreen cache)
     // Draw areas first (below), then point locations on top
     const isAreaType = (loc) => ['Circle', 'Rectangle', 'Polygon'].includes(loc.Properties?.Shape);
     const hasSearch = searchResultMap.size > 0;
@@ -935,8 +938,6 @@
     drawAnimationId = requestAnimationFrame(draw);
   }
 
-  // drawShapesAndLocations is now handled by spatial index + offscreen cache
-
   // Helper to lighten a color (hex or named)
   function lightenColor(color, percent) {
     // Only works for hex or rgb(a) colors
@@ -965,6 +966,7 @@
 
     // Helper to check if point hits a location (uses cached image-space coords)
     const checkHit = (loc, i) => {
+      if (!loc._imgBbox) return null;
       const type = loc.Properties.Shape;
       if (type === 'Circle') {
         const center = imageCoordsToCanvasCoords(loc._imgCircle.cx, loc._imgCircle.cy);
@@ -1073,14 +1075,14 @@
       const loc = filteredLocations[i];
       const type = loc.Properties.Shape;
       if (type === 'Circle') {
-        const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
-        const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+        const center = imageCoordsToCanvasCoords(loc._imgCircle.cx, loc._imgCircle.cy);
+        const outer = imageCoordsToCanvasCoords(loc._imgCircle.ox, loc._imgCircle.oy);
         const radius = outer.x - center.x + buffer;
         const dx = x - center.x, dy = y - center.y;
         if (dx * dx + dy * dy <= radius * radius) foundAreas.push({ type: 'area', shape: loc });
       } else if (type === 'Rectangle') {
-        const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
-        const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+        const start = imageCoordsToCanvasCoords(loc._imgRect.sx, loc._imgRect.sy);
+        const end = imageCoordsToCanvasCoords(loc._imgRect.ex, loc._imgRect.ey);
         const width = end.x - start.x;
         const height = start.y - end.y;
         if (
@@ -1090,13 +1092,10 @@
           y <= start.y + buffer
         ) foundAreas.push({ type: 'area', shape: loc });
       } else if (type === 'Polygon') {
-        const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
-          if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
-          return result;
-        }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+        const verts = (loc._imgVerts ?? []).map(v => imageCoordsToCanvasCoords(v.x, v.y));
         if (pointInPolygon({ x, y }, verts)) foundAreas.push({ type: 'area', shape: loc });
       } else {
-        const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+        const pt = imageCoordsToCanvasCoords(loc._imgPoint.x, loc._imgPoint.y);
         if (loc.Properties.Type === 'Teleporter') {
           const dx = x - pt.x, dy = y - pt.y;
           const radius = 14 + buffer;
@@ -1117,15 +1116,15 @@
       const loc = filteredLocations[i];
       const type = loc.Properties.Shape;
       if (type === 'Circle') {
-        const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
-        const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+        const center = imageCoordsToCanvasCoords(loc._imgCircle.cx, loc._imgCircle.cy);
+        const outer = imageCoordsToCanvasCoords(loc._imgCircle.ox, loc._imgCircle.oy);
         const radius = outer.x - center.x + buffer;
         const dx = x - center.x, dy = y - center.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist <= radius) candidates.push({ type: 'area', shape: loc, dist, priority: 2 });
       } else if (type === 'Rectangle') {
-        const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
-        const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+        const start = imageCoordsToCanvasCoords(loc._imgRect.sx, loc._imgRect.sy);
+        const end = imageCoordsToCanvasCoords(loc._imgRect.ex, loc._imgRect.ey);
         const width = end.x - start.x;
         const height = start.y - end.y;
         if (
@@ -1141,15 +1140,12 @@
           candidates.push({ type: 'area', shape: loc, dist, priority: 2 });
         }
       } else if (type === 'Polygon') {
-        const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
-          if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
-          return result;
-        }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+        const verts = (loc._imgVerts ?? []).map(v => imageCoordsToCanvasCoords(v.x, v.y));
         if (pointInPolygon({ x, y }, verts)) {
           candidates.push({ type: 'area', shape: loc, dist: 0, priority: 2 });
         }
       } else {
-        const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+        const pt = imageCoordsToCanvasCoords(loc._imgPoint.x, loc._imgPoint.y);
         const dx = x - pt.x, dy = y - pt.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const radius = (loc.Properties.Type === 'Teleporter' ? 14 : 6) + buffer;

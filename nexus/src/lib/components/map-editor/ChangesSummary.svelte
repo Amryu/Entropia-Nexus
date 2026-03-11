@@ -54,9 +54,13 @@
     const origProps = orig?.Properties;
     const origCoords = origProps?.Coordinates;
 
-    const isArea = mod.locationType === 'Area';
+    const effectiveLocationType = mod.locationType ||
+      ((origProps?.Shape || String(origProps?.Type || '').endsWith('Area')) ? 'Area' : origProps?.Type) ||
+      null;
+    if (!effectiveLocationType) return null;
+    const isArea = effectiveLocationType === 'Area';
     const props = {
-      Type: isArea ? 'Area' : (mod.locationType || 'Teleporter'),
+      Type: isArea ? 'Area' : effectiveLocationType,
       Coordinates: {
         Longitude: mod.longitude ?? origCoords?.Longitude ?? null,
         Latitude: mod.latitude ?? origCoords?.Latitude ?? null,
@@ -287,7 +291,11 @@
   function getEntityType(change) {
     const mod = change.modified;
     if (!mod) return 'Location';
-    return mod.locationType === 'Area' ? 'Area' : 'Location';
+    const origProps = change.action === 'edit' ? change.original?.Properties : null;
+    const effectiveLocationType = mod.locationType ||
+      ((origProps?.Shape || String(origProps?.Type || '').endsWith('Area')) ? 'Area' : origProps?.Type) ||
+      null;
+    return effectiveLocationType === 'Area' ? 'Area' : 'Location';
   }
 
   function getStatusIcon(key) {

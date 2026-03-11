@@ -171,9 +171,9 @@
 
   $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
     if (focusLocation._dbChange) {
-      // Normal reviewer: select DB change for read-only viewing
-      selectedDbChange = focusLocation._dbChange;
-      selectedId = focusLocation.Id;
+      // Route to handleSelectDbChange so admins/owners get an editable pending change
+      // instead of being forced into read-only mode
+      handleSelectDbChange({ detail: focusLocation._dbChange });
     } else if (focusLocation.Id != null) {
       const matched = locations.find(l => l.Id == focusLocation.Id);
       selectedId = matched ? matched.Id : focusLocation.Id;

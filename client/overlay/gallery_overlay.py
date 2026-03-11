@@ -155,6 +155,7 @@ class GalleryOverlay(OverlayWidget):
         self._nexus_client = nexus_client
         self._loader = None
         self._all_items: list[dict] = []
+        self._thumb_widgets_by_path: dict[str, ThumbnailWidget] = {}
         self._selected_month: tuple[int, int] | None = None
         self._click_origin = None
         self._saved_size = (420, 500)
@@ -633,6 +634,7 @@ class GalleryOverlay(OverlayWidget):
                 widget.upload_clicked.connect(self._on_upload_clicked)
                 row, col = divmod(i, cols)
                 grid.addWidget(widget, row, col)
+                self._thumb_widgets_by_path[item["path"]] = widget
                 if item.get("pending"):
                     self._pending_thumbs.append((item["path"], widget, 0))
 
@@ -661,13 +663,24 @@ class GalleryOverlay(OverlayWidget):
     def _reload(self):
         # Disconnect old loader to prevent stale results; wait briefly for cleanup
         if self._loader is not None:
+            self._loader.cancel()
+            try:
+                self._loader.items_ready.disconnect(self._on_items_ready)
+            except TypeError:
+                pass
+            try:
+                self._loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
+            except TypeError:
+                pass
             try:
                 self._loader.loaded.disconnect(self._on_loaded)
             except TypeError:
-                pass  # already disconnected
+                pass
             if self._loader.isRunning():
                 self._loader.wait(3000)
             self._loader = None
+
+        self._thumb_widgets_by_path = {}
 
         ss_dir = self._config.screenshot_directory or DEFAULT_SCREENSHOT_DIR
         clip_dir = self._config.clip_directory or DEFAULT_CLIP_DIR
@@ -681,15 +694,35 @@ class GalleryOverlay(OverlayWidget):
             thumb_height=GALLERY_THUMB_HEIGHT,
             db=self._db,
         )
+        self._loader.items_ready.connect(self._on_items_ready)
+        self._loader.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._loader.loaded.connect(self._on_loaded)
         self._loader.start()
 
     _PENDING_MAX_RETRIES = 30  # 30 x 2s = 60s max wait
 
-    def _on_loaded(self, items: list[dict]):
+    def _on_items_ready(self, items: list[dict]):
+        """Phase 1: file list arrived — show placeholders immediately."""
         self._all_items = items
         self._pending_thumbs = []
         self._populate_sidebar()
+
+    def _on_thumbnail_ready(self, path: str, qimage):
+        """Phase 2: a single thumbnail arrived — update its widget."""
+        widget = self._thumb_widgets_by_path.get(path)
+        if widget is not None:
+            from PyQt6.QtGui import QPixmap
+            widget.set_pixmap(QPixmap.fromImage(qimage))
+
+    def _on_loaded(self, items: list[dict]):
+        """Phase 2 complete — update pending state for clips that failed."""
+        for item in items:
+            if item.get("pending"):
+                widget = self._thumb_widgets_by_path.get(item["path"])
+                if widget:
+                    self._pending_thumbs.append((item["path"], widget, 0))
+        if self._pending_thumbs:
+            self._pending_timer.start()
 
     def _retry_pending_thumbs(self):
         """Retry thumbnail generation for clips that were still encoding."""
@@ -876,6 +909,15 @@ class GalleryOverlay(OverlayWidget):
         if hasattr(self, "_relayout_timer"):
             self._relayout_timer.stop()
         if self._loader is not None:
+            self._loader.cancel()
+            try:
+                self._loader.items_ready.disconnect(self._on_items_ready)
+            except TypeError:
+                pass
+            try:
+                self._loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
+            except TypeError:
+                pass
             try:
                 self._loader.loaded.disconnect(self._on_loaded)
             except TypeError:

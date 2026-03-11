@@ -726,6 +726,17 @@ class MainWindow(QWidget):
             self.navigate_to_society(item_name)
             return
 
+        if item_type == "Map":
+            import re
+            slug = re.sub(r'[^0-9a-zA-Z]', '', item_name).lower()
+            self._applying_nav = True
+            self._ensure_page(PAGE_MAPS)
+            self._sidebar.set_active_no_emit(PAGE_MAPS)
+            self._pages.setCurrentIndex(PAGE_MAPS)
+            self._applying_nav = False
+            self._maps_page.navigate_to_planet(slug)
+            return
+
         # MobMaturity → navigate to the parent mob
         if item_type == "MobMaturity":
             mob_name = item.get("MobName", item_name)
