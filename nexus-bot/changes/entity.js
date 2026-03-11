@@ -695,21 +695,54 @@ export const UpsertConfigs = {
   Area: {
     columns: [
       { name: "Name", value: x => x.Name },
-      { name: "Type", value: x => x.Properties?.Type ?? null },
-      { name: "Shape", value: x => {
-        const { shape } = sanitizeShapeAndData(x.Properties || {});
-        return shape ?? x.Properties?.Shape ?? null;
-      }},
-      { name: "Data", value: x => {
-        const { data } = sanitizeShapeAndData(x.Properties || {});
-        return data ?? x.Properties?.Data ?? null;
-      }},
+      { name: "Type", value: x => x.Properties?.Type ?? 'Area' },
+      { name: "Description", value: x => x.Properties?.Description ?? null },
       { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? null },
       { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? null },
       { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null },
-      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) }
+      { name: "PlanetId", value: async (x, c) => x.Planet?.Name ? await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id ?? null) : null },
+      { name: "ParentLocationId", value: async (x, c) => x.ParentLocation?.Name ? await c.query(`SELECT "Id" FROM ONLY "Locations" WHERE "Name" = $1`, [x.ParentLocation.Name]).then(res => res.rows[0]?.Id ?? null) : null }
     ],
-    table: "Areas"
+    table: "Locations",
+    relationChangeFunc: async (client, id, x) => {
+      // 1. Upsert Areas extension record (Type, Shape, Data)
+      await applyLocationExtensionChanges(client, id, x);
+
+      if (x.Properties?.AreaType === 'MobArea') {
+        const density = x.Properties?.Density ?? null;
+
+        // 2. Upsert MobSpawns (required by API INNER JOIN; update Density if provided)
+        await client.query(
+          `INSERT INTO "MobSpawns" ("LocationId", "Density")
+           VALUES ($1, $2)
+           ON CONFLICT ("LocationId") DO UPDATE SET
+             "Density" = COALESCE($2, "MobSpawns"."Density")`,
+          [id, density]
+        );
+
+        // 3. Upsert MobSpawnMaturities if mob data provided
+        const mobData = x.Properties?.MobData;
+        if (Array.isArray(mobData)) {
+          if (mobData.length === 0) {
+            await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1`, [id]);
+          } else {
+            const valid = mobData.filter(m => m.maturityId != null);
+            await client.query(
+              `DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+              [id, valid.map(m => m.maturityId)]
+            );
+            await Promise.all(valid.map(m =>
+              client.query(
+                `INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT ("LocationId", "MaturityId") DO UPDATE SET "IsRare" = $3`,
+                [id, m.maturityId, m.isRare ? 1 : 0]
+              )
+            ));
+          }
+        }
+      }
+    }
   },
   Mob: {
     columns: [

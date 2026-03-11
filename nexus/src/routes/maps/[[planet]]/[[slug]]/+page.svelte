@@ -1441,6 +1441,15 @@
             dbChangeIdMap={editorDbChangeIdMap}
             on:clear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
             on:submitted={handleChangesSubmitted}
+            on:removed={() => { editorPendingChanges = editorPendingChanges; }}
+            on:dbChangeDeleted={(e) => {
+              if (planetPendingOverride) {
+                planetPendingOverride = planetPendingOverride.filter(c => c.id !== e.detail.dbId);
+              } else if (data.planetPendingChanges) {
+                data.planetPendingChanges = data.planetPendingChanges.filter(c => c.id !== e.detail.dbId);
+              }
+              editorPendingChanges = editorPendingChanges;
+            }}
           />
         </svelte:fragment>
       </svelte:component>

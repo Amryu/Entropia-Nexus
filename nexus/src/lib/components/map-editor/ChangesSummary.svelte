@@ -256,6 +256,7 @@
         delete changeStatuses[key];
         changeStatuses = changeStatuses;
         addToast('Change deleted', { type: 'success' });
+        dispatch('dbChangeDeleted', { key, dbId });
         dispatch('submitted');
       } else {
         changeStatuses[key] = 'error';
@@ -492,8 +493,9 @@
         {@const type = change.action === 'delete' ? getEffectiveType(change.original) : (change.modified?.areaType || change.modified?.locationType || '')}
         {@const statusKey = changeStatuses[change.key]}
         {@const hasDbChange = dbChangeIdMap.has(change.key)}
+        {@const displayAction = hasDbChange && change.action === 'add' ? 'edit' : change.action}
         <div class="change-row">
-          <span class="action-indicator" style="color: {getActionColor(change.action)}">{getActionLabel(change.action)}</span>
+          <span class="action-indicator" style="color: {getActionColor(displayAction)}">{getActionLabel(displayAction)}</span>
           <span class="change-name">{name}</span>
           <span class="change-type">{type}</span>
           {#if statusKey}
@@ -502,7 +504,7 @@
           {#if hasDbChange}
             <button class="row-delete-btn" title="Delete submitted change" on:click={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
           {:else}
-            <button class="row-remove-btn" title="Revert" on:click={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; }}>×</button>
+            <button class="row-remove-btn" title="Revert" on:click={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; dispatch('removed', change.key); }}>×</button>
           {/if}
         </div>
       {/each}

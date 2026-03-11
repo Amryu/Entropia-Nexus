@@ -166,8 +166,8 @@
     && !pendingChanges.has(selectedId)
     && selectedId > 0);
 
-  // Only count changes that aren't pristine DB-seeded entries (already submitted, not locally modified)
-  $: changeCount = [...pendingChanges.entries()].filter(([key]) => !dbChangeIdMap.has(key) || modifiedDbChanges.has(key)).length;
+  // Count all pending changes so badge matches the changes list
+  $: changeCount = pendingChanges.size;
 
   $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
     if (focusLocation._dbChange) {
