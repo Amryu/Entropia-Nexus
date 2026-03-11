@@ -504,7 +504,7 @@ class ThumbnailWidget(QWidget):
         if (info and info.get("global_type")
                 and info.get("target_name")
                 and info.get("value") is not None):
-            name = f"{int(info['value'])} PEDd - {info['target_name']}"
+            name = f"{int(info['value'])} PED - {info['target_name']}"
         else:
             name = os.path.basename(self._path)
         max_chars = max(12, thumb_width // 7)

@@ -6,7 +6,7 @@
       {"type": "fix", "text": "Recording audio no longer drifts on dropped frames — the last available frame is repeated to fill gaps, keeping video duration exactly in sync with audio"},
       {"type": "fix", "text": "Recording frame queue increased from 3 to 10 to reduce unnecessary drops during brief encoding hiccups"},
       {"type": "feat", "text": "Encoding priority setting: choose Normal, Below Normal (recommended), or Idle — the OS automatically backs off encoding when the game needs CPU, no polling required"},
-      {"type": "feat", "text": "Gallery now shows global value and mob name (e.g. '250 PEDd - Leviathan Stalker') instead of the filename for clips and screenshots linked to a global"}
+      {"type": "feat", "text": "Gallery now shows global value and mob name (e.g. '250 PED - Leviathan Stalker') instead of the filename for clips and screenshots linked to a global"}
     ]
   },
   {
