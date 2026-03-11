@@ -10,6 +10,7 @@ import threading
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLineEdit,
     QPushButton, QLabel, QApplication, QScrollArea, QSizePolicy,
+    QProgressBar,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QPixmap
@@ -84,6 +85,9 @@ _IMAGE_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "
 def _planet_slug(name: str) -> str:
     return re.sub(r"[^0-9a-zA-Z]", "", name).lower()
 
+
+# Fill percentages for difficulty/density bars: 5%, 30%, 55%, 80%, 100%
+_BAR_FILLS = [5, 30, 55, 80, 100]
 
 # ---------------------------------------------------------------------------
 # Mob-area name parsing and difficulty coloring
@@ -778,11 +782,18 @@ class _LocationInfoPanel(QWidget):
             self._layout.addWidget(mob_header)
 
             if diff:
-                dr, dg, db = _difficulty_color(diff[0])
-                self._add_stat_row_colored("Difficulty", diff[1], f"rgb({dr}, {dg}, {db})")
+                band = diff[0]
+                r, g, b = _difficulty_color(band)
+                fill = 100 if band == 5 else _BAR_FILLS[band]
+                is_boss = band == 5
+                self._add_stat_bar_row(
+                    "Difficulty", fill, r, g, b,
+                    boss_label="Boss" if is_boss else None,
+                    difficulty_band=band if not is_boss else None,
+                )
             if density is not None:
-                density_map = {1: "Very Low", 2: "Low", 3: "Medium", 4: "High", 5: "Very High"}
-                self._add_stat_row("Density", density_map.get(density, str(density)))
+                fill = _BAR_FILLS[max(0, min(int(density), 5) - 1)]
+                self._add_stat_bar_row("Density", fill, 100, 160, 220)
             if shared is not None:
                 self._add_stat_row("Shared", "Yes" if shared else "No")
             if is_event is not None:
@@ -891,6 +902,78 @@ class _LocationInfoPanel(QWidget):
         val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row_l.addWidget(lbl, 1)
         row_l.addWidget(val, 0)
+        self._layout.addWidget(row)
+
+    def _add_stat_bar_row(self, label: str, fill_pct: int, r: int, g: int, b: int,
+                          boss_label: str | None = None, difficulty_band: int | None = None):
+        """Render a stat row with a gradient bar instead of a text value."""
+        BAR_WIDTH = 140
+
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        row_l = QHBoxLayout(row)
+        row_l.setContentsMargins(0, 0, 0, 2)
+        row_l.setSpacing(8)
+
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;")
+        row_l.addWidget(lbl, 1)
+
+        # Right side: optional boss badge + fixed-width bar
+        right = QWidget()
+        right.setFixedWidth(BAR_WIDTH)
+        right.setStyleSheet("background: transparent;")
+        right_l = QVBoxLayout(right)
+        right_l.setContentsMargins(0, 0, 0, 0)
+        right_l.setSpacing(1)
+
+        if boss_label:
+            badge = QLabel(boss_label)
+            badge.setStyleSheet(
+                "color: rgb(180, 80, 220); font-size: 10px; font-weight: 700;"
+                " background: transparent; letter-spacing: 1px;"
+            )
+            badge.setAlignment(Qt.AlignmentFlag.AlignRight)
+            right_l.addWidget(badge)
+
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setValue(fill_pct)
+        bar.setTextVisible(False)
+        bar.setFixedHeight(7)
+
+        if difficulty_band is not None and difficulty_band < 5:
+            # Gradient spans only up to the current band's color
+            _band_colors = [
+                "rgb(100,230,50)", "rgb(200,230,0)", "rgb(255,200,0)",
+                "rgb(255,120,0)", "rgb(255,50,30)",
+            ]
+            stops = _band_colors[:difficulty_band + 1]
+            if len(stops) == 1:
+                chunk_bg = stops[0]
+            else:
+                step = 1.0 / (len(stops) - 1)
+                stop_str = ", ".join(
+                    f"stop:{i * step:.3f} {c}" for i, c in enumerate(stops)
+                )
+                chunk_bg = f"qlineargradient(x1:0, y1:0, x2:1, y2:0, {stop_str})"
+        else:
+            chunk_bg = f"rgb({r}, {g}, {b})"
+
+        bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: rgba(255, 255, 255, 25);
+                border-radius: 3px;
+                border: none;
+            }}
+            QProgressBar::chunk {{
+                background: {chunk_bg};
+                border-radius: 3px;
+            }}
+        """)
+        right_l.addWidget(bar)
+
+        row_l.addWidget(right, 0)
         self._layout.addWidget(row)
 
     @staticmethod
@@ -1262,6 +1345,15 @@ class MapsPage(QWidget):
                 self._canvas.set_selected(loc_id)
                 self._canvas.center_on_smart(loc)
                 self._show_info_panel(loc)
+
+    def navigate_to_planet(self, slug: str):
+        """Navigate to a planet map by its URL slug (used by search)."""
+        if slug == self._current_slug and not self._loading:
+            return
+        for i in range(self._planet_combo.count()):
+            if self._planet_combo.itemData(i) == slug:
+                self._planet_combo.setCurrentIndex(i)
+                break
 
     def navigate_to_location(self, planet_name: str, location_id: int):
         """Navigate to a specific location on a planet (used by external callers)."""

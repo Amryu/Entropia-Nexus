@@ -749,13 +749,31 @@
     return Number(value).toFixed(0);
   }
 
-  function formatDensity(value) {
-    if (value === 1 || value === '1') return 'Very Low';
-    if (value === 2 || value === '2') return 'Low';
-    if (value === 3 || value === '3') return 'Medium';
-    if (value === 4 || value === '4') return 'High';
-    if (value === 5 || value === '5') return 'Very High';
-    return value ?? 'N/A';
+  // Fill percentages for difficulty/density bars: 5%, 30%, 55%, 80%, 100%
+  const BAR_FILLS = [5, 30, 55, 80, 100];
+  const DIFFICULTY_COLORS = [
+    'rgb(100, 230, 50)',
+    'rgb(200, 230, 0)',
+    'rgb(255, 200, 0)',
+    'rgb(255, 120, 0)',
+    'rgb(255, 50, 30)',
+  ];
+
+  function difficultyBarFill(band) {
+    if (band === 5) return 100; // Boss: full bar
+    return BAR_FILLS[band] ?? 5;
+  }
+
+  function difficultyBarGradient(band) {
+    // Gradient includes only colors up to current band
+    const colors = DIFFICULTY_COLORS.slice(0, band + 1);
+    return colors.length === 1 ? colors[0] : `linear-gradient(to right, ${colors.join(', ')})`;
+  }
+
+  function densityBarFill(value) {
+    const v = Number(value);
+    if (!v || v < 1) return 5;
+    return BAR_FILLS[Math.min(v, 5) - 1];
   }
 
   function handleWaypointPaste(event) {
@@ -1298,15 +1316,28 @@
             <div class="info-section">
               <h4>Mob Area</h4>
               {#if activeLocation._difficulty}
+                {@const diff = activeLocation._difficulty}
+                {@const isBoss = diff.band === 5}
                 <div class="stat-row">
                   <span class="stat-label">Difficulty</span>
-                  <span class="stat-value" style="color: {activeLocation._difficulty.color}; font-weight: 600">{activeLocation._difficulty.label}</span>
+                  <div class="stat-bar-wrap">
+                    {#if isBoss}<span class="boss-badge">Boss</span>{/if}
+                    <div class="stat-bar-track">
+                      <div class="stat-bar-fill" style="width: {difficultyBarFill(diff.band)}%; background: {isBoss ? 'rgb(180, 80, 220)' : difficultyBarGradient(diff.band)};"></div>
+                    </div>
+                  </div>
                 </div>
               {/if}
-              <div class="stat-row">
-                <span class="stat-label">Density</span>
-                <span class="stat-value">{formatDensity(activeLocation?.Properties?.Density)}</span>
-              </div>
+              {#if activeLocation?.Properties?.Density != null}
+                <div class="stat-row">
+                  <span class="stat-label">Density</span>
+                  <div class="stat-bar-wrap">
+                    <div class="stat-bar-track">
+                      <div class="stat-bar-fill density-bar-fill" style="width: {densityBarFill(activeLocation.Properties.Density)}%;"></div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
               <div class="stat-row">
                 <span class="stat-label">Shared</span>
                 <span class="stat-value">{activeLocation?.Properties?.IsShared ? 'Yes' : 'No'}</span>
@@ -1939,6 +1970,40 @@
 
   .waypoint-row .stat-value {
     width: 100%;
+  }
+
+  .stat-bar-wrap {
+    width: 140px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-end;
+  }
+
+  .boss-badge {
+    font-size: 10px;
+    font-weight: 700;
+    color: rgb(180, 80, 220);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .stat-bar-track {
+    width: 100%;
+    height: 7px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .stat-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+  }
+
+  .density-bar-fill {
+    background: rgb(100, 160, 220);
   }
 
   .waypoint-row :global(.waypoint-btn) {
