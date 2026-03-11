@@ -22,7 +22,8 @@ UPDATE ONLY "Locations"
 
 -- Step 3: Create Areas rows for the migrated locations (idempotent via ON CONFLICT)
 INSERT INTO "Areas" ("LocationId", "Type", "Shape", "Data")
-SELECT l."Id", 'WaveEventArea'::"AreaType", 'Point'::"Shape", '{}'::jsonb
+SELECT l."Id", 'WaveEventArea'::"AreaType", 'Circle'::"Shape",
+       jsonb_build_object('x', l."Longitude", 'y', l."Latitude", 'radius', 100)
 FROM ONLY "Locations" l
 WHERE l."Type" = 'Area'
   AND NOT EXISTS (
