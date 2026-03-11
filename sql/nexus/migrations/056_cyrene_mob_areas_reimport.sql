@@ -548,6 +548,16 @@ JOIN ONLY "MobMaturities" mm ON mm."MobId" = m."Id"
 WHERE l."PlanetId" = 7 AND a."Type" = 'MobArea'
 ON CONFLICT ("MaturityId", "LocationId") DO NOTHING;
 
+-- Step 6: Insert MobSpawns (required by API base query INNER JOIN)
+INSERT INTO "MobSpawns" ("LocationId")
+SELECT l."Id"
+FROM ONLY "Locations" l
+JOIN ONLY "Areas" a ON a."LocationId" = l."Id"
+WHERE l."PlanetId" = 7 AND a."Type" = 'MobArea'
+AND NOT EXISTS (
+  SELECT 1 FROM ONLY "MobSpawns" ms WHERE ms."LocationId" = l."Id"
+);
+
 DROP TABLE _cyrene_import;
 
 COMMIT;

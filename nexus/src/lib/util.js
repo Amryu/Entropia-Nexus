@@ -319,6 +319,8 @@ export function getTypeLink(name, type, subType = null, id = null) {
       if (!planet) return null;
       return `/maps/${planet.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${id != null ? id : encodeURIComponentSafe(name)}`;
     }
+    case 'Map':
+      return `/maps/${name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}`;
     case 'Skill':
       return `/information/skills/${encodeURIComponentSafe(name)}`;
     case 'Profession':
@@ -436,6 +438,8 @@ export function getTypeName(type) {
         return 'User';
       case 'Society':
         return 'Society';
+      case 'Map':
+        return 'Maps';
       case 'Player':
         return 'Player';
       case 'Team':
