@@ -165,11 +165,10 @@
     }
   }
 
-  // Read-only when: viewing a DB pending change, or a non-admin user selects
-  // an existing approved location (not a pending add/edit of their own).
-  $: isReadOnly = !!selectedDbChange || (!isAdmin && selectedId != null && !isNewLocation
-    && !pendingChanges.has(selectedId)
-    && selectedId > 0);
+  // Read-only when: viewing another user's DB pending change, or a non-admin
+  // user selects a location locked by another user's pending change.
+  $: isReadOnly = !!selectedDbChange || (!isAdmin && selectedId != null
+    && selectedId > 0 && lockedLocationMap.has(selectedId));
 
   // Count all pending changes so badge matches the changes list
   $: changeCount = pendingChanges.size;

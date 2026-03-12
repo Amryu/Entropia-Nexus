@@ -1303,7 +1303,7 @@
                         on:mouseenter={() => { hoveredLocation = teleporter; mapRef?.panTo(teleporter); }}
                         on:mouseleave={() => { hoveredLocation = null; if (selectedLocation) mapRef?.panTo(selectedLocation); }}
                       >
-                        <span>{teleporter.Name}</span>
+                        <span class="teleporter-name">{teleporter.Name}</span>
                         <span class="teleporter-distance">{teleporter._distance?.toFixed(0)} m</span>
                       </button>
                     {/each}
@@ -1364,6 +1364,42 @@
               {#if activeLocation?.Properties?.Notes}
                 <div class="description-text">{activeLocation.Properties.Notes}</div>
               {/if}
+            </div>
+          {/if}
+
+          {#if activeLocation?.Properties?.AreaType === 'LandArea'}
+            <div class="info-section">
+              <h4>Land Area</h4>
+              <div class="stat-row">
+                <span class="stat-label">Hunting Tax</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <InlineEdit type="number" value={activeLocation?.Properties?.TaxRateHunting ?? ''} path="Properties.TaxRateHunting" step={0.1} min={0} max={5} placeholder="%" />
+                  {:else}
+                    {activeLocation?.Properties?.TaxRateHunting != null ? `${activeLocation.Properties.TaxRateHunting}%` : '—'}
+                  {/if}
+                </span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Mining Tax</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <InlineEdit type="number" value={activeLocation?.Properties?.TaxRateMining ?? ''} path="Properties.TaxRateMining" step={0.1} min={0} max={5} placeholder="%" />
+                  {:else}
+                    {activeLocation?.Properties?.TaxRateMining != null ? `${activeLocation.Properties.TaxRateMining}%` : '—'}
+                  {/if}
+                </span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Shops Tax</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <InlineEdit type="number" value={activeLocation?.Properties?.TaxRateShops ?? ''} path="Properties.TaxRateShops" step={0.1} min={0} max={5} placeholder="%" />
+                  {:else}
+                    {activeLocation?.Properties?.TaxRateShops != null ? `${activeLocation.Properties.TaxRateShops}%` : '—'}
+                  {/if}
+                </span>
+              </div>
             </div>
           {/if}
 
@@ -2158,9 +2194,17 @@
     background-color: var(--hover-color, rgba(255, 255, 255, 0.05));
   }
 
+  .teleporter-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
   .teleporter-distance {
     font-size: 11px;
     color: var(--text-muted, #999);
+    flex-shrink: 0;
   }
 
   .description-text {
