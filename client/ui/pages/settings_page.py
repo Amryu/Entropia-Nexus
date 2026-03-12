@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, QTimer, QObject, QEvent
 from PyQt6.QtGui import QCursor, QPainter, QColor, QLinearGradient
 
 from ...core.config import save_config
+from ...core.build_flags import is_dev_build
 from ...core.constants import EVENT_CONFIG_CHANGED, EVENT_REPARSE_REQUESTED
 from ...core.logger import get_logger
 from ..theme import TEXT_MUTED, BORDER, ACCENT
@@ -27,30 +28,46 @@ _INPUT_MAX_W = 250       # QComboBox, QSpinBox, QDoubleSpinBox, HotkeyInput, QLi
 _SLIDER_MAX_W = 300      # QSlider (gain, opacity, etc.)
 _PATH_MAX_W = 400        # QLineEdit for file/directory paths
 
-# Overlay hotkey definitions: (display label, config_key, tooltip)
-_OVERLAY_HOTKEY_DEFS = [
-    ("Toggle Overlay", "hotkey_overlay_toggle", "Show/hide all overlays"),
-    ("Search", "hotkey_search", "Open the search overlay"),
-    ("Map", "hotkey_map", "Open the map overlay"),
-    ("Exchange", "hotkey_exchange", "Open the exchange overlay"),
-    ("Notifications", "hotkey_notifications", "Open the notifications overlay"),
-    ("Debug Overlay", "hotkey_debug", "Toggle OCR/target lock debug overlay"),
-    ("Screenshot", "hotkey_screenshot", "Take a screenshot"),
-    ("Save Clip", "hotkey_save_clip", "Save a video clip from the buffer"),
-    ("Toggle Recording", "hotkey_toggle_recording", "Start/stop continuous recording"),
-]
+def _build_overlay_hotkey_defs() -> list[tuple[str, str, str]]:
+    defs = [
+        ("Toggle Overlay", "hotkey_overlay_toggle", "Show/hide all overlays"),
+        ("Search", "hotkey_search", "Open the search overlay"),
+        ("Map", "hotkey_map", "Open the map overlay"),
+        ("Exchange", "hotkey_exchange", "Open the exchange overlay"),
+        ("Notifications", "hotkey_notifications", "Open the notifications overlay"),
+        ("Debug Overlay", "hotkey_debug", "Toggle OCR/target lock debug overlay"),
+        ("Screenshot", "hotkey_screenshot", "Take a screenshot"),
+        ("Save Clip", "hotkey_save_clip", "Save a video clip from the buffer"),
+        ("Toggle Recording", "hotkey_toggle_recording", "Start/stop continuous recording"),
+    ]
+    if is_dev_build():
+        defs.insert(
+            6,
+            ("Radar Recalibrate", "hotkey_radar_recalibrate", "Force radar circle re-detection"),
+        )
+    return defs
 
-_OVERLAY_HOTKEY_DEFAULTS = {
-    "hotkey_overlay_toggle": "f2",
-    "hotkey_search": "ctrl+f",
-    "hotkey_map": "ctrl+m",
-    "hotkey_exchange": "ctrl+e",
-    "hotkey_notifications": "ctrl+n",
-    "hotkey_debug": "f3",
-    "hotkey_screenshot": "f12",
-    "hotkey_save_clip": "ctrl+shift+space",
-    "hotkey_toggle_recording": "ctrl+shift+r",
-}
+
+def _build_overlay_hotkey_defaults() -> dict[str, str]:
+    defaults = {
+        "hotkey_overlay_toggle": "f2",
+        "hotkey_search": "ctrl+f",
+        "hotkey_map": "ctrl+m",
+        "hotkey_exchange": "ctrl+e",
+        "hotkey_notifications": "ctrl+n",
+        "hotkey_debug": "f3",
+        "hotkey_screenshot": "f12",
+        "hotkey_save_clip": "ctrl+shift+space",
+        "hotkey_toggle_recording": "ctrl+shift+r",
+    }
+    if is_dev_build():
+        defaults["hotkey_radar_recalibrate"] = "home"
+    return defaults
+
+
+# Overlay hotkey definitions: (display label, config_key, tooltip)
+_OVERLAY_HOTKEY_DEFS = _build_overlay_hotkey_defs()
+_OVERLAY_HOTKEY_DEFAULTS = _build_overlay_hotkey_defaults()
 
 
 class _ScrollBlocker(QObject):
@@ -1268,15 +1285,18 @@ class SettingsPage(QWidget):
         capture_on = self._capture_enabled_cb.isChecked()
         clip_on = self._clip_enabled_cb.isChecked()
         obs_on = self._obs_enabled_cb.isChecked()
+        any_capture = capture_on or obs_on
+        # Clip enable checkbox requires some capture backend
+        self._clip_enabled_cb.setEnabled(any_capture)
         # OBS section requires capture to be enabled
         for w in getattr(self, "_obs_widgets", []):
             w.setEnabled(capture_on)
         # Internal capture widgets disabled when OBS is active or capture is off
         for w in getattr(self, "_internal_capture_widgets", []):
             w.setEnabled(capture_on and not obs_on)
-        # Clip-specific widgets enabled when clip is on
+        # Clip-specific widgets enabled when clip is on AND some capture backend is active
         for w in getattr(self, "_clip_only_widgets", []):
-            w.setEnabled(clip_on)
+            w.setEnabled(any_capture and clip_on)
 
     @staticmethod
     def _load_obs_password() -> str:

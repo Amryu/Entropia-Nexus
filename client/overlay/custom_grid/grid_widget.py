@@ -38,29 +38,20 @@ class GridWidget:
     Use ``_subscribe()`` inside ``setup()`` to subscribe to EventBus events;
     all subscriptions are automatically cleaned up by ``teardown()``.
 
-    Example::
+    Configuration
+    -------------
+    Override ``configure(parent, **kwargs)`` to open a settings dialog.
+    Return a dict on accept (may include ``"__slot__"`` with colspan/rowspan
+    overrides); return ``None`` to cancel.
 
-        class MyWidget(GridWidget):
-            WIDGET_ID = "com.example.my_widget"
-            DISPLAY_NAME = "My Widget"
-            DESCRIPTION = "Shows something useful."
-            MIN_WIDTH = 120
-            MIN_HEIGHT = 50
+    Override ``on_config_changed(config)`` to apply a new config dict to the
+    live widget.  The base implementation merges the dict into
+    ``_widget_config``; call ``super()`` to use this behaviour.
 
-            def setup(self, context):
-                super().setup(context)
-                self._label = None
-                self._subscribe(EVENT_LOOT_GROUP, self._on_loot)
-
-            def create_widget(self, parent):
-                from PyQt6.QtWidgets import QLabel
-                self._label = QLabel("Waiting...", parent)
-                self._label.setStyleSheet("color: #e0e0e0; font-size: 11px;")
-                return self._label
-
-            def _on_loot(self, data):
-                if self._label:
-                    self._label.setText(f"Loot: {data.get('total_ped', 0):.2f} PED")
+    Resize constraints
+    ------------------
+    Set ``MIN_COLSPAN`` / ``MIN_ROWSPAN`` and ``MAX_COLSPAN`` / ``MAX_ROWSPAN``
+    (0 = unbounded) on the subclass to constrain edge-drag resizing.
     """
 
     # Class-level metadata — override in subclasses
@@ -72,8 +63,14 @@ class GridWidget:
     MIN_WIDTH: int = 80
     MIN_HEIGHT: int = 40
 
+    # Resize constraints (in tiles; 0 = unbounded)
+    MIN_COLSPAN: int = 1
+    MIN_ROWSPAN: int = 1
+    MAX_COLSPAN: int = 0
+    MAX_ROWSPAN: int = 0
+
     def __init__(self, config: dict):
-        self._widget_config: dict = config or {}
+        self._widget_config: dict = dict(config) if config else {}
         self._context: WidgetContext | None = None
         self._subscriptions: list[tuple[str, Callable]] = []
 
@@ -113,13 +110,36 @@ class GridWidget:
 
         Override to persist widget-specific settings across sessions.
         """
-        return {}
+        return dict(self._widget_config)
 
     def on_resize(self, width: int, height: int) -> None:
-        """Called when the cell containing this widget is resized.
+        """Called when the cell containing this widget is resized."""
 
-        Override to react to size changes.
+    # --- Configuration ---
+
+    def configure(self, parent: QWidget, **kwargs) -> dict | None:
+        """Open a configuration dialog.
+
+        ``kwargs`` contains layout hints from the overlay:
+          - ``current_colspan`` / ``current_rowspan``: current slot size
+          - ``max_cols`` / ``max_rows``: maximum allowed values
+
+        Return a config dict on accept (may include a ``"__slot__"`` key with
+        ``colspan`` and/or ``rowspan`` to request a layout change), or
+        ``None`` to cancel.
+
+        The default implementation returns ``None`` (no config dialog).
         """
+        return None
+
+    def on_config_changed(self, config: dict) -> None:
+        """Apply a new configuration dict to the live widget.
+
+        The overlay calls this after ``configure()`` returns a non-None result.
+        The base implementation merges the dict into ``_widget_config``.
+        Subclasses should call ``super()`` then refresh their display.
+        """
+        self._widget_config.update(config)
 
     # --- EventBus subscription helper ---
 
@@ -131,3 +151,15 @@ class GridWidget:
             )
         self._context.event_bus.subscribe(event_type, callback)
         self._subscriptions.append((event_type, callback))
+
+    def _unsubscribe(self, event_type: str, callback: Callable) -> None:
+        """Unsubscribe a previously registered callback and remove from tracking."""
+        try:
+            if self._context:
+                self._context.event_bus.unsubscribe(event_type, callback)
+        except Exception:
+            pass
+        self._subscriptions = [
+            (e, c) for e, c in self._subscriptions
+            if not (e == event_type and c is callback)
+        ]

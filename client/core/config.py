@@ -33,6 +33,8 @@ class AppConfig:
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
     scan_roi_version: int = 0  # Tracks DEFAULT_ROI_PIXELS version; reset overrides when outdated
     ocr_trace_enabled: bool = False
+    radar_last_circle: list | None = None  # [cx, cy, r] persisted calibration
+    radar_digit_stpk: str = "radar_digits.stpk"
 
     # OCR - HUD regions (x, y, w, h) for mob/tool name detection
     mob_name_region: tuple[int, int, int, int] | None = None
@@ -60,12 +62,10 @@ class AppConfig:
     overlay_enabled: bool = True
     auto_pin_detail_overlay: bool = False
 
-    # Custom grid overlay
-    custom_grid_overlay_position: tuple[int, int] = (200, 200)
-    custom_grid_overlay_cols: int = 6       # number of tile columns (1-20)
-    custom_grid_overlay_rows: int = 4       # number of tile rows (1-20)
-    custom_grid_overlay_tile_size: int = 0  # 0=S(20px), 1=M(30px), 2=L(40px)
-    custom_grid_overlay_widgets: list = field(default_factory=list)
+    # Custom grid overlays (multiple named grids)
+    # Each entry: {"id": str, "name": str, "position": [x, y], "cols": int,
+    #              "rows": int, "tile_size": int, "widgets": list}
+    custom_grids: list = field(default_factory=list)
 
     # Auth
     nexus_base_url: str = "https://entropianexus.com"
@@ -101,6 +101,7 @@ class AppConfig:
     hotkey_notifications: str = "ctrl+n"
     hotkey_debug: str = "f3"
     hotkey_overlay_toggle: str = "f2"
+    hotkey_radar_recalibrate: str = "home"
     hotkey_recording_bar: str = "ctrl+r"
     hotkey_gallery: str = "ctrl+g"
 
@@ -316,6 +317,8 @@ DEFAULTS = {
     "hdr_compatibility_mode": False,
     "ocr_auto_scan_enabled": True,
     "ocr_trace_enabled": False,
+    "radar_last_circle": None,
+    "radar_digit_stpk": "radar_digits.stpk",
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},
     "scan_roi_version": 0,
@@ -341,6 +344,7 @@ DEFAULTS = {
     "overlay_opacity": 0.85,
     "overlay_enabled": True,
     "auto_pin_detail_overlay": False,
+    "custom_grids": [],
     "nexus_base_url": "https://entropianexus.com",
     "api_base_url": "https://api.entropianexus.com",
     "oauth_client_id": "",
@@ -364,6 +368,7 @@ DEFAULTS = {
     "hotkey_notifications": "ctrl+n",
     "hotkey_debug": "f3",
     "hotkey_overlay_toggle": "f2",
+    "hotkey_radar_recalibrate": "home",
     "hotkey_recording_bar": "ctrl+r",
     "hotkey_gallery": "ctrl+g",
     "main_window_screen_center": None,
@@ -566,6 +571,26 @@ def load_config(config_path: str = "config.json") -> AppConfig:
     if merged.get("scan_roi_version", 0) < SCAN_ROI_VERSION:
         merged["scan_roi_overrides"] = {}
         merged["scan_roi_version"] = SCAN_ROI_VERSION
+
+    # Migrate flat custom_grid_overlay_* → custom_grids list
+    if "custom_grid_overlay_widgets" in user_config and "custom_grids" not in user_config:
+        old_pos = user_config.get("custom_grid_overlay_position", [200, 200])
+        entry = {
+            "id": "default",
+            "name": "Custom Grid",
+            "position": list(old_pos) if isinstance(old_pos, (list, tuple)) else [200, 200],
+            "cols": user_config.get("custom_grid_overlay_cols", 12),
+            "rows": user_config.get("custom_grid_overlay_rows", 12),
+            "tile_size": user_config.get("custom_grid_overlay_tile_size", 0),
+            "widgets": user_config.get("custom_grid_overlay_widgets", []),
+        }
+        merged["custom_grids"] = [entry]
+    for _old_key in (
+        "custom_grid_overlay_position", "custom_grid_overlay_cols",
+        "custom_grid_overlay_rows", "custom_grid_overlay_tile_size",
+        "custom_grid_overlay_widgets",
+    ):
+        merged.pop(_old_key, None)
 
     # Migrate legacy overlay_position → per-overlay keys
     if "overlay_position" in user_config:

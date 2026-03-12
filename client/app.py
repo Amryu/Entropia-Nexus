@@ -18,6 +18,7 @@ import time
 import traceback
 
 from .core.config import load_config
+from .core.build_flags import is_dev_build
 from .core.constants import (
     EVENT_AUTH_STATE_CHANGED,
     EVENT_CLIP_SAVED,
@@ -333,7 +334,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     _notifications_overlay = None
     _recording_bar = None
     _gallery_overlay = None
-    _custom_grid_overlay = None
+    _custom_grid_overlays: dict = {}
+    _grid_manager_dialog = None
 
     # Pre-import detail_overlay during splash — compiling this large module
     # takes ~0.6s and would freeze the main thread if deferred to _create_overlays.
@@ -438,6 +440,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_target_lock_detector(config, event_bus, frame_distributor))
     workers.extend(_start_player_status_detector(config, event_bus, frame_distributor))
     workers.extend(_start_market_price_detector(config, event_bus, frame_distributor, data_client))
+    # workers.extend(_start_radar_detector(config, event_bus, frame_distributor, config_path))
 
     frame_distributor.start()
     workers.append(frame_distributor)
@@ -627,12 +630,14 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             )
             return _gallery_overlay
 
-        def _ensure_custom_grid_overlay():
-            nonlocal _custom_grid_overlay
-            if _custom_grid_overlay is not None:
-                return _custom_grid_overlay
+        def _ensure_custom_grid(grid_id: str):
+            """Return (and lazily create) the overlay instance for grid_id."""
+            nonlocal _custom_grid_overlays
+            if grid_id in _custom_grid_overlays:
+                return _custom_grid_overlays[grid_id]
             from .overlay.custom_grid_overlay import CustomGridOverlay
-            _custom_grid_overlay = CustomGridOverlay(
+            overlay = CustomGridOverlay(
+                grid_id=grid_id,
                 config=config, config_path=config_path,
                 event_bus=event_bus,
                 data_client=data_client,
@@ -640,15 +645,64 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 hunt_tracker=None,
                 manager=overlay_manager,
             )
-            return _custom_grid_overlay
+            _custom_grid_overlays[grid_id] = overlay
+            return overlay
+
+        def _delete_custom_grid(grid_id: str) -> None:
+            nonlocal _custom_grid_overlays
+            overlay = _custom_grid_overlays.pop(grid_id, None)
+            if overlay is not None:
+                overlay.set_wants_visible(False)
+                try:
+                    for slot in list(overlay._grid_canvas._slots):
+                        slot.grid_widget.teardown()
+                except Exception:
+                    pass
+                overlay.close()
+            config.custom_grids = [g for g in config.custom_grids if g.get("id") != grid_id]
+            from .core.config import save_config
+            save_config(config, config_path)
 
         def _toggle_custom_grid_overlay():
-            overlay = _ensure_custom_grid_overlay()
-            if not overlay.isVisible():
+            nonlocal _grid_manager_dialog
+            from .overlay.custom_grid.grid_manager_dialog import CustomGridManagerDialog
+            from .core.config import save_config as _save_config
+            if _grid_manager_dialog is not None and _grid_manager_dialog.isVisible():
+                _grid_manager_dialog.raise_()
+                _grid_manager_dialog.activateWindow()
+                return
+            _grid_manager_dialog = CustomGridManagerDialog(
+                config=config,
+                save_fn=lambda: _save_config(config, config_path),
+                parent=None,
+            )
+            def _on_open(grid_id: str):
+                overlay = _ensure_custom_grid(grid_id)
                 overlay.set_wants_visible(True)
                 overlay.raise_()
-            else:
-                overlay.set_wants_visible(False)
+                _grid_manager_dialog._refresh_rows()
+            def _on_close(grid_id: str):
+                overlay = _custom_grid_overlays.get(grid_id)
+                if overlay:
+                    overlay.set_wants_visible(False)
+                _grid_manager_dialog._refresh_rows()
+            def _on_delete(grid_id: str):
+                _delete_custom_grid(grid_id)
+                _grid_manager_dialog._refresh_rows()
+            def _on_rename(grid_id: str, name: str):
+                overlay = _custom_grid_overlays.get(grid_id)
+                if overlay:
+                    overlay.rename(name)
+            def _on_open_status(grid_id: str) -> bool:
+                ov = _custom_grid_overlays.get(grid_id)
+                return ov is not None and ov.wants_visible
+            _grid_manager_dialog.open_grid.connect(_on_open)
+            _grid_manager_dialog.close_grid.connect(_on_close)
+            _grid_manager_dialog.grid_deleted.connect(_on_delete)
+            _grid_manager_dialog.grid_renamed.connect(_on_rename)
+            _grid_manager_dialog._is_open_fn = _on_open_status
+            _grid_manager_dialog._refresh_rows()
+            _grid_manager_dialog.show()
 
         def _toggle_recording_bar():
             overlay = _ensure_recording_bar()
@@ -1432,6 +1486,32 @@ def _start_market_price_detector(config, event_bus, frame_cache=None, data_clien
         log.info("Market price detector started")
     except Exception as e:
         log.error("Market price detector failed to start: %s", e)
+    return workers
+
+
+def _radar_feature_enabled(config) -> bool:
+    """Radar OCR is a dev-only feature, with an additional runtime toggle."""
+    return is_dev_build() and getattr(config, "radar_enabled", True)
+
+
+def _start_radar_detector(config, event_bus, frame_cache=None, config_path="config.json"):
+    """Start the radar coordinate detector. Returns list of stoppable workers."""
+    workers = []
+    if not _radar_feature_enabled(config):
+        if not is_dev_build():
+            log.info("Radar detector disabled in production builds")
+        return workers
+    try:
+        from .ocr.radar_detector import RadarDetector
+        if frame_cache is None:
+            from .ocr.capturer import ScreenCapturer
+            frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
+        detector = RadarDetector(config, event_bus, frame_cache, config_path=config_path)
+        detector.start()
+        workers.append(detector)
+        log.info("Radar detector started")
+    except Exception as e:
+        log.error("Radar detector failed to start: %s", e)
     return workers
 
 

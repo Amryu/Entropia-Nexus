@@ -29,6 +29,11 @@ NEWS_LIMIT = 500
 MAX_TICKER_LINES = 200
 _TRIM_BUFFER = 30  # let ticker grow this far before bulk trim
 _MAX_GLOBAL_FINGERPRINTS = 500
+_GLOBAL_INGEST_BATCH_WINDOW_MS = 50
+_GLOBAL_PLAYER_WIDTH_RATIO = 0.27
+_GLOBAL_TARGET_WIDTH_RATIO = 0.35
+_GLOBAL_TEXT_WIDTH_FUDGE = 0.95
+_GLOBAL_CELL_PAD_PX = 8
 
 
 def _global_fingerprint(event: GlobalEvent) -> tuple:
@@ -98,14 +103,9 @@ _LINK_STYLE = f'color:{ACCENT};text-decoration:underline'
 
 def _elide_px(text: str, max_px: int, fm: QFontMetrics) -> str:
     """Truncate *text* so it fits within *max_px* pixels, adding '…'."""
-    if fm.horizontalAdvance(text) <= max_px:
-        return text
-    ellipsis = "\u2026"
-    ew = fm.horizontalAdvance(ellipsis)
-    for i in range(len(text) - 1, 0, -1):
-        if fm.horizontalAdvance(text[:i]) + ew <= max_px:
-            return text[:i] + ellipsis
-    return ellipsis
+    if max_px <= 0:
+        return ""
+    return fm.elidedText(text, Qt.TextElideMode.ElideRight, max_px)
 
 # CSS for article HTML rendering (QTextBrowser supports CSS 2.1 subset)
 _ARTICLE_CSS = f"""
@@ -818,6 +818,7 @@ class DashboardPage(QWidget):
         self._item_loader = None
         self._seen_ids: set[int] | None = None  # None = first load not done yet
         self._pending_post: dict | None = None  # post being loaded
+        self._pending_ingested_globals: deque[GlobalEvent] = deque()
 
         # Root layout with stacked widget for list/article views
         root = QVBoxLayout(self)
@@ -922,6 +923,12 @@ class DashboardPage(QWidget):
         self._resize_timer.setSingleShot(True)
         self._resize_timer.setInterval(100)
         self._resize_timer.timeout.connect(self._rebuild_globals)
+
+        # Coalesce short ingested-global bursts to avoid main-thread stalls.
+        self._ingested_flush_timer = QTimer(self)
+        self._ingested_flush_timer.setSingleShot(True)
+        self._ingested_flush_timer.setInterval(_GLOBAL_INGEST_BATCH_WINDOW_MS)
+        self._ingested_flush_timer.timeout.connect(self._flush_ingested_globals)
 
     # --- Ticker header ---
 
@@ -1106,12 +1113,13 @@ class DashboardPage(QWidget):
 
     def _on_ticker_history(self, data: dict):
         """Populate tickers with recent server data, oldest first."""
+        added_globals = 0
         for g in sorted(data["globals"], key=lambda x: x.get("timestamp", "")):
             try:
                 gt = GlobalType(g["type"])
             except ValueError:
                 continue
-            self._on_global(GlobalEvent(
+            if self._on_global(GlobalEvent(
                 timestamp=datetime.fromisoformat(g["timestamp"]),
                 global_type=gt,
                 player_name=g.get("player", ""),
@@ -1120,7 +1128,11 @@ class DashboardPage(QWidget):
                 value_unit=g.get("unit", "PED"),
                 is_hof=bool(g.get("hof")),
                 is_ath=bool(g.get("ath")),
-            ))
+            ), render=False):
+                added_globals += 1
+
+        if added_globals:
+            self._rebuild_globals()
 
         for t in sorted(data["trades"], key=lambda x: x.get("timestamp", "")):
             self._render_trade(TradeChatMessage(
@@ -1130,15 +1142,17 @@ class DashboardPage(QWidget):
                 message=t.get("message", ""),
             ))
 
-    def _on_global(self, data):
+    def _on_global(self, data: GlobalEvent, *, render: bool = True) -> bool:
         fp = _global_fingerprint(data)
         if fp in self._global_fingerprints:
-            return
+            return False
         self._global_fingerprints[fp] = None
         if len(self._global_fingerprints) > _MAX_GLOBAL_FINGERPRINTS:
             self._global_fingerprints.popitem(last=False)
         self._global_events.append(data)
-        self._render_global(data)
+        if render:
+            self._render_global(data)
+        return True
 
     def _on_ingested_global(self, data: dict):
         """Convert server dict to GlobalEvent and display in ticker."""
@@ -1157,7 +1171,27 @@ class DashboardPage(QWidget):
             is_hof=bool(data.get("hof")),
             is_ath=bool(data.get("ath")),
         )
-        self._on_global(event)
+        self._pending_ingested_globals.append(event)
+        if not self._ingested_flush_timer.isActive():
+            self._ingested_flush_timer.start()
+
+    def _flush_ingested_globals(self):
+        """Flush queued ingested globals in a single render pass."""
+        if not self._pending_ingested_globals:
+            return
+        pending = list(self._pending_ingested_globals)
+        self._pending_ingested_globals.clear()
+
+        if len(pending) == 1:
+            self._on_global(pending[0], render=True)
+            return
+
+        added = 0
+        for event in pending:
+            if self._on_global(event, render=False):
+                added += 1
+        if added:
+            self._rebuild_globals()
 
     def _should_show_global(self, data: GlobalEvent) -> bool:
         """Check dashboard config filters for globals."""
@@ -1169,7 +1203,14 @@ class DashboardPage(QWidget):
             return False
         return True
 
-    def _global_to_html(self, data) -> str | None:
+    def _global_to_html(
+        self,
+        data: GlobalEvent,
+        *,
+        fm: QFontMetrics | None = None,
+        player_px: int | None = None,
+        target_px: int | None = None,
+    ) -> str | None:
         """Return the HTML row for a single GlobalEvent, or None if filtered."""
         if not self._should_show_global(data):
             return None
@@ -1182,11 +1223,10 @@ class DashboardPage(QWidget):
         elif data.is_hof:
             badge = f'<b style="color:{ACCENT}">HoF</b>'
         _td = 'white-space:nowrap;padding:1px 4px'
-        fm = QFontMetrics(self._global_log.document().defaultFont())
-        vw = self._global_log.viewport().width()
-        pad = 8  # td padding (4px each side)
-        player = _esc(_elide_px(data.player_name, int(vw * 0.27 * 0.95) - pad, fm))
-        target = _esc(_elide_px(data.target_name, int(vw * 0.35 * 0.95) - pad, fm))
+        if fm is None or player_px is None or target_px is None:
+            fm, player_px, target_px = self._global_text_metrics()
+        player = _esc(_elide_px(data.player_name, player_px, fm))
+        target = _esc(_elide_px(data.target_name, target_px, fm))
         return (
             f'<table width="100%" cellpadding="0" cellspacing="0"'
             f' style="margin:0;table-layout:fixed">'
@@ -1200,6 +1240,22 @@ class DashboardPage(QWidget):
             f'</tr></table>'
         )
 
+    def _global_text_metrics(self) -> tuple[QFontMetrics, int, int]:
+        """Build shared text metrics for global ticker row rendering."""
+        fm = QFontMetrics(self._global_log.document().defaultFont())
+        vw = max(0, self._global_log.viewport().width())
+        player_px = max(
+            12,
+            int(vw * _GLOBAL_PLAYER_WIDTH_RATIO * _GLOBAL_TEXT_WIDTH_FUDGE)
+            - _GLOBAL_CELL_PAD_PX,
+        )
+        target_px = max(
+            12,
+            int(vw * _GLOBAL_TARGET_WIDTH_RATIO * _GLOBAL_TEXT_WIDTH_FUDGE)
+            - _GLOBAL_CELL_PAD_PX,
+        )
+        return fm, player_px, target_px
+
     def _render_global(self, data):
         """Render a single GlobalEvent into the globals ticker."""
         html = self._global_to_html(data)
@@ -1212,9 +1268,15 @@ class DashboardPage(QWidget):
 
     def _rebuild_globals(self):
         """Re-render all stored globals with current viewport width."""
+        fm, player_px, target_px = self._global_text_metrics()
         rows = []
         for event in self._global_events:
-            html = self._global_to_html(event)
+            html = self._global_to_html(
+                event,
+                fm=fm,
+                player_px=player_px,
+                target_px=target_px,
+            )
             if html is not None:
                 rows.append(html)
         # Trim to MAX_TICKER_LINES
@@ -1299,6 +1361,7 @@ class DashboardPage(QWidget):
     def cleanup(self):
         """Stop timers and background threads."""
         self._refresh_timer.stop()
+        self._ingested_flush_timer.stop()
         if self._fetcher and self._fetcher.isRunning():
             self._fetcher.quit()
             self._fetcher.wait(2000)

@@ -1,12 +1,10 @@
 [
   {
     "version": "0.3.5",
-    "date": "2026-03-11",
+    "date": "2026-03-12",
     "changes": [
       {"type": "feat", "text": "New 'Enable Video Capture' setting separates capture infrastructure from clipping — recording now works independently without enabling the clip replay buffer"},
       {"type": "feat", "text": "'Enable Clipping (Replay Buffering)' replaces the old clip toggle — controls only the clip button, hotkey, auto-clip on global, and OBS replay buffer management"},
-      {"type": "feat", "text": "Custom grid overlay: a configurable widget grid that can be pinned over the game window"},
-      {"type": "feat", "text": "Radar coordinate detection via OCR: reads minimap coordinates and tracks position in real time"},
       {"type": "fix", "text": "Webcam no longer activates at capture startup when only recording is enabled — pre-warmed only when the clip buffer is on or 'Keep camera active' is set"},
       {"type": "fix", "text": "Recording bar clip button shows a steady blue glow when the buffer is active, pulsing only during clip encoding"},
       {"type": "fix", "text": "Recording bar record and clip buttons now show a visually disabled state when their respective features are turned off"},

@@ -148,7 +148,7 @@ def _find_game_window_win32() -> Optional[tuple[int, int, int, int, int]]:
         user32.GetWindowTextW(hwnd, buf, length + 1)
         title = buf.value
         if title.startswith(GAME_WINDOW_TITLE_PREFIX):
-            log.info("Found game window: '%s'", title)
+            log.debug("Found game window: '%s'", title)
             rect = ctypes.wintypes.RECT()
             user32.GetClientRect(hwnd, ctypes.byref(rect))
             point = ctypes.wintypes.POINT(0, 0)
@@ -330,7 +330,7 @@ class SkillsWindowDetector:
         self._game_hwnd = hwnd
         self._game_origin = (gx, gy)
         self._game_geometry = (gx, gy, gw, gh)
-        log.info("Game window: (%s,%s) %sx%s hwnd=%s", gx, gy, gw, gh, hwnd)
+        log.debug("Game window: (%s,%s) %sx%s hwnd=%s", gx, gy, gw, gh, hwnd)
 
         # Step 2: Capture the game window (window backend on Windows, mss on Linux)
         game_image = self._capturer.capture_window(hwnd, geometry=(gx, gy, gw, gh))

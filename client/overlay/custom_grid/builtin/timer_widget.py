@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import time
+
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt, QTimer
-import time
 
 from ..grid_widget import GridWidget, WidgetContext
 from ....core.constants import EVENT_HUNT_SESSION_STARTED, EVENT_HUNT_SESSION_STOPPED
+from ._common import font_big, font_label, C_TEXT, C_DIM
 
-_TIME_STYLE = "color: #e0e0e0; font-size: 18px; font-weight: bold; font-family: monospace;"
-_SUB_STYLE = "color: #888888; font-size: 10px;"
 _BTN_STYLE = (
     "QPushButton { background: #2a2a40; color: #c0c0d0; border: 1px solid #555; "
     "border-radius: 3px; padding: 1px 6px; font-size: 10px; }"
@@ -29,8 +29,10 @@ class TimerWidget(GridWidget):
     WIDGET_ID = "com.entropianexus.timer"
     DISPLAY_NAME = "Timer"
     DESCRIPTION = "Stopwatch that auto-starts with hunt sessions, or runs standalone."
-    MIN_WIDTH = 110
-    MIN_HEIGHT = 52
+    DEFAULT_COLSPAN = 4
+    DEFAULT_ROWSPAN = 3
+    MIN_WIDTH = 80
+    MIN_HEIGHT = 40
 
     def __init__(self, config: dict):
         super().__init__(config)
@@ -38,6 +40,7 @@ class TimerWidget(GridWidget):
         self._elapsed_before_pause: float = 0.0
         self._running = False
         self._label: QLabel | None = None
+        self._sub: QLabel | None = None
         self._qt_timer: QTimer | None = None
 
     def setup(self, context: WidgetContext) -> None:
@@ -54,33 +57,31 @@ class TimerWidget(GridWidget):
 
         self._label = QLabel("00:00:00")
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setStyleSheet(_TIME_STYLE)
+        self._label.setStyleSheet(
+            f"color: {C_TEXT}; font-size: 18px; font-weight: bold; font-family: monospace;"
+        )
         layout.addWidget(self._label)
+
+        self._sub = QLabel("Hunt Timer")
+        self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sub.setStyleSheet(f"color: {C_DIM}; font-size: 10px;")
+        layout.addWidget(self._sub)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
         btn_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        start_btn = QPushButton("▶")
-        start_btn.setFixedWidth(28)
-        start_btn.setStyleSheet(_BTN_STYLE)
-        start_btn.setToolTip("Start")
-        start_btn.clicked.connect(self._manual_start)
-        btn_row.addWidget(start_btn)
-
-        stop_btn = QPushButton("⏸")
-        stop_btn.setFixedWidth(28)
-        stop_btn.setStyleSheet(_BTN_STYLE)
-        stop_btn.setToolTip("Pause")
-        stop_btn.clicked.connect(self._manual_stop)
-        btn_row.addWidget(stop_btn)
-
-        reset_btn = QPushButton("↺")
-        reset_btn.setFixedWidth(28)
-        reset_btn.setStyleSheet(_BTN_STYLE)
-        reset_btn.setToolTip("Reset")
-        reset_btn.clicked.connect(self._manual_reset)
-        btn_row.addWidget(reset_btn)
+        for symbol, tip, fn in [
+            ("▶", "Start", self._manual_start),
+            ("⏸", "Pause", self._manual_stop),
+            ("↺", "Reset", self._manual_reset),
+        ]:
+            btn = QPushButton(symbol)
+            btn.setFixedWidth(28)
+            btn.setStyleSheet(_BTN_STYLE)
+            btn.setToolTip(tip)
+            btn.clicked.connect(fn)
+            btn_row.addWidget(btn)
 
         layout.addLayout(btn_row)
 
@@ -116,14 +117,9 @@ class TimerWidget(GridWidget):
         if self._label:
             self._label.setText("00:00:00")
 
-    def _manual_start(self) -> None:
-        self._start()
-
-    def _manual_stop(self) -> None:
-        self._stop()
-
-    def _manual_reset(self) -> None:
-        self._reset()
+    def _manual_start(self) -> None: self._start()
+    def _manual_stop(self) -> None:  self._stop()
+    def _manual_reset(self) -> None: self._reset()
 
     def _on_session_start(self, _data) -> None:
         self._reset()
@@ -131,6 +127,15 @@ class TimerWidget(GridWidget):
 
     def _on_session_stop(self, _data) -> None:
         self._stop()
+
+    def on_resize(self, width: int, height: int) -> None:
+        if self._label:
+            self._label.setStyleSheet(
+                f"color: {C_TEXT}; font-size: {font_big(height)}px;"
+                " font-weight: bold; font-family: monospace;"
+            )
+        if self._sub:
+            self._sub.setStyleSheet(f"color: {C_DIM}; font-size: {font_label(height)}px;")
 
     def teardown(self) -> None:
         if self._qt_timer:

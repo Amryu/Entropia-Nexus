@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtCore import Qt
 
 from ..grid_widget import GridWidget, WidgetContext
-
-_KEY_STYLE = "color: #888888; font-size: 10px;"
-_VAL_STYLE = "color: #e0e0e0; font-size: 14px; font-weight: bold;"
+from ._common import font_big, font_label, C_DIM
 
 
 class StatLabelWidget(GridWidget):
     """A simple label widget displaying a configurable key/value pair.
-
-    The value can be updated at runtime from other widgets or external code
-    by calling ``set_value()``.  By itself it shows static configured text.
 
     Widget config keys:
         label  (str): The label/key text shown above the value.
@@ -26,12 +21,16 @@ class StatLabelWidget(GridWidget):
     WIDGET_ID = "com.entropianexus.stat_label"
     DISPLAY_NAME = "Stat Label"
     DESCRIPTION = "A simple key/value label. Useful as a static display or custom indicator."
-    MIN_WIDTH = 80
-    MIN_HEIGHT = 44
+    DEFAULT_COLSPAN = 3
+    DEFAULT_ROWSPAN = 2
+    MIN_WIDTH = 60
+    MIN_HEIGHT = 36
 
     def __init__(self, config: dict):
         super().__init__(config)
+        self._key_label: QLabel | None = None
         self._val_label: QLabel | None = None
+        self._val_color = config.get("color", "#e0e0e0")
 
     def setup(self, context: WidgetContext) -> None:
         super().setup(context)
@@ -39,7 +38,6 @@ class StatLabelWidget(GridWidget):
     def create_widget(self, parent: QWidget) -> QWidget:
         label_text = self._widget_config.get("label", "Stat")
         value_text = self._widget_config.get("value", "—")
-        color = self._widget_config.get("color", "#e0e0e0")
 
         w = QWidget(parent)
         layout = QVBoxLayout(w)
@@ -47,15 +45,15 @@ class StatLabelWidget(GridWidget):
         layout.setSpacing(1)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        key_lbl = QLabel(label_text)
-        key_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        key_lbl.setStyleSheet(_KEY_STYLE)
-        layout.addWidget(key_lbl)
+        self._key_label = QLabel(label_text)
+        self._key_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._key_label.setStyleSheet(f"color: {C_DIM}; font-size: 10px;")
+        layout.addWidget(self._key_label)
 
         self._val_label = QLabel(value_text)
         self._val_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._val_label.setStyleSheet(
-            f"color: {color}; font-size: 14px; font-weight: bold;"
+            f"color: {self._val_color}; font-size: 14px; font-weight: bold;"
         )
         layout.addWidget(self._val_label)
 
@@ -66,9 +64,19 @@ class StatLabelWidget(GridWidget):
         if self._val_label:
             self._val_label.setText(text)
 
+    def on_resize(self, width: int, height: int) -> None:
+        if self._key_label:
+            self._key_label.setStyleSheet(
+                f"color: {C_DIM}; font-size: {font_label(height)}px;"
+            )
+        if self._val_label:
+            self._val_label.setStyleSheet(
+                f"color: {self._val_color}; font-size: {font_big(height)}px; font-weight: bold;"
+            )
+
     def get_config(self) -> dict:
         return {
             "label": self._widget_config.get("label", "Stat"),
             "value": self._val_label.text() if self._val_label else "—",
-            "color": self._widget_config.get("color", "#e0e0e0"),
+            "color": self._val_color,
         }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import webbrowser
 from typing import TYPE_CHECKING
 
@@ -53,7 +54,8 @@ _MENU_ITEMS = [
     {"label": "Notifications", "shortcut": "Ctrl+N", "action": "notifications"},
     {"label": "Recording", "shortcut": "Ctrl+R", "action": "recording"},
     {"label": "Gallery", "shortcut": "Ctrl+G", "action": "gallery"},
-    {"label": "Custom Grid", "shortcut": "", "action": "custom_grid"},
+    *([{"label": "Custom Grid", "shortcut": "", "action": "custom_grid"}]
+      if not getattr(sys, "frozen", False) else []),
 ]
 
 _ROW_STYLE = (

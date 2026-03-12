@@ -468,9 +468,12 @@ class ScreenCapturer:
         self._wgc_min_interval = interval_s
         self._wgc_update_interval_ms = new_ms
 
-        if not boosted and not self._os_supports_min_update_interval():
+        if (not boosted
+                and not self._os_supports_min_update_interval()
+                and self._capture_backend_preference != "wgc"):
             # OS can't throttle WGC — suspend to free GPU resources.
             # capture_window() will fall through to BitBlt.
+            # Only suspend on "auto"; explicit "wgc" selection is honoured.
             if not self._wgc_suspended:
                 self._wgc_suspended = True
                 if self._wgc_session is not None:

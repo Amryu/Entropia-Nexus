@@ -8,21 +8,22 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtCore import Qt, QTimer
 
 from ..grid_widget import GridWidget, WidgetContext
-
-_LABEL_STYLE = "color: #e0e0e0; font-size: 20px; font-weight: bold; font-family: monospace;"
-_SUB_STYLE = "color: #888888; font-size: 10px;"
+from ._common import font_big, font_label, C_TEXT, C_DIM
 
 
 class ClockWidget(GridWidget):
     WIDGET_ID = "com.entropianexus.clock"
     DISPLAY_NAME = "Clock"
     DESCRIPTION = "Shows the current local time."
-    MIN_WIDTH = 100
-    MIN_HEIGHT = 44
+    DEFAULT_COLSPAN = 4
+    DEFAULT_ROWSPAN = 3
+    MIN_WIDTH = 80
+    MIN_HEIGHT = 40
 
     def __init__(self, config: dict):
         super().__init__(config)
         self._label: QLabel | None = None
+        self._sub: QLabel | None = None
         self._timer: QTimer | None = None
 
     def setup(self, context: WidgetContext) -> None:
@@ -37,13 +38,15 @@ class ClockWidget(GridWidget):
 
         self._label = QLabel("--:--:--")
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setStyleSheet(_LABEL_STYLE)
+        self._label.setStyleSheet(
+            f"color: {C_TEXT}; font-size: 20px; font-weight: bold; font-family: monospace;"
+        )
         layout.addWidget(self._label)
 
-        sub = QLabel("Local Time")
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub.setStyleSheet(_SUB_STYLE)
-        layout.addWidget(sub)
+        self._sub = QLabel("Local Time")
+        self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sub.setStyleSheet(f"color: {C_DIM}; font-size: 10px;")
+        layout.addWidget(self._sub)
 
         self._timer = QTimer()
         self._timer.setInterval(1000)
@@ -55,6 +58,15 @@ class ClockWidget(GridWidget):
     def _tick(self) -> None:
         if self._label:
             self._label.setText(datetime.now().strftime("%H:%M:%S"))
+
+    def on_resize(self, width: int, height: int) -> None:
+        if self._label:
+            self._label.setStyleSheet(
+                f"color: {C_TEXT}; font-size: {font_big(height)}px;"
+                " font-weight: bold; font-family: monospace;"
+            )
+        if self._sub:
+            self._sub.setStyleSheet(f"color: {C_DIM}; font-size: {font_label(height)}px;")
 
     def teardown(self) -> None:
         if self._timer:

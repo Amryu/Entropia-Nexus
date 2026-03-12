@@ -1,22 +1,31 @@
 """Global hotkey manager using the keyboard library."""
 
 from ..core.constants import EVENT_HOTKEY_TRIGGERED
+from ..core.build_flags import is_dev_build
 from ..core.logger import get_logger
 from ..platform import backend as _platform
 
 log = get_logger("Hotkeys")
 
-# Maps config field names to action identifiers
-HOTKEY_ACTIONS = {
-    # Hunt hotkeys disabled
-    # "hotkey_start_hunt": "start_hunt",
-    # "hotkey_stop_hunt": "stop_hunt",
-    # "hotkey_manual_mob_name": "manual_mob_name",
-    # "hotkey_ocr_scan": "ocr_scan",
-    "hotkey_screenshot": "screenshot",
-    "hotkey_save_clip": "save_clip",
-    "hotkey_toggle_recording": "toggle_recording",
-}
+
+def _build_hotkey_actions() -> dict[str, str]:
+    # Maps config field names to action identifiers
+    actions = {
+        # Hunt hotkeys disabled
+        # "hotkey_start_hunt": "start_hunt",
+        # "hotkey_stop_hunt": "stop_hunt",
+        # "hotkey_manual_mob_name": "manual_mob_name",
+        # "hotkey_ocr_scan": "ocr_scan",
+        "hotkey_screenshot": "screenshot",
+        "hotkey_save_clip": "save_clip",
+        "hotkey_toggle_recording": "toggle_recording",
+    }
+    if is_dev_build():
+        actions["hotkey_radar_recalibrate"] = "radar_recalibrate"
+    return actions
+
+
+HOTKEY_ACTIONS = _build_hotkey_actions()
 
 
 class HotkeyManager:

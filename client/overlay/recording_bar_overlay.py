@@ -278,7 +278,8 @@ class RecordingBarOverlay(OverlayWidget):
         self._event_bus.publish(EVENT_HOTKEY_TRIGGERED, "screenshot")
 
     def _on_clip_clicked(self):
-        if not self._config.clip_enabled and not self._config.obs_enabled:
+        capture_on = getattr(self._config, "capture_enabled", False)
+        if not (self._config.clip_enabled and capture_on) and not self._config.obs_enabled:
             # Neither mode active — open settings so user can enable one
             self.open_settings.emit()
             return
@@ -331,9 +332,9 @@ class RecordingBarOverlay(OverlayWidget):
 
     def _update_clip_button_state(self):
         """Update clip and record button appearances based on enabled state."""
-        clip_active = self._config.clip_enabled or self._config.obs_enabled
         capture_on = getattr(self._config, "capture_enabled", False)
         capture_active = capture_on or self._config.obs_enabled
+        clip_active = self._config.clip_enabled and capture_active
 
         # Clip button
         if clip_active:
@@ -591,7 +592,8 @@ class RecordingBarOverlay(OverlayWidget):
         self._encoding_pct = 0
         self._stop_pulse_if_unneeded()
         # Restore steady blue if clip buffer is still active
-        clip_active = self._config.clip_enabled or self._config.obs_enabled
+        capture_on = getattr(self._config, "capture_enabled", False)
+        clip_active = self._config.clip_enabled and (capture_on or self._config.obs_enabled)
         if clip_active:
             self._set_clip_icon_bright(True)
         if not self._capture_manager.is_recording:
