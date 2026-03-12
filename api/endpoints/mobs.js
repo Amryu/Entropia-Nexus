@@ -2,7 +2,7 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { getMobLoots, formatMobLoot } = require('./mobloots');
 const { getMobMaturities, formatMobMaturity } = require('./mobmaturities');
-const { getMobSpawns } = require('./mobspawns');
+const { getLocations } = require('./locations');
 const { ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -24,11 +24,75 @@ async function ensureInvestigatorCache() {
 }
 
 async function loadRelated(mobs){
-  const ids = mobs.map(m=>m.Id);
+  const ids = mobs.map(m => m.Id);
+  const mobIdSet = new Set(ids);
+
+  async function getMobSpawnsFromLocations() {
+    if (ids.length === 0) return {};
+
+    const locations = await getLocations({
+      types: ['Area'],
+      areaTypes: ['MobArea'],
+    });
+    if (!Array.isArray(locations) || locations.length === 0) return {};
+
+    const byMob = {};
+    for (const location of locations) {
+      const maturities = Array.isArray(location?.Maturities) ? location.Maturities : [];
+      if (maturities.length === 0) continue;
+
+      const coordinates = location?.Properties?.Coordinates || {};
+      const planetName = typeof location?.Planet?.Name === 'string' ? location.Planet.Name : null;
+      const planetTechnicalName = typeof location?.Planet?.Properties?.TechnicalName === 'string'
+        ? location.Planet.Properties.TechnicalName
+        : null;
+      const spawn = {
+        Id: location.Id,
+        Name: location.Name,
+        Properties: {
+          Description: location?.Properties?.Description ?? null,
+          Density: location?.Properties?.Density ?? null,
+          IsShared: location?.Properties?.IsShared === true || location?.Properties?.IsShared === 1,
+          IsEvent: location?.Properties?.IsEvent === true || location?.Properties?.IsEvent === 1,
+          Notes: location?.Properties?.Notes ?? null,
+          Type: location?.Properties?.AreaType ?? null,
+          Shape: location?.Properties?.Shape ?? null,
+          Data: location?.Properties?.Data ?? null,
+          Coordinates: {
+            Longitude: coordinates.Longitude ?? null,
+            Latitude: coordinates.Latitude ?? null,
+            Altitude: coordinates.Altitude ?? null
+          }
+        },
+        Planet: location?.Planet ? {
+          Name: planetName,
+          Properties: {
+            TechnicalName: planetTechnicalName
+          },
+          Links: location.Planet.Links || { "$Url": null }
+        } : null,
+        Maturities: maturities,
+        // Keep legacy link for response contract compatibility.
+        Links: { "$Url": `/mobspawns/${location.Id}` }
+      };
+
+      const seenMobIds = new Set();
+      for (const entry of maturities) {
+        const url = entry?.Maturity?.Mob?.Links?.$Url;
+        const match = typeof url === 'string' ? url.match(/\/mobs\/(\d+)$/) : null;
+        const mobId = match ? Number(match[1]) : null;
+        if (!Number.isFinite(mobId) || !mobIdSet.has(mobId) || seenMobIds.has(mobId)) continue;
+        seenMobIds.add(mobId);
+        (byMob[mobId] ||= []).push(spawn);
+      }
+    }
+    return byMob;
+  }
+
   return {
     Loots: await getMobLoots(ids),
     Maturities: await getMobMaturities(ids),
-    Spawns: await getMobSpawns(ids)
+    Spawns: await getMobSpawnsFromLocations()
   };
 }
 
@@ -70,27 +134,33 @@ function formatMob(m, rel, classIds){
     Planet: m.Planet ? { Name: m.Planet, Links: { "$Url": `/planets/${m.PlanetId}` } } : null,
     Species: m.Species ? { Name: m.Species, Properties: { CodexBaseCost: m.CodexBaseCost != null ? Number(m.CodexBaseCost) : null, CodexType: m.CodexType ?? null }, Links: { "$Url": `/mobspecies/${m.SpeciesId}` } } : null,
     Maturities: (rel.Maturities[m.Id]||[]).map(formatMobMaturity),
-    Spawns: (rel.Spawns[m.Id]||[]).map(sp=>({
+    Spawns: (rel.Spawns[m.Id]||[]).map(sp => ({
       Id: sp.Id,
       Name: sp.Name,
       Properties: {
-        Description: sp.Description,
-        Density: sp.Density,
-        IsShared: sp.IsShared === 1 || sp.IsShared === true,
-        IsEvent: sp.IsEvent === 1 || sp.IsEvent === true,
-        Notes: sp.Notes,
-        Type: sp.AreaType,
-        Shape: sp.Shape,
-        Data: sp.Data,
-        Coordinates: { Longitude: sp.Longitude, Latitude: sp.Latitude, Altitude: sp.Altitude }
+        Description: sp?.Properties?.Description ?? null,
+        Density: sp?.Properties?.Density ?? null,
+        IsShared: sp?.Properties?.IsShared === true || sp?.Properties?.IsShared === 1,
+        IsEvent: sp?.Properties?.IsEvent === true || sp?.Properties?.IsEvent === 1,
+        Notes: sp?.Properties?.Notes ?? null,
+        Type: sp?.Properties?.Type ?? null,
+        Shape: sp?.Properties?.Shape ?? null,
+        Data: sp?.Properties?.Data ?? null,
+        Coordinates: {
+          Longitude: sp?.Properties?.Coordinates?.Longitude ?? null,
+          Latitude: sp?.Properties?.Coordinates?.Latitude ?? null,
+          Altitude: sp?.Properties?.Coordinates?.Altitude ?? null
+        }
       },
-      Planet: sp.Planet ? { 
-        Name: sp.Planet, 
-        Properties: { TechnicalName: sp.TechnicalName },
-        Links: { "$Url": `/planets/${sp.PlanetId}` } 
+      Planet: sp.Planet ? {
+        Name: typeof sp.Planet?.Name === 'string' ? sp.Planet.Name : null,
+        Properties: {
+          TechnicalName: typeof sp.Planet?.Properties?.TechnicalName === 'string' ? sp.Planet.Properties.TechnicalName : null
+        },
+        Links: sp.Planet?.Links || { "$Url": null }
       } : null,
       Maturities: Array.isArray(sp.Maturities) ? sp.Maturities : [],
-      Links: { "$Url": `/locations/${sp.Id}` }
+      Links: { "$Url": `/mobspawns/${sp.Id}` }
     })),
     Loots: (rel.Loots[m.Id]||[]).map(formatMobLoot),
     Links: { "$Url": `/mobs/${m.Id}` }
@@ -112,7 +182,7 @@ function register(app){
   app.get('/mobs', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;
-      const data = await withCache('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'ClassIds', ...ITEM_TABLES], getMobs);
+      const data = await withCache('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'Locations', 'Areas', 'MobSpawnMaturities', 'ClassIds', ...ITEM_TABLES], getMobs);
       if (!res.headersSent) res.json(data);
     } catch (e) {
       if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch mobs' });
@@ -138,7 +208,7 @@ function register(app){
   app.get('/mobs/:mob', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;
-      const r = await withCachedLookup('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'ClassIds', ...ITEM_TABLES], getMobs, req.params.mob);
+      const r = await withCachedLookup('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'Locations', 'Areas', 'MobSpawnMaturities', 'ClassIds', ...ITEM_TABLES], getMobs, req.params.mob);
       if (r) {
         if (!res.headersSent) res.json(r);
       } else {

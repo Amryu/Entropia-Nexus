@@ -66,24 +66,35 @@
     return `background-color: ${style.bg}; color: ${style.color};`;
   }
 
+  function getPlanetName(planet) {
+    return typeof planet?.Name === 'string' ? planet.Name : '';
+  }
+
+  function toPlanetSlug(planet) {
+    const name = getPlanetName(planet) || 'Calypso';
+    return name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase() || 'calypso';
+  }
+
   function getWaypoint(planet, x, y, z, name) {
-    const technicalName = planet?.Properties?.TechnicalName || planet?.Name || 'Unknown';
+    const technicalName = planet?.Properties?.TechnicalName || getPlanetName(planet) || 'Unknown';
     return `[${technicalName}, ${x}, ${y}, ${z}, ${name}]`;
   }
 
   // Transform data for FancyTable
   $: tableData = sortedSpawns.map(spawn => {
-    const coords = spawn.Properties?.Coordinates || spawn.Properties?.Data || {};
+    const location = spawn?.Location || spawn;
+    const coords = location?.Properties?.Coordinates || location?.Properties?.Data || {};
     const x = coords.Longitude || coords.x || 0;
     const y = coords.Latitude || coords.y || 0;
     const z = coords.Altitude || 0;
-    const waypoint = getWaypoint(spawn.Planet, x, y, z, mobName);
-    const density = spawn.Properties?.Density;
+    const waypoint = getWaypoint(location?.Planet, x, y, z, mobName);
+    const density = location?.Properties?.Density;
     const otherMobs = [...new Set(spawn.Maturities?.map(sm => sm.Maturity?.Mob?.Name).filter(n => n && n !== mobName) || [])];
     const difficulty = getMobAreaDifficulty(spawn.Maturities);
+    const locationId = location?.Id ?? spawn?.Id;
 
     return {
-      id: spawn.Id,
+      id: locationId,
       maturities: formatMaturitiesRange(spawn.Maturities, mobName),
       otherMobs: otherMobs,
       otherMobsHtml: otherMobs.length > 0
@@ -95,7 +106,7 @@
       densityStyle: getDensityStyle(density),
       difficulty: difficulty,
       difficultyLabel: difficulty ? difficulty.label : 'N/A',
-      mapLink: `/maps/${(spawn.Planet?.Name || 'calypso').toLowerCase()}/${spawn.Id}`
+      mapLink: `/maps/${toPlanetSlug(location?.Planet)}/${locationId}`
     };
   });
 
