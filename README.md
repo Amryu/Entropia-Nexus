@@ -67,7 +67,8 @@ Before you begin, ensure you have:
 - **Python** 3.9+ and pip (for the desktop client)
 - **PostgreSQL** 14+ installed and running
 - **Git** for version control
-- **Git Bash / MSYS2** on Windows (build scripts use bash)
+- **Bash shell** for client scripts (`client/build.sh`, `client/release.sh`)
+  - Windows: install **Git Bash** (Git for Windows) or **MSYS2**
 - **Docker** and Docker Compose (optional, for containerized deployment)
 - **WSL** on Windows (optional, only needed for cross-platform client releases)
 
@@ -152,6 +153,24 @@ npm install
 cd ../nexus-bot
 npm install
 
+cd ..
+```
+
+If you plan to run or build the desktop client, use a Python virtual environment:
+
+```bash
+cd client
+python -m venv .venv
+
+# Activate the venv
+# PowerShell:
+.\.venv\Scripts\Activate.ps1
+# Git Bash / MSYS2:
+source .venv/Scripts/activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install pyinstaller
 cd ..
 ```
 
@@ -332,11 +351,21 @@ cd api && npm ci --omit=dev
 ### Desktop Client
 
 ```bash
-# Install Python dependencies
-pip install -r client/requirements.txt
-pip install pyinstaller
+# Create and activate a virtual environment (recommended)
+cd client
+python -m venv .venv
 
-# Build for current platform
+# PowerShell:
+.\.venv\Scripts\Activate.ps1
+# Git Bash / MSYS2:
+source .venv/Scripts/activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install pyinstaller
+cd ..
+
+# Build for current platform (run from a Bash shell)
 bash client/build.sh
 # Output: client/dist/entropia-nexus/
 
@@ -345,6 +374,8 @@ bash client/release.sh
 bash client/release.sh --windows-only
 bash client/release.sh --linux-only
 ```
+
+Note: `client/build.sh` and `client/release.sh` must be run from Bash (Git Bash/MSYS2/WSL), not CMD/PowerShell.
 
 The build script auto-detects the platform, bundles assets and data files, runs PyInstaller, and strips unnecessary Qt modules (~200 MB savings). Version is read from `client/VERSION` or git tags matching `client-*`.
 
@@ -433,7 +464,16 @@ By submitting a contribution, you agree to the terms in [Section 5 of the LICENS
 
 - Delete `node_modules` and reinstall: `rm -r node_modules && npm install`
 - Clear npm cache: `npm cache clean --force`
-- Ensure you're using Node.js 18+
+- Ensure you're using Node.js 24 LTS
+
+### Windows Path Length Errors
+
+- Symptoms: `Filename too long`, `ENAMETOOLONG`, checkout/build failures in deep paths.
+- Enable long paths in Git:
+  - `git config --global core.longpaths true`
+- Enable long paths in Windows (Administrator PowerShell), then reboot:
+  - `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force`
+- Keep clone paths short (example: `C:\dev\entropia-nexus`) if issues persist.
 
 ## License
 

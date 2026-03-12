@@ -3,26 +3,31 @@
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QWidget, QFrame, QTextBrowser,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QTextBrowser,
 )
 from PyQt6.QtCore import Qt
 
 from ..theme import PRIMARY, SECONDARY, TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, BORDER, HOVER
 from ..icons import svg_icon
 
-# Bump this when the terms change — triggers re-acceptance.
-TOS_VERSION = "1.0"
+# Bump this when the terms change - triggers re-acceptance.
+TOS_VERSION = "1.1"
 
-# Shield icon (24×24 viewBox)
+# Shield icon (24x24 viewBox)
 _SHIELD_SVG = (
     '<path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z'
     'm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>'
 )
 
 TOS_HTML = """\
-<h2>Entropia Nexus Client — Terms of Use, Disclaimer &amp; Privacy</h2>
-<p style="color: {muted};">Last updated: March 2, 2026</p>
+<h2>Entropia Nexus Client - Terms of Use, Disclaimer &amp; Privacy</h2>
+<p style="color: {muted};">Last updated: March 12, 2026</p>
 <hr>
 
 <h3>1. Nature of the Software</h3>
@@ -36,32 +41,38 @@ TOS_HTML = """\
 <p>The Software captures screenshots of the <b>Entropia Universe game window only</b> using
   Windows Graphics Capture (WGC) or the <code>PrintWindow</code> API as a fallback.
   These screenshots are processed <b>entirely on your local machine</b> for optical character
-  recognition (OCR) — for example, to read skill values or item data from the game interface.</p>
+  recognition (OCR) - for example, to read skill values or item data from the game interface.</p>
 <ul>
-  <li>Screenshots are <b>never transmitted</b> to any server.</li>
-  <li>No other windows or desktop content are captured.</li>
-  <li>OCR results stay on your machine unless you use features that explicitly sync data to your
-      account (such as saving custom markup values).</li>
+  <li>Game-window screenshots and recordings are processed locally by default.</li>
+  <li>No other windows or desktop content are intentionally captured.</li>
+  <li>Captured media stays on your device unless you explicitly choose to upload or share it.</li>
+  <li>OCR results stay local unless you enable features that sync data to your account.</li>
 </ul>
 
 <h3>3. Data Stored Locally</h3>
 <p>The Software stores the following data on your computer:</p>
 <ul>
   <li>Configuration and preferences (<code>config.json</code>)</li>
-  <li>Cached reference data (skill names, rank thresholds, item data, font calibration)</li>
+  <li>Local SQLite data (for example: parsed chat events, OCR scan results, and media metadata)</li>
+  <li>Captured screenshots/clips saved to your configured output folders</li>
+  <li>Cached reference data/assets (skill names, rank thresholds, item data, templates, changelog)</li>
   <li>Authentication tokens from Entropia Nexus OAuth</li>
 </ul>
-<p>No personal data beyond your Entropia Nexus account information is stored locally.</p>
+<p>This local data can include game-related identifiers (such as player names) visible in parsed logs or captured events.</p>
 
 <h3>4. Data Sent to Servers</h3>
 <p>The Software communicates with <code>api.entropianexus.com</code> for:</p>
 <ul>
-  <li>Fetching wiki data, skill references, exchange data, and map information</li>
-  <li>Storing and retrieving user preferences (e.g. custom markup values) when logged in</li>
+  <li>Fetching wiki, map, market, profile, and other reference data used by the client</li>
+  <li>Syncing account data when logged in (for example: skills, loadouts, preferences, profile details)</li>
+  <li>Crowdsourced ingestion (when enabled): global events, filtered trade chat messages, and market price OCR observations</li>
+  <li>Optional user-initiated uploads/sharing: profile images, global screenshots, and submitted external video URLs</li>
   <li>Checking for software updates</li>
 </ul>
+<p>Ingestion payloads can include game-related identifiers/content such as player names, target names,
+  locations, trade messages, item names, prices/markup values, timestamps, and confidence scores.</p>
 <p>Authentication uses Entropia Nexus OAuth (PKCE). The client does <b>not</b> handle or store
-  any passwords — authentication is managed entirely through the Nexus website.</p>
+  any passwords - authentication is managed entirely through the Nexus website.</p>
 <p>We do not sell or share your data with third parties, except as required by law or to protect
   the integrity of the service.</p>
 
@@ -69,7 +80,7 @@ TOS_HTML = """\
 <p>The Software draws transparent overlay windows on top of the game for displaying information
   such as item details, maps, and scan results.</p>
 <ul>
-  <li>Overlays are <b>purely visual</b> — they do not modify the game client, game memory,
+  <li>Overlays are <b>purely visual</b> - they do not modify the game client, game memory,
       network traffic, or game files in any way.</li>
   <li>Use of overlays is at your own discretion. Please consult MindArk's End User License
       Agreement (EULA) regarding third-party tools.</li>
@@ -85,8 +96,8 @@ TOS_HTML = """\
   <b>MindArk PE AB</b>. This Software is a fan-made tool operated under principles of fair use
   for informational and community purposes. We do not claim ownership of any MindArk intellectual
   property.</p>
-<p>The Software itself is proprietary. You may not reverse-engineer, redistribute, or modify it
-  without explicit permission.</p>
+<p>The Software is distributed under the Entropia Nexus Source-Available License.
+  Any use, redistribution, or modification must comply with that license.</p>
 
 <h3>8. Disclaimer of Liability</h3>
 <p>THE SOFTWARE IS PROVIDED <b>"AS IS"</b> AND <b>"AS AVAILABLE"</b>, WITHOUT WARRANTY OF ANY KIND,
@@ -107,8 +118,7 @@ TOS_HTML = """\
 <p>You agree not to:</p>
 <ul>
   <li>Use the Software to exploit, cheat, or violate MindArk's EULA</li>
-  <li>Reverse-engineer, decompile, or disassemble the Software</li>
-  <li>Redistribute or share the Software without permission</li>
+  <li>Use or redistribute the Software in violation of the Entropia Nexus license terms</li>
   <li>Use the Software for any illegal purpose</li>
 </ul>
 
@@ -139,7 +149,7 @@ class TosDialog(QDialog):
         self._read_only = read_only
         self.setWindowTitle(
             "Terms of Use & Privacy" if read_only
-            else "Terms of Use & Privacy — Please Review"
+            else "Terms of Use & Privacy - Please Review"
         )
         self.setMinimumSize(540, 420)
         self.resize(580, 540)
