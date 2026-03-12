@@ -15,6 +15,8 @@
   export let dbPendingChanges = [];
   export let currentUserId = null;
   export let isAdmin = false;
+  /** Map of locationId → change for locations locked by other users' pending changes */
+  export let lockedLocationMap = new Map();
 
   const dispatch = createEventDispatcher();
 
@@ -696,7 +698,7 @@
       if (locId === undefined) return;
       if (locId === selectedId) {
         if (layer.setStyle) layer.setStyle({ weight: 4, color: '#ffff00' });
-        if (editMode && (isAdmin || pendingChanges.has(locId))) enableEditing(layer, locId);
+        if (editMode && (isAdmin || !lockedLocationMap.has(locId))) enableEditing(layer, locId);
       } else {
         // Check if this is a pending add (negative tempId)
         const pending = pendingChanges.get(locId);

@@ -755,6 +755,7 @@
         {dbPendingChanges}
         {currentUserId}
         {isAdmin}
+        {lockedLocationMap}
         on:select={handleMapSelect}
         on:selectDbChange={handleSelectDbChange}
         on:drawCreated={handleDrawCreated}

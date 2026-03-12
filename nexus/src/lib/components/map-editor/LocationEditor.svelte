@@ -63,6 +63,9 @@
   let taxRateMining = null;
   let taxRateShops = null;
 
+  // Shape data cache — preserves shape data when swapping types
+  let _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
+
   // Related entities
   let relatedExpanded = false;
   let relatedMissions = null;
@@ -158,6 +161,8 @@
     taxRateShops = location.Properties?.TaxRateShops ?? null;
     _lastShapeDataRef = location.Properties?.Data;
     _lastCoordsRef = location.Properties?.Coordinates;
+    _prevShape = shape;
+    _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
     // Reset related data when location changes
     relatedMissions = null;
     relatedExpanded = false;
@@ -232,7 +237,51 @@
     } else {
       shapeDataJson = drawnData ? JSON.stringify(drawnData, null, 2) : '';
     }
+    _prevShape = shape;
+    _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
     setTimeout(() => { _populatingForm = false; }, 0);
+  }
+
+  // Track previous shape for swap caching
+  let _prevShape = null;
+
+  function handleShapeSwap(oldShape, newShape) {
+    // Save current shape data to cache
+    if (oldShape === 'Circle') {
+      _shapeCache.Circle = { x: circleX, y: circleY, radius: circleRadius };
+    } else if (oldShape === 'Rectangle') {
+      _shapeCache.Rectangle = { x: rectX, y: rectY, width: rectWidth, height: rectHeight };
+    } else if (oldShape === 'Polygon') {
+      _shapeCache.Polygon = shapeDataJson;
+    }
+
+    // Restore from cache or set defaults
+    const cached = _shapeCache[newShape];
+    if (newShape === 'Circle') {
+      if (cached) {
+        circleX = cached.x; circleY = cached.y; circleRadius = cached.radius;
+      } else {
+        // Default: use current coordinates as center
+        circleX = Number(longitude) || 0;
+        circleY = Number(latitude) || 0;
+        circleRadius = 100;
+      }
+    } else if (newShape === 'Rectangle') {
+      if (cached) {
+        rectX = cached.x; rectY = cached.y; rectWidth = cached.width; rectHeight = cached.height;
+      } else {
+        rectX = Number(longitude) || 0;
+        rectY = Number(latitude) || 0;
+        rectWidth = 100; rectHeight = 100;
+      }
+    } else if (newShape === 'Polygon') {
+      if (cached) {
+        shapeDataJson = cached;
+      } else {
+        shapeDataJson = '';
+      }
+    }
+    scheduleAutoSave();
   }
 
   // Build shape data object from current form state
@@ -821,7 +870,11 @@
 
       <div class="field-group">
         <span class="field-label">Shape</span>
-        <select class="field-input" bind:value={shape} disabled={readOnly || !isNew}>
+        <select class="field-input" bind:value={shape} disabled={readOnly}
+          on:change={(e) => {
+            if (_prevShape && _prevShape !== shape) handleShapeSwap(_prevShape, shape);
+            _prevShape = shape;
+          }}>
           {#each SHAPES as s}
             <option value={s}>{s}</option>
           {/each}
