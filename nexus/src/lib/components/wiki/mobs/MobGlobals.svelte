@@ -20,6 +20,8 @@
   let globalsData = null;
   let loading = false;
   let period = '30d';
+  let mounted = false;
+  let lastLoadedMobName = '';
   let refreshTimer = null;
   const REFRESH_INTERVAL = 15000;
 
@@ -115,8 +117,11 @@
   }
 
   function buildActivityChart() {
+    if (activityChart) {
+      activityChart.destroy();
+      activityChart = null;
+    }
     if (!activityCanvas || !activity.length) return;
-    if (activityChart) activityChart.destroy();
 
     const accentColor = getComputedCssVar('--accent-color') || '#60b0ff';
     const valueColor = '#2ecc71';
@@ -195,8 +200,30 @@
   }
 
   onMount(() => {
+    mounted = true;
+    lastLoadedMobName = mobName || '';
     loadGlobalsData();
   });
+
+  // Reload globals when navigating to a different mob within the same page instance.
+  $: if (mounted && mobName && mobName !== lastLoadedMobName) {
+    lastLoadedMobName = mobName;
+    globalsData = null;
+    topPage = 1;
+    recentPage = 1;
+    recentSort = { col: 'timestamp', asc: false };
+    loadGlobalsData();
+  }
+
+  $: if (mounted && !mobName && lastLoadedMobName) {
+    lastLoadedMobName = '';
+    globalsData = null;
+    clearInterval(refreshTimer);
+    if (activityChart) {
+      activityChart.destroy();
+      activityChart = null;
+    }
+  }
 
   onDestroy(() => {
     clearInterval(refreshTimer);
