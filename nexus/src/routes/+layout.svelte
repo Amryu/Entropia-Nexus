@@ -82,7 +82,7 @@
   height: 100%;
   margin: 0;
   padding: 0;
-  font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+  font-family: Calibri, 'Trebuchet MS', sans-serif;
   overflow: hidden;
   color: var(--text-color);
   background-color: var(--primary-color);
@@ -139,3 +139,4 @@
     <slot></slot>
   </div>
 </div>
+

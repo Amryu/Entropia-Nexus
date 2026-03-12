@@ -102,6 +102,7 @@ class MainWindow(QWidget):
         self._data_client = data_client
 
         self._wiki_page = None
+        self._maps_page = None
         self._profile_page = None
         self._society_page = None
         self._markup_resolver = None
@@ -265,7 +266,9 @@ class MainWindow(QWidget):
 
     def _create_maps_page(self):
         from .pages.maps_page import MapsPage
-        return MapsPage(data_client=self._data_client, config=self._config)
+        page = MapsPage(data_client=self._data_client, config=self._config)
+        self._maps_page = page
+        return page
 
     def _create_skills_page(self):
         from .pages.skills_page import SkillsPage
@@ -730,11 +733,16 @@ class MainWindow(QWidget):
             import re
             slug = re.sub(r'[^0-9a-zA-Z]', '', item_name).lower()
             self._applying_nav = True
-            self._ensure_page(PAGE_MAPS)
+            page = self._ensure_page(PAGE_MAPS)
             self._sidebar.set_active_no_emit(PAGE_MAPS)
             self._pages.setCurrentIndex(PAGE_MAPS)
             self._applying_nav = False
-            self._maps_page.navigate_to_planet(slug)
+            if hasattr(page, "navigate_to_planet"):
+                page.navigate_to_planet(slug)
+            elif self._maps_page and hasattr(self._maps_page, "navigate_to_planet"):
+                self._maps_page.navigate_to_planet(slug)
+            else:
+                log.warning("Maps page is not available for map search navigation (slug=%s)", slug)
             return
 
         # MobMaturity → navigate to the parent mob

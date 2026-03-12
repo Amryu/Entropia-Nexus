@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.3.6",
+    "date": "2026-03-12",
+    "changes": [
+      {"type": "fix", "text": "Map search result navigation no longer crashes with AttributeError when opening the Maps page"},
+      {"type": "fix", "text": "Mob globals panel now refreshes correctly when switching between mob pages in-place"},
+      {"type": "fix", "text": "Removed Gill Sans fallback fonts from client and web UI font stacks"}
+    ]
+  },
+  {
     "version": "0.3.5",
     "date": "2026-03-12",
     "changes": [
