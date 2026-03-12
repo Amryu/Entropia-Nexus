@@ -11,8 +11,10 @@ export const UpsertConfigs = {
     ],
     table: "Locations",
     relationChangeFunc: async (client, locationId, x) => {
-      await upsertEstateExtension(client, locationId, 'Shop', x.OwnerId, true, x.MaxGuests);
-      await applyEstateSectionsChanges(client, locationId, x.Sections ?? []);
+      await applyLocationExtensionChanges(client, locationId, {
+        Properties: { Type: 'Estate', EstateType: 'Shop', OwnerId: x.OwnerId, ItemTradeAvailable: true, MaxGuests: x.MaxGuests },
+        Sections: x.Sections ?? []
+      });
     }
   },
   Apartment: {
@@ -27,8 +29,10 @@ export const UpsertConfigs = {
     ],
     table: "Locations",
     relationChangeFunc: async (client, locationId, x) => {
-      await upsertEstateExtension(client, locationId, 'Apartment', null, false, x.MaxGuests);
-      await applyEstateSectionsChanges(client, locationId, x.Sections ?? []);
+      await applyLocationExtensionChanges(client, locationId, {
+        Properties: { Type: 'Estate', EstateType: 'Apartment', MaxGuests: x.MaxGuests },
+        Sections: x.Sections ?? []
+      });
     }
   },
   Weapon: {
@@ -648,7 +652,12 @@ export const UpsertConfigs = {
       { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null }
     ],
     table: "Locations",
-    relationChangeFunc: async (client, id, x) => await applyVendorOfferChanges(client, id, x.Offers)
+    relationChangeFunc: async (client, id, x) => {
+      await applyLocationExtensionChanges(client, id, {
+        Properties: { Type: 'Vendor' },
+        Offers: x.Offers ?? []
+      });
+    }
   },
   Profession: {
     columns: [
@@ -680,69 +689,6 @@ export const UpsertConfigs = {
       applySkillProfessionsChanges(client, id, x.Professions || []),
       applySkillUnlocksChanges(client, id, x.Unlocks || [])
     ])
-  },
-  Location: {
-    columns: [
-      { name: "Name", value: x => x.Name },
-      { name: "Description", value: x => x.Properties?.Description ?? null },
-      { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? null },
-      { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? null },
-      { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null },
-      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) }
-    ],
-    table: "Teleporters"
-  },
-  Area: {
-    columns: [
-      { name: "Name", value: x => x.Name },
-      { name: "Type", value: x => x.Properties?.Type ?? 'Area' },
-      { name: "Description", value: x => x.Properties?.Description ?? null },
-      { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? null },
-      { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? null },
-      { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null },
-      { name: "PlanetId", value: async (x, c) => x.Planet?.Name ? await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id ?? null) : null },
-      { name: "ParentLocationId", value: async (x, c) => x.ParentLocation?.Name ? await c.query(`SELECT "Id" FROM ONLY "Locations" WHERE "Name" = $1`, [x.ParentLocation.Name]).then(res => res.rows[0]?.Id ?? null) : null }
-    ],
-    table: "Locations",
-    relationChangeFunc: async (client, id, x) => {
-      // 1. Upsert Areas extension record (Type, Shape, Data)
-      await applyLocationExtensionChanges(client, id, x);
-
-      if (x.Properties?.AreaType === 'MobArea') {
-        const density = x.Properties?.Density ?? null;
-
-        // 2. Upsert MobSpawns (required by API INNER JOIN; update Density if provided)
-        await client.query(
-          `INSERT INTO "MobSpawns" ("LocationId", "Density")
-           VALUES ($1, $2)
-           ON CONFLICT ("LocationId") DO UPDATE SET
-             "Density" = COALESCE($2, "MobSpawns"."Density")`,
-          [id, density]
-        );
-
-        // 3. Upsert MobSpawnMaturities if mob data provided
-        const mobData = x.Properties?.MobData;
-        if (Array.isArray(mobData)) {
-          if (mobData.length === 0) {
-            await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1`, [id]);
-          } else {
-            const valid = mobData.filter(m => m.maturityId != null);
-            await client.query(
-              `DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`,
-              [id, valid.map(m => m.maturityId)]
-            );
-            await Promise.all(valid.map(m =>
-              client.query(
-                `INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT ("LocationId", "MaturityId") DO UPDATE SET "IsRare" = $3`,
-                [id, m.maturityId, m.isRare ? 1 : 0]
-              )
-            ));
-          }
-        }
-      }
-    }
   },
   Mob: {
     columns: [
@@ -867,7 +813,9 @@ export const UpsertConfigs = {
       await applyLocationFacilitiesChanges(client, id, x.Facilities || []);
       await applyLocationExtensionChanges(client, id, x);
     }
-  }
+  },
+  // Backwards compatibility: existing pending changes may use entity='Area'
+  get Area() { return this.Location; }
 }
 
 async function applyMissionStepsChanges(client, missionId, steps) {
@@ -1220,18 +1168,6 @@ export async function validateChainConnectivity(client, chainId) {
   };
 }
 
-async function upsertEstateExtension(client, locationId, estateType, ownerId, itemTradeAvailable, maxGuests) {
-  await client.query(`
-    INSERT INTO "Estates" ("LocationId", "Type", "OwnerId", "ItemTradeAvailable", "MaxGuests")
-    VALUES ($1, $2::"EstateType", $3, $4, $5)
-    ON CONFLICT ("LocationId") DO UPDATE SET
-      "Type" = $2::"EstateType",
-      "OwnerId" = $3,
-      "ItemTradeAvailable" = $4,
-      "MaxGuests" = $5
-  `, [locationId, estateType, ownerId ?? null, itemTradeAvailable, maxGuests ?? null]);
-}
-
 async function applyEstateSectionsChanges(client, locationId, sections) {
   const normalized = (sections || []).map(s => ({
     Name: s.Name,
@@ -1293,12 +1229,16 @@ async function applyLocationFacilitiesChanges(client, locationId, facilities) {
   }
 }
 
+const AREA_TYPES = ['PvpArea', 'PvpLootArea', 'MobArea', 'LandArea', 'ZoneArea', 'CityArea', 'EstateArea', 'EventArea', 'WaveEventArea'];
+
 async function applyLocationExtensionChanges(client, locationId, x) {
   const locationType = x.Properties?.Type;
+  // Derive AreaType: explicit AreaType field, or backward-compat where Type holds the AreaType value
+  const areaType = x.Properties?.AreaType ||
+    (AREA_TYPES.includes(locationType) ? locationType : null);
 
   // Handle Areas extension for Area type
-  if (locationType === 'Area' && x.Properties?.AreaType) {
-    const areaType = x.Properties.AreaType;
+  if ((locationType === 'Area' || areaType) && areaType) {
     const sanitized = sanitizeShapeAndData(x.Properties || {});
     const shape = sanitized.shape ?? x.Properties?.Shape ?? 'Point';
     const data = sanitized.data ?? JSON.stringify(x.Properties?.Data ?? {});
@@ -1343,9 +1283,46 @@ async function applyLocationExtensionChanges(client, locationId, x) {
     }
   }
 
+  // Handle MobSpawns extension for MobArea type
+  if (areaType === 'MobArea') {
+    const density = x.Properties?.Density ?? null;
+    await client.query(
+      `INSERT INTO "MobSpawns" ("LocationId", "Density")
+       VALUES ($1, $2)
+       ON CONFLICT ("LocationId") DO UPDATE SET
+         "Density" = COALESCE($2, "MobSpawns"."Density")`,
+      [locationId, density]
+    );
+
+    const mobData = x.Properties?.MobData;
+    if (Array.isArray(mobData)) {
+      if (mobData.length === 0) {
+        await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1`, [locationId]);
+      } else {
+        const valid = mobData.filter(m => m.maturityId != null);
+        await client.query(
+          `DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+          [locationId, valid.map(m => m.maturityId)]
+        );
+        await Promise.all(valid.map(m =>
+          client.query(
+            `INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")
+             VALUES ($1, $2, $3)
+             ON CONFLICT ("LocationId", "MaturityId") DO UPDATE SET "IsRare" = $3`,
+            [locationId, m.maturityId, m.isRare ? 1 : 0]
+          )
+        ));
+      }
+    }
+  }
+
+  // Handle VendorOffers for Vendor type
+  if (locationType === 'Vendor' && Array.isArray(x.Offers)) {
+    await applyVendorOfferChanges(client, locationId, x.Offers);
+  }
+
   // Handle WaveEventWaves for WaveEventArea area type
-  const areaType = x.Properties?.AreaType;
-  if (locationType === 'Area' && areaType === 'WaveEventArea' && Array.isArray(x.Waves)) {
+  if (areaType === 'WaveEventArea' && Array.isArray(x.Waves)) {
     await applyWaveEventWavesChanges(client, locationId, x.Waves);
   }
 }
@@ -1990,21 +1967,17 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
         // Create new MobSpawn (LocationId is the PK and FK to Locations)
         await client.query(`
-          INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent", "Name", "Description")
-          VALUES ($1, $2, $3, $4, $5, $6)
+          INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent")
+          VALUES ($1, $2, $3, $4)
           ON CONFLICT ("LocationId") DO UPDATE SET
             "Density" = EXCLUDED."Density",
             "IsShared" = EXCLUDED."IsShared",
-            "IsEvent" = EXCLUDED."IsEvent",
-            "Name" = EXCLUDED."Name",
-            "Description" = EXCLUDED."Description"
+            "IsEvent" = EXCLUDED."IsEvent"
         `, [
           areaId,
           spawn.Properties.Density || 3,
           spawn.Properties.IsShared ? 1 : 0,
-          spawn.Properties.IsEvent ? 1 : 0,
-          derivedName || null,
-          spawn.Properties.Description || null
+          spawn.Properties.IsEvent ? 1 : 0
         ]);
       }
 

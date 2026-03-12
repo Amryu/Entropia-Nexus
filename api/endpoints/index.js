@@ -1,5 +1,4 @@
 // Compose all endpoint registrars here
-const areas = require('./areas');
 const locations = require('./locations');
 const planets = require('./planets');
 const apartments = require('./apartments');
@@ -49,7 +48,7 @@ const enumerations = require('./enumerations');
 const audit = require('./audit');
 const entitychanges = require('./entitychanges');
 // Newly added (migration phase 3)
-let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspawns, mobspecies, mobs;
+let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspecies, mobs;
 try { absorbers = require('./absorbers'); } catch {}
 try { misctools = require('./misctools'); } catch {}
 try { signs = require('./signs'); } catch {}
@@ -63,13 +62,11 @@ try { tiers = require('./tiers'); } catch {}
 try { pets = require('./pets'); } catch {}
 try { mobloots = require('./mobloots'); } catch {}
 try { mobmaturities = require('./mobmaturities'); } catch {}
-try { mobspawns = require('./mobspawns'); } catch {}
 try { mobspecies = require('./mobspecies'); } catch {}
 try { mobs = require('./mobs'); } catch {}
 
 function registerAll(app){
   // Order can matter for overlapping paths; keep generic last
-  areas.register(app);
   locations.register(app);
   planets.register(app);
   apartments.register(app);
@@ -133,7 +130,6 @@ function registerAll(app){
   pets?.register(app);
   mobloots?.register(app);
   mobmaturities?.register(app);
-  mobspawns?.register(app);
   mobspecies?.register(app);
   mobs?.register(app);
 }

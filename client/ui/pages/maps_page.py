@@ -272,7 +272,7 @@ def _precompute_mob_area_data(locations: list[dict]):
       _mob_color: (r, g, b) | None
     """
     for loc in locations:
-        loc_type = loc.get("Properties", {}).get("Type", "")
+        loc_type = loc.get("Properties", {}).get("AreaType") or loc.get("Properties", {}).get("Type", "")
         if loc_type != "MobArea":
             continue
 
@@ -354,10 +354,10 @@ class _ElidedLabel(QLabel):
 
     def __init__(self, text: str = '', parent=None):
         super().__init__(parent)
-        self._full_text = text
+        self._full_text = ''
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        super().setText(text)
+        self.setText(text)
 
     def setText(self, text: str):
         self._full_text = text
@@ -500,7 +500,7 @@ class _SearchResultsList(QWidget):
 
         for i, loc in enumerate(results):
             name = loc.get("_mob_display_name") or loc.get("Name") or ""
-            loc_type = loc.get("Properties", {}).get("Type", "Location")
+            loc_type = loc.get("Properties", {}).get("AreaType") or loc.get("Properties", {}).get("Type", "Location")
             mob_rgb = loc.get("_mob_color")
             name_color = f"rgb({mob_rgb[0]}, {mob_rgb[1]}, {mob_rgb[2]})" if mob_rgb else None
             row = _SearchResultRow(i, name, loc_type, name_color=name_color)
@@ -674,7 +674,7 @@ class _LocationInfoPanel(QWidget):
 
         props = loc.get("Properties", {})
         name = loc.get("_mob_display_name") or loc.get("Name", "Unknown")
-        loc_type = props.get("Type", "")
+        loc_type = props.get("AreaType") or props.get("Type", "")
 
         # --- Header row: name + close button ---
         header = QWidget()
@@ -886,6 +886,29 @@ class _LocationInfoPanel(QWidget):
 
             self._add_separator()
 
+        # --- LandArea details ---
+        area_type = props.get("AreaType", "")
+        if loc_type == "Area" and area_type == "LandArea":
+            tax_h = props.get("TaxRateHunting")
+            tax_m = props.get("TaxRateMining")
+            tax_s = props.get("TaxRateShops")
+
+            la_header = QLabel("LAND AREA")
+            la_header.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 600;"
+                f" background: transparent; margin-bottom: 4px;"
+            )
+            self._layout.addWidget(la_header)
+
+            if tax_h is not None:
+                self._add_stat_row("Hunting Tax", f"{tax_h}%")
+            if tax_m is not None:
+                self._add_stat_row("Mining Tax", f"{tax_m}%")
+            if tax_s is not None:
+                self._add_stat_row("Shops Tax", f"{tax_s}%")
+
+            self._add_separator()
+
         # --- Description ---
         desc = props.get("Description")
         if desc:
@@ -909,9 +932,17 @@ class _LocationInfoPanel(QWidget):
         # Clear previous fixed-height constraint before re-measuring.
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+        # Constrain content to the panel's actual viewport width so that
+        # eliding labels elide correctly (adjustSize() would inflate to full
+        # text width and prevent elision of long teleporter names).
+        sb_w = self._scroll.verticalScrollBar().sizeHint().width()
+        content_w = max(1, self.width() - sb_w)
+        self._content.setFixedWidth(content_w)
         self._layout.activate()
-        self._content.adjustSize()
         ideal_h = self._content.sizeHint().height() + 2  # +2 for border
+        # Release the fixed-width constraint; setWidgetResizable handles sizing.
+        self._content.setMinimumWidth(0)
+        self._content.setMaximumWidth(16777215)
         parent = self.parentWidget()
         max_h = (parent.height() - 20) if parent else 800
         self.setFixedHeight(min(ideal_h, max_h))
@@ -1286,7 +1317,7 @@ class MapsPage(QWidget):
         ).start()
 
     def _fetch_planet_data(self, slug: str):
-        """Background: fetch locations + areas + mobspawns + image for a planet."""
+        """Background: fetch locations + image for a planet."""
         # Find planet dict
         planet = None
         for p in self._planets:
@@ -1299,35 +1330,12 @@ class MapsPage(QWidget):
 
         planet_name = planet["Name"]
 
-        # Fetch data in sequence (threads are cheap, avoid overcomplicating)
         try:
             locations = self._data_client.get_locations_for_planet(planet_name)
         except Exception:
             locations = []
-        try:
-            areas = self._data_client.get_areas_for_planet(planet_name)
-        except Exception:
-            areas = []
-        try:
-            mobspawns = self._data_client.get_mobspawns_for_planet(planet_name)
-        except Exception:
-            mobspawns = []
 
-        # Merge (same logic as +page.js)
-        by_id: dict[int, dict] = {}
-        for loc in locations:
-            by_id[loc["Id"]] = loc
-        for area in areas:
-            by_id[area["Id"]] = area
-            offset_id = area["Id"] + 200000
-            if offset_id in by_id and not by_id[offset_id].get("Properties", {}).get("Shape"):
-                del by_id[offset_id]
-        for mob in mobspawns:
-            by_id[mob["Id"]] = mob
-        merged = list(by_id.values())
-
-        # Pre-compute mob area display names and difficulty colors
-        _precompute_mob_area_data(merged)
+        _precompute_mob_area_data(locations)
 
         # Load image
         pixmap = self._load_planet_image(slug)
@@ -1341,9 +1349,9 @@ class MapsPage(QWidget):
             img_tile_size = img_w / map_w
             eu_ratio = _EU_PER_TILE / img_tile_size
             eu_tile_size = img_tile_size * eu_ratio
-            precompute_image_coords(merged, pmap, eu_ratio, eu_tile_size)
+            precompute_image_coords(locations, pmap, eu_ratio, eu_tile_size)
 
-            self._planet_data_payload = (planet, pixmap, merged)
+            self._planet_data_payload = (planet, pixmap, locations)
             self._planet_data_ready.emit(slug)
 
     def _load_planet_image(self, slug: str) -> QPixmap | None:
@@ -1517,7 +1525,7 @@ class MapsPage(QWidget):
         scored: list[tuple[int, dict]] = []
         for loc in self._canvas._locations:
             name = loc.get("Name") or ""
-            loc_type = loc.get("Properties", {}).get("Type", "")
+            loc_type = loc.get("Properties", {}).get("AreaType") or loc.get("Properties", {}).get("Type", "")
             display_name = loc.get("_mob_display_name") or ""
             s = max(
                 _fuzzy_score(name, query),

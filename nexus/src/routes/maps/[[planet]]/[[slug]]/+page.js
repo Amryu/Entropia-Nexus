@@ -26,63 +26,7 @@ export async function load({ fetch, params, url, parent }) {
   const isCreateMode = mode === 'create' && !!(session?.user?.verified || session?.user?.grants?.includes('wiki.approve') || session?.user?.administrator);
   const changeId = url.searchParams.get('changeId');
 
-  let [locations, areas, mobSpawns] = await Promise.all([
-    apiCall(fetch, '/locations?Planet=' + planet.Name),
-    apiCall(fetch, '/areas?Planet=' + planet.Name),
-    apiCall(fetch, '/mobspawns?Planet=' + planet.Name)
-  ]);
-
-  // Build a map of Id to object, preferring MobSpawn > Area > Location
-  const byId = {};
-
-  // 1. Add all locations (least specific)
-  for (const loc of locations) {
-    byId[loc.Id] = loc;
-  }
-
-  // 2. Add all areas (replace location if same Id or if area.Id + 200000 === location.Id)
-  for (const area of areas) {
-    byId[area.Id] = area;
-    // Remove any location with area.Id + 200000 === location.Id
-    const offsetId = area.Id + 200000;
-    if (byId[offsetId] && byId[offsetId].Properties && !byId[offsetId].Properties.Shape) {
-      delete byId[offsetId];
-    }
-  }
-
-  // 3. Add all mobspawns (replace area if same Id)
-  for (const mobSpawn of mobSpawns) {
-    byId[mobSpawn.Id] = mobSpawn;
-  }
-
-  locations = Object.values(byId);
-
-  // Check for duplicate IDs in the final combined dataset
-  const idCounts = {};
-  const duplicateIds = [];
-  
-  locations.forEach(location => {
-    const id = location.Id;
-    idCounts[id] = (idCounts[id] || 0) + 1;
-    if (idCounts[id] === 2) {
-      duplicateIds.push(id);
-    }
-  });
-
-  if (duplicateIds.length > 0) {
-    console.warn('Duplicate IDs found in locations:', duplicateIds);
-    duplicateIds.forEach(duplicateId => {
-      const duplicateItems = locations.filter(loc => loc.Id === duplicateId);
-      console.warn(`ID ${duplicateId} appears ${duplicateItems.length} times:`, duplicateItems.map(item => ({
-        Id: item.Id,
-        Name: item.Name,
-        Type: item.Properties.Type,
-        HasShape: !!item.Properties.Shape,
-        HasData: !!item.Properties.Data,
-        Source: item.Properties.Shape ? 'area' : 'location'
-      })));
-    });
-  }
+  let locations = await apiCall(fetch, '/locations?Planet=' + planet.Name);
 
   if (!params.planet && !params.slug) {
     return pageResponse(
@@ -90,14 +34,12 @@ export async function load({ fetch, params, url, parent }) {
       null,
       {
         locations,
-        areas,
         planet,
       }
     );
   }
 
-  let location = areas.find((area) => area.Id == params.slug)
-    ?? locations.find((location) => location.Id == params.slug);
+  let location = locations.find((loc) => loc.Id == params.slug);
 
   if (location === null) {
     return pageResponse(
@@ -115,7 +57,6 @@ export async function load({ fetch, params, url, parent }) {
     location,
     {
       locations,
-      areas,
       planet
     }
   );
@@ -139,10 +80,10 @@ export async function load({ fetch, params, url, parent }) {
 
   const getEntityType = (loc) => {
     if (!loc) return null;
-    if (loc?.Properties?.Type === 'MobArea') return null;
+    if (loc?.Properties?.AreaType === 'MobArea') return null;
     if (loc?.Properties?.Type === 'Shop') return null;
     if (loc?.Properties?.Type === 'Apartment') return 'Apartment';
-    if (loc?.Properties?.Shape || loc?.Properties?.Type?.endsWith('Area')) return 'Area';
+    if (loc?.Properties?.Type === 'Area' || loc?.Properties?.Shape) return 'Area';
     return 'Location';
   };
 

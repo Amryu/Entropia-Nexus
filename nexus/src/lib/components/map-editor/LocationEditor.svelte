@@ -136,7 +136,7 @@
     longitude = location.Properties?.Coordinates?.Longitude ?? 0;
     latitude = location.Properties?.Coordinates?.Latitude ?? 0;
     altitude = location.Properties?.Coordinates?.Altitude ?? 0;
-    areaType = location.Properties?.AreaType || location.Properties?.Type || 'MobArea';
+    areaType = location.Properties?.AreaType || (location.Properties?.Type !== 'Area' ? location.Properties?.Type : null) || 'MobArea';
     shape = location.Properties?.Shape || 'Polygon';
     const existingData = location.Properties?.Data;
     if (shape === 'Circle' && existingData) {
@@ -466,7 +466,8 @@
       ...(location?.Planet ? { Planet: location.Planet } : {}),
       ParentLocation: parentLocationName ? { Name: parentLocationName } : null,
       Facilities: location?.Facilities ?? [],
-      ...(location?.Waves ? { Waves: location.Waves } : {})
+      ...(location?.Waves ? { Waves: location.Waves } : {}),
+      ...(location?.Maturities ? { Maturities: location.Maturities } : {})
     };
   })() : null;
 
@@ -486,7 +487,18 @@
   }
 
   function openRawJson() {
-    jsonCollapsedPaths = new Set(collectArrayPaths(currentJson));
+    const paths = new Set(collectArrayPaths(currentJson));
+    // Expand Maturities array itself, but collapse heavy sub-objects within each entry
+    if (currentJson?.Maturities) {
+      paths.delete('Maturities');
+      currentJson.Maturities.forEach((entry, i) => {
+        const matPath = `Maturities[${i}].Maturity`;
+        for (const key of ['Properties', 'Attacks', 'Mob', 'Links']) {
+          if (entry?.Maturity?.[key] != null) paths.add(`${matPath}.${key}`);
+        }
+      });
+    }
+    jsonCollapsedPaths = paths;
     showRawJson = true;
   }
 

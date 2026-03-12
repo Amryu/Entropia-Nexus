@@ -405,7 +405,7 @@
 
     // Also add pending 'add' items as selectable layers
     for (const [tempId, change] of pendingChanges) {
-      if (change.action !== 'add' || !change.modified) continue;
+      if (change.original || !change.modified) continue;
       const mod = change.modified;
       const layer = createPendingAddLayer(mod, tempId);
       if (layer) {
@@ -459,7 +459,7 @@
       fillOpacity: style.fillOpacity,
       dashArray: style.dashArray
     });
-    const tooltipName = loc.Properties?.Type === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
+    const tooltipName = loc.Properties?.AreaType === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
     marker.bindTooltip(tooltipName, { direction: 'top', offset: [0, -8] });
     return marker;
   }
@@ -505,7 +505,7 @@
 
     const layer = createLeafletShape(shape, data, options);
     if (layer) {
-      const tooltipName = loc.Properties?.Type === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
+      const tooltipName = loc.Properties?.AreaType === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
       layer.bindTooltip(tooltipName, { sticky: true });
     }
     return layer;
@@ -702,7 +702,7 @@
       } else {
         // Check if this is a pending add (negative tempId)
         const pending = pendingChanges.get(locId);
-        if (pending?.action === 'add') {
+        if (pending && !pending.original) {
           // Restore pending add style
           const effectiveType = pending.modified?.locationType === 'Area'
             ? (pending.modified?.areaType || 'Area')
@@ -773,7 +773,7 @@
       }
     }
     for (const [tempId, change] of pendingChanges) {
-      if (change.action !== 'add' || !change.modified) continue;
+      if (change.original || !change.modified) continue;
       if (tempId === excludeId) continue;
       const mod = change.modified;
       if (mod.locationType !== 'Area' || !mod.shape || !mod.shapeData) continue;
@@ -800,7 +800,7 @@
       }
     }
     for (const [tempId, change] of pendingChanges) {
-      if (change.action !== 'add' || !change.modified) continue;
+      if (change.original || !change.modified) continue;
       if (tempId === excludeId) continue;
       const mod = change.modified;
       if (mod.locationType !== 'Area' || !mod.shape || !mod.shapeData) continue;

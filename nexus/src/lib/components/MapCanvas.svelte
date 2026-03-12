@@ -5,7 +5,7 @@
   function drawShape(ctx, loc, isHovered, isSelected) {
     const type = loc.Properties.Shape;
     ctx.save();
-    let baseColor = getColorByType(loc.Properties.Type, loc)?.color || 'white';
+    let baseColor = getColorByType(loc.Properties.AreaType || loc.Properties.Type, loc)?.color || 'white';
     // Enhanced highlight for selected
     if (isSelected) {
       ctx.shadowColor = 'yellow';
@@ -91,7 +91,7 @@
     // Draw shape with its actual color at reduced opacity, plus a numbered label
     const shape = loc.Properties.Shape;
     const isArea = ['Circle', 'Rectangle', 'Polygon'].includes(shape);
-    const baseColor = getColorByType(loc.Properties.Type, loc)?.color || 'yellow';
+    const baseColor = getColorByType(loc.Properties.AreaType || loc.Properties.Type, loc)?.color || 'yellow';
     ctx.save();
     ctx.shadowBlur = 0;
     ctx.lineWidth = 1.5;
@@ -342,7 +342,7 @@
   // Pre-compute difficulty colors for MobArea locations
   $: if (locations) {
     for (const loc of locations) {
-      if (loc.Properties?.Type === 'MobArea' && !loc._difficulty) {
+      if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
         loc._difficulty = getMobAreaDifficulty(loc.Maturities);
       }
     }
@@ -1414,7 +1414,7 @@
   }
 
   function getAreas(locations) {
-    return locations.filter(x => x.Properties?.Type?.endsWith('Area') === true);
+    return locations.filter(x => x.Properties?.Type === 'Area' || !!x.Properties?.AreaType);
   }
 
   function getColorByType(type, loc) {

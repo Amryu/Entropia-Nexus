@@ -96,7 +96,7 @@ Wrapper that owns the 3-column editor layout, all shared state, and all event ha
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `planet` | object\|null | `null` | Planet with `Properties.Map` data |
-| `locations` | array | `[]` | Merged locations/areas/mobspawns |
+| `locations` | array | `[]` | All locations (including mob spawn data) |
 | `allMobs` | array | `[]` | All mobs for MobAreaEditor |
 | `editMode` | boolean | `false` | Enable draw tools and shape editing |
 | `loading` | boolean | `false` | Show loading overlay on map |
@@ -443,7 +443,6 @@ Location edits are saved locally (to `pendingChanges`) automatically as the user
 GET /planets           - All planets
 GET /planets/:id       - Single planet
 GET /teleporters       - All teleporters
-GET /areas             - All areas
 GET /estates           - Player estates
 ```
 

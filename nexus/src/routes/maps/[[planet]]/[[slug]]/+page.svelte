@@ -168,7 +168,7 @@
   // Pre-compute difficulty for MobArea locations
   $: if (locations.length) {
     for (const loc of locations) {
-      if (loc.Properties?.Type === 'MobArea' && !loc._difficulty) {
+      if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
         loc._difficulty = getMobAreaDifficulty(loc.Maturities);
       }
     }
@@ -185,7 +185,7 @@
     if (!changeData?.Properties) return null;
     const props = changeData.Properties;
     const coords = props.Coordinates || {};
-    const isArea = props.Shape || String(props.Type || '').endsWith('Area');
+    const isArea = props.Shape || props.AreaType || props.Type === 'Area';
     const modified = {
       name: changeData.Name || '',
       locationType: isArea ? 'Area' : (props.Type || 'Location'),
@@ -258,10 +258,10 @@
 
   function getEntityTypeForLocation(location) {
     if (!location) return null;
-    if (location?.Properties?.Type === 'MobArea') return null;
+    if (location?.Properties?.AreaType === 'MobArea') return null;
     if (location?.Properties?.Type === 'Shop') return null;
     if (location?.Properties?.Type === 'Apartment') return 'Apartment';
-    if (location?.Properties?.Shape || location?.Properties?.Type?.endsWith('Area')) {
+    if (location?.Properties?.Type === 'Area' || location?.Properties?.Shape) {
       return 'Area';
     }
     return 'Location';
@@ -584,7 +584,7 @@
   }
 
   function getDisplayName(loc) {
-    if (loc.Properties?.Type === 'MobArea') return getMobAreaShortName(loc.Name);
+    if (loc.Properties?.AreaType === 'MobArea') return getMobAreaShortName(loc.Name);
     return loc.Name;
   }
 
@@ -596,7 +596,7 @@
         item,
         score: Math.max(
           fuzzyScore(item.Name, query),
-          item.Properties?.Type === 'MobArea' ? fuzzyScore(getMobAreaShortName(item.Name), query) : 0,
+          item.Properties?.AreaType === 'MobArea' ? fuzzyScore(getMobAreaShortName(item.Name), query) : 0,
           fuzzyScore(item.Properties?.Type, query) * 0.4
         )
       }))
@@ -722,17 +722,19 @@
 
   $: closestTeleporters = getClosestTeleporters(activeLocation);
 
-  function isDefaultVisibleType(type) {
+  function isDefaultVisibleType(loc) {
+    const type = loc?.Properties?.Type;
+    const areaType = loc?.Properties?.AreaType;
     if (!type) return false;
-    if (type === 'MobArea') return false;
-    if (type.endsWith('Area')) {
-      return DEFAULT_VISIBLE_AREA_TYPES.has(type);
+    if (areaType === 'MobArea') return false;
+    if (type === 'Area' || areaType) {
+      return DEFAULT_VISIBLE_AREA_TYPES.has(areaType);
     }
     return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
   }
 
   $: filteredLocations = (() => {
-    const base = (locations || []).filter((loc) => isDefaultVisibleType(loc?.Properties?.Type));
+    const base = (locations || []).filter((loc) => isDefaultVisibleType(loc));
     if (selectedLocation && !base.some((loc) => loc.Id === selectedLocation.Id)) {
       return [...base, selectedLocation];
     }
@@ -1312,7 +1314,7 @@
               </div>
             {/if}
 
-          {#if activeLocation?.Properties?.Type === 'MobArea'}
+          {#if activeLocation?.Properties?.AreaType === 'MobArea'}
             <div class="info-section">
               <h4>Mob Area</h4>
               {#if activeLocation._difficulty}
@@ -1509,6 +1511,10 @@
             on:clear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
             on:submitted={handleChangesSubmitted}
             on:removed={() => { editorPendingChanges = editorPendingChanges; }}
+            on:changeCreated={(e) => {
+              editorDbChangeIdMap.set(e.detail.key, e.detail.changeId);
+              editorDbChangeIdMap = editorDbChangeIdMap;
+            }}
             on:dbChangeDeleted={(e) => {
               if (planetPendingOverride) {
                 planetPendingOverride = planetPendingOverride.filter(c => c.id !== e.detail.dbId);

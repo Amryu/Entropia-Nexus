@@ -96,6 +96,28 @@ export const Location = {
         "LandAreaOwnerName": {
           "type": ["string", "null"],
           "default": null
+        },
+        // MobArea-specific properties (when Type = 'Area' and AreaType = 'MobArea')
+        "Density": {
+          "type": ["integer", "null"],
+          "default": null
+        },
+        "IsShared": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "IsEvent": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "Notes": {
+          "type": ["string", "null"],
+          "default": null
+        },
+        "MobData": {
+          "type": ["array", "null"],
+          "default": null,
+          "items": { "type": "object", "additionalProperties": true }
         }
       },
       "required": ["Type", "Coordinates"]
@@ -142,6 +164,12 @@ export const Location = {
         },
         "required": ["Name"]
       },
+      "default": []
+    },
+    // Maturities for MobArea type
+    "Maturities": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true },
       "default": []
     },
     // Waves for WaveEvent type

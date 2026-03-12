@@ -193,12 +193,6 @@ class DataClient:
     def get_locations_for_planet(self, planet: str) -> list[dict]:
         return self._get_cached(f"/locations?Planet={planet}")
 
-    def get_areas_for_planet(self, planet: str) -> list[dict]:
-        return self._get_cached(f"/areas?Planet={planet}")
-
-    def get_mobspawns_for_planet(self, planet: str) -> list[dict]:
-        return self._get_cached(f"/mobspawns?Planet={planet}")
-
     def get_finder_amplifiers(self) -> list[dict]:
         return self._get_cached("/finderamplifiers")
 

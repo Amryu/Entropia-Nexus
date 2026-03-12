@@ -200,7 +200,7 @@ function _formatMaturityRange(sortedMats) {
 export function getTooltipText(location) {
   let name;
 
-  if (location.Properties.Type === 'MobArea') {
+  if (location.Properties.AreaType === 'MobArea') {
     name = formatMobSpawnDisplayName(location.Name, location.Maturities);
   }
   else {
@@ -319,8 +319,8 @@ export function copyLocation(location) {
 
 export function getWaypointFromLocation(location) {
   if (!location) return '';
-  const type = location.Properties?.Type;
-  const name = type === 'MobArea'
+  const areaType = location.Properties?.AreaType;
+  const name = areaType === 'MobArea'
     ? (location.Name || '').split(',').map(x => x.trim().split(' - ')[0].trim()).join('/')
     : (location.Name || '');
   const planet = location.Planet?.Properties?.TechnicalName ?? location.Planet?.Name ?? '';

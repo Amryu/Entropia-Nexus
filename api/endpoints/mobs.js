@@ -90,7 +90,7 @@ function formatMob(m, rel, classIds){
         Links: { "$Url": `/planets/${sp.PlanetId}` } 
       } : null,
       Maturities: Array.isArray(sp.Maturities) ? sp.Maturities : [],
-      Links: { "$Url": `/mobspawns/${sp.Id}` }
+      Links: { "$Url": `/locations/${sp.Id}` }
     })),
     Loots: (rel.Loots[m.Id]||[]).map(formatMobLoot),
     Links: { "$Url": `/mobs/${m.Id}` }

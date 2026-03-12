@@ -113,7 +113,7 @@
       return loc;
     }
     const pending = pendingChanges.get(selectedId);
-    if (pending?.action === 'add' && pending.modified) {
+    if (!pending?.original && pending?.modified) {
       const mod = pending.modified;
       return {
         Id: selectedId,
@@ -211,7 +211,7 @@
       selectedDbChange = null; // Clear read-only state from any previous DB change selection
       const data = change.data;
       const props = data?.Properties || {};
-      const isAreaType = props.Shape || String(props.Type || '').endsWith('Area');
+      const isAreaType = props.Shape || props.AreaType || props.Type === 'Area';
 
       if (change.type === 'Create') {
         // Seed as a pending add
@@ -223,7 +223,7 @@
             longitude: props.Coordinates?.Longitude ?? 0,
             latitude: props.Coordinates?.Latitude ?? 0,
             altitude: props.Coordinates?.Altitude ?? null,
-            areaType: isAreaType ? (props.AreaType || props.Type || 'MobArea') : null,
+            areaType: isAreaType ? (props.AreaType || 'MobArea') : null,
             shape: props.Shape || null,
             shapeData: props.Data || null,
             parentLocationName: data?.ParentLocation?.Name || null,
@@ -238,7 +238,7 @@
           if (data?.Waves) {
             modified.waveData = { waves: data.Waves };
           }
-          pendingChanges.set(tempId, { action: 'add', original: null, modified });
+          pendingChanges.set(tempId, { action: 'edit', original: null, modified });
           dbChangeIdMap.set(tempId, change.id);
           pendingChanges = pendingChanges;
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
@@ -254,7 +254,7 @@
             longitude: props.Coordinates?.Longitude ?? loc.Properties?.Coordinates?.Longitude ?? 0,
             latitude: props.Coordinates?.Latitude ?? loc.Properties?.Coordinates?.Latitude ?? 0,
             altitude: props.Coordinates?.Altitude ?? loc.Properties?.Coordinates?.Altitude ?? null,
-            areaType: isAreaType ? (props.AreaType || props.Type || loc.Properties?.AreaType || 'MobArea') : null,
+            areaType: isAreaType ? (props.AreaType || loc.Properties?.AreaType || 'MobArea') : null,
             shape: props.Shape ?? loc.Properties?.Shape ?? null,
             shapeData: props.Data ?? loc.Properties?.Data ?? null,
             parentLocationName: data.ParentLocation?.Name || loc.ParentLocation?.Name || null,
@@ -326,7 +326,7 @@
       tempId
     };
 
-    pendingChanges.set(tempId, { action: 'add', original: null, modified });
+    pendingChanges.set(tempId, { action: 'edit', original: null, modified });
     pendingChanges = pendingChanges;
 
     // Select the new pending add for editing
@@ -341,7 +341,7 @@
     const modified = e.detail;
     const tempId = nextTempId--;
     modified.tempId = tempId;
-    pendingChanges.set(tempId, { action: 'add', original: null, modified });
+    pendingChanges.set(tempId, { action: 'edit', original: null, modified });
     pendingChanges = pendingChanges;
     isNewLocation = false;
     drawnShapeData = null;
@@ -358,8 +358,8 @@
       dbChangeIdMap.set(original.Id, existingDbChange.id);
     }
     const existingChange = pendingChanges.get(original.Id);
-    if (existingChange?.action === 'add') {
-      // Editing a pending add: merge into the existing add entry, don't overwrite with 'edit'
+    if (!existingChange?.original) {
+      // Editing a pending add: merge into the existing entry
       Object.assign(existingChange.modified, modified);
       pendingChanges.set(original.Id, existingChange);
     } else {
@@ -526,7 +526,7 @@
     const loc = locations.find(l => l.Id === locId);
     const existing = pendingChanges.get(locId);
 
-    if (existing?.action === 'add' && existing.modified) {
+    if (!existing?.original && existing?.modified) {
       // Pending add: update the modified data in place
       const modified = existing.modified;
       if (entropiaData.center) {
@@ -545,9 +545,8 @@
       const modified = existing?.modified || {};
       modified.name = modified.name ?? loc.Name;
       modified.locationType = modified.locationType ?? (isArea(loc) ? 'Area' : (loc.Properties?.Type || 'Area'));
-      // Preserve area type — Areas endpoint stores it in Properties.Type, not Properties.AreaType
       if (modified.locationType === 'Area' && modified.areaType === undefined) {
-        modified.areaType = loc.Properties?.AreaType || loc.Properties?.Type || 'MobArea';
+        modified.areaType = loc.Properties?.AreaType || 'MobArea';
       }
 
       if (entropiaData.center) {
@@ -587,7 +586,7 @@
     if (waveEditorContext?.location) {
       const loc = waveEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
-      if (existing?.action === 'add') {
+      if (!existing?.original) {
         existing.modified.waveData = { waves: waveData.waves };
         pendingChanges.set(loc.Id, existing);
       } else {
@@ -611,8 +610,8 @@
     if (mobEditorContext?.location) {
       const loc = mobEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
-      if (existing?.action === 'add') {
-        // Pending add: merge mob data into existing add entry
+      if (existing && !existing.original) {
+        // Pending add: merge mob data into existing entry
         existing.modified.name = mobData.name;
         existing.modified.mobData = { density: mobData.density, maturities: mobData.maturities };
         pendingChanges.set(loc.Id, existing);
@@ -651,7 +650,7 @@
       tempId
     };
 
-    pendingChanges.set(tempId, { action: 'add', original: null, modified });
+    pendingChanges.set(tempId, { action: 'edit', original: null, modified });
     pendingChanges = pendingChanges;
     isNewLocation = false;
     drawnShapeData = null;

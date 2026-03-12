@@ -275,7 +275,6 @@ Density badges:
 GET /mobs              - All mobs with related data
 GET /mobs/:id          - Single mob
 GET /mobmaturities     - All maturities
-GET /mobspawns         - Spawn locations with maturity mappings
 GET /mobloots          - Loot tables with item data
 GET /mobspecies        - Species list
 ```

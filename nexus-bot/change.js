@@ -7,7 +7,8 @@ const Validators = {};
 let shared = [EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tiers];
 const ENTITY_TYPE_MAP = {
   TeleportChip: 'TeleportationChip',
-  CreatureControlCapsule: 'Capsule'
+  CreatureControlCapsule: 'Capsule',
+  Area: 'Location'
 };
 
 function resolveSchemaType(type) {

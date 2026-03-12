@@ -2,6 +2,7 @@ const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { getObjects, parseItemList } = require('./utils');
 const { withCache } = require('./responseCache');
+const { formatMobMaturity } = require('./mobmaturities');
 
 // Location types for filtering
 const LOCATION_TYPES = {
@@ -40,13 +41,19 @@ const queries = {
            la."TaxRateHunting" AS "LandAreaTaxRateHunting",
            la."TaxRateMining" AS "LandAreaTaxRateMining",
            la."TaxRateShops" AS "LandAreaTaxRateShops",
-           la."OwnerId" AS "LandAreaOwnerId"
+           la."OwnerId" AS "LandAreaOwnerId",
+           -- MobSpawn extension data
+           ms."Density" AS "MobSpawnDensity",
+           ms."IsShared" AS "MobSpawnIsShared",
+           ms."IsEvent" AS "MobSpawnIsEvent",
+           ms."Notes" AS "MobSpawnNotes"
     FROM ONLY "Locations" l
     LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
     LEFT JOIN ONLY "Locations" parent ON l."ParentLocationId" = parent."Id"
     LEFT JOIN ONLY "Areas" a ON l."Id" = a."LocationId"
     LEFT JOIN ONLY "Estates" e ON l."Id" = e."LocationId"
     LEFT JOIN ONLY "LandAreas" la ON l."Id" = la."LocationId"
+    LEFT JOIN ONLY "MobSpawns" ms ON l."Id" = ms."LocationId"
   `,
   Facilities: `
     SELECT lf."LocationId", f."Id" AS "FacilityId", f."Name", f."Description", f."Icon"
@@ -107,6 +114,33 @@ async function _fetchWaveEventWaves(locationIds) {
   }
 }
 
+// Fetch mob spawn maturities for a set of MobArea location IDs
+async function _fetchMobSpawnMaturities(locationIds) {
+  if (!locationIds || locationIds.length === 0) return {};
+  try {
+    const { rows } = await pool.query(
+      `SELECT msm."LocationId", msm."IsRare", mm.*, m."Name" AS "Mob", m."Id" AS "MobId"
+       FROM ONLY "MobSpawnMaturities" msm
+       INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"
+       INNER JOIN ONLY "Mobs" m ON mm."MobId" = m."Id"
+       WHERE msm."LocationId" = ANY($1::int[])`,
+      [locationIds]
+    );
+    const map = {};
+    for (const r of rows) {
+      if (!map[r.LocationId]) map[r.LocationId] = [];
+      map[r.LocationId].push({
+        IsRare: r.IsRare === 1 || r.IsRare === true,
+        Maturity: formatMobMaturity(r)
+      });
+    }
+    return map;
+  } catch (e) {
+    console.error('Error fetching mob spawn maturities:', e);
+    return {};
+  }
+}
+
 function formatLocation(x, add = {}) {
   const result = {
     Id: x.Id,
@@ -141,6 +175,12 @@ function formatLocation(x, add = {}) {
     result.Properties.AreaType = x.AreaType;
     result.Properties.Shape = x.AreaShape;
     result.Properties.Data = x.AreaData;
+    if (x.AreaType === 'MobArea') {
+      result.Properties.Density = x.MobSpawnDensity ?? null;
+      result.Properties.IsShared = x.MobSpawnIsShared === 1 || x.MobSpawnIsShared === true;
+      result.Properties.IsEvent = x.MobSpawnIsEvent === 1 || x.MobSpawnIsEvent === true;
+      result.Properties.Notes = x.MobSpawnNotes ?? null;
+    }
     if (x.AreaType === 'LandArea') {
       result.Properties.TaxRateHunting = x.LandAreaTaxRateHunting ?? null;
       result.Properties.TaxRateMining = x.LandAreaTaxRateMining ?? null;
@@ -158,6 +198,10 @@ function formatLocation(x, add = {}) {
 
   if (x.AreaType === 'WaveEventArea' && add.waves) {
     result.Waves = add.waves;
+  }
+
+  if (add.maturities) {
+    result.Maturities = add.maturities;
   }
 
   return result;
@@ -216,13 +260,18 @@ async function getLocations(options = {}) {
     });
   }
 
-  // Fetch wave event waves for WaveEvent locations
+  // Fetch wave event waves and mob spawn maturities
   const waveEventIds = filteredRows.filter(r => r.AreaType === 'WaveEventArea').map(r => r.Id);
-  const wavesMap = await _fetchWaveEventWaves(waveEventIds);
+  const mobAreaIds = filteredRows.filter(r => r.AreaType === 'MobArea').map(r => r.Id);
+  const [wavesMap, maturitiesMap] = await Promise.all([
+    _fetchWaveEventWaves(waveEventIds),
+    _fetchMobSpawnMaturities(mobAreaIds)
+  ]);
 
   return filteredRows.map(x => formatLocation(x, {
     facilities: facilitiesMap[x.Id] || [],
-    waves: wavesMap[x.Id] || null
+    waves: wavesMap[x.Id] || null,
+    maturities: maturitiesMap[x.Id] || null
   }));
 }
 
@@ -237,29 +286,33 @@ async function getLocation(idOrName) {
   // If fetching by name and multiple matches found, return them all for disambiguation
   if (!byId && rows.length > 1) {
     const locationIds = rows.map(r => r.Id);
-    const [facilitiesMap, wavesMap] = await Promise.all([
+    const [facilitiesMap, wavesMap, maturitiesMap] = await Promise.all([
       _fetchFacilities(locationIds),
-      _fetchWaveEventWaves(rows.filter(r => r.AreaType === 'WaveEventArea').map(r => r.Id))
+      _fetchWaveEventWaves(rows.filter(r => r.AreaType === 'WaveEventArea').map(r => r.Id)),
+      _fetchMobSpawnMaturities(rows.filter(r => r.AreaType === 'MobArea').map(r => r.Id))
     ]);
 
     return {
       disambiguation: true,
       matches: rows.map(x => formatLocation(x, {
         facilities: facilitiesMap[x.Id] || [],
-        waves: wavesMap[x.Id] || null
+        waves: wavesMap[x.Id] || null,
+        maturities: maturitiesMap[x.Id] || null
       }))
     };
   }
 
   const location = rows[0];
-  const [facilities, waves] = await Promise.all([
+  const [facilities, waves, maturities] = await Promise.all([
     _fetchFacilities([location.Id]),
-    location.AreaType === 'WaveEventArea' ? _fetchWaveEventWaves([location.Id]) : Promise.resolve({})
+    location.AreaType === 'WaveEventArea' ? _fetchWaveEventWaves([location.Id]) : Promise.resolve({}),
+    location.AreaType === 'MobArea' ? _fetchMobSpawnMaturities([location.Id]) : Promise.resolve({})
   ]);
 
   return formatLocation(location, {
     facilities: facilities[location.Id] || [],
-    waves: waves[location.Id] || null
+    waves: waves[location.Id] || null,
+    maturities: maturities[location.Id] || null
   });
 }
 
@@ -381,7 +434,7 @@ function register(app) {
       if (hasFilters) {
         res.json(await getLocations(options));
       } else {
-        res.json(await withCache('/locations', ['Locations', 'Planets', 'Areas', 'Estates', 'LandAreas', 'LocationFacilities', 'Facilities', 'WaveEventWaves'], getLocations));
+        res.json(await withCache('/locations', ['Locations', 'Planets', 'Areas', 'Estates', 'LandAreas', 'LocationFacilities', 'Facilities', 'WaveEventWaves', 'MobSpawns', 'MobSpawnMaturities', 'MobMaturities', 'Mobs'], getLocations));
       }
     } catch (e) {
       console.error('Error fetching locations:', e);

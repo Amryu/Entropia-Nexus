@@ -548,13 +548,17 @@ class MapOverlay(OverlayWidget):
         self._info_panel.setFixedWidth(panel_w)
         self._info_wrapper.setFixedWidth(panel_w)
 
-        # Compute content height: clear constraints, activate layout, then measure
-        # (same pattern as _LocationInfoPanel._fit_height on the maps page)
+        # Compute content height: constrain content to viewport width so eliding
+        # labels elide correctly, then measure sizeHint height.
         self._info_panel.setMinimumHeight(0)
         self._info_panel.setMaximumHeight(16777215)
+        sb_w = self._info_panel._scroll.verticalScrollBar().sizeHint().width()
+        content_w = max(1, panel_w - sb_w)
+        self._info_panel._content.setFixedWidth(content_w)
         self._info_panel._layout.activate()
-        self._info_panel._content.adjustSize()
         content_h = self._info_panel._content.sizeHint().height() + 2  # +2 for border
+        self._info_panel._content.setMinimumWidth(0)
+        self._info_panel._content.setMaximumWidth(16777215)
 
         if self._size_idx == 0:
             # Small — external, to the right, top-aligned with the map window
@@ -683,7 +687,7 @@ class MapOverlay(OverlayWidget):
         ).start()
 
     def _fetch_planet_data(self, slug: str):
-        """Background: fetch locations + areas + mobspawns + image for a planet."""
+        """Background: fetch locations + image for a planet."""
         planet = None
         for p in self._planets:
             if _planet_slug(p["Name"]) == slug:
@@ -699,29 +703,8 @@ class MapOverlay(OverlayWidget):
             locations = self._data_client.get_locations_for_planet(planet_name)
         except Exception:
             locations = []
-        try:
-            areas = self._data_client.get_areas_for_planet(planet_name)
-        except Exception:
-            areas = []
-        try:
-            mobspawns = self._data_client.get_mobspawns_for_planet(planet_name)
-        except Exception:
-            mobspawns = []
 
-        # Merge by ID (same logic as MapsPage)
-        by_id: dict[int, dict] = {}
-        for loc in locations:
-            by_id[loc["Id"]] = loc
-        for area in areas:
-            by_id[area["Id"]] = area
-            offset_id = area["Id"] + 200000
-            if offset_id in by_id and not by_id[offset_id].get("Properties", {}).get("Shape"):
-                del by_id[offset_id]
-        for mob in mobspawns:
-            by_id[mob["Id"]] = mob
-        merged = list(by_id.values())
-
-        _precompute_mob_area_data(merged)
+        _precompute_mob_area_data(locations)
 
         pixmap = self._load_planet_image(slug)
 
@@ -734,9 +717,9 @@ class MapOverlay(OverlayWidget):
             img_tile_size = img_w / map_w
             eu_ratio = _EU_PER_TILE / img_tile_size
             eu_tile_size = img_tile_size * eu_ratio
-            precompute_image_coords(merged, pmap, eu_ratio, eu_tile_size)
+            precompute_image_coords(locations, pmap, eu_ratio, eu_tile_size)
 
-            self._planet_data_payload = (planet, pixmap, merged)
+            self._planet_data_payload = (planet, pixmap, locations)
             self._planet_data_ready.emit(slug)
 
     def _load_planet_image(self, slug: str) -> QPixmap | None:

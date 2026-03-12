@@ -2,7 +2,6 @@ import { Absorber } from "./schemas/Absorber.js";
 import { Apartment } from "./schemas/Apartment.js";
 import { ArmorPlating } from "./schemas/ArmorPlating.js";
 import { ArmorSet } from "./schemas/ArmorSet.js";
-import { Area } from "./schemas/Area.js";
 import { Blueprint } from "./schemas/Blueprint.js";
 import { Capsule } from "./schemas/Capsule.js";
 import { Clothing } from "./schemas/Clothing.js";
@@ -42,7 +41,6 @@ export const EntitySchemas = {
   Apartment,
   ArmorPlating,
   ArmorSet,
-  Area,
   Blueprint,
   Capsule,
   Clothing,

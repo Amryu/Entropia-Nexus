@@ -414,7 +414,7 @@ function getEntityCategory(entity) {
     return 'locations';
   }
   else if (entity === 'Area') {
-    return 'areas';
+    return 'locations';
   }
   else if (entity === 'ArmorSet') {
     return 'armorsets';

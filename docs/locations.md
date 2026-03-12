@@ -185,7 +185,6 @@ These endpoints still work but query the unified Locations table:
 | Endpoint | Behavior |
 |----------|----------|
 | `/teleporters` | Returns locations with `Type = 'Teleporter'` |
-| `/areas` | Returns locations with `Type = 'Area'` (with extension data) |
 | `/shops` | Returns locations with `Type = 'Estate'` and `EstateType = 'Shop'` |
 | `/apartments` | Returns locations with `Type = 'Estate'` and `EstateType = 'Apartment'` |
 

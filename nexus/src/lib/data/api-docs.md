@@ -96,7 +96,6 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | Endpoint | Description |
 |----------|-------------|
 | `/apartments` | Apartment estates |
-| `/areas` | Geographic areas |
 | `/events` | In-game events |
 | `/locations` | All locations with facilities and wave events |
 | `/missions` | Missions with chains and events |
@@ -118,7 +117,6 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/mobs` | Creatures with species, loots, maturities, and spawns |
 | `/mobloots` | Creature loot tables |
 | `/mobmaturities` | Creature maturity levels |
-| `/mobspawns` | Creature spawn locations |
 | `/mobspecies` | Creature species |
 
 ### Acquisition & Usage

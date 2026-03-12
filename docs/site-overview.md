@@ -335,7 +335,6 @@ GET /mobs              - Mobs/creatures
 GET /mobmaturities     - Mob maturity levels
 GET /planets           - Planets
 GET /teleporters       - Teleporter locations
-GET /areas             - Named areas
 GET /vendors           - NPC vendors
 GET /vendoroffers      - Vendor trade offers
 GET /professions       - Professions

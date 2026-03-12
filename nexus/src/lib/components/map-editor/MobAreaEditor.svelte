@@ -30,7 +30,7 @@
   }
 
   function initFromExisting() {
-    // Maturities come from the /mobspawns API at the top level, not inside Properties.
+    // Maturities come from the /locations API at the top level, not inside Properties.
     // Each entry: { IsRare, Maturity: { Id, Name, Properties: { Health, Level, Boss }, Mob: { Name, Links } } }
     const spawnMats = location?.Maturities;
     if (!spawnMats?.length) return;
@@ -58,6 +58,25 @@
         isRare: entry.IsRare || false
       });
     }
+    // For each matched mob, also load unselected maturities so the full list is available
+    for (const [mobId, entry] of matsByMob) {
+      const mob = mobs.find(m => m.Id === mobId);
+      if (!mob) continue;
+      const selectedIds = new Set(entry.maturities.map(m => m.id));
+      for (const m of (mob.Maturities || [])) {
+        if (selectedIds.has(m.Id)) continue;
+        entry.maturities.push({
+          id: m.Id,
+          name: m.Name,
+          health: m.Properties?.Health ?? 0,
+          level: m.Properties?.Level ?? null,
+          boss: m.Properties?.Boss === true,
+          selected: false,
+          isRare: false
+        });
+      }
+    }
+
     selectedMobs = Array.from(matsByMob.values());
     // Sort maturities within each mob
     for (const mob of selectedMobs) {

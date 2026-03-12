@@ -22,8 +22,8 @@
     ...change
   }));
 
-  $: addCount = changeList.filter(c => c.action === 'add').length;
-  $: editCount = changeList.filter(c => c.action === 'edit').length;
+  $: addCount = changeList.filter(c => c.action !== 'delete' && !c.original).length;
+  $: editCount = changeList.filter(c => c.action !== 'delete' && c.original).length;
   $: deleteCount = changeList.filter(c => c.action === 'delete').length;
 
   function buildEntityBody(change) {
@@ -49,13 +49,13 @@
     const mod = change.modified;
     if (!mod) return null;
 
-    // For edits, fall back to original data for fields not present in modified
-    const orig = change.action === 'edit' ? change.original : null;
+    // Fall back to original data for fields not present in modified
+    const orig = change.original || null;
     const origProps = orig?.Properties;
     const origCoords = origProps?.Coordinates;
 
     const effectiveLocationType = mod.locationType ||
-      ((origProps?.Shape || String(origProps?.Type || '').endsWith('Area')) ? 'Area' : origProps?.Type) ||
+      ((origProps?.Shape || origProps?.AreaType || origProps?.Type === 'Area') ? 'Area' : origProps?.Type) ||
       null;
     if (!effectiveLocationType) return null;
     const isArea = effectiveLocationType === 'Area';
@@ -70,12 +70,13 @@
     };
 
     if (isArea) {
-      props.AreaType = mod.areaType || null;
-      props.Shape = mod.shape || null;
-      props.Data = mod.shapeData || null;
+      props.AreaType = mod.areaType ?? origProps?.AreaType ?? null;
+      props.Shape = mod.shape ?? origProps?.Shape ?? null;
+      props.Data = mod.shapeData !== undefined ? mod.shapeData : (origProps?.Data ?? null);
 
       // LandArea extension fields
-      if (mod.areaType === 'LandArea') {
+      const effectiveAreaType = props.AreaType;
+      if (effectiveAreaType === 'LandArea') {
         props.TaxRateHunting = mod.taxRateHunting !== undefined ? mod.taxRateHunting : (origProps?.TaxRateHunting ?? null);
         props.TaxRateMining = mod.taxRateMining !== undefined ? mod.taxRateMining : (origProps?.TaxRateMining ?? null);
         props.TaxRateShops = mod.taxRateShops !== undefined ? mod.taxRateShops : (origProps?.TaxRateShops ?? null);
@@ -91,14 +92,14 @@
     }
 
     const body = {
-      Id: change.action === 'edit' ? change.original?.Id : null,
-      Name: mod.name,
+      Id: change.original?.Id || null,
+      Name: mod.name ?? orig?.Name ?? '',
       Properties: props,
       Planet: { Name: planet?.Name }
     };
 
     // WaveEvent wave data (stored at body level, not in Properties)
-    if (mod.areaType === 'WaveEventArea' && mod.waveData) {
+    if (props.AreaType === 'WaveEventArea' && mod.waveData) {
       body.Waves = mod.waveData.waves ?? [];
     }
 
@@ -116,7 +117,7 @@
     changeStatuses = changeStatuses;
 
     try {
-      const changeType = change.action === 'add' ? 'Create' : (change.action === 'delete' ? 'Delete' : 'Update');
+      const changeType = change.action === 'delete' ? 'Delete' : (change.original?.Id ? 'Update' : 'Create');
       const body = buildEntityBody(change);
 
       if (!body) {
@@ -144,6 +145,10 @@
       }
 
       if (result?.id) {
+        // After first POST, store the DB change ID so re-submissions use PUT
+        if (!existingChangeId) {
+          dispatch('changeCreated', { key, changeId: result.id });
+        }
         changeStatuses[key] = 'success';
         changeStatuses = changeStatuses;
         return true;
@@ -194,7 +199,7 @@
       changeStatuses = changeStatuses;
 
       try {
-        const changeType = change.action === 'add' ? 'Create' : (change.action === 'delete' ? 'Delete' : 'Update');
+        const changeType = change.action === 'delete' ? 'Delete' : (change.original?.Id ? 'Update' : 'Create');
         const body = buildEntityBody(change);
 
         if (!body) {
@@ -221,6 +226,9 @@
         }
 
         if (result?.id) {
+          if (!existingChangeId) {
+            dispatch('changeCreated', { key, changeId: result.id });
+          }
           changeStatuses[key] = 'success';
           successCount++;
         } else {
@@ -296,11 +304,11 @@
   function getEntityType(change) {
     const mod = change.modified;
     if (!mod) return 'Location';
-    const origProps = change.action === 'edit' ? change.original?.Properties : null;
+    const origProps = change.original?.Properties || null;
     const effectiveLocationType = mod.locationType ||
-      ((origProps?.Shape || String(origProps?.Type || '').endsWith('Area')) ? 'Area' : origProps?.Type) ||
+      ((origProps?.Shape || origProps?.AreaType || origProps?.Type === 'Area') ? 'Area' : origProps?.Type) ||
       null;
-    return effectiveLocationType === 'Area' ? 'Area' : 'Location';
+    return 'Location';
   }
 
   function getStatusIcon(key) {
@@ -506,7 +514,7 @@
         {@const type = change.action === 'delete' ? getEffectiveType(change.original) : (change.modified?.areaType || change.modified?.locationType || '')}
         {@const statusKey = changeStatuses[change.key]}
         {@const hasDbChange = dbChangeIdMap.has(change.key)}
-        {@const displayAction = hasDbChange && change.action === 'add' ? 'edit' : change.action}
+        {@const displayAction = change.action === 'delete' ? 'delete' : (change.original ? 'edit' : 'add')}
         <div class="change-row">
           <span class="action-indicator" style="color: {getActionColor(displayAction)}">{getActionLabel(displayAction)}</span>
           <span class="change-name">{name}</span>

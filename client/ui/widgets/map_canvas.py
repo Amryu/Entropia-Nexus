@@ -380,7 +380,7 @@ class MapCanvas(QWidget):
             if self._search_ids and loc_id in self._search_ids:
                 result.append(loc)
                 continue
-            t = loc.get("Properties", {}).get("Type", "")
+            t = loc.get("Properties", {}).get("AreaType") or loc.get("Properties", {}).get("Type", "")
             shape = loc.get("Properties", {}).get("Shape")
             # Map area type categories
             if shape in _SHAPE_TYPES:
@@ -475,7 +475,7 @@ class MapCanvas(QWidget):
 
     def _draw_location(self, painter: QPainter, loc: dict, has_search: bool):
         props = loc.get("Properties", {})
-        loc_type = props.get("Type", "")
+        loc_type = props.get("AreaType") or props.get("Type", "")
         loc_id = loc.get("Id")
         shape = props.get("Shape")
         is_hovered = self._hovered is not None and self._hovered.get("Id") == loc_id
@@ -877,7 +877,7 @@ class MapCanvas(QWidget):
 
     def _show_tooltip(self, loc: dict, pos: QPointF):
         name = loc.get("_mob_display_name") or loc.get("Name", "")
-        loc_type = loc.get("Properties", {}).get("Type", "")
+        loc_type = loc.get("Properties", {}).get("AreaType") or loc.get("Properties", {}).get("Type", "")
         label = f"{name}" if name else loc_type
         if name and loc_type:
             label = f"{name}  ({loc_type})"

@@ -80,6 +80,8 @@ function getEntityApiCollection(entityType) {
     case 'CreatureControlCapsule':
     case 'Capsule':
       return 'capsules';
+    case 'Area':
+      return 'locations';
     default:
       return `${entityType.toLowerCase()}s`;
   }

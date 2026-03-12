@@ -61,10 +61,11 @@
   $: if (locations) {
     filteredElements = locations.filter((item) => {
       const type = item?.Properties?.Type;
+      const areaType = item?.Properties?.AreaType;
       if (!type) return false;
-      if (type === 'MobArea') return false;
-      if (type.endsWith('Area')) {
-        return DEFAULT_VISIBLE_AREA_TYPES.has(type);
+      if (areaType === 'MobArea') return false;
+      if (type === 'Area' || areaType) {
+        return DEFAULT_VISIBLE_AREA_TYPES.has(areaType);
       }
       return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
     });

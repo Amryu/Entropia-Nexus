@@ -1235,6 +1235,10 @@ class DetailOverlayWidget(OverlayWidget):
                 pass
 
         confidence = snapshot.get("confidence")
+        try:
+            confidence = float(confidence) if confidence is not None else None
+        except (TypeError, ValueError):
+            confidence = None
         if confidence is not None and confidence < 0.5:
             warn_lbl = QLabel("Low confidence")
             warn_lbl.setStyleSheet(
@@ -2483,18 +2487,6 @@ class DetailOverlayWidget(OverlayWidget):
                     return
 
                 locations = dc.get_locations_for_planet(planet_name)
-                areas = dc.get_areas_for_planet(planet_name)
-                mobspawns = dc.get_mobspawns_for_planet(planet_name)
-
-                # Merge by ID (same logic as maps_page)
-                by_id: dict[int, dict] = {}
-                for loc in locations:
-                    by_id[loc["Id"]] = loc
-                for area in areas:
-                    by_id[area["Id"]] = area
-                for mob in mobspawns:
-                    by_id[mob["Id"]] = mob
-                merged = list(by_id.values())
 
                 # Load planet image
                 slug = re.sub(r"[^0-9a-zA-Z]", "", planet_name).lower()
@@ -2507,7 +2499,7 @@ class DetailOverlayWidget(OverlayWidget):
                 if os.path.exists(cache_path):
                     pm = QPixmap(cache_path)
                     if not pm.isNull():
-                        self._map_data_ready.emit(planet, pm, merged)
+                        self._map_data_ready.emit(planet, pm, locations)
                         return
 
                 import requests
@@ -2518,7 +2510,7 @@ class DetailOverlayWidget(OverlayWidget):
                     f.write(resp.content)
                 pm = QPixmap(cache_path)
                 if not pm.isNull():
-                    self._map_data_ready.emit(planet, pm, merged)
+                    self._map_data_ready.emit(planet, pm, locations)
             except Exception:
                 pass
 
