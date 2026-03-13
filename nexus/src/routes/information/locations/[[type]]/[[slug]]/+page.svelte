@@ -1290,17 +1290,19 @@
                 {#each activeLocation?.Waves || [] as wave, idx}
                   {@const isExpanded = expandedWaves[idx]}
                   <div class="wave-item" class:expanded={isExpanded}>
-                    <button
-                      class="wave-item-header"
-                      on:click={() => toggleWave(idx)}
-                      type="button"
-                    >
-                      <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
-                      <span class="wave-label">Wave {wave.WaveIndex}</span>
-                      <span class="wave-summary">
-                        {#if wave.TimeToComplete}{wave.TimeToComplete} min{/if}
-                        {#if wave.MobMaturities?.length}· {wave.MobMaturities.length} mobs{/if}
-                      </span>
+                    <div class="wave-item-header">
+                      <button
+                        class="wave-item-header-toggle"
+                        on:click={() => toggleWave(idx)}
+                        type="button"
+                      >
+                        <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+                        <span class="wave-label">Wave {wave.WaveIndex}</span>
+                        <span class="wave-summary">
+                          {#if wave.TimeToComplete}{wave.TimeToComplete} min{/if}
+                          {#if wave.MobMaturities?.length}· {wave.MobMaturities.length} mobs{/if}
+                        </span>
+                      </button>
                       <div class="wave-actions">
                         <button
                           class="btn-icon danger"
@@ -1309,7 +1311,7 @@
                           type="button"
                         >×</button>
                       </div>
-                    </button>
+                    </div>
 
                     {#if isExpanded}
                       <div class="wave-content">
@@ -1689,8 +1691,19 @@
   .wave-item-header {
     display: flex;
     align-items: center;
-    gap: 6px;
     width: 100%;
+    transition: background-color 0.15s;
+  }
+
+  .wave-item-header:hover {
+    background-color: var(--hover-color);
+  }
+
+  .wave-item-header-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
     padding: 8px 10px;
     background: none;
     border: none;
@@ -1698,11 +1711,6 @@
     cursor: pointer;
     text-align: left;
     font-size: 13px;
-    transition: background-color 0.15s;
-  }
-
-  .wave-item-header:hover {
-    background-color: var(--hover-color);
   }
 
   .wave-item-header .expand-icon {

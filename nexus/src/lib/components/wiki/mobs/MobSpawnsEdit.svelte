@@ -436,24 +436,26 @@
   <div class="spawns-list">
     {#each spawns as spawn, spawnIndex}
       <div class="spawn-item" class:expanded={expandedSpawns[spawnIndex]}>
-        <button
-          class="spawn-header"
-          on:click={() => toggleSpawn(spawnIndex)}
-          type="button"
-        >
-          <span class="expand-icon">{expandedSpawns[spawnIndex] ? '▼' : '▶'}</span>
-          <span class="spawn-name">{getSpawnLabel(spawn, spawnIndex)}</span>
-          <span class="spawn-summary">
-            <span class="density-badge density-{spawn.Properties?.Density || 3}">
-              {getDensityLabel(spawn.Properties?.Density)}
+        <div class="spawn-header">
+          <button
+            class="spawn-header-toggle"
+            on:click={() => toggleSpawn(spawnIndex)}
+            type="button"
+          >
+            <span class="expand-icon">{expandedSpawns[spawnIndex] ? '▼' : '▶'}</span>
+            <span class="spawn-name">{getSpawnLabel(spawn, spawnIndex)}</span>
+            <span class="spawn-summary">
+              <span class="density-badge density-{spawn.Properties?.Density || 3}">
+                {getDensityLabel(spawn.Properties?.Density)}
+              </span>
+              {#if spawn.Properties?.IsEvent}
+                <span class="event-badge">Event</span>
+              {/if}
+              {#if spawn.Properties?.IsShared}
+                <span class="shared-badge">Shared</span>
+              {/if}
             </span>
-            {#if spawn.Properties?.IsEvent}
-              <span class="event-badge">Event</span>
-            {/if}
-            {#if spawn.Properties?.IsShared}
-              <span class="shared-badge">Shared</span>
-            {/if}
-          </span>
+          </button>
           <div class="spawn-actions">
             <button
               class="btn-icon danger"
@@ -462,7 +464,7 @@
               type="button"
             >×</button>
           </div>
-        </button>
+        </div>
 
         {#if expandedSpawns[spawnIndex]}
           <div class="spawn-content">
@@ -788,8 +790,19 @@
   .spawn-header {
     display: flex;
     align-items: center;
-    gap: 6px;
     width: 100%;
+    transition: background-color 0.15s;
+  }
+
+  .spawn-header:hover {
+    background-color: var(--hover-color);
+  }
+
+  .spawn-header-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
     padding: 6px 10px;
     background: none;
     border: none;
@@ -797,11 +810,6 @@
     cursor: pointer;
     text-align: left;
     font-size: 12px;
-    transition: background-color 0.15s;
-  }
-
-  .spawn-header:hover {
-    background-color: var(--hover-color);
   }
 
   .expand-icon {

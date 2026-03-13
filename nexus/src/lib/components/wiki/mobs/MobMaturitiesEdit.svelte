@@ -397,17 +397,19 @@
   <div class="maturities-list">
     {#each maturities as maturity, matIndex (getUid(maturity))}
       <div class="maturity-item" class:expanded={expandedMaturities[getUid(maturity)]}>
-        <button
-          class="maturity-header"
-          on:click={() => toggleMaturity(maturity)}
-          type="button"
-        >
-          <span class="expand-icon">{expandedMaturities[getUid(maturity)] ? '▼' : '▶'}</span>
-          <span class="maturity-name">{getMaturityLabel(maturity, matIndex)}</span>
-          <span class="maturity-summary">
-            {#if maturity.Properties?.Level}Lv.{maturity.Properties.Level}{/if}
-            {#if maturity.Properties?.Health}HP: {maturity.Properties.Health}{/if}
-          </span>
+        <div class="maturity-header">
+          <button
+            class="maturity-header-toggle"
+            on:click={() => toggleMaturity(maturity)}
+            type="button"
+          >
+            <span class="expand-icon">{expandedMaturities[getUid(maturity)] ? '▼' : '▶'}</span>
+            <span class="maturity-name">{getMaturityLabel(maturity, matIndex)}</span>
+            <span class="maturity-summary">
+              {#if maturity.Properties?.Level}Lv.{maturity.Properties.Level}{/if}
+              {#if maturity.Properties?.Health}HP: {maturity.Properties.Health}{/if}
+            </span>
+          </button>
           <div class="maturity-actions">
             <button
               class="btn-icon danger"
@@ -416,7 +418,7 @@
               type="button"
             >×</button>
           </div>
-        </button>
+        </div>
 
         {#if expandedMaturities[getUid(maturity)]}
           <div class="maturity-content">
@@ -743,8 +745,19 @@
   .maturity-header {
     display: flex;
     align-items: center;
-    gap: 6px;
     width: 100%;
+    transition: background-color 0.15s;
+  }
+
+  .maturity-header:hover {
+    background-color: var(--hover-color);
+  }
+
+  .maturity-header-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
     padding: 6px 10px;
     background: none;
     border: none;
@@ -752,11 +765,6 @@
     cursor: pointer;
     text-align: left;
     font-size: 12px;
-    transition: background-color 0.15s;
-  }
-
-  .maturity-header:hover {
-    background-color: var(--hover-color);
   }
 
   .expand-icon {

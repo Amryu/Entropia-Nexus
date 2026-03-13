@@ -362,7 +362,7 @@
     background-color: var(--table-header-color) !important;
   }
 
-  tbody, tscroll {
+  tbody, .tscroll {
     display: grid;
     grid-template-columns: subgrid;
     overflow: hidden;
@@ -372,7 +372,7 @@
     grid-template-rows: repeat(auto-fill, var(--rowHeight)px);
   }
 
-  tscroll {
+  .tscroll {
     overflow-y: scroll;
     overflow-x: hidden;
   }
@@ -440,7 +440,7 @@
     </thead>
   {/if}
     {#if options.virtual}
-      <tscroll bind:this={viewport} style={`grid-column: span ${getColumnCount(header, filteredData) + 1};`}>
+      <table class="tscroll" bind:this={viewport} style={`grid-column: span ${getColumnCount(header, filteredData) + 1};`}>
         <tbody bind:this={contents} class={options.virtual ? 'virtual' : ''} style={`grid-column: span ${getColumnCount(header, filteredData)};`}>
           <VirtualTableRow
             items={filteredData}
@@ -472,7 +472,7 @@
             </tdgroup>
           </VirtualTableRow>
         </tbody>
-      </tscroll>
+      </table>
     {:else}
       <tbody bind:this={contents} class={options.virtual ? 'virtual' : ''} style={`grid-column: span ${getColumnCount(header, filteredData)};`}>
         {#each filteredData as item, index}
