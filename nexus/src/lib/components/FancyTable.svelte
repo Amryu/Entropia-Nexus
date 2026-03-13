@@ -1,8 +1,6 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { clickable } from '$lib/actions/clickable.js';
 
   
@@ -44,10 +42,10 @@ sortPhases?: Array<{ sortValue: (row) => any, order: 'ASC'|'DESC', color?: strin
 - defaultWidthBasis: 'content' | 'header' | 'both' (default: 'both')
 - horizontalScroll: Enable horizontal scrolling (default: true)
 - fitContent: When true, table shrinks to fit its content height instead of filling parent (default: false)
-Events:
-- rowClick: { row, index }
-- rowHover: { row, index } | null
-- sort: { column, order }
+Callback props:
+- onrowClick: ({ row, index }) => void
+- onrowHover: ({ row, index } | null) => void
+- onsort: ({ column, order }) => void
    * @property {any} [data]
    * @property {any} [fetchData] - async (offset, limit, sortBy, sortOrder, filters) => { rows, total }
    * @property {number} [rowHeight]
@@ -90,10 +88,11 @@ Events:
     rowClass = null,
     footer = null,
     footerLabelKey = null,
-    cell
+    cell,
+    onsort = null,
+    onrowClick = null,
+    onrowHover = null
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   // Internal state
   let containerEl = $state();
@@ -290,7 +289,7 @@ Events:
       sortPhaseIdx = 0;
     }
 
-    dispatch('sort', { column: sortColumn, order: sortOrder });
+    onsort?.({ column: sortColumn, order: sortOrder });
 
     if (isLazyMode) {
       // Reset and reload with new sort
@@ -320,11 +319,11 @@ Events:
   }
 
   function handleRowClick(row, index) {
-    dispatch('rowClick', { row, index });
+    onrowClick?.({ row, index });
   }
 
   function handleRowHover(row, index) {
-    dispatch('rowHover', row ? { row, index } : null);
+    onrowHover?.(row ? { row, index } : null);
   }
 
   function getCellValue(row, column) {
@@ -356,8 +355,8 @@ Events:
 
 
 
-  run(() => {
-    if (preserveDataOrder !== prevPreserveDataOrder) {
+  $effect(() => {
+    if (preserveDataOrder !== untrack(() => prevPreserveDataOrder)) {
       prevPreserveDataOrder = preserveDataOrder;
       if (preserveDataOrder) {
         sortColumn = null;
@@ -371,8 +370,8 @@ Events:
     }
   });
   // React to external defaultSort changes (e.g. viewport switch) unless user manually sorted
-  run(() => {
-    if (!userSorted && defaultSort && (defaultSort.column !== sortColumn || defaultSort.order !== sortOrder)) {
+  $effect(() => {
+    if (!userSorted && defaultSort && (defaultSort.column !== untrack(() => sortColumn) || defaultSort.order !== untrack(() => sortOrder))) {
       sortColumn = defaultSort.column ?? null;
       sortOrder = defaultSort.order ?? 'ASC';
       sortPhaseIdx = 0;
@@ -461,7 +460,7 @@ Events:
   let fillRowCount = $derived(fitContent ? 0 : (totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0));
   let virtualContainerHeight = $derived(fitContent ? totalHeight : Math.max(totalHeight, contentHeight || 0));
   // When display data changes (data, filters, sort, columns), recalculate visible range after DOM update
-  run(() => {
+  $effect(() => {
     if (displayData && !isLazyMode) {
       tick().then(() => {
         if (scrollEl) updateVisibleRange();

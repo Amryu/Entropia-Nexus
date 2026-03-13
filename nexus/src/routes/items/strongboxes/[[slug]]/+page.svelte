@@ -5,12 +5,10 @@
   Supports full wiki editing with wikiEditState integration.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getItemLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -48,8 +46,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.allItems === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.allItems === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'allItems', url: '/api/items' }
@@ -88,7 +86,7 @@
   };
 
   // Initialize edit state when entity/user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       if (data.isCreateMode) {
         const initialData = existingChange?.data || emptyStrongbox;
@@ -100,7 +98,7 @@
   });
 
   // Handle pending changes from API
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -345,7 +343,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeStrongbox?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter a description for this strongbox..."
               showWaypoints={true}
             />
@@ -364,7 +362,7 @@
             title="Possible Loots"
             icon=""
             bind:expanded={panelStates.loots}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#if $editMode}
               <!-- Edit mode: Loots editor -->
@@ -378,9 +376,9 @@
                         placeholder="Search for item..."
                         apiEndpoint="/search/items"
                         displayFn={(item) => item?.Name || ''}
-                        on:change={(e) => {
+                        onchange={(e) => {
                           const loots = [...(activeStrongbox?.Loots || [])];
-                          const value = e.detail?.value || '';
+                          const value = e.value || '';
                           if (value) {
                             const selectedItem = allItemsList.find(i => i.Name === value);
                             loots[index] = {
@@ -392,9 +390,9 @@
                           }
                           updateField('Loots', loots);
                         }}
-                        on:select={(e) => {
+                        onselect={(e) => {
                           const loots = [...(activeStrongbox?.Loots || [])];
-                          const value = e.detail?.value || '';
+                          const value = e.value || '';
                           if (value) {
                             const selectedItem = allItemsList.find(i => i.Name === value);
                             loots[index] = {
@@ -526,7 +524,7 @@
             itemId={activeStrongbox?.Id}
             itemName={activeStrongbox?.Name}
             bind:expanded={panelStates.marketPrices}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           />
         {/if}
 
@@ -536,7 +534,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

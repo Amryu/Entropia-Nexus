@@ -10,15 +10,9 @@
   - Validate chain connectivity before saving
 -->
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -51,6 +45,16 @@
    * @property {Object|null} Graph data for the chain { nodes, edges } [graphData]
    * @property {Array} [planetOptions]
    * @property {string} [currentPlanetName]
+   * @property {(data: any) => void} [oncreate]
+   * @property {(data: any) => void} [onupdateChain]
+   * @property {(data: any) => void} [onselect]
+   * @property {() => void} [onaddPrerequisite]
+   * @property {(data: any) => void} [onupdatePrerequisite]
+   * @property {(data: any) => void} [onremovePrerequisite]
+   * @property {() => void} [onaddDependent]
+   * @property {(data: any) => void} [onupdateDependent]
+   * @property {(data: any) => void} [onremoveDependent]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
@@ -64,7 +68,17 @@
     currentMission = null,
     graphData = null,
     planetOptions = [],
-    currentPlanetName = 'Calypso'
+    currentPlanetName = 'Calypso',
+    oncreate,
+    onupdateChain,
+    onselect,
+    onaddPrerequisite,
+    onupdatePrerequisite,
+    onremovePrerequisite,
+    onaddDependent,
+    onupdateDependent,
+    onremoveDependent,
+    onclose
   } = $props();
 
   // Local state
@@ -241,7 +255,7 @@
     // Check if HTML content is effectively empty
     const isEmpty = !newChainDescription || newChainDescription === '<p></p>' ||
                     newChainDescription.replace(/<[^>]*>/g, '').trim() === '';
-    dispatch('create', {
+    oncreate?.({
       name: newChainName.trim(),
       planet: newChainPlanet,
       description: isEmpty ? null : newChainDescription
@@ -255,52 +269,52 @@
       return;
     }
     editNameError = '';
-    dispatch('updateChain', { field: 'Name', value: editChainName.trim() });
+    onupdateChain?.({ field: 'Name', value: editChainName.trim() });
   }
 
   function handleChainDescriptionChange() {
     // Check if HTML content is effectively empty (just empty tags or whitespace)
     const isEmpty = !editChainDescription || editChainDescription === '<p></p>' ||
                     editChainDescription.replace(/<[^>]*>/g, '').trim() === '';
-    dispatch('updateChain', { field: 'Description', value: isEmpty ? null : editChainDescription });
+    onupdateChain?.({ field: 'Description', value: isEmpty ? null : editChainDescription });
   }
 
   function handleChainPlanetChange() {
-    dispatch('updateChain', { field: 'Planet', value: editChainPlanet });
+    onupdateChain?.({ field: 'Planet', value: editChainPlanet });
   }
 
   function handleSelectChain(name) {
-    dispatch('select', { name });
+    onselect?.({ name });
   }
 
   function handleAddPrerequisite() {
-    dispatch('addPrerequisite');
+    onaddPrerequisite?.();
   }
 
   function handleUpdatePrerequisite(index, missionId) {
     const mission = allMissions.find(m => String(m.Id) === String(missionId));
-    dispatch('updatePrerequisite', { index, mission });
+    onupdatePrerequisite?.({ index, mission });
   }
 
   function handleRemovePrerequisite(index) {
-    dispatch('removePrerequisite', { index });
+    onremovePrerequisite?.({ index });
   }
 
   function handleAddDependent() {
-    dispatch('addDependent');
+    onaddDependent?.();
   }
 
   function handleUpdateDependent(index, missionId) {
     const mission = allMissions.find(m => String(m.Id) === String(missionId));
-    dispatch('updateDependent', { index, mission });
+    onupdateDependent?.({ index, mission });
   }
 
   function handleRemoveDependent(index) {
-    dispatch('removeDependent', { index });
+    onremoveDependent?.({ index });
   }
 
   function handleClose() {
-    dispatch('close');
+    onclose?.();
   }
 
   function getMissionName(id) {
@@ -316,7 +330,7 @@
     return connectivityStatus.disconnectedIds.includes(String(id));
   }
   // Initialize edit values when chain data changes
-  run(() => {
+  $effect(() => {
     if (!isCreating && chainName) {
       editChainName = chainName || '';
       editChainDescription = chainDescription || '';
@@ -347,7 +361,7 @@
 </script>
 
 <div class="dialog-overlay" onclick={handleClose}>
-  <div class="chain-dialog" onclick={stopPropagation(bubble('click'))}>
+  <div class="chain-dialog" onclick={(e) => e.stopPropagation()}>
     <div class="dialog-header">
       <h3>{isCreating ? 'Create New Chain' : 'Edit Chain'}</h3>
       <button class="dialog-close" onclick={handleClose}>Close</button>
@@ -383,7 +397,7 @@
             <RichTextEditor
               content={newChainDescription}
               placeholder="Enter chain description..."
-              on:change={(e) => newChainDescription = e.detail}
+              onchange={(data) => newChainDescription = data}
               showWaypoints={true}
             />
           </div>
@@ -428,8 +442,8 @@
                 <RichTextEditor
                   content={editChainDescription}
                   placeholder="Chain description (optional)..."
-                  on:change={(e) => {
-                    editChainDescription = e.detail;
+                  onchange={(data) => {
+                    editChainDescription = data;
                     handleChainDescriptionChange();
                   }}
                   showWaypoints={true}
@@ -517,7 +531,7 @@
                         value={prereq?.Name || getOptionLabel(missionOptionsForDeps, prereq?.Id)}
                         options={missionOptionsForDeps}
                         placeholder="Select mission..."
-                        on:select={(e) => handleUpdatePrerequisite(idx, e.detail.value)}
+                        onselect={(e) => handleUpdatePrerequisite(idx, e.value)}
                       />
                       <button type="button" class="btn-icon danger" onclick={() => handleRemovePrerequisite(idx)} title="Remove">
                         &times;
@@ -544,7 +558,7 @@
                         value={dep?.Name || getOptionLabel(missionOptionsForDeps, dep?.Id)}
                         options={missionOptionsForDeps}
                         placeholder="Select mission..."
-                        on:select={(e) => handleUpdateDependent(idx, e.detail.value)}
+                        onselect={(e) => handleUpdateDependent(idx, e.value)}
                       />
                       <button type="button" class="btn-icon danger" onclick={() => handleRemoveDependent(idx)} title="Remove">
                         &times;

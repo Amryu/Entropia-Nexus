@@ -37,8 +37,8 @@
     showMediaDialog = true;
   }
 
-  function onMediaUploaded(e) {
-    const { type, globalId } = e.detail;
+  function onMediaUploaded(data) {
+    const { type, globalId } = data;
     const update = (arr) => arr.map(g => {
       if (g.id === globalId) {
         return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
@@ -49,8 +49,8 @@
     if (topLoots) topLoots = update(topLoots);
   }
 
-  function onMediaDeleted(e) {
-    const { globalId } = e.detail;
+  function onMediaDeleted(data) {
+    const { globalId } = data;
     const update = (arr) => arr.map(g => {
       if (g.id === globalId) {
         return { ...g, media_image: null, media_video: null };
@@ -292,10 +292,10 @@
 
   let currentTabConfig = $derived(TOP_LOOTS_TABS.find(t => t.value === topLootsTab) || TOP_LOOTS_TABS[0]);
 
-  function onDateRangeChange(e) {
-    period = e.detail.period;
-    dateFrom = e.detail.from;
-    dateTo = e.detail.to;
+  function onDateRangeChange(data) {
+    period = data.period;
+    dateFrom = data.from;
+    dateTo = data.to;
     topLootsPage = 1;
     fetchStats();
     fetchTopLoots();
@@ -548,8 +548,7 @@
     if (topTargetsChart) topTargetsChart.destroy();
   });
 
-  function handleSearchSelect(e) {
-    const { name, type } = e.detail;
+  function handleSearchSelect({ name, type }) {
     if (type === 'Player' || type === 'Team') {
       goto(`/globals/player/${encodeURIComponent(name)}`);
     } else {
@@ -557,9 +556,9 @@
     }
   }
 
-  function handleSearch(e) {
-    const query = e.detail.query?.trim();
-    if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
+  function handleSearch({ query }) {
+    const q = query?.trim();
+    if (q) goto(`/globals/player/${encodeURIComponent(q)}`);
   }
 
   let currentView = $derived($page.url.searchParams.get('view'));
@@ -569,8 +568,8 @@
   let targetSearchInput = $state();
   let locationSearchInput = $state();
 
-  function handlePlayerSelect(e) {
-    playerFilter = e.detail.name;
+  function handlePlayerSelect({ name }) {
+    playerFilter = name;
     onFilterChange();
   }
 
@@ -580,8 +579,8 @@
     onFilterChange();
   }
 
-  function handleTargetSelect(e) {
-    targetFilter = e.detail.name;
+  function handleTargetSelect({ name }) {
+    targetFilter = name;
     onFilterChange();
   }
 
@@ -591,8 +590,8 @@
     onFilterChange();
   }
 
-  function handleLocationSelect(e) {
-    locationFilter = e.detail.name;
+  function handleLocationSelect({ name }) {
+    locationFilter = name;
     onFilterChange();
   }
 
@@ -620,8 +619,8 @@
           placeholder="Search players, teams, mobs, resources..."
           endpoint="/api/globals/search"
           apiPrefix={false}
-          on:select={handleSearchSelect}
-          on:search={handleSearch}
+          onselect={handleSearchSelect}
+          onsearch={handleSearch}
         />
       </div>
     </div>
@@ -656,7 +655,7 @@
             apiPrefix={false}
             maxPerCategory={10}
             maxTotal={15}
-            on:select={handlePlayerSelect}
+            onselect={handlePlayerSelect}
             containerClass="filter-search-input"
           />
         {/if}
@@ -675,7 +674,7 @@
             apiPrefix={false}
             maxPerCategory={10}
             maxTotal={15}
-            on:select={handleTargetSelect}
+            onselect={handleTargetSelect}
             containerClass="filter-search-input"
           />
         {/if}
@@ -694,7 +693,7 @@
             apiPrefix={false}
             maxPerCategory={10}
             maxTotal={15}
-            on:select={handleLocationSelect}
+            onselect={handleLocationSelect}
             containerClass="filter-search-input"
           />
         {/if}
@@ -768,7 +767,7 @@
   <div class="charts-section">
     <div class="chart-header">
       <h2>Statistics</h2>
-      <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} on:change={onDateRangeChange} />
+      <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} onchange={onDateRangeChange} />
     </div>
 
     <div class="charts-grid">
@@ -910,7 +909,7 @@
                         {/if}
                       </button>
                     {:else if user}
-                      <GlobalMediaUpload globalId={loot.id} playerName={loot.player} {user} on:uploaded={onMediaUploaded} />
+                      <GlobalMediaUpload globalId={loot.id} playerName={loot.player} {user} onuploaded={onMediaUploaded} />
                     {/if}
                   </td>
                   <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
@@ -996,7 +995,7 @@
                       {/if}
                     </button>
                   {:else if user}
-                    <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} on:uploaded={onMediaUploaded} />
+                    <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} onuploaded={onMediaUploaded} />
                   {/if}
                 </td>
                 <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
@@ -1017,7 +1016,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} on:deleted={onMediaDeleted} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} onclose={() => { showMediaDialog = false; mediaDialogGlobal = null; }} ondeleted={onMediaDeleted} />
 
 <style>
   .globals-page {

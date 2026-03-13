@@ -1,9 +1,5 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import JsonTreeNode from './JsonTreeNode.svelte';
 
   /**
@@ -14,6 +10,7 @@
    * @property {any} [newData]
    * @property {string} [oldLabel]
    * @property {string} [newLabel]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
@@ -23,10 +20,9 @@
     oldData = null,
     newData = null,
     oldLabel = 'Previous',
-    newLabel = 'Current'
+    newLabel = 'Current',
+    onclose
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let leftPane = $state();
   let rightPane = $state();
@@ -36,7 +32,7 @@
   let collapsedPaths = $state(new Set());
 
   function close() {
-    dispatch('close');
+    onclose?.();
   }
 
   function handleKeydown(e) {
@@ -121,7 +117,7 @@
   let cleanedNew = $derived(newData ? cleanAndSort(newData) : null);
 
   // Reset collapsed state when dialog opens
-  run(() => {
+  $effect(() => {
     if (show) {
       collapsedPaths = new Set();
     }
@@ -132,7 +128,7 @@
 
 {#if show}
   <div class="dialog-overlay" role="presentation" onclick={close}>
-    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="dialog" onclick={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>{title}</h3>
         <button type="button" class="close-btn" onclick={close}>×</button>

@@ -2,18 +2,16 @@
   //@ts-nocheck
   import { tradeList, removeFromTradeList, clearTradeList } from '../../exchangeStore.js';
   import { formatPedValue, itemTypeBadge } from '../../orderUtils';
-  import { createEventDispatcher } from 'svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
   /**
    * @typedef {Object} Props
    * @property {Array} [allItems]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
-  let { allItems = [] } = $props();
+  let { allItems = [], onclose } = $props();
 
   let itemLookup = $derived((() => {
     const map = new Map();
@@ -53,7 +51,7 @@
   let totalItems = $derived(filteredItems.length);
 
   function handleClose() {
-    dispatch('close');
+    onclose?.();
   }
 
   function handleRemove(orderId) {

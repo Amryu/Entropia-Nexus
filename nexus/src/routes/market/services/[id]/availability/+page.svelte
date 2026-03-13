@@ -17,8 +17,8 @@
   // Track the current state - use data.availability directly for initialization
   let currentSlots = $state(Array.isArray(data.availability) ? [...data.availability] : []);
 
-  function handleUpdate(event) {
-    currentSlots = event.detail;
+  function handleUpdate(data) {
+    currentSlots = data;
     hasChanges = true;
     saveStatus = '';
   }
@@ -120,7 +120,7 @@
   <div class="calendar-section">
     <AvailabilityCalendar
       availability={currentSlots}
-      on:update={handleUpdate}
+      onupdate={handleUpdate}
     />
   </div>
 

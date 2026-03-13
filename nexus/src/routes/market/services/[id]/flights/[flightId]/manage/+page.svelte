@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -418,7 +416,7 @@
     : pendingAction === 'advance' ? getNextState()
     : flight?.current_state);
   let projectedStopIndex = $derived(pendingAction === 'advance' ? getNextStopIndex() : (flight?.current_stop_index || 0));
-  run(() => {
+  $effect(() => {
     if (flight && !pendingAction) {
       routeStops = typeof flight.route_stops === 'string'
         ? JSON.parse(flight.route_stops)

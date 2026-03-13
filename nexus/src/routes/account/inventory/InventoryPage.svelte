@@ -1,7 +1,4 @@
 <script>
-  import { createBubbler, stopPropagation, self } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   //@ts-nocheck
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -537,8 +534,7 @@
   }
 
   // --- Container renaming ---
-  async function handleSaveContainerName(e) {
-    const { path, name, itemName } = e.detail;
+  async function handleSaveContainerName({ path, name, itemName }) {
     try {
       const res = await fetch('/api/users/inventory/containers', {
         method: 'PUT',
@@ -561,8 +557,7 @@
     }
   }
 
-  async function handleDeleteContainerName(e) {
-    const { path } = e.detail;
+  async function handleDeleteContainerName({ path }) {
     try {
       await fetch('/api/users/inventory/containers', {
         method: 'DELETE',
@@ -1012,7 +1007,7 @@
                             oninput={handleMarkupInput}
                             onblur={finishMarkupEdit}
                             onkeydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
-                            onclick={stopPropagation(bubble('click'))}
+                            onclick={(e) => e.stopPropagation()}
                             autofocus
                             step="0.01"
                             placeholder={item._isAbsolute ? '+0' : '100%'}
@@ -1022,7 +1017,7 @@
                             class="markup-cell"
                             class:has-markup={item._markup != null}
                             class:has-market={item._markup == null && item._marketPrice != null}
-                            onclick={stopPropagation(() => item.item_id > 0 && startMarkupEdit(item))}
+                            onclick={(e) => { e.stopPropagation(); item.item_id > 0 && startMarkupEdit(item); }}
                             title="Click to edit markup"
                             use:clickable
                           >
@@ -1069,12 +1064,12 @@
               {editingMarkupId}
               {editingMarkupValue}
               {containerNames}
-              on:rowClick={(e) => openItemDialog(e.detail.row)}
-              on:startMarkupEdit={(e) => startMarkupEdit(e.detail.item)}
-              on:markupInput={(e) => { editingMarkupValue = e.detail.value; handleMarkupInput(); }}
-              on:finishMarkupEdit={finishMarkupEdit}
-              on:saveContainerName={handleSaveContainerName}
-              on:deleteContainerName={handleDeleteContainerName}
+              onrowClick={(data) => openItemDialog(data.row)}
+              onstartMarkupEdit={(data) => startMarkupEdit(data.item)}
+              onmarkupInput={(data) => { editingMarkupValue = data.value; handleMarkupInput(); }}
+              onfinishMarkupEdit={finishMarkupEdit}
+              onsaveContainerName={handleSaveContainerName}
+              ondeleteContainerName={handleDeleteContainerName}
             />
           {/if}
           </div>
@@ -1086,7 +1081,7 @@
 
 <!-- Import history panel -->
 {#if showHistoryPanel}
-  <ImportHistory on:close={() => showHistoryPanel = false} />
+  <ImportHistory onclose={() => showHistoryPanel = false} />
 {/if}
 
 <!-- Import dialog -->
@@ -1094,8 +1089,8 @@
   <InventoryImportDialog
     show={showImportDialog}
     allItems={allSlimItems}
-    on:close={() => showImportDialog = false}
-    on:imported={handleImported}
+    onclose={() => showImportDialog = false}
+    onimported={handleImported}
   />
 {/if}
 
@@ -1105,8 +1100,8 @@
     show={showDetailDialog}
     item={detailItem}
     allItems={allSlimItems}
-    on:close={() => { showDetailDialog = false; detailItem = null; }}
-    on:edit={handleEditFromDetail}
+    onclose={() => { showDetailDialog = false; detailItem = null; }}
+    onedit={handleEditFromDetail}
   />
 {/if}
 
@@ -1116,10 +1111,10 @@
     show={showItemDialog}
     item={editingItem}
     slimItem={itemLookup.get(editingItem.item_id)}
-    on:close={() => { showItemDialog = false; editingItem = null; }}
-    on:updated={(e) => {
-      const idx = inventoryItems.findIndex(i => i.id === e.detail.id);
-      if (idx >= 0) inventoryItems[idx] = { ...inventoryItems[idx], ...e.detail };
+    onclose={() => { showItemDialog = false; editingItem = null; }}
+    onupdated={(data) => {
+      const idx = inventoryItems.findIndex(i => i.id === data.id);
+      if (idx >= 0) inventoryItems[idx] = { ...inventoryItems[idx], ...data };
       inventoryItems = inventoryItems;
     }}
   />
@@ -1127,7 +1122,7 @@
 
 <!-- Bulk markup dialog -->
 {#if showBulkMarkupDialog}
-  <div class="modal-overlay" onclick={self(() => showBulkMarkupDialog = false)} use:clickable>
+  <div class="modal-overlay" onclick={(e) => { if (e.target === e.currentTarget) showBulkMarkupDialog = false; }} use:clickable>
     <div class="modal" role="dialog" aria-modal="true">
       <div class="modal-header">
         <h3>Set Markup for {selectedItems.size} Items</h3>

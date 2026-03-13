@@ -4,8 +4,6 @@
   Can also activate the auction from here.
 -->
 <script>
-  import { self } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
@@ -199,7 +197,7 @@
             showCodeBlock={false}
             showVideo={false}
             showImages={false}
-            on:change={(e) => description = e.detail}
+            onchange={(data) => description = data}
           />
         {/await}
       </div>
@@ -222,7 +220,7 @@
     </div>
 
     {#if showDeleteConfirm}
-      <div class="modal-overlay" role="presentation" onclick={self(() => showDeleteConfirm = false)}>
+      <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showDeleteConfirm = false; }}>
         <div class="confirm-dialog" role="dialog" aria-modal="true">
           <p class="confirm-message">Delete this draft auction?</p>
           <div class="confirm-actions">
@@ -234,7 +232,7 @@
     {/if}
 
     {#if showActivateConfirm}
-      <div class="modal-overlay" role="presentation" onclick={self(() => showActivateConfirm = false)}>
+      <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showActivateConfirm = false; }}>
         <div class="confirm-dialog" role="dialog" aria-modal="true">
           <p class="confirm-message">Are you sure you want to activate this auction?</p>
           <p class="confirm-warning">Once a bid is placed, the auction cannot be cancelled or edited. Make sure your pricing, duration, and item set are correct before proceeding.</p>

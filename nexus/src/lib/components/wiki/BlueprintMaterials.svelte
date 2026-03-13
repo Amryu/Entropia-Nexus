@@ -263,8 +263,8 @@
                   allowedTypes={['Material']}
                   allowedNames={materialNames}
                   validValues={materialNames}
-                  on:change={(e) => updateMaterial(index, 'Item', e.detail.value)}
-                  on:select={(e) => updateMaterial(index, 'Item', e.detail.data || e.detail.value)}
+                  onchange={(e) => updateMaterial(index, 'Item', e.value)}
+                  onselect={(e) => updateMaterial(index, 'Item', e.data || e.value)}
                 />
               </div>
               <div class="table-cell col-amount">

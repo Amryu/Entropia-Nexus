@@ -3,8 +3,6 @@
   Shows auction info, pricing, bid section, bid history, item set, and admin controls.
 -->
 <script>
-  import { self } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { invalidateAll } from '$app/navigation';
@@ -179,8 +177,8 @@
   // Admin: rollback
   let pendingRollback = null;
 
-  async function handleRollback(e) {
-    const { bidId, amount } = e.detail;
+  async function handleRollback(data) {
+    const { bidId, amount } = data;
     if (!adminReason.trim()) {
       addToast('Enter a reason in the admin panel below', { type: 'warning' });
       return;
@@ -296,9 +294,9 @@
               {turnstileSiteKey}
               disclaimerAccepted={disclaimerStatus?.bidder || false}
               {isSeller}
-              on:bid={handleBidOrBuyout}
-              on:buyout={handleBidOrBuyout}
-              on:needDisclaimer={handleNeedDisclaimer}
+              onbid={(data) => handleBidOrBuyout(data)}
+              onbuyout={(data) => handleBidOrBuyout(data)}
+              onneedDisclaimer={handleNeedDisclaimer}
             />
           </div>
 
@@ -384,7 +382,7 @@
           </div>
 
           <!-- Bid History -->
-          <BidHistoryPanel {bids} {isAdmin} on:rollback={handleRollback} />
+          <BidHistoryPanel {bids} {isAdmin} onrollback={handleRollback} />
         </div>
       </div>
 
@@ -458,12 +456,12 @@
       <AuctionDisclaimerDialog
         bind:open={showDisclaimer}
         role={disclaimerRole}
-        on:accepted={handleDisclaimerAccepted}
+        onaccepted={(data) => handleDisclaimerAccepted(data)}
       />
 
       <!-- Confirmation dialog (replaces native confirm()) -->
       {#if confirmAction}
-        <div class="modal-overlay" role="presentation" onclick={self(handleConfirmNo)}>
+        <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleConfirmNo(e); }}>
           <div class="confirm-dialog" role="dialog" aria-modal="true">
             <p class="confirm-message">{confirmMessage}</p>
             <div class="confirm-actions">

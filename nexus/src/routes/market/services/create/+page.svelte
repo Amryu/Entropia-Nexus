@@ -1,10 +1,8 @@
 <script lang="ts">
-  import { run, preventDefault } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { apiPost } from '$lib/util';
   import EquipmentEditor from '$lib/components/services/EquipmentEditor.svelte';
   import { loadEntity } from '$lib/utils/entityLoader';
@@ -74,15 +72,17 @@
   ];
 
   // Reactive: reset ship name and service mode when transportation type changes
-  run(() => {
+  $effect(() => {
     if (transportationType === 'regular') {
-      shipName = shipName && regularShipOptions.includes(shipName) ? shipName : '';
+      const current = untrack(() => shipName);
+      shipName = current && regularShipOptions.includes(current) ? current : '';
       serviceMode = 'on_demand';
     } else if (transportationType === 'warp_equus') {
       shipName = 'Quad-Wing Equus';
       serviceMode = 'on_demand';
     } else if (transportationType === 'warp_privateer') {
-      shipName = shipName === 'Quad-Wing Equus' || regularShipOptions.includes(shipName) ? '' : shipName;
+      const current = untrack(() => shipName);
+      shipName = current === 'Quad-Wing Equus' || regularShipOptions.includes(current) ? '' : current;
     }
   });
 
@@ -220,7 +220,7 @@
       <div class="error-message">{error}</div>
     {/if}
 
-    <form onsubmit={preventDefault(handleSubmit)} class="service-form">
+    <form onsubmit={(e) => { e.preventDefault(); handleSubmit(e); }} class="service-form">
       <div class="form-section">
         <h2>Basic Information</h2>
 
@@ -255,7 +255,7 @@
               showCodeBlock={false}
               showVideo={false}
               showImages={false}
-              on:change={(e) => description = e.detail}
+              onchange={(data) => description = data}
             />
           {/await}
         </div>

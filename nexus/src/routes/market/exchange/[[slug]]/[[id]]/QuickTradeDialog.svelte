@@ -1,23 +1,18 @@
 <script>
-  import { run, self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { page } from '$app/stores';
   import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint, isLimited, formatMarkupValue, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
   import { hasCondition } from '$lib/shopUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
-  
 
-  
 
-  
 
-  
 
-  
+
+
+
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
@@ -25,6 +20,10 @@
    * @property {'buy'|'sell'} [side]
    * @property {object|null} [item]
    * @property {boolean} [showAddToList] - Whether to show the "Add to Trade List" button
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onconfirm]
+   * @property {(data: any) => void} [oneditOwn]
+   * @property {(data: any) => void} [onaddToList]
    */
 
   /** @type {Props} */
@@ -33,10 +32,12 @@
     order = null,
     side = 'buy',
     item = null,
-    showAddToList = false
+    showAddToList = false,
+    onclose,
+    onconfirm,
+    oneditOwn,
+    onaddToList,
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let quantity = $state(1);
   let submitting = $state(false);
@@ -55,19 +56,19 @@
     submitting = false;
   }
 
-  run(() => {
+  $effect(() => {
     minQty = Math.max(1, Math.floor(Number(order?.min_quantity ?? 1) || 1));
   });
-  run(() => {
+  $effect(() => {
     maxQty = Math.max(1, Math.floor(Number(order?.quantity ?? 1) || 1));
   });
-  run(() => {
+  $effect(() => {
     effectiveMinQty = Math.min(minQty, maxQty);
   });
-  run(() => {
+  $effect(() => {
     currentOrderId = order?.id ?? order?.Id ?? null;
   });
-  run(() => {
+  $effect(() => {
     if (show && order) {
       if (!wasOpen || initializedOrderId !== currentOrderId) {
         quantity = maxQty;
@@ -78,7 +79,7 @@
       wasOpen = true;
     }
   });
-  run(() => {
+  $effect(() => {
     if (!show && wasOpen) {
       wasOpen = false;
       initializedOrderId = null;
@@ -90,7 +91,7 @@
     const sellerId = order?.user_id ?? order?.SellerId ?? order?.UserId ?? null;
     return userId && sellerId && String(userId) === String(sellerId);
   })());
-  run(() => {
+  $effect(() => {
     qtyNumber = Number(quantity);
   });
   let qtyValid = $derived(Number.isInteger(qtyNumber) && qtyNumber >= effectiveMinQty && qtyNumber <= maxQty);
@@ -150,7 +151,7 @@
   }
 
   function close() {
-    dispatch('close');
+    onclose?.();
   }
 
   async function confirm() {
@@ -162,7 +163,7 @@
     error = null;
 
     try {
-      dispatch('confirm', {
+      onconfirm?.({
         order,
         quantity: normalized,
         side
@@ -183,7 +184,7 @@
     class="modal-overlay"
     role="button"
     tabindex="-1"
-    onclick={self(close)}
+    onclick={(e) => { if (e.target === e.currentTarget) close(); }}
     onkeydown={(e) => e.key === 'Escape' && close()}
   >
     <div class="quick-trade-dialog">
@@ -309,7 +310,7 @@
         {#if isOwnOrder}
           <button
             class="btn btn-edit"
-            onclick={() => dispatch('editOwn', { order })}
+            onclick={() => oneditOwn?.({ order })}
           >
             Edit Order
           </button>
@@ -317,7 +318,7 @@
           {#if showAddToList}
             <button
               class="btn btn-list"
-              onclick={() => dispatch('addToList', { order, quantity: getNormalizedQuantity() ?? quantity, side })}
+              onclick={() => onaddToList?.({ order, quantity: getNormalizedQuantity() ?? quantity, side })}
               disabled={submitting || !qtyValid}
             >
               Add to Trade List

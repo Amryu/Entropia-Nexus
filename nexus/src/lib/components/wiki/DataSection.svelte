@@ -4,26 +4,20 @@
   Supports expand/collapse with smooth animation.
 -->
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { slide } from 'svelte/transition';
-  import { createEventDispatcher } from 'svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
 
-  
 
-  
 
-  
 
-  
 
-  
+
+
+
+
+
   /**
    * @typedef {Object} Props
    * @property {string} [title]
@@ -34,6 +28,7 @@
    * @property {boolean} [allowOverflow]
    * @property {import('svelte').Snippet} [actions]
    * @property {import('svelte').Snippet} [children]
+   * @property {Function} [ontoggle]
    */
 
   /** @type {Props} */
@@ -45,13 +40,14 @@
     subtitle = '',
     allowOverflow = false,
     actions,
-    children
+    children,
+    ontoggle
   } = $props();
 
   function toggle() {
     if (collapsible) {
       expanded = !expanded;
-      dispatch('toggle', { expanded });
+      ontoggle?.({ expanded });
     }
   }
 
@@ -82,7 +78,7 @@
       {/if}
     </div>
 
-    <div class="section-actions" role="presentation" onclick={stopPropagation(bubble('click'))}>
+    <div class="section-actions" role="presentation" onclick={(e) => e.stopPropagation()}>
       {@render actions?.()}
     </div>
 

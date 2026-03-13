@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { tradeRequests } from '../../exchangeStore.js';
@@ -136,7 +134,7 @@
       if (id) handleCancel(id);
     }
   }
-  run(() => {
+  $effect(() => {
     if (user?.id) loadTradeRequests();
   });
 </script>

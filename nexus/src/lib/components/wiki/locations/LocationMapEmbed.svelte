@@ -9,10 +9,8 @@
   - Click to open full map view
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
@@ -945,7 +943,7 @@
   });
 
   // Reload map when planet changes
-  run(() => {
+  $effect(() => {
     if (browser && mapImageUrl) {
       loadMapImage();
     }
@@ -954,8 +952,8 @@
   // Re-center map when location changes (external navigation)
   // Track location.Id to detect when we've navigated to a different location
   let lastLocationId = $state(null);
-  run(() => {
-    if (browser && mapLoaded && location?.Id !== lastLocationId) {
+  $effect(() => {
+    if (browser && mapLoaded && location?.Id !== untrack(() => lastLocationId)) {
       lastLocationId = location?.Id;
       // Only re-center if we have valid coordinates
       if (locationCoords?.Longitude != null) {

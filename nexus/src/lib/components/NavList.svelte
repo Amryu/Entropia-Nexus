@@ -1,11 +1,7 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
 
   import '$lib/style.css';
-
-  import { createEventDispatcher } from 'svelte';
 
   import Table from './Table.svelte';
   import { encodeURIComponentSafe, navigate } from '$lib/util';
@@ -22,6 +18,7 @@
    * @property {any} [tableViewInfo]
    * @property {any} user
    * @property {boolean} [editable]
+   * @property {Function} [onexpand]
    */
 
   /** @type {Props} */
@@ -33,7 +30,8 @@
     basePath = '',
     tableViewInfo = {},
     user,
-    editable = false
+    editable = false,
+    onexpand
   } = $props();
 
   let contextMenuElement = $state();
@@ -50,7 +48,7 @@
   let end = $state();
   let count = $state();
 
-  run(() => {
+  $effect(() => {
     isMultiType = typeof items === 'object' && !Array.isArray(items)
     elements = isMultiType ? Object.keys(items).map(x => items[x].map(y => { y._type = x; return y })).flat() : items;
     elements = elements.sort((a, b) => {
@@ -58,10 +56,10 @@
       return a.Name.localeCompare(b.Name, undefined, { numeric: true, sensitivity: 'base' });
     });
   });
-  
+
   let filteredElements = $state();
 
-  run(() => {
+  $effect(() => {
     filteredElements = elements.filter((item) => {
       return !(isMultiType && currentCategorySelected && item._type !== currentCategorySelected);
     });
@@ -72,8 +70,6 @@
     });
   });
 
-  const dispatch = createEventDispatcher();
-
   function expand() {
     expanded = !expanded;
 
@@ -81,7 +77,7 @@
       search = '';
     }
 
-    dispatch('expand', { expanded });
+    onexpand?.({ expanded });
   }
 
   function createItem(type = null) {
@@ -261,8 +257,8 @@
         bind:start
         bind:end
         bind:count
-        on:rowClick={(evt) => {
-          currentSelection = evt.detail.data.values[0];
+        onrowClick={(row) => {
+          currentSelection = row.data.values[0];
 
           navigate(getItemLink(filteredElements.find(x => x.Name === currentSelection)));
         }} />
@@ -280,7 +276,7 @@
         <Table
           style='width: 300px'
           header={
-            { 
+            {
               values: ['Name'],
               widths: ['1fr'],
             }
@@ -295,14 +291,14 @@
             })
           }
           options={
-            { 
+            {
               highlightOnHover: true,
               virtual: true
             }
           }
-          on:rowClick={(evt) => {
-            currentSelection = evt.detail.data.values[0];
-            
+          onrowClick={(row) => {
+            currentSelection = row.data.values[0];
+
             navigate(getItemLink(filteredElements.find(x => x.Name === currentSelection)));
           }} />
       {/if}

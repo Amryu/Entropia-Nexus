@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import { clampDecimals, getItemLink } from '$lib/util';
   import '$lib/style.css';
@@ -55,7 +53,7 @@
   function getLineTotal(mat, mu) {
     return getLineTT(mat) * (mu || 100) / 100;
   }
-  run(() => {
+  $effect(() => {
     if (blueprint) {
       resetMarkup();
     }

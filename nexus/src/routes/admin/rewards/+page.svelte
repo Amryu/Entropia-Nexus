@@ -1,6 +1,4 @@
 <script>
-  import { stopPropagation, self } from 'svelte/legacy';
-
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
@@ -623,7 +621,7 @@
               <td class="amount-cell">{formatAmount(c.total_score)}</td>
               <td>
                 {#if parseFloat(c.total_earned) - parseFloat(c.total_paid) > 0}
-                  <button class="btn btn-sm" onclick={stopPropagation(() => startPayoutForUser(c.id, (parseFloat(c.total_earned) - parseFloat(c.total_paid)).toFixed(2)))}>
+                  <button class="btn btn-sm" onclick={(e) => { e.stopPropagation(); startPayoutForUser(c.id, (parseFloat(c.total_earned) - parseFloat(c.total_paid)).toFixed(2)); }}>
                     Pay
                   </button>
                 {/if}
@@ -861,7 +859,7 @@
 
 <!-- Rule Form Dialog -->
 {#if showRuleForm}
-  <div class="form-overlay" onclick={self(() => showRuleForm = false)} role="presentation">
+  <div class="form-overlay" onclick={(e) => { if (e.target === e.currentTarget) showRuleForm = false; }} role="presentation">
     <div class="form-dialog">
       <h3>{editingRule ? 'Edit Rule' : 'Create Rule'}</h3>
       <div class="form-group">
@@ -927,7 +925,7 @@
 
 <!-- Payout Form Dialog -->
 {#if showPayoutForm}
-  <div class="form-overlay" onclick={self(() => showPayoutForm = false)} role="presentation">
+  <div class="form-overlay" onclick={(e) => { if (e.target === e.currentTarget) showPayoutForm = false; }} role="presentation">
     <div class="form-dialog">
       <h3>Create Payout</h3>
       <div class="form-group">
@@ -957,7 +955,7 @@
 
 <!-- Retroactive Reward Assignment Dialog -->
 {#if showRetroAssignForm && retroAssignTarget}
-  <div class="form-overlay" onclick={self(closeRetroAssignForm)} role="presentation">
+  <div class="form-overlay" onclick={(e) => { if (e.target === e.currentTarget) closeRetroAssignForm(); }} role="presentation">
     <div class="form-dialog">
       <h3>Assign Reward</h3>
       <div class="form-group">

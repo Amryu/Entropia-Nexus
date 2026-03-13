@@ -6,10 +6,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -21,7 +18,7 @@
    */
 
   /** @type {Props} */
-  let { entry, expanded = $bindable(false) } = $props();
+  let { entry, expanded = $bindable(false), onupdate, onremove } = $props();
 
   let pieces = $derived(entry?.pieces || []);
   let hasPieces = $derived(pieces.length > 0);
@@ -31,7 +28,7 @@
   }
 
   function updateGender(gender) {
-    dispatch('update', { ...entry, gender: gender || undefined });
+    onupdate?.({ ...entry, gender: gender || undefined });
   }
 
   function updatePieceMeta(index, field, value) {
@@ -39,11 +36,11 @@
     const piece = { ...newPieces[index] };
     piece.meta = { ...(piece.meta || {}), [field]: value };
     newPieces[index] = piece;
-    dispatch('update', { ...entry, pieces: newPieces });
+    onupdate?.({ ...entry, pieces: newPieces });
   }
 
   function remove() {
-    dispatch('remove');
+    onremove?.();
   }
 </script>
 

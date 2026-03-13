@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { stopPropagation, createBubbler } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
 
   import '$lib/style.css';
@@ -441,8 +438,8 @@
     };
   }
 
-  function handleBrowseRowClick(event) {
-    const { row } = event.detail;
+  function handleBrowseRowClick(data) {
+    const { row } = data;
     if (row) {
       selectUser(row);
     }
@@ -638,15 +635,14 @@
     mobileSearchRef?.clear?.();
   }
 
-  function handleSearchSelect(event) {
+  function handleSearchSelect({ url }) {
     // Navigate to the selected result
-    goto(event.detail.url);
+    goto(url);
     closeMobileMenu();
   }
 
-  function handleSearchNavigate(event) {
+  function handleSearchNavigate({ query }) {
     // Navigate to dedicated search page
-    const query = event.detail.query;
     if (query && query.trim().length >= 2) {
       goto(`/search?q=${encodeURIComponent(query.trim())}`);
       desktopSearchRef?.clear?.();
@@ -2241,8 +2237,8 @@
         placeholder="Search..."
         mode="dropdown"
         containerClass="desktop-search"
-        on:select={handleSearchSelect}
-        on:search={handleSearchNavigate}
+        onselect={handleSearchSelect}
+        onsearch={handleSearchNavigate}
       />
     </div>
     {#if canCopyShortLink}
@@ -2275,7 +2271,7 @@
             <span>Notifications</span>
             <button
               class="notification-markall"
-              onclick={stopPropagation(markAllNotificationsRead)}
+              onclick={(e) => { e.stopPropagation(); markAllNotificationsRead(); }}
               disabled={notificationsUnread === 0 || notificationsLoading}
             >
               Mark all as read
@@ -2303,7 +2299,7 @@
                     <a
                       class="notification-action"
                       href={notificationActionMap[notification.type].href}
-                      onclick={stopPropagation(bubble('click'))}
+                      onclick={(e) => e.stopPropagation()}
                     >{notificationActionMap[notification.type].label}</a>
                   {/if}
                 </button>
@@ -2466,9 +2462,9 @@
         mode="dropdown"
         containerClass="mobile-search"
         showOnFocus={true}
-        on:select={handleSearchSelect}
-        on:search={handleSearchNavigate}
-        on:close={exitMobileSearchMode}
+        onselect={handleSearchSelect}
+        onsearch={handleSearchNavigate}
+        onclose={exitMobileSearchMode}
       />
       {#if mobileSearchMode}
         <button class="mobile-search-cancel" onclick={exitMobileSearchMode}>Cancel</button>
@@ -2531,7 +2527,7 @@
               {/if}
             </div>
           </div>
-          <div class="mobile-user-quick-actions" onclick={stopPropagation(bubble('click'))}>
+          <div class="mobile-user-quick-actions" onclick={(e) => e.stopPropagation()}>
             {#if canCopyShortLink}
               <button
                 class="mobile-quick-btn short-link-mobile-btn"
@@ -2573,7 +2569,7 @@
           </div>
           <button
             class="mobile-user-chevron-btn"
-            onclick={stopPropagation(() => (mobileUserExpanded = !mobileUserExpanded))}
+            onclick={(e) => { e.stopPropagation(); mobileUserExpanded = !mobileUserExpanded; }}
             aria-label={mobileUserExpanded ? 'Collapse user menu' : 'Expand user menu'}
           >
             <span class="mobile-user-chevron" class:expanded={mobileUserExpanded}>&#9656;</span>
@@ -2656,7 +2652,7 @@
 
 {#if showImpersonateDialog}
   <div class="dialog-overlay" role="presentation" onclick={resetImpersonateDialog}>
-    <div class="dialog dialog-wide" onclick={stopPropagation(bubble('click'))}>
+    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()}>
       <h3>Impersonate User</h3>
       <p class="dialog-description">Search for a user by their Discord name or EU character name.</p>
 
@@ -2733,7 +2729,7 @@
 
 {#if showBrowseDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showBrowseDialog = false}>
-    <div class="dialog dialog-large" onclick={stopPropagation(bubble('click'))}>
+    <div class="dialog dialog-large" onclick={(e) => e.stopPropagation()}>
       <h3>Browse Users</h3>
       <p class="dialog-description">Click on a row to select a user. Use the search boxes to filter.</p>
 
@@ -2747,7 +2743,7 @@
             sortable={true}
             searchable={true}
             emptyMessage="No users found"
-            on:rowClick={handleBrowseRowClick}
+            onrowClick={handleBrowseRowClick}
           />
         {/key}
       </div>

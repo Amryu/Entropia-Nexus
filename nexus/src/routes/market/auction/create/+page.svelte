@@ -3,8 +3,6 @@
   Form to create a new auction. Creates as draft, then can activate.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { goto, beforeNavigate } from '$app/navigation';
@@ -74,7 +72,7 @@
   ) ?? false);
 
   // Reset customized if no (C) items
-  run(() => {
+  $effect(() => {
     if (!hasCustomizableItems) customized = false;
   });
 
@@ -156,8 +154,8 @@
     }
   }
 
-  function handleDurationChange(e) {
-    durationDays = e.detail;
+  function handleDurationChange(value) {
+    durationDays = value;
   }
 
   async function handleSave(activate = false) {
@@ -382,7 +380,7 @@
         bind:value={durationDays}
         buyoutPrice={effectiveBuyout}
         startingBid={startingBidNum}
-        on:change={handleDurationChange}
+        onchange={handleDurationChange}
       />
     </section>
 
@@ -409,7 +407,7 @@
             showCodeBlock={false}
             showVideo={false}
             showImages={false}
-            on:change={(e) => description = e.detail}
+            onchange={(data) => description = data}
           />
         {/await}
       </div>
@@ -433,13 +431,13 @@
 <ItemSetDialog
   bind:show={showItemSetDialog}
   hideName
-  on:save={handleItemSetCreated}
+  onsave={handleItemSetCreated}
 />
 
 <AuctionDisclaimerDialog
   bind:open={showDisclaimer}
   role="seller"
-  on:accepted={handleDisclaimerAccepted}
+  onaccepted={() => handleDisclaimerAccepted()}
 />
 
 <style>

@@ -4,12 +4,7 @@
   When a new owner is set, all managers are cleared automatically.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -21,10 +16,12 @@
    * @property {string} [shopName] - Shop name/identifier for API calls
    * @property {boolean} [open] - Whether the dialog is open
    * @property {string} [currentOwner] - Current owner name (for display)
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onsaved]
    */
 
   /** @type {Props} */
-  let { shopName = '', open = $bindable(false), currentOwner = '' } = $props();
+  let { shopName = '', open = $bindable(false), currentOwner = '', onclose, onsaved } = $props();
 
   // Local state
   let newOwnerName = $state('');
@@ -34,7 +31,7 @@
   let confirmClear = $state(false);
 
   // Reset state when dialog opens
-  run(() => {
+  $effect(() => {
     if (open) {
       newOwnerName = '';
       error = null;
@@ -45,7 +42,7 @@
 
   function close() {
     open = false;
-    dispatch('close');
+    onclose?.();
   }
 
   function handleBackdropClick(event) {
@@ -105,7 +102,7 @@
         confirmClear = false;
       } else {
         success = 'Owner updated successfully. Managers have been cleared.';
-        dispatch('saved', { ownerName: name });
+        onsaved?.({ ownerName: name });
         setTimeout(() => {
           close();
           // Reload the page to get fresh data

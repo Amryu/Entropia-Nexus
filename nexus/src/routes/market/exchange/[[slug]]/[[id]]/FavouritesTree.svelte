@@ -1,7 +1,4 @@
 <script>
-  import { preventDefault, stopPropagation, createBubbler } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { createFolder, renameFolder, deleteFolder, removeFavourite, moveToFolder } from '../../favouritesStore.js';
   import { clickable } from '$lib/actions/clickable.js';
@@ -160,7 +157,7 @@
       <div
         class="fav-folder"
         class:drag-over={dragOverTarget === folder.id}
-        ondragover={preventDefault((e) => handleDragOver(e, folder.id))}
+        ondragover={(e) => { e.preventDefault(); handleDragOver(e, folder.id); }}
         ondragleave={() => handleDragLeave(folder.id)}
         ondrop={(e) => handleDrop(e, folder.id)}
         role="group"
@@ -174,7 +171,7 @@
           <span
             class="expand-toggle"
             class:expanded={expandedFolders.has(folder.id)}
-            onclick={stopPropagation(() => toggleFolder(folder.id))}
+            onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }}
             use:clickable={{ tabindex: -1 }}
           >{expandedFolders.has(folder.id) ? '▾' : '▸'}</span>
 
@@ -187,24 +184,24 @@
               bind:value={editingFolderName}
               onblur={finishRename}
               onkeydown={handleRenameKeydown}
-              onclick={stopPropagation(bubble('click'))}
+              onclick={(e) => e.stopPropagation()}
               autofocus
             />
           {:else}
             <span
               class="folder-name"
-              ondblclick={stopPropagation(() => startRename(folder))}
+              ondblclick={(e) => { e.stopPropagation(); startRename(folder); }}
             >{folder.name}</span>
           {/if}
 
           <span class="folder-count">{(folder.items || []).length}</span>
           <div class="folder-actions">
-            <button class="folder-action-btn" onclick={stopPropagation(() => startRename(folder))} title="Rename">
+            <button class="folder-action-btn" onclick={(e) => { e.stopPropagation(); startRename(folder); }} title="Rename">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/>
               </svg>
             </button>
-            <button class="folder-action-btn delete" onclick={stopPropagation(() => handleDeleteFolder(folder.id))} title="Delete folder">
+            <button class="folder-action-btn delete" onclick={(e) => { e.stopPropagation(); handleDeleteFolder(folder.id); }} title="Delete folder">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4l8 8M12 4l-8 8"/>
               </svg>
@@ -229,7 +226,7 @@
                 <span class="fav-item-name">
                   {itemMap[itemId]?.n || `Item #${itemId}`}
                 </span>
-                <button class="fav-remove-btn" onclick={stopPropagation(() => removeFavourite(itemId))} title="Remove">x</button>
+                <button class="fav-remove-btn" onclick={(e) => { e.stopPropagation(); removeFavourite(itemId); }} title="Remove">x</button>
               </div>
             {/each}
             {#if (folder.items || []).length === 0}
@@ -245,7 +242,7 @@
       <div
         class="fav-root-items"
         class:drag-over={dragOverTarget === 'root'}
-        ondragover={preventDefault((e) => handleDragOver(e, 'root'))}
+        ondragover={(e) => { e.preventDefault(); handleDragOver(e, 'root'); }}
         ondragleave={() => handleDragLeave('root')}
         ondrop={(e) => handleDrop(e, null)}
         role="group"
@@ -265,7 +262,7 @@
             <span class="fav-item-name">
               {itemMap[itemId]?.n || `Item #${itemId}`}
             </span>
-            <button class="fav-remove-btn" onclick={stopPropagation(() => removeFavourite(itemId))} title="Remove">x</button>
+            <button class="fav-remove-btn" onclick={(e) => { e.stopPropagation(); removeFavourite(itemId); }} title="Remove">x</button>
           </div>
         {/each}
       </div>

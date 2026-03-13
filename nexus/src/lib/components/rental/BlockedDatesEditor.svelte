@@ -5,12 +5,9 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { formatDateDisplay } from '$lib/utils/rentalPricing.js';
 
-  const dispatch = createEventDispatcher();
 
-  
 
   
 
@@ -20,10 +17,11 @@
    * @property {number} offerId
    * @property {Array<{id: number, start_date: string, end_date: string, reason: string|null}>} [blockedDates]
    * @property {boolean} [loading]
+   * @property {(data: {blockedDates: Array}) => void} [onchange]
    */
 
   /** @type {Props} */
-  let { offerId, blockedDates = $bindable([]), loading = false } = $props();
+  let { offerId, blockedDates = $bindable([]), loading = false, onchange } = $props();
 
   let newStart = $state('');
   let newEnd = $state('');
@@ -75,7 +73,7 @@
       newStart = '';
       newEnd = '';
       newReason = '';
-      dispatch('change', { blockedDates });
+      onchange?.({ blockedDates });
     } catch (err) {
       error = 'Failed to add blocked dates.';
     } finally {
@@ -98,7 +96,7 @@
       }
 
       blockedDates = blockedDates.filter(d => d.id !== id);
-      dispatch('change', { blockedDates });
+      onchange?.({ blockedDates });
     } catch (err) {
       error = 'Failed to remove blocked dates.';
     }

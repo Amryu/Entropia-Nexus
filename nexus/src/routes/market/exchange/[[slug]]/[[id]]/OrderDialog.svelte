@@ -1,8 +1,5 @@
 <script lang="ts">
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from "svelte";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT, itemTypeBadge } from "../../orderUtils";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
@@ -329,6 +326,10 @@
     isNonFungible?: boolean;
     planets?: any;
     submitting?: boolean;
+    onclose?: () => void;
+    onsubmit?: (data: any) => void;
+    onnext?: (data: any) => void;
+    ondelete?: (data: any) => void;
   }
 
   let {
@@ -342,14 +343,16 @@
     planets = [
     'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
   ],
-    submitting = false
+    submitting = false,
+    onclose,
+    onsubmit,
+    onnext,
+    ondelete,
   }: Props = $props();
-
-  const dispatch = createEventDispatcher();
 
   function close() {
     sessionOrderCount = 0;
-    dispatch('close');
+    onclose?.();
   }
   function submit() {
     if (submitting) return;
@@ -357,7 +360,7 @@
       addToast('Please complete the captcha verification', { type: 'warning' });
       return;
     }
-    dispatch('submit', { order, turnstileToken });
+    onsubmit?.({ order, turnstileToken });
     sessionOrderCount = 0;
     resetTurnstile = true;
   }
@@ -367,7 +370,7 @@
       addToast('Please complete the captcha verification', { type: 'warning' });
       return;
     }
-    dispatch('next', { order, turnstileToken });
+    onnext?.({ order, turnstileToken });
     sessionOrderCount++;
     resetTurnstile = true;
   }
@@ -375,7 +378,7 @@
   let showGenderSelect = $derived(isGenderedItem && itemGender !== 'Neutral' && itemGender !== null);
   let genderFixed = $derived(itemGender === 'Male' || itemGender === 'Female');
   // Watch for changes to recalc
-  run(() => {
+  $effect(() => {
     if (order) recalcPrices();
   });
   // When pet level changes, refresh disabled/color state (options re-compute from order state)
@@ -686,7 +689,7 @@
       {/if}
       <div class="actions">
         {#if mode === 'edit'}
-          <button class="delete-btn" onclick={() => { if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) { addToast('Please complete the captcha verification', { type: 'warning' }); return; } dispatch('delete', { order, turnstileToken }); resetTurnstile = true; }} title="Delete this order">Delete</button>
+          <button class="delete-btn" onclick={() => { if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) { addToast('Please complete the captcha verification', { type: 'warning' }); return; } ondelete?.({ order, turnstileToken }); resetTurnstile = true; }} title="Delete this order">Delete</button>
         {/if}
         <span class="actions-spacer"></span>
         <button onclick={close} disabled={submitting}>{sessionOrderCount > 0 ? 'Done' : 'Cancel'}</button>

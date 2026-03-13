@@ -15,8 +15,6 @@
   See plan file for full migration details.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   /**
    * @deprecated Use WikiPage and related components from $lib/components/wiki/ instead.
@@ -128,8 +126,8 @@
     }
   }
 
-  function setExpansionState(event) {
-    expanded = event.detail.expanded;
+  function setExpansionState({ expanded: newExpanded }) {
+    expanded = newExpanded;
   }
 
   function getCanonicalUrl(params) {
@@ -141,7 +139,7 @@
       return `https://entropianexus.com${basePath}`;
   } 
 
-  run(() => {
+  $effect(() => {
     if (typeof window !== 'undefined' && mode != new URLSearchParams(window.location.search).get('mode') && data != null) updateMode();
   });
 </script>
@@ -201,7 +199,7 @@
         title={title}
         basePath={basePath}
         editable={editConfig != null}
-        on:expand={setExpansionState} />
+        onexpand={setExpansionState} />
     </div>
     <div class="flex-content {expanded ? 'hidden' : ''}">
       {#if $loading}

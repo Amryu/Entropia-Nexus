@@ -4,10 +4,7 @@
   Supports various field types: text, number, select, checkbox, coordinates, etc.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import {
     editMode,
     updateField,
@@ -15,8 +12,6 @@
     validationErrors,
     getNestedValue
   } from '$lib/stores/wikiEditState.js';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -64,6 +59,7 @@
    * @property {boolean} [required]
    * @property {string} [displayFormat]
    * @property {boolean} [editable]
+   * @property {Function} [onchange]
    */
 
   /** @type {Props} */
@@ -82,7 +78,8 @@
     step = null,
     required = false,
     displayFormat = '',
-    editable = undefined
+    editable = undefined,
+    onchange
   } = $props();
 
   // Internal state
@@ -94,12 +91,12 @@
   let isEditable = $derived(editable !== undefined ? editable : $editMode);
 
   // Sync local value with prop
-  run(() => {
+  $effect(() => {
     localValue = value;
   });
 
   // Get error from store
-  run(() => {
+  $effect(() => {
     error = path ? $validationErrors[path] : null;
   });
 
@@ -186,7 +183,7 @@
     }
 
     // Dispatch change event
-    dispatch('change', { value: newValue, path });
+    onchange?.({ value: newValue, path });
   }
 
   function formatDisplayValue(val) {

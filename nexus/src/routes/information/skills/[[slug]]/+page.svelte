@@ -7,11 +7,9 @@
   Supports full wiki editing with wikiEditState integration.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -50,8 +48,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.professions === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.professions === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'professions', url: '/api/professions' }
@@ -113,7 +111,7 @@
   let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Initialize edit state when entity/user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       if (data.isCreateMode) {
         const initialData = existingChange?.data || emptySkill;
@@ -125,7 +123,7 @@
   });
 
   // Handle pending changes from API
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -350,7 +348,7 @@
   let unlockCount = $derived(getUnlockCount(activeSkill));
   let isHidden = $derived(activeSkill?.Properties?.IsHidden ?? false);
   let isExtractable = $derived(activeSkill?.Properties?.IsExtractable ?? false);
-  run(() => {
+  $effect(() => {
     if ($editMode) {
       const unlockCount = activeSkill?.Unlocks?.length || 0;
       const shouldBeHidden = unlockCount > 0;
@@ -360,7 +358,7 @@
     }
   });
   let hpIncrease = $derived(activeSkill?.Properties?.HpIncrease || 0);
-  run(() => {
+  $effect(() => {
     if ($editMode) {
       const categoryName = (activeSkill?.Category?.Name || '').trim();
       setFieldError('Category.Name', categoryName ? null : 'Category is required');
@@ -571,7 +569,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeSkill?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter a description for this skill..."
               showWaypoints={true}
             />
@@ -594,7 +592,7 @@
             icon=""
             bind:expanded={panelStates.professions}
             subtitle="{professionCount} profession{professionCount !== 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#if $editMode}
               <div class="skill-edit-list">
@@ -607,8 +605,8 @@
                         value={entry?.Profession?.Name || ''}
                         options={professionOptions}
                         placeholder="Profession"
-                        on:select={(e) => updateProfessionEntry(index, 'Profession', e.detail.value)}
-                        on:change={(e) => updateProfessionEntry(index, 'Profession', e.detail.value)}
+                        onselect={(e) => updateProfessionEntry(index, 'Profession', e.value)}
+                        onchange={(e) => updateProfessionEntry(index, 'Profession', e.value)}
                       />
                     </div>
                     <input
@@ -643,7 +641,7 @@
             icon=""
             bind:expanded={panelStates.unlocks}
             subtitle="{unlockCount} profession{unlockCount !== 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#if $editMode}
               <div class="skill-edit-list">
@@ -656,8 +654,8 @@
                         value={entry?.Profession?.Name || ''}
                         options={professionOptions}
                         placeholder="Profession"
-                        on:select={(e) => updateUnlockEntry(index, 'Profession', e.detail.value)}
-                        on:change={(e) => updateUnlockEntry(index, 'Profession', e.detail.value)}
+                        onselect={(e) => updateUnlockEntry(index, 'Profession', e.value)}
+                        onchange={(e) => updateUnlockEntry(index, 'Profession', e.value)}
                       />
                     </div>
                     <input

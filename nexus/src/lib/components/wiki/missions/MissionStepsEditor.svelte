@@ -3,9 +3,6 @@
   Editor for mission steps + objective payloads.
 -->
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { updateField } from '$lib/stores/wikiEditState.js';
   import { hasCondition } from '$lib/shopUtils.js';
@@ -614,7 +611,7 @@
           <RichTextEditor
             content={step.Description ?? ''}
             placeholder="Step description"
-            on:change={(e) => updateStepField(stepIndex, 'Description', e.detail)}
+            onchange={(data) => updateStepField(stepIndex, 'Description', data)}
             showWaypoints={true}
           />
         </div>
@@ -652,7 +649,7 @@
                           value={getOptionLabel(npcOptions, payload.targetLocationId)}
                           options={npcOptions}
                           placeholder="Search NPC..."
-                          on:select={(e) => updateObjectivePayload(stepIndex, objIndex, { targetLocationId: toNumber(e.detail.value) })}
+                          onselect={(e) => updateObjectivePayload(stepIndex, objIndex, { targetLocationId: toNumber(e.value) })}
                         />
                       </div>
                       <div class="objective-field full">
@@ -661,7 +658,7 @@
                           <RichTextEditor
                             content={payload.dialogText ?? ''}
                             placeholder="Dialog cue"
-                            on:change={(e) => updateObjectivePayload(stepIndex, objIndex, { dialogText: e.detail })}
+                            onchange={(data) => updateObjectivePayload(stepIndex, objIndex, { dialogText: data })}
                             showWaypoints={true}
                           />
                         </div>
@@ -675,7 +672,7 @@
                           value={getOptionLabel(locationOptions, payload.targetLocationId)}
                           options={locationOptions}
                           placeholder="Search location..."
-                          on:select={(e) => updateObjectivePayload(stepIndex, objIndex, { targetLocationId: toNumber(e.detail.value) })}
+                          onselect={(e) => updateObjectivePayload(stepIndex, objIndex, { targetLocationId: toNumber(e.value) })}
                         />
                       </div>
                     </div>
@@ -687,7 +684,7 @@
                         planetLocked={!!missionPlanet}
                         hideName={true}
                         nameLocked={true}
-                        on:change={(e) => handleExploreWaypointChange(stepIndex, objIndex, e.detail)}
+                        onchange={(data) => handleExploreWaypointChange(stepIndex, objIndex, data)}
                       />
                     </div>
                   {:else if objective.Type === 'KillCount' || objective.Type === 'KillCycle'}
@@ -716,7 +713,7 @@
                                 value={mob.mobId || ''}
                                 placeholder="Search mob..."
                                 options={mobOptions}
-                                on:select={(e) => handleMobSelect(stepIndex, objIndex, mobIndex, e.detail.value)}
+                                onselect={(e) => handleMobSelect(stepIndex, objIndex, mobIndex, e.value)}
                               />
                             </div>
                             <button
@@ -775,7 +772,7 @@
                           value={getOptionLabel(npcOptions, payload.npcLocationId)}
                           options={npcOptions}
                           placeholder="Search NPC..."
-                          on:select={(e) => updateObjectivePayload(stepIndex, objIndex, { npcLocationId: toNumber(e.detail.value) })}
+                          onselect={(e) => updateObjectivePayload(stepIndex, objIndex, { npcLocationId: toNumber(e.value) })}
                         />
                       </div>
                       <div class="objective-field full">
@@ -790,8 +787,8 @@
                                 placeholder="Search item..."
                                 apiEndpoint="/search/items"
                                 displayFn={(item) => item?.Name || ''}
-                                on:change={(e) => handleHandInItemChange(stepIndex, objIndex, itemIndex, e.detail.value)}
-                                on:select={(e) => handleHandInItemSelect(stepIndex, objIndex, itemIndex, e.detail.data)}
+                                onchange={(e) => handleHandInItemChange(stepIndex, objIndex, itemIndex, e.value)}
+                                onselect={(e) => handleHandInItemSelect(stepIndex, objIndex, itemIndex, e.data)}
                               />
                               <input
                                 type="number"
@@ -836,8 +833,8 @@
                           placeholder="Search item..."
                           apiEndpoint="/search/items"
                           displayFn={(item) => item?.Name || ''}
-                          on:change={(e) => handleCollectItemChange(stepIndex, objIndex, e.detail.value)}
-                          on:select={(e) => handleCollectItemSelect(stepIndex, objIndex, e.detail.data)}
+                          onchange={(e) => handleCollectItemChange(stepIndex, objIndex, e.value)}
+                          onselect={(e) => handleCollectItemSelect(stepIndex, objIndex, e.data)}
                         />
                       </div>
                       <div class="objective-field">
@@ -861,8 +858,8 @@
                           placeholder="Search item..."
                           apiEndpoint="/search/items"
                           displayFn={(item) => item?.Name || ''}
-                          on:change={(e) => handleCollectItemChange(stepIndex, objIndex, e.detail.value)}
-                          on:select={(e) => handleCollectItemSelect(stepIndex, objIndex, e.detail.data)}
+                          onchange={(e) => handleCollectItemChange(stepIndex, objIndex, e.value)}
+                          onselect={(e) => handleCollectItemSelect(stepIndex, objIndex, e.data)}
                         />
                       </div>
                       <div class="objective-field">
@@ -891,7 +888,7 @@
                                 value={getSpeciesName(speciesId)}
                                 placeholder="Search species..."
                                 options={mobSpeciesOptions}
-                                on:select={(e) => handleAISpeciesSelect(stepIndex, objIndex, idx, e.detail.value)}
+                                onselect={(e) => handleAISpeciesSelect(stepIndex, objIndex, idx, e.value)}
                               />
                             </div>
                             <button
@@ -933,8 +930,8 @@
                                 placeholder="Search item..."
                                 apiEndpoint="/search/items"
                                 displayFn={(item) => item?.Name || ''}
-                                on:change={(e) => handleAIHandInItemChange(stepIndex, objIndex, itemIndex, e.detail.value)}
-                                on:select={(e) => handleAIHandInItemSelect(stepIndex, objIndex, itemIndex, e.detail.data)}
+                                onchange={(e) => handleAIHandInItemChange(stepIndex, objIndex, itemIndex, e.value)}
+                                onselect={(e) => handleAIHandInItemSelect(stepIndex, objIndex, itemIndex, e.data)}
                               />
                               <input
                                 type="number"
@@ -1042,7 +1039,7 @@
   {@const dialogMobId = ensureArray(getObjectivePayload(stepIndex, objIndex).mobs)[mobIndex]?.mobId}
   {@const maturitiesForMob = getMaturitiesForMob(dialogMobId)}
   <div class="dialog-overlay" role="presentation" onclick={closeDialog}>
-    <div class="maturity-dialog" role="dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="maturity-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>Configure Maturities: {getMobName(dialogMobId)}</h3>
         <button type="button" class="btn-icon" onclick={closeDialog}>×</button>

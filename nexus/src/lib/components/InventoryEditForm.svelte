@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import { apiCall, apiPut } from "$lib/util";
   import EditFormControlGroup from "./EditFormControlGroup.svelte";
@@ -210,10 +208,10 @@
   function cancel() {
     window.location.reload();
   }
-  run(() => {
+  $effect(() => {
     disabled = !canEdit || !user?.verified;
   });
-  run(() => {
+  $effect(() => {
     formObject = normalizeObject(object);
   });
 </script>

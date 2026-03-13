@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import DashboardNav from "$lib/components/services/DashboardNav.svelte";
@@ -312,7 +309,7 @@
 <!-- Ticket Extension Dialog -->
 {#if showExtendDialog && selectedTicket}
   <div class="dialog-overlay" onclick={closeExtendDialog} onkeypress={(e) => e.key === 'Escape' && closeExtendDialog()}>
-    <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
+    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
       <div class="dialog-header">
         <h2>{getTicketStatus(selectedTicket) === 'expired' ? 'Reactivate Ticket' : 'Extend Ticket'}</h2>
         <button class="close-btn" onclick={closeExtendDialog}>&times;</button>

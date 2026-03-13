@@ -1,28 +1,27 @@
 <script>
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
-  import { createEventDispatcher } from 'svelte';
   import { computeState } from '../../exchangeConstants.js';
   import { formatMarkupValue } from '../../orderUtils';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
-  
 
-  
 
-  
 
-  
 
-  
 
-  
 
-  
 
-  
 
-  
+
+
+
+
+
+
+
+
+
   /**
    * @typedef {Object} Props
    * @property {'buy'|'sell'} [side]
@@ -34,6 +33,8 @@
    * @property {boolean} [isArmorPlating]
    * @property {boolean} [isGendered]
    * @property {string} [planetFilter]
+   * @property {(data: any) => void} [onrowClick]
+   * @property {(data: any) => void} [onsellerClick]
    */
 
   /** @type {Props} */
@@ -46,10 +47,10 @@
     currentUserId = null,
     isArmorPlating = false,
     isGendered = false,
-    planetFilter = 'All Planets'
+    planetFilter = 'All Planets',
+    onrowClick,
+    onsellerClick,
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
 
   function buildColumns(isTierable, isAbsoluteMu, isPlating, isGend) {
@@ -147,8 +148,8 @@
     return `${days}d`;
   }
 
-  function handleRowClick(e) {
-    dispatch('rowClick', e.detail);
+  function handleRowClick(data) {
+    onrowClick?.(data);
   }
 
   function handleTableClick(e) {
@@ -158,7 +159,7 @@
     e.preventDefault();
     const userId = sellerEl.dataset.sellerId;
     const name = sellerEl.dataset.sellerName || 'Unknown';
-    if (userId) dispatch('sellerClick', { id: userId, name });
+    if (userId) onsellerClick?.({ id: userId, name });
   }
   // Build columns dynamically based on item type
   let columns = $derived(buildColumns(tierable, absoluteMarkup, isArmorPlating, isGendered));
@@ -193,7 +194,7 @@
       searchable={false}
       emptyMessage="No {side} orders"
       rowClass={(row) => currentUserId && String(row.user_id) === String(currentUserId) ? 'my-order' : null}
-      on:rowClick={handleRowClick}
+      onrowClick={handleRowClick}
     />
   </div>
 </div>

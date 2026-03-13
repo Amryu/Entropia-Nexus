@@ -5,9 +5,6 @@
   Includes inline management controls for users with guide grants.
 -->
 <script>
-  import { run, createBubbler, stopPropagation, preventDefault } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import GuideNavigation from '$lib/components/guides/GuideNavigation.svelte';
@@ -113,7 +110,7 @@
   let chapterTitle = $derived(lesson?.chapter_title);
 
   // Reset edit mode when navigating between lessons
-  run(() => {
+  $effect(() => {
     if (slug) editMode = false;
   });
 
@@ -204,7 +201,7 @@
   }
 
   // Auto-generate slug from title for new lessons
-  run(() => {
+  $effect(() => {
     if (dialogType === 'lesson' && dialogName) {
       dialogSlug = autoSlug(dialogName);
     }
@@ -554,14 +551,14 @@
 <!-- CREATE/EDIT DIALOG -->
 {#if showDialog}
   <div class="dialog-overlay" role="dialog" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
-    <div class="dialog" role="presentation" onclick={stopPropagation(bubble('click'))}>
+    <div class="dialog" role="presentation" onclick={(e) => e.stopPropagation()}>
       <h3 class="dialog-title">{dialogTitle}</h3>
 
       {#if dialogError}
         <div class="dialog-error">{dialogError}</div>
       {/if}
 
-      <form onsubmit={preventDefault(submitDialog)}>
+      <form onsubmit={(e) => { e.preventDefault(); submitDialog(e); }}>
         <div class="dialog-field">
           <label for="dialog-name">Title</label>
           <input id="dialog-name" type="text" bind:value={dialogName} required placeholder="Enter title..." />

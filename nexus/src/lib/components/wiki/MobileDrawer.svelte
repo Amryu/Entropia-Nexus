@@ -4,31 +4,26 @@
   Includes backdrop overlay and swipe-to-close support.
 -->
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { fly, fade } from 'svelte/transition';
 
-  const dispatch = createEventDispatcher();
 
-  
 
-  
+
   /**
    * @typedef {Object} Props
    * @property {boolean} [open]
    * @property {string} [side]
    * @property {import('svelte').Snippet} [children]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
-  let { open = $bindable(false), side = 'left', children } = $props();
+  let { open = $bindable(false), side = 'left', children, onclose } = $props();
 
   function close() {
     open = false;
-    dispatch('close');
+    onclose?.();
   }
 
   function handleBackdropClick() {
@@ -92,7 +87,7 @@
       ontouchstart={handleTouchStart}
       ontouchmove={handleTouchMove}
       ontouchend={handleTouchEnd}
-      onclick={stopPropagation(bubble('click'))}
+      onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
       aria-label="Navigation"

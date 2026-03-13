@@ -1,8 +1,5 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
-
 
   function drawShape(ctx, loc, isHovered, isSelected) {
     const type = loc.Properties.Shape;
@@ -1420,15 +1417,15 @@
   function toggleMobAreas() { showMobAreas = !showMobAreas; }
   function togglePvpAreas() { showPvpAreas = !showPvpAreas; }
   function toggleOtherAreas() { showOtherAreas = !showOtherAreas; }
-  run(() => { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); });
-  run(() => {
+  $effect(() => { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); });
+  $effect(() => {
     if (canvasBounds && mapCenterPos != null && zoom) {
       locations = locations;
     }
   });
   // Filter locations based on layer toggles
   // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
-  run(() => {
+  $effect(() => {
     // Touch all toggle variables to establish reactive dependencies
     const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected, searchResults];
     const searchResultIds = new Set(searchResults.map(sr => sr.Id));
@@ -1457,22 +1454,22 @@
       return showOtherAreas;
     }) : [];
   });
-  run(() => {
+  $effect(() => {
     if (filteredLocations) { if (browser) markDirty(); }
   });
-  run(() => {
+  $effect(() => {
     if ($mapLoadedStore === false) {
       initPromise();
     }
   });
-  run(() => {
+  $effect(() => {
     if (typeof window !== 'undefined') document.documentElement.style.setProperty('--cursorStatus', dragging ? 'grabbing' : 'default');
   });
-  run(() => {
+  $effect(() => {
     if (mapName) reloadImage(mapName);
   });
   // Pre-compute difficulty colors for MobArea locations
-  run(() => {
+  $effect(() => {
     if (locations) {
       for (const loc of locations) {
         if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
@@ -1481,7 +1478,7 @@
       }
     }
   });
-  run(() => {
+  $effect(() => {
     mapContextMenuObject = { contextMenu: mapContextMenuElement, payload: null }
   });
 </script>
@@ -1586,12 +1583,7 @@
   bind:text={tooltipText}
   bind:show={tooltipShow}
   bind:tooltipPos={tooltipPos}
-  on:hide={() => wasPositionCopied = false}
-  on:elementClick={(e) => {
-    if (e.detail.button === 0) {
-      navigate(`/maps/${planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${e.detail.payload.Id}`);
-    }
-  }} />
+/>
 <ContextMenu
   bind:this={mapContextMenuElement}
   menu={mapContextMenu} />

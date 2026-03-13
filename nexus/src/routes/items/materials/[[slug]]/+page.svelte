@@ -7,12 +7,10 @@
   Supports full wiki editing with wikiEditState integration.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -54,8 +52,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.availableItems === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.availableItems === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'availableItems', url: '/api/items' }
@@ -98,7 +96,7 @@
   };
 
   // Initialize edit state when entity/user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       if (data.isCreateMode) {
         const initialData = existingChange?.data || emptyMaterial;
@@ -110,7 +108,7 @@
   });
 
   // Handle pending changes from API
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -318,8 +316,8 @@
                   value={activeMaterial?.Properties?.Type || ''}
                   options={materialTypeOptions}
                   placeholder="e.g. Ore"
-                  on:select={(e) => updateField('Properties.Type', e.detail.value)}
-                  on:change={(e) => updateField('Properties.Type', e.detail.value)}
+                  onselect={(e) => updateField('Properties.Type', e.value)}
+                  onchange={(e) => updateField('Properties.Type', e.value)}
                 />
               {:else}
                 {activeMaterial?.Properties?.Type || 'N/A'}
@@ -391,7 +389,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeMaterial?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter a description for this material..."
               showWaypoints={true}
             />
@@ -411,7 +409,7 @@
             icon=""
             bind:expanded={panelStates.refining}
             subtitle="{activeMaterial?.RefiningRecipes?.length || 0} recipe{(activeMaterial?.RefiningRecipes?.length || 0) !== 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <RefiningRecipesEditor
               recipes={activeMaterial?.RefiningRecipes || []}
@@ -427,7 +425,7 @@
             itemId={activeMaterial?.Id}
             itemName={activeMaterial?.Name}
             bind:expanded={panelStates.marketPrices}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           />
         {/if}
 
@@ -437,7 +435,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>
@@ -449,7 +447,7 @@
             title="Usage"
             icon=""
             bind:expanded={panelStates.usage}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Usage item={activeMaterial} usage={additional.usage} />
           </DataSection>

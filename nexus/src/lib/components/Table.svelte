@@ -1,9 +1,7 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
-  import { createEventDispatcher } from 'svelte';
+  import { untrack } from 'svelte';
 
   import VirtualTableRow from '$lib/components/VirtualTableRow.svelte';
 
@@ -30,7 +28,9 @@
     style = '',
     start = $bindable(0),
     end = $bindable(0),
-    count = $bindable(0)
+    count = $bindable(0),
+    onrowClick,
+    onrowHover
   } = $props();
 
   const rowHeight = 19;
@@ -127,16 +127,12 @@
     return '';
   }
 
-  const dispatch = createEventDispatcher();
-
   function rowClick(row) {
-    // Dispatch the full row object: { index, data }
-    dispatch('rowClick', row);
+    onrowClick?.(row);
   }
 
   function rowHover(row) {
-    // Dispatch the full row object: { index, data }
-    dispatch('rowHover', row);
+    onrowHover?.(row);
   }
 
   function shouldShowTooltip(row, index) {
@@ -185,16 +181,16 @@
     if (!isSpannable(spans[colIndex])) return false;
     return row.values[colIndex] === prevRow.values[colIndex];
   }
-  run(() => {
+  $effect(() => {
     if (header.values
-      && (currentHeaders.length !== header?.values.length 
-      || !currentHeaders.every((x, i) => x === header.values[i])
-      || !header.values.every((x, i) => x === currentHeaders[i]))) {
+      && (untrack(() => currentHeaders).length !== header?.values.length
+      || !untrack(() => currentHeaders).every((x, i) => x === header.values[i])
+      || !header.values.every((x, i) => x === untrack(() => currentHeaders)[i]))) {
       resetHeaderFilters();
       currentHeaders = header.values;
     }
   });
-  run(() => {
+  $effect(() => {
     if (data != null && data.length > 0) {
       filteredData = data;
 
@@ -264,7 +260,7 @@
       count = filteredData.length;
     }
   });
-  run(() => {
+  $effect(() => {
     if (filteredData && options.virtual !== true) {
       // Map the starting index of every span column. A new span starts once the value of the current row is different from the previous row.
       spanMap = Array(getColumnCount(header, filteredData)).fill(null);
@@ -470,8 +466,8 @@
             itemHeight={rowHeight}
             viewport={viewport}
             contents={contents}
-            on:rowClick={(e) => rowClick(e.detail)}
-            on:rowHover={(e) => rowHover(e.detail)}
+            onrowClick={(row) => rowClick(row)}
+            onrowHover={(row) => rowHover(row)}
             bind:start
             bind:end
             

@@ -4,10 +4,8 @@
   Uses FancyTable for consistent styling.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
 
   /**
@@ -137,8 +135,8 @@
   }
 
   let selectedKey = $derived(selectedMaturityId != null ? `${selectedMaturityId}-${tableData.length}` : null);
-  run(() => {
-    if (selectedKey && selectedKey !== lastSelectedKey) {
+  $effect(() => {
+    if (selectedKey && selectedKey !== untrack(() => lastSelectedKey)) {
       lastSelectedKey = selectedKey;
       tick().then(scrollToSelectedRow);
     }

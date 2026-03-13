@@ -4,10 +4,8 @@
   Self-contained: fetches data on mount, manages its own chart and period selection.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler } from 'chart.js';
   import 'chartjs-adapter-date-fns';
 
@@ -214,8 +212,8 @@
   });
 
   // Reload globals when navigating to a different mob within the same page instance.
-  run(() => {
-    if (mounted && mobName && mobName !== lastLoadedMobName) {
+  $effect(() => {
+    if (mounted && mobName && mobName !== untrack(() => lastLoadedMobName)) {
       lastLoadedMobName = mobName;
       globalsData = null;
       topPage = 1;
@@ -225,8 +223,8 @@
     }
   });
 
-  run(() => {
-    if (mounted && !mobName && lastLoadedMobName) {
+  $effect(() => {
+    if (mounted && !mobName && untrack(() => lastLoadedMobName)) {
       lastLoadedMobName = '';
       globalsData = null;
       clearInterval(refreshTimer);
@@ -402,7 +400,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} onclose={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
 
 <style>
   .mob-globals {

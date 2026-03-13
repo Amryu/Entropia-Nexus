@@ -1,9 +1,5 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { LOCATION_TYPES, AREA_TYPES, getEffectiveType, getTypeColor, isArea } from './mapEditorUtils.js';
 
@@ -23,10 +19,11 @@
     selectedId = null,
     pendingChanges = new Map(),
     editMode = false,
-    mode = 'admin'
+    mode = 'admin',
+    onfilterChange,
+    onselect,
+    onmassDelete
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   // Filter state
   let typeFilters = $state({});
@@ -99,9 +96,9 @@
   })());
 
   // Emit filtered IDs to parent for map visibility
-  run(() => {
+  $effect(() => {
     const ids = new Set(filteredLocations.map(l => l.Id));
-    dispatch('filterChange', ids);
+    onfilterChange?.(ids);
   });
 
   function handleSelect(loc) {
@@ -113,7 +110,7 @@
       }
       selectedForDeletion = selectedForDeletion;
     } else {
-      dispatch('select', loc.Id);
+      onselect?.(loc.Id);
     }
   }
 
@@ -137,7 +134,7 @@
       selectedForDeletion = new Set();
       multiSelectMode = false;
     } else {
-      dispatch('massDelete', selectedForDeletion);
+      onmassDelete?.(selectedForDeletion);
       selectedForDeletion = new Set();
       multiSelectMode = false;
     }
@@ -388,7 +385,7 @@
           tabindex="0"
         >
           {#if multiSelectMode}
-            <input type="checkbox" checked={selectedForDeletion.has(loc.Id)} onclick={stopPropagation(bubble('click'))} />
+            <input type="checkbox" checked={selectedForDeletion.has(loc.Id)} onclick={(e) => e.stopPropagation()} />
           {/if}
           {#if changeType}
             <span class="change-dot {changeType}"></span>

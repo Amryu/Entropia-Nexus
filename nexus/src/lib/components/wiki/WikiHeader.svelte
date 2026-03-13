@@ -5,11 +5,8 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { editMode, startEdit, cancelEdit, hasChanges } from '$lib/stores/wikiEditState.js';
   import { encodeURIComponentSafe } from '$lib/util';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -30,6 +27,7 @@
    * @property {object|null} [user]
    * @property {boolean} [editable]
    * @property {boolean} [isMobile]
+   * @property {Function} [ontogglenav]
    */
 
   /** @type {Props} */
@@ -39,7 +37,8 @@
     entity = null,
     user = null,
     editable = false,
-    isMobile = false
+    isMobile = false,
+    ontogglenav
   } = $props();
 
   // Check if user can edit
@@ -62,7 +61,7 @@
 
 
   function toggleNav() {
-    dispatch('toggleNav');
+    ontogglenav?.();
   }
 </script>
 

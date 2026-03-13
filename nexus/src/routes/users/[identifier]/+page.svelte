@@ -1,8 +1,6 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
+  import { untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { slide } from 'svelte/transition';
   import { sanitizeHtml } from '$lib/sanitize';
@@ -665,7 +663,7 @@
   let society = $derived(profile?.society || null);
   let pendingSocietyRequest = $derived(profile?.pendingSocietyRequest || null);
   // Reset UI state when profile changes
-  run(() => {
+  $effect(() => {
     if (profile?.id && profile.id !== currentProfileId) {
       currentProfileId = profile.id;
       resetUIState();
@@ -685,19 +683,19 @@
     { id: 'Shops', label: 'Shops', available: hasShops },
     { id: 'Orders', label: 'Orders', available: hasOrders }
   ].filter(tab => tab.available));
-  run(() => {
-    if (!tabInitialized && availableTabs.length > 0) {
+  $effect(() => {
+    if (!untrack(() => tabInitialized) && availableTabs.length > 0) {
       const desired = profile.defaultTab || 'General';
       activeTab = availableTabs.find(tab => tab.id === desired)?.id || availableTabs[0].id;
       tabInitialized = true;
     }
   });
-  run(() => {
-    if (tabInitialized && !availableTabs.find(tab => tab.id === activeTab)) {
+  $effect(() => {
+    if (tabInitialized && !availableTabs.find(tab => tab.id === untrack(() => activeTab))) {
       activeTab = availableTabs[0]?.id || 'General';
     }
   });
-  run(() => {
+  $effect(() => {
     if (activeTab === 'Globals' && !globalsLoaded) {
       loadGlobalsData();
     }
@@ -734,20 +732,20 @@
   let globalsDiscoveries = $derived((globalsData?.achievements || []).filter(a => a.type === 'discovery').slice(0, 5));
   let buyOrders = $derived(sortOrdersByCategory(orders.filter(o => o.type === 'BUY')));
   let sellOrders = $derived(sortOrdersByCategory(orders.filter(o => o.type === 'SELL')));
-  run(() => {
+  $effect(() => {
     showcaseRecord = avatar?.showcaseLoadout || null;
   });
   let showcaseLoadoutRaw = $derived(showcaseRecord?.data || null);
-  run(() => {
+  $effect(() => {
     showcaseLoadout = resolveDefaultSets(showcaseLoadoutRaw);
   });
-  run(() => {
+  $effect(() => {
     showcaseShareCode = showcaseRecord?.share_code || showcaseRecord?.shareCode || null;
   });
-  run(() => {
+  $effect(() => {
     showcaseName = showcaseRecord?.name || showcaseLoadout?.Name || 'Showcase Loadout';
   });
-  run(() => {
+  $effect(() => {
     avatarSubTabs = [
       { id: 'Stats', label: 'Detailed Stats' },
       { id: 'Weapons', label: 'Weapons' },
@@ -756,14 +754,14 @@
       { id: 'Accessories', label: 'Rings, Clothing & Pet' }
     ];
   });
-  run(() => {
-    if (!avatarTabsInitialized && avatarSubTabs.length > 0) {
+  $effect(() => {
+    if (!untrack(() => avatarTabsInitialized) && avatarSubTabs.length > 0) {
       avatarDetailTab = 'Stats';
       avatarTabsInitialized = true;
     }
   });
-  run(() => {
-    if (avatarTabsInitialized && !avatarSubTabs.find(tab => tab.id === avatarDetailTab)) {
+  $effect(() => {
+    if (avatarTabsInitialized && !avatarSubTabs.find(tab => tab.id === untrack(() => avatarDetailTab))) {
       avatarDetailTab = avatarSubTabs[0]?.id || 'Stats';
     }
   });
@@ -771,21 +769,21 @@
   let displayImageUrl = $derived(imageFailed
     ? profile.discordAvatarUrl
     : (profile.profileImageUrl || profile.discordAvatarUrl));
-  run(() => {
+  $effect(() => {
     clothingEntries = (showcaseLoadout?.Gear?.Clothing || []).map(entry => (
       typeof entry === 'string' ? { Name: entry } : entry
     ));
   });
-  run(() => {
+  $effect(() => {
     leftRing = clothingEntries.length ? getClothingSlot('Ring', 'Left') : null;
   });
-  run(() => {
+  $effect(() => {
     rightRing = clothingEntries.length ? getClothingSlot('Ring', 'Right') : null;
   });
-  run(() => {
+  $effect(() => {
     selectedClothing = clothingEntries.filter(item => !isRingSlot(item?.Slot));
   });
-  run(() => {
+  $effect(() => {
     evaluation = showcaseLoadout
       ? evaluateLoadout(
           showcaseLoadout,
@@ -810,22 +808,22 @@
         )
       : null;
   });
-  run(() => {
+  $effect(() => {
     stats = evaluation?.stats || {};
   });
-  run(() => {
+  $effect(() => {
     effectsAll = evaluation?.effects?.all || [];
   });
   let defenseBreakdown = $derived({
     ...(stats.totalDefenseByType || {}),
     Block: stats.blockChance ?? 0
   });
-  run(() => {
+  $effect(() => {
     if (showcaseLoadout && browser && !referenceReady && !referenceLoading) {
       loadAvatarReferences();
     }
   });
-  run(() => {
+  $effect(() => {
     if (browser && showcaseRecord && !showcaseRecord?.data && showcaseShareCode && !isHydratingShowcase) {
       hydrateShowcaseLoadout(showcaseShareCode);
     }
@@ -1727,7 +1725,7 @@
 
 {#if showSocietyDialog}
   <div class="dialog-backdrop" onclick={() => showSocietyDialog = false} onkeydown={(e) => e.key === 'Escape' && (showSocietyDialog = false)}>
-    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="society-dialog-title">
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="society-dialog-title">
       <div class="dialog-header">
         <h3 id="society-dialog-title">{societyMode === 'join' ? 'Join a Society' : 'Create a Society'}</h3>
         <button class="close-btn" onclick={() => showSocietyDialog = false} aria-label="Close dialog">&#10005;</button>
@@ -1807,15 +1805,15 @@
   entityName={profile.euName || profile.discordName}
   showDelete={true}
   hasImage={!!profile.hasCustomImage}
-  on:close={() => (showImageDialog = false)}
-  on:uploaded={(event) => {
-    if (event.detail?.imageUrl) {
-      profile = { ...profile, profileImageUrl: event.detail.imageUrl, hasCustomImage: true };
+  onclose={() => (showImageDialog = false)}
+  onuploaded={(data) => {
+    if (data?.imageUrl) {
+      profile = { ...profile, profileImageUrl: data.imageUrl, hasCustomImage: true };
       imageFailed = false;
       saveStatus = 'Profile image updated.';
     }
   }}
-  on:deleted={() => {
+  ondeleted={() => {
     profile = { ...profile, profileImageUrl: null, hasCustomImage: false };
     imageFailed = false;
     saveStatus = 'Profile image removed.';

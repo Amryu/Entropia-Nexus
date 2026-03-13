@@ -1,6 +1,4 @@
 <script>
-  import { stopPropagation } from 'svelte/legacy';
-
   // @ts-nocheck
   /**
    * GzButton — Inline "GZ" (congrats) toggle button for globals.
@@ -71,7 +69,7 @@
   class:gz-compact={compact}
   class:gz-disabled={!user}
   title={user ? (userGz ? 'Remove GZ' : 'GZ! (Congrats)') : 'Log in to GZ'}
-  onclick={stopPropagation(toggle)}
+  onclick={(e) => { e.stopPropagation(); toggle(); }}
   disabled={!user || toggling}
 >
   <span class="gz-label">GZ</span>

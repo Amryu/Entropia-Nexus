@@ -1,8 +1,6 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, getShapeEdges, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
@@ -35,10 +33,13 @@
     dbPendingChanges = [],
     currentUserId = null,
     isAdmin = false,
-    lockedLocationMap = new Map()
+    lockedLocationMap = new Map(),
+    onselect,
+    onselectDbChange,
+    ondrawCreated,
+    onshapeEdited,
+    onclone
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let mapContainer = $state();
   let map = $state();
@@ -82,7 +83,7 @@
     {
       label: 'Clone Shape',
       action: (payload) => {
-        if (payload) dispatch('clone', payload);
+        if (payload) onclone?.(payload);
       }
     },
     {
@@ -249,7 +250,7 @@
       layer.addTo(map);
       drawnLayer = layer;
 
-      dispatch('drawCreated', entropiaData);
+      ondrawCreated?.(entropiaData);
     });
 
     // Deselect on empty click
@@ -258,7 +259,7 @@
         _clickedLayer = false;
         return;
       }
-      dispatch('select', null);
+      onselect?.(null);
     });
 
     // Hide context menu on map click
@@ -381,7 +382,7 @@
         layer._locId = loc.Id;
         layer.on('click', () => {
           _clickedLayer = true;
-          dispatch('select', loc.Id);
+          onselect?.(loc.Id);
         });
         // Right-click context menu
         layer.on('contextmenu', (e) => {
@@ -405,7 +406,7 @@
         layer._locId = tempId;
         layer.on('click', () => {
           _clickedLayer = true;
-          dispatch('select', tempId);
+          onselect?.(tempId);
         });
         layer.on('contextmenu', (e) => {
           if (!editMode) return;
@@ -643,7 +644,7 @@
           layer.bindTooltip(tooltip, { sticky: true });
           layer.on('click', () => {
             _clickedLayer = true;
-            dispatch('selectDbChange', change);
+            onselectDbChange?.(change);
           });
           dbChangesLayerGroup.addLayer(layer);
         }
@@ -657,7 +658,7 @@
         marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -8] });
         marker.on('click', () => {
           _clickedLayer = true;
-          dispatch('selectDbChange', change);
+          onselectDbChange?.(change);
         });
         dbChangesLayerGroup.addLayer(marker);
       }
@@ -1098,7 +1099,7 @@
                 const [lat, lng] = transforms.entropiaToLeaflet(entropiaData.center.x, entropiaData.center.y);
                 editableOverlay.setLatLng([lat, lng]);
               }
-              dispatch('shapeEdited', { locId, entropiaData });
+              onshapeEdited?.({ locId, entropiaData });
             }
           }, 80);
         });
@@ -1200,7 +1201,7 @@
 
           dragState = null;
           if (entropiaData) {
-            dispatch('shapeEdited', { locId, entropiaData });
+            onshapeEdited?.({ locId, entropiaData });
           }
           // Re-enable vertex editing so handles reattach to moved geometry.
           // L.Edit.Poly caches latlngs at init; update the stale reference
@@ -1230,7 +1231,7 @@
       editableOverlay.on('dragend', () => {
         const newPos = editableOverlay.getLatLng();
         const eCoords = transforms.leafletToEntropia(newPos.lat, newPos.lng);
-        dispatch('shapeEdited', { locId, entropiaData: { shape: null, data: null, center: eCoords } });
+        onshapeEdited?.({ locId, entropiaData: { shape: null, data: null, center: eCoords } });
         // Update the underlying circleMarker position
         if (layer.setLatLng) layer.setLatLng(newPos);
       });
@@ -1313,7 +1314,7 @@
         edit: false // We use our own enableEditing(), not leaflet-draw's edit toolbar
       });
       map.addControl(drawControl);
-      map.on('draw:drawstart', () => dispatch('select', null));
+      map.on('draw:drawstart', () => onselect?.(null));
     } else if (!editMode && drawControl) {
       cleanupEditing();
       map.off('draw:drawstart');
@@ -1469,7 +1470,7 @@
       }
     }
   }
-  run(() => {
+  $effect(() => {
     if (map && locations && pendingChanges !== undefined) {
       if (!_editingActive) {
         rebuildLayers();
@@ -1478,23 +1479,23 @@
       }
     }
   });
-  run(() => {
+  $effect(() => {
     if (map && dbPendingChanges && transforms) rebuildDbChangesOverlay();
   });
-  run(() => {
+  $effect(() => {
     if (map && filteredLocationIds !== undefined) updateVisibility();
   });
-  run(() => {
+  $effect(() => {
     if (map && selectedId !== undefined) updateSelection();
   });
-  run(() => {
+  $effect(() => {
     if (map && editMode !== undefined) toggleDrawControl();
   });
-  run(() => {
+  $effect(() => {
     if (map && L && transforms) updatePreview(previewShape);
   });
   // Refresh vertex snap data reactively when snap settings change during editing
-  run(() => {
+  $effect(() => {
     if (_editingActive && _editingLoc) {
       if (snapEnabled || snapToGrid) {
         _activeVertexSnapData = {

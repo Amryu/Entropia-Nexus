@@ -1,12 +1,9 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import '../construction.css';
 
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
 
@@ -1274,7 +1271,7 @@
     return effective;
   })());
   // Sync calculator config into plan data for persistence
-  run(() => {
+  $effect(() => {
     if (activePlan) {
       const config = {};
       if (Object.keys(nonFailChances).length > 0) config.nonFailChances = nonFailChances;
@@ -1302,10 +1299,10 @@
     ...(activePlan?.name ? [{ label: activePlan.name }] : [])
   ]);
   // Reset checked states when targets or ownership changes
-  run(() => {
+  $effect(() => {
     const targets = activePlan?.data?.targets || [];
     const currentKey = JSON.stringify(targets.map(t => `${t.blueprintId}:${t.quantity}`)) + JSON.stringify(globalOwnership);
-    if (currentKey !== previousTargetsKey && previousTargetsKey !== '') {
+    if (currentKey !== untrack(() => previousTargetsKey) && untrack(() => previousTargetsKey) !== '') {
       // Targets or ownership changed - reset checked states
       checkedSteps = new Set();
       collapsedSteps = new Set();
@@ -1471,7 +1468,7 @@
   // Check if any steps require residue
   let needsResidue = $derived(craftingSteps.some(s => s.owned && s.totalResidue > 0));
   // Debounced auto-save: trigger save after delay when isDirty changes
-  run(() => {
+  $effect(() => {
     if (browser && isDirty && activePlan) {
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
@@ -1700,9 +1697,9 @@
                   typeFilter="Blueprint"
                   limit={20}
                   clearOnSelect={true}
-                  on:select={(e) => {
+                  onselect={(e) => {
                     // Search returns Items.Id, but cache uses Blueprints.Id (offset by 6M)
-                    const itemId = e.detail.data?.Id;
+                    const itemId = e.data?.Id;
                     const blueprintId = itemId ? itemId - BLUEPRINT_ID_OFFSET : null;
                     handleAddTarget(blueprintCache.get(blueprintId));
                   }}
@@ -1976,7 +1973,7 @@
                 {@const isCollapsed = collapsedSteps.has(i)}
                 <li class="step-item" class:not-owned={!step.owned} class:checked={isChecked} class:collapsed={isCollapsed}>
                   <div class="step-header" onclick={() => toggleStepCollapsed(i)} role="button" tabindex="0" onkeypress={(e) => e.key === 'Enter' && toggleStepCollapsed(i)}>
-                    <label class="step-checkbox" onclick={stopPropagation(bubble('click'))}>
+                    <label class="step-checkbox" onclick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={isChecked} onchange={() => toggleStepChecked(i)} />
                     </label>
                     <span class="step-number">{i + 1}</span>
@@ -1984,7 +1981,7 @@
                       {#if step.isMaterialChild}
                         <span class="step-type-badge material">Material</span>
                       {/if}
-                      <a href={getBlueprintLink(step.blueprint)} class="step-blueprint" onclick={stopPropagation(bubble('click'))}>
+                      <a href={getBlueprintLink(step.blueprint)} class="step-blueprint" onclick={(e) => e.stopPropagation()}>
                         {step.blueprint.Name}
                       </a>
                       {#if step.isSiB}<span class="sib-badge">SiB</span>{/if}
@@ -2096,7 +2093,7 @@
                                           class="mat-bp-badge"
                                           class:active={bpPickerMaterial === mat.item?.Name}
                                           title="Using: {selectedBp?.Name} — Click to change"
-                                          onclick={stopPropagation((e) => openBpPicker(mat.item?.Name, e))}
+                                          onclick={(e) => { e.stopPropagation(); openBpPicker(mat.item?.Name, e); }}
                                         >
                                           {bpOptions.length} BPs
                                         </button>
@@ -2491,7 +2488,7 @@
       <button
         class="bp-picker-option"
         class:selected={bp.Id === selectedId}
-        onclick={stopPropagation(() => selectBpFromPicker(bpPickerMaterial, bp.Id))}
+        onclick={(e) => { e.stopPropagation(); selectBpFromPicker(bpPickerMaterial, bp.Id); }}
       >
         <span class="bp-picker-radio">{bp.Id === selectedId ? '●' : '○'}</span>
         <span class="bp-picker-name">{bp.Name}</span>
@@ -2503,7 +2500,7 @@
 <!-- Ownership Panel Modal -->
 {#if showConfigPanel}
   <div class="ownership-overlay" onclick={() => showConfigPanel = false} onkeydown={(e) => e.key === 'Escape' && (showConfigPanel = false)}>
-    <div class="ownership-panel config-panel" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
+    <div class="ownership-panel config-panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
       <div class="panel-header">
         <h2>Calculator Settings</h2>
         <button class="btn-close" onclick={() => showConfigPanel = false}>×</button>
@@ -2586,7 +2583,7 @@
 
 {#if showOwnershipPanel}
   <div class="ownership-overlay" onclick={() => showOwnershipPanel = false} onkeydown={(e) => e.key === 'Escape' && (showOwnershipPanel = false)}>
-    <div class="ownership-panel" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
+    <div class="ownership-panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
       <div class="panel-header">
         <h2>Blueprint Ownership</h2>
         <button class="btn-close" onclick={() => showOwnershipPanel = false}>×</button>
@@ -2623,7 +2620,7 @@
 
 {#if showDeleteDialog}
 <div class="dialog-backdrop" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
-  <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
     <div class="dialog-header">
       <h3 id="delete-dialog-title">Delete Plan</h3>
     </div>
@@ -2640,7 +2637,7 @@
 
 {#if showImportSourceDialog}
 <div class="dialog-backdrop" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
-  <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
     <div class="dialog-header">
       <h3 id="import-dialog-title">Import Plan</h3>
     </div>
@@ -2663,7 +2660,7 @@
 {#if showHotspotDialog}
 {@const breakdown = getHotspotBreakdown()}
 <div class="dialog-backdrop" onclick={() => showHotspotDialog = false} onkeydown={(e) => e.key === 'Escape' && (showHotspotDialog = false)}>
-  <div class="dialog hotspot-dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="hotspot-dialog-title">
+  <div class="dialog hotspot-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="hotspot-dialog-title">
     <div class="dialog-header">
       <h3 id="hotspot-dialog-title">Hotspot Model</h3>
     </div>
@@ -2774,7 +2771,7 @@
 
 {#if showConditionInfoDialog}
 <div class="dialog-backdrop" role="presentation" onclick={() => showConditionInfoDialog = false} onkeydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
-  <div class="dialog condition-info-dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
+  <div class="dialog condition-info-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
     <div class="dialog-header">
       <h3 id="condition-info-title">Condition</h3>
     </div>
@@ -2807,7 +2804,7 @@
   allItems={exchangeSlimItems}
   inventoryData={inventoryLoaded ? inventoryItems : null}
   {isLoggedIn}
-  on:close={() => { showMassBuy = false; massBuyItems = []; }}
-  on:complete={() => { showMassBuy = false; massBuyItems = []; }}
+  onclose={() => { showMassBuy = false; massBuyItems = []; }}
+  oncomplete={() => { showMassBuy = false; massBuyItems = []; }}
 />
 </div>

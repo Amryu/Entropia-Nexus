@@ -4,7 +4,6 @@
    * GlobalMediaUpload - Small inline component for uploading media to a global.
    * Shows a camera/upload icon that opens a dropdown for screenshot upload or YouTube link.
    */
-  import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
   
@@ -20,15 +19,13 @@
    */
 
   /** @type {Props} */
-  let { globalId, playerName = '', user = null } = $props();
+  let { globalId, playerName = '', user = null, onuploaded } = $props();
 
   /** Only show upload for the user's own globals (or admins) */
   let isOwner = $derived(user && playerName && user.eu_name
     && user.eu_name.toLowerCase() === playerName.toLowerCase());
   let isAdmin = $derived(user?.administrator || user?.grants?.includes('admin.panel'));
   let canUpload = $derived(isOwner || isAdmin);
-
-  const dispatch = createEventDispatcher();
   let showMenu = $state(false);
   let showVideoInput = $state(false);
   let videoUrl = $state('');
@@ -86,7 +83,7 @@
       const data = await res.json();
       if (res.ok) {
         addToast('Screenshot uploaded successfully.', { type: 'success' });
-        dispatch('uploaded', { type: 'image', globalId });
+        onuploaded?.({ type: 'image', globalId });
       } else {
         addToast(data.error || 'Upload failed.', { type: 'error' });
       }
@@ -115,7 +112,7 @@
       const data = await res.json();
       if (res.ok) {
         addToast('Video link added successfully.', { type: 'success' });
-        dispatch('uploaded', { type: 'video', globalId });
+        onuploaded?.({ type: 'video', globalId });
       } else {
         addToast(data.error || 'Failed to add video link.', { type: 'error' });
       }

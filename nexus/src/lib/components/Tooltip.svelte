@@ -1,10 +1,7 @@
 <script>
   //@ts-nocheck
 
-  import { onMount, createEventDispatcher } from "svelte";
-
-
-  export const dispatch = createEventDispatcher();
+  import { onMount } from "svelte";
 
   /**
    * @typedef {Object} Props

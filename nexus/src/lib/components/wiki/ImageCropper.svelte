@@ -4,11 +4,8 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { browser } from '$app/environment';
   import Cropper from 'svelte-easy-crop';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -23,6 +20,8 @@
    * @property {number} [aspect]
    * @property {number} [minZoom]
    * @property {number} [maxZoom]
+   * @property {() => void} [onconfirm]
+   * @property {() => void} [oncancel]
    */
 
   /** @type {Props} */
@@ -30,7 +29,9 @@
     image = '',
     aspect = 1,
     minZoom = 1,
-    maxZoom = 3
+    maxZoom = 3,
+    onconfirm,
+    oncancel
   } = $props();
 
   let crop = $state({ x: 0, y: 0 });
@@ -109,11 +110,11 @@
   }
 
   function handleConfirm() {
-    dispatch('confirm');
+    onconfirm?.();
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 </script>
 

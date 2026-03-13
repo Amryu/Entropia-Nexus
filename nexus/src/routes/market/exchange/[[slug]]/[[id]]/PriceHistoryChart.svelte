@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import { onMount, onDestroy } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend } from 'chart.js';
@@ -179,7 +177,7 @@
     });
   }
 
-  run(() => {
+  $effect(() => {
     if (canvasEl && data) {
       buildChart(data);
     }

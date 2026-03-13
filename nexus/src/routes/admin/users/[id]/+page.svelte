@@ -1,7 +1,4 @@
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -1099,7 +1096,7 @@
 <!-- Lock Dialog -->
 {#if showLockDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showLockDialog = false}>
-    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="dialog" onclick={(e) => e.stopPropagation()}>
       <h3>Lock User</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Locking a user prevents them from using verified-only features. They can still log in and view content.
@@ -1133,7 +1130,7 @@
 <!-- Ban Dialog -->
 {#if showBanDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showBanDialog = false}>
-    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="dialog" onclick={(e) => e.stopPropagation()}>
       <h3>Ban User</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Banning a user will immediately log them out, prevent future logins, and trigger a Discord server ban.

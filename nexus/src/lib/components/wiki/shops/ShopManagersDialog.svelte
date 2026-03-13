@@ -4,13 +4,8 @@
   Managers are added by their verified Entropia name.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -22,10 +17,12 @@
    * @property {string} [shopName] - Shop name/identifier for API calls
    * @property {boolean} [open] - Whether the dialog is open
    * @property {any} [managers] - Current managers list
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onsaved]
    */
 
   /** @type {Props} */
-  let { shopName = '', open = $bindable(false), managers = [] } = $props();
+  let { shopName = '', open = $bindable(false), managers = [], onclose, onsaved } = $props();
 
   // Local state
   let localManagers = $state([]);
@@ -36,7 +33,7 @@
   let success = $state(null);
 
   // Sync with prop
-  run(() => {
+  $effect(() => {
     if (open) {
       localManagers = [...(managers || []).map(m => ({ Name: m.Name || m.name || m }))];
       error = null;
@@ -47,7 +44,7 @@
 
   function close() {
     open = false;
-    dispatch('close');
+    onclose?.();
   }
 
   function addManager() {
@@ -101,7 +98,7 @@
         error = result.error || 'Failed to update managers';
       } else {
         success = 'Managers updated successfully';
-        dispatch('saved', { managers: localManagers });
+        onsaved?.({ managers: localManagers });
         setTimeout(() => {
           close();
         }, 1000);

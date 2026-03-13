@@ -5,9 +5,6 @@
   with maturity configuration dialog.
 -->
 <script>
-  import { stopPropagation, createBubbler } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { editMode, updateField, currentEntity } from '$lib/stores/wikiEditState.js';
   import { clickable } from '$lib/actions/clickable.js';
@@ -474,7 +471,7 @@
           <div class="spawn-actions">
             <button
               class="btn-icon danger"
-              onclick={stopPropagation(() => removeSpawn(spawnIndex))}
+              onclick={(e) => { e.stopPropagation(); removeSpawn(spawnIndex); }}
               title="Remove spawn"
               type="button"
             >×</button>
@@ -685,7 +682,7 @@
                     placeholder="Search to add another mob..."
                     clearOnSelect
                     filterFn={getMobSearchFilter(spawn)}
-                    on:select={(e) => addMobToSpawn(spawnIndex, e.detail.value)}
+                    onselect={(e) => addMobToSpawn(spawnIndex, e.value)}
                   />
                 </div>
               </div>
@@ -704,7 +701,7 @@
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog}
   <div class="dialog-overlay" role="presentation" onclick={closeMaturityDialog}>
-    <div class="maturity-dialog" role="dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="maturity-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>{maturityDialog.mobName}</h3>
         <button class="dialog-close" onclick={closeMaturityDialog} type="button">×</button>

@@ -1,11 +1,8 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
 
   import Table from './Table.svelte';
   import { encodeURIComponentSafe, navigate } from '$lib/util';
-  import { createEventDispatcher } from 'svelte';
 
   /**
    * @typedef {Object} Props
@@ -32,8 +29,6 @@
 
   let filteredElements = $state();
 
-
-  const dispatch = createEventDispatcher();
 
   function getTableViewInfo(currentCategorySelected) {
     return tableViewInfo;
@@ -77,11 +72,11 @@
     });
     return result.slice(0, 300);
   }
-  run(() => {
+  $effect(() => {
     elements = items;
     elements = elements.sort((a, b) => a.Name.localeCompare(b.Name));
   });
-  run(() => {
+  $effect(() => {
     const searchTerm = search?.toLowerCase();
     filteredElements = filterElements(elements, searchTerm);
   });

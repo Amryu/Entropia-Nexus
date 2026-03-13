@@ -6,9 +6,6 @@
 <script>
   // @ts-nocheck
   import { TIERABLE_TYPES, CONDITION_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
-  import { createEventDispatcher } from 'svelte';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -34,7 +31,8 @@
     itemGender = null,
     maxTT = null,
     minTT = null,
-    petEffects = []
+    petEffects = [],
+    onchange
   } = $props();
 
   let meta = $derived(item?.meta || {});
@@ -50,18 +48,18 @@
 
   function updateMeta(field, value) {
     const newMeta = { ...meta, [field]: value };
-    dispatch('change', newMeta);
+    onchange?.(newMeta);
   }
 
   function updatePetField(field, value) {
     const pet = { ...(meta.pet || {}), [field]: value };
-    dispatch('change', { ...meta, pet });
+    onchange?.({ ...meta, pet });
   }
 
   function updatePetSkill(skillName, value) {
     const skills = { ...(meta.pet?.skills || {}), [skillName]: value };
     const pet = { ...(meta.pet || {}), skills };
-    dispatch('change', { ...meta, pet });
+    onchange?.({ ...meta, pet });
   }
 </script>
 

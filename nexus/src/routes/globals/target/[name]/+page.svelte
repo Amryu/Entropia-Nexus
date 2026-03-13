@@ -4,8 +4,6 @@
   summary stats, activity chart, top players, and recent globals.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
@@ -36,8 +34,8 @@
     showMediaDialog = true;
   }
 
-  function onMediaUploaded(e) {
-    const { type, globalId } = e.detail;
+  function onMediaUploaded(data) {
+    const { type, globalId } = data;
     recent = recent.map(g => {
       if (g.id === globalId) {
         return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
@@ -46,8 +44,8 @@
     });
   }
 
-  function onMediaDeleted(e) {
-    const { globalId } = e.detail;
+  function onMediaDeleted(data) {
+    const { globalId } = data;
     if (recent) {
       recent = recent.map(g => {
         if (g.id === globalId) return { ...g, media_image: null, media_video: null };
@@ -75,10 +73,10 @@
   let dateTo = $state(null);
   let loading = $state(false);
 
-  function onDateRangeChange(e) {
-    period = e.detail.period;
-    dateFrom = e.detail.from;
-    dateTo = e.detail.to;
+  function onDateRangeChange(data) {
+    period = data.period;
+    dateFrom = data.from;
+    dateTo = data.to;
     refetchData();
   }
 
@@ -139,7 +137,7 @@
 
   // Apply initial SSR data — inlined so Svelte tracks write dependencies
   // (applyData is opaque to the compiler, breaking SSR reactive ordering)
-  run(() => {
+  $effect(() => {
     if (initialData) {
       summary = initialData.summary;
       topPlayers = initialData.top_players || [];
@@ -361,8 +359,7 @@
     if (topPlayersChart) topPlayersChart.destroy();
   });
 
-  function handleSearchSelect(e) {
-    const { name, type } = e.detail;
+  function handleSearchSelect({ name, type }) {
     if (type === 'Player' || type === 'Team') {
       goto(`/globals/player/${encodeURIComponent(name)}`);
     } else {
@@ -370,9 +367,9 @@
     }
   }
 
-  function handleSearch(e) {
-    const query = e.detail.query?.trim();
-    if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
+  function handleSearch({ query }) {
+    const q = query?.trim();
+    if (q) goto(`/globals/player/${encodeURIComponent(q)}`);
   }
 </script>
 
@@ -406,8 +403,8 @@
           placeholder="Search players, teams, mobs, resources..."
           endpoint="/api/globals/search"
           apiPrefix={false}
-          on:select={handleSearchSelect}
-          on:search={handleSearch}
+          onselect={handleSearchSelect}
+          onsearch={handleSearch}
         />
       </div>
     </div>
@@ -441,7 +438,7 @@
     {/if}
 
     <!-- Period Selector -->
-    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} disabled={loading} on:change={onDateRangeChange} />
+    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} disabled={loading} onchange={onDateRangeChange} />
 
     <!-- Summary Cards -->
     <div class="stats-row">
@@ -540,7 +537,7 @@
                           {/if}
                         </button>
                       {:else if user}
-                        <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} on:uploaded={onMediaUploaded} />
+                        <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} onuploaded={onMediaUploaded} />
                       {/if}
                     </td>
                     <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
@@ -610,7 +607,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} on:deleted={onMediaDeleted} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} onclose={() => { showMediaDialog = false; mediaDialogGlobal = null; }} ondeleted={onMediaDeleted} />
 
 <style>
   .target-page {

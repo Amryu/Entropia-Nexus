@@ -1,7 +1,4 @@
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
@@ -385,7 +382,7 @@
 
 {#if showPendingDialog}
   <div class="dialog-backdrop" onclick={() => (showPendingDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showPendingDialog = false)}>
-    <div class="dialog dialog-wide" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="pending-invites-title">
+    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="pending-invites-title">
       <div class="dialog-header">
         <h3 id="pending-invites-title">Pending Society Invites</h3>
         <button class="close-btn" onclick={() => (showPendingDialog = false)} aria-label="Close dialog">&#10005;</button>
@@ -406,7 +403,7 @@
               sortable={false}
               searchable={false}
               emptyMessage="No pending requests"
-              on:click={handlePendingTableClick}
+              onrowClick={handlePendingTableClick}
             />
           {/key}
         </div>
@@ -420,7 +417,7 @@
 
 {#if showDisbandDialog}
   <div class="dialog-backdrop" onclick={closeDisbandDialog} onkeydown={(e) => e.key === 'Escape' && closeDisbandDialog()}>
-    <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="disband-title">
+    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="disband-title">
       <div class="dialog-header">
         <h3 id="disband-title">Disband Society</h3>
         <button class="close-btn" onclick={closeDisbandDialog} aria-label="Close dialog">&#10005;</button>

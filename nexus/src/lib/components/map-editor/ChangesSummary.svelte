@@ -1,6 +1,5 @@
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { apiPost, apiPut, apiDelete } from '$lib/util.js';
   import { addToast } from '$lib/stores/toasts.js';
   import { getEffectiveType } from './mapEditorUtils.js';
@@ -19,10 +18,13 @@
     pendingChanges = $bindable(new Map()),
     planet = null,
     isAdmin = false,
-    dbChangeIdMap = new Map()
+    dbChangeIdMap = new Map(),
+    onchangeCreated,
+    onsubmitted,
+    onclear,
+    onremoved,
+    ondbChangeDeleted
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let submitting = $state(false);
   let directApplying = $state(false);
@@ -161,7 +163,7 @@
       if (result?.id) {
         // After first POST, store the DB change ID so re-submissions use PUT
         if (!existingChangeId) {
-          dispatch('changeCreated', { key, changeId: result.id });
+          onchangeCreated?.({ key, changeId: result.id });
         }
         changeStatuses[key] = 'success';
         changeStatuses = changeStatuses;
@@ -196,7 +198,7 @@
 
     if (successCount > 0) {
       addToast(`Submitted ${successCount} change(s) for review`, { type: 'success' });
-      dispatch('submitted');
+      onsubmitted?.();
     }
   }
 
@@ -241,7 +243,7 @@
 
         if (result?.id) {
           if (!existingChangeId) {
-            dispatch('changeCreated', { key, changeId: result.id });
+            onchangeCreated?.({ key, changeId: result.id });
           }
           changeStatuses[key] = 'success';
           successCount++;
@@ -260,12 +262,12 @@
 
     if (successCount > 0) {
       addToast(`Directly applied ${successCount} change(s)`, { type: 'success' });
-      dispatch('submitted');
+      onsubmitted?.();
     }
   }
 
   function clearAll() {
-    dispatch('clear');
+    onclear?.();
     changeStatuses = {};
   }
 
@@ -287,8 +289,8 @@
         delete changeStatuses[key];
         changeStatuses = changeStatuses;
         addToast('Change deleted', { type: 'success' });
-        dispatch('dbChangeDeleted', { key, dbId });
-        dispatch('submitted');
+        ondbChangeDeleted?.({ key, dbId });
+        onsubmitted?.();
       } else {
         changeStatuses[key] = 'error';
         changeStatuses = changeStatuses;
@@ -539,7 +541,7 @@
           {#if hasDbChange}
             <button class="row-delete-btn" title="Delete submitted change" onclick={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
           {:else}
-            <button class="row-remove-btn" title="Revert" onclick={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; dispatch('removed', change.key); }}>×</button>
+            <button class="row-remove-btn" title="Revert" onclick={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; onremoved?.(change.key); }}>×</button>
           {/if}
         </div>
       {/each}

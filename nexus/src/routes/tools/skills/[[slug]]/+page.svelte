@@ -4,13 +4,10 @@
   Uses WikiPage for consistent layout with mobile drawer support.
 -->
 <script>
-  import { run, stopPropagation, self, createBubbler } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import '../../tools.css';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { page } from '$app/stores';
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import {
@@ -465,7 +462,7 @@
   let totalHP = $derived(calculateHP(skillValues, skillsMetadata));
   let nonZeroSkillCount = $derived(Object.values(skillValues).filter(v => v > 0).length);
   // Debounced PED value fetch from server
-  run(() => {
+  $effect(() => {
     if (skillValues) debouncedFetchPEDValues();
   });
   let totalSkillPoints = $derived(Object.values(skillValues).reduce((s, v) => s + (v > 0 ? v : 0), 0));
@@ -555,10 +552,10 @@
     return [];
   })());
   // Default all skills to 'chip' when optimizer skills change
-  run(() => {
+  $effect(() => {
     const newOverrides = {};
     for (const s of optimizerSkills) {
-      const existing = methodOverrides[s.Name];
+      const existing = untrack(() => methodOverrides)[s.Name];
       const meta = skillLookup.get(s.Name);
       if (existing) {
         // Keep existing override, but force non-extractable skills away from 'chip'
@@ -571,7 +568,7 @@
     methodOverrides = newOverrides;
   });
   // Markups for optimizer and method table display
-  run(() => {
+  $effect(() => {
     void markupSource; void customMarkups; void wapByName; void nameToId; void inventoryMarkupMap; void ingameByName;
     if ((targetType === 'profession' && targetProfession) || targetType === 'hp') {
       const skillNames = targetType === 'profession'
@@ -586,7 +583,7 @@
     }
   });
   // Optimizer reactive
-  run(() => {
+  $effect(() => {
     if (targetType === 'profession' && targetProfession && targetLevel > 0) {
       const prof = professionLookup.get(targetProfession);
       if (prof) {
@@ -716,7 +713,7 @@
               >
                 <span class="item-name">{skill.Name}</span>
                 {#if skill.IsHidden}
-                  <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} onclick={stopPropagation(() => toggleSkillUnlock(skill.Name))} use:clickable={{ tabindex: -1 }}>
+                  <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} onclick={(e) => { e.stopPropagation(); toggleSkillUnlock(skill.Name); }} use:clickable={{ tabindex: -1 }}>
                     {#if val > 0}
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                     {:else}
@@ -1239,7 +1236,7 @@
 
 <!-- Import Dialog -->
 {#if showImportDialog}
-  <div class="dialog-overlay" onclick={self(() => showImportDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)} role="presentation">
+  <div class="dialog-overlay" onclick={(e) => { if (e.target === e.currentTarget) showImportDialog = false; }} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)} role="presentation">
     <div class="dialog">
       <div class="dialog-header">
         <h2>Import Skills</h2>
@@ -1342,7 +1339,7 @@
 
 <!-- Import History Panel -->
 {#if showHistoryPanel}
-  <div class="dialog-overlay" onclick={self(() => showHistoryPanel = false)} onkeydown={(e) => e.key === 'Escape' && (showHistoryPanel = false)} role="presentation">
+  <div class="dialog-overlay" onclick={(e) => { if (e.target === e.currentTarget) showHistoryPanel = false; }} onkeydown={(e) => e.key === 'Escape' && (showHistoryPanel = false)} role="presentation">
     <div class="dialog dialog-wide">
       <div class="dialog-header">
         <h2>Import History</h2>
@@ -1370,7 +1367,7 @@
                   <span class="history-expand">{expandedImportId === imp.id ? '▼' : '▶'}</span>
                 </div>
                 {#if expandedImportId === imp.id && expandedDeltas.length > 0}
-                  <div class="history-deltas" onclick={stopPropagation(bubble('click'))} onkeydown={stopPropagation(bubble('keydown'))} role="presentation">
+                  <div class="history-deltas" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
                     {#each expandedDeltas as d}
                       {@const change = Number(d.new_value) - Number(d.old_value)}
                       <div class="delta-row">

@@ -5,13 +5,11 @@
   Article: Description → Maturities → Locations → Loots → Codex
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
@@ -59,8 +57,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.speciesList === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.speciesList === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'speciesList', url: '/api/mobspecies' },
@@ -99,13 +97,13 @@
   let showEditSpeciesDialog = $state(false);
   let localSpeciesList = $state([]);
   let localSpeciesSeed = $state('');
-  run(() => {
+  $effect(() => {
     const seed = JSON.stringify((speciesList || []).map(s => [
       s?.Name || '',
       s?.Properties?.CodexBaseCost ?? null,
       s?.Properties?.CodexType ?? null
     ]));
-    if (seed !== localSpeciesSeed) {
+    if (seed !== untrack(() => localSpeciesSeed)) {
       localSpeciesSeed = seed;
       localSpeciesList = [...(speciesList || [])];
     }
@@ -156,9 +154,9 @@
 
   // Track initialization to avoid resetting edits on query-only navigation.
   let lastInitKey = $state(null);
-  run(() => {
+  $effect(() => {
     const initKey = `Mob-${mob?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
-    if (user && initKey !== lastInitKey) {
+    if (user && initKey !== untrack(() => lastInitKey)) {
       lastInitKey = initKey;
       const existingChange = data.existingChange || null;
       const initialEntity = isCreateMode
@@ -170,7 +168,7 @@
   });
 
   // Set pending change in store when it changes
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -231,8 +229,8 @@
   /**
    * When mob-level AttacksPerMinute is changed, cascade to all maturities.
    */
-  function handleMobApmChange(event) {
-    const newApm = event.detail.value;
+  function handleMobApmChange(data) {
+    const newApm = data.value;
     const maturities = $currentEntity?.Maturities;
     if (!maturities || maturities.length === 0) return;
 
@@ -907,8 +905,8 @@
   let maturityScrollKey = $derived(selectedMaturityIdForActiveMob != null && activeMob?.Id != null && !$editMode
     ? `${activeMob.Id}-${selectedMaturityIdForActiveMob}`
     : null);
-  run(() => {
-    if (maturityScrollKey && maturityScrollKey !== lastMaturityScrollKey) {
+  $effect(() => {
+    if (maturityScrollKey && maturityScrollKey !== untrack(() => lastMaturityScrollKey)) {
       lastMaturityScrollKey = maturityScrollKey;
       panelStates = { ...panelStates, maturities: true };
       savePanelStates();
@@ -919,8 +917,8 @@
   });
 
   // ========== EDIT HANDLERS ==========
-  function handleDescriptionChange(event) {
-    updateField('Properties.Description', event.detail);
+  function handleDescriptionChange(data) {
+    updateField('Properties.Description', data);
   }
 
   function buildSpeciesProps(raw) {
@@ -980,15 +978,15 @@
     updateField('Species', { Name: name });
   }
 
-  function handleCreateSpecies(event) {
-    const { Name, _newSpecies } = event.detail;
+  function handleCreateSpecies(data) {
+    const { Name, _newSpecies } = data;
     upsertLocalSpecies(Name, _newSpecies);
     updateField('Species', buildSpeciesPayload(Name, _newSpecies));
     showCreateSpeciesDialog = false;
   }
 
-  function handleEditSpecies(event) {
-    const { Name, _newSpecies } = event.detail;
+  function handleEditSpecies(data) {
+    const { Name, _newSpecies } = data;
     upsertLocalSpecies(Name, _newSpecies);
     updateField('Species', buildSpeciesPayload(Name, _newSpecies, activeMob?.Species));
     showEditSpeciesDialog = false;
@@ -1144,8 +1142,8 @@
                       value={activeMob?.Species?.Name || ''}
                       placeholder="Search species..."
                       options={speciesOptions}
-                      on:change={(e) => handleSpeciesNameInput(e.detail.value)}
-                      on:select={(e) => handleSpeciesNameInput(e.detail.value)}
+                      onchange={(e) => handleSpeciesNameInput(e.value)}
+                      onselect={(e) => handleSpeciesNameInput(e.value)}
                     />
                     {#if activeMob?.Species?.Name}
                       <button class="btn-create-inline" onclick={() => showEditSpeciesDialog = true} title="Edit species details">
@@ -1200,7 +1198,7 @@
                   type="number"
                   step={0.1}
                   min={0}
-                  on:change={handleMobApmChange}
+                  onchange={handleMobApmChange}
                 />
               </span>
             </div>
@@ -1378,7 +1376,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeMob?.Properties?.Description || ''}
-              on:change={handleDescriptionChange}
+              onchange={handleDescriptionChange}
               placeholder="Enter a description for this mob..."
               showWaypoints={true}
             />
@@ -1398,7 +1396,7 @@
             icon=""
             bind:expanded={panelStates.maturities}
             subtitle="{activeMob?.Maturities?.length || 0} maturities"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#if $editMode}
               <MobMaturitiesEdit
@@ -1424,7 +1422,7 @@
             icon=""
             bind:expanded={panelStates.locations}
             subtitle="{activeMob?.Spawns?.length || 0} spawn{(activeMob?.Spawns?.length || 0) !== 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#if $editMode}
               <MobSpawnsEdit
@@ -1447,7 +1445,7 @@
             icon=""
             bind:expanded={panelStates.loots}
             subtitle="{activeMob?.Loots?.length || 0} item{(activeMob?.Loots?.length || 0) !== 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#if $editMode}
               <MobLootsEdit
@@ -1468,7 +1466,7 @@
             title="Codex Calculator"
             icon=""
             bind:expanded={panelStates.codex}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <MobCodex
               baseCost={speciesCodexBaseCost}
@@ -1486,7 +1484,7 @@
             icon=""
             bind:expanded={panelStates.globals}
             subtitle="Global loot events"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <MobGlobals mobName={activeMob.Name} />
           </DataSection>
@@ -1503,16 +1501,16 @@
 
 {#if showCreateSpeciesDialog}
   <CreateSpeciesDialog
-    on:create={handleCreateSpecies}
-    on:cancel={() => showCreateSpeciesDialog = false}
+    oncreate={handleCreateSpecies}
+    oncancel={() => showCreateSpeciesDialog = false}
   />
 {/if}
 
 {#if showEditSpeciesDialog}
   <CreateSpeciesDialog
     species={activeMob?.Species}
-    on:create={handleEditSpecies}
-    on:cancel={() => showEditSpeciesDialog = false}
+    oncreate={handleEditSpecies}
+    oncancel={() => showEditSpeciesDialog = false}
   />
 {/if}
 

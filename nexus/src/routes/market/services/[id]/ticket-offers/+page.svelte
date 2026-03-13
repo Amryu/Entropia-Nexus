@@ -22,8 +22,8 @@
     error = '';
   }
 
-  function handleEdit(event) {
-    editingOffer = event.detail;
+  function handleEdit(data) {
+    editingOffer = data;
     showEditor = true;
     error = '';
   }
@@ -34,8 +34,7 @@
     error = '';
   }
 
-  async function handleSave(event) {
-    const offerData = event.detail;
+  async function handleSave(offerData) {
     saving = true;
     error = '';
 
@@ -66,8 +65,8 @@
     }
   }
 
-  async function handleDelete(event) {
-    const { id } = event.detail;
+  async function handleDelete(data) {
+    const { id } = data;
     saving = true;
     error = '';
 
@@ -114,9 +113,9 @@
         offer={editingOffer}
         {saving}
         serviceMode={service.transportation_details?.service_mode || 'on_demand'}
-        on:save={handleSave}
-        on:cancel={handleCancel}
-        on:delete={handleDelete}
+        onsave={handleSave}
+        oncancel={handleCancel}
+        ondelete={handleDelete}
       />
     {:else}
       <div class="actions-bar">
@@ -133,7 +132,7 @@
       {:else}
         <div class="offers-grid">
           {#each ticketOffers as offer (offer.id)}
-            <TicketOfferCard {offer} isOwner={true} on:edit={handleEdit} />
+            <TicketOfferCard {offer} isOwner={true} onedit={handleEdit} />
           {/each}
         </div>
       {/if}

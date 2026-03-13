@@ -4,27 +4,21 @@
   Suggests using the Exchange instead.
 -->
 <script>
-  import { createEventDispatcher } from 'svelte';
-
-  const dispatch = createEventDispatcher();
-
-  
-
-  
   /**
    * @typedef {Object} Props
    * @property {boolean} [visible]
    * @property {number|null} [itemId]
+   * @property {() => void} [ondismiss]
    */
 
   /** @type {Props} */
-  let { visible = false, itemId = null } = $props();
+  let { visible = false, itemId = null, ondismiss } = $props();
 
   let dismissed = $state(false);
 
   function handleDismiss() {
     dismissed = true;
-    dispatch('dismiss');
+    ondismiss?.();
   }
 </script>
 

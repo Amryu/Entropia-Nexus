@@ -4,8 +4,6 @@
   Item sets are created inline (1:1 with rental) — no dropdown selection.
 -->
 <script>
-  import { preventDefault } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
@@ -216,10 +214,10 @@
   let discounts = $state([]);
   let deposit = $state(0);
 
-  function handlePricingChange(e) {
-    pricePerDay = e.detail.pricePerDay;
-    discounts = e.detail.discounts;
-    deposit = e.detail.deposit;
+  function handlePricingChange(data) {
+    pricePerDay = data.pricePerDay;
+    discounts = data.discounts;
+    deposit = data.deposit;
   }
 
   async function handleSubmit() {
@@ -288,7 +286,7 @@
 
     <h1>Create Rental Offer</h1>
 
-    <form onsubmit={preventDefault(handleSubmit)} class="create-form">
+    <form onsubmit={(e) => { e.preventDefault(); handleSubmit(e); }} class="create-form">
       {#if error}
         <div class="error-banner">{error}</div>
       {/if}
@@ -318,7 +316,7 @@
               showCodeBlock={false}
               showVideo={false}
               showImages={false}
-              on:change={(e) => description = e.detail}
+              onchange={(data) => description = data}
             />
           {/await}
         </div>
@@ -404,7 +402,7 @@
           {pricePerDay}
           {discounts}
           {deposit}
-          on:change={handlePricingChange}
+          onchange={handlePricingChange}
         />
       </div>
 
@@ -452,7 +450,7 @@
   bind:show={showItemSetDialog}
   hideName={true}
   allowedItemTypes={RENTAL_ALLOWED_ITEM_TYPES}
-  on:save={handleItemSetCreated}
+  onsave={handleItemSetCreated}
 />
 
 <style>

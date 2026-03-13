@@ -3,9 +3,8 @@
   Edit an existing rental offer. Includes status controls, blocked dates, and requests.
 -->
 <script>
-  import { run, preventDefault } from 'svelte/legacy';
-
   // @ts-nocheck
+  import { untrack } from 'svelte';
   import '$lib/style.css';
   import { goto, invalidateAll } from '$app/navigation';
   import { apiPut } from '$lib/util';
@@ -38,8 +37,8 @@
   let deposit = $state(0);
   let initialized = $state(false);
 
-  run(() => {
-    if (offer && !initialized) {
+  $effect(() => {
+    if (offer && !untrack(() => initialized)) {
       title = offer.title || '';
       description = offer.description || '';
       planetId = offer.planet_id ? String(offer.planet_id) : '';
@@ -57,10 +56,10 @@
   let activeRequests = $derived(requests.filter(r => ['open', 'accepted', 'in_progress'].includes(r.status)));
   let canEditFields = $derived(offer?.status === 'draft');
 
-  function handlePricingChange(e) {
-    pricePerDay = e.detail.pricePerDay;
-    discounts = e.detail.discounts;
-    deposit = e.detail.deposit;
+  function handlePricingChange(data) {
+    pricePerDay = data.pricePerDay;
+    discounts = data.discounts;
+    deposit = data.deposit;
   }
 
   async function handleSave() {
@@ -197,7 +196,7 @@
         {/if}
       </div>
 
-      <form onsubmit={preventDefault(handleSave)} class="edit-form">
+      <form onsubmit={(e) => { e.preventDefault(); handleSave(e); }} class="edit-form">
         <!-- Item Set (read-only since linked) -->
         {#if offer.item_set}
           <div class="form-section">
@@ -227,7 +226,7 @@
                 showVideo={false}
                 showImages={false}
                 disabled={!canEditFields}
-                on:change={(e) => description = e.detail}
+                onchange={(data) => description = data}
               />
             {/await}
           </div>
@@ -261,7 +260,7 @@
               {pricePerDay}
               {discounts}
               {deposit}
-              on:change={handlePricingChange}
+              onchange={handlePricingChange}
             />
           {:else}
             <div class="read-only-pricing">

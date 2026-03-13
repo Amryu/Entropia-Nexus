@@ -4,14 +4,9 @@
   Respects buyout-only 365 day max vs 30 day normal max.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
-  import { createEventDispatcher } from 'svelte';
   import { getMaxDuration } from '$lib/common/auctionUtils.js';
 
-  const dispatch = createEventDispatcher();
 
-  
 
   
 
@@ -21,10 +16,11 @@
    * @property {number} [value]
    * @property {number|null} [buyoutPrice]
    * @property {number} [startingBid]
+   * @property {(value: number) => void} [onchange]
    */
 
   /** @type {Props} */
-  let { value = $bindable(7), buyoutPrice = null, startingBid = 0 } = $props();
+  let { value = $bindable(7), buyoutPrice = null, startingBid = 0, onchange } = $props();
 
   let maxDuration = $derived(getMaxDuration({ starting_bid: startingBid, buyout_price: buyoutPrice }));
   let presets = $derived(maxDuration > 30
@@ -32,23 +28,23 @@
     : [1, 3, 7, 14, 30]);
 
   // Clamp value if max changes
-  run(() => {
+  $effect(() => {
     if (value > maxDuration) {
       value = maxDuration;
-      dispatch('change', value);
+      onchange?.(value);
     }
   });
 
   function handlePreset(days) {
     value = days;
-    dispatch('change', value);
+    onchange?.(value);
   }
 
   function handleInput(e) {
     const v = parseInt(e.target.value, 10);
     if (Number.isFinite(v) && v >= 1 && v <= maxDuration) {
       value = v;
-      dispatch('change', value);
+      onchange?.(value);
     }
   }
 </script>

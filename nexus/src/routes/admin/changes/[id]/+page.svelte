@@ -1,9 +1,6 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { getTypeLink, encodeURIComponentSafe } from '$lib/util.js';
@@ -387,8 +384,8 @@
     return versions;
   })());
   // Auto-select the newest non-current version for diff when flag is set
-  run(() => {
-    if (shouldAutoSelectDiff && combinedVersions.length > 0) {
+  $effect(() => {
+    if (untrack(() => shouldAutoSelectDiff) && combinedVersions.length > 0) {
       // Find the first version that isn't the current change (can't compare against itself)
       const firstComparable = combinedVersions.find(v => !v.isCurrent);
       if (firstComparable) {
@@ -974,7 +971,7 @@
                           href="/admin/changes/{version.changeId}"
                           class="view-change-link"
                           title="View this change"
-                          onclick={stopPropagation(bubble('click'))}
+                          onclick={(e) => e.stopPropagation()}
                         >→</a>
                       {/if}
                     </div>
@@ -1118,5 +1115,5 @@
   newData={currentData}
   oldLabel={selectedVersionType === 'original' ? 'Original Version' : selectedVersionType?.startsWith('related-') ? 'Previous Approved Change' : 'Previous Edit'}
   newLabel="Current Change"
-  on:close={() => showCompareDialog = false}
+  onclose={() => showCompareDialog = false}
 />

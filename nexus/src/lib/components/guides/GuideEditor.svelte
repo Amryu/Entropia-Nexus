@@ -59,8 +59,8 @@
     clearMessages();
   }
 
-  function handleEditorChange(e) {
-    editContent = e.detail;
+  function handleEditorChange(data) {
+    editContent = data;
   }
 
   async function saveParagraph(paragraphId) {
@@ -204,7 +204,7 @@
 
       {#if editingId === paragraph.id && RichTextEditor}
         <div class="editor-wrapper">
-          <RichTextEditor content={editContent} on:change={handleEditorChange} placeholder="Write paragraph content..." showWaypoints={true} />
+          <RichTextEditor content={editContent} onchange={handleEditorChange} placeholder="Write paragraph content..." showWaypoints={true} />
           <div class="editor-actions">
             <button class="btn-cancel" onclick={cancelEdit} disabled={saving}>Cancel</button>
             <button class="btn-save" onclick={() => saveParagraph(paragraph.id)} disabled={saving}>

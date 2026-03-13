@@ -4,10 +4,7 @@
   Dispatches `change` with { period, from, to } when the selection changes.
 -->
 <script>
-  import { createEventDispatcher } from 'svelte';
   import { PERIOD_OPTIONS } from '$lib/data/globals-constants.js';
-
-  const dispatch = createEventDispatcher();
 
   
   
@@ -26,7 +23,8 @@
     period = $bindable('7d'),
     from = $bindable(null),
     to = $bindable(null),
-    disabled = false
+    disabled = false,
+    onchange
   } = $props();
 
   let showCustom = $state(!!(from && to));
@@ -36,7 +34,7 @@
     from = null;
     to = null;
     period = value;
-    dispatch('change', { period, from: null, to: null });
+    onchange?.({ period, from: null, to: null });
   }
 
   function openCustom() {
@@ -46,7 +44,7 @@
   function onCustomChange() {
     if (from && to) {
       period = 'custom';
-      dispatch('change', { period: 'custom', from, to });
+      onchange?.({ period: 'custom', from, to });
     }
   }
 </script>

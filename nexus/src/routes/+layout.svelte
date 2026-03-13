@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import '$lib/style.css';
 
@@ -20,14 +18,14 @@
   $page;
 
   // Set initial viewport width from server-side detection
-  run(() => {
+  $effect(() => {
     if (data.initialViewportWidth) {
       initialViewportWidth.set(data.initialViewportWidth);
     }
   });
 
   // Whenever the page store updates, decode the parameters
-  run(() => {
+  $effect(() => {
     pageParams.set(
       Object.fromEntries(
         Object.entries($page.params).map(([key, value]) => [

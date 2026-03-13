@@ -7,18 +7,18 @@
   import { MAX_SELL_ORDERS, MAX_ORDERS_PER_ITEM } from '../../exchangeConstants.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
 
   /**
    * @typedef {Object} Props
    * @property {any} [user]
    * @property {any} [allItems]
+   * @property {(data: any) => void} [onsell]
+   * @property {(data: any) => void} [onmassSell]
    */
 
   /** @type {Props} */
-  let { user = null, allItems = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { user = null, allItems = [], onsell, onmassSell } = $props();
 
   let loading = $state(false);
   let error = $state(null);
@@ -104,7 +104,7 @@
   }
 
   function openMassSellDialog() {
-    dispatch('massSell', { items: Array.from(massSellList.values()) });
+    onmassSell?.({ items: Array.from(massSellList.values()) });
   }
 
   // Build order count lookup: item_id → { buy, sell } (exclude closed orders)
@@ -293,7 +293,7 @@
       o => o.type === 'SELL' && o.item_id === invItem.item_id && o.state !== 'closed'
     );
 
-    dispatch('sell', {
+    onsell?.({
       invItem,
       existingOrder: existingOrder || null,
     });
@@ -373,7 +373,7 @@
   show={showConfigDialog}
   item={configItem}
   {allItems}
-  on:close={() => { showConfigDialog = false; }}
+  onclose={() => { showConfigDialog = false; }}
 />
 
 <style>

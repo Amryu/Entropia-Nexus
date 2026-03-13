@@ -6,8 +6,6 @@
   Supports full wiki editing.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -95,7 +93,7 @@
   };
 
   // Initialize edit state when user/vendor changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const existingChange = data.existingChange || null;
       const initialEntity = isCreateMode
@@ -107,7 +105,7 @@
   });
 
   // Set pending change in store when it changes
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -297,8 +295,8 @@
     if (detail.z !== undefined) updateField('Properties.Coordinates.Altitude', detail.z);
   }
 
-  function handleDescriptionChange(event) {
-    updateField('Properties.Description', event.detail);
+  function handleDescriptionChange(data) {
+    updateField('Properties.Description', data);
   }
 </script>
 
@@ -426,7 +424,7 @@
               nameLocked={true}
               hidePlanet={true}
               hideName={true}
-              on:change={(e) => handleWaypointChange(e.detail)}
+              onchange={handleWaypointChange}
             />
           {:else if hasLocation}
             <div class="coordinates-display">
@@ -482,7 +480,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeVendor?.Properties?.Description || ''}
-              on:change={handleDescriptionChange}
+              onchange={handleDescriptionChange}
               placeholder="Enter a description for this vendor..."
               showWaypoints={true}
             />
@@ -504,7 +502,7 @@
           icon=""
           bind:expanded={panelStates.offers}
           subtitle="{offerCount} item{offerCount !== 1 ? 's' : ''}"
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         >
           {#if $editMode}
             <VendorOffersEdit offers={activeVendor?.Offers || []} fieldPath="Offers" />

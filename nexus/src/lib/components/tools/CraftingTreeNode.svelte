@@ -5,9 +5,6 @@
 -->
 <script>
   import CraftingTreeNode from './CraftingTreeNode.svelte';
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { getMaxNonFailChance, isLimitedBlueprint } from '$lib/utils/constructionCalculator.js';
 
@@ -100,7 +97,7 @@
           max={maxNonFail}
           step="any"
           onchange={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
-          onclick={stopPropagation(bubble('click'))}
+          onclick={(e) => e.stopPropagation()}
         />%
       </span>
     {/if}

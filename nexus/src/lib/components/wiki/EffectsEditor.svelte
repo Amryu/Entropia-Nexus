@@ -5,8 +5,6 @@
   Uses SearchInput for effect selection with sublabel support for CanonicalName.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import { getTimeString } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
@@ -48,7 +46,7 @@
   let editingEffectIndex = $state(null);
   // Local copy of available effects so newly created ones appear immediately
   let localAvailableEffects = $state([]);
-  run(() => {
+  $effect(() => {
     localAvailableEffects = [...(availableEffects || [])];
   });
 
@@ -146,8 +144,8 @@
     updateField(fieldName, effects.filter((_, i) => i !== index));
   }
 
-  function handleCreateEffect(event) {
-    const { Name, _newEffect } = event.detail;
+  function handleCreateEffect(data) {
+    const { Name, _newEffect } = data;
 
     // Add to local available effects so it appears in search immediately
     localAvailableEffects = [...localAvailableEffects, {
@@ -179,9 +177,9 @@
     editingEffectIndex = index;
   }
 
-  function handleEditEffect(event) {
+  function handleEditEffect(data) {
     if (editingEffectIndex == null) return;
-    const { _newEffect } = event.detail;
+    const { _newEffect } = data;
     const newEffects = [...effects];
     newEffects[editingEffectIndex] = { ...newEffects[editingEffectIndex], _newEffect };
 
@@ -247,8 +245,8 @@
                   value={effect.Name}
                   options={effectOptions}
                   placeholder="Search effect..."
-                  on:select={(e) => updateEffect(i, 'Name', e.detail.value)}
-                  on:change={(e) => updateEffect(i, 'Name', e.detail.value)}
+                  onselect={(e) => updateEffect(i, 'Name', e.value)}
+                  onchange={(e) => updateEffect(i, 'Name', e.value)}
                 />
               </div>
               {#if effect.Name}
@@ -331,16 +329,16 @@
 
 {#if showCreateDialog}
   <CreateEffectDialog
-    on:create={handleCreateEffect}
-    on:cancel={() => showCreateDialog = false}
+    oncreate={handleCreateEffect}
+    oncancel={() => showCreateDialog = false}
   />
 {/if}
 
 {#if editingEffectIndex != null}
   <CreateEffectDialog
     effect={getEditEffectData(editingEffectIndex)}
-    on:edit={handleEditEffect}
-    on:cancel={() => editingEffectIndex = null}
+    onedit={handleEditEffect}
+    oncancel={() => editingEffectIndex = null}
   />
 {/if}
 

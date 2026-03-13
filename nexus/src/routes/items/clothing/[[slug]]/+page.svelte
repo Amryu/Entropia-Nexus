@@ -12,12 +12,10 @@
   - controls: General, Economy, Set (with Name and EffectsOnSetEquip), Equip Effects
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -57,8 +55,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.effects === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.effects === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'effects', url: '/api/effects' },
@@ -131,7 +129,7 @@
   };
 
   // Initialize edit state when user/clothing changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const existingChange = data.existingChange || null;
       const initialEntity = isCreateMode
@@ -143,7 +141,7 @@
   });
 
   // Set pending change in store when it changes
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -164,8 +162,7 @@
     resetEditState();
   });
 
-  function handleSetChange(event) {
-    const value = event?.detail?.value ?? event?.target?.value ?? '';
+  function handleSetChange({ value = '' } = {}) {
     const trimmed = value.trim();
     if (trimmed) {
       updateField('Set.Name', trimmed);
@@ -175,8 +172,7 @@
     }
   }
 
-  function handleSetSelect(event) {
-    const value = event?.detail?.value ?? event?.target?.value ?? '';
+  function handleSetSelect({ value = '' } = {}) {
     const trimmed = value.trim();
     if (trimmed) {
       const selected = equipsetsList.find(s => s.Name === trimmed);
@@ -298,8 +294,8 @@
   }
 
   // ========== EDIT HANDLERS ==========
-  function handleDescriptionChange(event) {
-    updateField('Properties.Description', event.detail);
+  function handleDescriptionChange(data) {
+    updateField('Properties.Description', data);
   }
 </script>
 
@@ -415,8 +411,8 @@
                   value={activeClothing?.Properties?.Type || ''}
                   placeholder="Search type..."
                   options={typeOptions}
-                  on:change={(e) => updateField('Properties.Type', e.detail.value || '')}
-                  on:select={(e) => updateField('Properties.Type', e.detail.value || '')}
+                  onchange={(e) => updateField('Properties.Type', e.value || '')}
+                  onselect={(e) => updateField('Properties.Type', e.value || '')}
                 />
               {:else}
                 {activeClothing?.Properties?.Type || 'N/A'}
@@ -431,8 +427,8 @@
                   value={activeClothing?.Properties?.Slot || ''}
                   placeholder="Search slot..."
                   options={slotOptions}
-                  on:change={(e) => updateField('Properties.Slot', e.detail.value || '')}
-                  on:select={(e) => updateField('Properties.Slot', e.detail.value || '')}
+                  onchange={(e) => updateField('Properties.Slot', e.value || '')}
+                  onselect={(e) => updateField('Properties.Slot', e.value || '')}
                 />
               {:else}
                 {activeClothing?.Properties?.Slot || 'N/A'}
@@ -519,9 +515,8 @@
                     value={activeClothing?.Set?.Name || ''}
                     placeholder="Search equipment set..."
                     options={equipsetsList.map(s => s.Name)}
-                    on:change={(e) => handleSetChange(e)}
-                    on:select={(e) => handleSetSelect(e)}
-                    on:blur={(e) => handleSetSelect(e)}
+                    onchange={handleSetChange}
+                    onselect={handleSetSelect}
                   />
                 </span>
               </div>
@@ -555,7 +550,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeClothing?.Properties?.Description || ''}
-              on:change={handleDescriptionChange}
+              onchange={handleDescriptionChange}
               placeholder="Enter a description for this clothing item..."
               showWaypoints={true}
             />
@@ -574,7 +569,7 @@
             itemId={activeClothing?.Id}
             itemName={activeClothing?.Name}
             bind:expanded={panelStates.marketPrices}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           />
         {/if}
 
@@ -584,7 +579,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

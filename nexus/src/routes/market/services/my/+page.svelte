@@ -78,8 +78,8 @@
     }
   ];
 
-  function handleServiceRowClick(event) {
-    const { row } = event.detail;
+  function handleServiceRowClick(data) {
+    const { row } = data;
     viewService(row);
   }
 </script>
@@ -141,7 +141,7 @@
             sortable={true}
             searchable={false}
             emptyMessage="No active services"
-            on:rowClick={handleServiceRowClick}
+            onrowClick={handleServiceRowClick}
           />
         </div>
       </div>
@@ -158,7 +158,7 @@
             sortable={true}
             searchable={false}
             emptyMessage="No inactive services"
-            on:rowClick={handleServiceRowClick}
+            onrowClick={handleServiceRowClick}
           />
         </div>
       </div>

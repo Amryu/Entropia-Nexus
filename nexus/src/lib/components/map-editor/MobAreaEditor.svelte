@@ -1,9 +1,5 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { createEventDispatcher, onMount } from 'svelte';
   import { generateMobAreaName } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import { clickable } from '$lib/actions/clickable.js';
@@ -21,10 +17,10 @@
     mobs = [],
     location = null,
     isNew = false,
-    pendingMobData = null
+    pendingMobData = null,
+    onsave,
+    oncancel
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let mobSearch = $state('');
   let mobSearchResults = $state([]);
@@ -265,7 +261,7 @@
       }
     }
 
-    dispatch('save', {
+    onsave?.({
       name: effectiveName,
       density,
       maturities: maturityList
@@ -273,11 +269,11 @@
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 
   // If editing an existing mob area, populate from pending changes or spawn data
-  run(() => {
+  $effect(() => {
     if (location && !isNew && mobs.length) {
       if (pendingMobData) {
         initFromPending();
@@ -287,7 +283,7 @@
     }
   });
   // Search mobs
-  run(() => {
+  $effect(() => {
     if (mobSearch.trim().length >= 2) {
       const q = mobSearch.trim().toLowerCase();
       mobSearchResults = mobs
@@ -299,7 +295,7 @@
     }
   });
   // Auto-generate name (DB format stays same)
-  run(() => {
+  $effect(() => {
     const entries = selectedMobs.map(m => ({
       mobName: m.mobName,
       maturities: m.maturities.filter(mat => mat.selected).map(mat => ({ name: mat.name, health: mat.health }))
@@ -750,7 +746,7 @@
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog && dialogMob}
   <div class="dialog-overlay" role="presentation" onclick={closeMaturityDialog}>
-    <div class="maturity-dialog" role="dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="maturity-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>{dialogMob.mobName}</h3>
         <button class="dialog-close" onclick={closeMaturityDialog}>×</button>

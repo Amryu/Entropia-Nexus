@@ -6,12 +6,10 @@
   Legacy editConfig preserved in vehicles-legacy/+page.svelte
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -50,8 +48,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.materials === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.materials === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'materials', url: '/api/materials' },
@@ -122,7 +120,7 @@
   };
 
   // Initialize edit state when user/vehicle changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const existingChange = data.existingChange || null;
       const initialEntity = isCreateMode
@@ -134,7 +132,7 @@
   });
 
   // Set pending change in store when it changes
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -236,8 +234,8 @@
   }
 
   // ========== EDIT HANDLERS ==========
-  function handleDescriptionChange(event) {
-    updateField('Properties.Description', event.detail);
+  function handleDescriptionChange(data) {
+    updateField('Properties.Description', data);
   }
 </script>
 
@@ -603,15 +601,15 @@
                   apiEndpoint="/search/items"
                   displayFn={(item) => item?.Name || ''}
                   allowedTypes={['Material']}
-                  on:change={(e) => {
-                    const value = e.detail?.value || '';
+                  onchange={(e) => {
+                    const value = e.value || '';
                     if (!value) {
                       updateField('Fuel', null);
                     }
                   }}
-                  on:select={(e) => {
-                    if (e.detail?.value) {
-                      updateField('Fuel', { Name: e.detail.value });
+                  onselect={(e) => {
+                    if (e.value) {
+                      updateField('Fuel', { Name: e.value });
                     }
                   }}
                 />
@@ -676,7 +674,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeVehicle?.Properties?.Description || ''}
-              on:change={handleDescriptionChange}
+              onchange={handleDescriptionChange}
               placeholder="Enter a description for this vehicle..."
               showWaypoints={true}
             />
@@ -695,7 +693,7 @@
             itemId={activeVehicle?.Id}
             itemName={activeVehicle?.Name}
             bind:expanded={panelStates.marketPrices}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           />
         {/if}
 
@@ -705,7 +703,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

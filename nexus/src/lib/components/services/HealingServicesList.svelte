@@ -212,8 +212,8 @@
     }
   ];
 
-  function handleRowClick(event) {
-    const { row } = event.detail;
+  function handleRowClick(data) {
+    const { row } = data;
     viewService(row);
   }
 </script>
@@ -228,7 +228,7 @@
     searchable={true}
     emptyMessage="No healing services found"
     {loading}
-    on:rowClick={handleRowClick}
+    onrowClick={handleRowClick}
   />
 </div>
 

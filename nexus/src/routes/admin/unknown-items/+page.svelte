@@ -1,6 +1,4 @@
 <script>
-  import { stopPropagation } from 'svelte/legacy';
-
   //@ts-nocheck
   import { onMount } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
@@ -103,7 +101,7 @@
       
         {#if column.key === '_actions'}
           {#if !row.resolved}
-            <button class="btn btn-sm btn-resolve" onclick={stopPropagation(() => markResolved(row))}>
+            <button class="btn btn-sm btn-resolve" onclick={(e) => { e.stopPropagation(); markResolved(row); }}>
               Resolve
             </button>
           {:else}

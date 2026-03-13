@@ -1,9 +1,6 @@
 <script lang="ts">
-  import { run, self, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
 
   import CategoryTree from "./CategoryTree.svelte";
   import FancyTable from "$lib/components/FancyTable.svelte";
@@ -368,12 +365,12 @@
     else goto('/market/exchange');
   }
 
-  function handleOrderAction(e) {
+  function handleOrderAction(data) {
     if (!canPostOrders) {
       openAuthDialog();
       return;
     }
-    const item = e.detail;
+    const item = data;
     // Resolve the slim item for the order's item_id so type detection works
     const rawOrder = item.order || item;
     const slimItem = (allItems || []).find(si => si?.i === (rawOrder.item_id ?? item.itemId));
@@ -387,8 +384,8 @@
     }
   }
 
-  function handleAddToListFromDialog(e) {
-    const { order, quantity, side } = e.detail;
+  function handleAddToListFromDialog(data) {
+    const { order, quantity, side } = data;
     if (!order) return;
     addToTradeList({
       orderId: order.id,
@@ -421,8 +418,8 @@
     else if ($showTrades && tradesPanelRef) tradesPanelRef.refresh();
   }
 
-  async function handleInventorySell(e) {
-    const { invItem, existingOrder } = e.detail;
+  async function handleInventorySell(data) {
+    const { invItem, existingOrder } = data;
     if (!invItem?.item_id) return;
 
     try {
@@ -531,8 +528,8 @@
     }
   }
 
-  function handleMassSell(e) {
-    massSellItems = e.detail.items;
+  function handleMassSell(data) {
+    massSellItems = data.items;
     showMassSellDialog = true;
   }
 
@@ -1354,16 +1351,16 @@
     }
   }
 
-  async function onSubmitOrder(e) {
-    const order = e?.detail?.order;
-    const turnstileToken = e?.detail?.turnstileToken;
+  async function onSubmitOrder(data) {
+    const order = data?.order;
+    const turnstileToken = data?.turnstileToken;
     if (!order) { closeOrderDialog(); return; }
     await submitOrderPayload(order, true, turnstileToken);
   }
 
-  async function onNextOrder(e) {
-    const order = e?.detail?.order;
-    const turnstileToken = e?.detail?.turnstileToken;
+  async function onNextOrder(data) {
+    const order = data?.order;
+    const turnstileToken = data?.turnstileToken;
     if (!order) return;
     const success = await submitOrderPayload(order, false, turnstileToken);
     if (success) {
@@ -1376,9 +1373,9 @@
     }
   }
 
-  async function handleDeleteOrder(e) {
-    const order = e?.detail?.order;
-    const turnstileToken = e?.detail?.turnstileToken;
+  async function handleDeleteOrder(data) {
+    const order = data?.order;
+    const turnstileToken = data?.turnstileToken;
     const orderId = order?._orderId;
     if (!orderId) { closeOrderDialog(); return; }
 
@@ -1472,8 +1469,8 @@
     quickTradeItem = null;
   }
 
-  async function handleQuickTradeConfirm(e) {
-    const { order, quantity, side } = e.detail;
+  async function handleQuickTradeConfirm(data) {
+    const { order, quantity, side } = data;
     const item = selectedItemDetails || selectedItem;
     const itemName = order.details?.item_name || item?.Name || item?.n || 'Unknown';
 
@@ -1507,8 +1504,8 @@
     }
   }
 
-  async function handleBulkSubmit(e) {
-    const { matches, planet } = e.detail;
+  async function handleBulkSubmit(data) {
+    const { matches, planet } = data;
     const item = selectedItemDetails || selectedItem;
     const itemName = item?.Name || item?.n || 'Unknown';
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
@@ -1602,28 +1599,29 @@
   // Detail view = listings + routeId present + NOT a category match
   let isDetailView = $derived(viewSlug === 'listings' && !!routeId && !resolvedCategory);
   // Sync category selection from route
-  run(() => {
+  $effect(() => {
     if (viewSlug === 'listings') {
       if (!routeId || !resolvedCategory) {
         if (!routeId) {
-          if (savedOverviewFilters) {
+          const saved = untrack(() => savedOverviewFilters);
+          if (saved) {
             // Restore saved filters from before detail view
-            selectedCategory = savedOverviewFilters.category;
-            selectedCategoryRawPath = savedOverviewFilters.categoryRawPath;
-            selectedItems = savedOverviewFilters.items;
-            searchTerm = savedOverviewFilters.searchTerm;
-            selectedPlanet = savedOverviewFilters.planet;
-            selectedLimited = savedOverviewFilters.limited;
-            selectedSex = savedOverviewFilters.sex;
-            sidebarTab = savedOverviewFilters.sidebarTab;
-            selectedFavFolderId = savedOverviewFilters.favFolderId;
-            favouriteFolderFilter = savedOverviewFilters.favFolderFilter;
-            tierMin = savedOverviewFilters.tierMin;
-            tierMax = savedOverviewFilters.tierMax;
-            tirMin = savedOverviewFilters.tirMin;
-            tirMax = savedOverviewFilters.tirMax;
-            qrMin = savedOverviewFilters.qrMin;
-            qrMax = savedOverviewFilters.qrMax;
+            selectedCategory = saved.category;
+            selectedCategoryRawPath = saved.categoryRawPath;
+            selectedItems = saved.items;
+            searchTerm = saved.searchTerm;
+            selectedPlanet = saved.planet;
+            selectedLimited = saved.limited;
+            selectedSex = saved.sex;
+            sidebarTab = saved.sidebarTab;
+            selectedFavFolderId = saved.favFolderId;
+            favouriteFolderFilter = saved.favFolderFilter;
+            tierMin = saved.tierMin;
+            tierMax = saved.tierMax;
+            tirMin = saved.tirMin;
+            tirMax = saved.tirMax;
+            qrMin = saved.qrMin;
+            qrMax = saved.qrMax;
             savedOverviewFilters = null;
           } else {
             selectedCategory = 'All';
@@ -1660,22 +1658,25 @@
       return all.find((it) => it?.n === key) || null;
     }
   })());
-  run(() => {
+  $effect(() => {
     const id = selectedItem?.i ?? null;
     if (!id) {
       // Clear when no item is selected
-      if (detailsAbort?.abort) detailsAbort.abort();
-      detailsAbort = null;
-      lastDetailsItemId = null;
-      if (selectedItemDetails !== null) {
-        selectedItemDetails = null;
-        console.log('[ExchangeBrowser] selectedItemDetails cleared (no selected item)');
-      }
-    } else if (id !== lastDetailsItemId) {
-      try {
-        // Cancel any in-flight request
+      untrack(() => {
         if (detailsAbort?.abort) detailsAbort.abort();
-      } catch {}
+        detailsAbort = null;
+        lastDetailsItemId = null;
+        if (selectedItemDetails !== null) {
+          selectedItemDetails = null;
+        }
+      });
+    } else if (id !== untrack(() => lastDetailsItemId)) {
+      untrack(() => {
+        try {
+          // Cancel any in-flight request
+          if (detailsAbort?.abort) detailsAbort.abort();
+        } catch {}
+      });
       // Fire new request for this ID only
       lastDetailsItemId = id; // optimistic set to avoid duplicate dispatches
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1689,11 +1690,9 @@
           // Properties.Type as the top-level type ("Material"), losing the sub-type
           if (it && selectedItem?.st) it.st = selectedItem.st;
           selectedItemDetails = it || null;
-          console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
         } catch (e) {
           if (controller && controller.signal?.aborted) return;
           selectedItemDetails = null;
-          console.log('[ExchangeBrowser] selectedItemDetails error:', e);
         } finally {
           if (detailsAbort === controller) detailsAbort = null;
         }
@@ -1702,8 +1701,8 @@
   });
   let isLimitedDetail = $derived(selectedItemDetails && isLimited(selectedItemDetails));
   let tirRangeMax = $derived(isLimitedDetail ? 4000 : 200);
-  run(() => {
-    if (selectedItem?.i !== lastFilterItemId) {
+  $effect(() => {
+    if (selectedItem?.i !== untrack(() => lastFilterItemId)) {
       lastFilterItemId = selectedItem?.i ?? null;
       tierMin = 0; tierMax = 10;
       tirMin = 0; tirMax = tirRangeMax;
@@ -1713,62 +1712,71 @@
       showFilterDialog = false;
     }
   });
-  run(() => {
-    if (tirRangeMax !== lastTirRangeMax) {
-      if (tirMax === lastTirRangeMax) tirMax = tirRangeMax;
-      lastTirRangeMax = tirRangeMax;
-    }
+  $effect(() => {
+    const rangeMax = tirRangeMax;
+    untrack(() => {
+      if (rangeMax !== lastTirRangeMax) {
+        if (tirMax === lastTirRangeMax) tirMax = rangeMax;
+        lastTirRangeMax = rangeMax;
+      }
+    });
   });
-  run(() => {
-    if (isDetailView && !wasDetailView) {
-      savedOverviewFilters = {
-        category: selectedCategory,
-        categoryRawPath: selectedCategoryRawPath,
-        items: selectedItems,
-        searchTerm,
-        planet: selectedPlanet,
-        limited: selectedLimited,
-        sex: selectedSex,
-        sidebarTab,
-        favFolderId: selectedFavFolderId,
-        favFolderFilter: favouriteFolderFilter,
-        tierMin, tierMax,
-        tirMin, tirMax,
-        qrMin, qrMax,
-      };
-    }
-    wasDetailView = isDetailView;
+  $effect(() => {
+    const detail = isDetailView;
+    untrack(() => {
+      if (detail && !wasDetailView) {
+        savedOverviewFilters = {
+          category: selectedCategory,
+          categoryRawPath: selectedCategoryRawPath,
+          items: selectedItems,
+          searchTerm,
+          planet: selectedPlanet,
+          limited: selectedLimited,
+          sex: selectedSex,
+          sidebarTab,
+          favFolderId: selectedFavFolderId,
+          favFolderFilter: favouriteFolderFilter,
+          tierMin, tierMax,
+          tirMin, tirMax,
+          qrMin, qrMax,
+        };
+      }
+      wasDetailView = detail;
+    });
   });
   // Gender from slim cache: undefined = non-gendered, null = untradeable clothing, 'Both'/'Male'/'Female'/'Neutral'
   let selectedItemGender = $derived(selectedItem?.g);
   let isGenderedDetail = $derived(GENDERED_TYPES.has(selectedItem?.t) && selectedItemGender !== 'Neutral' && selectedItemGender !== null);
-  run(() => {
-    if (viewSlug !== currentViewSlug) {
-      currentViewSlug = viewSlug;
-      if (viewSlug === 'listings') {
-        showMyOrders.set(false);
-        showInventory.set(false);
-        showTrades.set(false);
-        if (showUserOrders) clearTradeList();
-        showUserOrders = false;
-      } else if (viewSlug === 'orders') {
-        const id = routeId;
-        const decodedName = id ? decodeURIComponentSafe(id) : null;
-        const currentUserName = $page?.data?.session?.user?.eu_name;
-        if (decodedName && decodedName !== currentUserName) {
-          openUserOrdersByName(decodedName);
-        } else {
-          switchFloatingTab('orders');
+  $effect(() => {
+    const slug = viewSlug;
+    const id = routeId;
+    untrack(() => {
+      if (slug !== currentViewSlug) {
+        currentViewSlug = slug;
+        if (slug === 'listings') {
+          showMyOrders.set(false);
+          showInventory.set(false);
+          showTrades.set(false);
+          if (showUserOrders) clearTradeList();
+          showUserOrders = false;
+        } else if (slug === 'orders') {
+          const decodedName = id ? decodeURIComponentSafe(id) : null;
+          const currentUserName = $page?.data?.session?.user?.eu_name;
+          if (decodedName && decodedName !== currentUserName) {
+            openUserOrdersByName(decodedName);
+          } else {
+            switchFloatingTab('orders');
+          }
+        } else if (slug === 'inventory') {
+          switchFloatingTab('inventory');
+        } else if (slug === 'trades') {
+          switchFloatingTab('trades');
         }
-      } else if (viewSlug === 'inventory') {
-        switchFloatingTab('inventory');
-      } else if (viewSlug === 'trades') {
-        switchFloatingTab('trades');
       }
-    }
+    });
   });
   // If a pending edit order exists and item details have loaded, open the edit dialog
-  run(() => {
+  $effect(() => {
     if (pendingEditOrder && selectedItemDetails) {
       const order = pendingEditOrder;
       pendingEditOrder = null;
@@ -1800,7 +1808,7 @@
     }
   });
   // Filter items based on search, L/UL, and Sex
-  run(() => {
+  $effect(() => {
     const needle = searchTerm.toLowerCase();
     const base = Array.isArray(selectedItems) ? selectedItems : allItems;
 
@@ -1893,10 +1901,10 @@
     return rows;
   })());
   let listDefaultSort = $derived({ column: smallViewport ? 'orders' : 'lastUpdate', order: 'DESC' });
-  run(() => {
+  $effect(() => {
     detailMarkupItem = selectedItemDetails || selectedItem;
   });
-  run(() => {
+  $effect(() => {
     detailIsAbsoluteMarkup = isAbsoluteMarkup(detailMarkupItem);
   });
   let appliesLULForCurrent =
@@ -1911,7 +1919,7 @@
     }
     return PLANETS.filter(p => planets.has(p));
   })());
-  run(() => {
+  $effect(() => {
     if (typeof window !== "undefined") {
       try {
         localStorage.setItem(
@@ -1926,13 +1934,13 @@
     }
   });
   // Load orders for detail view — only when we have a numeric item ID
-  run(() => {
+  $effect(() => {
     if (isDetailView && selectedItem?.i) {
       loadOrders(selectedItem.i, selectedPlanet);
     }
   });
   // Reload price data when gender filter changes for gendered items
-  run(() => {
+  $effect(() => {
     if (isDetailView && selectedItem?.i && isGenderedDetail) {
       if (priceGender === 'Both') {
         exchangePrices = null;
@@ -1944,13 +1952,13 @@
       }
     }
   });
-  run(() => {
+  $effect(() => {
     if (isDetailView && selectedItem?.i && selectedPeriod) {
       loadPeriodStats(selectedItem.i, selectedPeriod);
     }
   });
   // Reload chart data when period changes while chart is visible
-  run(() => {
+  $effect(() => {
     if (showPriceHistory && selectedItem?.i && selectedPeriod) {
       loadPriceHistory();
     }
@@ -1960,7 +1968,7 @@
   let needsVerification = $derived(!!(currentUser && !currentUser.verified));
   let canPostOrders = $derived(!!(currentUser && currentUser.verified));
   let floatingPanelOpen = $derived(showUserOrders || (canPostOrders && ($showMyOrders || $showInventory || $showTrades)));
-  run(() => {
+  $effect(() => {
     if (!canPostOrders && $showTradeList) showTradeList.set(false);
   });
   let loginUrl = $derived(`/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
@@ -2324,7 +2332,7 @@
         </div>
 
         {#if $showTradeList}
-          <CartSummary {allItems} on:close={() => showTradeList.set(false)} />
+          <CartSummary {allItems} onclose={() => showTradeList.set(false)} />
         {:else if listTableData.length > 0}
           <div class="table-wrapper">
             <FancyTable
@@ -2337,8 +2345,8 @@
               defaultSort={listDefaultSort}
               preserveDataOrder={!!searchTerm}
               emptyMessage="No items found"
-              on:rowClick={(evt) => {
-                const item = evt?.detail?.row?._item;
+              onrowClick={(data) => {
+                const item = data?.row?._item;
                 if (item?.i != null) goto(`/market/exchange/listings/${item.i}`);
               }}
             />
@@ -2501,7 +2509,7 @@
               >{showPriceHistory ? "Orders" : "Chart"}</button>
             </div>
           </div>
-          <div class="detail-filters" role="presentation" class:open={showFilterDialog} onclick={self(() => showFilterDialog = false)}>
+          <div class="detail-filters" role="presentation" class:open={showFilterDialog} onclick={(e) => { if (e.target === e.currentTarget) showFilterDialog = false; }}>
             <div class="detail-filters-content">
               <div class="detail-filters-header">
                 <span>Filters</span>
@@ -2674,10 +2682,10 @@
         side={quickTradeSide}
         item={quickTradeItem || selectedItemDetails || selectedItem}
         showAddToList={showUserOrders}
-        on:close={closeQuickTrade}
-        on:confirm={handleQuickTradeConfirm}
-        on:addToList={handleAddToListFromDialog}
-        on:editOwn={(e) => { closeQuickTrade(); editOrderInline(e.detail.order); }}
+        onclose={closeQuickTrade}
+        onconfirm={handleQuickTradeConfirm}
+        onaddToList={handleAddToListFromDialog}
+        oneditOwn={(data) => { closeQuickTrade(); editOrderInline(data.order); }}
       />
 
       <OrderDialog
@@ -2687,10 +2695,10 @@
         isNonFungible={orderDialogIsNonFungible}
         submitting={submittingOrder}
         itemGender={orderDialogGender}
-        on:close={closeOrderDialog}
-        on:submit={onSubmitOrder}
-        on:next={onNextOrder}
-        on:delete={handleDeleteOrder}
+        onclose={closeOrderDialog}
+        onsubmit={onSubmitOrder}
+        onnext={onNextOrder}
+        ondelete={handleDeleteOrder}
       />
 
       <BulkTradeDialog
@@ -2698,8 +2706,8 @@
         itemName={selectedItemDetails?.Name || selectedItem?.n || ''}
         item={selectedItemDetails || selectedItem}
         orderBookOrders={[...(buyOrders || []), ...(sellOrders || [])]}
-        on:close={() => showBulkTradeDialog = false}
-        on:bulkSubmit={handleBulkSubmit}
+        onclose={() => showBulkTradeDialog = false}
+        onbulkSubmit={handleBulkSubmit}
       />
     </div>
 
@@ -2734,7 +2742,7 @@
           </div>
           {#if $showTradeList}
             {#if $tradeList.length > 0}
-              <CartSummary {allItems} on:close={() => showTradeList.set(false)} />
+              <CartSummary {allItems} onclose={() => showTradeList.set(false)} />
             {:else}
               <div class="trade-list-empty-state">
                 <p>Your trade list is empty.</p>
@@ -2747,13 +2755,13 @@
               {#if panelSideFilter !== 'BUY'}
                 <div class="detail-table sell">
                   <span class="table-label sell">Sell</span>
-                  <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" canTrade={canPostOrders} {allItems} on:orderAction={handleOrderAction} />
+                  <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" canTrade={canPostOrders} {allItems} onorderAction={handleOrderAction} />
                 </div>
               {/if}
               {#if panelSideFilter !== 'SELL'}
                 <div class="detail-table buy">
                   <span class="table-label buy">Buy</span>
-                  <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" canTrade={canPostOrders} {allItems} on:orderAction={handleOrderAction} />
+                  <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" canTrade={canPostOrders} {allItems} onorderAction={handleOrderAction} />
                 </div>
               {/if}
             </div>
@@ -2807,14 +2815,12 @@
               user={currentUser}
               sideFilter={panelSideFilter}
               {allItems}
-              on:edit={(e) => {
-                const order = e.detail;
+              onedit={(order) => {
                 if (order?.item_id) {
                   editOrderInline(order);
                 }
               }}
-              on:close={(e) => {
-                const order = e.detail;
+              onclose={(order) => {
                 if (!order?.id) return;
                 if (env.PUBLIC_TURNSTILE_SITE_KEY) {
                   requestTurnstile('close', async (token) => {
@@ -2850,8 +2856,8 @@
               bind:this={inventoryPanelRef}
               user={currentUser}
               {allItems}
-              on:sell={handleInventorySell}
-              on:massSell={handleMassSell}
+              onsell={handleInventorySell}
+              onmassSell={handleMassSell}
             />
           {:else if $showTrades}
             <TradeRequestsPanel
@@ -2868,8 +2874,8 @@
 <InventoryImportDialog
   show={showImportDialog}
   {allItems}
-  on:close={() => { showImportDialog = false; }}
-  on:imported={() => {
+  onclose={() => { showImportDialog = false; }}
+  onimported={() => {
     // Refresh inventory panel — dialog stays open to show results
     if ($showInventory && inventoryPanelRef) {
       inventoryPanelRef.refresh();
@@ -2879,7 +2885,7 @@
 
 <OrderAdjustDialog
   show={showAdjustDialog}
-  on:close={() => { showAdjustDialog = false; }}
+  onclose={() => { showAdjustDialog = false; }}
 />
 
 <MassSellDialog
@@ -2887,13 +2893,13 @@
   items={massSellItems}
   {allItems}
   sellOrderCount={currentSellCount}
-  on:close={() => { showMassSellDialog = false; }}
-  on:complete={handleMassSellComplete}
+  onclose={() => { showMassSellDialog = false; }}
+  oncomplete={handleMassSellComplete}
 />
 
 {#if pendingTurnstileAction}
   <div class="turnstile-modal-overlay" role="presentation" onclick={cancelTurnstileModal}>
-    <div class="turnstile-modal" onclick={stopPropagation(bubble('click'))}>
+    <div class="turnstile-modal" onclick={(e) => e.stopPropagation()}>
       <h3 class="turnstile-modal-title">
         {pendingTurnstileAction.type === 'bump' ? 'Bump All Orders' : 'Close Order'}
       </h3>
@@ -2915,7 +2921,7 @@
 
 {#if showAuthDialog}
   <div class="auth-dialog-overlay" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
-    <div class="auth-dialog-content" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+    <div class="auth-dialog-content" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
       <button class="auth-dialog-close" onclick={closeAuthDialog} aria-label="Close">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18" />

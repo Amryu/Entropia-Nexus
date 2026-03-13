@@ -175,8 +175,8 @@
     { key: 'planet', header: 'Planet' }
   ]);
 
-  function handleMarketRowClick(e) {
-    const { row } = e.detail;
+  function handleMarketRowClick(data) {
+    const { row } = data;
     if (row.rowLink) goto(row.rowLink);
   }
 
@@ -469,7 +469,7 @@
             fitContent
             defaultSort={{ column: 'markup', order: 'ASC' }}
             emptyMessage="No market listings"
-            on:rowClick={handleMarketRowClick}
+            onrowClick={handleMarketRowClick}
           />
         </div>
       {/if}

@@ -2,18 +2,14 @@
   @component TurnstileWidget
   Cloudflare Turnstile captcha widget.
   Loads the Turnstile script dynamically and renders the challenge.
-  Dispatches 'verified' event with the token on success.
-  Dispatches 'error' event on failure.
+  Calls onverified({ token }) on success.
+  Calls onerror() on failure.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
 
-  const dispatch = createEventDispatcher();
 
-  
 
   
 
@@ -26,6 +22,9 @@
    * @property {'auto'|'light'|'dark'} [theme]
    * @property {string|null} [token]
    * @property {boolean} [reset]
+   * @property {(detail: { token: string }) => void} [onverified]
+   * @property {() => void} [onerror]
+   * @property {() => void} [onexpired]
    */
 
   /** @type {Props} */
@@ -33,7 +32,10 @@
     siteKey = '',
     theme = 'auto',
     token = $bindable(null),
-    reset = $bindable(false)
+    reset = $bindable(false),
+    onverified = undefined,
+    onerror = undefined,
+    onexpired = undefined
   } = $props();
 
   let container = $state();
@@ -72,15 +74,15 @@
       theme,
       callback: (t) => {
         token = t;
-        dispatch('verified', { token: t });
+        onverified?.({ token: t });
       },
       'error-callback': () => {
         token = null;
-        dispatch('error');
+        onerror?.();
       },
       'expired-callback': () => {
         token = null;
-        dispatch('expired');
+        onexpired?.();
       }
     });
   }
@@ -92,7 +94,7 @@
     }
   }
 
-  run(() => {
+  $effect(() => {
     if (reset && browser) {
       resetWidget();
       reset = false;

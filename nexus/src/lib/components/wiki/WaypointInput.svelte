@@ -13,7 +13,7 @@
   Usage:
     <WaypointInput
       value={{ planet: 'Calypso', x: 123, y: 456, z: 100, name: 'Location' }}
-      on:change={(e) => handleChange(e.detail)}
+      onchange={handleChange}
     />
 
     With locked/hidden fields:
@@ -22,18 +22,14 @@
       planetLocked={true}
       hidePlanet={false}
       hideName={true}
-      on:change={(e) => handleChange(e.detail)}
+      onchange={handleChange}
     />
 -->
 <script>
-  import { run, preventDefault } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher, onMount, tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { clickable } from '$lib/actions/clickable.js';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -54,6 +50,7 @@
    * @property {boolean} [hidePlanet] - Hide the planet field entirely
    * @property {boolean} [hideName] - Hide the name field entirely
    * @property {boolean} [disabled] - Whether the input is disabled
+   * @property {Function} [onchange]
    */
 
   /** @type {Props} */
@@ -63,7 +60,8 @@
     nameLocked = false,
     hidePlanet = false,
     hideName = false,
-    disabled = false
+    disabled = false,
+    onchange
   } = $props();
 
   // Internal state
@@ -84,7 +82,7 @@
   let localName = $state('');
 
   // Sync local values with prop
-  run(() => {
+  $effect(() => {
     localX = value?.x != null ? String(value.x) : '';
     localY = value?.y != null ? String(value.y) : '';
     localZ = value?.z != null ? String(value.z) : '';
@@ -93,7 +91,7 @@
   });
 
   // Filter planets based on search
-  run(() => {
+  $effect(() => {
     const search = planetSearchValue.toLowerCase().trim();
     if (search.length === 0) {
       filteredPlanets = planets;
@@ -150,7 +148,7 @@
 
   function emitChange(updates) {
     const newValue = { ...value, ...updates };
-    dispatch('change', newValue);
+    onchange?.(newValue);
   }
 
   function handlePaste(event) {
@@ -375,7 +373,7 @@
                 <div
                   class="planet-option"
                   class:highlighted={idx === highlightedPlanetIndex}
-                  onmousedown={preventDefault(() => selectPlanet(planet))}
+                  onmousedown={(e) => { e.preventDefault(); selectPlanet(planet); }}
                   onmouseenter={() => highlightedPlanetIndex = idx}
                   use:clickable
                   role="button"

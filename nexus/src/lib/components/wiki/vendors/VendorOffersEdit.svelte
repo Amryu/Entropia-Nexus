@@ -105,8 +105,8 @@
                 placeholder="Search item..."
                 apiEndpoint="/search/items"
                 displayFn={(item) => item?.Name || ''}
-                on:change={(e) => updateOfferField(index, 'Item.Name', e.detail.value)}
-                on:select={(e) => updateOfferField(index, 'Item.Name', e.detail.data?.Name || e.detail.value)}
+                onchange={(e) => updateOfferField(index, 'Item.Name', e.value)}
+                onselect={(e) => updateOfferField(index, 'Item.Name', e.data?.Name || e.value)}
               />
             </div>
 
@@ -162,8 +162,8 @@
                       placeholder="Price item..."
                       apiEndpoint="/search/items"
                       displayFn={(item) => item?.Name || ''}
-                      on:change={(e) => updatePriceField(index, priceIndex, 'Item.Name', e.detail.value)}
-                      on:select={(e) => updatePriceField(index, priceIndex, 'Item.Name', e.detail.data?.Name || e.detail.value)}
+                      onchange={(e) => updatePriceField(index, priceIndex, 'Item.Name', e.value)}
+                      onselect={(e) => updatePriceField(index, priceIndex, 'Item.Name', e.data?.Name || e.value)}
                     />
                   </div>
                   <button

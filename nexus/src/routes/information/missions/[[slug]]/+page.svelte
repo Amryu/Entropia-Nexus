@@ -3,14 +3,11 @@
   Wiki layout with sidebar toggle between missions and mission chains.
 -->
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
@@ -629,8 +626,8 @@
     showChainDialog = false;
   }
 
-  function handleChainCreate(event) {
-    const { name, planet } = event.detail;
+  function handleChainCreate(data) {
+    const { name, planet } = data;
     // Add to trusted chain names so it doesn't show validation error
     trustedChainNames = new Set([...trustedChainNames, name]);
     // Set the chain name on the mission and close the dialog
@@ -640,14 +637,14 @@
     showChainDialog = false;
   }
 
-  function handleChainSelect(event) {
-    const { name } = event.detail;
+  function handleChainSelect(data) {
+    const { name } = data;
     updateField('MissionChain.Name', name);
     showChainDialog = false;
   }
 
-  function handleChainUpdate(event) {
-    const { field, value } = event.detail;
+  function handleChainUpdate(data) {
+    const { field, value } = data;
     // Update the chain field on the mission's MissionChain object
     updateField(`MissionChain.${field}`, value);
   }
@@ -805,31 +802,31 @@
     addPrerequisite();
   }
 
-  function handleDialogUpdatePrerequisite(event) {
-    const { index, mission } = event.detail;
+  function handleDialogUpdatePrerequisite(data) {
+    const { index, mission } = data;
     if (mission) {
       updatePrerequisite(index, mission.Id);
     }
   }
 
-  function handleDialogRemovePrerequisite(event) {
-    removePrerequisite(event.detail.index);
+  function handleDialogRemovePrerequisite(data) {
+    removePrerequisite(data.index);
   }
 
   function handleDialogAddDependent() {
     addDependent();
   }
 
-  function handleDialogUpdateDependent(event) {
-    const { index, mission } = event.detail;
+  function handleDialogUpdateDependent(data) {
+    const { index, mission } = data;
     updateDependent(index, mission);
   }
 
-  function handleDialogRemoveDependent(event) {
-    removeDependent(event.detail.index);
+  function handleDialogRemoveDependent(data) {
+    removeDependent(data.index);
   }
-  run(() => {
-    if ($editMode && data.mobMaturities === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.mobMaturities === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'mobMaturities', url: '/api/mobmaturities' },
@@ -859,10 +856,10 @@
   let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, entityId));
   let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
   let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
-  run(() => {
+  $effect(() => {
     // Create a stable key for the current entity context
     const initKey = `${entityType}-${entity?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
-    if (user && initKey !== lastInitKey) {
+    if (user && initKey !== untrack(() => lastInitKey)) {
       lastInitKey = initKey;
       const existingChange = data.existingChange || null;
       const initialEntity = isCreateMode
@@ -872,7 +869,7 @@
       initEditState(initialEntity, entityType, isCreateMode, editChange);
     }
   });
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -889,9 +886,9 @@
   let activeChain = $derived(isChainView ? activeEntity : null);
   // Parse existing cooldown duration only when switching to a different mission
   // In create mode, use 'create' sentinel so the guard fires once (not on every activeMission change)
-  run(() => {
+  $effect(() => {
     const missionIdentity = activeMission?.Id ?? (isCreateMode ? 'create' : null);
-    if (missionIdentity !== lastParsedMissionId) {
+    if (missionIdentity !== untrack(() => lastParsedMissionId)) {
       lastParsedMissionId = missionIdentity;
       if (activeMission?.Properties?.CooldownDuration) {
         const parsed = parseCooldownDuration(activeMission.Properties.CooldownDuration);
@@ -905,7 +902,7 @@
     }
   });
   // When type changes to Recurring and no cooldown is set yet, persist the default value
-  run(() => {
+  $effect(() => {
     if ($editMode && activeMission?.Properties?.Type === 'Recurring' && !activeMission?.Properties?.CooldownDuration) {
       updateCooldownDuration();
     }
@@ -921,7 +918,7 @@
     label: chain.Name
   })));
   // Initialize trusted chain names when edit state changes
-  run(() => {
+  $effect(() => {
     const newTrusted = new Set();
     // Trust the original entity's chain
     if (entity?.MissionChain?.Name) {
@@ -932,7 +929,7 @@
       newTrusted.add(data.existingChange.data.MissionChain.Name);
     }
     // Keep any chains added via the dialog during this session
-    for (const name of trustedChainNames) {
+    for (const name of untrack(() => trustedChainNames)) {
       if (!chainOptions.some(opt => opt.value === name)) {
         // Only keep if it's not already in chainOptions (meaning it was created this session)
         newTrusted.add(name);
@@ -1300,8 +1297,8 @@
                       value={activeMission?.MissionChain?.Name || ''}
                       placeholder="Chain..."
                       options={chainOptions}
-                      on:change={(e) => updateField('MissionChain.Name', e.detail.value || null)}
-                      on:select={(e) => updateField('MissionChain.Name', e.detail.value || null)}
+                      onchange={(e) => updateField('MissionChain.Name', e.value || null)}
+                      onselect={(e) => updateField('MissionChain.Name', e.value || null)}
                     />
                     <button
                       type="button"
@@ -1336,8 +1333,8 @@
                     value={getOptionLabel(eventOptions, activeMission?.Event?.Id)}
                     options={eventOptions}
                     placeholder="Select event (optional)"
-                    on:select={(e) => {
-                      const eventId = e.detail.value ? Number(e.detail.value) : null;
+                    onselect={(e) => {
+                      const eventId = e.value ? Number(e.value) : null;
                       if (eventId) {
                         const event = (data.events || []).find(ev => ev.Id === eventId);
                         updateField('Event', event ? { Id: event.Id, Name: event.Name } : null);
@@ -1361,8 +1358,8 @@
                     value={getOptionLabel(startLocationOptions, activeMission?.StartLocationId)}
                     options={startLocationOptions}
                     placeholder="Select location (optional)"
-                    on:select={(e) => {
-                      const locationId = e.detail.value ? Number(e.detail.value) : null;
+                    onselect={(e) => {
+                      const locationId = e.value ? Number(e.value) : null;
                       updateField('StartLocationId', locationId);
                     }}
                   />
@@ -1506,7 +1503,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder={isChainView ? 'Describe this mission chain...' : 'Describe this mission...'}
               showWaypoints={true}
             />
@@ -1649,7 +1646,7 @@
                           value={prereq?.Name || getOptionLabel(missionOptions, prereq?.Id)}
                           options={missionOptions}
                           placeholder="Select mission"
-                          on:select={(e) => updatePrerequisite(idx, e.detail.value)}
+                          onselect={(e) => updatePrerequisite(idx, e.value)}
                         />
                         <button type="button" class="btn-icon danger" onclick={() => removePrerequisite(idx)} title="Remove prerequisite">×</button>
                       </div>
@@ -1670,8 +1667,8 @@
                           value={dep?.Name || getOptionLabel(missionOptions, dep?.Id)}
                           options={missionOptions}
                           placeholder="Select mission"
-                          on:select={(e) => {
-                            const mission = missionsList.find(m => String(m.Id) === e.detail.value);
+                          onselect={(e) => {
+                            const mission = missionsList.find(m => String(m.Id) === e.value);
                             updateDependent(idx, mission);
                           }}
                         />
@@ -1747,7 +1744,7 @@
 
   {#if showGraphDialog}
     <div class="dialog-overlay" onclick={() => showGraphDialog = false}>
-      <div class="graph-dialog" onclick={stopPropagation(bubble('click'))}>
+      <div class="graph-dialog" onclick={(e) => e.stopPropagation()}>
         <div class="graph-dialog-header">
           <h3>{activeMission?.MissionChain?.Name || 'Mission Graph'}</h3>
           <span class="graph-dialog-count">{graphData?.nodes?.length || 0} missions</span>
@@ -1817,16 +1814,16 @@
       graphData={graphData}
       planetOptions={planetOptions}
       currentPlanetName={activeMission?.Planet?.Name || 'Calypso'}
-      on:close={closeChainDialog}
-      on:create={handleChainCreate}
-      on:select={handleChainSelect}
-      on:updateChain={handleChainUpdate}
-      on:addPrerequisite={handleDialogAddPrerequisite}
-      on:updatePrerequisite={handleDialogUpdatePrerequisite}
-      on:removePrerequisite={handleDialogRemovePrerequisite}
-      on:addDependent={handleDialogAddDependent}
-      on:updateDependent={handleDialogUpdateDependent}
-      on:removeDependent={handleDialogRemoveDependent}
+      onclose={closeChainDialog}
+      oncreate={handleChainCreate}
+      onselect={handleChainSelect}
+      onupdateChain={handleChainUpdate}
+      onaddPrerequisite={handleDialogAddPrerequisite}
+      onupdatePrerequisite={handleDialogUpdatePrerequisite}
+      onremovePrerequisite={handleDialogRemovePrerequisite}
+      onaddDependent={handleDialogAddDependent}
+      onupdateDependent={handleDialogUpdateDependent}
+      onremoveDependent={handleDialogRemoveDependent}
     />
   {/if}
 </WikiPage>

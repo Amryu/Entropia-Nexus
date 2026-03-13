@@ -4,7 +4,6 @@
    * GlobalMediaDialog - Modal for viewing global media (screenshot or video).
    * Supports GZ (congrats), delete (uploader/admin), and report (other users).
    */
-  import { createEventDispatcher } from 'svelte';
   import { parseVideoUrl } from '$lib/utils/videoEmbed.js';
   import { addToast } from '$lib/stores/toasts.js';
   import GzButton from '$lib/components/globals/GzButton.svelte';
@@ -22,9 +21,7 @@
    */
 
   /** @type {Props} */
-  let { show = false, global = null, user = null } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { show = false, global = null, user = null, onclose, ondeleted } = $props();
 
   let videoInfo = $derived(global?.media_video
     ? parseVideoUrl(global.media_video, typeof window !== 'undefined' ? window.location.hostname : 'entropianexus.com')
@@ -46,7 +43,7 @@
     showReportForm = false;
     reportReason = '';
     reported = false;
-    dispatch('close');
+    onclose?.();
   }
 
   function handleBackdropClick(e) {
@@ -72,7 +69,7 @@
       const res = await fetch(`/api/globals/${global.id}/media`, { method: 'DELETE' });
       if (res.ok) {
         addToast('Media deleted.', { type: 'success' });
-        dispatch('deleted', { globalId: global.id });
+        ondeleted?.({ globalId: global.id });
       } else {
         const data = await res.json().catch(() => ({}));
         addToast(data.error || 'Failed to delete media.', { type: 'error' });

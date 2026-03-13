@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { apiCall, getTypeLink } from '$lib/util';
   
@@ -590,7 +587,7 @@
       .sort() 
     : []);
   // Load items when item type changes
-  run(() => {
+  $effect(() => {
     if (itemType && showAddModal) {
       loadItemsForType(itemType);
       // Auto-check primary if no primary exists for this type/slot
@@ -607,7 +604,7 @@
     }
   });
   // Auto-check primary when item type changes
-  run(() => {
+  $effect(() => {
     if (itemType) {
       autoCheckPrimary();
     }
@@ -728,7 +725,7 @@
 
 {#if showAddModal}
   <div class="modal-backdrop" onclick={closeModal}>
-    <div class="modal" onclick={stopPropagation(bubble('click'))}>
+    <div class="modal" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h3>{editingIndex !== null ? 'Edit' : 'Add'} Equipment</h3>
         <button type="button" class="modal-close" onclick={closeModal}>&times;</button>

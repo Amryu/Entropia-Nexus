@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
 
   import '$lib/style.css';
@@ -21,7 +19,7 @@
 
   let fileInput = $state();
 
-  run(() => {
+  $effect(() => {
     if (loadouts !== null) {
       sortedLoadouts = loadouts.sort((a, b) => a.Name.localeCompare(b.Name));
     }
@@ -29,7 +27,7 @@
   
   let filteredLoadouts = $state();
 
-  run(() => {
+  $effect(() => {
     const searchTerm = search?.toLowerCase();
     filteredLoadouts = !search.trim() ? sortedLoadouts : sortedLoadouts.filter((item) => {
       return item.Name.toLowerCase().includes(searchTerm);
@@ -268,8 +266,8 @@
             virtual: true
           }
         }
-        on:rowClick={(evt) => {
-          currentLoadout = loadouts.find(x => x.Id === evt.detail.data.id);
+        onrowClick={(row) => {
+          currentLoadout = loadouts.find(x => x.Id === row.data.id);
         }} />
     {/if}
   </div>

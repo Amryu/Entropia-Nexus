@@ -4,8 +4,6 @@
   Supports mouse, touch, and keyboard input.
 -->
 <script>
-  import { createEventDispatcher } from 'svelte';
-
   /**
    * @typedef {Object} Props
    * @property {number} [min]
@@ -15,6 +13,7 @@
    * @property {number} [valueMax]
    * @property {string} [label]
    * @property {boolean} [compact]
+   * @property {(data: {min: number, max: number}) => void} [onchange]
    */
 
   /** @type {Props} */
@@ -25,10 +24,9 @@
     valueMin = $bindable(0),
     valueMax = $bindable(100),
     label = '',
-    compact = false
+    compact = false,
+    onchange
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let trackEl = $state();
   let dragging = null; // 'min' | 'max' | null
@@ -78,7 +76,7 @@
     dragging = null;
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', onPointerUp);
-    dispatch('change', { min: valueMin, max: valueMax });
+    onchange?.({ min: valueMin, max: valueMax });
   }
 
   function onTrackClick(e) {
@@ -93,7 +91,7 @@
     } else {
       valueMax = Math.max(val, valueMin);
     }
-    dispatch('change', { min: valueMin, max: valueMax });
+    onchange?.({ min: valueMin, max: valueMax });
   }
 
   function onKeydown(e, thumb) {
@@ -112,7 +110,7 @@
       valueMax = clamp(delta === -Infinity ? valueMin : delta === Infinity ? max : valueMax + delta);
       valueMax = Math.max(valueMax, valueMin);
     }
-    dispatch('change', { min: valueMin, max: valueMax });
+    onchange?.({ min: valueMin, max: valueMax });
   }
 </script>
 

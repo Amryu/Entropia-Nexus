@@ -7,12 +7,10 @@
   Legacy editConfig preserved in furnishings-legacy/+page.svelte
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -246,15 +244,15 @@
   let canCreateNew = $derived(data.canCreateNew ?? true);
   let userPendingCreates = $derived(data.userPendingCreates || []);
   let userPendingUpdates = $derived(data.userPendingUpdates || []);
-  run(() => {
-    if (!filterInitialized) {
+  $effect(() => {
+    if (!untrack(() => filterInitialized)) {
       selectedFilter = additional.type || null;
       filterInitialized = true;
     }
   });
-  run(() => {
+  $effect(() => {
     if (filterInitialized && !furnishing && !isCreateMode) {
-      if ((additional.type || null) !== selectedFilter) {
+      if ((additional.type || null) !== untrack(() => selectedFilter)) {
         selectedFilter = additional.type || null;
       }
     }
@@ -281,7 +279,7 @@
     return combined;
   })());
   // Initialize edit state when entity or user changes
-  run(() => {
+  $effect(() => {
     if (user && additional.type) {
       const entityType = getEntityType(additional.type);
       const entity = isCreateMode ? (existingChange?.data || getEmptyEntity(additional.type)) : furnishing;
@@ -292,7 +290,7 @@
     }
   });
   // Set existing pending change when data loads
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -647,7 +645,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter {getTypeName(additional.type).toLowerCase()} description..."
               showWaypoints={true}
             />
@@ -665,7 +663,7 @@
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -674,7 +672,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

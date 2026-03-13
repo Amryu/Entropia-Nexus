@@ -14,9 +14,8 @@
   />
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
+  import { untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { darkMode } from '../../../stores.js';
   import ImageUploadDialog from './ImageUploadDialog.svelte';
@@ -103,8 +102,8 @@
     }
   }
 
-  function handleImageUploaded(event) {
-    if (event.detail.linked) {
+  function handleImageUploaded(data) {
+    if (data.linked) {
       // Linked images are already approved — show directly without pending overlay
       pendingImagePreview = null;
       userPendingImage = null;
@@ -113,7 +112,7 @@
       // Force URL refresh by bumping lastCheckedId
       lastCheckedId = null;
     } else {
-      pendingImagePreview = event.detail.previewUrl;
+      pendingImagePreview = data.previewUrl;
       userPendingImage = null; // Clear old pending image since we just uploaded a new one
       imageExists = true;
       imageChecked = true;
@@ -122,8 +121,8 @@
   // Can upload when editing existing entity (not create mode) and user is verified
   let canUploadImage = $derived(isEditMode && !isCreateMode && entityId && user?.verified);
   // Check if image exists when entity ID changes (client-side only)
-  run(() => {
-    if (browser && entityId && entityId !== lastCheckedId) {
+  $effect(() => {
+    if (browser && entityId && entityId !== untrack(() => lastCheckedId)) {
       lastCheckedId = entityId;
       imageExists = false;
       imageChecked = false;
@@ -150,7 +149,7 @@
     }
   });
   // Reset image state in create mode or when no entity is selected
-  run(() => {
+  $effect(() => {
     if (browser && (isCreateMode || !entityId)) {
       lastCheckedId = null;
       imageExists = false;
@@ -161,8 +160,8 @@
     }
   });
   // Re-fetch pending image when user becomes available (after login)
-  run(() => {
-    if (browser && user && entityId && !pendingImageFetched) {
+  $effect(() => {
+    if (browser && user && entityId && !untrack(() => pendingImageFetched)) {
       fetchUserPendingImage();
     }
   });
@@ -241,8 +240,8 @@
   {entityType}
   {entityId}
   {entityName}
-  on:uploaded={handleImageUploaded}
-  on:close={() => showUploadDialog = false}
+  onuploaded={handleImageUploaded}
+  onclose={() => showUploadDialog = false}
 />
 
 <style>

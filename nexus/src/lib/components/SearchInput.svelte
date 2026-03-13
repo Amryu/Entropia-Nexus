@@ -12,22 +12,17 @@
   @example
   <SearchInput
     placeholder="Search items..."
-    on:select={(e) => goto(e.detail.url)}
-    on:close={() => handleClose()}
+    onselect={(e) => goto(e.url)}
+    onclose={() => handleClose()}
   />
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { getTypeLink, getTypeName } from '$lib/util';
   import { scoreSearchResult } from '$lib/search.js';
 
-  const dispatch = createEventDispatcher();
-
-  
 
   
 
@@ -64,6 +59,10 @@
    * @property {string} [endpoint]
    * @property {boolean} [apiPrefix]
    * @property {boolean} [showOnFocus]
+   * @property {Function} [onselect]
+   * @property {Function} [onclose]
+   * @property {Function} [onsearch]
+   * @property {Function} [onfocusinput]
    */
 
   /** @type {Props} */
@@ -79,7 +78,11 @@
     showResults = $bindable(false),
     endpoint = '/search',
     apiPrefix = true,
-    showOnFocus = false
+    showOnFocus = false,
+    onselect,
+    onclose,
+    onsearch,
+    onfocusinput
   } = $props();
 
   // Internal state
@@ -168,7 +171,7 @@
 
   // Build flat list for keyboard navigation
   let categorizedResults = $derived(categorizeResults(searchResults));
-  run(() => {
+  $effect(() => {
     flatResults = [];
     for (const category of Object.keys(categorizedResults)) {
       for (const result of categorizedResults[category]) {
@@ -247,7 +250,7 @@
         selectResult(flatResults[highlightedIndex]);
       } else if (value.trim().length >= 2) {
         // No arrow key selection — go to dedicated search page
-        dispatch('search', { query: value });
+        onsearch?.({ query: value });
         closeResults();
       }
       return;
@@ -256,7 +259,7 @@
     if (!showResults || flatResults.length === 0) {
       if (event.key === 'Escape') {
         closeResults();
-        dispatch('close');
+        onclose?.();
       }
       return;
     }
@@ -279,7 +282,7 @@
       case 'Escape':
         event.preventDefault();
         closeResults();
-        dispatch('close');
+        onclose?.();
         break;
 
       case 'Tab':
@@ -299,7 +302,7 @@
   }
 
   function selectResult(result) {
-    dispatch('select', {
+    onselect?.({
       id: result.Id,
       name: result.Name,
       type: result.Type,
@@ -331,7 +334,7 @@
     } else if (value.length >= 2 && searchResults.length > 0) {
       showResults = true;
     }
-    dispatch('focus');
+    onfocusinput?.();
   }
 
   function handleResultClick(event, result) {

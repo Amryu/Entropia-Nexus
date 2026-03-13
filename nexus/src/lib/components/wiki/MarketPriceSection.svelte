@@ -11,17 +11,12 @@
   filters market price data by tier.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { onMount } from 'svelte';
-  import { createEventDispatcher } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { browser } from '$app/environment';
   import DataSection from './DataSection.svelte';
   import MarketPriceChart from './MarketPriceChart.svelte';
   import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -40,6 +35,7 @@
    * @property {Array<{name: string, slot: string, gender: string}>|null} [pieces] - Armor set pieces for piece-level market price selection.
 When provided, a slot/gender selector is shown and prices are fetched per piece.
    * @property {string|null} [entityType] - Entity type (e.g. "Weapon", "ArmorSet"). When tierable, a tier selector is shown.
+   * @property {Function} [ontoggle]
    */
 
   /** @type {Props} */
@@ -48,7 +44,8 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
     itemName = null,
     expanded = $bindable(true),
     pieces = null,
-    entityType = null
+    entityType = null,
+    ontoggle
   } = $props();
 
   const PERIODS = [
@@ -81,7 +78,7 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
   let showTierSelector = $derived(entityType && TIERABLE_TYPES.has(entityType));
 
   function toggleSection() {
-    dispatch('toggle', { expanded });
+    ontoggle?.({ expanded });
   }
 
   // --- Piece helpers ---
@@ -108,8 +105,8 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
   let availableSlots = $derived(piecesBySlot ? SLOT_ORDER.filter(s => piecesBySlot[s]) : []);
 
   // Auto-select first slot when pieces change
-  run(() => {
-    if (availableSlots.length > 0 && (!selectedSlot || !piecesBySlot?.[selectedSlot])) {
+  $effect(() => {
+    if (availableSlots.length > 0 && (!untrack(() => selectedSlot) || !piecesBySlot?.[untrack(() => selectedSlot)])) {
       selectedSlot = availableSlots[0];
     }
   });
@@ -250,13 +247,13 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
 
   // Reactive: fetch when piece, item, or tier changes (client-side only)
   // Reference selectedTier to track it as a dependency for refetch on tier change.
-  run(() => {
+  $effect(() => {
     if (browser && pieces && activePieceName) {
       selectedTier;
       fetchLatest(null, activePieceName);
     }
   });
-  run(() => {
+  $effect(() => {
     if (browser && !pieces && (itemId || itemName)) {
       selectedTier;
       fetchLatest(itemId, itemName);
@@ -264,7 +261,7 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
   });
 </script>
 
-<DataSection title="Market Prices" bind:expanded on:toggle={toggleSection}>
+<DataSection title="Market Prices" bind:expanded ontoggle={toggleSection}>
   <div class="mps-content">
     {#if showTierSelector}
       <div class="mps-tier-selector">

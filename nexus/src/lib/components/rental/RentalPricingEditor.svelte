@@ -5,10 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { generatePricingPreview, formatPrice } from '$lib/utils/rentalPricing.js';
-
-  const dispatch = createEventDispatcher();
 
   const MAX_DISCOUNTS = 5;
 
@@ -22,10 +19,11 @@
    * @property {number} [pricePerDay]
    * @property {Array<{minDays: number, percent: number}>} [discounts]
    * @property {number} [deposit]
+   * @property {(data: {pricePerDay: number, discounts: Array, deposit: number}) => void} [onchange]
    */
 
   /** @type {Props} */
-  let { pricePerDay = $bindable(0), discounts = $bindable([]), deposit = $bindable(0) } = $props();
+  let { pricePerDay = $bindable(0), discounts = $bindable([]), deposit = $bindable(0), onchange } = $props();
 
   let preview = $derived(pricePerDay > 0 ? generatePricingPreview(pricePerDay, discounts) : []);
 
@@ -63,7 +61,7 @@
   }
 
   function emitChange() {
-    dispatch('change', { pricePerDay, discounts, deposit });
+    onchange?.({ pricePerDay, discounts, deposit });
   }
 </script>
 

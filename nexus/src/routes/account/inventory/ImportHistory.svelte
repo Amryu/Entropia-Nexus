@@ -1,14 +1,11 @@
 <script>
-  import { self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import ValueChart from './ValueChart.svelte';
   import { formatPedRaw } from '../../market/exchange/orderUtils';
   import { clickable } from '$lib/actions/clickable.js';
 
-  const dispatch = createEventDispatcher();
+  let { onclose } = $props();
 
   let imports = $state([]);
   let valueHistory = $state([]);
@@ -110,14 +107,14 @@
   }
 
   function handleClose() {
-    dispatch('close');
+    onclose?.();
   }
 
   // Load on mount
   loadData();
 </script>
 
-<div class="modal-overlay" role="presentation" onclick={self(handleClose)} onkeydown={(e) => e.key === 'Escape' && handleClose()}>
+<div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleClose(e); }} onkeydown={(e) => e.key === 'Escape' && handleClose()}>
   <div class="history-modal" role="dialog" aria-modal="true" aria-label="Import History">
     <div class="history-header">
       <h2>Import History</h2>

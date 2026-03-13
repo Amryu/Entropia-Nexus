@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   import { onMount, onDestroy } from 'svelte';
 
   /**
@@ -98,7 +96,7 @@
     if (rafId) cancelAnimationFrame(rafId);
   });
   // Recompute offset when items change (layout may shift)
-  run(() => {
+  $effect(() => {
     if (items && containerEl && scrollParent) updateOffset();
   });
   // Computed layout

@@ -5,12 +5,10 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import Cropper from 'svelte-easy-crop';
   import { addToast } from '$lib/stores/toasts.js';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -38,6 +36,9 @@
    * @property {number} [aspect]
    * @property {number} [maxWidth]
    * @property {number} [maxHeight]
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onuploaded]
+   * @property {() => void} [ondeleted]
    */
 
   /** @type {Props} */
@@ -50,7 +51,10 @@
     hasImage = false,
     aspect = 1,
     maxWidth = 320,
-    maxHeight = 320
+    maxHeight = 320,
+    onclose,
+    onuploaded,
+    ondeleted
   } = $props();
 
   // State
@@ -73,7 +77,7 @@
 
   function handleClose() {
     reset();
-    dispatch('close');
+    onclose?.();
   }
 
   function reset() {
@@ -165,7 +169,7 @@
 
       const result = await response.json().catch(() => ({}));
 
-      dispatch('uploaded', {
+      onuploaded?.({
         tempPath: result.tempPath,
         previewUrl: result.previewUrl,
         approved: result.approved,
@@ -306,7 +310,7 @@
 
       const result = await response.json();
 
-      dispatch('uploaded', {
+      onuploaded?.({
         imageUrl: result.imageUrl,
         linked: true
       });
@@ -345,7 +349,7 @@
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || `Delete failed: ${response.status}`);
       }
-      dispatch('deleted');
+      ondeleted?.();
       addToast('Image deleted', { type: 'success' });
       handleClose();
     } catch (err) {

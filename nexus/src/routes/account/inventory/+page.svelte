@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -9,7 +7,7 @@
   let user = $state(null);
   let loaded = $state(false);
 
-  run(() => {
+  $effect(() => {
     user = $page.data?.session?.user ?? null;
   });
 

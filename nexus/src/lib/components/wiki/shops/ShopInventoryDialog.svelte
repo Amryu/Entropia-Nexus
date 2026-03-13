@@ -5,15 +5,10 @@
   Groups are user-defined (not tied to estate areas).
 -->
 <script>
-  import { run, stopPropagation } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util';
   import { isPercentMarkupType } from '$lib/common/itemTypes.js';
   import SearchInput from '$lib/components/SearchInput.svelte';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -28,6 +23,8 @@
    * @property {boolean} [open] - Whether the dialog is open
    * @property {any} [inventoryGroups] - Current inventory groups from shop data
    * @property {any} [itemDetails] - Item details map (ItemId -> Item object) for looking up names
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onsaved]
    */
 
   /** @type {Props} */
@@ -35,7 +32,9 @@
     shopName = '',
     open = $bindable(false),
     inventoryGroups = [],
-    itemDetails = {}
+    itemDetails = {},
+    onclose,
+    onsaved
   } = $props();
 
   // Constants
@@ -111,7 +110,7 @@
 
   function close() {
     open = false;
-    dispatch('close');
+    onclose?.();
   }
 
   // Group management
@@ -203,8 +202,7 @@
   }
 
   // Handle item selection from SearchInput
-  function handleItemSelect(event) {
-    const { id, name, type, subType } = event.detail;
+  function handleItemSelect({ id, name, type, subType }) {
     selectItem({ Id: id, Name: name, Type: type, SubType: subType });
   }
 
@@ -357,7 +355,7 @@
         error = result.error || 'Failed to update inventory';
       } else {
         success = 'Inventory updated successfully';
-        dispatch('saved', { inventoryGroups: localGroups });
+        onsaved?.({ inventoryGroups: localGroups });
         setTimeout(() => {
           close();
         }, 1000);
@@ -376,7 +374,7 @@
   }
 
   // Initialize groups when dialog opens
-  run(() => {
+  $effect(() => {
     if (open) {
       initializeGroups();
       error = null;
@@ -417,7 +415,7 @@
                 {#if groupEditMode && activeGroupIndex === index && localGroups.length > 1}
                   <button
                     class="reorder-group-btn"
-                    onclick={stopPropagation(() => moveGroup(index, -1))}
+                    onclick={(e) => { e.stopPropagation(); moveGroup(index, -1); }}
                     disabled={saving || index === 0}
                     title="Move group left"
                   >
@@ -452,7 +450,7 @@
                     class="group-tab"
                     class:active={activeGroupIndex === index}
                     onclick={() => { activeGroupIndex = index; editingItemIndex = null; }}
-                    ondblclick={stopPropagation(() => startEditGroupName(index))}
+                    ondblclick={(e) => { e.stopPropagation(); startEditGroupName(index); }}
                     disabled={saving}
                     title="Double-click to rename"
                   >
@@ -465,7 +463,7 @@
                   {#if localGroups.length > 1}
                     <button
                       class="reorder-group-btn"
-                      onclick={stopPropagation(() => moveGroup(index, 1))}
+                      onclick={(e) => { e.stopPropagation(); moveGroup(index, 1); }}
                       disabled={saving || index === localGroups.length - 1}
                       title="Move group right"
                     >
@@ -478,7 +476,7 @@
                   <div class="group-action-buttons">
                     <button
                       class="group-action-btn rename"
-                      onclick={stopPropagation(() => startEditGroupName(index))}
+                      onclick={(e) => { e.stopPropagation(); startEditGroupName(index); }}
                       disabled={saving}
                       title="Rename group"
                     >
@@ -490,7 +488,7 @@
                     {#if localGroups.length > 1}
                       <button
                         class="group-action-btn delete"
-                        onclick={stopPropagation(() => deleteGroup(index))}
+                        onclick={(e) => { e.stopPropagation(); deleteGroup(index); }}
                         disabled={saving}
                         title="Delete group"
                       >
@@ -563,7 +561,7 @@
             containerClass="inventory-search"
             endpoint="/search/items"
             disabled={saving}
-            on:select={handleItemSelect}
+            onselect={handleItemSelect}
           />
         </div>
 

@@ -1,20 +1,18 @@
 <script>
-  import { preventDefault } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
 
   /**
    * @typedef {Object} Props
    * @property {any} [offer] - null for create, object for edit
    * @property {boolean} [saving]
    * @property {string} [serviceMode] - 'on_demand', 'scheduled', or 'both'
+   * @property {(data: any) => void} [onsave]
+   * @property {() => void} [oncancel]
+   * @property {(data: {id: number}) => void} [ondelete]
    */
 
   /** @type {Props} */
-  let { offer = null, saving = false, serviceMode = 'on_demand' } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { offer = null, saving = false, serviceMode = 'on_demand', onsave, oncancel, ondelete } = $props();
 
   // Form state
   let offerType = $state(offer?.uses_count ? 'uses' : (offer?.validity_days ? 'duration' : 'uses'));
@@ -49,16 +47,16 @@
       offerData.id = offer.id;
     }
 
-    dispatch('save', offerData);
+    onsave?.(offerData);
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 
   function handleDelete() {
     if (confirm('Are you sure you want to delete this ticket offer? Existing tickets will still be valid.')) {
-      dispatch('delete', { id: offer.id });
+      ondelete?.({ id: offer.id });
     }
   }
 </script>
@@ -66,7 +64,7 @@
 <div class="ticket-offer-editor">
   <h3>{offer ? 'Edit Ticket Offer' : 'Create Ticket Offer'}</h3>
 
-  <form onsubmit={preventDefault(handleSubmit)}>
+  <form onsubmit={(e) => { e.preventDefault(); handleSubmit(e); }}>
     <div class="form-group">
       <label>Ticket Name</label>
       <div class="auto-name">{name}</div>

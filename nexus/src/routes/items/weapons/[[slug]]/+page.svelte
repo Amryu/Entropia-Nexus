@@ -5,12 +5,10 @@
   Article: Description → Tiers → Acquisition
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, hasItemTag, clampDecimals, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -56,8 +54,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.effects === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.effects === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'effects', url: '/api/effects' },
@@ -140,7 +138,7 @@
   // ========== EDIT STATE MANAGEMENT ==========
   // Initialize edit state when weapon changes or in create mode
   let lastInitKey = $state(null);
-  run(() => {
+  $effect(() => {
     if (user) {
       const createSeedSource = existingChange?.data ? 'existing' : (resolvedPendingChange?.data ? 'pending' : 'empty');
       const initKey = data.isCreateMode
@@ -149,7 +147,7 @@
           ? `view:${weapon?.Id ?? weapon?.ItemId}:${resolvedPendingChange?.id || 'none'}`
           : null;
 
-      if (initKey && initKey !== lastInitKey) {
+      if (initKey && initKey !== untrack(() => lastInitKey)) {
         if (data.isCreateMode) {
           // If editing an existing pending create, use that data; otherwise use empty template
           initEditState(createSeed, 'Weapon', true, existingChange || resolvedPendingChange || null);
@@ -162,7 +160,7 @@
   });
 
   // Initialize pending change state
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -185,16 +183,18 @@
   let previousEntityId = $state(null);
 
   // Exit edit mode when navigating to a different entity (unless it's a draft/pending change)
-  run(() => {
-    if (weapon?.Id !== previousEntityId && previousEntityId !== null) {
+  $effect(() => {
+    const currentId = weapon?.Id;
+    const prevId = untrack(() => previousEntityId);
+    if (currentId !== prevId && prevId !== null) {
       // Only exit edit mode if not viewing a draft/pending change
       const hasUnsavedDraft = $editMode && !$existingPendingChange;
       if ($editMode && !hasUnsavedDraft) {
         resetEditState();
       }
-      previousEntityId = weapon?.Id;
-    } else if (previousEntityId === null && weapon?.Id) {
-      previousEntityId = weapon.Id;
+      previousEntityId = currentId;
+    } else if (prevId === null && currentId) {
+      previousEntityId = currentId;
     }
   });
 
@@ -744,8 +744,8 @@
   let prevType = $state(null);
 
   // When Class changes, auto-select Category if only one option exists
-  run(() => {
-    if ($editMode && activeWeapon?.Properties?.Class && activeWeapon.Properties.Class !== prevClass) {
+  $effect(() => {
+    if ($editMode && activeWeapon?.Properties?.Class && activeWeapon.Properties.Class !== untrack(() => prevClass)) {
       prevClass = activeWeapon.Properties.Class;
       // If only one category option for this class, auto-select it
       if (categoryOptions.length === 1 && activeWeapon.Properties.Category !== categoryOptions[0]) {
@@ -767,8 +767,8 @@
   });
 
   // When Type changes, auto-select professions if only one option exists
-  run(() => {
-    if ($editMode && activeWeapon?.Properties?.Type && activeWeapon.Properties.Type !== prevType) {
+  $effect(() => {
+    if ($editMode && activeWeapon?.Properties?.Type && activeWeapon.Properties.Type !== untrack(() => prevType)) {
       prevType = activeWeapon.Properties.Type;
       // Auto-select Hit Profession if only one option
       if (hitProfessionOptions.length === 1 && professionNames.hit !== hitProfessionOptions[0]) {
@@ -1333,7 +1333,7 @@
             <RichTextEditor
               content={activeWeapon.Properties?.Description || ''}
               placeholder="Enter weapon description..."
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               showWaypoints={true}
             />
           {:else if activeWeapon.Properties?.Description}
@@ -1352,7 +1352,7 @@
             icon=""
             bind:expanded={panelStates.tiers}
             subtitle="{(additional.tierInfo?.length || activeWeapon?.Tiers?.length || 0)} tiers"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <TieringEditor entity={activeWeapon} entityType="Weapon" tierInfo={additional.tierInfo || []} />
           </DataSection>
@@ -1364,7 +1364,7 @@
           itemName={activeWeapon?.Name}
           entityType="Weapon"
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -1373,7 +1373,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

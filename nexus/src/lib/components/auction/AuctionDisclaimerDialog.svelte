@@ -3,22 +3,21 @@
   Modal dialog for first-time bidder/seller disclaimer acceptance.
 -->
 <script>
-  import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  const dispatch = createEventDispatcher();
 
-  
 
-  
+
   /**
    * @typedef {Object} Props
    * @property {boolean} [open]
    * @property {'bidder'|'seller'} [role]
+   * @property {(data: {role: string}) => void} [onaccepted]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
-  let { open = $bindable(false), role = 'bidder' } = $props();
+  let { open = $bindable(false), role = 'bidder', onaccepted, onclose } = $props();
 
   let accepted = $state(false);
   let submitting = $state(false);
@@ -67,7 +66,7 @@
         throw new Error(data.error || 'Failed to accept disclaimer');
       }
 
-      dispatch('accepted', { role });
+      onaccepted?.({ role });
       open = false;
     } catch (err) {
       addToast(err.message, { type: 'error' });
@@ -79,7 +78,7 @@
   function handleClose() {
     accepted = false;
     open = false;
-    dispatch('close');
+    onclose?.();
   }
 
   function handleBackdropClick(e) {

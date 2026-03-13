@@ -9,8 +9,6 @@
   - Owner data (managers, inventory): Uses existing dialogs with direct save
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -179,8 +177,8 @@
   }
 
   // Handle HasAdditionalArea toggle
-  function handleAdditionalAreaChange(event) {
-    const isChecked = event.detail.value;
+  function handleAdditionalAreaChange(data) {
+    const isChecked = data.value;
     const currentSections = $currentEntity?.Sections || [];
 
     if (isChecked) {
@@ -455,13 +453,13 @@
     inventoryDialogOpen = true;
   }
 
-  function handleManagersSaved(event) {
+  function handleManagersSaved(data) {
     // Reload the page to get fresh data
     window.location.reload();
   }
 
-  function handleInventorySaved(event) {
-    const { inventoryGroups } = event.detail;
+  function handleInventorySaved(data) {
+    const { inventoryGroups } = data;
     if (shop && inventoryGroups) {
       // Update the shop object directly — the external API cache may still
       // serve stale data, so a page reload would show old inventory.
@@ -507,7 +505,7 @@
   // Wiki edit permissions - verified users can edit wiki data
   let canEditWiki = $derived(user?.verified || user?.administrator);
   // Initialize edit state when user or entity changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const editChange = isCreateMode ? (data.existingChange || null) : (canUsePendingChange ? resolvedPendingChange : null);
       initEditState(
@@ -519,7 +517,7 @@
     }
   });
   // Set pending change when available
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -543,7 +541,7 @@
     ? `https://entropianexus.com/market/shops/${encodeURIComponentSafe(activeEntity.Name)}`
     : 'https://entropianexus.com/market/shops');
   // Refetch when shop changes
-  run(() => {
+  $effect(() => {
     if (shop?.Id) {
       fetchItemDetails();
     }
@@ -734,7 +732,7 @@
               nameLocked={true}
               hidePlanet={true}
               hideName={true}
-              on:change={(e) => handleWaypointChange(e.detail)}
+              onchange={handleWaypointChange}
             />
           {:else if hasLocation}
             <div class="coordinates-display">
@@ -766,7 +764,7 @@
                       min={0}
                       step={1}
                       placeholder="Max Points"
-                      on:change={(e) => handleSectionPointsChange('Indoor', e.detail.value)}
+                      onchange={(data) => handleSectionPointsChange('Indoor', data.value)}
                     />
                     <span class="points-label">pts</span>
                   </div>
@@ -781,7 +779,7 @@
                       min={0}
                       step={1}
                       placeholder="Max Points"
-                      on:change={(e) => handleSectionPointsChange('Display', e.detail.value)}
+                      onchange={(data) => handleSectionPointsChange('Display', data.value)}
                     />
                     <span class="points-label">pts</span>
                   </div>
@@ -792,7 +790,7 @@
                     <InlineEdit
                       value={hasAdditionalArea}
                       type="checkbox"
-                      on:change={handleAdditionalAreaChange}
+                      onchange={handleAdditionalAreaChange}
                     />
                     <span class="toggle-label">Has Additional Area</span>
                   </span>
@@ -808,7 +806,7 @@
                         min={0}
                         step={1}
                         placeholder="Max Points"
-                        on:change={(e) => handleSectionPointsChange('Additional', e.detail.value)}
+                        onchange={(data) => handleSectionPointsChange('Additional', data.value)}
                       />
                       <span class="points-label">pts</span>
                     </div>
@@ -870,7 +868,7 @@
           {#if $editMode}
             <RichTextEditor
               content={$currentEntity?.Description || ''}
-              on:change={(e) => updateField('Description', e.detail)}
+              onchange={(data) => updateField('Description', data)}
               placeholder="Describe this shop..."
             />
           {:else if activeEntity?.Description}
@@ -896,7 +894,7 @@
           icon=""
           bind:expanded={panelStates.inventory}
           subtitle="{totalItems} item{totalItems !== 1 ? 's' : ''}"
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         >
           {#snippet actions()}
                   
@@ -955,8 +953,8 @@
     shopName={shop.Name}
     bind:open={managersDialogOpen}
     managers={shopManagers}
-    on:close={() => managersDialogOpen = false}
-    on:saved={handleManagersSaved}
+    onclose={() => managersDialogOpen = false}
+    onsaved={handleManagersSaved}
   />
 
   <ShopInventoryDialog
@@ -964,8 +962,8 @@
     bind:open={inventoryDialogOpen}
     inventoryGroups={shop.InventoryGroups || []}
     {itemDetails}
-    on:close={() => inventoryDialogOpen = false}
-    on:saved={handleInventorySaved}
+    onclose={() => inventoryDialogOpen = false}
+    onsaved={handleInventorySaved}
   />
 {/if}
 

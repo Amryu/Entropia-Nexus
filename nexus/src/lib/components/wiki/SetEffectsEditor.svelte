@@ -8,9 +8,8 @@
   Display format: Shows "<strength><unit> <effect name>" (e.g., "+5% Speed Increase")
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
+  import { untrack } from 'svelte';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from './SearchInput.svelte';
   import CreateEffectDialog from './CreateEffectDialog.svelte';
@@ -41,7 +40,7 @@
   let showCreateDialog = $state(false);
   let createDialogPieceCount = $state(null);
   let localAvailableEffects = $state([]);
-  run(() => {
+  $effect(() => {
     localAvailableEffects = [...(availableEffects || [])];
   });
 
@@ -125,8 +124,8 @@
     updateField(fieldName, [...effects, newEffect]);
   }
 
-  function handleCreateEffect(event) {
-    const { Name, _newEffect } = event.detail;
+  function handleCreateEffect(data) {
+    const { Name, _newEffect } = data;
 
     localAvailableEffects = [...localAvailableEffects, {
       Name,
@@ -179,8 +178,8 @@
 
   // New section piece count selection
   let newSectionPieceCount = $state(2);
-  run(() => {
-    if (availablePieceCounts.length > 0 && !availablePieceCounts.includes(newSectionPieceCount)) {
+  $effect(() => {
+    if (availablePieceCounts.length > 0 && !availablePieceCounts.includes(untrack(() => newSectionPieceCount))) {
       newSectionPieceCount = availablePieceCounts[0];
     }
   });
@@ -210,8 +209,8 @@
                         value={effect.Name}
                         options={effectOptions}
                         placeholder="Search effect..."
-                        on:select={(e) => updateEffect(effect._originalIndex, 'Name', e.detail.value)}
-                        on:change={(e) => updateEffect(effect._originalIndex, 'Name', e.detail.value)}
+                        onselect={(e) => updateEffect(effect._originalIndex, 'Name', e.value)}
+                        onchange={(e) => updateEffect(effect._originalIndex, 'Name', e.value)}
                       />
                     </div>
                     <button class="btn-remove-effect" onclick={() => removeEffect(effect._originalIndex)} title="Remove effect">
@@ -296,8 +295,8 @@
 
 {#if showCreateDialog}
   <CreateEffectDialog
-    on:create={handleCreateEffect}
-    on:cancel={() => { showCreateDialog = false; createDialogPieceCount = null; }}
+    oncreate={handleCreateEffect}
+    oncancel={() => { showCreateDialog = false; createDialogPieceCount = null; }}
   />
 {/if}
 

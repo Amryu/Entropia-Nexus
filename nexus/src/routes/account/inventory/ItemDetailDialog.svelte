@@ -1,8 +1,5 @@
 <script>
-  import { run, self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { apiCall, getTypeLink } from '$lib/util.js';
   import {
     formatPedRaw, formatMarkupValue, itemTypeBadge
@@ -16,9 +13,7 @@
    */
 
   /** @type {Props} */
-  let { show = false, item = null, allItems = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { show = false, item = null, allItems = [], onclose, onedit } = $props();
 
   let wikiData = $state(null);
   let loading = $state(false);
@@ -126,11 +121,11 @@
   }
 
   function handleClose() {
-    dispatch('close');
+    onclose?.();
   }
 
   function handleEdit() {
-    dispatch('edit');
+    onedit?.();
   }
 
   function openWiki() {
@@ -140,7 +135,7 @@
   function openOrders() {
     if (item?.item_id) window.open(`/market/exchange/listings/${item.item_id}`, '_blank');
   }
-  run(() => {
+  $effect(() => {
     if (show && item) loadWikiData(item.item_id);
   });
   let type = $derived(item?._type || wikiData?.Properties?.Type || wikiData?.Type || null);
@@ -152,7 +147,7 @@
 </script>
 
 {#if show && item}
-  <div class="modal-overlay" role="presentation" onclick={self(handleClose)}>
+  <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleClose(e); }}>
     <div class="modal">
       <!-- Item identity header -->
       <div class="item-identity">

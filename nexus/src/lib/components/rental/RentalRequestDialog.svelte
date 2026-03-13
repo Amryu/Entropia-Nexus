@@ -4,14 +4,9 @@
   Contains date picker, pricing breakdown, and optional note.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import DateRangePicker from './DateRangePicker.svelte';
   import { countDays } from '$lib/utils/rentalPricing.js';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -29,6 +24,8 @@
    * @property {Set<string>} [unavailableDates]
    * @property {string|null} [initialStart]
    * @property {string|null} [initialEnd]
+   * @property {(data: any) => void} [onsubmit]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
@@ -37,7 +34,9 @@
     offer,
     unavailableDates = new Set(),
     initialStart = null,
-    initialEnd = null
+    initialEnd = null,
+    onsubmit,
+    onclose
   } = $props();
 
   let selectedStart = $state(null);
@@ -62,9 +61,9 @@
     return false;
   }
 
-  function handleDateChange(e) {
-    selectedStart = e.detail.start;
-    selectedEnd = e.detail.end;
+  function handleDateChange(data) {
+    selectedStart = data.start;
+    selectedEnd = data.end;
     error = '';
   }
 
@@ -75,7 +74,7 @@
     note = '';
     error = '';
     submitting = false;
-    dispatch('close');
+    onclose?.();
   }
 
   async function handleSubmit() {
@@ -102,7 +101,7 @@
         return;
       }
 
-      dispatch('submit', data);
+      onsubmit?.(data);
       close();
     } catch (err) {
       error = 'Failed to submit rental request.';
@@ -118,7 +117,7 @@
   function handleKeydown(e) {
     if (e.key === 'Escape') close();
   }
-  run(() => {
+  $effect(() => {
     if (show && !initialized) {
       selectedStart = initialStart || null;
       selectedEnd = initialEnd || null;
@@ -152,7 +151,7 @@
           discounts={offer.discounts || []}
           deposit={Number(offer.deposit)}
           {unavailableDates}
-          on:change={handleDateChange}
+          onchange={handleDateChange}
         />
 
         <div class="note-field">

@@ -1,9 +1,5 @@
 <script>
-  import { createBubbler, preventDefault } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
@@ -11,17 +7,16 @@
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { formatPedRaw } from '../../orderUtils';
 
-  
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
    * @property {any} [allItems] - Flattened item list from ExchangeBrowser for name→id resolution: [{i, n}, ...]
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onimported]
    */
 
   /** @type {Props} */
-  let { show = false, allItems = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { show = false, allItems = [], onclose, onimported } = $props();
   const MAX_ITEMS = 30000;
 
   let step = $state('paste'); // 'paste' | 'preview' | 'done'
@@ -522,7 +517,7 @@
       const allImported = [...parsedItems, ...unresolvedItems];
       inventory.set(allImported.map((item, i) => ({ ...item, id: i + 1 })));
       step = 'done';
-      dispatch('imported', data);
+      onimported?.(data);
 
       // Remap container custom names (best-effort, non-blocking)
       remapContainerNames(allImported);
@@ -832,7 +827,7 @@
     showUnresolved = false;
     inputMode = 'text';
     containerRefMap = new Map();
-    dispatch('close');
+    onclose?.();
   }
 
   function handleBack() {
@@ -937,7 +932,7 @@
             use:clickable
             aria-label="Choose file to upload"
             onclick={() => fileInput?.click()}
-            ondragover={preventDefault(bubble('dragover'))}
+            ondragover={(e) => e.preventDefault()}
             ondrop={handleDrop}
           >
             <input

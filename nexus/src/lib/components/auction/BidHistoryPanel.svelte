@@ -8,16 +8,15 @@
 
   
 
-  import { createEventDispatcher } from 'svelte';
   /**
    * @typedef {Object} Props
    * @property {Array} [bids]
    * @property {boolean} [isAdmin]
+   * @property {(data: {bidId: number, amount: any}) => void} [onrollback]
    */
 
   /** @type {Props} */
-  let { bids = [], isAdmin = false } = $props();
-  const dispatch = createEventDispatcher();
+  let { bids = [], isAdmin = false, onrollback } = $props();
 
   function formatTimeAgo(dateStr) {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -66,7 +65,7 @@
             <button
               class="rollback-btn"
               title="Rollback to this bid"
-              onclick={() => dispatch('rollback', { bidId: bid.id, amount: bid.amount })}
+              onclick={() => onrollback?.({ bidId: bid.id, amount: bid.amount })}
             >
               Rollback here
             </button>

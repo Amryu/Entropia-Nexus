@@ -9,8 +9,6 @@
   - Click to expand to full map (opens new tab)
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
@@ -393,7 +391,7 @@
   });
 
   // Reload map when planet changes
-  run(() => {
+  $effect(() => {
     if (browser && mapImageUrl) {
       loadMapImage();
     }

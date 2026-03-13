@@ -1,6 +1,5 @@
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { stripHtml } from '$lib/sanitize.js';
 
   /**
@@ -9,6 +8,9 @@
    * @property {boolean} [isOwner]
    * @property {boolean} [purchasing]
    * @property {boolean} [showAsSingleOption] - If true, shows "Request Flight" button
+   * @property {(data: any) => void} [onpurchase]
+   * @property {(data: any) => void} [onrequestFlight]
+   * @property {(data: any) => void} [onedit]
    */
 
   /** @type {Props} */
@@ -16,10 +18,11 @@
     offer,
     isOwner = false,
     purchasing = false,
-    showAsSingleOption = false
+    showAsSingleOption = false,
+    onpurchase,
+    onrequestFlight,
+    onedit
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   function getOfferTypeLabel() {
     if (offer.uses_count) {
@@ -32,11 +35,11 @@
   }
 
   function handlePurchase() {
-    dispatch('purchase', offer);
+    onpurchase?.(offer);
   }
 
   function handleRequestFlight() {
-    dispatch('requestFlight', offer);
+    onrequestFlight?.(offer);
   }
 </script>
 

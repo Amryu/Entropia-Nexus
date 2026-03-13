@@ -3,8 +3,6 @@
   Displays all roles, their grants, and provides CRUD for roles.
 -->
 <script>
-  import { self } from 'svelte/legacy';
-
   // @ts-nocheck
   import { onMount } from 'svelte';
 
@@ -231,7 +229,7 @@
 
 <!-- Create/Edit Dialog -->
 {#if showDialog}
-  <div class="dialog-overlay" role="presentation" onclick={self(() => showDialog = false)}>
+  <div class="dialog-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showDialog = false; }}>
     <div class="dialog">
       <h2>{dialogMode === 'create' ? 'Create Role' : `Edit: ${editingRole.name}`}</h2>
 

@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import { navigate } from '$lib/util';
 
@@ -16,13 +14,13 @@
   let selectedPlanet = $state();
   let planetSimpleName = $state();
 
-  run(() => {
+  $effect(() => {
     planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
   });
-  run(() => {
+  $effect(() => {
     selectedPlanet = planetSimpleName;
   });
-  run(() => {
+  $effect(() => {
     if (selectedPlanet !== planetSimpleName) {
       navigate('/maps/' + selectedPlanet);
     }
@@ -68,7 +66,7 @@
   
   let filteredElements = $state([]);
 
-  run(() => {
+  $effect(() => {
     if (locations) {
       filteredElements = locations.filter((item) => {
         const type = item?.Properties?.Type;
@@ -185,22 +183,22 @@
             virtual: true
           }
         }
-        on:rowClick={(evt) => {
+        onrowClick={(row) => {
           // Set selection immediately and update the URL
-          const clicked = evt.detail.data.payload;
+          const clicked = row.data.payload;
           selected = clicked;
           locations = locations;
           if (clicked?.Id) {
             navigate(`/maps/${planetSimpleName}/${clicked.Id}`);
           }
         }}
-        on:rowHover={(evt) => {
-          if (evt.detail === null) {
+        onrowHover={(row) => {
+          if (row === null) {
             hovered = null;
             return;
           }
 
-          hovered = filteredElements.find(x => locationEquals(x, evt.detail.data.payload));
+          hovered = filteredElements.find(x => locationEquals(x, row.data.payload));
         }} />
     {/if}
   </div>

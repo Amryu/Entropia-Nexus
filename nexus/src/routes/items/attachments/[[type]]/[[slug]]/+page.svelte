@@ -6,12 +6,10 @@
   Supports full wiki editing (except enhancers, which are database-generated).
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -52,8 +50,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.effects === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.effects === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'effects', url: '/api/effects' }
@@ -79,16 +77,16 @@
   let selectedFilter = $state(null);
   let filterInitialized = $state(false);
 
-  run(() => {
-    if (!filterInitialized) {
+  $effect(() => {
+    if (!untrack(() => filterInitialized)) {
       selectedFilter = additional.type || null;
       filterInitialized = true;
     }
   });
 
-  run(() => {
+  $effect(() => {
     if (filterInitialized && !attachment && !isCreateMode) {
-      if ((additional.type || null) !== selectedFilter) {
+      if ((additional.type || null) !== untrack(() => selectedFilter)) {
         selectedFilter = additional.type || null;
       }
     }
@@ -223,7 +221,7 @@
 
   // ========== WIKI EDIT STATE ==========
   // Initialize edit state when user/entity changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const entityType = getEntityType(additional.type);
       const emptyEntity = getEmptyEntity(additional.type);
@@ -233,7 +231,7 @@
   });
 
   // Set pending change when it exists
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -1027,7 +1025,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
               showWaypoints={true}
             />
@@ -1045,7 +1043,7 @@
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -1054,7 +1052,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

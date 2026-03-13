@@ -5,18 +5,17 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
   /**
    * @typedef {Object} Props
    * @property {{ Name: string, Properties?: { CodexBaseCost?: number, CodexType?: string }, _newSpecies?: { CodexBaseCost?: number, CodexType?: string } } | null} [species]
+   * @property {(data: any) => void} [oncreate]
+   * @property {() => void} [oncancel]
    */
 
   /** @type {Props} */
-  let { species = null } = $props();
+  let { species = null, oncreate, oncancel } = $props();
 
   let isEdit = $derived(!!species);
 
@@ -32,7 +31,7 @@
 
   function handleSubmit() {
     if (!canSubmit) return;
-    dispatch('create', {
+    oncreate?.({
       Name: name.trim(),
       _newSpecies: {
         CodexBaseCost: codexBaseCost !== '' ? Number(codexBaseCost) : null,
@@ -42,7 +41,7 @@
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 
   function handleOverlayClick(e) {

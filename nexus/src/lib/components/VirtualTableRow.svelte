@@ -1,8 +1,6 @@
 <script>
-	import { run } from 'svelte/legacy';
-
 	//@ts-nocheck
-	import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
+	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
   import '$lib/style.css';
 
@@ -28,7 +26,9 @@
 		contents = $bindable(),
 		start = $bindable(0),
 		end = $bindable(0),
-		children
+		children,
+		onrowClick = undefined,
+		onrowHover = undefined
 	} = $props();
   
 	// local state
@@ -44,8 +44,6 @@
 
   let resizeObserver = $state();
 
-  let dispatch = createEventDispatcher();
-  
 
   let handlersAttached = $state(false);
 
@@ -104,28 +102,28 @@
       resizeObserver.disconnect();
     }
   });
-	run(() => {
+	$effect(() => {
 		top = start * itemHeight;
 	});
-  run(() => {
+  $effect(() => {
 		if(contents) contents.style.paddingTop = `${top}px`;
 	});
-	run(() => {
+	$effect(() => {
 		bottom = (items.length - end) * itemHeight + (Math.max(viewport_height - start * itemHeight, end * itemHeight) - start * itemHeight);
 	});
-  run(() => {
+  $effect(() => {
 		if(contents) contents.style.paddingBottom = `${bottom}px`;
 	});
-	
-  run(() => {
-		if(resizeObserver && viewport && !handlersAttached) {
+
+  $effect(() => {
+		if(resizeObserver && viewport && !untrack(() => handlersAttached)) {
 	    viewport.addEventListener('scroll', handle_scroll);
 	    resizeObserver.observe(viewport);
 	    handlersAttached = true;
 	  }
 	});
 	// whenever `items` changes, invalidate the current heightmap
-	run(() => {
+	$effect(() => {
 		if (mounted) refresh(items, viewport_height, itemHeight);
 	});
 </script>
@@ -138,7 +136,7 @@
 
 {#if typeof window !== 'undefined'}
 	{#each visible as row, rowIndex (row.index)}
-	<tr onclick={() => dispatch('rowClick', row)} onmouseover={() => dispatch('rowHover', row)} onfocus={() => dispatch('rowHover', row)} onmouseout={() => dispatch('rowHover', null)} onblur={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
+	<tr onclick={() => onrowClick?.(row)} onmouseover={() => onrowHover?.(row)} onfocus={() => onrowHover?.(row)} onmouseout={() => onrowHover?.(null)} onblur={() => onrowHover?.(null)} style={row.data.trStyle ?? ''}>
 		{@render children?.({ item: row.data, index: rowIndex + start, })}
 	</tr>
 	{/each}

@@ -1,9 +1,5 @@
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { clickable } from '$lib/actions/clickable.js';
   import { formatPedRaw, formatMarkupValue } from '../../market/exchange/orderUtils';
 
@@ -20,10 +16,14 @@
     items = [],
     editingMarkupId = null,
     editingMarkupValue = $bindable(''),
-    containerNames = new Map()
+    containerNames = new Map(),
+    onrowClick,
+    onstartMarkupEdit,
+    onmarkupInput,
+    onfinishMarkupEdit,
+    ondeleteContainerName,
+    onsaveContainerName,
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let expandedPaths = $state(new Set());
   let expandedVersion = $state(0); // Trigger reactivity on set changes
@@ -116,7 +116,7 @@
   }
 
   function handleItemClick(item) {
-    dispatch('rowClick', { row: item });
+    onrowClick?.({ row: item });
   }
 
   function hasChildren(node) {
@@ -140,15 +140,15 @@
   }
 
   function startMarkupEdit(item) {
-    dispatch('startMarkupEdit', { item });
+    onstartMarkupEdit?.({ item });
   }
 
   function handleMarkupInput() {
-    dispatch('markupInput', { value: editingMarkupValue });
+    onmarkupInput?.({ value: editingMarkupValue });
   }
 
   function finishMarkupEdit() {
-    dispatch('finishMarkupEdit');
+    onfinishMarkupEdit?.();
   }
 
   // --- Container rename ---
@@ -169,9 +169,9 @@
 
     if (!name || name === originalName) {
       // Revert to default — delete custom name
-      dispatch('deleteContainerName', { path });
+      ondeleteContainerName?.({ path });
     } else {
-      dispatch('saveContainerName', { path, name, itemName: originalName });
+      onsaveContainerName?.({ path, name, itemName: originalName });
     }
     editingContainerPath = null;
     editingContainerName = '';
@@ -220,7 +220,7 @@
                   if (e.key === 'Enter') finishContainerRename();
                   if (e.key === 'Escape') cancelContainerRename();
                 }}
-                onclick={stopPropagation(bubble('click'))}
+                onclick={(e) => e.stopPropagation()}
                 autofocus
                 maxlength="100"
               />
@@ -238,8 +238,8 @@
                   class="rename-btn"
                   role="button"
                   tabindex="0"
-                  onclick={stopPropagation(() => startContainerRename(row.node))}
-                  onkeydown={stopPropagation((e) => e.key === 'Enter' && startContainerRename(row.node))}
+                  onclick={(e) => { e.stopPropagation(); startContainerRename(row.node); }}
+                  onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') startContainerRename(row.node); }}
                   title="Rename container"
                 >&#9998;</span>
               {/if}
@@ -277,7 +277,7 @@
                 oninput={handleMarkupInput}
                 onblur={finishMarkupEdit}
                 onkeydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
-                onclick={stopPropagation(bubble('click'))}
+                onclick={(e) => e.stopPropagation()}
                 autofocus
                 step="0.01"
                 placeholder={row.item._isAbsolute ? '+0' : '100%'}
@@ -287,7 +287,7 @@
                 class="mu-cell"
                 class:has-mu={row.item._markup != null}
                 class:has-market={row.item._markup == null && row.item._marketPrice != null}
-                onclick={stopPropagation(() => row.item.item_id > 0 && startMarkupEdit(row.item))}
+                onclick={(e) => { e.stopPropagation(); row.item.item_id > 0 && startMarkupEdit(row.item); }}
                 title="Click to edit markup"
                 use:clickable
               >

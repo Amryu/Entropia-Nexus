@@ -3,12 +3,11 @@
   Unified wiki page for all location types with type filtering.
 -->
 <script>
-  import { run, stopPropagation, preventDefault } from 'svelte/legacy';
 
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
@@ -532,8 +531,8 @@
     return pairs.join('\n');
   }
 
-  run(() => {
-    if ($editMode && data.mobMaturities === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.mobMaturities === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'mobMaturities', url: '/api/mobmaturities' }
@@ -558,18 +557,18 @@
   // URL-based type (used for breadcrumbs, canonical URLs, etc.)
   let currentType = $derived(data.type || null);
   // Initialize filter from URL once on mount/first data load
-  run(() => {
-    if (!filterInitialized && data.type !== undefined) {
+  $effect(() => {
+    if (!untrack(() => filterInitialized) && data.type !== undefined) {
       selectedFilter = data.type || null;
       filterInitialized = true;
     }
   });
   // Update filter when navigating to a filter-only URL (no item selected, not create mode)
   // This allows filter buttons to work while item clicks don't change the filter
-  run(() => {
-    if (filterInitialized && !data.object && !isCreateMode && !disambiguation) {
+  $effect(() => {
+    if (untrack(() => filterInitialized) && !data.object && !isCreateMode && !disambiguation) {
       // We're on a filter view (no specific item), update the filter
-      if (data.type !== selectedFilter) {
+      if (data.type !== untrack(() => selectedFilter)) {
         selectedFilter = data.type || null;
       }
     }
@@ -653,11 +652,11 @@
     Sections: [],
     Waves: []
   });
-  run(() => {
+  $effect(() => {
     // Check if data is consistent - URL changeId should match loaded existingChange.id in create mode
     const dataIsConsistent = !isCreateMode || !currentChangeId || (data.existingChange?.id && String(data.existingChange.id) === String(currentChangeId));
     const initKey = `${entityType}-${entity?.Id ?? 'new'}-${isCreateMode}-${currentChangeId ?? 'none'}-${data.existingChange?.id ?? 'none'}`;
-    if (user && initKey !== lastInitKey && dataIsConsistent) {
+    if (user && initKey !== untrack(() => lastInitKey) && dataIsConsistent) {
       lastInitKey = initKey;
       const existingChange = data.existingChange || null;
       const initialEntity = isCreateMode
@@ -667,7 +666,7 @@
       initEditState(initialEntity, entityType, isCreateMode, editChange);
     }
   });
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -681,7 +680,7 @@
     : (activeLocation?.Properties?.Type || 'Teleporter'));
   let isSettlement = $derived(SETTLEMENT_TYPES.includes(locationType));
   // Auto-set EstateType when type changes to Estate (required for bot extension handling)
-  run(() => {
+  $effect(() => {
     if ($editMode && locationType === 'Estate' && !activeLocation?.Properties?.EstateType) {
       updateField('Properties.EstateType', 'Apartment');
     }
@@ -913,8 +912,8 @@
                   value={getOptionLabel([{ value: '', label: 'None' }, ...parentLocationOptions], activeLocation?.ParentLocation?.Id)}
                   options={[{ value: '', label: 'None' }, ...parentLocationOptions]}
                   placeholder="Select parent location"
-                  on:select={(e) => {
-                    const locId = e.detail.value ? Number(e.detail.value) : null;
+                  onselect={(e) => {
+                    const locId = e.value ? Number(e.value) : null;
                     if (locId) {
                       const loc = allLocations.find(l => l.Id === locId);
                       updateField('ParentLocation', loc ? { Id: loc.Id, Name: loc.Name } : null);
@@ -940,7 +939,7 @@
                 nameLocked={true}
                 hidePlanet={true}
                 hideName={true}
-                on:change={(e) => handleWaypointChange(e.detail)}
+                onchange={handleWaypointChange}
               />
             {:else}
               <WaypointCopyButton waypoint={waypointString} />
@@ -1281,7 +1280,7 @@
                   value=""
                   options={facilityOptions.filter(f => !(activeLocation?.Facilities || []).some(af => af.Name === f.value))}
                   placeholder="Add facility..."
-                  on:select={(e) => { if (e.detail.value) addFacility(e.detail.value); }}
+                  onselect={(e) => { if (e.value) addFacility(e.value); }}
                 />
               </div>
             {:else if activeLocation?.Facilities?.length}
@@ -1320,7 +1319,7 @@
                       <div class="wave-actions">
                         <button
                           class="btn-icon danger"
-                          onclick={stopPropagation(() => removeWave(idx))}
+                          onclick={(e) => { e.stopPropagation(); removeWave(idx); }}
                           title="Remove wave"
                           type="button"
                         >×</button>
@@ -1368,7 +1367,7 @@
                                   <button
                                     type="button"
                                     class="maturity-suggestion-item"
-                                    onmousedown={preventDefault(() => selectMaturity(idx, mat))}
+                                    onmousedown={(e) => { e.preventDefault(); selectMaturity(idx, mat); }}
                                   >
                                     <span class="suggestion-mob">{mat.Mob?.Name || 'Unknown'}</span>
                                     <span class="suggestion-mat">{mat.Name || 'Unknown'}</span>
@@ -1420,7 +1419,7 @@
             {#if $editMode}
               <RichTextEditor
                 content={activeLocation?.Properties?.Description || ''}
-                on:change={(e) => updateField('Properties.Description', e.detail)}
+                onchange={(data) => updateField('Properties.Description', data)}
                 placeholder="Describe this location..."
                 showWaypoints={true}
               />

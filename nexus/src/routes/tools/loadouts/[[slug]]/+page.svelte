@@ -1,12 +1,9 @@
 ﻿<script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import '../loadouts.css';
 
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import { browser } from '$app/environment';
   import { beforeNavigate, goto } from '$app/navigation';
@@ -1666,9 +1663,9 @@
 
   }
 
-  function handlePickerRowClick(event) {
+  function handlePickerRowClick(data) {
     if (!loadout || !activePicker) return;
-    const row = event?.detail?.row;
+    const row = data?.row;
     const item = row?._item;
     if (!item) return;
     pickerPreviewRow = row;
@@ -3494,7 +3491,7 @@
   let sharedLoadoutData = $derived(sharedLoadout?.data ?? null);
   let sharedDisplayName = $derived(sharedLoadoutData?.Name || sharedLoadout?.name || 'Shared Loadout');
   // Initialize loadouts when entering normal mode (either on mount or after leaving shared mode)
-  run(() => {
+  $effect(() => {
     if (browser && !isSharedMode && !loadoutsInitialized) {
       initializeLoadoutsOnModeChange();
     }
@@ -3524,7 +3521,7 @@
   let rightRing = $derived(effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Right') : null);
   let selectedHealingIsChip = $derived(!!effectiveLoadoutData?.Gear?.Healing?.Name
     && medicalChips.some(c => c.Name === effectiveLoadoutData.Gear.Healing.Name));
-  run(() => {
+  $effect(() => {
     // Ensure this recomputes when caps/catalog/entities/loadout change.
     // Use sharedLoadoutData in shared mode, otherwise use loadout
     loadoutVersion;
@@ -3596,7 +3593,7 @@
     : null);
   let activePetEffects = $derived(activePet?.Effects || []);
   // Auto-select loadout from URL when data becomes available (skip in shared mode)
-  run(() => {
+  $effect(() => {
     if (browser && !isSharedMode && data?.additional?.loadoutId && !urlSelectionAttempted && !loadout && loadoutsDataLoaded) {
       urlSelectionAttempted = true;
       const urlId = data.additional.loadoutId;
@@ -3627,32 +3624,32 @@
       .filter(s => Array.isArray(loadout.Sets[s]) && loadout.Sets[s].length > 1);
   })());
   // When the current loadout changes, prune selected sections that are no longer valid
-  run(() => {
-    if (compareSetSections.size > 0 && compareSetAvailableSections.length > 0) {
-      const pruned = new Set(Array.from(compareSetSections).filter(s => compareSetAvailableSections.includes(s)));
-      if (pruned.size !== compareSetSections.size) compareSetSections = pruned;
+  $effect(() => {
+    if (untrack(() => compareSetSections).size > 0 && compareSetAvailableSections.length > 0) {
+      const pruned = new Set(Array.from(untrack(() => compareSetSections)).filter(s => compareSetAvailableSections.includes(s)));
+      if (pruned.size !== untrack(() => compareSetSections).size) compareSetSections = pruned;
     }
   });
   // --- Set permutation comparison ---
-  run(() => {
+  $effect(() => {
     compareSetMode = compareSetSections.size > 0;
   });
   // Rebuild permutations when relevant state changes
-  run(() => {
+  $effect(() => {
     if (compareMode && compareSetMode && loadout) {
       compareSetPermutations = buildSetPermutations(loadout, compareSetSections);
     } else {
       compareSetPermutations = [];
     }
   });
-  run(() => {
+  $effect(() => {
     if (activeSource === 'online') {
       loadouts = onlineLoadouts.map(r => r.data);
     } else {
       loadouts = localLoadouts;
     }
   });
-  run(() => {
+  $effect(() => {
     if (compareMode) {
       // Build a snapshot cache when entering compare (avoids per-render recomputation).
       // We intentionally don't depend on loadoutVersion to avoid recomputing on every edit.
@@ -3680,25 +3677,25 @@
       compareEvalCache = new Map();
     }
   });
-  run(() => {
+  $effect(() => {
     compareAnchorId = loadout?.Id ?? null;
   });
-  run(() => {
+  $effect(() => {
     compareAnchorEval = compareAnchorId ? compareEvalCache.get(compareAnchorId) : null;
   });
-  run(() => {
+  $effect(() => {
     compareEffectiveDisplay = compareDisplay === 'delta' && compareAnchorEval ? 'delta' : 'values';
   });
-  run(() => {
+  $effect(() => {
     compareVisibleKeys = isMobileLayout
       ? COMPARE_MOBILE_KEYS[compareType]
       : (compareType === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor);
   });
-  run(() => {
-    if (compareHiddenLoadoutIds.size > 0) {
+  $effect(() => {
+    if (untrack(() => compareHiddenLoadoutIds).size > 0) {
       const existing = new Set(loadouts.filter(lo => lo?.Id).map(lo => lo.Id));
-      const pruned = new Set(Array.from(compareHiddenLoadoutIds).filter(id => existing.has(id)));
-      if (pruned.size !== compareHiddenLoadoutIds.size) {
+      const pruned = new Set(Array.from(untrack(() => compareHiddenLoadoutIds)).filter(id => existing.has(id)));
+      if (pruned.size !== untrack(() => compareHiddenLoadoutIds).size) {
         compareHiddenLoadoutIds = pruned;
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(COMPARE_HIDDEN_ROWS_STORAGE_KEY, JSON.stringify(Array.from(compareHiddenLoadoutIds)));
@@ -3706,7 +3703,7 @@
       }
     }
   });
-  run(() => {
+  $effect(() => {
     compareType;
     compareEffectiveDisplay;
     compareAnchorId;
@@ -3729,18 +3726,18 @@
         : [];
     }
   });
-  run(() => {
+  $effect(() => {
     hiddenCompareRows = loadouts
       .filter(lo => lo?.Id && compareHiddenLoadoutIds.has(lo.Id))
       .map(lo => ({ id: lo.Id, name: lo.Name }));
   });
-  run(() => {
+  $effect(() => {
     compareType;
     compareVisibleKeys;
     compareEffectiveDisplay;
     compareColumns = compareMode ? buildCompareColumns() : [];
   });
-  run(() => {
+  $effect(() => {
     if (activeSource === 'local') {
       writeLocalLoadouts(localLoadouts);
     }
@@ -3763,7 +3760,7 @@
     const query = loadoutSearch.trim().toLowerCase();
     return !query || name.includes(query);
   }));
-  run(() => {
+  $effect(() => {
     if(loadout?.Gear.Weapon.Enhancers) {
       loadout.Gear.Weapon.Enhancers.Damage = clamp(loadout.Gear.Weapon.Enhancers.Damage, 0, 10);
       loadout.Gear.Weapon.Enhancers.Accuracy = clamp(loadout.Gear.Weapon.Enhancers.Accuracy, 0, 10);
@@ -3772,24 +3769,24 @@
       loadout.Gear.Weapon.Enhancers.SkillMod = clamp(loadout.Gear.Weapon.Enhancers.SkillMod, 0, 10);
     }
   });
-  run(() => {
+  $effect(() => {
     if(loadout?.Gear.Armor.Enhancers) {
       loadout.Gear.Armor.Enhancers.Defense = clamp(loadout.Gear.Armor.Enhancers.Defense, 0, 10);
       loadout.Gear.Armor.Enhancers.Durability = clamp(loadout.Gear.Armor.Enhancers.Durability, 0, 10);
     }
   });
-  run(() => {
+  $effect(() => {
     if(loadout?.Gear?.Healing?.Enhancers) {
       loadout.Gear.Healing.Enhancers.Economy = clamp(loadout.Gear.Healing.Enhancers.Economy, 0, 10);
       loadout.Gear.Healing.Enhancers.SkillMod = clamp(loadout.Gear.Healing.Enhancers.SkillMod, 0, 10);
     }
   });
-  run(() => {
+  $effect(() => {
     if (loadout && loadout.Markup == null) {
       resetMarkup();
     }
   });
-  run(() => {
+  $effect(() => {
     if (loadout?.Markup) {
       if (loadout.Markup.ArmorSet == null) loadout.Markup.ArmorSet = 100;
       if (loadout.Markup.PlateSet == null) loadout.Markup.PlateSet = 100;
@@ -3801,7 +3798,7 @@
       });
     }
   });
-  run(() => {
+  $effect(() => {
     if (loadout?.Gear?.Armor?.ManageIndividual === false && loadout?.Gear?.Armor?.SetName === null) {
       resetArmor();
     } else if (loadout?.Gear?.Armor?.ManageIndividual === true) {
@@ -4097,30 +4094,26 @@
               {/snippet}
         <div class="compare-toolbar">
           <div class="compare-toolbar-left">
-            <div class="compare-segment" onclick={stopPropagation(bubble('click'))}>
+            <div class="compare-segment" onclick={(e) => e.stopPropagation()}>
               <button type="button" class:active={compareType === 'weapons'} onclick={() => (compareType = 'weapons')}>Weapons</button>
               <button type="button" class:active={compareType === 'armor'} onclick={() => (compareType = 'armor')}>Armor</button>
             </div>
-            <div class="compare-segment" onclick={stopPropagation(bubble('click'))}>
+            <div class="compare-segment" onclick={(e) => e.stopPropagation()}>
               <button type="button" class:active={compareDisplay === 'values'} onclick={() => (compareDisplay = 'values')}>Values</button>
               <button type="button" class:active={compareDisplay === 'delta'} disabled={!compareAnchorEval} onclick={() => (compareDisplay = 'delta')}>Delta</button>
             </div>
             {#if compareSetAvailableSections.length > 0}
-              <div class="compare-menu" onclick={stopPropagation(bubble('click'))}>
+              <div class="compare-menu" onclick={(e) => e.stopPropagation()}>
                 <button
                   type="button"
                   class="compare-menu-btn"
                   class:active={compareSetMode}
-                  onclick={stopPropagation(() => {
-                    compareSetsOpen = !compareSetsOpen;
-                    compareHiddenOpen = false;
-                    compareColumnsOpen = false;
-                  })}
+                  onclick={(e) => { e.stopPropagation(); compareSetsOpen = !compareSetsOpen; compareHiddenOpen = false; compareColumnsOpen = false; }}
                 >
                   Sets{compareSetSections.size > 0 ? ` (${compareSetSections.size})` : ''}
                 </button>
                 {#if compareSetsOpen}
-                  <div class="compare-popover" onclick={stopPropagation(bubble('click'))}>
+                  <div class="compare-popover" onclick={(e) => e.stopPropagation()}>
                     <div class="compare-popover-header">
                       <div class="compare-popover-title">Compare set permutations</div>
                       {#if compareSetSections.size > 0}
@@ -4151,7 +4144,7 @@
           </div>
 
           <div class="compare-toolbar-right">
-            <div class="compare-search" onclick={stopPropagation(bubble('click'))}>
+            <div class="compare-search" onclick={(e) => e.stopPropagation()}>
               <input type="text" placeholder="Search loadouts..." bind:value={compareNameQuery} />
             </div>
 
@@ -4160,16 +4153,12 @@
                 <button
                   type="button"
                   class="compare-menu-btn"
-                  onclick={stopPropagation(() => {
-                    compareHiddenOpen = !compareHiddenOpen;
-                    compareColumnsOpen = false;
-                    compareSetsOpen = false;
-                  })}
+                  onclick={(e) => { e.stopPropagation(); compareHiddenOpen = !compareHiddenOpen; compareColumnsOpen = false; compareSetsOpen = false; }}
                 >
                   Hidden{hiddenCompareRows.length ? ` (${hiddenCompareRows.length})` : ''}
                 </button>
                 {#if compareHiddenOpen}
-                  <div class="compare-popover" onclick={stopPropagation(bubble('click'))}>
+                  <div class="compare-popover" onclick={(e) => e.stopPropagation()}>
                     {#if hiddenCompareRows.length === 0}
                       <div class="compare-popover-empty">No hidden loadouts.</div>
                     {:else}
@@ -4192,16 +4181,12 @@
                 <button
                   type="button"
                   class="compare-menu-btn"
-                  onclick={stopPropagation(() => {
-                    compareColumnsOpen = !compareColumnsOpen;
-                    compareHiddenOpen = false;
-                    compareSetsOpen = false;
-                  })}
+                  onclick={(e) => { e.stopPropagation(); compareColumnsOpen = !compareColumnsOpen; compareHiddenOpen = false; compareSetsOpen = false; }}
                 >
                   Columns
                 </button>
                 {#if compareColumnsOpen}
-                  <div class="compare-popover" onclick={stopPropagation(bubble('click'))}>
+                  <div class="compare-popover" onclick={(e) => e.stopPropagation()}>
                     <div class="compare-popover-header">
                       <div class="compare-popover-title">Shown columns</div>
                       <button type="button" class="compare-popover-reset" onclick={() => resetCompareColumns(compareType)}>Reset</button>
@@ -4239,8 +4224,8 @@
             sortable={true}
             rowHeight={isMobileLayout ? 34 : 38}
             emptyMessage="No loadouts match your filters."
-            on:rowClick={(e) => {
-              const id = e.detail?.row?._id;
+            onrowClick={(data) => {
+              const id = data?.row?._id;
               if (compareSetMode && id?.includes('::perm::')) {
                 // Switch to the set combination for this permutation
                 const perm = compareSetPermutations.find(p => p.loadout.Id === id);
@@ -5318,40 +5303,40 @@
                     <button
                       class="set-tab"
                       class:active={activeSetIndices.Weapon === i}
-                      onclick={stopPropagation(() => handleSetTabClick('Weapon', i))}
+                      onclick={(e) => { e.stopPropagation(); handleSetTabClick('Weapon', i); }}
                     >
                       <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                       {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                       {#if activeSetIndices.Weapon === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                     </button>
                     {#if setTabMenuOpen?.section === 'Weapon' && setTabMenuOpen?.index === i}
-                      <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Weapon', i))}>Rename</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Weapon', i))}>
+                      <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Weapon', i); }}>Rename</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Weapon', i); }}>
                           {setEntry.isDefault ? 'Already default' : 'Set as default'}
                         </button>
                         <div class="set-tab-menu-divider"></div>
-                        <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Weapon', i))}>Delete set</button>
+                        <button class="set-tab-menu-item danger" onclick={(e) => { e.stopPropagation(); deleteSet('Weapon', i); }}>Delete set</button>
                       </div>
                     {/if}
                   </div>
                 {/each}
-                <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; })} title="Add set">+
+                <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
                   {#if setAddMenuOpen === 'Weapon'}
                     <div class="set-tab-menu">
-                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', false))}>New empty set</button>
-                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', true))}>Copy current set</button>
+                      <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', false); }}>New empty set</button>
+                      <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', true); }}>Copy current set</button>
                     </div>
                   {/if}
                 </button>
               </div>
             {:else}
               <div class="set-tabs">
-                <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; })} title="Add set">+
+                <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
                   {#if setAddMenuOpen === 'Weapon'}
                     <div class="set-tab-menu">
-                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', false))}>New empty set</button>
-                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', true))}>Copy current set</button>
+                      <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', false); }}>New empty set</button>
+                      <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', true); }}>Copy current set</button>
                     </div>
                   {/if}
                 </button>
@@ -5595,40 +5580,40 @@
                       <button
                         class="set-tab"
                         class:active={activeSetIndices.Armor === i}
-                        onclick={stopPropagation(() => handleSetTabClick('Armor', i))}
+                        onclick={(e) => { e.stopPropagation(); handleSetTabClick('Armor', i); }}
                       >
                         <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                         {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                         {#if activeSetIndices.Armor === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Armor' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
-                          <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Armor', i))}>Rename</button>
-                          <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Armor', i))}>
+                        <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                          <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Armor', i); }}>Rename</button>
+                          <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Armor', i); }}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
                           </button>
                           <div class="set-tab-menu-divider"></div>
-                          <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Armor', i))}>Delete set</button>
+                          <button class="set-tab-menu-item danger" onclick={(e) => { e.stopPropagation(); deleteSet('Armor', i); }}>Delete set</button>
                         </div>
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; })} title="Add set">+
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
                     {#if setAddMenuOpen === 'Armor'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', false))}>New empty set</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', true))}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', false); }}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', true); }}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; })} title="Add set">+
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
                     {#if setAddMenuOpen === 'Armor'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', false))}>New empty set</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', true))}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', false); }}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', true); }}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
@@ -5762,40 +5747,40 @@
                       <button
                         class="set-tab"
                         class:active={activeSetIndices.Healing === i}
-                        onclick={stopPropagation(() => handleSetTabClick('Healing', i))}
+                        onclick={(e) => { e.stopPropagation(); handleSetTabClick('Healing', i); }}
                       >
                         <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                         {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                         {#if activeSetIndices.Healing === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Healing' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
-                          <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Healing', i))}>Rename</button>
-                          <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Healing', i))}>
+                        <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                          <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Healing', i); }}>Rename</button>
+                          <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Healing', i); }}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
                           </button>
                           <div class="set-tab-menu-divider"></div>
-                          <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Healing', i))}>Delete set</button>
+                          <button class="set-tab-menu-item danger" onclick={(e) => { e.stopPropagation(); deleteSet('Healing', i); }}>Delete set</button>
                         </div>
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; })} title="Add set">+
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
                     {#if setAddMenuOpen === 'Healing'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', false))}>New empty set</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', true))}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', false); }}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', true); }}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; })} title="Add set">+
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
                     {#if setAddMenuOpen === 'Healing'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', false))}>New empty set</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', true))}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', false); }}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', true); }}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
@@ -5874,40 +5859,40 @@
                       <button
                         class="set-tab"
                         class:active={activeSetIndices.Accessories === i}
-                        onclick={stopPropagation(() => handleSetTabClick('Accessories', i))}
+                        onclick={(e) => { e.stopPropagation(); handleSetTabClick('Accessories', i); }}
                       >
                         <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                         {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                         {#if activeSetIndices.Accessories === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Accessories' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
-                          <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Accessories', i))}>Rename</button>
-                          <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Accessories', i))}>
+                        <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                          <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Accessories', i); }}>Rename</button>
+                          <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Accessories', i); }}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
                           </button>
                           <div class="set-tab-menu-divider"></div>
-                          <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Accessories', i))}>Delete set</button>
+                          <button class="set-tab-menu-item danger" onclick={(e) => { e.stopPropagation(); deleteSet('Accessories', i); }}>Delete set</button>
                         </div>
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; })} title="Add set">+
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
                     {#if setAddMenuOpen === 'Accessories'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', false))}>New empty set</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', true))}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', false); }}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', true); }}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; })} title="Add set">+
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
                     {#if setAddMenuOpen === 'Accessories'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', false))}>New empty set</button>
-                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', true))}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', false); }}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', true); }}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
@@ -6082,7 +6067,7 @@
 
 {#if showPickerDialog && pickerConfig}
   <div class="dialog-backdrop picker-backdrop" onclick={closePicker} onkeydown={(e) => e.key === 'Escape' && closePicker()}>
-    <div class="dialog picker-dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="picker-dialog-title">
+    <div class="dialog picker-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="picker-dialog-title">
       <div class="dialog-header">
         <h3 id="picker-dialog-title">{pickerConfig.title}</h3>
         {#if activePicker === 'amplifier'}
@@ -6153,7 +6138,7 @@
               sortable={true}
               stickyHeader={true}
               emptyMessage="No items found"
-              on:rowClick={handlePickerRowClick}
+              onrowClick={handlePickerRowClick}
             />
           </div>
         {/if}
@@ -6269,7 +6254,7 @@
 
 {#if showImportSourceDialog}
   <div class="dialog-backdrop" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
-    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="import-source-title">
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-source-title">
       <div class="dialog-header">
         <h3 id="import-source-title">Import Loadout</h3>
         <button class="close-btn" onclick={() => showImportSourceDialog = false} aria-label="Close dialog">
@@ -6302,7 +6287,7 @@
 
 {#if showShareDialog}
   <div class="dialog-backdrop" onclick={() => showShareDialog = false} onkeydown={(e) => e.key === 'Escape' && (showShareDialog = false)}>
-    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
       <div class="dialog-header">
         <h3 id="share-dialog-title">Share Loadout</h3>
         <button class="close-btn" onclick={() => showShareDialog = false} aria-label="Close dialog">
@@ -6343,7 +6328,7 @@
 
 {#if showImportDialog}
   <div class="dialog-backdrop" onclick={() => showImportDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)}>
-    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
       <div class="dialog-header">
         <h3 id="import-dialog-title">Import Local Loadouts</h3>
         <button class="close-btn" onclick={() => showImportDialog = false} aria-label="Close dialog">
@@ -6378,7 +6363,7 @@
 
 {#if showDeleteDialog}
 <div class="dialog-backdrop" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
-  <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
     <div class="dialog-header">
       <h3 id="delete-dialog-title">Delete Loadout</h3>
     </div>
@@ -6395,7 +6380,7 @@
 
 {#if setRenameDialog}
 <div class="dialog-backdrop" onclick={() => setRenameDialog = null} onkeydown={(e) => e.key === 'Escape' && (setRenameDialog = null)}>
-  <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
+  <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
     <div class="dialog-header">
       <h3>Rename Set</h3>
     </div>

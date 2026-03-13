@@ -1,10 +1,7 @@
 <script>
   import EditFormControlGroup from './EditFormControlGroup.svelte';
-  import { run } from 'svelte/legacy';
 
   //@ts-nocheck
-  import { createEventDispatcher } from "svelte";
-
   import { writable } from "svelte/store";
 
   /**
@@ -15,6 +12,7 @@
    * @property {any} [controls]
    * @property {any} [title]
    * @property {boolean} [disabled]
+   * @property {() => void} [onchange]
    */
 
   /** @type {Props} */
@@ -24,11 +22,11 @@
     dependencies = {},
     controls = [],
     title = null,
-    disabled = false
+    disabled = false,
+    onchange
   } = $props();
 
   let stores = $state({});
-  let dispatch = createEventDispatcher();
   let tempValues = $state({});
 
   function createStore(object, _get, _set, dependencies) {
@@ -44,12 +42,12 @@
       set value(newValue) {
         _set(object, newValue, dependencies, root);
         set(newValue);
-        dispatch('change');
+        onchange?.();
       }
     };
   }
 
-  run(() => {
+  $effect(() => {
     if(controls) {
       stores = {};
       controls.forEach((control, i) => {
@@ -167,7 +165,7 @@
     {:else if control.type === 'textarea'}
       <textarea id={control.key} bind:value={stores[i].value} disabled={disabled}></textarea>
     {:else if control.type === 'select'}
-      <select id={control.key} bind:value={stores[i].value} disabled={disabled} onchange={() => dispatch('change')}>
+      <select id={control.key} bind:value={stores[i].value} disabled={disabled} onchange={() => onchange?.()}>
         {#each control.options(object, dependencies, root) as option}
           <option value={option ?? ''}>{option ?? 'None'}</option>
         {/each}
@@ -360,7 +358,7 @@
         <input type="number" id={control.key} value={stores[i].value[1]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [stores[i].value[0], Number(event.target.value)]} disabled={disabled} />
       </span>
     {:else if control.type === 'group'}
-      <EditFormControlGroup root={root} bind:object={object} controls={control.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+      <EditFormControlGroup root={root} bind:object={object} controls={control.controls} dependencies={dependencies} disabled={disabled} onchange={() => onchange?.()} />
     {:else if control.type === 'list'}
       {#each (stores[i].value ?? [])
         .map((item, idx) => ({ item, idx }))
@@ -376,7 +374,7 @@
                 ...arr.slice(0, idx),
                 ...arr.slice(idx + 1)
               ];
-              dispatch('change'); 
+              onchange?.(); 
             }
           }} disabled={disabled} />
           {#if control.allowInsert !== false}
@@ -395,12 +393,12 @@
                 newItem,
                 ...parentArray.slice(insertIdx)
               ];
-              dispatch('change'); 
+              onchange?.(); 
             }} disabled={disabled} />
           {/if}
         </span>
         <div class="efcg-item">
-          <EditFormControlGroup root={root} bind:object={entry.item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+          <EditFormControlGroup root={root} bind:object={entry.item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} onchange={() => onchange?.()} />
         </div>
       {/each}
       {control.itemNameFunc ? control.itemNameFunc(stores[i].value?.length) : `#${(stores[i].value?.length ?? 0) + 1}`}
@@ -412,7 +410,7 @@
           control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
         }
         stores[i].value = [...stores[i].value, newItem]; 
-        dispatch('change'); 
+        onchange?.(); 
       }} disabled={disabled} />
     {:else if control.type === 'array'}
       {@const arrayItems = Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k, root)) ?? undefined)}
@@ -420,12 +418,12 @@
         <span>
           {control.itemNameFunc(j)} &nbsp;
           {#if value !== undefined}
-      <input type="button" title="Remove" value="🗑️" onclick={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j, root)); dispatch('change'); }} disabled={disabled} />
+      <input type="button" title="Remove" value="🗑️" onclick={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j, root)); onchange?.(); }} disabled={disabled} />
           {/if}
         </span>
         {#if value !== undefined}
           <div class="efcg-item">
-            <EditFormControlGroup root={root} bind:object={arrayItems[j]} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+            <EditFormControlGroup root={root} bind:object={arrayItems[j]} controls={control.config.controls} dependencies={dependencies} disabled={disabled} onchange={() => onchange?.()} />
           </div>
         {:else}
           <input type="button" value="Add" onclick={() => { 
@@ -437,7 +435,7 @@
             }
             const arr = stores[i].value || [];
             stores[i].value = [...arr, newItem]; 
-            dispatch('change'); 
+            onchange?.(); 
           }} disabled={disabled} />
         {/if}
       {/each}

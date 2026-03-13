@@ -1,8 +1,5 @@
 <script>
-  import { run, self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { inventory } from '../../exchangeStore.js';
   import { isBlueprint, isItemTierable, isLimited, itemHasCondition } from '../../orderUtils';
   import { apiCall } from '$lib/util.js';
@@ -12,12 +9,12 @@
    * @property {boolean} [show]
    * @property {any} [item]
    * @property {any} [allItems]
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onupdated]
    */
 
   /** @type {Props} */
-  let { show = false, item = $bindable(null), allItems = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { show = false, item = $bindable(null), allItems = [], onclose, onupdated } = $props();
 
   let itemDetails = $state(null);
   let loadingDetails = $state(false);
@@ -169,7 +166,7 @@
       );
       // Update local item reference
       item = updated;
-      dispatch('updated', updated);
+      onupdated?.(updated);
 
       saved = true;
       setTimeout(() => { saved = false; }, 1500);
@@ -182,9 +179,9 @@
 
   function handleClose() {
     if (saveTimeout) clearTimeout(saveTimeout);
-    dispatch('close');
+    onclose?.();
   }
-  run(() => {
+  $effect(() => {
     if (show && item) openItem(item);
   });
   let isFungible = $derived(item && !item.instance_key);
@@ -202,7 +199,7 @@
 </script>
 
 {#if show && item}
-  <div class="modal-overlay" role="presentation" onclick={self(handleClose)}>
+  <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">{item.item_name || 'Item'}</h3>

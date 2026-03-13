@@ -393,8 +393,8 @@
                       placeholder="Search item..."
                       apiEndpoint="/search/items"
                       displayFn={(item) => item?.Name || ''}
-                      on:change={(e) => handleItemSearchChange(choiceIndex, itemIndex, e.detail.value)}
-                      on:select={(e) => handleItemSearchSelect(choiceIndex, itemIndex, e.detail.data)}
+                      onchange={(e) => handleItemSearchChange(choiceIndex, itemIndex, e.value)}
+                      onselect={(e) => handleItemSearchSelect(choiceIndex, itemIndex, e.data)}
                     />
                     <button type="button" class="btn-icon danger" onclick={() => removeItem(choiceIndex, itemIndex)} title="Remove">×</button>
                   </div>
@@ -436,8 +436,8 @@
                       filterFn={skillImplantFilter}
                       displayFn={skillDisplayFn}
                       emptyMessage="No skills found"
-                      on:change={(e) => handleSkillSearchChange(choiceIndex, skillIndex, e.detail.value)}
-                      on:select={(e) => handleSkillSearchSelect(choiceIndex, skillIndex, e.detail.data)}
+                      onchange={(e) => handleSkillSearchChange(choiceIndex, skillIndex, e.value)}
+                      onselect={(e) => handleSkillSearchSelect(choiceIndex, skillIndex, e.data)}
                     />
                     <button type="button" class="btn-icon danger" onclick={() => removeSkill(choiceIndex, skillIndex)} title="Remove">×</button>
                   </div>
@@ -491,8 +491,8 @@
                   placeholder="Search item..."
                   apiEndpoint="/search/items"
                   displayFn={(item) => item?.Name || ''}
-                  on:change={(e) => handleItemSearchChange(0, itemIndex, e.detail.value)}
-                  on:select={(e) => handleItemSearchSelect(0, itemIndex, e.detail.data)}
+                  onchange={(e) => handleItemSearchChange(0, itemIndex, e.value)}
+                  onselect={(e) => handleItemSearchSelect(0, itemIndex, e.data)}
                 />
                 <button type="button" class="btn-icon danger" onclick={() => removeItem(0, itemIndex)} title="Remove">×</button>
               </div>
@@ -533,8 +533,8 @@
                   filterFn={skillImplantFilter}
                   displayFn={skillDisplayFn}
                   emptyMessage="No skills found"
-                  on:change={(e) => handleSkillSearchChange(0, skillIndex, e.detail.value)}
-                  on:select={(e) => handleSkillSearchSelect(0, skillIndex, e.detail.data)}
+                  onchange={(e) => handleSkillSearchChange(0, skillIndex, e.value)}
+                  onselect={(e) => handleSkillSearchSelect(0, skillIndex, e.data)}
                 />
                 <button type="button" class="btn-icon danger" onclick={() => removeSkill(0, skillIndex)} title="Remove">×</button>
               </div>

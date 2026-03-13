@@ -5,10 +5,7 @@
   Supports inventory integration to show already-owned items and adjust quantities.
 -->
 <script>
-  import { run, self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { PLANETS, MAX_BUY_ORDERS, DEFAULT_PARTIAL_RATIO } from '../../market/exchange/exchangeConstants.js';
   import { env } from '$env/dynamic/public';
   import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
@@ -40,10 +37,10 @@
     buyOrderCount = $bindable(0),
     isLoggedIn = false,
     allItems = [],
-    inventoryData = null
+    inventoryData = null,
+    oncomplete,
+    onclose
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let orderRows = $state([]);
   let globalPlanet = $state('Calypso');
@@ -346,7 +343,7 @@
         if (createdCount > 0) parts.push(`${createdCount} created`);
         if (updatedCount > 0) parts.push(`${updatedCount} updated`);
         addToast(`${progress} buy order${progress > 1 ? 's' : ''} processed (${parts.join(', ')})`, { type: 'success' });
-        dispatch('complete');
+        oncomplete?.();
       }
     } catch (err) {
       orderRows = orderRows.map(r => r.covered || r.status === 'done' ? r : { ...r, status: 'error', error: 'Network error' });
@@ -368,10 +365,10 @@
   function close() {
     if (submitting) return;
     ordersLoaded = false;
-    dispatch('close');
+    onclose?.();
   }
   // Pre-populate inventory from parent if provided
-  run(() => {
+  $effect(() => {
     if (show && inventoryData && !inventoryLoaded && !inventoryLoading) {
       inventoryItems = inventoryData;
       inventoryLoaded = true;
@@ -389,19 +386,19 @@
     return [...planets].sort();
   })());
   // Re-apply inventory when storage filter changes
-  run(() => {
+  $effect(() => {
     if (inventoryLoaded && storageFilter) {
       applyInventoryToRows();
     }
   });
   // Fetch user orders when dialog opens (for edit detection)
-  run(() => {
+  $effect(() => {
     if (show && isLoggedIn && !ordersLoaded && !ordersLoading) {
       loadUserOrders();
     }
   });
   // Rebuild order rows when items change and dialog is shown
-  run(() => {
+  $effect(() => {
     if (show && items.length > 0) {
       buildOrderRows();
     }
@@ -414,7 +411,7 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" onclick={self(close)}>
+  <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
     <div class="modal">
       <div class="modal-header">
         <h3>Mass Buy Orders</h3>
@@ -605,8 +602,8 @@
 <InventoryImportDialog
   show={showInventoryImport}
   {allItems}
-  on:close={() => showInventoryImport = false}
-  on:imported={() => {
+  onclose={() => showInventoryImport = false}
+  onimported={() => {
     showInventoryImport = false;
     loadInventory();
   }}

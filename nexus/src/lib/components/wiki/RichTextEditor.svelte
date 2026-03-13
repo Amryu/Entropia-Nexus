@@ -17,17 +17,12 @@
   Market usage: showHeadings={false} showCodeBlock={false} showVideo={false} showImages={false}
 -->
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
-  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { Editor, Node, mergeAttributes } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import Link from '@tiptap/extension-link';
   import { page } from '$app/stores';
-
-  const dispatch = createEventDispatcher();
 
   /** Suppress the initial onUpdate that TipTap fires when normalizing empty content */
   let initialized = $state(false);
@@ -72,7 +67,8 @@
     showVideo = true,
     showImages = true,
     showWaypoints = false,
-    handleMarkdownPaste = false
+    handleMarkdownPaste = false,
+    onchange
   } = $props();
 
   /** @type {Editor|null} */
@@ -483,7 +479,7 @@
         if (!initialized) return;
         const html = editor.getHTML();
         content = html;
-        dispatch('change', html);
+        onchange?.(html);
       },
       onSelectionUpdate: () => {
         updateResizeToolbar();
@@ -534,7 +530,7 @@
   });
 
   // Update content when prop changes externally (suppress onUpdate echo)
-  run(() => {
+  $effect(() => {
     if (editor && content !== editor.getHTML()) {
       initialized = false;
       editor.commands.setContent(content || '');
@@ -543,7 +539,7 @@
   });
 
   // Update editable state
-  run(() => {
+  $effect(() => {
     if (editor) {
       editor.setEditable(!disabled);
     }
@@ -1011,7 +1007,7 @@
 
   {#if isLinkModalOpen}
     <div class="link-modal-overlay" role="presentation" onclick={closeLinkModal} onkeydown={(e) => e.key === 'Escape' && closeLinkModal()}>
-      <div class="link-modal" role="dialog" onclick={stopPropagation(bubble('click'))}>
+      <div class="link-modal" role="dialog" onclick={(e) => e.stopPropagation()}>
         <h4>Insert Link</h4>
         <div class="link-field">
           <label for="link-text">Link Text</label>
@@ -1047,7 +1043,7 @@
 
   {#if showVideo && isVideoModalOpen}
     <div class="link-modal-overlay" role="presentation" onclick={closeVideoModal} onkeydown={(e) => e.key === 'Escape' && closeVideoModal()}>
-      <div class="link-modal" role="dialog" onclick={stopPropagation(bubble('click'))}>
+      <div class="link-modal" role="dialog" onclick={(e) => e.stopPropagation()}>
         <h4>Embed Video</h4>
         <div class="link-field">
           <label for="video-url">YouTube or Vimeo URL</label>
@@ -1088,7 +1084,7 @@
 
   {#if showWaypoints && isWaypointModalOpen}
     <div class="link-modal-overlay" role="presentation" onclick={closeWaypointModal} onkeydown={(e) => e.key === 'Escape' && closeWaypointModal()}>
-      <div class="link-modal" role="dialog" onclick={stopPropagation(bubble('click'))}>
+      <div class="link-modal" role="dialog" onclick={(e) => e.stopPropagation()}>
         <h4>Insert Waypoint</h4>
         <div class="link-field">
           <label for="waypoint-string">Waypoint</label>

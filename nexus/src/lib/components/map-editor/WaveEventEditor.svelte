@@ -1,8 +1,5 @@
 <script>
-  import { run, stopPropagation } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util.js';
 
   /**
@@ -18,10 +15,10 @@
     mobs = [],
     location = null,
     isNew = false,
-    pendingWaveData = null
+    pendingWaveData = null,
+    onsave,
+    oncancel
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   // Working copy of waves
   let waves = $state([]);
@@ -34,7 +31,7 @@
   let maturitySearchResults = $state([]);
 
   // Initialize from pending data or existing location Waves
-  run(() => {
+  $effect(() => {
     const source = pendingWaveData?.waves ?? location?.Waves ?? [];
     if (waves.length === 0 && source.length > 0) {
       waves = source.map(w => ({
@@ -75,7 +72,7 @@
   }
 
   // Preload maturities for all mobs referenced in current waves
-  run(() => {
+  $effect(() => {
     const referencedMobIds = new Set();
     for (const wave of waves) {
       for (const matId of wave.MobMaturities) {
@@ -159,11 +156,11 @@
   }
 
   function handleSave() {
-    dispatch('save', { waves });
+    onsave?.({ waves });
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 </script>
 
@@ -438,7 +435,7 @@
           <span class="wave-summary">
             {#if wave.TimeToComplete}{wave.TimeToComplete} min · {/if}{wave.MobMaturities.length} mob{wave.MobMaturities.length !== 1 ? 's' : ''}
           </span>
-          <button class="wave-remove" onclick={stopPropagation(() => removeWave(idx))} title="Remove wave">×</button>
+          <button class="wave-remove" onclick={(e) => { e.stopPropagation(); removeWave(idx); }} title="Remove wave">×</button>
         </div>
 
         {#if expandedWaves.has(idx)}

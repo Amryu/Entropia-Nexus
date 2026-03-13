@@ -6,8 +6,6 @@
   Article: Description → Skill Components → Skill Unlocks
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -231,7 +229,7 @@
   // Build navigation items from professions
   let navItems = $derived(allItems);
   // Initialize edit state when entity or user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const entity = isCreateMode ? (existingChange?.data || emptyEntity) : profession;
       if (entity) {
@@ -241,7 +239,7 @@
     }
   });
   // Set existing pending change when data loads
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -425,7 +423,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Description || ''}
-              on:change={(e) => updateField('Description', e.detail)}
+              onchange={(data) => updateField('Description', data)}
               placeholder="Enter profession description..."
               showWaypoints={true}
             />
@@ -444,7 +442,7 @@
           icon=""
           bind:expanded={panelStates.skills}
           subtitle="{skillCount} skill{skillCount > 1 ? 's' : ''}"
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         >
           <ProfessionSkills skills={activeEntity?.Skills} />
         </DataSection>
@@ -456,7 +454,7 @@
             icon=""
             bind:expanded={panelStates.unlocks}
             subtitle="{unlockCount} unlock{unlockCount > 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <ProfessionUnlocks unlocks={activeEntity.Unlocks} />
           </DataSection>

@@ -8,12 +8,10 @@
   Supports full wiki editing.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -57,8 +55,8 @@
 
   // Lazy-load edit dependencies when edit mode activates
   let editDepsLoading = $state(false);
-  run(() => {
-    if ($editMode && data.effects === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.effects === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'effects', url: '/api/effects' },
@@ -86,17 +84,17 @@
   let filterInitialized = $state(false);
 
   // Initialize filter from URL once on first data load
-  run(() => {
-    if (!filterInitialized) {
+  $effect(() => {
+    if (!untrack(() => filterInitialized)) {
       selectedFilter = additional.type || null;
       filterInitialized = true;
     }
   });
 
   // Sync filter only when on list view (no item selected, not create mode)
-  run(() => {
-    if (filterInitialized && !tool && !isCreateMode) {
-      if ((additional.type || null) !== selectedFilter) {
+  $effect(() => {
+    if (untrack(() => filterInitialized) && !tool && !isCreateMode) {
+      if ((additional.type || null) !== untrack(() => selectedFilter)) {
         selectedFilter = additional.type || null;
       }
     }
@@ -142,8 +140,8 @@
 
   // When misctools profession is cleared, also clear skill fields
   // InlineEdit already updates Profession.Name via its own path prop
-  function handleMiscToolProfessionChange(e) {
-    if (!e.detail.value) {
+  function handleMiscToolProfessionChange(data) {
+    if (!data.value) {
       updateField('Properties.Skill.IsSiB', null);
       updateField('Properties.Skill.LearningIntervalStart', null);
       updateField('Properties.Skill.LearningIntervalEnd', null);
@@ -274,7 +272,7 @@
 
   // ========== WIKI EDIT STATE ==========
   // Initialize edit state when user/entity changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const entityType = getEntityType(additional.type);
       const emptyEntity = getEmptyEntity(additional.type);
@@ -284,7 +282,7 @@
   });
 
   // Set pending change when it exists
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -1053,8 +1051,8 @@
                       value={activeEntity?.Profession?.Name || ''}
                       options={professionOptions}
                       placeholder="Search profession..."
-                      on:select={(e) => updateField('Profession.Name', e.detail.value)}
-                      on:change={(e) => updateField('Profession.Name', e.detail.value)}
+                      onselect={(e) => updateField('Profession.Name', e.value)}
+                      onchange={(e) => updateField('Profession.Name', e.value)}
                     />
                   {:else if activeEntity?.Profession?.Name}
                     <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
@@ -1074,7 +1072,7 @@
                       type="select"
                       placeholder="None"
                       options={professionOptions}
-                      on:change={handleMiscToolProfessionChange}
+                      onchange={handleMiscToolProfessionChange}
                     />
                   {:else if activeEntity?.Profession?.Name}
                     <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
@@ -1176,7 +1174,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
               showWaypoints={true}
             />
@@ -1196,7 +1194,7 @@
             icon=""
             bind:expanded={panelStates.tiering}
             subtitle="{additional.tierInfo?.length || 0} tiers"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <TieringEditor entity={activeEntity} entityType={getEntityType(additional.type)} tierInfo={additional.tierInfo} />
           </DataSection>
@@ -1208,7 +1206,7 @@
           itemName={activeEntity?.Name}
           entityType={getEntityType(additional.type)}
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -1217,7 +1215,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>

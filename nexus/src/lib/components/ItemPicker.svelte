@@ -1,15 +1,13 @@
 <script>
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import Table from './Table.svelte';
-
-  const dispatch = createEventDispatcher();
 
   let {
     items = [],
     columns = [],
     columnWidths = [],
-    columnFunctions = []
+    columnFunctions = [],
+    onrowClick
   } = $props();
 </script>
 
@@ -28,7 +26,7 @@
       }
     })}
     options={{ searchable: true, virtual: true }}
-    on:rowClick={(evt) => {
-      dispatch('rowClick', evt.detail.data);
+    onrowClick={(row) => {
+      onrowClick?.(row.data);
     }} />
 </div>

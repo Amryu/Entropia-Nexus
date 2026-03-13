@@ -1,13 +1,10 @@
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   //@ts-nocheck
   import '$lib/style.css';
 
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { loading } from '../../../../stores';
   import { apiCall, getErrorMessage, getLatestPendingUpdate } from '$lib/util';
   import {
@@ -535,7 +532,7 @@
   let hasPendingChanges = $derived(userPendingCreates.length + userPendingUpdates.length > 0);
   let locations = $derived(data?.additional?.locations || []);
   let isCreateMode = $derived(data.isCreateMode || false);
-  run(() => {
+  $effect(() => {
     if (locations) {
       const slug = $page.params.slug;
       if (!slug) {
@@ -544,12 +541,12 @@
         if (isMobile) {
           panelExpanded = false;
         }
-      } else if (slug !== currentSlug && !isCreateMode) {
+      } else if (slug !== untrack(() => currentSlug) && !isCreateMode) {
         currentSlug = slug;
         // Only update selectedLocation if it doesn't already match the slug.
         // This prevents a race condition where the URL updates before new locations
         // data arrives, which would clear the selection set by selectLocation().
-        if (!selectedLocation || selectedLocation.Id != slug) {
+        if (!untrack(() => selectedLocation) || untrack(() => selectedLocation).Id != slug) {
           const found = findLocationBySlug(slug, locations) || data.object;
           selectedLocation = found;
         }
@@ -560,7 +557,7 @@
   let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, locationEntityId));
   let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
   // Pre-compute difficulty for MobArea locations
-  run(() => {
+  $effect(() => {
     if (locations.length) {
       for (const loc of locations) {
         if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
@@ -571,7 +568,7 @@
   });
   let error = $derived(data.error);
   let effectiveCreateMode = $derived(isCreateMode && isEditAllowed);
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -579,7 +576,7 @@
       setViewingPendingChange(false);
     }
   });
-  run(() => {
+  $effect(() => {
     if (selectedLocation && isApartmentType(selectedLocation?.Properties?.Type)) {
       const viewId = selectedLocation.Id;
       selectedDetails = apartmentDetails[viewId] || null;
@@ -598,8 +595,8 @@
   let isAreaEntity = $derived(!!activeLocation?.Properties?.Shape || isAreaType(activeLocation?.Properties?.Type));
   let isApartmentEntity = $derived(isApartmentType(activeLocation?.Properties?.Type) || activeEntityType === 'Apartment');
   let hasLocationContent = $derived(!isMobile && !!activeLocation?.Properties?.Coordinates);
-  run(() => {
-    if (mapRef && selectedLocation?.Id && selectedLocation.Id !== lastFocusedId) {
+  $effect(() => {
+    if (mapRef && selectedLocation?.Id && selectedLocation.Id !== untrack(() => lastFocusedId)) {
       lastFocusedId = selectedLocation.Id;
       mapRef.focusOnLocation(selectedLocation);
     }
@@ -630,9 +627,9 @@
   let leafletFocusKey = $derived(manualEditFocusKey
     || (shouldAutoOpenLeaflet ? `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}` : null));
   // Seed editorPendingChanges for author/admin viewing an existing Create change
-  run(() => {
+  $effect(() => {
     if (leafletEditMode && data.existingChange?.id && data.existingChange.type === 'Create'
-        && canEditExistingChange && seededChangeId !== data.existingChange.id) {
+        && canEditExistingChange && untrack(() => seededChangeId) !== data.existingChange.id) {
       seededChangeId = data.existingChange.id;
       const tempId = -data.existingChange.id;
       const modified = convertChangeToModified(data.existingChange.data, tempId);
@@ -642,17 +639,17 @@
       }
     }
   });
-  run(() => {
-    if (shouldAutoOpenLeaflet && autoLeafletHandledKey !== autoLeafletKey && !leafletEditMode) {
+  $effect(() => {
+    if (shouldAutoOpenLeaflet && untrack(() => autoLeafletHandledKey) !== autoLeafletKey && !leafletEditMode) {
       autoLeafletHandledKey = autoLeafletKey;
       activateEditMode();
     }
   });
-  run(() => {
+  $effect(() => {
     if (currentPlanet) {
       const group = getPlanetGroupByType($page.params.planet) || getPlanetGroupByType(normalizePlanetSlug(currentPlanet.Name));
       const planetSlug = $page.params.planet;
-      if (group && (group.groupName !== lastPlanetGroup || planetSlug !== lastPlanetSlug)) {
+      if (group && (group.groupName !== untrack(() => lastPlanetGroup) || planetSlug !== untrack(() => lastPlanetSlug))) {
         selectedMainPlanet = group.groupName;
         subAreas = group.list;
         const match = group.list.find((entry) => entry._type === planetSlug);
@@ -662,8 +659,8 @@
       }
     }
   });
-  run(() => {
-    if (!currentPlanet && !selectedMainPlanet && mainPlanets.length > 0) {
+  $effect(() => {
+    if (!currentPlanet && !untrack(() => selectedMainPlanet) && mainPlanets.length > 0) {
       selectedMainPlanet = mainPlanets[0];
       subAreas = planetGroups[selectedMainPlanet] || [];
       selectedSubArea = subAreas[0]?._type || '';
@@ -686,18 +683,18 @@
       .slice(0, 20)
       .map((entry) => entry.item);
   })());
-  run(() => {
+  $effect(() => {
     if (!searchQuery.trim()) {
       searchOpen = false;
     }
   });
   // Reset keyboard selection when results change
-  run(() => {
+  $effect(() => {
     searchResults, searchSelectedIndex = -1;
   });
   // Clear hover state when search closes
-  run(() => {
-    if (!searchOpen && searchResultsHovered) {
+  $effect(() => {
+    if (!searchOpen && untrack(() => searchResultsHovered)) {
       searchResultsHovered = false;
       hoveredLocation = null;
     }
@@ -710,12 +707,12 @@
     }
     return base;
   })());
-  run(() => {
+  $effect(() => {
     if (selectedLocation) {
       panelClosing = false;
     }
   });
-  run(() => {
+  $effect(() => {
     if (isMobile && (selectedLocation || effectiveCreateMode)) {
       panelClosing = false;
     }
@@ -1041,7 +1038,7 @@
       onclick={() => pendingDialogOpen = false}
       onkeydown={(e) => e.key === 'Escape' && (pendingDialogOpen = false)}
     >
-      <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))}>
+      <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()}>
         <div class="dialog-header">
           <h3>Your Drafts & Reviews</h3>
           <button class="close-btn" onclick={() => pendingDialogOpen = false} aria-label="Close dialog">
@@ -1119,18 +1116,18 @@
               planet={currentPlanet}
               isAdmin={user?.grants?.includes('admin.panel') || user?.administrator || false}
               dbChangeIdMap={editorDbChangeIdMap}
-              on:clear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
-              on:submitted={handleChangesSubmitted}
-              on:removed={() => { editorPendingChanges = editorPendingChanges; }}
-              on:changeCreated={(e) => {
-                editorDbChangeIdMap.set(e.detail.key, e.detail.changeId);
+              onclear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
+              onsubmitted={handleChangesSubmitted}
+              onremoved={() => { editorPendingChanges = editorPendingChanges; }}
+              onchangeCreated={(ev) => {
+                editorDbChangeIdMap.set(ev.key, ev.changeId);
                 editorDbChangeIdMap = editorDbChangeIdMap;
               }}
-              on:dbChangeDeleted={(e) => {
+              ondbChangeDeleted={(ev) => {
                 if (planetPendingOverride) {
-                  planetPendingOverride = planetPendingOverride.filter(c => c.id !== e.detail.dbId);
+                  planetPendingOverride = planetPendingOverride.filter(c => c.id !== ev.dbId);
                 } else if (data.planetPendingChanges) {
-                  data.planetPendingChanges = data.planetPendingChanges.filter(c => c.id !== e.detail.dbId);
+                  data.planetPendingChanges = data.planetPendingChanges.filter(c => c.id !== ev.dbId);
                 }
                 editorPendingChanges = editorPendingChanges;
               }}

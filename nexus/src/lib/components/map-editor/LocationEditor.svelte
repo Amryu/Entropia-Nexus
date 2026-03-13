@@ -1,8 +1,6 @@
 <script>
-  import { run, self } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { apiCall } from '$lib/util.js';
   import { LOCATION_TYPES, AREA_TYPES, SHAPES, isArea, getEffectiveType } from './mapEditorUtils.js';
@@ -43,11 +41,16 @@
     isAdmin = false,
     lockedBy = null,
     allLocations = [],
-    isDbChange = false
+    isDbChange = false,
+    onedit,
+    ondelete,
+    onremovePendingAdd,
+    ondeleteDbChange,
+    onrevert,
+    oneditMobArea,
+    oneditWaveArea,
+    onpreview
   } = $props();
-
-
-  const dispatch = createEventDispatcher();
 
   // Edit form state
   let name = $state('');
@@ -248,7 +251,7 @@
       taxRateShops: isLandArea ? taxRateShops : null
     };
 
-    dispatch('edit', { original: location, modified });
+    onedit?.({ original: location, modified });
   }
 
   function handleDelete() {
@@ -262,33 +265,33 @@
       navigator.clipboard?.writeText(text);
       addToast('Delete info copied to clipboard', { type: 'success' });
     } else {
-      dispatch('delete', location);
+      ondelete?.(location);
     }
   }
 
   function handleRemovePendingAdd() {
     if (!location) return;
     if (isDbChange) {
-      dispatch('deleteDbChange', location.Id);
+      ondeleteDbChange?.(location.Id);
     } else {
-      dispatch('removePendingAdd', location.Id);
+      onremovePendingAdd?.(location.Id);
     }
   }
 
   function handleRevert() {
-    dispatch('revert', location);
+    onrevert?.(location);
   }
 
   function handleEditMobArea() {
-    dispatch('editMobArea', { location, isNew });
+    oneditMobArea?.({ location, isNew });
   }
 
   function handleEditWaveArea() {
-    dispatch('editWaveArea', { location, isNew });
+    oneditWaveArea?.({ location, isNew });
   }
 
-  function handleDescriptionChange(e) {
-    description = e.detail;
+  function handleDescriptionChange(data) {
+    description = data;
     scheduleAutoSave();
   }
 
@@ -365,7 +368,7 @@
     .filter(l => isArea(l) && l.Id !== location?.Id)
     .map(l => ({ label: l.Name, value: String(l.Id), sublabel: getEffectiveType(l) })));
   // Populate form from location or drawn data — only when the actual location changes
-  run(() => {
+  $effect(() => {
     if (location && !isNew && location.Id !== loadedLocationId) {
       _populatingForm = true;
       clearTimeout(autoSaveTimer);
@@ -411,7 +414,7 @@
     }
   });
   // Clear tracking when deselected
-  run(() => {
+  $effect(() => {
     if (!location && !isNew) {
       loadedLocationId = null;
       loadedDrawnShapeRef = null;
@@ -419,7 +422,7 @@
       _lastCoordsRef = null;
     }
   });
-  run(() => {
+  $effect(() => {
     if (isNew && drawnShapeData && drawnShapeData !== loadedDrawnShapeRef) {
       _populatingForm = true;
       clearTimeout(autoSaveTimer);
@@ -454,7 +457,7 @@
     }
   });
   // Update shape fields when shape data changes externally (e.g., map drag/resize)
-  run(() => {
+  $effect(() => {
     if (location && location.Id === loadedLocationId && !isNew) {
       const newData = location.Properties?.Data;
       const newCoords = location.Properties?.Coordinates;
@@ -485,7 +488,7 @@
       }
     }
   });
-  run(() => {
+  $effect(() => {
     // Track all shape-related fields for reactivity
     const _shape = shape;
     const _shapeDataJson = shapeDataJson;
@@ -499,7 +502,7 @@
     clearTimeout(previewTimeout);
     previewTimeout = setTimeout(() => {
       if (!_active) {
-        dispatch('preview', null);
+        onpreview?.(null);
         return;
       }
 
@@ -515,14 +518,14 @@
           } catch { return; } // invalid JSON — skip preview update
         }
         if (shapeData) {
-          dispatch('preview', { shape: _shape, data: shapeData, center: null });
+          onpreview?.({ shape: _shape, data: shapeData, center: null });
         } else {
-          dispatch('preview', null);
+          onpreview?.(null);
         }
       } else if (_locType !== 'Area') {
-        dispatch('preview', { shape: null, data: null, center: { x: Number(_lon), y: Number(_lat) } });
+        onpreview?.({ shape: null, data: null, center: { x: Number(_lon), y: Number(_lat) } });
       } else {
-        dispatch('preview', null);
+        onpreview?.(null);
       }
     }, 150);
   });
@@ -1016,8 +1019,8 @@
           placeholder="Search parent area..."
           limit={15}
           disabled={readOnly}
-          on:change={(e) => { parentLocationName = e.detail.value; scheduleAutoSave(); }}
-          on:select={(e) => { parentLocationName = e.detail.data?.label || e.detail.value; scheduleAutoSave(); }}
+          onchange={(e) => { parentLocationName = e.value; scheduleAutoSave(); }}
+          onselect={(e) => { parentLocationName = e.data?.label || e.value; scheduleAutoSave(); }}
         />
       {:else}
         <input class="field-input" type="text" bind:value={parentLocationName} placeholder="Parent area name" disabled={readOnly} />
@@ -1039,7 +1042,7 @@
             showVideo={false}
             showImages={false}
             showWaypoints={true}
-            on:change={handleDescriptionChange}
+            onchange={handleDescriptionChange}
           />
         </div>
       {:else if description}
@@ -1084,7 +1087,7 @@
 
 {#if showRawJson}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="json-dialog-overlay" onclick={self(closeRawJson)}>
+  <div class="json-dialog-overlay" onclick={(e) => { if (e.target === e.currentTarget) closeRawJson(); }}>
     <div class="json-dialog">
       <div class="json-dialog-header">
         <h3>{location?.Name || 'Raw JSON'}</h3>

@@ -150,8 +150,8 @@
     };
   }
 
-  function handleRowClick(event) {
-    const { row } = event.detail;
+  function handleRowClick(data) {
+    const { row } = data;
     if (row?.id) {
       goto(`/admin/users/${row.id}`);
     }
@@ -362,7 +362,7 @@
         sortable={true}
         searchable={true}
         emptyMessage="No users found"
-        on:rowClick={handleRowClick}
+        onrowClick={handleRowClick}
       />
     {/key}
   </div>

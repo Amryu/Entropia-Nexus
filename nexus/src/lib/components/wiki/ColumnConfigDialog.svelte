@@ -5,21 +5,18 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
-
-  
   /**
    * @typedef {Object} Props
    * @property {Array} [visibleColumns]
    * @property {Array} [allColumns]
+   * @property {Function} [onapply]
+   * @property {Function} [oncancel]
    */
 
   /** @type {Props} */
-  let { visibleColumns = [], allColumns = [] } = $props();
+  let { visibleColumns = [], allColumns = [], onapply, oncancel } = $props();
 
   // Internal state: working copy of visible column keys (in order)
   let selectedKeys = $state(visibleColumns.map(c => c.key));
@@ -130,11 +127,11 @@
   }
 
   function handleApply() {
-    dispatch('apply', { columnKeys: selectedKeys });
+    onapply?.({ columnKeys: selectedKeys });
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 
   function handleOverlayClick(e) {

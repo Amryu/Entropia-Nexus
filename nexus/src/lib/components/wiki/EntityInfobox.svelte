@@ -5,15 +5,11 @@
   In edit mode, clicking the icon opens the image upload dialog.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { editMode, isCreateMode } from '$lib/stores/wikiEditState.js';
   import ImageUploadDialog from './ImageUploadDialog.svelte';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -50,6 +46,7 @@
    * @property {string|number|null} [entityId]
    * @property {object|null} [user]
    * @property {import('svelte').Snippet} [extra]
+   * @property {Function} [onimageUploaded]
    */
 
   /** @type {Props} */
@@ -65,7 +62,8 @@
     entityType = '',
     entityId = null,
     user = null,
-    extra
+    extra,
+    onimageUploaded
   } = $props();
 
   // Image upload dialog state
@@ -112,8 +110,8 @@
     }
   }
 
-  function handleImageUploaded(event) {
-    const { previewUrl, approved } = event.detail;
+  function handleImageUploaded(data) {
+    const { previewUrl, approved } = data;
     if (approved) {
       // Auto-approved: show the approved image URL directly, no pending overlay
       pendingImagePreview = `/api/img/${entityType}/${entityId}?t=${Date.now()}`;
@@ -124,7 +122,7 @@
     }
     userPendingImage = null; // Clear old pending image since we just uploaded a new one
     imageLoadFailed = false;
-    dispatch('imageUploaded', event.detail);
+    onimageUploaded?.(data);
   }
 
   function handleImageError() {
@@ -144,14 +142,14 @@
   // Can upload only when editing an existing entity (not create mode) and user is verified
   let canUpload = $derived($editMode && !$isCreateMode && entityId && user?.verified);
   // Reset image load state when imageUrl changes
-  run(() => {
+  $effect(() => {
     if (imageUrl) {
       imageLoadFailed = false;
     }
   });
   // Fetch user's pending image when entity changes (if user is logged in)
-  run(() => {
-    if (browser && user && entityType && entityId && entityId !== lastCheckedEntityId) {
+  $effect(() => {
+    if (browser && user && entityType && entityId && entityId !== untrack(() => lastCheckedEntityId)) {
       lastCheckedEntityId = entityId;
       pendingImageChecked = false;
       userPendingImage = null;
@@ -261,8 +259,8 @@
   {entityType}
   {entityId}
   entityName={displayName}
-  on:uploaded={handleImageUploaded}
-  on:close={() => showUploadDialog = false}
+  onuploaded={handleImageUploaded}
+  onclose={() => showUploadDialog = false}
 />
 
 <style>

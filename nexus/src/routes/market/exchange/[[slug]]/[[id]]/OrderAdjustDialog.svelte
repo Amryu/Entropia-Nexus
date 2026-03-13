@@ -1,19 +1,16 @@
 <script>
-  import { run, self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { myOrders, inventory, enrichOrders, upsertOrder } from '../../exchangeStore.js';
 
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
-  let { show = false } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { show = false, onclose } = $props();
 
   let discrepancies = $state([]);
   let adjustingAll = $state(false);
@@ -136,7 +133,7 @@
   }
 
   function handleClose() {
-    dispatch('close');
+    onclose?.();
   }
 
   /** Expose discrepancy count for the parent to show a badge */
@@ -148,13 +145,13 @@
   export function refresh() {
     if (show) computeDiscrepancies();
   }
-  run(() => {
+  $effect(() => {
     if (show) computeDiscrepancies();
   });
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" onclick={self(handleClose)}>
+  <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">Order Coverage</h3>

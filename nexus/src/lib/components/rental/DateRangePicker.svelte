@@ -5,12 +5,9 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { countDays, calculateRentalPrice, formatPrice } from '$lib/utils/rentalPricing.js';
 
-  const dispatch = createEventDispatcher();
 
-  
 
   
 
@@ -35,6 +32,7 @@
    * @property {number} [pricePerDay]
    * @property {Array} [discounts]
    * @property {number} [deposit]
+   * @property {(data: {start: string|null, end: string|null}) => void} [onchange]
    */
 
   /** @type {Props} */
@@ -46,7 +44,8 @@
     selectedEnd = $bindable(null),
     pricePerDay = 0,
     discounts = [],
-    deposit = 0
+    deposit = 0,
+    onchange
   } = $props();
 
 
@@ -81,7 +80,7 @@
     if (selectedStart && selectedEnd && selectedEnd < selectedStart) {
       selectedEnd = null;
     }
-    dispatch('change', { start: selectedStart, end: selectedEnd });
+    onchange?.({ start: selectedStart, end: selectedEnd });
   }
 
   function handleEndChange(e) {
@@ -90,7 +89,7 @@
       selectedStart = selectedEnd;
       selectedEnd = null;
     }
-    dispatch('change', { start: selectedStart, end: selectedEnd });
+    onchange?.({ start: selectedStart, end: selectedEnd });
   }
   let effectiveMin = $derived(minDate || getToday());
   let effectiveMax = $derived(maxDate || getMaxDate());

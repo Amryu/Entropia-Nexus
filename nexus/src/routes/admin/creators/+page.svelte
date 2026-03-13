@@ -1,6 +1,4 @@
 <script>
-  import { stopPropagation } from 'svelte/legacy';
-
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -133,11 +131,11 @@
           </div>
           <div class="creator-actions">
             {#if creator.platform !== 'kick'}
-              <button class="btn-icon" title="Refresh data" onclick={stopPropagation(() => refreshCreator(creator))} disabled={creator._refreshing}>
+              <button class="btn-icon" title="Refresh data" onclick={(e) => { e.stopPropagation(); refreshCreator(creator); }} disabled={creator._refreshing}>
                 {creator._refreshing ? '...' : 'Refresh'}
               </button>
             {/if}
-            <button class="btn-icon" class:active-toggle={creator.active} title={creator.active ? 'Deactivate' : 'Activate'} onclick={stopPropagation(() => toggleActive(creator))}>
+            <button class="btn-icon" class:active-toggle={creator.active} title={creator.active ? 'Deactivate' : 'Activate'} onclick={(e) => { e.stopPropagation(); toggleActive(creator); }}>
               {creator.active ? 'On' : 'Off'}
             </button>
           </div>

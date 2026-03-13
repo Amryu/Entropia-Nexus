@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import { apiCall, apiPost, apiPut, navigate } from "$lib/util";
   import EditFormControlGroup from "./EditFormControlGroup.svelte";
@@ -150,13 +148,13 @@
         });
     }
   }
-  run(() => {
+  $effect(() => {
     disabled = change != null && user?.id !== change.author_id && !user?.grants?.includes('wiki.approve');
   });
-  run(() => {
+  $effect(() => {
     if (config) loadForm(config);
   });
-  run(() => {
+  $effect(() => {
     if ((object == null || Object.keys(object).length === 0) && change?.data) object = change.data;
   });
 </script>
@@ -183,7 +181,7 @@
   {/if}
   <form>
     {#each config.controls.filter(x => x._if === undefined || x._if(object, dependencies, object)) as control}
-      <EditFormControlGroup on:change={() => { config = config; object = object; }} root={object} bind:object={object} controls={control.controls || [control]} dependencies={dependencies} title={control.label} disabled={disabled} />
+      <EditFormControlGroup onchange={() => { config = config; object = object; }} root={object} bind:object={object} controls={control.controls || [control]} dependencies={dependencies} title={control.label} disabled={disabled} />
     {/each}
     <br />
     <div style="text-align: right;">

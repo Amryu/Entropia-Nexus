@@ -5,9 +5,6 @@
   Following the editConfig pattern from mobs-legacy.
 -->
 <script>
-  import { stopPropagation, createBubbler } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { editMode, updateField, currentEntity, originalEntity } from '$lib/stores/wikiEditState.js';
@@ -427,7 +424,7 @@
           <div class="maturity-actions">
             <button
               class="btn-icon danger"
-              onclick={stopPropagation(() => removeMaturity(maturity))}
+              onclick={(e) => { e.stopPropagation(); removeMaturity(maturity); }}
               title="Remove maturity"
               type="button"
             >×</button>
@@ -648,11 +645,11 @@
                             <div class="copy-menu-wrapper">
                               <button
                                 class="btn-copy"
-                                onclick={stopPropagation(() => toggleCopyMenu(matIndex, attackIndex))}
+                                onclick={(e) => { e.stopPropagation(); toggleCopyMenu(matIndex, attackIndex); }}
                                 type="button"
                               >Copy...</button>
                               {#if showCopyMenu}
-                                  <div class="copy-menu" onclick={stopPropagation(bubble('click'))} onkeydown={stopPropagation(bubble('keydown'))} role="presentation">
+                                  <div class="copy-menu" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
                                   {#if matIndex > 0 && hasPrevData}
                                     <button type="button" onclick={() => copyComposition(matIndex - 1, attackIndex, matIndex, attackIndex)}>
                                       from Previous

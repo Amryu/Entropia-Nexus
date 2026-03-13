@@ -1,16 +1,15 @@
 <script>
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { isPercentMarkup, formatMarkupValue } from '../../orderUtils';
 
 
-  
 
-  
 
-  
 
-  
+
+
+
+
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
@@ -18,6 +17,8 @@
    * @property {object|null} [item]
    * @property {Array} [orderBookOrders]
    * @property {Array} [planets]
+   * @property {() => void} [onclose]
+   * @property {(data: any) => void} [onbulkSubmit]
    */
 
   /** @type {Props} */
@@ -26,10 +27,10 @@
     itemName = '',
     item = null,
     orderBookOrders = [],
-    planets = ['Calypso', 'Arkadia', 'Cyrene', 'Monria', 'Next Island', 'Rocktropia', 'Toulan']
+    planets = ['Calypso', 'Arkadia', 'Cyrene', 'Monria', 'Next Island', 'Rocktropia', 'Toulan'],
+    onclose,
+    onbulkSubmit,
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let activeTab = $state('buy'); // 'buy' | 'sell'
   let quantity = $state(1);
@@ -85,12 +86,12 @@
   }
 
   function close() {
-    dispatch('close');
+    onclose?.();
   }
 
   function submit() {
     if (submitting || matched.matched.length === 0) return;
-    dispatch('bulkSubmit', {
+    onbulkSubmit?.({
       type: activeTab === 'buy' ? 'Buy' : 'Sell',
       matches: matched.matched,
       planet: planet === 'All Planets' ? null : planet

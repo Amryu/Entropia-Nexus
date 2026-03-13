@@ -132,8 +132,8 @@
               apiParams={{ armorParts: 'true' }}
               displayFn={(item) => item?.Name || ''}
               validValues={itemNamesSet}
-              on:change={(e) => updateLootField(index, 'Item.Name', e.detail.value)}
-              on:select={(e) => updateLootField(index, 'Item.Name', e.detail.data?.Name || e.detail.value)}
+              onchange={(e) => updateLootField(index, 'Item.Name', e.value)}
+              onselect={(e) => updateLootField(index, 'Item.Name', e.data?.Name || e.value)}
             />
           </div>
 

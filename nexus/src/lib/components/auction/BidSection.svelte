@@ -4,16 +4,11 @@
   Handles bid placement, buyout, and disclaimer checks.
 -->
 <script>
-  import { self } from 'svelte/legacy';
-
-  import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { getMinNextBid, isBuyoutOnly } from '$lib/common/auctionUtils.js';
   import TurnstileWidget from '../TurnstileWidget.svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
 
   
 
@@ -26,6 +21,9 @@
    * @property {string} [turnstileSiteKey]
    * @property {boolean} [disclaimerAccepted]
    * @property {boolean} [isSeller]
+   * @property {(data: any) => void} [onbid]
+   * @property {(data: any) => void} [onbuyout]
+   * @property {() => void} [onneedDisclaimer]
    */
 
   /** @type {Props} */
@@ -33,7 +31,10 @@
     auction,
     turnstileSiteKey = '',
     disclaimerAccepted = false,
-    isSeller = false
+    isSeller = false,
+    onbid,
+    onbuyout,
+    onneedDisclaimer
   } = $props();
 
   let bidAmount = $state('');
@@ -51,17 +52,13 @@
   let isActive = $derived(auction.status === 'active');
   let hasBuyout = $derived(auction.buyout_price != null);
 
-  function handleTurnstileVerified(e) {
-    turnstileToken = e.detail.token;
-  }
-
   function handleBid() {
     if (!turnstileToken) {
       addToast('Please complete the captcha verification', { type: 'warning' });
       return;
     }
     if (!disclaimerAccepted) {
-      dispatch('needDisclaimer');
+      onneedDisclaimer?.();
       return;
     }
 
@@ -97,7 +94,7 @@
       addToast(`Bid placed: ${amount.toFixed(2)} PED`, { type: 'success' });
       bidAmount = '';
       resetTurnstile = true;
-      dispatch('bid', data);
+      onbid?.(data);
     } catch (err) {
       addToast('Failed to place bid', { type: 'error' });
       resetTurnstile = true;
@@ -112,7 +109,7 @@
       return;
     }
     if (!disclaimerAccepted) {
-      dispatch('needDisclaimer');
+      onneedDisclaimer?.();
       return;
     }
 
@@ -138,7 +135,7 @@
 
       addToast('Buyout successful!', { type: 'success' });
       resetTurnstile = true;
-      dispatch('buyout', data);
+      onbuyout?.(data);
     } catch (err) {
       addToast('Failed to buy out', { type: 'error' });
       resetTurnstile = true;
@@ -198,14 +195,13 @@
         siteKey={turnstileSiteKey}
         bind:token={turnstileToken}
         bind:reset={resetTurnstile}
-        on:verified={handleTurnstileVerified}
       />
     </div>
   </div>
 {/if}
 
 {#if confirmAction}
-  <div class="modal-overlay" role="presentation" onclick={self(() => confirmAction = null)}>
+  <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) confirmAction = null; }}>
     <div class="confirm-dialog" role="dialog" aria-modal="true">
       {#if confirmAction === 'bid'}
         <p class="confirm-message">Place a bid of <strong>{confirmBidAmount.toFixed(2)} PED</strong> on this auction?</p>

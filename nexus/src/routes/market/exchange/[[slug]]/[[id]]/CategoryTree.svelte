@@ -1,8 +1,7 @@
 <script>
   import CategoryTree from './CategoryTree.svelte';
-  import { stopPropagation } from 'svelte/legacy';
 
-  
+
   /**
    * @typedef {Object} Props
    * @property {any} [categories]
@@ -156,7 +155,7 @@
       {#if category.children.length > 0}
         <span
           class="expand-toggle {expandedNodes.has(category.id) ? 'expanded' : ''}"
-          onclick={stopPropagation(() => toggleExpanded(category.id, category))}
+          onclick={(e) => { e.stopPropagation(); toggleExpanded(category.id, category); }}
           role="button"
           tabindex="-1"
         >{expandedNodes.has(category.id) ? '▾' : '▸'}</span>

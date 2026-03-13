@@ -4,10 +4,7 @@
   Supports item search, armor/clothing set quick-add, and per-item metadata editing.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import ItemMetaEditor from './ItemMetaEditor.svelte';
@@ -15,8 +12,6 @@
   import { apiPost, apiPut, apiCall } from '$lib/util.js';
   import { addToast } from '$lib/stores/toasts.js';
   import { TIERABLE_TYPES, CONDITION_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
-
-  const dispatch = createEventDispatcher();
 
   const MAX_ITEMS = 100;
 
@@ -44,7 +39,9 @@
     itemSet = null,
     loadoutId = null,
     allowedItemTypes = null,
-    hideName = false
+    hideName = false,
+    onclose,
+    onsave
   } = $props();
 
   // Internal state
@@ -60,7 +57,7 @@
   let showSetButton = $derived(!allowedItemTypes || allowedItemTypes.has('Armor'));
 
   // Initialize state when dialog opens or itemSet changes
-  run(() => {
+  $effect(() => {
     if (show) {
       if (itemSet) {
         name = itemSet.name || '';
@@ -94,7 +91,7 @@
   function close() {
     if (saving) return;
     show = false;
-    dispatch('close');
+    onclose?.();
   }
 
   // === Item Management ===
@@ -245,7 +242,7 @@
         return;
       }
 
-      dispatch('save', result);
+      onsave?.(result);
       show = false;
     } catch (err) {
       addToast('Failed to save item set.');
@@ -289,7 +286,7 @@
               allowedTypes={allowedTypesArray}
               filterFn={limitedFilterFn}
               clearOnSelect={true}
-              on:select={(e) => addItem(e.detail.data)}
+              onselect={(e) => addItem(e.data)}
             />
           </div>
           <button
@@ -325,7 +322,7 @@
               placeholder="Search armor sets..."
               filterFn={limitedFilterFn}
               clearOnSelect={true}
-              on:select={(e) => addArmorSet(e.detail.data)}
+              onselect={(e) => addArmorSet(e.data)}
             />
           </div>
         {/if}
@@ -343,8 +340,8 @@
               {#if item.setType}
                 <SetEntry
                   entry={item}
-                  on:update={(e) => updateSetEntry(index, e.detail)}
-                  on:remove={() => removeSetEntry(index)}
+                  onupdate={(data) => updateSetEntry(index, data)}
+                  onremove={() => removeSetEntry(index)}
                 />
               {:else}
                 <div class="item-row">
@@ -385,7 +382,7 @@
                     <div class="item-meta" transition:slide={{ duration: 150 }}>
                       <ItemMetaEditor
                         {item}
-                        on:change={(e) => updateItemMeta(index, e.detail)}
+                        onchange={(data) => updateItemMeta(index, data)}
                       />
                     </div>
                   {/if}

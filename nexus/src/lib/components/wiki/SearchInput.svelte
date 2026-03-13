@@ -15,7 +15,7 @@
     value={selected}
     options={[{ label: 'Option A', value: 'a' }, { label: 'Option B', value: 'b' }]}
     placeholder="Select option..."
-    on:select={(e) => selected = e.detail.value}
+    onselect={(e) => selected = e.value}
   />
 
   @example API mode for items
@@ -25,14 +25,12 @@
     placeholder="Search item..."
     displayFn={(item) => item.Name}
     valueFn={(item) => item.Name}
-    on:select={(e) => handleItemSelect(e.detail.data)}
+    onselect={(e) => handleItemSelect(e.data)}
   />
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
-  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { scoreSearchResult } from '$lib/search.js';
   import { clickable } from '$lib/actions/clickable.js';
@@ -100,6 +98,8 @@
    * @property {Function|null} [valueFn]
    * @property {string} [emptyMessage]
    * @property {Array<string>|Set<string>|null} [validValues]
+   * @property {Function} [onchange]
+   * @property {Function} [onselect]
    */
 
   /** @type {Props} */
@@ -122,10 +122,10 @@
     displayFn = null,
     valueFn = null,
     emptyMessage = 'No matches',
-    validValues = null
+    validValues = null,
+    onchange,
+    onselect
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let localValue = $state(value || '');
   let results = $state([]);
@@ -339,7 +339,7 @@
     }
     const query = cleaned;
     localValue = query;
-    dispatch('change', { value: query });
+    onchange?.({ value: query });
 
     if (isLocalMode) {
       results = filterLocalResults(query);
@@ -390,8 +390,8 @@
     const rawData = getRawData(item);
 
     localValue = clearOnSelect ? '' : displayText;
-    dispatch('change', { value: clearOnSelect ? '' : displayText });
-    dispatch('select', { value: selectedValue, data: rawData });
+    onchange?.({ value: clearOnSelect ? '' : displayText });
+    onselect?.({ value: selectedValue, data: rawData });
     closeResults();
   }
 
@@ -427,12 +427,12 @@
     ? (validValues instanceof Set ? validValues : new Set(validValues))
     : null);
   // Sync external value changes
-  run(() => {
+  $effect(() => {
     localValue = value ?? '';
   });
   let isValid = $derived(validSet && localValue?.trim() ? validSet.has(localValue.trim()) : null);
   // Update dropdown position when showing
-  run(() => {
+  $effect(() => {
     if (browser && showResults) {
       tick().then(updateDropdownPosition);
     }

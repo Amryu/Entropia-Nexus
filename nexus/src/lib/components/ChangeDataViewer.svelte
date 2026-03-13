@@ -798,5 +798,5 @@
   show={showTextDialog}
   title={textDialogTitle}
   content={textDialogContent}
-  on:close={closeTextDialog}
+  onclose={closeTextDialog}
 />

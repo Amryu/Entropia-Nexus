@@ -5,11 +5,8 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
 
   
 
@@ -28,6 +25,7 @@
    * @property {string|null} [selectedStart]
    * @property {string|null} [selectedEnd]
    * @property {number} [months]
+   * @property {(data: {start: string, end: string|null}) => void} [onselect]
    */
 
   /** @type {Props} */
@@ -37,7 +35,8 @@
     selectable = false,
     selectedStart = $bindable(null),
     selectedEnd = $bindable(null),
-    months = 3
+    months = 3,
+    onselect
   } = $props();
 
   const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -155,7 +154,7 @@
       clickedStart = dateStr;
       selectedStart = dateStr;
       selectedEnd = null;
-      dispatch('select', { start: dateStr, end: null });
+      onselect?.({ start: dateStr, end: null });
     } else {
       // Complete selection
       let start = clickedStart;
@@ -168,7 +167,7 @@
       selectedStart = start;
       selectedEnd = end;
       clickedStart = null;
-      dispatch('select', { start, end });
+      onselect?.({ start, end });
     }
   }
 

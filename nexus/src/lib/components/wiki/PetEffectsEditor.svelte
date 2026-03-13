@@ -10,8 +10,6 @@
   - Properties.Unlock: { Level, CostPED, CostEssence, CostRareEssence, Criteria, CriteriaValue }
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from './SearchInput.svelte';
@@ -34,7 +32,7 @@
 
   let showCreateDialog = $state(false);
   let localAvailableEffects = $state([]);
-  run(() => {
+  $effect(() => {
     localAvailableEffects = [...(availableEffects || [])];
   });
 
@@ -88,8 +86,8 @@
     updateField(fieldName, [...effects, newEffect]);
   }
 
-  function handleCreateEffect(event) {
-    const { Name, _newEffect } = event.detail;
+  function handleCreateEffect(data) {
+    const { Name, _newEffect } = data;
 
     localAvailableEffects = [...localAvailableEffects, {
       Name,
@@ -165,8 +163,8 @@
                   value={effect.Name}
                   options={effectOptions}
                   placeholder="Search effect..."
-                  on:select={(e) => updateEffect(i, 'Name', e.detail.value)}
-                  on:change={(e) => updateEffect(i, 'Name', e.detail.value)}
+                  onselect={(e) => updateEffect(i, 'Name', e.value)}
+                  onchange={(e) => updateEffect(i, 'Name', e.value)}
                 />
               </div>
               <button class="btn-remove" onclick={() => removeEffect(i)} title="Remove effect">
@@ -348,8 +346,8 @@
 
 {#if showCreateDialog}
   <CreateEffectDialog
-    on:create={handleCreateEffect}
-    on:cancel={() => showCreateDialog = false}
+    oncreate={handleCreateEffect}
+    oncancel={() => showCreateDialog = false}
   />
 {/if}
 

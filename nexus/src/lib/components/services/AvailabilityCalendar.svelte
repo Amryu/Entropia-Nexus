@@ -1,16 +1,16 @@
 <script lang="ts">
   // @ts-nocheck
   import '$lib/style.css';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   interface Props {
     availability?: any; // Array of { day_of_week, start_time, end_time, is_available }
     readonly?: boolean;
+    onchange?: (data: { day_of_week: number; start_time: string; is_available: boolean }) => void;
+    onupdate?: (data: any[]) => void;
   }
 
-  let { availability = [], readonly = false }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+  let { availability = [], readonly = false, onchange, onupdate }: Props = $props();
 
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const fullDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -95,7 +95,7 @@
     availabilityMap = new Map(availabilityMap); // Trigger reactivity
 
     // Dispatch change event with the updated slot
-    dispatch('change', {
+    onchange?.({
       day_of_week: day,
       start_time: time,
       is_available: newValue
@@ -168,7 +168,7 @@
       dragStart = null;
       hasDragged = false;
       // Dispatch final availability state
-      dispatch('update', getAvailabilityArray());
+      onupdate?.(getAvailabilityArray());
     }
   }
 
@@ -239,13 +239,13 @@
       }
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
 
   function clearAll() {
     if (readonly) return;
     availabilityMap = new Map();
-    dispatch('update', []);
+    onupdate?.([]);
   }
 
   function selectDay(day) {
@@ -254,7 +254,7 @@
       availabilityMap.set(`${day}-${slot.label}`, true);
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
 
   function clearDay(day) {
@@ -263,7 +263,7 @@
       availabilityMap.set(`${day}-${slot.label}`, false);
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
 
   // Select time range across all days
@@ -278,7 +278,7 @@
       }
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
 
 
@@ -321,7 +321,7 @@
       availabilityMap.set(`${day}-${slot.label}`, shouldEnable);
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
 
   // Toggle entire hour row (all days)
@@ -346,7 +346,7 @@
       }
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
 
   // Toggle a specific time slot across all days (for sub-labels)
@@ -366,7 +366,7 @@
       availabilityMap.set(`${day}-${time}`, shouldEnable);
     }
     availabilityMap = new Map(availabilityMap);
-    dispatch('update', getAvailabilityArray());
+    onupdate?.(getAvailabilityArray());
   }
   // Get current day and time in MA Time (UTC+1)
   let currentMATime = $derived((() => {

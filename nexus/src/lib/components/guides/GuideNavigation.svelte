@@ -4,8 +4,6 @@
   Expandable categories and chapters with lesson items as leaf nodes.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   /**
    * @typedef {Object} Props
    * @property {any} [tree]
@@ -19,7 +17,7 @@
   let expandedChapters = $state(new Set());
 
   // Auto-expand to show current lesson
-  run(() => {
+  $effect(() => {
     if (currentSlug && tree.length > 0) {
       for (const cat of tree) {
         for (const ch of cat.chapters || []) {

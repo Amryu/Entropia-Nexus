@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import MapEditorLeaflet from './MapEditorLeaflet.svelte';
   import LocationList from './LocationList.svelte';
@@ -113,8 +111,8 @@
 
 
   // --- Event handlers ---
-  function handleMapSelect(e) {
-    selectedId = e.detail;
+  function handleMapSelect(id) {
+    selectedId = id;
     selectedDbChange = null;
     isNewLocation = false;
     drawnShapeData = null;
@@ -127,8 +125,7 @@
     }
   }
 
-  function handleSelectDbChange(e) {
-    const change = e.detail;
+  function handleSelectDbChange(change) {
     const isOwnChange = change.author_id === currentUserId;
 
     if (isOwnChange || isAdmin) {
@@ -212,8 +209,8 @@
     if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
   }
 
-  function handleListSelect(e) {
-    selectedId = e.detail;
+  function handleListSelect(id) {
+    selectedId = id;
     selectedDbChange = null;
     isNewLocation = false;
     drawnShapeData = null;
@@ -228,12 +225,11 @@
     if (loc && mapComponent) mapComponent.panToLocation(loc);
   }
 
-  function handleFilterChange(e) {
-    filteredLocationIds = e.detail;
+  function handleFilterChange(ids) {
+    filteredLocationIds = ids;
   }
 
-  function handleDrawCreated(e) {
-    const entropiaData = e.detail;
+  function handleDrawCreated(entropiaData) {
 
     // Immediately create a pending add so the shape persists on the map.
     // The user can edit details later or remove it via the Remove button.
@@ -262,8 +258,7 @@
     previewShape = null;
   }
 
-  function handleAddLocation(e) {
-    const modified = e.detail;
+  function handleAddLocation(modified) {
     const tempId = nextTempId--;
     modified.tempId = tempId;
     pendingChanges.set(tempId, { action: 'edit', original: null, modified });
@@ -272,8 +267,7 @@
     drawnShapeData = null;
   }
 
-  function handleEditLocation(e) {
-    const { original, modified } = e.detail;
+  function handleEditLocation({ original, modified }) {
     // Block editing if locked by another user (unless admin)
     if (!isAdmin && original?.Id && lockedLocationMap.has(original.Id)) return;
     // Admin editing a location with an existing pending change from another user:
@@ -310,14 +304,12 @@
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
   }
 
-  function handleDeleteLocation(e) {
-    const loc = e.detail;
+  function handleDeleteLocation(loc) {
     pendingChanges.set(loc.Id, { action: 'delete', original: loc, modified: null });
     pendingChanges = pendingChanges;
   }
 
-  function handleRevertLocation(e) {
-    const loc = e.detail;
+  function handleRevertLocation(loc) {
     if (loc?.Id) {
       pendingChanges.delete(loc.Id);
       if (modifiedDbChanges.delete(loc.Id)) modifiedDbChanges = modifiedDbChanges;
@@ -330,8 +322,7 @@
     if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
   }
 
-  function handleRemovePendingAdd(e) {
-    const tempId = e.detail;
+  function handleRemovePendingAdd(tempId) {
     if (tempId != null) {
       pendingChanges.delete(tempId);
       dbChangeIdMap.delete(tempId);
@@ -347,8 +338,7 @@
     }
   }
 
-  async function handleDeleteDbChange(e) {
-    const tempId = e.detail;
+  async function handleDeleteDbChange(tempId) {
     const dbId = dbChangeIdMap.get(tempId);
     if (!dbId) return;
     if (!confirm('Delete this submitted change? This cannot be undone.')) return;
@@ -378,8 +368,7 @@
     }
   }
 
-  function handleMassDelete(e) {
-    const ids = e.detail;
+  function handleMassDelete(ids) {
     for (const id of ids) {
       const loc = locations.find(l => l.Id === id);
       if (loc) {
@@ -419,8 +408,7 @@
     }
   }
 
-  function handlePreview(e) {
-    const pd = e.detail;
+  function handlePreview(pd) {
     if (isNewLocation) return;
 
     if (selectedId && pd) {
@@ -446,8 +434,7 @@
     }
   }
 
-  function handleShapeEdited(e) {
-    const { locId, entropiaData } = e.detail;
+  function handleShapeEdited({ locId, entropiaData }) {
     // Block shape editing if locked by another user (unless admin)
     if (!isAdmin && lockedLocationMap.has(locId)) return;
     // Admin editing a location with an existing pending change from another user:
@@ -505,18 +492,17 @@
     }
   }
 
-  function handleEditMobArea(e) {
-    mobEditorContext = e.detail;
+  function handleEditMobArea(ctx) {
+    mobEditorContext = ctx;
     rightPanel = 'mobEditor';
   }
 
-  function handleEditWaveArea(e) {
-    waveEditorContext = e.detail;
+  function handleEditWaveArea(ctx) {
+    waveEditorContext = ctx;
     rightPanel = 'waveEditor';
   }
 
-  function handleWaveSave(e) {
-    const waveData = e.detail;
+  function handleWaveSave(waveData) {
     if (waveEditorContext?.location) {
       const loc = waveEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
@@ -539,8 +525,7 @@
     waveEditorContext = null;
   }
 
-  function handleMobSave(e) {
-    const mobData = e.detail;
+  function handleMobSave(mobData) {
     if (mobEditorContext?.location) {
       const loc = mobEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
@@ -566,8 +551,7 @@
     mobEditorContext = null;
   }
 
-  function handleClone(e) {
-    const loc = e.detail;
+  function handleClone(loc) {
     if (!loc) return;
 
     const OFFSET = 50;
@@ -612,7 +596,7 @@
     }
     return map;
   })());
-  run(() => {
+  $effect(() => {
     if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
       if (focusLocation._dbChange) {
         // Route to handleSelectDbChange so admins/owners get an editable pending change
@@ -703,7 +687,7 @@
   let isReadOnly = $derived(!!selectedDbChange || (!isAdmin && selectedId != null
     && selectedId > 0 && lockedLocationMap.has(selectedId)));
   // Count pending changes excluding DB-seeded but unmodified entries
-  run(() => {
+  $effect(() => {
     changeCount = Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length;
   });
 </script>
@@ -773,9 +757,9 @@
         {pendingChanges}
         {editMode}
         {mode}
-        on:select={handleListSelect}
-        on:filterChange={handleFilterChange}
-        on:massDelete={handleMassDelete}
+        onselect={handleListSelect}
+        onfilterChange={handleFilterChange}
+        onmassDelete={handleMassDelete}
       />
     {/if}
   </div>
@@ -795,11 +779,11 @@
         {currentUserId}
         {isAdmin}
         {lockedLocationMap}
-        on:select={handleMapSelect}
-        on:selectDbChange={handleSelectDbChange}
-        on:drawCreated={handleDrawCreated}
-        on:shapeEdited={handleShapeEdited}
-        on:clone={handleClone}
+        onselect={handleMapSelect}
+        onselectDbChange={handleSelectDbChange}
+        ondrawCreated={handleDrawCreated}
+        onshapeEdited={handleShapeEdited}
+        onclone={handleClone}
       />
       {#if loading}
         <div class="loading-overlay">Loading map data...</div>
@@ -816,8 +800,8 @@
         location={mobEditorContext?.location}
         isNew={mobEditorContext?.isNew || false}
         pendingMobData={mobEditorContext?.location ? pendingChanges.get(mobEditorContext.location.Id)?.modified?.mobData : null}
-        on:save={handleMobSave}
-        on:cancel={handleMobCancel}
+        onsave={handleMobSave}
+        oncancel={handleMobCancel}
       />
     {:else if rightPanel === 'waveEditor'}
       <WaveEventEditor
@@ -825,8 +809,8 @@
         location={waveEditorContext?.location}
         isNew={waveEditorContext?.isNew || false}
         pendingWaveData={waveEditorContext?.location ? pendingChanges.get(waveEditorContext.location.Id)?.modified?.waveData : null}
-        on:save={handleWaveSave}
-        on:cancel={handleWaveCancel}
+        onsave={handleWaveSave}
+        oncancel={handleWaveCancel}
       />
     {:else if rightPanel === 'editor'}
       <LocationEditor
@@ -839,15 +823,14 @@
         lockedBy={selectedLocation?.Id ? lockedLocationMap.get(selectedLocation.Id) : null}
         allLocations={locations}
         isDbChange={selectedId != null && dbChangeIdMap.has(selectedId)}
-        on:add={handleAddLocation}
-        on:edit={handleEditLocation}
-        on:delete={handleDeleteLocation}
-        on:revert={handleRevertLocation}
-        on:removePendingAdd={handleRemovePendingAdd}
-        on:deleteDbChange={handleDeleteDbChange}
-        on:editMobArea={handleEditMobArea}
-        on:editWaveArea={handleEditWaveArea}
-        on:preview={handlePreview}
+        onedit={handleEditLocation}
+        ondelete={handleDeleteLocation}
+        onrevert={handleRevertLocation}
+        onremovePendingAdd={handleRemovePendingAdd}
+        ondeleteDbChange={handleDeleteDbChange}
+        oneditMobArea={handleEditMobArea}
+        oneditWaveArea={handleEditWaveArea}
+        onpreview={handlePreview}
       />
     {:else}
       {@render output?.()}

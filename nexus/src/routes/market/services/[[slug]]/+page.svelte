@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { run, stopPropagation, createBubbler } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
 
@@ -16,7 +13,7 @@
   import LoginToCreateButton from '$lib/components/LoginToCreateButton.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { getTypeLink, apiPost, encodeURIComponentSafe } from '$lib/util';
   import { addToast } from '$lib/stores/toasts';
   import { sanitizeMarketHtml } from '$lib/sanitize';
@@ -179,8 +176,7 @@
     }
   }
 
-  async function handlePurchaseTicket(event) {
-    const offer = event.detail;
+  async function handlePurchaseTicket(offer) {
     if (!user) {
       goto('/discord/login?redirect=/market/services/' + selectedService.id);
       return;
@@ -771,7 +767,7 @@
   // Filter to main planets only for transportation services
   let mainPlanets = $derived(planets.filter(p => p.Id >= 1 && p.Id <= 7));
   // Fetch ticket offers when a transportation service is selected (client-side only)
-  run(() => {
+  $effect(() => {
     if (mounted && selectedService?.type === 'transportation' && selectedService?.id) {
       fetch(`/api/services/${selectedService.id}/ticket-offers`)
         .then(r => r.json())
@@ -782,8 +778,8 @@
       fetchUpcomingFlights();
 
       // Clear any existing interval
-      if (flightUpdateInterval) {
-        clearInterval(flightUpdateInterval);
+      if (untrack(() => flightUpdateInterval)) {
+        clearInterval(untrack(() => flightUpdateInterval));
       }
 
       // Set up polling to update flights every 15 seconds
@@ -795,8 +791,8 @@
       upcomingFlights = [];
 
       // Clear interval when not viewing transportation service
-      if (flightUpdateInterval) {
-        clearInterval(flightUpdateInterval);
+      if (untrack(() => flightUpdateInterval)) {
+        clearInterval(untrack(() => flightUpdateInterval));
         flightUpdateInterval = null;
       }
     }
@@ -808,7 +804,7 @@
   let cancelledFlights = $derived(upcomingFlights.filter(f => f.status === 'cancelled'));
   let nextActiveFlight = $derived(activeFlights[0] || null);
   // Reset active tool and consumables when service changes
-  run(() => {
+  $effect(() => {
     if (selectedService) {
       const medicalEquipment = selectedService.equipment?.filter(e => 
         e.is_primary !== false && (e.item_type === 'medicaltools' || e.item_type === 'medicalchips')
@@ -900,19 +896,19 @@
     }
   });
   // Update currentType reactively when navigating between category slugs
-  run(() => {
+  $effect(() => {
     const slug = $page.params.slug;
     if (slug && CATEGORY_SLUGS.includes(slug)) {
       currentType = slug;
     }
   });
   // Save selected service type and planet to localStorage
-  run(() => {
+  $effect(() => {
     if (typeof localStorage !== 'undefined' && currentType) {
       localStorage.setItem('lastServiceType', currentType);
     }
   });
-  run(() => {
+  $effect(() => {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('lastServicePlanet', selectedPlanetId === null ? 'all' : selectedPlanetId.toString());
     }
@@ -930,7 +926,7 @@
     
     return list;
   })());
-  run(() => {
+  $effect(() => {
     if (selectedService?.type === 'transportation' && ticketOffers) {
       hasSingleUseOffer = ticketOffers.some(offer => offer.uses_count === 1);
     }
@@ -1679,8 +1675,8 @@
                     {offer}
                     {isOwner}
                     showAsSingleOption={ticketOffers.length === 1 && !isOwner}
-                    on:purchase={handlePurchaseTicket}
-                    on:requestFlight={() => openRequestModal('request')}
+                    onpurchase={handlePurchaseTicket}
+                    onrequestFlight={() => openRequestModal('request')}
                   />
                 {/each}
               </div>
@@ -1960,7 +1956,7 @@
                               <span class="primary-badge">Primary</span>
                             {/if}
                             {#if hasAttachments(equip)}
-                              <button class="attachments-badge" onclick={stopPropagation(() => openAttachmentDialog(equip))} title="View attachments">
+                              <button class="attachments-badge" onclick={(e) => { e.stopPropagation(); openAttachmentDialog(equip); }} title="View attachments">
                                 {countAttachments(equip)} attachment{countAttachments(equip) > 1 ? 's' : ''}
                               </button>
                             {/if}
@@ -2177,7 +2173,7 @@
                               <span class="primary-badge">Primary</span>
                             {/if}
                             {#if hasAttachments(equip)}
-                              <button class="attachments-badge" onclick={stopPropagation(() => openAttachmentDialog(equip))} title="View attachments">
+                              <button class="attachments-badge" onclick={(e) => { e.stopPropagation(); openAttachmentDialog(equip); }} title="View attachments">
                                 {countAttachments(equip)} attachment{countAttachments(equip) > 1 ? 's' : ''}
                               </button>
                             {/if}
@@ -2352,7 +2348,7 @@
 
 {#if showRequestModal}
   <div class="modal-backdrop" onclick={closeRequestModal}>
-    <div class="modal" onclick={stopPropagation(bubble('click'))}>
+    <div class="modal" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h2>{selectedService.title}</h2>
         <button class="modal-close" onclick={closeRequestModal}>&times;</button>
@@ -2502,7 +2498,7 @@
   {@const item = attachmentDialogData.item}
   {@const weaponClass = att.weaponClass}
   <div class="modal-backdrop" onclick={closeAttachmentDialog}>
-    <div class="attachment-dialog" onclick={stopPropagation(bubble('click'))}>
+    <div class="attachment-dialog" onclick={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>Attachments for {item.item_name}</h3>
         <button class="modal-close" onclick={closeAttachmentDialog}>&times;</button>
@@ -2709,7 +2705,7 @@
 <!-- Check-in Dialog -->
 {#if showCheckinDialog && checkinFlight}
   <div class="modal-backdrop" onclick={closeCheckinDialog}>
-    <div class="modal" onclick={stopPropagation(bubble('click'))}>
+    <div class="modal" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h2>Check In to Flight</h2>
         <button class="modal-close" onclick={closeCheckinDialog}>&times;</button>

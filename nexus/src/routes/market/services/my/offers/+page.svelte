@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { stopPropagation } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import DashboardNav from "$lib/components/services/DashboardNav.svelte";
@@ -191,11 +189,11 @@
             </span>
           </div>
           <div class="service-actions">
-            <button class="small-btn" onclick={stopPropagation(() => editService(service.id))}>Edit</button>
-            <button class="small-btn" onclick={stopPropagation(() => goto(`/market/services/${service.id}/availability`))}>Availability</button>
+            <button class="small-btn" onclick={(e) => { e.stopPropagation(); editService(service.id); }}>Edit</button>
+            <button class="small-btn" onclick={(e) => { e.stopPropagation(); goto(`/market/services/${service.id}/availability`); }}>Availability</button>
             <button
               class="small-btn toggle-btn"
-              onclick={stopPropagation(() => toggleServiceActive(service))}
+              onclick={(e) => { e.stopPropagation(); toggleServiceActive(service); }}
               disabled={togglingService === service.id}
             >
               {togglingService === service.id ? '...' : 'Deactivate'}
@@ -242,10 +240,10 @@
               <span class="inactive-badge">Inactive</span>
             </div>
             <div class="service-actions">
-              <button class="small-btn" onclick={stopPropagation(() => editService(service.id))}>Edit</button>
+              <button class="small-btn" onclick={(e) => { e.stopPropagation(); editService(service.id); }}>Edit</button>
               <button
                 class="small-btn toggle-btn activate"
-                onclick={stopPropagation(() => toggleServiceActive(service))}
+                onclick={(e) => { e.stopPropagation(); toggleServiceActive(service); }}
                 disabled={togglingService === service.id}
               >
                 {togglingService === service.id ? '...' : 'Activate'}

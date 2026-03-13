@@ -38,12 +38,12 @@
     return set;
   }
 
-  function handleCalendarSelect(e) {
-    selectedStart = e.detail.start;
-    selectedEnd = e.detail.end;
+  function handleCalendarSelect(data) {
+    selectedStart = data.start;
+    selectedEnd = data.end;
   }
 
-  function handleRequestSubmit(e) {
+  function handleRequestSubmit(data) {
     addToast('Rental request submitted successfully!', { type: 'success' });
     showRequestDialog = false;
     // Reload page to reflect updated availability
@@ -193,7 +193,7 @@
                 bind:selectedStart
                 bind:selectedEnd
                 months={1}
-                on:select={handleCalendarSelect}
+                onselect={handleCalendarSelect}
               />
             </div>
           </div>
@@ -208,7 +208,7 @@
         {unavailableDates}
         initialStart={selectedStart}
         initialEnd={selectedEnd}
-        on:submit={handleRequestSubmit}
+        onsubmit={handleRequestSubmit}
       />
     {/if}
   </div>

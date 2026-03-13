@@ -6,12 +6,10 @@
   Legacy editConfig preserved in pets-legacy/+page.svelte
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -173,8 +171,8 @@
       default: return '#9ca3af';
     }
   }
-  run(() => {
-    if ($editMode && data.effects === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.effects === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'effects', url: '/api/effects' },
@@ -207,7 +205,7 @@
   // Build navigation items
   let navItems = $derived(allItems);
   // Initialize edit state when entity or user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const entity = isCreateMode ? (existingChange?.data || emptyEntity) : pet;
       if (entity) {
@@ -217,7 +215,7 @@
     }
   });
   // Set existing pending change when data loads
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -488,7 +486,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter pet description..."
               showWaypoints={true}
             />
@@ -507,7 +505,7 @@
             title="Pet Skills"
             icon=""
             bind:expanded={panelStates.skills}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <PetEffectsEditor
               effects={activeEntity?.Effects || []}
@@ -522,7 +520,7 @@
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -531,7 +529,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>
@@ -543,7 +541,7 @@
             title="Usage"
             icon=""
             bind:expanded={panelStates.usage}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Usage usage={additional.usage} item={activeEntity} />
           </DataSection>

@@ -3,22 +3,20 @@
   /**
    * TextViewerDialog - A modal dialog for viewing long text content
    */
-  import { createEventDispatcher } from 'svelte';
 
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
    * @property {string} [title]
    * @property {string} [content]
+   * @property {() => void} [onclose]
    */
 
   /** @type {Props} */
-  let { show = false, title = 'View Content', content = '' } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { show = false, title = 'View Content', content = '', onclose } = $props();
 
   function close() {
-    dispatch('close');
+    onclose?.();
   }
 
   function handleBackdropClick(e) {

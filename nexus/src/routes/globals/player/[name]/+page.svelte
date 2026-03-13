@@ -3,9 +3,6 @@
   Tabbed view of a player's globals: Overview, Hunting, Mining, Crafting, ATHs.
 -->
 <script>
-  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
@@ -36,8 +33,8 @@
     showMediaDialog = true;
   }
 
-  function onMediaUploaded(e) {
-    const { type, globalId } = e.detail;
+  function onMediaUploaded(data) {
+    const { type, globalId } = data;
     const update = (arr) => arr ? arr.map(g => {
       if (g.id === globalId) {
         return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
@@ -53,8 +50,8 @@
     if (playerData?.pvp_events) playerData.pvp_events = update(playerData.pvp_events);
   }
 
-  function onMediaDeleted(e) {
-    const { globalId } = e.detail;
+  function onMediaDeleted(data) {
+    const { globalId } = data;
     const update = (arr) => arr ? arr.map(g => {
       if (g.id === globalId) return { ...g, media_image: null, media_video: null };
       return g;
@@ -94,10 +91,10 @@
   let dateTo = $state(null);
   let loading = $state(false);
 
-  function onDateRangeChange(e) {
-    period = e.detail.period;
-    dateFrom = e.detail.from;
-    dateTo = e.detail.to;
+  function onDateRangeChange(data) {
+    period = data.period;
+    dateFrom = data.from;
+    dateTo = data.to;
     fetchData();
   }
 
@@ -235,8 +232,7 @@
   });
 
 
-  function handleSearchSelect(e) {
-    const { name, type } = e.detail;
+  function handleSearchSelect({ name, type }) {
     if (type === 'Player' || type === 'Team') {
       goto(`/globals/player/${encodeURIComponent(name)}`);
     } else {
@@ -244,9 +240,9 @@
     }
   }
 
-  function handleSearch(e) {
-    const query = e.detail.query?.trim();
-    if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
+  function handleSearch({ query }) {
+    const q = query?.trim();
+    if (q) goto(`/globals/player/${encodeURIComponent(q)}`);
   }
 
 
@@ -309,7 +305,7 @@
   let sortedRareItems = $derived(sortedData(rareItems, rareFindSort));
   let pvpEvents = $derived(playerData?.pvp_events || []);
   let sortedPvpEvents = $derived(sortedData(pvpEvents, pvpSort));
-  run(() => {
+  $effect(() => {
     if (activityCanvas && activity.length && activeTab === 'overview') {
       tick().then(buildActivityChart);
     }
@@ -349,8 +345,8 @@
           placeholder="Search players, teams, mobs, resources..."
           endpoint="/api/globals/search"
           apiPrefix={false}
-          on:select={handleSearchSelect}
-          on:search={handleSearch}
+          onselect={handleSearchSelect}
+          onsearch={handleSearch}
         />
       </div>
     </div>
@@ -360,7 +356,7 @@
     <p class="empty-state">No globals recorded for this player</p>
   {:else}
     <!-- Period Selector -->
-    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} disabled={loading} on:change={onDateRangeChange} />
+    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} disabled={loading} onchange={onDateRangeChange} />
 
     <!-- Summary Cards -->
     <div class="stats-row">
@@ -459,7 +455,7 @@
                           {/if}
                         </button>
                       {:else if user}
-                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
                       <GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact />
                     </span>
@@ -494,7 +490,7 @@
                           {/if}
                         </button>
                       {:else if user}
-                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
                       <GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact />
                     </span>
@@ -529,7 +525,7 @@
                           {/if}
                         </button>
                       {:else if user}
-                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
                       <GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact />
                     </span>
@@ -578,7 +574,7 @@
                               {/if}
                             </button>
                           {:else if user}
-                            <GlobalMediaUpload globalId={item.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                            <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
@@ -610,7 +606,7 @@
                           {/if}
                         </button>
                       {:else if user}
-                        <GlobalMediaUpload globalId={ach.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                        <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
                       <GzButton globalId={ach.id} count={ach.gz_count || 0} {user} compact />
                     </span>
@@ -674,7 +670,7 @@
                             {/if}
                           </button>
                         {:else if user}
-                          <GlobalMediaUpload globalId={g.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          <GlobalMediaUpload globalId={g.id} {playerName} {user} onuploaded={onMediaUploaded} />
                         {/if}
                       </td>
                       <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
@@ -727,7 +723,7 @@
                           {#if hasDetails}
                             <span class="expand-icon">{expandedMobs.has(mobKey) ? '\u25BC' : '\u25B6'}</span>
                           {/if}
-                          <a href="/globals/target/{encodeURIComponent(displayName)}" class="target-link" onclick={stopPropagation(bubble('click'))}>{displayName}</a>
+                          <a href="/globals/target/{encodeURIComponent(displayName)}" class="target-link" onclick={(e) => e.stopPropagation()}>{displayName}</a>
                         </td>
                         <td class="right">{mob.kills}</td>
                         <td class="right">{formatPed(mob.total_value)}</td>
@@ -795,7 +791,7 @@
                               {/if}
                             </button>
                           {:else if user}
-                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
@@ -903,7 +899,7 @@
                               {/if}
                             </button>
                           {:else if user}
-                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
@@ -1011,7 +1007,7 @@
                               {/if}
                             </button>
                           {:else if user}
-                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
@@ -1070,7 +1066,7 @@
                             {/if}
                           </button>
                         {:else if user}
-                          <GlobalMediaUpload globalId={item.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
                         {/if}
                       </td>
                       <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
@@ -1106,7 +1102,7 @@
                         {/if}
                       </button>
                     {:else if user}
-                      <GlobalMediaUpload globalId={ach.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                      <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
                     {/if}
                     <GzButton globalId={ach.id} count={ach.gz_count || 0} {user} compact />
                   </span>
@@ -1143,7 +1139,7 @@
                         {/if}
                       </button>
                     {:else if user}
-                      <GlobalMediaUpload globalId={ach.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                      <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
                     {/if}
                     <GzButton globalId={ach.id} count={ach.gz_count || 0} {user} compact />
                   </span>
@@ -1189,7 +1185,7 @@
                             {/if}
                           </button>
                         {:else if user}
-                          <GlobalMediaUpload globalId={g.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                          <GlobalMediaUpload globalId={g.id} {playerName} {user} onuploaded={onMediaUploaded} />
                         {/if}
                       </td>
                       <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
@@ -1251,7 +1247,7 @@
                               {/if}
                             </button>
                           {:else if user}
-                            <GlobalMediaUpload globalId={entry.id} {playerName} {user} on:uploaded={onMediaUploaded} />
+                            <GlobalMediaUpload globalId={entry.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={entry.id} count={entry.gz_count || 0} {user} compact /></td>
@@ -1342,7 +1338,7 @@
   {/if}
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} on:close={() => { showMediaDialog = false; mediaDialogGlobal = null; }} on:deleted={onMediaDeleted} />
+<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} onclose={() => { showMediaDialog = false; mediaDialogGlobal = null; }} ondeleted={onMediaDeleted} />
 
 <style>
   .player-page {

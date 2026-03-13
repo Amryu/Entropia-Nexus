@@ -132,8 +132,8 @@
                     placeholder="Search item..."
                     apiEndpoint="/search/items"
                     displayFn={(item) => item?.Name || ''}
-                    on:change={(e) => updateIngredient(recipeIdx, ingIdx, 'Name', e.detail.value)}
-                    on:select={(e) => updateIngredient(recipeIdx, ingIdx, 'Name', e.detail.value)}
+                    onchange={(e) => updateIngredient(recipeIdx, ingIdx, 'Name', e.value)}
+                    onselect={(e) => updateIngredient(recipeIdx, ingIdx, 'Name', e.value)}
                   />
                   <span class="ingredient-x">×</span>
                   <input

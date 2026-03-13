@@ -8,18 +8,17 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
 
-  
   /**
    * @typedef {Object} Props
    * @property {{ Name: string, CanonicalName?: string, Properties?: { Unit?: string, IsPositive?: boolean, Description?: string } } | null} [effect]
+   * @property {Function} [oncreate]
+   * @property {Function} [onedit]
+   * @property {Function} [oncancel]
    */
 
   /** @type {Props} */
-  let { effect = null } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { effect = null, oncreate, onedit, oncancel } = $props();
 
   let isEditMode = $derived(!!effect);
 
@@ -42,11 +41,15 @@
         Description: description.trim() || null
       }
     };
-    dispatch(isEditMode ? 'edit' : 'create', payload);
+    if (isEditMode) {
+      onedit?.(payload);
+    } else {
+      oncreate?.(payload);
+    }
   }
 
   function handleCancel() {
-    dispatch('cancel');
+    oncancel?.();
   }
 
   function handleOverlayClick(e) {

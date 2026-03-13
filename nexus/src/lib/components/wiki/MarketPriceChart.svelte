@@ -4,8 +4,6 @@
   Shows either markup (%) or sales (count) over time for a selected period.
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import { onDestroy } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler } from 'chart.js';
@@ -137,7 +135,7 @@
     });
   }
 
-  run(() => {
+  $effect(() => {
     if (canvasEl && data && period && field) {
       buildChart(data);
     }

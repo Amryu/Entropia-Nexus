@@ -5,10 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import ImageCropper from './ImageCropper.svelte';
-
-  const dispatch = createEventDispatcher();
 
   
 
@@ -26,6 +23,7 @@
    * @property {number|string} [entityId]
    * @property {boolean} [editable]
    * @property {number} [maxSizeMB]
+   * @property {(data: any) => void} [onupload]
    */
 
   /** @type {Props} */
@@ -34,7 +32,8 @@
     entityType = '',
     entityId = '',
     editable = false,
-    maxSizeMB = 2
+    maxSizeMB = 2,
+    onupload
   } = $props();
 
   // Component state
@@ -124,7 +123,7 @@
       const result = await response.json();
 
       // Notify parent of successful upload
-      dispatch('upload', {
+      onupload?.({
         tempPath: result.tempPath,
         previewUrl: result.previewUrl
       });
@@ -156,8 +155,8 @@
       <ImageCropper
         bind:this={cropperRef}
         image={selectedImage}
-        on:confirm={handleCropConfirm}
-        on:cancel={handleCropCancel}
+        onconfirm={handleCropConfirm}
+        oncancel={handleCropCancel}
       />
       {#if isUploading}
         <div class="upload-overlay">

@@ -1,7 +1,4 @@
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -212,7 +209,7 @@
     <!-- Deny dialog -->
     {#if showDenyDialog}
       <div class="dialog-overlay" role="presentation" onclick={() => { showDenyDialog = false; }} onkeydown={(e) => e.key === 'Escape' && (showDenyDialog = false)}>
-        <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
+        <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
           <h3>Deny Event</h3>
           <div class="form-group">
             <label for="deny-reason">Reason (optional)</label>

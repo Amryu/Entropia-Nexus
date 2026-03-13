@@ -31,10 +31,10 @@
   let data = $state(null);
   let loading = $state(true);
 
-  function onDateRangeChange(e) {
-    period = e.detail.period;
-    dateFrom = e.detail.from;
-    dateTo = e.detail.to;
+  function onDateRangeChange(data) {
+    period = data.period;
+    dateFrom = data.from;
+    dateTo = data.to;
     onFilterChange();
   }
 
@@ -105,8 +105,8 @@
   let targetSearchInput = $state();
   let locationSearchInput = $state();
 
-  function handlePlayerSelect(e) {
-    playerFilter = e.detail.name;
+  function handlePlayerSelect({ name }) {
+    playerFilter = name;
     onFilterChange();
   }
   function clearPlayerFilter() {
@@ -114,8 +114,8 @@
     if (playerSearchInput) playerSearchInput.clear();
     onFilterChange();
   }
-  function handleTargetSelect(e) {
-    targetFilter = e.detail.name;
+  function handleTargetSelect({ name }) {
+    targetFilter = name;
     onFilterChange();
   }
   function clearTargetFilter() {
@@ -123,8 +123,8 @@
     if (targetSearchInput) targetSearchInput.clear();
     onFilterChange();
   }
-  function handleLocationSelect(e) {
-    locationFilter = e.detail.name;
+  function handleLocationSelect({ name }) {
+    locationFilter = name;
     onFilterChange();
   }
   function clearLocationFilter() {
@@ -133,8 +133,7 @@
     onFilterChange();
   }
 
-  function handleSearchSelect(e) {
-    const { name, type } = e.detail;
+  function handleSearchSelect({ name, type }) {
     if (type === 'Player' || type === 'Team') {
       goto(`/globals/player/${encodeURIComponent(name)}`);
     } else {
@@ -162,7 +161,7 @@
           placeholder="Search players, teams, mobs, resources..."
           endpoint="/api/globals/search"
           apiPrefix={false}
-          on:select={handleSearchSelect}
+          onselect={handleSearchSelect}
         />
       </div>
     </div>
@@ -185,7 +184,7 @@
             <button class="chip-clear" onclick={clearPlayerFilter}>&times;</button>
           </div>
         {:else}
-          <SearchInput bind:this={playerSearchInput} placeholder="Player / Team..." endpoint="/api/globals/players" apiPrefix={false} maxPerCategory={10} maxTotal={15} on:select={handlePlayerSelect} containerClass="filter-search-input" />
+          <SearchInput bind:this={playerSearchInput} placeholder="Player / Team..." endpoint="/api/globals/players" apiPrefix={false} maxPerCategory={10} maxTotal={15} onselect={handlePlayerSelect} containerClass="filter-search-input" />
         {/if}
       </div>
       <div class="filter-search">
@@ -195,7 +194,7 @@
             <button class="chip-clear" onclick={clearTargetFilter}>&times;</button>
           </div>
         {:else}
-          <SearchInput bind:this={targetSearchInput} placeholder="Target..." endpoint="/api/globals/targets" apiPrefix={false} maxPerCategory={10} maxTotal={15} on:select={handleTargetSelect} containerClass="filter-search-input" />
+          <SearchInput bind:this={targetSearchInput} placeholder="Target..." endpoint="/api/globals/targets" apiPrefix={false} maxPerCategory={10} maxTotal={15} onselect={handleTargetSelect} containerClass="filter-search-input" />
         {/if}
       </div>
       <div class="filter-search">
@@ -205,7 +204,7 @@
             <button class="chip-clear" onclick={clearLocationFilter}>&times;</button>
           </div>
         {:else}
-          <SearchInput bind:this={locationSearchInput} placeholder="Location..." endpoint="/api/globals/locations" apiPrefix={false} maxPerCategory={10} maxTotal={15} on:select={handleLocationSelect} containerClass="filter-search-input" />
+          <SearchInput bind:this={locationSearchInput} placeholder="Location..." endpoint="/api/globals/locations" apiPrefix={false} maxPerCategory={10} maxTotal={15} onselect={handleLocationSelect} containerClass="filter-search-input" />
         {/if}
       </div>
       <input type="number" placeholder="Min PED" bind:value={minValue} oninput={onFilterChange} class="filter-input filter-input-short" />
@@ -221,7 +220,7 @@
 
   <!-- Controls row -->
   <div class="controls-row">
-    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} on:change={onDateRangeChange} />
+    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} onchange={onDateRangeChange} />
     <div class="sort-toggle">
       <button class="sort-btn" class:active={sortBy === 'value'} onclick={() => onSortChange('value')}>By Value</button>
       <button class="sort-btn" class:active={sortBy === 'count'} onclick={() => onSortChange('count')}>By Count</button>

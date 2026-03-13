@@ -6,21 +6,21 @@
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   import { goto } from '$app/navigation';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  
+
   /**
    * @typedef {Object} Props
    * @property {any} [user]
    * @property {string} [sideFilter] - 'all' | 'BUY' | 'SELL'
    * @property {Array} [allItems]
+   * @property {(data: any) => void} [onclose]
+   * @property {(data: any) => void} [onedit]
    */
 
   /** @type {Props} */
-  let { user = null, sideFilter = 'all', allItems = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { user = null, sideFilter = 'all', allItems = [], onclose, onedit } = $props();
   let loading = $state(false);
   let bumping = false;
   let error = $state(null);
@@ -93,11 +93,11 @@
   }
 
   function handleClose(order) {
-    dispatch('close', order);
+    onclose?.(order);
   }
 
   function handleEdit(order) {
-    dispatch('edit', order);
+    onedit?.(order);
   }
 
   /** Intercept clicks on action buttons inside FancyTable rows */

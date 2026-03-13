@@ -1,7 +1,4 @@
 <script>
-  import { createBubbler, stopPropagation } from 'svelte/legacy';
-
-  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -634,7 +631,7 @@
                   <a
                     class="author-link"
                     href={getProfileUrl(change.author_id, change.author_eu_name)}
-                    onclick={stopPropagation(bubble('click'))}
+                    onclick={(e) => e.stopPropagation()}
                   >
                     {change.author_name || 'Unknown'}
                   </a>
@@ -650,7 +647,7 @@
                   <a
                     class="author-link"
                     href={getProfileUrl(change.reviewed_by, null)}
-                    onclick={stopPropagation(bubble('click'))}
+                    onclick={(e) => e.stopPropagation()}
                   >
                     {change.reviewer_name || 'Unknown'}
                   </a>
@@ -688,7 +685,7 @@
                 <a
                   class="mobile-card-meta-value author-link"
                   href={getProfileUrl(change.author_id, change.author_eu_name)}
-                  onclick={stopPropagation(bubble('click'))}
+                  onclick={(e) => e.stopPropagation()}
                 >
                   {change.author_name || 'Unknown'}
                 </a>

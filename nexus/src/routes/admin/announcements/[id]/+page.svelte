@@ -116,13 +116,13 @@
     }
   }
 
-  function handleEditorChange(e) {
-    content_html = e.detail;
+  function handleEditorChange(data) {
+    content_html = data;
   }
 
-  function handleImageUploaded(event) {
-    if (event.detail?.imageUrl) {
-      image_url = event.detail.imageUrl;
+  function handleImageUploaded(data) {
+    if (data?.imageUrl) {
+      image_url = data.imageUrl;
       addToast('Image uploaded', 'success');
     }
     showImageDialog = false;
@@ -177,7 +177,7 @@
             showVideo={true}
             showImages={true}
             handleMarkdownPaste={true}
-            on:change={handleEditorChange}
+            onchange={handleEditorChange}
           />
         {/await}
       </div>
@@ -252,9 +252,9 @@
     aspect={1.9}
     maxWidth={1200}
     maxHeight={630}
-    on:close={() => (showImageDialog = false)}
-    on:uploaded={handleImageUploaded}
-    on:deleted={() => {
+    onclose={() => (showImageDialog = false)}
+    onuploaded={handleImageUploaded}
+    ondeleted={() => {
       image_url = '';
       showImageDialog = false;
       addToast('Image removed', 'success');

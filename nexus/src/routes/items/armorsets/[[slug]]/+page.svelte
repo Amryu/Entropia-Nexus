@@ -12,12 +12,10 @@
   - controls: General, Economy, Defense (9 types), Armors (7 slots with gender support), Set Effects, Tiering
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -440,8 +438,8 @@
 
   // Damage types for display
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
-  run(() => {
-    if ($editMode && data.effects === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.effects === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'effects', url: '/api/effects' }
@@ -471,7 +469,7 @@
   // Build navigation items
   let navItems = $derived(allItems);
   // Initialize edit state when entity or user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const entity = isCreateMode ? (existingChange?.data || emptyEntity) : armorSet;
       if (entity) {
@@ -481,7 +479,7 @@
     }
   });
   // Set existing pending change when data loads
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -672,7 +670,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter armor set description..."
               showWaypoints={true}
             />
@@ -692,7 +690,7 @@
             icon=""
             bind:expanded={panelStates.pieces}
             subtitle="{pieceCount} pieces"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             {#key armorSet?.Id ?? 'create'}
               <ArmorSetPieces armorSet={activeEntity} />
@@ -707,7 +705,7 @@
             icon=""
             bind:expanded={panelStates.tiering}
             subtitle="{additional.tierInfo?.length || 0} tiers"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <TieringEditor entity={activeEntity} entityType="ArmorSet" tierInfo={additional.tierInfo || []} setPieceCount={pieceCount} />
           </DataSection>
@@ -720,7 +718,7 @@
           entityType="ArmorSet"
           pieces={flattenArmorPieces(activeEntity?.Armors)}
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -729,7 +727,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} isMultiItem={true} />
           </DataSection>
@@ -741,7 +739,7 @@
             title="Usage"
             icon=""
             bind:expanded={panelStates.usage}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Usage usage={additional.usage} item={armorSet} isMultiItem={true} />
           </DataSection>

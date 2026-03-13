@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
@@ -8,14 +6,13 @@
   import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getOrderStackValue, computeUnitPrice, itemTypeBadge, getTopCategory, getCategoryOrder } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
-  import { createEventDispatcher } from 'svelte';
 
-  const dispatch = createEventDispatcher();
 
-  
 
-  
-  
+
+
+
+
 
   let orders = $state([]);
   let loading = $state(false);
@@ -26,6 +23,7 @@
    * @property {Array} [allItems]
    * @property {boolean} [canTrade]
    * @property {string} [sideFilter] - 'all' | 'BUY' | 'SELL'
+   * @property {(data: any) => void} [onorderAction]
    */
 
   /** @type {Props} */
@@ -33,7 +31,8 @@
     user = null,
     allItems = [],
     canTrade = true,
-    sideFilter = 'all'
+    sideFilter = 'all',
+    onorderAction,
   } = $props();
 
 
@@ -90,7 +89,7 @@
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
-    dispatch('orderAction', {
+    onorderAction?.({
       orderId: order.id,
       itemId: order.item_id,
       itemName: order.details?.item_name || 'Unknown',
@@ -105,8 +104,8 @@
     });
   }
 
-  function handleRowClick(e) {
-    const row = e.detail?.row;
+  function handleRowClick(data) {
+    const row = data?.row;
     if (!row) return;
     const item = itemLookup.get(row.item_id);
     const name = item?.n || row.details?.item_name;
@@ -117,7 +116,7 @@
     }
   }
 
-  run(() => {
+  $effect(() => {
     if (user?.id) loadOrders(user.id);
   });
   // Build item lookup by ID: item_id -> slim item { i, n, t, v, ... }
@@ -230,7 +229,7 @@
       searchable={true}
       defaultSort={{ column: '_category', order: 'ASC' }}
       emptyMessage={orders.length === 0 ? 'No active orders' : 'No matching orders'}
-      on:rowClick={handleRowClick}
+      onrowClick={handleRowClick}
     />
   {/if}
 </div>

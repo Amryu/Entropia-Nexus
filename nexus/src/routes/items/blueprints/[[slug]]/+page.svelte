@@ -24,12 +24,10 @@
   }
 -->
 <script>
-  import { run } from 'svelte/legacy';
-
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
   import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
@@ -444,9 +442,9 @@
   }
 
   /** Auto-fill Product and Book from blueprint name */
-  function handleNameChange(e) {
+  function handleNameChange(data) {
     if (!$editMode) return;
-    const name = e.detail.value || '';
+    const name = data.value || '';
     const match = name.match(/^(.+?)\s+Blueprint(?:\s+\(L\))?$/);
     if (match) {
       const productName = match[1].trim();
@@ -460,36 +458,36 @@
   }
 
   /** Auto-fill Profession from Type */
-  function handleTypeChange(e) {
+  function handleTypeChange(data) {
     if (!$editMode) return;
     const productName = $currentEntity?.Product?.Name;
-    autoFillProfession(e.detail.value, productName);
+    autoFillProfession(data.value, productName);
   }
 
   /** Auto-fill LearningIntervalStart from blueprint Level */
-  function handleLevelChange(e) {
+  function handleLevelChange(data) {
     if (!$editMode) return;
-    const minLvl = LEVEL_TO_MIN_PROFESSION[Number(e.detail.value)];
+    const minLvl = LEVEL_TO_MIN_PROFESSION[Number(data.value)];
     if (minLvl != null) {
       updateField('Properties.Skill.LearningIntervalStart', minLvl);
       updateField('Properties.Skill.LearningIntervalEnd', minLvl + 5);
     }
   }
 
-  function handleBookChange(e) {
-    updateField('Book.Name', e.detail.value);
+  function handleBookChange({ value }) {
+    updateField('Book.Name', value);
   }
 
-  function handleBookSelect(e) {
-    updateField('Book.Name', e.detail.value || '');
+  function handleBookSelect({ value }) {
+    updateField('Book.Name', value || '');
   }
 
-  function handleProductInput(e) {
-    updateField('Product.Name', e.detail.value);
+  function handleProductInput({ value }) {
+    updateField('Product.Name', value);
   }
 
-  function handleProductSelect(e) {
-    const productName = e.detail?.value || '';
+  function handleProductSelect({ value }) {
+    const productName = value || '';
     updateField('Product.Name', productName);
     if (productName) {
       autoFillAmountForProduct(productName);
@@ -498,8 +496,8 @@
   }
 
 
-  run(() => {
-    if ($editMode && data.blueprintbooks === null && !editDepsLoading) {
+  $effect(() => {
+    if ($editMode && data.blueprintbooks === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'blueprintbooks', url: '/api/blueprintbooks' },
@@ -543,7 +541,7 @@
   // Build navigation items
   let navItems = $derived(allItems);
   // Initialize edit state when entity or user changes
-  run(() => {
+  $effect(() => {
     if (user) {
       const entity = isCreateMode ? (existingChange?.data || emptyEntity) : blueprint;
       if (entity) {
@@ -557,7 +555,7 @@
     }
   });
   // Set existing pending change when data loads
-  run(() => {
+  $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
     } else {
@@ -658,7 +656,7 @@
               path="Name"
               type="text"
               placeholder="Blueprint Name"
-              on:change={handleNameChange}
+              onchange={handleNameChange}
             />
           </div>
           <div class="infobox-subtitle">
@@ -710,7 +708,7 @@
                 type="number"
                 min={1}
                 max={100}
-                on:change={handleLevelChange}
+                onchange={handleLevelChange}
               />
             </span>
           </div>
@@ -722,7 +720,7 @@
                 path="Properties.Type"
                 type="select"
                 options={typeOptions}
-                on:change={handleTypeChange}
+                onchange={handleTypeChange}
               />
             </span>
           </div>
@@ -735,8 +733,8 @@
                   placeholder="Search book..."
                   options={bookOptions}
                   validValues={blueprintbooks.map(b => b.Name)}
-                  on:change={handleBookChange}
-                  on:select={handleBookSelect}
+                  onchange={handleBookChange}
+                  onselect={handleBookSelect}
                 />
               {:else}
                 {activeEntity?.Book?.Name ?? 'N/A'}
@@ -752,8 +750,8 @@
                   placeholder="Search product..."
                   options={productOptions}
                   validValues={productItems.map(i => i.Name)}
-                  on:change={handleProductInput}
-                  on:select={handleProductSelect}
+                  onchange={handleProductInput}
+                  onselect={handleProductSelect}
                 />
               {:else if activeEntity?.Product?.Name}
                 <a href={getItemLink(activeEntity.Product)} class="item-link">{activeEntity.Product.Name}</a>
@@ -877,7 +875,7 @@
             path="Name"
             type="text"
             placeholder="Blueprint Name"
-            on:change={handleNameChange}
+            onchange={handleNameChange}
           />
         </h1>
 
@@ -886,7 +884,7 @@
           {#if $editMode}
             <RichTextEditor
               content={activeEntity?.Properties?.Description || ''}
-              on:change={(e) => updateField('Properties.Description', e.detail)}
+              onchange={(data) => updateField('Properties.Description', data)}
               placeholder="Enter blueprint description..."
               showWaypoints={true}
             />
@@ -906,7 +904,7 @@
             icon=""
             bind:expanded={panelStates.construction}
             subtitle="{activeEntity?.Materials?.length || 0} materials"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <BlueprintMaterials blueprint={activeEntity} availableMaterials={materials} />
           </DataSection>
@@ -917,7 +915,7 @@
           itemId={activeEntity?.Id}
           itemName={activeEntity?.Name}
           bind:expanded={panelStates.marketPrices}
-          on:toggle={savePanelStates}
+          ontoggle={savePanelStates}
         />
 
         <!-- Acquisition Section -->
@@ -926,7 +924,7 @@
             title="Acquisition"
             icon=""
             bind:expanded={panelStates.acquisition}
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>
@@ -939,7 +937,7 @@
             icon=""
             bind:expanded={panelStates.drops}
             subtitle="{activeEntity.Drops.length} blueprints"
-            on:toggle={savePanelStates}
+            ontoggle={savePanelStates}
           >
             <div class="drops-list">
               {#each activeEntity.Drops as drop}

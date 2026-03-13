@@ -1,8 +1,5 @@
 <script>
-  import { run, self } from 'svelte/legacy';
-
   //@ts-nocheck
-  import { createEventDispatcher } from 'svelte';
   import { isItemStackable, isPercentMarkup, isItemTierable, isBlueprint, isLimited, itemHasCondition, itemTypeBadge } from '../../orderUtils';
   import { PLANETS, DEFAULT_PARTIAL_RATIO, MAX_SELL_ORDERS, MAX_ORDERS_PER_ITEM } from '../../exchangeConstants.js';
   import { myOrders, upsertOrder } from '../../exchangeStore.js';
@@ -19,6 +16,8 @@
    * @property {any} [items] - Array of { invItem, count }
    * @property {any} [allItems] - Slim items for type lookup
    * @property {number} [sellOrderCount] - Current number of active sell orders
+   * @property {() => void} [onclose]
+   * @property {() => void} [oncomplete]
    */
 
   /** @type {Props} */
@@ -26,10 +25,10 @@
     show = false,
     items = [],
     allItems = [],
-    sellOrderCount = 0
+    sellOrderCount = 0,
+    onclose,
+    oncomplete,
   } = $props();
-
-  const dispatch = createEventDispatcher();
 
   let orderRows = $state([]);
   let globalPlanet = $state('Calypso');
@@ -346,7 +345,7 @@
         submitting = false;
       } else {
         submitting = false;
-        dispatch('complete');
+        oncomplete?.();
       }
     } catch (err) {
       orderRows = orderRows.map(r => (r.blocked || r.status === 'done') ? r : { ...r, status: 'error', error: 'Network error' });
@@ -368,10 +367,10 @@
 
   function close() {
     if (submitting) return;
-    dispatch('close');
+    onclose?.();
   }
   // Rebuild order rows when items change and dialog is shown
-  run(() => {
+  $effect(() => {
     if (show && items.length > 0) {
       buildOrderRows();
     }
@@ -383,7 +382,7 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" onclick={self(close)}>
+  <div class="modal-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) close(); }}>
     <div class="modal">
       <div class="modal-header">
         <h3>Mass Sell Orders</h3>
