@@ -39,8 +39,14 @@
   let currentCategorySelected = $state(null);
 
   let search = $state('');
-  let isMultiType = $state();
-  let elements = $state();
+  let isMultiType = $derived(typeof items === 'object' && !Array.isArray(items));
+  let elements = $derived.by(() => {
+    const arr = isMultiType
+      ? Object.keys(items).flatMap(x => items[x].map(y => { y._type = x; return y }))
+      : items.slice();
+    arr.sort((a, b) => a.Name.localeCompare(b.Name, undefined, { numeric: true, sensitivity: 'base' }));
+    return arr;
+  });
 
   let expanded = $state(false);
 
@@ -48,24 +54,12 @@
   let end = $state();
   let count = $state();
 
-  $effect(() => {
-    isMultiType = typeof items === 'object' && !Array.isArray(items)
-    elements = isMultiType ? Object.keys(items).map(x => items[x].map(y => { y._type = x; return y })).flat() : items;
-    elements = elements.sort((a, b) => {
-      // Natural sort that handles numbers properly
-      return a.Name.localeCompare(b.Name, undefined, { numeric: true, sensitivity: 'base' });
-    });
-  });
-
-  let filteredElements = $state();
-
-  $effect(() => {
-    filteredElements = elements.filter((item) => {
+  let filteredElements = $derived.by(() => {
+    let result = elements.filter((item) => {
       return !(isMultiType && currentCategorySelected && item._type !== currentCategorySelected);
     });
-
     const searchTerm = search?.toLowerCase();
-    filteredElements = !search.trim() ? filteredElements : filteredElements.filter((item) => {
+    return !search.trim() ? result : result.filter((item) => {
       return item.Name.toLowerCase().includes(searchTerm);
     });
   });

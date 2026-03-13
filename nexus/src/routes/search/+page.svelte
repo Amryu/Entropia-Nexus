@@ -10,16 +10,24 @@
 
   let { data } = $props();
 
-  let searchInput = $state(data.query || '');
+  let initialQuery = $derived(data.query || '');
+  let initialResults = $derived(data.results || []);
+
+  let searchInput = $state('');
   let debounceTimer;
   let collapsedGroups = $state({});
   let sortState = {}; // { [type]: { key, dir } }
   let isLoading = $state(false);
-  let results = $state(data.results || []);
-  let currentQuery = $state(data.query || '');
+  let results = $state([]);
+  let currentQuery = $state('');
 
+  // Sync from SSR data on load/navigation
+  $effect(() => {
+    searchInput = initialQuery;
+    results = initialResults;
+    currentQuery = initialQuery;
+  });
 
-  // Sync from SSR data on initial load
   onMount(() => {
     // Handle browser back/forward by listening to popstate
     const handlePopState = () => {

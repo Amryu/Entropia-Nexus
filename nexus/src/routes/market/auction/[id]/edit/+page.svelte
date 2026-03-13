@@ -16,13 +16,23 @@
 
   let auction = $derived(data.auction);
 
-  // Form state (initialized from server data to avoid SSR issues)
-  let title = $state(data.auction?.title || '');
-  let description = $state(data.auction?.description || '');
-  let startingBid = $state(data.auction?.starting_bid ? String(parseFloat(data.auction.starting_bid)) : '');
-  let buyoutPrice = $state(data.auction?.buyout_price ? String(parseFloat(data.auction.buyout_price)) : '');
-  let buyoutOnly = $state(data.auction?.buyout_price != null && parseFloat(data.auction.buyout_price) === parseFloat(data.auction.starting_bid));
-  let durationDays = $state(data.auction?.duration_days || 7);
+  // Form state - re-sync when auction data changes (e.g. navigation)
+  let title = $state('');
+  let description = $state('');
+  let startingBid = $state('');
+  let buyoutPrice = $state('');
+  let buyoutOnly = $state(false);
+  let durationDays = $state(7);
+
+  $effect(() => {
+    const a = auction;
+    title = a?.title || '';
+    description = a?.description || '';
+    startingBid = a?.starting_bid ? String(parseFloat(a.starting_bid)) : '';
+    buyoutPrice = a?.buyout_price ? String(parseFloat(a.buyout_price)) : '';
+    buyoutOnly = a?.buyout_price != null && parseFloat(a.buyout_price) === parseFloat(a.starting_bid);
+    durationDays = a?.duration_days || 7;
+  });
 
   let saving = $state(false);
 
@@ -188,7 +198,7 @@
         <input id="auction-title" type="text" bind:value={title} maxlength="120" />
       </div>
       <div class="form-group">
-        <label>Description</label>
+        <span class="form-label">Description</span>
         {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
           <RichTextEditor
             content={description}
@@ -301,14 +311,14 @@
     margin-bottom: 0.75rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     font-size: 0.85rem;
     color: var(--text-muted);
     font-weight: 500;
   }
 
-  .form-group input,
-  .form-group textarea {
+  .form-group input {
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     background: var(--bg-color);
@@ -318,13 +328,10 @@
     box-sizing: border-box;
   }
 
-  .form-group input:focus,
-  .form-group textarea:focus {
+  .form-group input:focus {
     border-color: var(--accent-color);
     outline: none;
   }
-
-  .form-group textarea { resize: vertical; font-family: inherit; }
 
   .form-row { margin-bottom: 0.75rem; }
 

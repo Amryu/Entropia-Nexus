@@ -11,12 +11,9 @@
     hovered = $bindable()
   } = $props();
 
+  let planetSimpleName = $derived(planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase());
   let selectedPlanet = $state();
-  let planetSimpleName = $state();
 
-  $effect(() => {
-    planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
-  });
   $effect(() => {
     selectedPlanet = planetSimpleName;
   });
@@ -64,25 +61,23 @@
   const DEFAULT_VISIBLE_AREA_TYPES = new Set(['LandArea']);
   let searchQuery = $state('');
   
-  let filteredElements = $state([]);
-
-  $effect(() => {
-    if (locations) {
-      filteredElements = locations.filter((item) => {
-        const type = item?.Properties?.Type;
-        const areaType = item?.Properties?.AreaType;
-        if (!type) return false;
-        if (areaType === 'MobArea') return false;
-        if (type === 'Area' || areaType) {
-          return DEFAULT_VISIBLE_AREA_TYPES.has(areaType);
-        }
-        return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
-      });
-      if (searchQuery.trim()) {
-        const query = searchQuery.trim().toLowerCase();
-        filteredElements = filteredElements.filter((item) => item?.Name?.toLowerCase().includes(query));
+  let filteredElements = $derived.by(() => {
+    if (!locations) return [];
+    let result = locations.filter((item) => {
+      const type = item?.Properties?.Type;
+      const areaType = item?.Properties?.AreaType;
+      if (!type) return false;
+      if (areaType === 'MobArea') return false;
+      if (type === 'Area' || areaType) {
+        return DEFAULT_VISIBLE_AREA_TYPES.has(areaType);
       }
+      return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
+    });
+    if (searchQuery.trim()) {
+      const query = searchQuery.trim().toLowerCase();
+      result = result.filter((item) => item?.Name?.toLowerCase().includes(query));
     }
+    return result;
   });
 
   function getSymbolByLocation(location) {

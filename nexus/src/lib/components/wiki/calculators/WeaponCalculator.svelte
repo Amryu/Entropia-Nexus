@@ -133,13 +133,14 @@
 <div class="weapon-calculator" class:compact class:variant-inline={variant === 'inline'} class:variant-grid={variant === 'grid'} class:variant-list={variant === 'list'}>
   {#if showSkillSlider}
     <div class="skill-slider-section">
-      <label class="slider-label">
+      <label class="slider-label" for="weapon-skill-level">
         <span class="slider-label-text">Skill Level</span>
         <span class="slider-value">{skillLevel}%</span>
       </label>
       <div class="slider-container">
         <input
           type="range"
+          id="weapon-skill-level"
           class="wiki-slider"
           min="0"
           max="100"

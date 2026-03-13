@@ -8,8 +8,14 @@
   /** @type {Props} */
   let { data } = $props();
 
-  const { client, scopeInfo, effectiveScopes, redirectUri, state, codeChallenge, codeChallengeMethod } = data;
-  const hasWriteScopes = scopeInfo.some(s => s.isWrite && s.available);
+  let client = $derived(data.client);
+  let scopeInfo = $derived(data.scopeInfo);
+  let effectiveScopes = $derived(data.effectiveScopes);
+  let redirectUri = $derived(data.redirectUri);
+  let state = $derived(data.state);
+  let codeChallenge = $derived(data.codeChallenge);
+  let codeChallengeMethod = $derived(data.codeChallengeMethod);
+  let hasWriteScopes = $derived(scopeInfo.some(s => s.isWrite && s.available));
 </script>
 
 <svelte:head>

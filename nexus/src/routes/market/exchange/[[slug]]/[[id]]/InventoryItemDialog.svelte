@@ -313,7 +313,7 @@
 
             {#if petEffects.length > 0}
               <div class="skill-section">
-                <label class="skill-label">Unlocked Skills</label>
+                <span class="skill-label">Unlocked Skills</span>
                 <div class="skill-list">
                   {#each petEffects as effect}
                     {@const effectName = effect.Name || effect._newEffect?.CanonicalName || 'Unknown'}

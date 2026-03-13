@@ -136,10 +136,6 @@
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
   }
 
-  .drawer-left {
-    /* Default - left side */
-  }
-
   .drawer-right {
     margin-left: auto;
     box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);

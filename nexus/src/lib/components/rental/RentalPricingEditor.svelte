@@ -95,7 +95,7 @@
 
   <div class="discounts-section">
     <div class="discounts-header">
-      <label>Duration Discounts</label>
+      <span class="section-label">Duration Discounts</span>
       {#if discounts.length < MAX_DISCOUNTS}
         <button type="button" class="add-btn" onclick={addDiscount}>+ Add Discount</button>
       {/if}
@@ -142,7 +142,7 @@
 
   {#if preview.length > 0}
     <div class="preview-section">
-      <label>Pricing Preview</label>
+      <span class="section-label">Pricing Preview</span>
       <div class="preview-table">
         <div class="preview-header">
           <span>Duration</span>
@@ -216,7 +216,7 @@
     align-items: center;
   }
 
-  .discounts-header label {
+  .discounts-header .section-label {
     font-weight: 500;
     font-size: 0.9rem;
     color: var(--text-color);
@@ -309,7 +309,7 @@
     gap: 0.5rem;
   }
 
-  .preview-section label {
+  .preview-section .section-label {
     font-weight: 500;
     font-size: 0.9rem;
     color: var(--text-color);

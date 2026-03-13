@@ -2342,8 +2342,8 @@
 </div>
 
 {#if showRequestModal}
-  <div class="modal-backdrop" onclick={closeRequestModal}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-backdrop" role="presentation" onclick={closeRequestModal}>
+    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
       <div class="modal-header">
         <h2>{selectedService.title}</h2>
         <button class="modal-close" onclick={closeRequestModal}>&times;</button>
@@ -2492,8 +2492,8 @@
   {@const att = attachmentDialogData.attachments}
   {@const item = attachmentDialogData.item}
   {@const weaponClass = att.weaponClass}
-  <div class="modal-backdrop" onclick={closeAttachmentDialog}>
-    <div class="attachment-dialog" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-backdrop" role="presentation" onclick={closeAttachmentDialog}>
+    <div class="attachment-dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
       <div class="dialog-header">
         <h3>Attachments for {item.item_name}</h3>
         <button class="modal-close" onclick={closeAttachmentDialog}>&times;</button>
@@ -2699,8 +2699,8 @@
 
 <!-- Check-in Dialog -->
 {#if showCheckinDialog && checkinFlight}
-  <div class="modal-backdrop" onclick={closeCheckinDialog}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-backdrop" role="presentation" onclick={closeCheckinDialog}>
+    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
       <div class="modal-header">
         <h2>Check In to Flight</h2>
         <button class="modal-close" onclick={closeCheckinDialog}>&times;</button>
@@ -2756,7 +2756,7 @@
         {:else}
           {@const routeStops = typeof checkinFlight.route_stops === 'string' ? JSON.parse(checkinFlight.route_stops) : checkinFlight.route_stops}
           <div class="form-group">
-            <label>Fixed Route</label>
+            <span class="form-label">Fixed Route</span>
             <p class="route-display">
               {#each routeStops as stop, i}
                 {stop.name || `Planet ${stop.planet_id}`}{#if i < routeStops.length - 1} → {/if}
@@ -3380,7 +3380,8 @@
     margin-bottom: 1.5rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     display: block;
     margin-bottom: 0.75rem;
     color: var(--text-color);

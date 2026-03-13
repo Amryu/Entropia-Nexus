@@ -10,7 +10,6 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { clampDecimals } from '$lib/util';
-  import { clickable } from '$lib/actions/clickable.js';
 
   
 
@@ -108,7 +107,7 @@
   {#if !compact}
     <!-- Group 3: Reload/Uses toggle + Ammo -->
     <div class="economy-row last-row">
-      <div class="economy-item toggleable" onclick={toggleReloadUsesMin} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
+      <div class="economy-item toggleable" onclick={toggleReloadUsesMin} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleReloadUsesMin())} title="Click to toggle between Reload and Uses/min" role="button" tabindex="0">
         {#if showReload}
           <span class="economy-label">
             Reload

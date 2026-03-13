@@ -9,7 +9,7 @@
 
   let { data } = $props();
 
-  const featuredSections = [
+  let featuredSections = $derived([
     {
       name: 'Exchange',
       href: '/market/exchange',
@@ -26,9 +26,9 @@
       count: data.totalServices,
       cls: 'featured-services'
     }
-  ];
+  ]);
 
-  const secondarySections = [
+  let secondarySections = $derived([
     {
       name: 'Shops',
       href: '/market/shops',
@@ -50,7 +50,7 @@
       countLabel: 'available',
       count: data.availableRentals
     }
-  ];
+  ]);
 
   const serviceTypes = [
     { key: 'healing', name: 'Healing', description: 'Paramedic and healing services' },

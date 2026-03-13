@@ -5,8 +5,6 @@
   import { onMount } from 'svelte';
   import { apiCall, getTypeName, getTypeLink } from '$lib/util.js';
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
-  import { clickable } from '$lib/actions/clickable.js';
-
   let entityType = $derived($page.params.entityType);
   let entityId = $derived($page.params.entityId);
 
@@ -513,7 +511,7 @@
           {/if}
 
           {#each changes as change}
-            <div class="timeline-item" use:clickable onclick={() => viewChange(change.id)}>
+            <div class="timeline-item" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => viewChange(change.id)}>
               <div class="timeline-marker change"></div>
               <div class="timeline-content">
                 <div class="timeline-title">
@@ -535,8 +533,8 @@
           <div class="comparison-section">
             <div class="comparison-header">
               <div class="version-select-group">
-                <label>Left (Previous)</label>
-                <select class="version-select" value={leftVersion} onchange={(e) => setLeftVersion(e.target.value)}>
+                <label for="version-left">Left (Previous)</label>
+                <select id="version-left" class="version-select" value={leftVersion} onchange={(e) => setLeftVersion(e.target.value)}>
                   <option value="">Select version...</option>
                   {#each versionOptions as option}
                     <option value={option.value}>{option.label}</option>
@@ -544,8 +542,8 @@
                 </select>
               </div>
               <div class="version-select-group">
-                <label>Right (Current)</label>
-                <select class="version-select" value={rightVersion} onchange={(e) => setRightVersion(e.target.value)}>
+                <label for="version-right">Right (Current)</label>
+                <select id="version-right" class="version-select" value={rightVersion} onchange={(e) => setRightVersion(e.target.value)}>
                   <option value="">Select version...</option>
                   {#each versionOptions as option}
                     <option value={option.value}>{option.label}</option>

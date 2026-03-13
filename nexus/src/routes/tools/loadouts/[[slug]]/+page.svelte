@@ -3512,37 +3512,40 @@
   let selectedHealingIsChip = $derived(!!effectiveLoadoutData?.Gear?.Healing?.Name
     && medicalChips.some(c => c.Name === effectiveLoadoutData.Gear.Healing.Name));
   $effect(() => {
-    // Ensure this recomputes when caps/catalog/entities/loadout change.
-    // Use sharedLoadoutData in shared mode, otherwise use loadout
+    // Explicit triggers — deep loadout/entity reads inside evaluateLoadout are untracked
+    // to avoid creating dependencies on every nested property.
     loadoutVersion;
     effectCaps;
     effectsCatalog;
     entitiesVersion;
-    const effectiveLoadout = isSharedMode ? sharedLoadoutData : loadout;
-    evaluation = effectiveLoadout
-      ? evaluateLoadout(
-          effectiveLoadout,
-          {
-            armorSlots,
-            weapons,
-            amplifiers,
-            scopes,
-            sights,
-            absorbers,
-            matrices,
-            implants,
-            armors,
-            armorPlatings: armorplatings,
-            armorSets: armorsets,
-            clothing,
-            pets,
-            stimulants,
-            medicalTools,
-            medicalChips
-          },
-          { effectsCatalog, effectCaps, isLimitedName }
-        )
-      : null;
+    // Track loadout/sharedLoadoutData identity (reassignment), not deep properties
+    const lo = isSharedMode ? sharedLoadoutData : loadout;
+    untrack(() => {
+      evaluation = lo
+        ? evaluateLoadout(
+            lo,
+            {
+              armorSlots,
+              weapons,
+              amplifiers,
+              scopes,
+              sights,
+              absorbers,
+              matrices,
+              implants,
+              armors,
+              armorPlatings: armorplatings,
+              armorSets: armorsets,
+              clothing,
+              pets,
+              stimulants,
+              medicalTools,
+              medicalChips
+            },
+            { effectsCatalog, effectCaps, isLimitedName }
+          )
+        : null;
+    });
   });
   let stats = $derived(evaluation?.stats || {});
   let nonActiveHotBonuses = $derived((() => {
@@ -3615,13 +3618,18 @@
       if (pruned.size !== untrack(() => compareSetSections).size) compareSetSections = pruned;
     }
   });
-  // Rebuild permutations when relevant state changes
+  // Rebuild permutations when relevant state changes.
+  // Use untrack for the body because buildSetPermutations calls syncAllActiveSetsToSets()
+  // which mutates loadout — without untrack this creates an infinite loop.
   $effect(() => {
-    if (compareMode && compareSetMode && loadout) {
-      compareSetPermutations = buildSetPermutations(loadout, compareSetSections);
-    } else {
+    if (!compareMode || !compareSetMode || !loadout) {
       compareSetPermutations = [];
+      return;
     }
+    const sections = compareSetSections;
+    untrack(() => {
+      compareSetPermutations = buildSetPermutations(loadout, sections);
+    });
   });
   $effect(() => {
     if (activeSource === 'online') {
@@ -3633,27 +3641,30 @@
   $effect(() => {
     if (compareMode) {
       // Build a snapshot cache when entering compare (avoids per-render recomputation).
-      // We intentionally don't depend on loadoutVersion to avoid recomputing on every edit.
+      // Explicit triggers — deep loadout reads via evaluateLoadout are untracked
+      // to avoid creating excessive dependencies on every loadout property.
       entitiesVersion;
       effectsCatalog;
       effectCaps;
       // Re-evaluate when set permutations change
       compareSetPermutations;
 
-      const ctx = getEvalContext();
-      const next = new Map();
-      // Always evaluate all loadouts (for normal compare and for anchor reference)
-      for (const lo of loadouts) {
-        if (!lo?.Id) continue;
-        next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
-      }
-      // Also evaluate set permutations
-      for (const perm of compareSetPermutations) {
-        const lo = perm.loadout;
-        if (!lo?.Id) continue;
-        next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
-      }
-      compareEvalCache = next;
+      untrack(() => {
+        const ctx = getEvalContext();
+        const next = new Map();
+        // Always evaluate all loadouts (for normal compare and for anchor reference)
+        for (const lo of loadouts) {
+          if (!lo?.Id) continue;
+          next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
+        }
+        // Also evaluate set permutations
+        for (const perm of compareSetPermutations) {
+          const lo = perm.loadout;
+          if (!lo?.Id) continue;
+          next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
+        }
+        compareEvalCache = next;
+      });
     } else {
       compareEvalCache = new Map();
     }
@@ -4050,16 +4061,16 @@
               {/snippet}
         <div class="compare-toolbar">
           <div class="compare-toolbar-left">
-            <div class="compare-segment" onclick={(e) => e.stopPropagation()}>
+            <div class="compare-segment" role="presentation" onclick={(e) => e.stopPropagation()}>
               <button type="button" class:active={compareType === 'weapons'} onclick={() => (compareType = 'weapons')}>Weapons</button>
               <button type="button" class:active={compareType === 'armor'} onclick={() => (compareType = 'armor')}>Armor</button>
             </div>
-            <div class="compare-segment" onclick={(e) => e.stopPropagation()}>
+            <div class="compare-segment" role="presentation" onclick={(e) => e.stopPropagation()}>
               <button type="button" class:active={compareDisplay === 'values'} onclick={() => (compareDisplay = 'values')}>Values</button>
               <button type="button" class:active={compareDisplay === 'delta'} disabled={!compareAnchorEval} onclick={() => (compareDisplay = 'delta')}>Delta</button>
             </div>
             {#if compareSetAvailableSections.length > 0}
-              <div class="compare-menu" onclick={(e) => e.stopPropagation()}>
+              <div class="compare-menu" role="presentation" onclick={(e) => e.stopPropagation()}>
                 <button
                   type="button"
                   class="compare-menu-btn"
@@ -4069,7 +4080,7 @@
                   Sets{compareSetSections.size > 0 ? ` (${compareSetSections.size})` : ''}
                 </button>
                 {#if compareSetsOpen}
-                  <div class="compare-popover" onclick={(e) => e.stopPropagation()}>
+                  <div class="compare-popover" role="presentation" onclick={(e) => e.stopPropagation()}>
                     <div class="compare-popover-header">
                       <div class="compare-popover-title">Compare set permutations</div>
                       {#if compareSetSections.size > 0}
@@ -4100,7 +4111,7 @@
           </div>
 
           <div class="compare-toolbar-right">
-            <div class="compare-search" onclick={(e) => e.stopPropagation()}>
+            <div class="compare-search" role="presentation" onclick={(e) => e.stopPropagation()}>
               <input type="text" placeholder="Search loadouts..." bind:value={compareNameQuery} />
             </div>
 
@@ -4114,7 +4125,7 @@
                   Hidden{hiddenCompareRows.length ? ` (${hiddenCompareRows.length})` : ''}
                 </button>
                 {#if compareHiddenOpen}
-                  <div class="compare-popover" onclick={(e) => e.stopPropagation()}>
+                  <div class="compare-popover" role="presentation" onclick={(e) => e.stopPropagation()}>
                     {#if hiddenCompareRows.length === 0}
                       <div class="compare-popover-empty">No hidden loadouts.</div>
                     {:else}
@@ -4142,7 +4153,7 @@
                   Columns
                 </button>
                 {#if compareColumnsOpen}
-                  <div class="compare-popover" onclick={(e) => e.stopPropagation()}>
+                  <div class="compare-popover" role="presentation" onclick={(e) => e.stopPropagation()}>
                     <div class="compare-popover-header">
                       <div class="compare-popover-title">Shown columns</div>
                       <button type="button" class="compare-popover-reset" onclick={() => resetCompareColumns(compareType)}>Reset</button>
@@ -4311,34 +4322,41 @@
                 <div class="settings-group-title">Profession Levels</div>
                 <div class="settings-divider" aria-hidden="true"></div>
                 <div class="setting-row">
-                  <label>Hit Profession</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Hit ?? ''} />
+                  <label>Hit Profession
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Hit ?? ''} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>Dmg Profession</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Dmg ?? ''} />
+                  <label>Dmg Profession
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Dmg ?? ''} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>Heal Profession</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Heal ?? ''} />
+                  <label>Heal Profession
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Heal ?? ''} />
+                  </label>
                 </div>
                 <div class="settings-group-title">Bonus Stats</div>
                 <div class="settings-divider" aria-hidden="true"></div>
                 <div class="setting-row">
-                  <label>% Damage</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusDamage ?? 0} />
+                  <label>% Damage
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusDamage ?? 0} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>% Crit Chance</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusCritChance ?? 0} />
+                  <label>% Crit Chance
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusCritChance ?? 0} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>% Crit Damage</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusCritDamage ?? 0} />
+                  <label>% Crit Damage
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusCritDamage ?? 0} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>% Reload</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusReload ?? 0} />
+                  <label>% Reload
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Properties?.BonusReload ?? 0} />
+                  </label>
                 </div>
               </div>
             </DataSection>
@@ -4513,24 +4531,29 @@
               <h3 class="panel-title">Enhancers & Options</h3>
               <div class="enhancer-grid">
                 <div class="enhancer-field">
-                  <label>Damage</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Damage ?? 0} />
+                  <label>Damage
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Damage ?? 0} />
+                  </label>
                 </div>
                 <div class="enhancer-field">
-                  <label>Accuracy</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Accuracy ?? 0} />
+                  <label>Accuracy
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Accuracy ?? 0} />
+                  </label>
                 </div>
                 <div class="enhancer-field">
-                  <label>Range</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Range ?? 0} />
+                  <label>Range
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Range ?? 0} />
+                  </label>
                 </div>
                 <div class="enhancer-field">
-                  <label>Economy</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Economy ?? 0} />
+                  <label>Economy
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Economy ?? 0} />
+                  </label>
                 </div>
                 <div class="enhancer-field">
-                  <label>Skill Mod</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.SkillMod ?? 0} />
+                  <label>Skill Mod
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.SkillMod ?? 0} />
+                  </label>
                 </div>
               </div>
             </div>
@@ -4625,12 +4648,14 @@
               <h3 class="panel-title">Enhancers & Options</h3>
               <div class="enhancer-grid">
                 <div class="enhancer-field">
-                  <label>Defense</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Armor?.Enhancers?.Defense ?? 0} />
+                  <label>Defense
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Armor?.Enhancers?.Defense ?? 0} />
+                  </label>
                 </div>
                 <div class="enhancer-field">
-                  <label>Durability</label>
-                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Armor?.Enhancers?.Durability ?? 0} />
+                  <label>Durability
+                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Armor?.Enhancers?.Durability ?? 0} />
+                  </label>
                 </div>
               </div>
               <label class="checkbox-row">
@@ -5206,34 +5231,41 @@
                 <div class="settings-group-title">Profession Levels</div>
                 <div class="settings-divider" aria-hidden="true"></div>
                 <div class="setting-row">
-                  <label>Hit Profession</label>
-                  <input type="number" bind:value={loadout.Skill.Hit} />
+                  <label>Hit Profession
+                    <input type="number" bind:value={loadout.Skill.Hit} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>Dmg Profession</label>
-                  <input type="number" bind:value={loadout.Skill.Dmg} />
+                  <label>Dmg Profession
+                    <input type="number" bind:value={loadout.Skill.Dmg} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>Heal Profession</label>
-                  <input type="number" bind:value={loadout.Skill.Heal} />
+                  <label>Heal Profession
+                    <input type="number" bind:value={loadout.Skill.Heal} />
+                  </label>
                 </div>
                 <div class="settings-group-title">Bonus Stats</div>
                 <div class="settings-divider" aria-hidden="true"></div>
                 <div class="setting-row">
-                  <label>% Damage</label>
-                  <input type="number" bind:value={loadout.Properties.BonusDamage} />
+                  <label>% Damage
+                    <input type="number" bind:value={loadout.Properties.BonusDamage} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>% Crit Chance</label>
-                  <input type="number" bind:value={loadout.Properties.BonusCritChance} />
+                  <label>% Crit Chance
+                    <input type="number" bind:value={loadout.Properties.BonusCritChance} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>% Crit Damage</label>
-                  <input type="number" bind:value={loadout.Properties.BonusCritDamage} />
+                  <label>% Crit Damage
+                    <input type="number" bind:value={loadout.Properties.BonusCritDamage} />
+                  </label>
                 </div>
                 <div class="setting-row">
-                  <label>% Reload</label>
-                  <input type="number" bind:value={loadout.Properties.BonusReload} />
+                  <label>% Reload
+                    <input type="number" bind:value={loadout.Properties.BonusReload} />
+                  </label>
                 </div>
               </div>
             </DataSection>
@@ -5266,7 +5298,7 @@
                       {#if activeSetIndices.Weapon === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                     </button>
                     {#if setTabMenuOpen?.section === 'Weapon' && setTabMenuOpen?.index === i}
-                      <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                      <div class="set-tab-menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Weapon', i); }}>Rename</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Weapon', i); }}>
                           {setEntry.isDefault ? 'Already default' : 'Set as default'}
@@ -5277,25 +5309,27 @@
                     {/if}
                   </div>
                 {/each}
-                <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
+                <div class="set-tab-add-container">
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+</button>
                   {#if setAddMenuOpen === 'Weapon'}
                     <div class="set-tab-menu">
                       <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', false); }}>New empty set</button>
                       <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', true); }}>Copy current set</button>
                     </div>
                   {/if}
-                </button>
+                </div>
               </div>
             {:else}
               <div class="set-tabs">
-                <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
+                <div class="set-tab-add-container">
+                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+</button>
                   {#if setAddMenuOpen === 'Weapon'}
                     <div class="set-tab-menu">
                       <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', false); }}>New empty set</button>
                       <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Weapon', true); }}>Copy current set</button>
                     </div>
                   {/if}
-                </button>
+                </div>
               </div>
             {/if}
             <div class="panel-grid two-col">
@@ -5471,54 +5505,59 @@
                 <h3 class="panel-title">Enhancers & Options</h3>
                 <div class="enhancer-grid">
                   <div class="enhancer-field">
-                    <label>Damage</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      bind:value={loadout.Gear.Weapon.Enhancers.Damage}
-                      oninput={(e) => enforceEnhancerCap('weapon', 'Damage', e.target.value)}
-                    />
+                    <label>Damage
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Weapon.Enhancers.Damage}
+                        oninput={(e) => enforceEnhancerCap('weapon', 'Damage', e.target.value)}
+                      />
+                    </label>
                   </div>
                   <div class="enhancer-field">
-                    <label>Accuracy</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      bind:value={loadout.Gear.Weapon.Enhancers.Accuracy}
-                      oninput={(e) => enforceEnhancerCap('weapon', 'Accuracy', e.target.value)}
-                    />
+                    <label>Accuracy
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Weapon.Enhancers.Accuracy}
+                        oninput={(e) => enforceEnhancerCap('weapon', 'Accuracy', e.target.value)}
+                      />
+                    </label>
                   </div>
                   <div class="enhancer-field">
-                    <label>Range</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      bind:value={loadout.Gear.Weapon.Enhancers.Range}
-                      oninput={(e) => enforceEnhancerCap('weapon', 'Range', e.target.value)}
-                    />
+                    <label>Range
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Weapon.Enhancers.Range}
+                        oninput={(e) => enforceEnhancerCap('weapon', 'Range', e.target.value)}
+                      />
+                    </label>
                   </div>
                   <div class="enhancer-field">
-                    <label>Economy</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      bind:value={loadout.Gear.Weapon.Enhancers.Economy}
-                      oninput={(e) => enforceEnhancerCap('weapon', 'Economy', e.target.value)}
-                    />
+                    <label>Economy
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Weapon.Enhancers.Economy}
+                        oninput={(e) => enforceEnhancerCap('weapon', 'Economy', e.target.value)}
+                      />
+                    </label>
                   </div>
                   <div class="enhancer-field">
-                    <label>Skill Mod</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      bind:value={loadout.Gear.Weapon.Enhancers.SkillMod}
-                      oninput={(e) => enforceEnhancerCap('weapon', 'SkillMod', e.target.value)}
-                    />
+                    <label>Skill Mod
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Weapon.Enhancers.SkillMod}
+                        oninput={(e) => enforceEnhancerCap('weapon', 'SkillMod', e.target.value)}
+                      />
+                    </label>
                   </div>
                 </div>
                 <div class="panel-divider compact"></div>
@@ -5543,7 +5582,7 @@
                         {#if activeSetIndices.Armor === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Armor' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                        <div class="set-tab-menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                           <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Armor', i); }}>Rename</button>
                           <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Armor', i); }}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
@@ -5554,25 +5593,27 @@
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
+                  <div class="set-tab-add-container">
+                    <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+</button>
                     {#if setAddMenuOpen === 'Armor'}
                       <div class="set-tab-menu">
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', false); }}>New empty set</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', true); }}>Copy current set</button>
                       </div>
                     {/if}
-                  </button>
+                  </div>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
+                  <div class="set-tab-add-container">
+                    <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+</button>
                     {#if setAddMenuOpen === 'Armor'}
                       <div class="set-tab-menu">
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', false); }}>New empty set</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Armor', true); }}>Copy current set</button>
                       </div>
                     {/if}
-                  </button>
+                  </div>
                 </div>
               {/if}
               <div class="panel-grid two-col">
@@ -5666,24 +5707,26 @@
                 <h3 class="panel-title">Enhancers & Options</h3>
                 <div class="enhancer-grid">
                 <div class="enhancer-field">
-                  <label>Defense</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    bind:value={loadout.Gear.Armor.Enhancers.Defense}
-                    oninput={(e) => enforceEnhancerCap('armor', 'Defense', e.target.value)}
-                  />
+                  <label>Defense
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      bind:value={loadout.Gear.Armor.Enhancers.Defense}
+                      oninput={(e) => enforceEnhancerCap('armor', 'Defense', e.target.value)}
+                    />
+                  </label>
                 </div>
                 <div class="enhancer-field">
-                  <label>Durability</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    bind:value={loadout.Gear.Armor.Enhancers.Durability}
-                    oninput={(e) => enforceEnhancerCap('armor', 'Durability', e.target.value)}
-                  />
+                  <label>Durability
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      bind:value={loadout.Gear.Armor.Enhancers.Durability}
+                      oninput={(e) => enforceEnhancerCap('armor', 'Durability', e.target.value)}
+                    />
+                  </label>
                 </div>
                 </div>
                 <label class="checkbox-row">
@@ -5710,7 +5753,7 @@
                         {#if activeSetIndices.Healing === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Healing' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                        <div class="set-tab-menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                           <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Healing', i); }}>Rename</button>
                           <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Healing', i); }}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
@@ -5721,25 +5764,27 @@
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
+                  <div class="set-tab-add-container">
+                    <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+</button>
                     {#if setAddMenuOpen === 'Healing'}
                       <div class="set-tab-menu">
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', false); }}>New empty set</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', true); }}>Copy current set</button>
                       </div>
                     {/if}
-                  </button>
+                  </div>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
+                  <div class="set-tab-add-container">
+                    <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+</button>
                     {#if setAddMenuOpen === 'Healing'}
                       <div class="set-tab-menu">
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', false); }}>New empty set</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Healing', true); }}>Copy current set</button>
                       </div>
                     {/if}
-                  </button>
+                  </div>
                 </div>
               {/if}
               <div class="panel-grid two-col">
@@ -5772,34 +5817,37 @@
                   {/if}
                   <div class="enhancer-grid">
                     <div class="enhancer-field">
-                      <label>Heal</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        disabled={selectedHealingIsChip}
-                        bind:value={loadout.Gear.Healing.Enhancers.Heal}
-                      />
+                      <label>Heal
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          disabled={selectedHealingIsChip}
+                          bind:value={loadout.Gear.Healing.Enhancers.Heal}
+                        />
+                      </label>
                     </div>
                     <div class="enhancer-field">
-                      <label>Economy</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        disabled={selectedHealingIsChip}
-                        bind:value={loadout.Gear.Healing.Enhancers.Economy}
-                      />
+                      <label>Economy
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          disabled={selectedHealingIsChip}
+                          bind:value={loadout.Gear.Healing.Enhancers.Economy}
+                        />
+                      </label>
                     </div>
                     <div class="enhancer-field">
-                      <label>Skill Modification</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        disabled={selectedHealingIsChip}
-                        bind:value={loadout.Gear.Healing.Enhancers.SkillMod}
-                      />
+                      <label>Skill Modification
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          disabled={selectedHealingIsChip}
+                          bind:value={loadout.Gear.Healing.Enhancers.SkillMod}
+                        />
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -5822,7 +5870,7 @@
                         {#if activeSetIndices.Accessories === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Accessories' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" onclick={(e) => e.stopPropagation()}>
+                        <div class="set-tab-menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                           <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); openSetRename('Accessories', i); }}>Rename</button>
                           <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); setDefaultSet('Accessories', i); }}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
@@ -5833,25 +5881,27 @@
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
+                  <div class="set-tab-add-container">
+                    <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+</button>
                     {#if setAddMenuOpen === 'Accessories'}
                       <div class="set-tab-menu">
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', false); }}>New empty set</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', true); }}>Copy current set</button>
                       </div>
                     {/if}
-                  </button>
+                  </div>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
+                  <div class="set-tab-add-container">
+                    <button class="set-tab-add" onclick={(e) => { e.stopPropagation(); setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+</button>
                     {#if setAddMenuOpen === 'Accessories'}
                       <div class="set-tab-menu">
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', false); }}>New empty set</button>
                         <button class="set-tab-menu-item" onclick={(e) => { e.stopPropagation(); addNewSet('Accessories', true); }}>Copy current set</button>
                       </div>
                     {/if}
-                  </button>
+                  </div>
                 </div>
               {/if}
               <div class="accessory-panel">
@@ -6022,8 +6072,8 @@
 </WikiPage>
 
 {#if showPickerDialog && pickerConfig}
-  <div class="dialog-backdrop picker-backdrop" onclick={closePicker} onkeydown={(e) => e.key === 'Escape' && closePicker()}>
-    <div class="dialog picker-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="picker-dialog-title">
+  <div class="dialog-backdrop picker-backdrop" role="presentation" onclick={closePicker} onkeydown={(e) => e.key === 'Escape' && closePicker()}>
+    <div class="dialog picker-dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="picker-dialog-title">
       <div class="dialog-header">
         <h3 id="picker-dialog-title">{pickerConfig.title}</h3>
         {#if activePicker === 'amplifier'}
@@ -6209,8 +6259,8 @@
 </style>
 
 {#if showImportSourceDialog}
-  <div class="dialog-backdrop" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
-    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-source-title">
+  <div class="dialog-backdrop" role="presentation" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="import-source-title">
       <div class="dialog-header">
         <h3 id="import-source-title">Import Loadout</h3>
         <button class="close-btn" onclick={() => showImportSourceDialog = false} aria-label="Close dialog">
@@ -6242,8 +6292,8 @@
 
 
 {#if showShareDialog}
-  <div class="dialog-backdrop" onclick={() => showShareDialog = false} onkeydown={(e) => e.key === 'Escape' && (showShareDialog = false)}>
-    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
+  <div class="dialog-backdrop" role="presentation" onclick={() => showShareDialog = false} onkeydown={(e) => e.key === 'Escape' && (showShareDialog = false)}>
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="share-dialog-title">
       <div class="dialog-header">
         <h3 id="share-dialog-title">Share Loadout</h3>
         <button class="close-btn" onclick={() => showShareDialog = false} aria-label="Close dialog">
@@ -6283,8 +6333,8 @@
 {/if}
 
 {#if showImportDialog}
-  <div class="dialog-backdrop" onclick={() => showImportDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)}>
-    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+  <div class="dialog-backdrop" role="presentation" onclick={() => showImportDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)}>
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="import-dialog-title">
       <div class="dialog-header">
         <h3 id="import-dialog-title">Import Local Loadouts</h3>
         <button class="close-btn" onclick={() => showImportDialog = false} aria-label="Close dialog">
@@ -6318,8 +6368,8 @@
 {/if}
 
 {#if showDeleteDialog}
-<div class="dialog-backdrop" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
-  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+<div class="dialog-backdrop" role="presentation" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
+  <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="delete-dialog-title">
     <div class="dialog-header">
       <h3 id="delete-dialog-title">Delete Loadout</h3>
     </div>
@@ -6335,8 +6385,8 @@
 {/if}
 
 {#if setRenameDialog}
-<div class="dialog-backdrop" onclick={() => setRenameDialog = null} onkeydown={(e) => e.key === 'Escape' && (setRenameDialog = null)}>
-  <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+<div class="dialog-backdrop" role="presentation" onclick={() => setRenameDialog = null} onkeydown={(e) => e.key === 'Escape' && (setRenameDialog = null)}>
+  <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
     <div class="dialog-header">
       <h3>Rename Set</h3>
     </div>

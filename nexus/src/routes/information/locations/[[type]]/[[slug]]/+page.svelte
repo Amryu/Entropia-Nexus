@@ -1058,7 +1058,7 @@
                 </div>
               {:else if currentShape === 'Polygon'}
                 <div class="polygon-editor">
-                  <label class="polygon-label">Vertices (X, Y pairs, one per line)</label>
+                  <label class="polygon-label">Vertices (X, Y pairs, one per line)
                   <textarea
                     class="polygon-textarea"
                     placeholder="e.g.&#10;1000, 2000&#10;1500, 2500&#10;1200, 3000"
@@ -1067,7 +1067,7 @@
                       const vertices = parsePolygonVertices(e.target.value);
                       if (vertices) updateShapeData('vertices', vertices);
                     }}
-                  ></textarea>
+                  ></textarea></label>
                   <span class="polygon-hint">
                     Enter coordinates as X, Y pairs (one pair per line or comma-separated)
                   </span>

@@ -407,7 +407,7 @@
         </div>
 
         <div class="form-group">
-          <label>Route Type *</label>
+          <span class="group-label">Route Type *</span>
           <div class="route-type-selector">
             <label class="route-type-option" class:selected={routeType === 'fixed'}>
               <input type="radio" bind:group={routeType} value="fixed" />
@@ -424,7 +424,7 @@
 
         {#if routeType === 'fixed'}
           <div class="form-group">
-            <label>Route Stops *</label>
+            <span class="group-label">Route Stops *</span>
             <div class="route-stops">
               {#each routeStops as stop, i}
                 <div class="route-stop">
@@ -445,7 +445,7 @@
           </div>
         {:else}
           <div class="form-group">
-            <label>Starting Point *</label>
+            <span class="group-label">Starting Point *</span>
             <div class="route-stop">
               <span class="stop-number">1</span>
               <select bind:value={routeStops[0].planet_id} onchange={() => { routeStops[0].name = getPlanetName(routeStops[0].planet_id); }}>
@@ -459,7 +459,7 @@
           </div>
 
           <div class="form-group">
-            <label>End Point (Optional)</label>
+            <span class="group-label">End Point (Optional)</span>
             <div class="route-stop">
               <span class="stop-number end">E</span>
               <select bind:value={flexibleEndPoint.planet_id} onchange={() => { flexibleEndPoint.name = getPlanetName(flexibleEndPoint.planet_id); }}>
@@ -768,7 +768,8 @@
     margin-bottom: 1rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .group-label {
     display: block;
     margin-bottom: 0.25rem;
     font-weight: 500;

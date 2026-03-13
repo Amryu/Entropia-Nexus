@@ -679,13 +679,6 @@
   .btn:hover:not(:disabled) { background: var(--hover-color); }
   .btn:disabled { opacity: 0.5; cursor: default; }
 
-  .btn-primary {
-    background: var(--accent-color);
-    color: white;
-    border-color: var(--accent-color);
-  }
-  .btn-primary:hover { opacity: 0.9; }
-
   .btn-danger {
     border-color: #ef4444;
     color: #ef4444;
@@ -1095,8 +1088,7 @@
 <svelte:window onkeydown={e => { if (e.key === 'Escape' && showRawJson) closeRawJson(); }} />
 
 {#if showRawJson}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="json-dialog-overlay" onclick={(e) => { if (e.target === e.currentTarget) closeRawJson(); }}>
+  <div class="json-dialog-overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeRawJson(); }}>
     <div class="json-dialog">
       <div class="json-dialog-header">
         <h3>{location?.Name || 'Raw JSON'}</h3>

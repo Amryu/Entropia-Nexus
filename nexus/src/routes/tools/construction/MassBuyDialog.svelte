@@ -488,7 +488,7 @@
             {#if !row.covered}
               <div class="row-fields">
                 <div class="field">
-                  <label>Markup (%)</label>
+                  <label>Markup (%)
                   <input
                     type="number"
                     min="100"
@@ -499,9 +499,10 @@
                     class:field-error={row.error && row.error.includes('Markup')}
                     onchange={() => clampMarkup(row)}
                   />
+                  </label>
                 </div>
                 <div class="field">
-                  <label>Qty</label>
+                  <label>Qty
                   <input
                     type="number"
                     min="1"
@@ -511,6 +512,7 @@
                     class:field-error={row.error && row.error.includes('Quantity')}
                     onchange={() => clampQty(row)}
                   />
+                  </label>
                 </div>
                 <div class="field field-partial">
                   <label class="partial-label">

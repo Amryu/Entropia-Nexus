@@ -2544,7 +2544,7 @@
               {/if}
               {#if detailHasCondition}
                 <div class="condition-filter">
-                  <label class="condition-label">Cond: <strong style="display:inline-block;min-width:4ch;text-align:right">{minConditionPct}%</strong></label>
+                  <label class="condition-label">Cond: <strong style="display:inline-block;min-width:4ch;text-align:right">{minConditionPct}%</strong>
                   <input
                     type="range"
                     class="condition-slider"
@@ -2553,7 +2553,7 @@
                     step="1"
                     bind:value={minConditionPct}
                     title="Minimum condition %"
-                  />
+                  /></label>
                 </div>
               {/if}
             </div>
@@ -2893,7 +2893,7 @@
 
 {#if pendingTurnstileAction}
   <div class="turnstile-modal-overlay" role="presentation" onclick={cancelTurnstileModal}>
-    <div class="turnstile-modal" onclick={(e) => e.stopPropagation()}>
+    <div class="turnstile-modal" role="dialog" tabindex="-1" aria-modal="true" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3 class="turnstile-modal-title">
         {pendingTurnstileAction.type === 'bump' ? 'Bump All Orders' : 'Close Order'}
       </h3>
@@ -2914,8 +2914,8 @@
 {/if}
 
 {#if showAuthDialog}
-  <div class="auth-dialog-overlay" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
-    <div class="auth-dialog-content" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+  <div class="auth-dialog-overlay" role="presentation" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
+    <div class="auth-dialog-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="auth-dialog-title">
       <button class="auth-dialog-close" onclick={closeAuthDialog} aria-label="Close">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18" />

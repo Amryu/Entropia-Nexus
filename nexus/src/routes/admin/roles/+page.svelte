@@ -165,7 +165,7 @@
       {#each roles as role}
         <div class="table-row" class:expanded={expandedRoleId === role.id}>
           <span class="col-name">
-            <button class="expand-btn" onclick={() => toggleExpand(role.id)}>
+            <button class="expand-btn" onclick={() => toggleExpand(role.id)} aria-label="Toggle role details">
               <svg class="chevron" class:open={expandedRoleId === role.id} width="12" height="12" viewBox="0 0 12 12">
                 <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" />
               </svg>
@@ -254,7 +254,7 @@
       </div>
 
       <div class="form-field">
-        <label>Grants</label>
+        <span class="form-label">Grants</span>
         <div class="grant-checkboxes">
           {#each allGrants as grant}
             <label class="grant-checkbox">
@@ -554,7 +554,8 @@
     margin-bottom: 16px;
   }
 
-  .form-field label {
+  .form-field label,
+  .form-field .form-label {
     display: block;
     margin-bottom: 4px;
     font-size: 0.8125rem;

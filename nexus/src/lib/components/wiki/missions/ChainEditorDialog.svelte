@@ -83,8 +83,16 @@
 
   // Local state
   let newChainName = $state('');
-  let newChainPlanet = $state(currentPlanetName);
+  let newChainPlanet = $state('');
   let newChainDescription = $state('');
+
+  // Sync default planet when prop changes
+  $effect(() => {
+    if (!newChainPlanet) {
+      newChainPlanet = currentPlanetName;
+    }
+  });
+
   let nameError = $state('');
 
   // For editing existing chain
@@ -360,8 +368,8 @@
     .map(m => ({ value: String(m.Id), label: m.Name })));
 </script>
 
-<div class="dialog-overlay" onclick={handleClose}>
-  <div class="chain-dialog" onclick={(e) => e.stopPropagation()}>
+<div class="dialog-overlay" role="presentation" onclick={handleClose}>
+  <div class="chain-dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
     <div class="dialog-header">
       <h3>{isCreating ? 'Create New Chain' : 'Edit Chain'}</h3>
       <button class="dialog-close" onclick={handleClose}>Close</button>
@@ -393,7 +401,7 @@
             </select>
           </div>
           <div class="form-field">
-            <label>Description (optional)</label>
+            <span class="label">Description (optional)</span>
             <RichTextEditor
               content={newChainDescription}
               placeholder="Enter chain description..."
@@ -438,7 +446,7 @@
                 </div>
               </div>
               <div class="form-field">
-                <label>Description</label>
+                <span class="label">Description</span>
                 <RichTextEditor
                   content={editChainDescription}
                   placeholder="Chain description (optional)..."
@@ -644,7 +652,8 @@
     gap: 6px;
   }
 
-  .form-field label {
+  .form-field label,
+  .form-field .label {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-muted, #999);

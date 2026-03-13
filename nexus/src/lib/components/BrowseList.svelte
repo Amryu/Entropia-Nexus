@@ -23,11 +23,15 @@
   } = $props();
 
   let search = $state('');
-  let elements = $state();
   let activeTab = $state('Browse');
 
+  let elements = $derived.by(() => {
+    const arr = items.slice();
+    arr.sort((a, b) => a.Name.localeCompare(b.Name));
+    return arr;
+  });
 
-  let filteredElements = $state();
+  let filteredElements = $derived(filterElements(elements, search?.toLowerCase()));
 
 
   function getTableViewInfo(currentCategorySelected) {
@@ -72,14 +76,6 @@
     });
     return result.slice(0, 300);
   }
-  $effect(() => {
-    elements = items;
-    elements = elements.sort((a, b) => a.Name.localeCompare(b.Name));
-  });
-  $effect(() => {
-    const searchTerm = search?.toLowerCase();
-    filteredElements = filterElements(elements, searchTerm);
-  });
 </script>
 
 <style>
@@ -141,9 +137,9 @@
   <br />
 
   <div class="tabs">
-    <div class="tab {activeTab === 'Browse' ? 'active' : ''}" onclick={() => activeTab = 'Browse'}>Browse</div>
-    <div class="tab {activeTab === 'Search' ? 'active' : ''}" onclick={() => activeTab = 'Search'}>Search</div>
-    <div class="tab {activeTab === 'Favourites' ? 'active' : ''}" onclick={() => activeTab = 'Favourites'}>Favourites</div>
+    <div class="tab {activeTab === 'Browse' ? 'active' : ''}" role="button" tabindex="0" onclick={() => activeTab = 'Browse'} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activeTab = 'Browse'; } }}>Browse</div>
+    <div class="tab {activeTab === 'Search' ? 'active' : ''}" role="button" tabindex="0" onclick={() => activeTab = 'Search'} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activeTab = 'Search'; } }}>Search</div>
+    <div class="tab {activeTab === 'Favourites' ? 'active' : ''}" role="button" tabindex="0" onclick={() => activeTab = 'Favourites'} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activeTab = 'Favourites'; } }}>Favourites</div>
   </div>
 
   {#if activeTab === 'Browse'}
@@ -155,22 +151,22 @@
       {#each filteredElements as item}
         <li class="nested-list-item">
           {#if item.children && item.children.length > 0}
-            <span class="arrow {item.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(item)}>&#9654;</span>
+            <span class="arrow {item.expanded ? 'expanded' : ''}" role="button" tabindex="0" onclick={() => toggleExpand(item)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleExpand(item))}>&#9654;</span>
           {/if}
-          <span onclick={() => navigate(getItemLink(item))}>{item.Name}</span>
+          <span role="button" tabindex="0" onclick={() => navigate(getItemLink(item))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(item)))}>{item.Name}</span>
           {#if item.expanded && item.children && item.children.length > 0}
             <ul class="nested-list">
               {#each item.children as child}
                 <li class="nested-list-item">
                   {#if child.children && child.children.length > 0}
-                    <span class="arrow {child.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(child)}>&#9654;</span>
+                    <span class="arrow {child.expanded ? 'expanded' : ''}" role="button" tabindex="0" onclick={() => toggleExpand(child)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleExpand(child))}>&#9654;</span>
                   {/if}
-                  <span onclick={() => navigate(getItemLink(child))}>{child.Name}</span>
+                  <span role="button" tabindex="0" onclick={() => navigate(getItemLink(child))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(child)))}>{child.Name}</span>
                   {#if child.expanded && child.children && child.children.length > 0}
                     <ul class="nested-list">
                       {#each child.children as grandchild}
                         <li class="nested-list-item">
-                          <span onclick={() => navigate(getItemLink(grandchild))}>{grandchild.Name}</span>
+                          <span role="button" tabindex="0" onclick={() => navigate(getItemLink(grandchild))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(grandchild)))}>{grandchild.Name}</span>
                         </li>
                       {/each}
                     </ul>
@@ -192,7 +188,7 @@
     <ul class="nested-list">
       {#each getFlatFilteredElements(elements, search.toLowerCase()) as item}
         <li class="nested-list-item">
-          <span onclick={() => navigate(getItemLink(item))}>{item.Name}</span>
+          <span role="button" tabindex="0" onclick={() => navigate(getItemLink(item))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(item)))}>{item.Name}</span>
         </li>
       {/each}
     </ul>
@@ -203,22 +199,22 @@
       {#each favourites as item}
         <li class="nested-list-item">
           {#if item.children && item.children.length > 0}
-            <span class="arrow {item.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(item)}>&#9654;</span>
+            <span class="arrow {item.expanded ? 'expanded' : ''}" role="button" tabindex="0" onclick={() => toggleExpand(item)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleExpand(item))}>&#9654;</span>
           {/if}
-          <span onclick={() => navigate(getItemLink(item))}>{item.Name}</span>
+          <span role="button" tabindex="0" onclick={() => navigate(getItemLink(item))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(item)))}>{item.Name}</span>
           {#if item.expanded && item.children && item.children.length > 0}
             <ul class="nested-list">
               {#each item.children as child}
                 <li class="nested-list-item">
                   {#if child.children && child.children.length > 0}
-                    <span class="arrow {child.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(child)}>&#9654;</span>
+                    <span class="arrow {child.expanded ? 'expanded' : ''}" role="button" tabindex="0" onclick={() => toggleExpand(child)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleExpand(child))}>&#9654;</span>
                   {/if}
-                  <span onclick={() => navigate(getItemLink(child))}>{child.Name}</span>
+                  <span role="button" tabindex="0" onclick={() => navigate(getItemLink(child))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(child)))}>{child.Name}</span>
                   {#if child.expanded && child.children && child.children.length > 0}
                     <ul class="nested-list">
                       {#each child.children as grandchild}
                         <li class="nested-list-item">
-                          <span onclick={() => navigate(getItemLink(grandchild))}>{grandchild.Name}</span>
+                          <span role="button" tabindex="0" onclick={() => navigate(getItemLink(grandchild))} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate(getItemLink(grandchild)))}>{grandchild.Name}</span>
                         </li>
                       {/each}
                     </ul>

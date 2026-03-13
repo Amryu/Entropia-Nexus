@@ -294,7 +294,7 @@
           </div>
           {#if customized}
             <div class="custom-image-upload">
-              <label class="upload-label">Custom Image (optional)</label>
+              <span class="upload-label">Custom Image (optional)</span>
               {#if customImagePreview}
                 <div class="image-preview-row">
                   <img src={customImagePreview} alt="Custom item preview" class="image-preview" />
@@ -398,7 +398,7 @@
         />
       </div>
       <div class="form-group">
-        <label>Description (optional)</label>
+        <span class="form-label">Description (optional)</span>
         {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
           <RichTextEditor
             content={description}
@@ -502,14 +502,14 @@
     gap: 0.25rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     font-size: 0.85rem;
     color: var(--text-muted);
     font-weight: 500;
   }
 
-  .form-group input,
-  .form-group textarea {
+  .form-group input {
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     background: var(--bg-color);
@@ -519,15 +519,9 @@
     box-sizing: border-box;
   }
 
-  .form-group input:focus,
-  .form-group textarea:focus {
+  .form-group input:focus {
     border-color: var(--accent-color);
     outline: none;
-  }
-
-  .form-group textarea {
-    resize: vertical;
-    font-family: inherit;
   }
 
   .checkbox-label {

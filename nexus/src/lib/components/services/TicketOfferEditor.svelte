@@ -1,5 +1,6 @@
 <script>
   // @ts-nocheck
+  import { untrack } from 'svelte';
 
   /**
    * @typedef {Object} Props
@@ -14,13 +15,13 @@
   /** @type {Props} */
   let { offer = null, saving = false, serviceMode = 'on_demand', onsave, oncancel, ondelete } = $props();
 
-  // Form state
-  let offerType = $state(offer?.uses_count ? 'uses' : (offer?.validity_days ? 'duration' : 'uses'));
-  let usesCount = $state(offer?.uses_count || 1);
-  let validityDays = $state(offer?.validity_days || 30);
-  let price = $state(offer?.price ? parseFloat(offer.price).toFixed(2) : '');
-  let waivesPickupFee = $state(offer?.waives_pickup_fee || false);
-  let description = $state(offer?.description || '');
+  // Form state - initialized from offer prop (initial value capture via untrack)
+  let offerType = $state(untrack(() => offer?.uses_count ? 'uses' : (offer?.validity_days ? 'duration' : 'uses')));
+  let usesCount = $state(untrack(() => offer?.uses_count || 1));
+  let validityDays = $state(untrack(() => offer?.validity_days || 30));
+  let price = $state(untrack(() => offer?.price ? parseFloat(offer.price).toFixed(2) : ''));
+  let waivesPickupFee = $state(untrack(() => offer?.waives_pickup_fee || false));
+  let description = $state(untrack(() => offer?.description || ''));
 
   // Auto-generate name based on type and amount
   let name = $derived(offerType === 'uses'
@@ -66,13 +67,13 @@
 
   <form onsubmit={(e) => { e.preventDefault(); handleSubmit(e); }}>
     <div class="form-group">
-      <label>Ticket Name</label>
+      <span class="group-label">Ticket Name</span>
       <div class="auto-name">{name}</div>
       <small>Auto-generated based on type and amount</small>
     </div>
 
     <div class="form-group">
-      <label>Ticket Type *</label>
+      <span class="group-label">Ticket Type *</span>
       <div class="radio-group">
         <label class="radio-label">
           <input type="radio" bind:group={offerType} value="uses" />
@@ -155,7 +156,8 @@
     margin-bottom: 1rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .group-label {
     display: block;
     margin-bottom: 0.25rem;
     font-weight: 500;

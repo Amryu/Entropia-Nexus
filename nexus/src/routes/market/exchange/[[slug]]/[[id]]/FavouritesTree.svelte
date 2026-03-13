@@ -1,7 +1,6 @@
 <script>
   // @ts-nocheck
   import { createFolder, renameFolder, deleteFolder, removeFavourite, moveToFolder } from '../../favouritesStore.js';
-  import { clickable } from '$lib/actions/clickable.js';
 
   /**
    * @typedef {Object} Props
@@ -145,7 +144,9 @@
       class="fav-folder-header clickable"
       class:selected={selectedFolderId === 'all'}
       onclick={() => handleFolderSelect('all', allFavItemIds)}
-      use:clickable
+      onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
+      role="button"
+      tabindex="0"
     >
       <span class="expand-spacer"></span>
       <span class="folder-name">All Favourites</span>
@@ -166,13 +167,17 @@
           class="fav-folder-header clickable"
           class:selected={selectedFolderId === folder.id}
           onclick={() => handleFolderSelect(folder.id, folder.items || [])}
-          use:clickable
+          onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
+          role="button"
+          tabindex="0"
         >
           <span
             class="expand-toggle"
             class:expanded={expandedFolders.has(folder.id)}
             onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }}
-            use:clickable={{ tabindex: -1 }}
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
+            role="button"
+            tabindex="-1"
           >{expandedFolders.has(folder.id) ? '▾' : '▸'}</span>
 
           {#if editingFolderId === folder.id}
@@ -190,6 +195,7 @@
           {:else}
             <span
               class="folder-name"
+              role="none"
               ondblclick={(e) => { e.stopPropagation(); startRename(folder); }}
             >{folder.name}</span>
           {/if}
@@ -220,7 +226,9 @@
                 onclick={() => handleItemClick(itemId)}
                 ondragstart={(e) => handleDragStart(e, itemId)}
                 ondragend={handleDragEnd}
-                use:clickable
+                onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
+                role="button"
+                tabindex="0"
               >
                 <span class="expand-spacer"></span>
                 <span class="fav-item-name">
@@ -256,7 +264,9 @@
             onclick={() => handleItemClick(itemId)}
             ondragstart={(e) => handleDragStart(e, itemId)}
             ondragend={handleDragEnd}
-            use:clickable
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
+            role="button"
+            tabindex="0"
           >
             <span class="expand-spacer"></span>
             <span class="fav-item-name">

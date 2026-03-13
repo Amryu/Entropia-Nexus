@@ -931,25 +931,25 @@
           <h2>Social Links</h2>
           <div class="social-edit-grid">
             <div class="social-edit-row">
-              <label class="social-edit-label">
+              <label class="social-edit-label" for="social-discord">
                 <svg viewBox="0 0 127.14 96.36" width="16" height="16"><path fill="#5865F2" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0 105.89 105.89 0 0 0 19.39 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2.03a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2.03a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53.05s5-12.68 11.45-12.68S54 46.07 53.89 53.05 48.84 65.69 42.45 65.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53.05s5-12.68 11.44-12.68S96.23 46.07 96.12 53.05 91.08 65.69 84.69 65.69Z"/></svg>
                 Discord
               </label>
-              <input type="text" bind:value={form.socialDiscord} placeholder="username" maxlength="200" />
+              <input id="social-discord" type="text" bind:value={form.socialDiscord} placeholder="username" maxlength="200" />
             </div>
             <div class="social-edit-row">
-              <label class="social-edit-label">
+              <label class="social-edit-label" for="social-youtube">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
                 YouTube
               </label>
-              <input type="text" bind:value={form.socialYoutube} placeholder="channel name or URL" maxlength="200" />
+              <input id="social-youtube" type="text" bind:value={form.socialYoutube} placeholder="channel name or URL" maxlength="200" />
             </div>
             <div class="social-edit-row">
-              <label class="social-edit-label">
+              <label class="social-edit-label" for="social-twitch">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path fill="#9146FF" d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
                 Twitch
               </label>
-              <input type="text" bind:value={form.socialTwitch} placeholder="username or URL" maxlength="200" />
+              <input id="social-twitch" type="text" bind:value={form.socialTwitch} placeholder="username or URL" maxlength="200" />
             </div>
           </div>
           <p class="hint">Discord username is copied to clipboard when clicked. YouTube and Twitch accept usernames or channel URLs.</p>
@@ -972,8 +972,8 @@
         <h2>Avatar</h2>
         {#if isEditing}
           <div class="field-group">
-            <label>Showcase Loadout</label>
-            <select bind:value={form.showcaseLoadoutCode}>
+            <label for="showcase-loadout">Showcase Loadout</label>
+            <select id="showcase-loadout" bind:value={form.showcaseLoadoutCode}>
               <option value="">None</option>
               {#each avatar.publicLoadouts || [] as loadout}
                 <option value={loadout.share_code}>{loadout.name}</option>
@@ -1598,12 +1598,12 @@
               <table class="globals-compact-table">
                 <thead>
                   <tr>
-                    <th class="col-target" onclick={() => onGlobalsSort('target')}>Target{sortIcon(globalsSort, 'target')}</th>
+                    <th class="col-target sortable" role="columnheader" tabindex="0" onclick={() => onGlobalsSort('target')} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onGlobalsSort('target'))}>Target{sortIcon(globalsSort, 'target')}</th>
                     <th class="col-type">Type</th>
-                    <th class="col-num right" onclick={() => onGlobalsSort('count')}>Count{sortIcon(globalsSort, 'count')}</th>
-                    <th class="col-num right" onclick={() => onGlobalsSort('total_value')}>Total Value{sortIcon(globalsSort, 'total_value')}</th>
-                    <th class="col-num right" onclick={() => onGlobalsSort('avg_value')}>Avg{sortIcon(globalsSort, 'avg_value')}</th>
-                    <th class="col-num right" onclick={() => onGlobalsSort('best_value')}>Best{sortIcon(globalsSort, 'best_value')}</th>
+                    <th class="col-num right sortable" role="columnheader" tabindex="0" onclick={() => onGlobalsSort('count')} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onGlobalsSort('count'))}>Count{sortIcon(globalsSort, 'count')}</th>
+                    <th class="col-num right sortable" role="columnheader" tabindex="0" onclick={() => onGlobalsSort('total_value')} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onGlobalsSort('total_value'))}>Total Value{sortIcon(globalsSort, 'total_value')}</th>
+                    <th class="col-num right sortable" role="columnheader" tabindex="0" onclick={() => onGlobalsSort('avg_value')} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onGlobalsSort('avg_value'))}>Avg{sortIcon(globalsSort, 'avg_value')}</th>
+                    <th class="col-num right sortable" role="columnheader" tabindex="0" onclick={() => onGlobalsSort('best_value')} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onGlobalsSort('best_value'))}>Best{sortIcon(globalsSort, 'best_value')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1689,8 +1689,8 @@
 </div>
 
 {#if showSocietyDialog}
-  <div class="dialog-backdrop" onclick={() => showSocietyDialog = false} onkeydown={(e) => e.key === 'Escape' && (showSocietyDialog = false)}>
-    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="society-dialog-title">
+  <div class="dialog-backdrop" role="presentation" onclick={() => showSocietyDialog = false} onkeydown={(e) => e.key === 'Escape' && (showSocietyDialog = false)}>
+    <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="society-dialog-title">
       <div class="dialog-header">
         <h3 id="society-dialog-title">{societyMode === 'join' ? 'Join a Society' : 'Create a Society'}</h3>
         <button class="close-btn" onclick={() => showSocietyDialog = false} aria-label="Close dialog">&#10005;</button>
@@ -1703,8 +1703,8 @@
 
         {#if societyMode === 'join'}
           <div class="field-group">
-            <label>Search Societies</label>
-            <input type="text" placeholder="Type to search..." value={societySearchQuery} oninput={(e) => handleSocietySearchInput(e.target.value)} />
+            <label for="society-search">Search Societies</label>
+            <input id="society-search" type="text" placeholder="Type to search..." value={societySearchQuery} oninput={(e) => handleSocietySearchInput(e.target.value)} />
             {#if societySearchLoading}
               <div class="hint">Searching...</div>
             {:else if societySearchError}
@@ -1729,20 +1729,20 @@
           </div>
         {:else}
           <div class="field-group">
-            <label>Society Name</label>
-            <input type="text" bind:value={societyCreateName} placeholder="Society name" />
+            <label for="society-name">Society Name</label>
+            <input id="society-name" type="text" bind:value={societyCreateName} placeholder="Society name" />
           </div>
           <div class="field-group">
-            <label>Abbreviation</label>
-            <input type="text" bind:value={societyCreateAbbr} placeholder="Short tag (optional)" />
+            <label for="society-abbr">Abbreviation</label>
+            <input id="society-abbr" type="text" bind:value={societyCreateAbbr} placeholder="Short tag (optional)" />
           </div>
             <div class="field-group">
-              <label>Description</label>
+              <span class="field-label">Description</span>
               <RichTextEditor bind:content={societyCreateDescription} placeholder="Short description" />
             </div>
             <div class="field-group">
-              <label>Discord</label>
-              <input type="text" bind:value={societyCreateDiscord} placeholder="Invite link or code (optional)" />
+              <label for="society-discord">Discord</label>
+              <input id="society-discord" type="text" bind:value={societyCreateDiscord} placeholder="Invite link or code (optional)" />
               <div class="helper-text">Only the invite code is stored.</div>
             </div>
         {/if}

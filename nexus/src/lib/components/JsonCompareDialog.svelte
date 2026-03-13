@@ -128,7 +128,7 @@
 
 {#if show}
   <div class="dialog-overlay" role="presentation" onclick={close}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>{title}</h3>
         <button type="button" class="close-btn" onclick={close}>×</button>

@@ -36,44 +36,71 @@
     }
   });
 
-  // Form data - initialized from data.service (not the reactive variable)
-  let serviceType = $state(data.service?.type || 'healing');
-  let title = $state(data.service?.title || '');
-  let description = $state(data.service?.description || '');
-  let planetId = $state(data.service?.planet_id || null);
-  let willingToTravel = $state(data.service?.willing_to_travel || false);
-  let travelFee = $state(data.service?.travel_fee ? parseFloat(data.service.travel_fee).toFixed(2) : null);
+  // Form data - re-sync from page data on navigation
+  let serviceType = $state('healing');
+  let title = $state('');
+  let description = $state('');
+  let planetId = $state(null);
+  let willingToTravel = $state(false);
+  let travelFee = $state(null);
 
   // Healing details
-  let paramedicLevel = $state(data.service?.healing_details?.paramedic_level || null);
-  let acceptsTimeBilling = $state(data.service?.healing_details?.accepts_time_billing !== false);
-  let ratePerHour = $state(data.service?.healing_details?.rate_per_hour ? parseFloat(data.service.healing_details.rate_per_hour).toFixed(2) : (data.service?.dps_details?.rate_per_hour ? parseFloat(data.service.dps_details.rate_per_hour).toFixed(2) : null));
-  let acceptsDecayBilling = $state(data.service?.healing_details?.accepts_decay_billing !== false || data.service?.dps_details?.accepts_decay_billing !== false);
+  let paramedicLevel = $state(null);
+  let acceptsTimeBilling = $state(true);
+  let ratePerHour = $state(null);
+  let acceptsDecayBilling = $state(true);
 
   // DPS details
-  let dpsNotes = $state(data.service?.dps_details?.notes || '');
+  let dpsNotes = $state('');
 
   // Equipment
-  let equipment = $state(data.service?.equipment || []);
+  let equipment = $state([]);
 
   // Transportation details
-  let transportationType = $state(data.service?.transportation_details?.transportation_type || 'regular');
-  let shipName = $state(data.service?.transportation_details?.ship_name || '');
-  let serviceMode = $state(data.service?.transportation_details?.service_mode || 'on_demand');
+  let transportationType = $state('regular');
+  let shipName = $state('');
+  let serviceMode = $state('on_demand');
 
   // Custom type name
-  let customTypeName = $state(data.service?.custom_type_name || '');
+  let customTypeName = $state('');
 
   // Owner fields (transportation only)
-  let differentOwner = $state(!!(data.service?.owner_display_name || data.service?.owner_user_id));
-  let ownerDisplayName = $state(data.service?.owner_display_name || '');
+  let differentOwner = $state(false);
+  let ownerDisplayName = $state('');
 
   // Pickup (transportation)
-  let allowsPickup = $state(data.service?.transportation_details?.allows_pickup || false);
-  let pickupFee = $state(data.service?.transportation_details?.pickup_fee || '');
+  let allowsPickup = $state(false);
+  let pickupFee = $state('');
 
   // Discord code (warp services only)
-  let discordCode = $state(data.service?.transportation_details?.discord_code || '');
+  let discordCode = $state('');
+
+  // Populate form when service data changes (initial load or navigation)
+  $effect(() => {
+    const s = service;
+    if (!s) return;
+    serviceType = s.type || 'healing';
+    title = s.title || '';
+    description = s.description || '';
+    planetId = s.planet_id || null;
+    willingToTravel = s.willing_to_travel || false;
+    travelFee = s.travel_fee ? parseFloat(s.travel_fee).toFixed(2) : null;
+    paramedicLevel = s.healing_details?.paramedic_level || null;
+    acceptsTimeBilling = s.healing_details?.accepts_time_billing !== false;
+    ratePerHour = s.healing_details?.rate_per_hour ? parseFloat(s.healing_details.rate_per_hour).toFixed(2) : (s.dps_details?.rate_per_hour ? parseFloat(s.dps_details.rate_per_hour).toFixed(2) : null);
+    acceptsDecayBilling = s.healing_details?.accepts_decay_billing !== false || s.dps_details?.accepts_decay_billing !== false;
+    dpsNotes = s.dps_details?.notes || '';
+    equipment = s.equipment || [];
+    transportationType = s.transportation_details?.transportation_type || 'regular';
+    shipName = s.transportation_details?.ship_name || '';
+    serviceMode = s.transportation_details?.service_mode || 'on_demand';
+    customTypeName = s.custom_type_name || '';
+    differentOwner = !!(s.owner_display_name || s.owner_user_id);
+    ownerDisplayName = s.owner_display_name || '';
+    allowsPickup = s.transportation_details?.allows_pickup || false;
+    pickupFee = s.transportation_details?.pickup_fee || '';
+    discordCode = s.transportation_details?.discord_code || '';
+  });
 
   // Ship name options for regular transportation
   const regularShipOptions = ['Sleipnir', 'Quad-Wing Interceptor'];
@@ -280,7 +307,7 @@
       </div>
 
       <div class="form-group">
-        <label>Description</label>
+        <span class="form-label">Description</span>
         {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
           <RichTextEditor
             content={description}
@@ -581,7 +608,8 @@
     margin-bottom: 0;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     display: block;
     margin-bottom: 0.25rem;
     font-weight: 500;

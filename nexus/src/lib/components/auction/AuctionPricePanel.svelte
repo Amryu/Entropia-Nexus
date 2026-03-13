@@ -120,10 +120,4 @@
     font-weight: 500;
     color: var(--text-color);
   }
-
-  .price-value.muted,
-  .price-row.muted .price-label {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-  }
 </style>

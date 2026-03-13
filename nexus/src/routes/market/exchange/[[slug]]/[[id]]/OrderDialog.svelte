@@ -559,7 +559,7 @@
           </div>
         {:else}
           <div class="form-row max-tt-row">
-            <label>{isPet(order.Item) ? 'Nutrio Cap.' : 'Max TT'}</label>
+            <span class="form-label">{isPet(order.Item) ? 'Nutrio Cap.' : 'Max TT'}</span>
             <div class="static-value">
               {order.Item.MaxTT != null ? `${formatPedRaw(Number(order.Item.MaxTT))} PED` : 'N/A'}
               {#if isPet(order.Item) && Number(order.Item.MaxTT) === PET_DEFAULT_MAX_TT}
@@ -909,36 +909,6 @@
   }
   .partial-label input[type="checkbox"] {
     margin: 0;
-  }
-  /* Tab bar */
-  .tab-bar {
-    display: flex;
-    gap: 0;
-    margin-bottom: 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  .tab {
-    flex: 1;
-    padding: 6px 12px;
-    background: var(--bg-color);
-    border: none;
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .tab:not(:last-child) {
-    border-right: 1px solid var(--border-color);
-  }
-  .tab.active {
-    background: var(--accent-color);
-    color: white;
-  }
-  .tab:hover:not(.active) {
-    background: var(--hover-color);
   }
   .inv-warning-banner {
     background: var(--warning-bg);

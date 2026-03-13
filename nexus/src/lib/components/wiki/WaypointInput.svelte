@@ -29,7 +29,6 @@
   // @ts-nocheck
   import { onMount, tick } from 'svelte';
   import { browser } from '$app/environment';
-  import { clickable } from '$lib/actions/clickable.js';
 
   
 
@@ -347,7 +346,7 @@
     <!-- Planet field -->
     {#if !hidePlanet}
       <div class="field-group planet-group">
-        <label class="field-label">
+        <label class="field-label" for="waypoint-planet">
           Planet
           {#if planetLocked}
             <span class="lock-icon" title="Locked - won't change on paste">🔒</span>
@@ -355,6 +354,7 @@
         </label>
         <div class="planet-search">
           <input
+            id="waypoint-planet"
             bind:this={planetInputEl}
             type="text"
             class="field-input"
@@ -375,9 +375,9 @@
                   class:highlighted={idx === highlightedPlanetIndex}
                   onmousedown={(e) => { e.preventDefault(); selectPlanet(planet); }}
                   onmouseenter={() => highlightedPlanetIndex = idx}
-                  use:clickable
                   role="button"
                   tabindex="0"
+                  onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
                 >
                   {planet.Name}
                 </div>
@@ -391,8 +391,9 @@
     <!-- Coordinates -->
     <div class="coords-group">
       <div class="field-group coord-field">
-        <label class="field-label">Longitude</label>
+        <label class="field-label" for="waypoint-longitude">Longitude</label>
         <input
+          id="waypoint-longitude"
           bind:this={coordInputEl}
           type="text"
           inputmode="decimal"
@@ -405,8 +406,9 @@
         />
       </div>
       <div class="field-group coord-field">
-        <label class="field-label">Latitude</label>
+        <label class="field-label" for="waypoint-latitude">Latitude</label>
         <input
+          id="waypoint-latitude"
           type="text"
           inputmode="decimal"
           class="field-input coord-input"
@@ -418,8 +420,9 @@
         />
       </div>
       <div class="field-group coord-field">
-        <label class="field-label">Altitude</label>
+        <label class="field-label" for="waypoint-altitude">Altitude</label>
         <input
+          id="waypoint-altitude"
           type="text"
           inputmode="decimal"
           class="field-input coord-input"
@@ -435,13 +438,14 @@
     <!-- Name field -->
     {#if !hideName}
       <div class="field-group name-group">
-        <label class="field-label">
+        <label class="field-label" for="waypoint-name">
           Name
           {#if nameLocked}
             <span class="lock-icon" title="Locked - won't change on paste">🔒</span>
           {/if}
         </label>
         <input
+          id="waypoint-name"
           type="text"
           class="field-input"
           value={localName}
@@ -611,11 +615,6 @@
   .coord-input {
     text-align: center;
     font-family: monospace;
-  }
-
-  /* Name group */
-  .name-group {
-    /* Full width */
   }
 
   /* Mobile adjustments */

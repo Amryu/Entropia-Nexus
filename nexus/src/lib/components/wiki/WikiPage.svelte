@@ -428,9 +428,8 @@
                   {/if}
                 </button>
                 {#if createDropdownOpen}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <div class="create-dropdown-backdrop" onclick={closeCreateDropdown} onkeydown={(e) => e.key === 'Escape' && closeCreateDropdown()} role="presentation"></div>
-                  <div class="create-dropdown" role="menu" onkeydown={(e) => e.key === 'Escape' && closeCreateDropdown()}>
+                  <div class="create-dropdown" role="menu" tabindex="-1" onkeydown={(e) => e.key === 'Escape' && closeCreateDropdown()}>
                     {#each createCategories as category}
                       <button
                         class="create-dropdown-item"
@@ -499,10 +498,8 @@
 
   <!-- Auth Help Dialog -->
   {#if showAuthDialog}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="dialog-overlay" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="dialog-content" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+    <div class="dialog-overlay" role="presentation" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
+      <div class="dialog-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="auth-dialog-title">
         <button class="dialog-close" onclick={closeAuthDialog} aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18" />

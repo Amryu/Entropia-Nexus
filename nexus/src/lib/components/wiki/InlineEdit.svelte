@@ -84,7 +84,7 @@
 
   // Internal state
   let inputEl = $state();
-  let localValue = $state(value);
+  let localValue = $state('');
   let error = $state(null);
 
   // Determine if field is editable

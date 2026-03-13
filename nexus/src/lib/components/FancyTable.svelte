@@ -1,7 +1,6 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, tick, untrack } from 'svelte';
-  import { clickable } from '$lib/actions/clickable.js';
 
   
 
@@ -101,8 +100,8 @@ Callback props:
   let footerEl = $state();
   let internalData = $state([]);
   let totalRows = $state(0);
-  let sortColumn = $state(defaultSort?.column ?? null);
-  let sortOrder = $state(defaultSort?.order ?? 'ASC');
+  let sortColumn = $state(untrack(() => defaultSort?.column ?? null));
+  let sortOrder = $state(untrack(() => defaultSort?.order ?? 'ASC'));
   let sortPhaseIdx = $state(0);
   let userSorted = $state(false);
 
@@ -1083,8 +1082,10 @@ Callback props:
           class:sorted={sortColumn === column.key}
           class:hide-on-mobile={column.hideOnMobile}
           class:hide-on-desktop={column.hideOnDesktop}
-          use:clickable
+          role="button"
+          tabindex="0"
           onclick={() => handleSort(column)}
+          onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
         >
           {column.header}
           {#if sortColumn === column.key}
@@ -1139,8 +1140,10 @@ Callback props:
             class:odd={index % 2 === 1}
             class:last-row={index === totalCount - 1}
             style="top: {top}px; height: {effectiveRowHeight}px; grid-template-columns: {gridTemplateColumns};"
-            use:clickable
+            role="button"
+            tabindex="0"
             onclick={() => handleRowClick(row, index)}
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
             onmouseover={() => handleRowHover(row, index)}
             onfocus={() => handleRowHover(row, index)}
             onmouseout={() => handleRowHover(null, null)}

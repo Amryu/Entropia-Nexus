@@ -74,9 +74,9 @@
           {#each damageTypes as type}
             {@const value = damage[type.key] || 0}
             <div class="damage-edit-item" class:has-value={value > 0}>
-              <label class="damage-edit-label" style="color: var({type.colorVar})" title={type.label}>
+              <span class="damage-edit-label" style="color: var({type.colorVar})" title={type.label}>
                 {type.short}
-              </label>
+              </span>
               <InlineEdit
                 value={value || null}
                 path="Properties.Damage.{type.key}"

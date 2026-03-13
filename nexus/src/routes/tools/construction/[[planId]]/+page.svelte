@@ -1266,15 +1266,21 @@
     }
     return effective;
   })());
-  // Sync calculator config into plan data for persistence
+  // Sync calculator config into plan data for persistence.
+  // activePlan mutation is untracked to avoid a self-referencing loop
+  // (reading activePlan and writing activePlan.data.config).
   $effect(() => {
-    if (activePlan) {
+    const hasNFC = Object.keys(nonFailChances).length > 0;
+    const hasCP = Object.keys(conditionPercents).length > 0;
+    const hasMCC = Object.keys(materialCraftConfig).length > 0;
+    untrack(() => {
+      if (!activePlan) return;
       const config = {};
-      if (Object.keys(nonFailChances).length > 0) config.nonFailChances = nonFailChances;
-      if (Object.keys(conditionPercents).length > 0) config.conditionPercents = conditionPercents;
-      if (Object.keys(materialCraftConfig).length > 0) config.materialCraftConfig = materialCraftConfig;
+      if (hasNFC) config.nonFailChances = nonFailChances;
+      if (hasCP) config.conditionPercents = conditionPercents;
+      if (hasMCC) config.materialCraftConfig = materialCraftConfig;
       activePlan.data.config = Object.keys(config).length > 0 ? config : undefined;
-    }
+    });
   });
   // Computed - pass configuration to buildCraftingTree
   let craftingConfig = $derived({ rollChance, certainty, nonFailChances, materialCraftConfig, conditionPercents });
@@ -1968,7 +1974,7 @@
                 {@const isChecked = checkedSteps.has(i)}
                 {@const isCollapsed = collapsedSteps.has(i)}
                 <li class="step-item" class:not-owned={!step.owned} class:checked={isChecked} class:collapsed={isCollapsed}>
-                  <div class="step-header" onclick={() => toggleStepCollapsed(i)} role="button" tabindex="0" onkeypress={(e) => e.key === 'Enter' && toggleStepCollapsed(i)}>
+                  <div class="step-header" onclick={() => toggleStepCollapsed(i)} role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleStepCollapsed(i))}>
                     <label class="step-checkbox" onclick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={isChecked} onchange={() => toggleStepChecked(i)} />
                     </label>
@@ -2495,8 +2501,8 @@
 {/if}
 <!-- Ownership Panel Modal -->
 {#if showConfigPanel}
-  <div class="ownership-overlay" onclick={() => showConfigPanel = false} onkeydown={(e) => e.key === 'Escape' && (showConfigPanel = false)}>
-    <div class="ownership-panel config-panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div class="ownership-overlay" role="presentation" onclick={() => showConfigPanel = false} onkeydown={(e) => e.key === 'Escape' && (showConfigPanel = false)}>
+    <div class="ownership-panel config-panel" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
       <div class="panel-header">
         <h2>Calculator Settings</h2>
         <button class="btn-close" onclick={() => showConfigPanel = false}>×</button>
@@ -2578,8 +2584,8 @@
 {/if}
 
 {#if showOwnershipPanel}
-  <div class="ownership-overlay" onclick={() => showOwnershipPanel = false} onkeydown={(e) => e.key === 'Escape' && (showOwnershipPanel = false)}>
-    <div class="ownership-panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div class="ownership-overlay" role="presentation" onclick={() => showOwnershipPanel = false} onkeydown={(e) => e.key === 'Escape' && (showOwnershipPanel = false)}>
+    <div class="ownership-panel" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
       <div class="panel-header">
         <h2>Blueprint Ownership</h2>
         <button class="btn-close" onclick={() => showOwnershipPanel = false}>×</button>
@@ -2615,8 +2621,8 @@
 {/if}
 
 {#if showDeleteDialog}
-<div class="dialog-backdrop" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
-  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+<div class="dialog-backdrop" role="presentation" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
+  <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="delete-dialog-title">
     <div class="dialog-header">
       <h3 id="delete-dialog-title">Delete Plan</h3>
     </div>
@@ -2632,8 +2638,8 @@
 {/if}
 
 {#if showImportSourceDialog}
-<div class="dialog-backdrop" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
-  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+<div class="dialog-backdrop" role="presentation" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
+  <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="import-dialog-title">
     <div class="dialog-header">
       <h3 id="import-dialog-title">Import Plan</h3>
     </div>
@@ -2655,8 +2661,8 @@
 
 {#if showHotspotDialog}
 {@const breakdown = getHotspotBreakdown()}
-<div class="dialog-backdrop" onclick={() => showHotspotDialog = false} onkeydown={(e) => e.key === 'Escape' && (showHotspotDialog = false)}>
-  <div class="dialog hotspot-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="hotspot-dialog-title">
+<div class="dialog-backdrop" role="presentation" onclick={() => showHotspotDialog = false} onkeydown={(e) => e.key === 'Escape' && (showHotspotDialog = false)}>
+  <div class="dialog hotspot-dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="hotspot-dialog-title">
     <div class="dialog-header">
       <h3 id="hotspot-dialog-title">Hotspot Model</h3>
     </div>
@@ -2767,7 +2773,7 @@
 
 {#if showConditionInfoDialog}
 <div class="dialog-backdrop" role="presentation" onclick={() => showConditionInfoDialog = false} onkeydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
-  <div class="dialog condition-info-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
+  <div class="dialog condition-info-dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="condition-info-title">
     <div class="dialog-header">
       <h3 id="condition-info-title">Condition</h3>
     </div>

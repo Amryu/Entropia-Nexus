@@ -3,8 +3,6 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import ValueChart from './ValueChart.svelte';
   import { formatPedRaw } from '../../market/exchange/orderUtils';
-  import { clickable } from '$lib/actions/clickable.js';
-
   let { onclose } = $props();
 
   let imports = $state([]);
@@ -131,7 +129,7 @@
       <div class="import-list">
         {#each imports as imp (imp.id)}
           <div class="import-row" class:expanded={expandedId === imp.id}>
-            <div class="import-summary" use:clickable onclick={() => toggleExpand(imp)}>
+            <div class="import-summary" role="button" tabindex="0" onclick={() => toggleExpand(imp)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleExpand(imp))}>
               <div class="import-date">{formatDate(imp.imported_at)}</div>
               <div class="import-stats">
                 <span>{imp.item_count} items</span>

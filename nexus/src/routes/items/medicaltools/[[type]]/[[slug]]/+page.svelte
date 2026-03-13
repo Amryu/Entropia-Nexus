@@ -21,8 +21,6 @@
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
-  import { clickable } from '$lib/actions/clickable.js';
-
   // Wiki edit state
   import {
     editMode,
@@ -695,7 +693,7 @@
             </div>
           {:else}
             <!-- In view mode, toggle between Reload and Uses/min -->
-            <div class="stat-row toggleable" onclick={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
+            <div class="stat-row toggleable" onclick={toggleReloadUses} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} title="Click to toggle between Reload and Uses/min" role="button" tabindex="0">
               {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
                 <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>

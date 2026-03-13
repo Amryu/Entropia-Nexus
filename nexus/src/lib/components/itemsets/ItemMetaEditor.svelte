@@ -66,8 +66,9 @@
 <div class="item-meta-editor">
   {#if isTierable}
     <div class="meta-row">
-      <label class="meta-label">Tier</label>
+      <label class="meta-label" for="meta-tier-{item.itemId}">Tier</label>
       <input
+        id="meta-tier-{item.itemId}"
         type="number"
         class="meta-input meta-input-small"
         value={meta.tier ?? ''}
@@ -79,8 +80,9 @@
       />
     </div>
     <div class="meta-row">
-      <label class="meta-label">TiR</label>
+      <label class="meta-label" for="meta-tir-{item.itemId}">TiR</label>
       <input
+        id="meta-tir-{item.itemId}"
         type="number"
         class="meta-input meta-input-small"
         value={meta.tiR ?? ''}
@@ -94,8 +96,9 @@
 
   {#if hasCondition}
     <div class="meta-row">
-      <label class="meta-label">TT</label>
+      <label class="meta-label" for="meta-tt-{item.itemId}">TT</label>
       <input
+        id="meta-tt-{item.itemId}"
         type="number"
         class="meta-input"
         value={meta.currentTT ?? ''}
@@ -113,8 +116,9 @@
 
   {#if isBlueprint}
     <div class="meta-row">
-      <label class="meta-label">QR</label>
+      <label class="meta-label" for="meta-qr-{item.itemId}">QR</label>
       <input
+        id="meta-qr-{item.itemId}"
         type="number"
         class="meta-input meta-input-small"
         value={meta.qr ?? ''}
@@ -129,8 +133,9 @@
 
   {#if isUnisex}
     <div class="meta-row">
-      <label class="meta-label">Gender</label>
+      <label class="meta-label" for="meta-gender-{item.itemId}">Gender</label>
       <select
+        id="meta-gender-{item.itemId}"
         class="meta-select"
         value={meta.gender || ''}
         onchange={(e) => updateMeta('gender', e.target.value || null)}
@@ -144,8 +149,9 @@
 
   {#if isPet}
     <div class="meta-row">
-      <label class="meta-label">Level</label>
+      <label class="meta-label" for="meta-pet-level-{item.itemId}">Level</label>
       <input
+        id="meta-pet-level-{item.itemId}"
         type="number"
         class="meta-input meta-input-small"
         value={meta.pet?.level ?? ''}
@@ -157,8 +163,9 @@
       />
     </div>
     <div class="meta-row">
-      <label class="meta-label">Fed</label>
+      <label class="meta-label" for="meta-pet-fed-{item.itemId}">Fed</label>
       <input
+        id="meta-pet-fed-{item.itemId}"
         type="number"
         class="meta-input"
         value={meta.pet?.currentTT ?? ''}
@@ -287,10 +294,12 @@
   /* Remove spinner arrows on number inputs */
   .meta-input::-webkit-outer-spin-button,
   .meta-input::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
     margin: 0;
   }
   .meta-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 </style>

@@ -23,9 +23,17 @@
     return species?._newSpecies || species?.Properties || {};
   }
 
-  let name = $state(species?.Name || '');
-  let codexBaseCost = $state(getSpeciesValues().CodexBaseCost ?? '');
-  let codexType = $state(getSpeciesValues().CodexType || 'Mob');
+  let name = $state('');
+  let codexBaseCost = $state('');
+  let codexType = $state('Mob');
+
+  // Sync form fields when the species prop changes (e.g. dialog reopens with different species)
+  $effect(() => {
+    name = species?.Name || '';
+    const vals = getSpeciesValues();
+    codexBaseCost = vals.CodexBaseCost ?? '';
+    codexType = vals.CodexType || 'Mob';
+  });
 
   let canSubmit = $derived(name.trim().length > 0);
 

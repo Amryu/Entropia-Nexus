@@ -370,7 +370,7 @@
                 {#each activeStrongbox?.Loots || [] as loot, index}
                   <div class="loot-row">
                     <div class="loot-field item-field">
-                      <label>Item</label>
+                      <span class="field-label">Item</span>
                       <SearchInput
                         value={loot.Item?.Name || ''}
                         placeholder="Search for item..."
@@ -405,7 +405,7 @@
                       />
                     </div>
                     <div class="loot-field rarity-field">
-                      <label>Rarity</label>
+                      <span class="field-label">Rarity</span>
                       <select
                         value={loot.Rarity || 'Common'}
                         onchange={(e) => {
@@ -420,7 +420,7 @@
                       </select>
                     </div>
                     <div class="loot-field date-field from-field">
-                      <label>Available From (optional)</label>
+                      <span class="field-label">Available From (optional)</span>
                       <input
                         type="date"
                         value={loot.AvailableFrom || ''}
@@ -432,7 +432,7 @@
                       />
                     </div>
                     <div class="loot-field date-field until-field">
-                      <label>Available Until (optional)</label>
+                      <span class="field-label">Available Until (optional)</span>
                       <input
                         type="date"
                         value={loot.AvailableUntil || ''}
@@ -622,7 +622,7 @@
     overflow: visible;
   }
 
-  .loot-field label {
+  .loot-field .field-label {
     font-size: 11px;
     font-weight: 600;
     color: var(--text-muted, #999);
@@ -843,7 +843,7 @@
       grid-area: rarity;
     }
 
-    .loot-field label {
+    .loot-field .field-label {
       font-size: 11px;
     }
 

@@ -513,12 +513,12 @@
                   class="new-group-input"
                   disabled={saving}
                 />
-                <button class="add-group-confirm" onclick={addGroup} disabled={!newGroupName.trim() || saving}>
+                <button class="add-group-confirm" onclick={addGroup} disabled={!newGroupName.trim() || saving} aria-label="Confirm add group">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
                 </button>
-                <button class="add-group-cancel" onclick={() => { showNewGroupInput = false; newGroupName = ''; }}>
+                <button class="add-group-cancel" onclick={() => { showNewGroupInput = false; newGroupName = ''; }} aria-label="Cancel add group">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -553,7 +553,7 @@
 
         <!-- Add Item Search -->
         <div class="add-item-section">
-          <label class="search-label">Add Item</label>
+          <span class="search-label">Add Item</span>
           <SearchInput
             bind:value={itemSearchQuery}
             placeholder="Search items by name..."
@@ -1078,11 +1078,13 @@
   /* Hide number spinners */
   .compact-input::-webkit-outer-spin-button,
   .compact-input::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
     margin: 0;
   }
 
   .compact-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 

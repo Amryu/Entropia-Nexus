@@ -166,7 +166,7 @@
       </div>
 
       <div class="form-group">
-        <label>Content</label>
+        <span class="form-label">Content</span>
         <span class="hint" style="margin-bottom: 0.375rem;">Full article body. Supports rich text formatting. Paste markdown and it will be auto-converted.</span>
         {#await import('$lib/components/wiki/RichTextEditor.svelte') then module}
           <module.default
@@ -183,7 +183,7 @@
       </div>
 
       <div class="form-group">
-        <label>Image</label>
+        <span class="form-label">Image</span>
         {#if image_url}
           <div class="image-preview">
             <img src={image_url} alt="Announcement banner" />
@@ -325,7 +325,8 @@
     margin-bottom: 1.25rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     display: block;
     margin-bottom: 0.375rem;
     font-weight: 500;

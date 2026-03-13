@@ -153,8 +153,7 @@
           <div class="defense-edit-item" class:has-value={value > 0}>
             <label class="defense-edit-label" style="color: var({getColorVar(type)})">
               {type.substring(0, 3)}
-            </label>
-            <input
+              <input
               type="number"
               class="defense-input"
               value={value}
@@ -163,6 +162,7 @@
               max={type === 'Block' ? 100 : undefined}
               onchange={(e) => updateDefenseValue(type, e.target.value)}
             />
+            </label>
           </div>
         {/each}
       </div>

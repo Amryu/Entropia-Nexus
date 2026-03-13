@@ -1,7 +1,6 @@
 <script>
   import ChangeDataViewer from './ChangeDataViewer.svelte';
   // @ts-nocheck
-  import { clickable } from '$lib/actions/clickable.js';
   /**
    * ChangeDataViewer - Smart JSON viewer for entity change data
    *
@@ -674,7 +673,7 @@
           {/if}
         </div>
       {:else}
-          <div class="field-header" class:changed={diffInfo.type === 'changed'} class:added={diffInfo.type === 'added'} onclick={() => toggleSection(key)} use:clickable role="button" tabindex="0">
+          <div class="field-header" class:changed={diffInfo.type === 'changed'} class:added={diffInfo.type === 'added'} onclick={() => toggleSection(key)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} role="button" tabindex="0">
           <span class="field-key">
             <span class="expand-icon" class:expanded={isExpanded}>▶</span>
             {#if diffInfo.type !== 'none'}

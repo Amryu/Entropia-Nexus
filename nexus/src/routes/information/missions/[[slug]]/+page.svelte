@@ -1743,8 +1743,8 @@
   {/if}
 
   {#if showGraphDialog}
-    <div class="dialog-overlay" onclick={() => showGraphDialog = false}>
-      <div class="graph-dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog-overlay" role="presentation" onclick={() => showGraphDialog = false}>
+      <div class="graph-dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
         <div class="graph-dialog-header">
           <h3>{activeMission?.MissionChain?.Name || 'Mission Graph'}</h3>
           <span class="graph-dialog-count">{graphData?.nodes?.length || 0} missions</span>

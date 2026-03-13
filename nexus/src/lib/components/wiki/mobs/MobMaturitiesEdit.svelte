@@ -937,11 +937,13 @@
   }
 
   .field input[type="number"] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 
   .field input[type="number"]::-webkit-outer-spin-button,
   .field input[type="number"]::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
     margin: 0;
   }

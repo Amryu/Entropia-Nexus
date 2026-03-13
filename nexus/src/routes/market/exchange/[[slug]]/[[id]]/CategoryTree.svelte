@@ -156,6 +156,7 @@
         <span
           class="expand-toggle {expandedNodes.has(category.id) ? 'expanded' : ''}"
           onclick={(e) => { e.stopPropagation(); toggleExpanded(category.id, category); }}
+          onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.stopPropagation(), toggleExpanded(category.id, category))}
           role="button"
           tabindex="-1"
         >{expandedNodes.has(category.id) ? '▾' : '▸'}</span>

@@ -176,9 +176,10 @@
 
             <div class="effect-fields-row">
               <div class="field-group">
-                <label>Strength</label>
+                <label for="effect-strength-{i}">Strength</label>
                 <div class="input-with-unit">
                   <input
+                    id="effect-strength-{i}"
                     type="number"
                     value={effect.Properties?.Strength ?? 0}
                     step="0.1"
@@ -188,9 +189,10 @@
                 </div>
               </div>
               <div class="field-group">
-                <label>Upkeep</label>
+                <label for="effect-upkeep-{i}">Upkeep</label>
                 <div class="input-with-unit">
                   <input
+                    id="effect-upkeep-{i}"
                     type="number"
                     value={effect.Properties?.NutrioConsumptionPerHour ?? 0}
                     step="1"
@@ -221,8 +223,9 @@
                 <div class="unlock-fields">
                   <div class="unlock-row">
                     <div class="field-group small">
-                      <label>Level</label>
+                      <label for="effect-level-{i}">Level</label>
                       <input
+                        id="effect-level-{i}"
                         type="number"
                         value={effect.Properties?.Unlock?.Level ?? 1}
                         min="1"
@@ -230,8 +233,9 @@
                       />
                     </div>
                     <div class="field-group small">
-                      <label>PED Cost</label>
+                      <label for="effect-ped-cost-{i}">PED Cost</label>
                       <input
+                        id="effect-ped-cost-{i}"
                         type="number"
                         value={effect.Properties?.Unlock?.CostPED ?? 0}
                         min="0"
@@ -242,8 +246,9 @@
                   </div>
                   <div class="unlock-row">
                     <div class="field-group small">
-                      <label>Essence Cost</label>
+                      <label for="effect-essence-{i}">Essence Cost</label>
                       <input
+                        id="effect-essence-{i}"
                         type="number"
                         value={effect.Properties?.Unlock?.CostEssence ?? 0}
                         min="0"
@@ -251,8 +256,9 @@
                       />
                     </div>
                     <div class="field-group small">
-                      <label>Rare Essence</label>
+                      <label for="effect-rare-essence-{i}">Rare Essence</label>
                       <input
+                        id="effect-rare-essence-{i}"
                         type="number"
                         value={effect.Properties?.Unlock?.CostRareEssence ?? 0}
                         min="0"
@@ -262,8 +268,9 @@
                   </div>
                   <div class="unlock-row criteria-row">
                     <div class="field-group">
-                      <label>Criteria</label>
+                      <label for="effect-criteria-{i}">Criteria</label>
                       <input
+                        id="effect-criteria-{i}"
                         type="text"
                         value={effect.Properties?.Unlock?.Criteria || ''}
                         placeholder="e.g., Hunt creatures"
@@ -271,8 +278,9 @@
                       />
                     </div>
                     <div class="field-group small">
-                      <label>Amount</label>
+                      <label for="effect-amount-{i}">Amount</label>
                       <input
+                        id="effect-amount-{i}"
                         type="number"
                         value={effect.Properties?.Unlock?.CriteriaValue ?? ''}
                         min="0"

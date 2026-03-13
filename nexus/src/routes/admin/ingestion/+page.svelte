@@ -7,15 +7,15 @@
   /** @type {Props} */
   let { data } = $props();
 
-  let stats = $state(data.stats);
-  let alerts = $state(data.alerts);
-  let alertTotal = $state(data.alertTotal || 0);
+  let stats = $state((() => data.stats)());
+  let alerts = $state((() => data.alerts)());
+  let alertTotal = $state((() => data.alertTotal || 0)());
   let alertPage = $state(1);
   const ALERTS_PER_PAGE = 10;
   let alertsLoading = $state(false);
-  let users = $state(data.users);
-  let allowedClients = $state(data.allowedClients || []);
-  let tradeChannels = $state(data.tradeChannels || []);
+  let users = $state((() => data.users)());
+  let allowedClients = $state((() => data.allowedClients || [])());
+  let tradeChannels = $state((() => data.tradeChannels || [])());
 
   let showBanDialog = $state(false);
   let showPurgeDialog = $state(false);
@@ -637,7 +637,7 @@
 <!-- Ban Dialog -->
 {#if showBanDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showBanDialog = false}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Ban from Ingestion</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         This will block the user from submitting and receiving ingestion data.
@@ -670,7 +670,7 @@
 <!-- Purge Dialog -->
 {#if showPurgeDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showPurgeDialog = false}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Purge User Data</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         This will permanently delete all ingested data (globals, trades, and market prices)
@@ -696,7 +696,7 @@
 <!-- Resolve Alert Dialog -->
 {#if showResolveDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showResolveDialog = false}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Resolve Alert</h3>
 
       {#if actionError}
@@ -725,7 +725,7 @@
 <!-- Add Application Dialog -->
 {#if showAddClientDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showAddClientDialog = false}>
-    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog dialog-wide" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Allow Application</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Select a registered OAuth application to grant ingestion access.
@@ -777,7 +777,7 @@
 <!-- Add Trade Channel Dialog -->
 {#if showAddChannelDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showAddChannelDialog = false}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Add Trade Channel</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Add a trade channel that clients are allowed to submit messages from.
@@ -880,7 +880,6 @@
     font-size: 28px;
     font-weight: 700;
     margin: 0;
-    color: var(--text-color);
   }
 
   .stat-inline-detail {

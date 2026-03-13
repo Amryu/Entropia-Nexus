@@ -209,7 +209,7 @@
     <!-- Deny dialog -->
     {#if showDenyDialog}
       <div class="dialog-overlay" role="presentation" onclick={() => { showDenyDialog = false; }} onkeydown={(e) => e.key === 'Escape' && (showDenyDialog = false)}>
-        <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
           <h3>Deny Event</h3>
           <div class="form-group">
             <label for="deny-reason">Reason (optional)</label>

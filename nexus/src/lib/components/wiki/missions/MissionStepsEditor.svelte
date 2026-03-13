@@ -644,7 +644,7 @@
                   {#if objective.Type === 'Dialog'}
                     <div class="objective-grid">
                       <div class="objective-field full">
-                        <label>NPC</label>
+                        <span class="field-label">NPC</span>
                         <SearchInput
                           value={getOptionLabel(npcOptions, payload.targetLocationId)}
                           options={npcOptions}
@@ -653,7 +653,7 @@
                         />
                       </div>
                       <div class="objective-field full">
-                        <label>Dialog Text</label>
+                        <span class="field-label">Dialog Text</span>
                         <div class="dialog-text-editor">
                           <RichTextEditor
                             content={payload.dialogText ?? ''}
@@ -667,7 +667,7 @@
                   {:else if objective.Type === 'Interact'}
                     <div class="objective-grid">
                       <div class="objective-field full">
-                        <label>Target</label>
+                        <span class="field-label">Target</span>
                         <SearchInput
                           value={getOptionLabel(locationOptions, payload.targetLocationId)}
                           options={locationOptions}
@@ -740,26 +740,28 @@
                       <div class="kill-options">
                         {#if objective.Type === 'KillCount'}
                           <div class="objective-field">
-                            <label>{useKillPoints ? 'Total Points' : 'Total Count'}</label>
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="0"
-                              value={payload.totalCountRequired ?? ''}
-                              oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
-                            />
+                            <label>{useKillPoints ? 'Total Points' : 'Total Count'}
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="0"
+                                value={payload.totalCountRequired ?? ''}
+                                oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                              />
+                            </label>
                           </div>
                         {:else if objective.Type === 'KillCycle'}
                           <div class="objective-field">
-                            <label>PED to Cycle</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="0"
-                              value={payload.pedToCycle ?? ''}
-                              oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
-                            />
+                            <label>PED to Cycle
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0"
+                                value={payload.pedToCycle ?? ''}
+                                oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                              />
+                            </label>
                           </div>
                         {/if}
                       </div>
@@ -767,7 +769,7 @@
                   {:else if objective.Type === 'HandIn'}
                     <div class="objective-grid">
                       <div class="objective-field full">
-                        <label>NPC</label>
+                        <span class="field-label">NPC</span>
                         <SearchInput
                           value={getOptionLabel(npcOptions, payload.npcLocationId)}
                           options={npcOptions}
@@ -776,7 +778,7 @@
                         />
                       </div>
                       <div class="objective-field full">
-                        <label>Items</label>
+                        <span class="field-label">Items</span>
                         <div class="handin-list">
                           {#each ensureArray(payload.items) as item, itemIndex}
                             {@const itemKey = getItemDraftKey(stepIndex, objIndex, itemIndex)}
@@ -827,7 +829,7 @@
                   {:else if objective.Type === 'Collect'}
                     <div class="objective-grid">
                       <div class="objective-field">
-                        <label>Item</label>
+                        <span class="field-label">Item</span>
                         <SearchInput
                           value={getCollectDisplayName(payload.itemId, stepIndex, objIndex)}
                           placeholder="Search item..."
@@ -838,21 +840,22 @@
                         />
                       </div>
                       <div class="objective-field">
-                        <label>Quantity</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="Amount"
-                          value={payload.quantity ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { quantity: toNumber(e.target.value) })}
-                        />
+                        <label>Quantity
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Amount"
+                            value={payload.quantity ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { quantity: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                     </div>
                   {:else if objective.Type === 'CollectValue'}
                     <div class="objective-grid">
                       <div class="objective-field">
-                        <label>Item</label>
+                        <span class="field-label">Item</span>
                         <SearchInput
                           value={getCollectDisplayName(payload.itemId, stepIndex, objIndex)}
                           placeholder="Search item..."
@@ -863,15 +866,16 @@
                         />
                       </div>
                       <div class="objective-field">
-                        <label>Value (PED)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="PED"
-                          value={payload.pedValue ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedValue: toNumber(e.target.value) })}
-                        />
+                        <label>Value (PED)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="PED"
+                            value={payload.pedValue ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedValue: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                     </div>
                   {:else if objective.Type === 'AIKillCycle'}
@@ -905,22 +909,23 @@
                       </div>
                       <div class="kill-options">
                         <div class="objective-field">
-                          <label>Est. PED to Cycle</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0"
-                            value={payload.pedToCycle ?? ''}
-                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
-                          />
+                          <label>Est. PED to Cycle
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="0"
+                              value={payload.pedToCycle ?? ''}
+                              oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                            />
+                          </label>
                         </div>
                       </div>
                     </div>
                   {:else if objective.Type === 'AIHandIn'}
                     <div class="objective-grid">
                       <div class="objective-field full">
-                        <label>Item Pool (min–max quantity)</label>
+                        <span class="field-label">Item Pool (min&ndash;max quantity)</span>
                         <div class="handin-list">
                           {#each ensureArray(payload.items) as item, itemIndex}
                             {@const itemKey = getItemDraftKey(stepIndex, objIndex, itemIndex)}
@@ -959,65 +964,70 @@
                   {:else if objective.Type === 'CraftSuccess' || objective.Type === 'CraftAttempt'}
                     <div class="objective-grid">
                       <div class="objective-field">
-                        <label>{objective.Type === 'CraftSuccess' ? 'Successful Crafts' : 'Craft Attempts'}</label>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={payload.totalCountRequired ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
-                        />
+                        <label>{objective.Type === 'CraftSuccess' ? 'Successful Crafts' : 'Craft Attempts'}
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={payload.totalCountRequired ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                     </div>
                   {:else if objective.Type === 'CraftCycle'}
                     <div class="objective-grid">
                       <div class="objective-field">
-                        <label>PED to Cycle</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={payload.pedToCycle ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
-                        />
+                        <label>PED to Cycle
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0"
+                            value={payload.pedToCycle ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                     </div>
                   {:else if objective.Type === 'MiningCycle' || objective.Type === 'MiningPoints'}
                     <div class="objective-grid">
                       <div class="objective-field">
-                        <label>{objective.Type === 'MiningCycle' ? 'Mining Drops' : 'Mining Points'}</label>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={payload.totalCountRequired ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
-                        />
+                        <label>{objective.Type === 'MiningCycle' ? 'Mining Drops' : 'Mining Points'}
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={payload.totalCountRequired ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                     </div>
                   {:else if objective.Type === 'MiningClaim'}
                     <div class="objective-grid">
                       <div class="objective-field">
-                        <label>Claims Required</label>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={payload.totalCountRequired ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
-                        />
+                        <label>Claims Required
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={payload.totalCountRequired ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                       <div class="objective-field">
-                        <label>Min Claim Value (PED)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="Any"
-                          value={payload.minClaimValue ?? ''}
-                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { minClaimValue: toNumber(e.target.value) })}
-                        />
+                        <label>Min Claim Value (PED)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Any"
+                            value={payload.minClaimValue ?? ''}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { minClaimValue: toNumber(e.target.value) })}
+                          />
+                        </label>
                       </div>
                     </div>
                   {/if}
@@ -1039,7 +1049,7 @@
   {@const dialogMobId = ensureArray(getObjectivePayload(stepIndex, objIndex).mobs)[mobIndex]?.mobId}
   {@const maturitiesForMob = getMaturitiesForMob(dialogMobId)}
   <div class="dialog-overlay" role="presentation" onclick={closeDialog}>
-    <div class="maturity-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="maturity-dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>Configure Maturities: {getMobName(dialogMobId)}</h3>
         <button type="button" class="btn-icon" onclick={closeDialog}>×</button>
@@ -1256,10 +1266,17 @@
     grid-column: 1 / -1;
   }
 
-  .objective-field label {
+  .objective-field label,
+  .objective-field .field-label {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
+  }
+
+  .objective-field label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .objective-field input {

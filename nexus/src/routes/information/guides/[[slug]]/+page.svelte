@@ -550,7 +550,7 @@
 
 <!-- CREATE/EDIT DIALOG -->
 {#if showDialog}
-  <div class="dialog-overlay" role="dialog" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
+  <div class="dialog-overlay" role="dialog" tabindex="-1" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
     <div class="dialog" role="presentation" onclick={(e) => e.stopPropagation()}>
       <h3 class="dialog-title">{dialogTitle}</h3>
 

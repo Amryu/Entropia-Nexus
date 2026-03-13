@@ -82,7 +82,7 @@
           <span class="piece-slot">{piece.slot || ''}</span>
           <span class="piece-name">{piece.name}</span>
           <div class="piece-tt">
-            <label class="piece-tt-label">TT</label>
+            <label class="piece-tt-label">TT
             <input
               type="number"
               class="piece-tt-input"
@@ -92,6 +92,7 @@
               placeholder="0.00"
               onchange={(e) => updatePieceMeta(idx, 'currentTT', e.target.value === '' ? null : Number(e.target.value))}
             />
+            </label>
           </div>
         </div>
       {/each}
@@ -268,10 +269,12 @@
   /* Remove spinner arrows */
   .piece-tt-input::-webkit-outer-spin-button,
   .piece-tt-input::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
     margin: 0;
   }
   .piece-tt-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 

@@ -246,7 +246,7 @@
         </div>
 
         <div class="form-group">
-          <label>Description</label>
+          <span class="form-label">Description</span>
           {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
             <RichTextEditor
               content={description}
@@ -499,7 +499,8 @@
     margin-bottom: 0;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     display: block;
     margin-bottom: 0.25rem;
     font-weight: 500;

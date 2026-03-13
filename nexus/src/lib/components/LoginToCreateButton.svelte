@@ -44,8 +44,8 @@
 {/if}
 
 {#if showDialog}
-  <div class="dialog-overlay" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
-    <div class="dialog-content" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+  <div class="dialog-overlay" role="presentation" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
+    <div class="dialog-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="auth-dialog-title">
       <button class="dialog-close" onclick={closeDialog} aria-label="Close">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18" />

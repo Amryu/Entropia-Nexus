@@ -5,7 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-
+  import { untrack } from 'svelte';
 
   /**
    * @typedef {Object} Props
@@ -19,7 +19,7 @@
   let { visibleColumns = [], allColumns = [], onapply, oncancel } = $props();
 
   // Internal state: working copy of visible column keys (in order)
-  let selectedKeys = $state(visibleColumns.map(c => c.key));
+  let selectedKeys = $state(untrack(() => visibleColumns.map(c => c.key)));
 
   // Drag state
   let dragIndex = $state(null);
@@ -147,12 +147,11 @@
   }
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
 <div
   class="modal-overlay"
-  role="button"
-  tabindex="0"
+  role="presentation"
   onclick={handleOverlayClick}
-  onkeydown={handleKeydown}
 >
   <div class="modal" role="dialog" aria-modal="true">
     <h3>Configure Columns</h3>

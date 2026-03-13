@@ -71,8 +71,10 @@
     crafting: { count: 0, value: 0 },
   };
 
-  let globals = $state([...(data.globals || [])]);
-  let summary = $state({ ...EMPTY_SUMMARY, ...(data.summary || {}) });
+  let dataGlobals = $derived(data.globals || []);
+  let dataSummary = $derived(data.summary || {});
+  let globals = $state((() => [...dataGlobals])());
+  let summary = $state((() => ({ ...EMPTY_SUMMARY, ...dataSummary }))());
 
   // Filters
   let typeFilter = $state('');
@@ -117,10 +119,10 @@
 
   // Live table
   let pollTimer = null;
-  let latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
+  let latestTimestamp = $state(null);
   let loadingMore = $state(false);
   let tableLoading = $state(false);
-  let hasMore = $state(globals.length >= 50);
+  let hasMore = $state(true);
   let newIds = $state(new Set());
   let liveSort = $state({ col: 'timestamp', asc: false });
   let sortedGlobals = $derived(liveSort.col === 'timestamp' && !liveSort.asc
@@ -525,8 +527,8 @@
 
   afterNavigate(() => {
     // Reinitialize from SSR data on every navigation (including initial)
-    globals = [...(data.globals || [])];
-    summary = { ...EMPTY_SUMMARY, ...(data.summary || {}) };
+    globals = [...dataGlobals];
+    summary = { ...EMPTY_SUMMARY, ...dataSummary };
     latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
     hasMore = globals.length >= 50;
     newIds = new Set();

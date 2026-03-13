@@ -1,6 +1,5 @@
 <script>
   //@ts-nocheck
-  import { clickable } from '$lib/actions/clickable.js';
   import { formatPedRaw, formatMarkupValue } from '../../market/exchange/orderUtils';
 
   /**
@@ -197,7 +196,9 @@
           class="tree-row tree-container"
           class:expanded={expandedPaths.has(row.node.path)}
           onclick={() => editingContainerPath !== row.node.path && toggleExpand(row.node.path)}
-          use:clickable
+          onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), editingContainerPath !== row.node.path && toggleExpand(row.node.path))}
+          role="button"
+          tabindex="0"
         >
           <span class="tree-indent" style="width: {row.node.depth * 12}px"></span>
           <span class="tree-arrow">
@@ -257,7 +258,9 @@
         <div
           class="tree-row tree-item"
           onclick={() => handleItemClick(row.item)}
-          use:clickable
+          onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), handleItemClick(row.item))}
+          role="button"
+          tabindex="0"
         >
           <span class="tree-indent" style="width: {row.depth * 12}px"></span>
           <span class="tree-arrow"></span>
@@ -287,8 +290,10 @@
                 class:has-mu={row.item._markup != null}
                 class:has-market={row.item._markup == null && row.item._marketPrice != null}
                 onclick={(e) => { e.stopPropagation(); row.item.item_id > 0 && startMarkupEdit(row.item); }}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); row.item.item_id > 0 && startMarkupEdit(row.item); } }}
                 title="Click to edit markup"
-                use:clickable
+                role="button"
+                tabindex="0"
               >
                 {#if row.item._markup != null}
                   {row.item._isAbsolute ? formatMarkupValue(row.item._markup, true) : formatMarkupValue(row.item._markup, false)}

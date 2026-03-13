@@ -724,8 +724,8 @@
 </div>
 
 {#if showAddModal}
-  <div class="modal-backdrop" onclick={closeModal}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-backdrop" role="presentation" onclick={closeModal}>
+    <div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h3>{editingIndex !== null ? 'Edit' : 'Add'} Equipment</h3>
         <button type="button" class="modal-close" onclick={closeModal}>&times;</button>

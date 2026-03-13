@@ -756,16 +756,16 @@
   <div class="map-controls">
     <div class="control-row">
       <div class="control-group">
-        <label>Planet</label>
-        <select bind:value={selectedMainPlanet} onchange={handleMainPlanetChange}>
+        <label for="map-planet">Planet</label>
+        <select id="map-planet" bind:value={selectedMainPlanet} onchange={handleMainPlanetChange}>
           {#each mainPlanets as planetName}
             <option value={planetName}>{planetGroups[planetName]?.[0]?.Name || planetName}</option>
           {/each}
         </select>
       </div>
       <div class="control-group">
-        <label>Area</label>
-        <select bind:value={selectedSubArea} onchange={handleSubAreaChange}>
+        <label for="map-area">Area</label>
+        <select id="map-area" bind:value={selectedSubArea} onchange={handleSubAreaChange}>
           {#each subAreas as area}
             <option value={area._type}>{area.Name}</option>
           {/each}
@@ -1034,10 +1034,11 @@
   {#if pendingDialogOpen}
     <div
       class="dialog-backdrop"
+      role="presentation"
       onclick={() => pendingDialogOpen = false}
       onkeydown={(e) => e.key === 'Escape' && (pendingDialogOpen = false)}
     >
-      <div class="dialog dialog-compact" onclick={(e) => e.stopPropagation()}>
+      <div class="dialog dialog-compact" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
         <div class="dialog-header">
           <h3>Your Drafts & Reviews</h3>
           <button class="close-btn" onclick={() => pendingDialogOpen = false} aria-label="Close dialog">

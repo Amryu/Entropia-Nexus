@@ -1304,6 +1304,11 @@
   }
 
   & .enhancer-field label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
     font-size: 12px;
     color: var(--text-muted, #999);
   }
@@ -1638,6 +1643,9 @@
   }
 
   & .setting-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -1893,6 +1901,11 @@
     opacity: 0.8;
   }
 
+  & .set-tab-add-container {
+    position: relative;
+    display: inline-flex;
+  }
+
   & .set-tab-add {
     display: inline-flex;
     align-items: center;
@@ -1908,7 +1921,6 @@
     color: var(--text-muted, #999);
     cursor: pointer;
     transition: all 0.15s ease;
-    position: relative;
   }
 
   & .set-tab-add:hover {

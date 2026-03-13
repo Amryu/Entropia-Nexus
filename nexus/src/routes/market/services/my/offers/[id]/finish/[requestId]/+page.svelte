@@ -14,12 +14,18 @@
   let loading = $state(false);
   let error = $state(null);
 
-  // Form fields
+  // Form fields - re-sync from page data on navigation
   let actualEnd = $state(new Date().toISOString().slice(0, 16)); // datetime-local format
-  let actualStart = $state(request.actual_start
-    ? new Date(request.actual_start).toISOString().slice(0, 16)
-    : new Date().toISOString().slice(0, 16));
-  let actualPayment = $state(request.final_payment || request.estimated_payment || '');
+  let actualStart = $state(new Date().toISOString().slice(0, 16));
+  let actualPayment = $state('');
+
+  $effect(() => {
+    const r = request;
+    actualStart = r?.actual_start
+      ? new Date(r.actual_start).toISOString().slice(0, 16)
+      : new Date().toISOString().slice(0, 16);
+    actualPayment = r?.final_payment || r?.estimated_payment || '';
+  });
   let providerNotes = $state('');
   let breakMinutes = $state('');
   let actualDecay = $state('');

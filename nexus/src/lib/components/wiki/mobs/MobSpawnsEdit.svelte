@@ -7,7 +7,6 @@
 <script>
   // @ts-nocheck
   import { editMode, updateField, currentEntity } from '$lib/stores/wikiEditState.js';
-  import { clickable } from '$lib/actions/clickable.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   
@@ -700,7 +699,7 @@
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog}
   <div class="dialog-overlay" role="presentation" onclick={closeMaturityDialog}>
-    <div class="maturity-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="maturity-dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>{maturityDialog.mobName}</h3>
         <button class="dialog-close" onclick={closeMaturityDialog} type="button">×</button>

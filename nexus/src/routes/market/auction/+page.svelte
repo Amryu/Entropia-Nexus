@@ -17,10 +17,16 @@
   let filters = $derived(data.filters || {});
   let user = $derived(data.session?.user);
   let isVerified = $derived(!!user?.verified);
-  let totalPages = $derived(Math.ceil(total / data.limit));
+  let limit = $derived(data.limit);
+  let totalPages = $derived(Math.ceil(total / limit));
 
-  let searchInput = $state(data?.filters?.search || '');
+  let searchInput = $state('');
   let searchTimeout;
+
+  // Re-sync search input from page data on navigation
+  $effect(() => {
+    searchInput = filters?.search || '';
+  });
 
   function updateFilter(key, value) {
     const url = new URL($page.url);

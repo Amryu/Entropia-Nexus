@@ -747,10 +747,12 @@
   /* Remove spinner arrows */
   .quantity-input::-webkit-outer-spin-button,
   .quantity-input::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
     margin: 0;
   }
   .quantity-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 

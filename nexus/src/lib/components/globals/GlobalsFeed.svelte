@@ -5,7 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { getTypeConfig } from '$lib/data/globals-constants.js';
   import { timeAgo, formatValue } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
@@ -18,7 +18,7 @@
     showMediaDialog = true;
   }
 
-  
+
   /**
    * @typedef {Object} Props
    * @property {Array<object>} [initialGlobals]
@@ -30,9 +30,10 @@
   const POLL_INTERVAL = 5000;
   const MAX_ITEMS = 15;
 
-  let globals = $state([...initialGlobals].slice(0, MAX_ITEMS));
+  // initialGlobals is server-rendered seed data; copy once into mutable state
+  let globals = $state(untrack(() => [...initialGlobals].slice(0, MAX_ITEMS)));
   let pollTimer = null;
-  let latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
+  let latestTimestamp = untrack(() => globals.length > 0 ? globals[0].timestamp : null);
   let newIds = $state(new Set());
 
   async function poll() {

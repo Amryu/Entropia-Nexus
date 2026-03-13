@@ -15,21 +15,20 @@
   let { loadouts = $bindable(null), currentLoadout = $bindable(null) } = $props();
 
   let search = $state('');
-  let sortedLoadouts = $state();
 
   let fileInput = $state();
 
-  $effect(() => {
-    if (loadouts !== null) {
-      sortedLoadouts = loadouts.sort((a, b) => a.Name.localeCompare(b.Name));
-    }
+  let sortedLoadouts = $derived.by(() => {
+    if (loadouts === null) return null;
+    const arr = loadouts.slice();
+    arr.sort((a, b) => a.Name.localeCompare(b.Name));
+    return arr;
   });
-  
-  let filteredLoadouts = $state();
 
-  $effect(() => {
+  let filteredLoadouts = $derived.by(() => {
+    if (!sortedLoadouts) return null;
     const searchTerm = search?.toLowerCase();
-    filteredLoadouts = !search.trim() ? sortedLoadouts : sortedLoadouts.filter((item) => {
+    return !search.trim() ? sortedLoadouts : sortedLoadouts.filter((item) => {
       return item.Name.toLowerCase().includes(searchTerm);
     });
   });

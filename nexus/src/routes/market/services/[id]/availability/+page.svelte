@@ -14,8 +14,13 @@
   let saveStatus = $state(''); // '', 'success', 'error'
   let hasChanges = $state(false);
 
-  // Track the current state - use data.availability directly for initialization
-  let currentSlots = $state(Array.isArray(data.availability) ? [...data.availability] : []);
+  // Track the current state - re-sync from page data on navigation
+  let currentSlots = $state([]);
+
+  $effect(() => {
+    currentSlots = [...availability];
+    hasChanges = false;
+  });
 
   function handleUpdate(data) {
     currentSlots = data;
@@ -67,9 +72,8 @@
         sample: normalizedResult.slice(0, 3)
       });
 
-      // Update the availability data with the normalized server response
-      availability = normalizedResult;
-      currentSlots = [...availability];
+      // Update the current slots with the normalized server response
+      currentSlots = [...normalizedResult];
       
       hasChanges = false;
       saveStatus = 'success';

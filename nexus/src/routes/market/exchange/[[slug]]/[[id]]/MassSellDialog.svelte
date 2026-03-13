@@ -423,8 +423,9 @@
             {#if !row.blocked}
             <div class="row-fields">
               <div class="field">
-                <label>Markup{row.pctMarkup ? ' (%)' : ' (+PED)'}</label>
+                <label for="mass-markup-{row.key}">Markup{row.pctMarkup ? ' (%)' : ' (+PED)'}</label>
                 <input
+                  id="mass-markup-{row.key}"
                   type="number"
                   min={row.pctMarkup ? 100 : 0}
                   step={row.pctMarkup ? 1 : 0.01}
@@ -437,8 +438,9 @@
               </div>
               {#if row.stackable}
                 <div class="field">
-                  <label>Qty</label>
+                  <label for="mass-qty-{row.key}">Qty</label>
                   <input
+                    id="mass-qty-{row.key}"
                     type="number"
                     min="1"
                     bind:value={row.quantity}
@@ -481,8 +483,9 @@
               {/if}
               {#if row.hasCond}
                 <div class="field">
-                  <label>TT</label>
+                  <label for="mass-tt-{row.key}">TT</label>
                   <input
+                    id="mass-tt-{row.key}"
                     type="number"
                     min="0"
                     max={row.maxTT ?? undefined}
@@ -497,8 +500,9 @@
               {/if}
               {#if row.tierable}
                 <div class="field">
-                  <label>Tier</label>
+                  <label for="mass-tier-{row.key}">Tier</label>
                   <input
+                    id="mass-tier-{row.key}"
                     type="number"
                     min="0"
                     max="10"
@@ -510,8 +514,9 @@
                   />
                 </div>
                 <div class="field">
-                  <label>TiR</label>
+                  <label for="mass-tir-{row.key}">TiR</label>
                   <input
+                    id="mass-tir-{row.key}"
                     type="number"
                     min="0"
                     max={row.limited ? 4000 : 200}
@@ -525,8 +530,9 @@
               {/if}
               {#if row.blueprint && !row.limited}
                 <div class="field">
-                  <label>QR</label>
+                  <label for="mass-qr-{row.key}">QR</label>
                   <input
+                    id="mass-qr-{row.key}"
                     type="number"
                     min="1"
                     max="100"

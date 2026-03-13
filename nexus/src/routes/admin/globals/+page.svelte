@@ -3,7 +3,7 @@
   import { addToast } from '$lib/stores/toasts.js';
 
   let { data } = $props();
-  let reports = $state(data.reports || []);
+  let reports = $derived(data.reports || []);
   let filter = $state('pending'); // 'pending' | 'resolved' | 'all'
 
   let filtered = $derived(filter === 'all' ? reports
@@ -32,7 +32,6 @@
       const res = await fetch(`/api/admin/globals/reports/${report.id}/resolve`, { method: 'POST' });
       if (res.ok) {
         report.resolved_at = new Date().toISOString();
-        reports = [...reports];
         if (!skipToast) addToast('Report dismissed.', { type: 'success' });
       }
     } catch {

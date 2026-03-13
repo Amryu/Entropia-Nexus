@@ -7,11 +7,11 @@
   import { onMount, onDestroy } from 'svelte';
   import { getTimeRemaining } from '$lib/common/auctionUtils.js';
 
-  
 
-  
 
-  
+
+
+
   /**
    * @typedef {Object} Props
    * @property {string|Date} endsAt
@@ -22,19 +22,23 @@
   /** @type {Props} */
   let { endsAt, frozen = false, size = 'normal' } = $props();
 
-  let remaining = $state(getTimeRemaining(endsAt));
+  let tick = $state(0);
   let interval;
 
-  function update() {
-    remaining = getTimeRemaining(endsAt);
-    if (remaining.expired && interval) {
-      clearInterval(interval);
-    }
-  }
+  let remaining = $derived((() => {
+    tick; // subscribe to tick changes for periodic updates
+    return getTimeRemaining(endsAt);
+  })());
 
   onMount(() => {
     if (!frozen) {
-      interval = setInterval(update, 1000);
+      interval = setInterval(() => {
+        if (remaining.expired) {
+          clearInterval(interval);
+          return;
+        }
+        tick++;
+      }, 1000);
     }
   });
 

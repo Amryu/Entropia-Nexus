@@ -216,7 +216,7 @@
           </div>
 
           <div class="form-group">
-            <label>Description</label>
+            <span class="form-label">Description</span>
             {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
               <RichTextEditor
                 content={description}
@@ -511,7 +511,8 @@
     margin-bottom: 0;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .form-label {
     display: block;
     font-weight: 500;
     font-size: 0.9rem;
@@ -520,8 +521,7 @@
   }
 
   .form-group input,
-  .form-group select,
-  .form-group textarea {
+  .form-group select {
     width: 100%;
     padding: 0.5rem;
     background: var(--primary-color);
@@ -533,20 +533,14 @@
     font-family: inherit;
   }
 
-  .form-group textarea {
-    resize: vertical;
-  }
-
   .form-group input:focus,
-  .form-group select:focus,
-  .form-group textarea:focus {
+  .form-group select:focus {
     border-color: var(--accent-color);
     outline: none;
   }
 
   .form-group input:disabled,
-  .form-group select:disabled,
-  .form-group textarea:disabled {
+  .form-group select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }

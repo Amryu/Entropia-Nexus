@@ -266,11 +266,13 @@
     color: var(--text-color);
     font-size: 1rem;
     outline: none;
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 
   .bid-input::-webkit-outer-spin-button,
   .bid-input::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
     margin: 0;
   }

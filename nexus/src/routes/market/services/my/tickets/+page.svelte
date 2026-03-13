@@ -270,7 +270,7 @@
           <p class="section-description">Click a ticket to extend it</p>
           <div class="ticket-list issued">
             {#each issuedTickets as ticket}
-              <div class="ticket-row clickable" onclick={() => openExtendDialog(ticket)} onkeypress={(e) => e.key === 'Enter' && openExtendDialog(ticket)} role="button" tabindex="0">
+              <div class="ticket-row clickable" onclick={() => openExtendDialog(ticket)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openExtendDialog(ticket))} role="button" tabindex="0">
                 <span class="buyer">{ticket.buyer_name}</span>
                 <span class="service">{ticket.service_title}</span>
                 <span class="name">{ticket.offer_name}</span>
@@ -289,7 +289,7 @@
           <p class="section-description">Click to reactivate an expired ticket</p>
           <div class="ticket-list issued">
             {#each expiredIssuedTickets as ticket}
-              <div class="ticket-row clickable expired-row" onclick={() => openExtendDialog(ticket)} onkeypress={(e) => e.key === 'Enter' && openExtendDialog(ticket)} role="button" tabindex="0">
+              <div class="ticket-row clickable expired-row" onclick={() => openExtendDialog(ticket)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openExtendDialog(ticket))} role="button" tabindex="0">
                 <span class="buyer">{ticket.buyer_name}</span>
                 <span class="service">{ticket.service_title}</span>
                 <span class="name">{ticket.offer_name}</span>
@@ -308,8 +308,8 @@
 
 <!-- Ticket Extension Dialog -->
 {#if showExtendDialog && selectedTicket}
-  <div class="dialog-overlay" onclick={closeExtendDialog} onkeypress={(e) => e.key === 'Escape' && closeExtendDialog()}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div class="dialog-overlay" role="presentation" onclick={closeExtendDialog} onkeydown={(e) => e.key === 'Escape' && closeExtendDialog()}>
+    <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true">
       <div class="dialog-header">
         <h2>{getTicketStatus(selectedTicket) === 'expired' ? 'Reactivate Ticket' : 'Extend Ticket'}</h2>
         <button class="close-btn" onclick={closeExtendDialog}>&times;</button>
@@ -332,17 +332,17 @@
 
         {#if getTicketStatus(selectedTicket) === 'expired'}
           <div class="form-group">
-            <label>Reactivate with:</label>
-            <div class="input-row">
+            <span class="label">Reactivate with:</span>
+            <label class="input-row">
               <input type="number" bind:value={additionalDays} min="1" max="365" /> days validity
-            </div>
-            <div class="input-row">
+            </label>
+            <label class="input-row">
               <input type="number" bind:value={additionalUses} min="0" max="100" /> additional uses (optional)
-            </div>
+            </label>
           </div>
         {:else}
           <div class="form-group">
-            <label>Extension type:</label>
+            <span class="label">Extension type:</span>
             <div class="radio-group">
               <label class="radio-option">
                 <input type="radio" bind:group={extendAction} value="extend_uses" />
@@ -359,13 +359,15 @@
 
           {#if extendAction === 'extend_uses'}
             <div class="form-group">
-              <label>Additional uses:</label>
+              <label>Additional uses:
               <input type="number" bind:value={additionalUses} min="1" max="100" />
+              </label>
             </div>
           {:else if extendAction === 'extend_validity'}
             <div class="form-group">
-              <label>Additional days:</label>
+              <label>Additional days:
               <input type="number" bind:value={additionalDays} min="1" max="365" />
+              </label>
             </div>
           {/if}
         {/if}
@@ -715,7 +717,8 @@
     margin-bottom: 1rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group > span.label {
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;

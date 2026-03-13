@@ -242,7 +242,7 @@
     display: flex;
     flex-direction: column;
   }
-  .panel-loading, .panel-error, .panel-empty {
+  .panel-loading, .panel-error {
     padding: 24px;
     text-align: center;
     font-size: 13px;

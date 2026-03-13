@@ -12,7 +12,6 @@
   import { addToast } from '$lib/stores/toasts';
   import { PREFERRED_SHORT_ROUTE_BY_PREFIX } from '$lib/short-url-routes.js';
   import { loading } from "../../actions/loading";
-  import { clickable } from '$lib/actions/clickable.js';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
 
@@ -2478,7 +2477,7 @@
           <div class="mobile-section">
             <!-- On mobile, clicking header just expands/collapses - no navigation -->
             <!-- This prevents menu from closing before user can see options -->
-            <div class="mobile-section-header" use:clickable onclick={() => toggleSection(menu)}>
+            <div class="mobile-section-header" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => toggleSection(menu)}>
               <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
               <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
             </div>
@@ -2508,7 +2507,7 @@
     <!-- User Section (at bottom, collapsible) -->
     <div class="mobile-user-section" class:expanded={mobileUserExpanded}>
       {#if user}
-        <div class="mobile-user-header" use:clickable onclick={() => mobileUserExpanded = !mobileUserExpanded}>
+        <div class="mobile-user-header" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => mobileUserExpanded = !mobileUserExpanded}>
           <img
             src={user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : `https://cdn.discordapp.com/embed/avatars/${Number(user.id) % 5}.png`}
             class="mobile-user-avatar"
@@ -2526,7 +2525,7 @@
               {/if}
             </div>
           </div>
-          <div class="mobile-user-quick-actions" onclick={(e) => e.stopPropagation()}>
+          <div class="mobile-user-quick-actions" role="presentation" onclick={(e) => e.stopPropagation()}>
             {#if canCopyShortLink}
               <button
                 class="mobile-quick-btn short-link-mobile-btn"
@@ -2651,7 +2650,7 @@
 
 {#if showImpersonateDialog}
   <div class="dialog-overlay" role="presentation" onclick={resetImpersonateDialog}>
-    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog dialog-wide" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Impersonate User</h3>
       <p class="dialog-description">Search for a user by their Discord name or EU character name.</p>
 
@@ -2687,7 +2686,7 @@
         {#if showUserSuggestions && userSearchResults.length > 0}
           <div class="suggestions-dropdown">
             {#each userSearchResults as result}
-              <div class="suggestion-item" use:clickable onclick={() => selectUser(result)}>
+              <div class="suggestion-item" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => selectUser(result)}>
                 <div class="suggestion-name">
                   {result.global_name || result.username}
                   {#if result.verified}
@@ -2728,7 +2727,7 @@
 
 {#if showBrowseDialog}
   <div class="dialog-overlay" role="presentation" onclick={() => showBrowseDialog = false}>
-    <div class="dialog dialog-large" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog dialog-large" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <h3>Browse Users</h3>
       <p class="dialog-description">Click on a row to select a user. Use the search boxes to filter.</p>
 

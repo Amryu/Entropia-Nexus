@@ -3,7 +3,6 @@
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
-  import { clickable } from '$lib/actions/clickable.js';
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { formatPedRaw } from '../../orderUtils';
 
@@ -925,7 +924,9 @@
         {#if inputMode === 'file'}
           <div
             class="file-drop-zone"
-            use:clickable
+            role="button"
+            tabindex="0"
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}
             aria-label="Choose file to upload"
             onclick={() => fileInput?.click()}
             ondragover={(e) => e.preventDefault()}
@@ -1193,11 +1194,6 @@
   .help-method ol li {
     margin-bottom: 6px;
   }
-  .help-method ul {
-    margin: 2px 0;
-    padding-left: 16px;
-    font-size: 12px;
-  }
   .help-method a {
     color: var(--accent-color);
   }
@@ -1302,12 +1298,6 @@
     border-radius: 3px;
     font-size: 11px;
   }
-  .unresolved-more {
-    font-size: 11px;
-    color: var(--text-muted);
-    padding: 1px 6px;
-  }
-
   /* Preview table */
   .preview-table {
     height: 350px;
@@ -1511,9 +1501,6 @@
   @media (max-width: 600px) {
     .modal {
       padding: 1rem;
-    }
-    .snippet-row {
-      flex-direction: column;
     }
     .disc-name {
       max-width: 120px;

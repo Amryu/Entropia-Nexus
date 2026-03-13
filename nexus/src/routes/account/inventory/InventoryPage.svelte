@@ -3,7 +3,6 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { clickable } from '$lib/actions/clickable.js';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { apiCall } from '$lib/util.js';
@@ -827,7 +826,7 @@
 
         <!-- Mobile sidebar overlay -->
         {#if mobileSidebarOpen}
-          <div class="sidebar-overlay" onclick={() => mobileSidebarOpen = false} use:clickable></div>
+          <div class="sidebar-overlay" onclick={() => mobileSidebarOpen = false} role="presentation"></div>
         {/if}
 
         <!-- Main content -->
@@ -913,7 +912,7 @@
               {#snippet cell({ column, row })}
                                       
                   {#if column.key === 'item_name'}
-                    <span class="item-name-link" onclick={() => openItemDialog(row)} use:clickable>
+                    <span class="item-name-link" onclick={() => openItemDialog(row)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openItemDialog(row))} role="button" tabindex="0">
                       {@html `${row.item_name}${row._slim ? itemTypeBadge(row._type) : ''}${sellBadge(row)}`}
                     </span>
                   {:else if column.key === '_markup'}
@@ -936,8 +935,10 @@
                         class:has-markup={row._markup != null}
                         class:has-market={row._markup == null && row._marketPrice != null}
                         onclick={() => row.item_id > 0 && startMarkupEdit(row)}
+                        onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), row.item_id > 0 && startMarkupEdit(row))}
                         title="Click to edit markup"
-                        use:clickable
+                        role="button"
+                        tabindex="0"
                       >
                         {#if row._markup != null}
                           {row._isAbsolute ? formatMarkupValue(row._markup, true) : formatMarkupValue(row._markup, false)}
@@ -958,7 +959,7 @@
             <div class="grid-padding">
             <VirtualGrid items={filteredItems} minCardWidth={200} cardHeight={180} gap={12} >
               {#snippet children({ item })}
-                                                <div class="grid-card" onclick={() => openItemDialog(item)} use:clickable>
+                                                <div class="grid-card" onclick={() => openItemDialog(item)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openItemDialog(item))} role="button" tabindex="0">
                   <div class="grid-card-header">
                     {#if getItemImageUrl(item, 48) && !failedImages.has(item.item_id)}
                       <img
@@ -1011,8 +1012,10 @@
                             class:has-markup={item._markup != null}
                             class:has-market={item._markup == null && item._marketPrice != null}
                             onclick={(e) => { e.stopPropagation(); item.item_id > 0 && startMarkupEdit(item); }}
+                            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); item.item_id > 0 && startMarkupEdit(item); } }}
                             title="Click to edit markup"
-                            use:clickable
+                            role="button"
+                            tabindex="0"
                           >
                             {#if item._markup != null}
                               {item._isAbsolute ? formatMarkupValue(item._markup, true) : formatMarkupValue(item._markup, false)}
@@ -1114,8 +1117,8 @@
 
 <!-- Bulk markup dialog -->
 {#if showBulkMarkupDialog}
-  <div class="modal-overlay" onclick={(e) => { if (e.target === e.currentTarget) showBulkMarkupDialog = false; }} use:clickable>
-    <div class="modal" role="dialog" aria-modal="true">
+  <div class="modal-overlay" onclick={(e) => { if (e.target === e.currentTarget) showBulkMarkupDialog = false; }} role="presentation">
+    <div class="modal" role="dialog" tabindex="-1" aria-modal="true">
       <div class="modal-header">
         <h3>Set Markup for {selectedItems.size} Items</h3>
         <button class="close-btn" onclick={() => showBulkMarkupDialog = false}>&times;</button>
@@ -1557,6 +1560,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
   }

@@ -67,8 +67,8 @@
     mediaDialogGlobal = null;
   }
 
-  let playerData = $state(data.playerData);
-  let playerName = data.playerName;
+  let playerData = $state((() => data.playerData)());
+  let playerName = $derived(data.playerName);
   let recentSort = $state({ col: 'timestamp', asc: false });
 
   // Tabs - base tabs always shown, extra tabs conditional on data

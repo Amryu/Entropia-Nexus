@@ -6,7 +6,6 @@
   import { getTypeLink, encodeURIComponentSafe } from '$lib/util.js';
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
   import JsonCompareDialog from '$lib/components/JsonCompareDialog.svelte';
-  import { clickable } from '$lib/actions/clickable.js';
   import { addToast } from '$lib/stores/toasts.js';
 
   const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
@@ -958,10 +957,18 @@
                   <div
                     class="history-item"
                     class:selected={selectedVersionType === version.key}
-                    use:clickable
+                    role="button"
+                    tabindex="0"
                     onclick={() => {
                       selectedVersionType = selectedVersionType === version.key ? null : version.key;
                       showDiff = selectedVersionType !== null;
+                    }}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectedVersionType = selectedVersionType === version.key ? null : version.key;
+                        showDiff = selectedVersionType !== null;
+                      }
                     }}
                   >
                     <div class="history-date">
@@ -1072,7 +1079,7 @@
                 <div class="reward-form">
                   {#if matchingRules.length > 0}
                     <div class="reward-field">
-                      <label>Rule</label>
+                      <label>Rule
                       <select bind:value={rewardForm.rule_id} onchange={onRuleSelect}>
                         <option value="">Custom (no rule)</option>
                         {#each matchingRules as rule}
@@ -1081,19 +1088,23 @@
                           </option>
                         {/each}
                       </select>
+                      </label>
                     </div>
                   {/if}
                   <div class="reward-field">
-                    <label>Amount (PED)</label>
+                    <label>Amount (PED)
                     <input type="number" step="0.01" min="0.01" bind:value={rewardForm.amount} placeholder="0.00" />
+                    </label>
                   </div>
                   <div class="reward-field">
-                    <label>Score</label>
+                    <label>Score
                     <input type="number" step="0.01" min="0" bind:value={rewardForm.contribution_score} placeholder="Optional" />
+                    </label>
                   </div>
                   <div class="reward-field">
-                    <label>Note</label>
+                    <label>Note
                     <input type="text" bind:value={rewardForm.note} placeholder="Optional" />
+                    </label>
                   </div>
                   <button class="action-link action-link-primary" style="margin-top: 8px;" onclick={assignReward} disabled={isAssigningReward}>
                     {isAssigningReward ? 'Assigning...' : 'Assign Reward'}

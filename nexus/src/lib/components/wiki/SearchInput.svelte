@@ -33,7 +33,6 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { scoreSearchResult } from '$lib/search.js';
-  import { clickable } from '$lib/actions/clickable.js';
 
   
 
@@ -127,7 +126,7 @@
     onselect
   } = $props();
 
-  let localValue = $state(value || '');
+  let localValue = $state('');
   let results = $state([]);
   let isSearching = $state(false);
   let showResults = $state(false);
@@ -477,8 +476,10 @@
           <div
             class="search-result"
             class:highlighted={resultIndex === highlightedIndex}
-            use:clickable
+            role="button"
+            tabindex="0"
             onclick={() => selectResult(result)}
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), selectResult(result))}
             onmouseenter={() => highlightedIndex = resultIndex}
           >
             <span class="result-name">{getDisplayText(result)}</span>

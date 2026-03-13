@@ -28,11 +28,10 @@
     computeSkillDiff
   } from '$lib/utils/skillImportUtils.js';
   import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
-  import { clickable } from '$lib/actions/clickable.js';
-
   let { data } = $props();
 
-  const { skillsMetadata, professionsMetadata } = data;
+  let skillsMetadata = $derived(data.skillsMetadata);
+  let professionsMetadata = $derived(data.professionsMetadata);
 
   // ─── State ────────────────────────────────────────────────────────────
   const LOCAL_STORAGE_KEY = 'skills';
@@ -713,7 +712,7 @@
               >
                 <span class="item-name">{skill.Name}</span>
                 {#if skill.IsHidden}
-                  <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} onclick={(e) => { e.stopPropagation(); toggleSkillUnlock(skill.Name); }} use:clickable={{ tabindex: -1 }}>
+                  <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} onclick={(e) => { e.stopPropagation(); toggleSkillUnlock(skill.Name); }} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())}>
                     {#if val > 0}
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                     {:else}
@@ -1910,11 +1909,6 @@
   .detail-table.cols-4 .detail-table-header,
   .detail-table.cols-4 .detail-table-row {
     grid-template-columns: 1fr 55px 65px 65px;
-  }
-
-  .detail-table.cols-2 .detail-table-header,
-  .detail-table.cols-2 .detail-table-row {
-    grid-template-columns: 50px 1fr;
   }
 
   .detail-table.cols-3 .detail-table-header,

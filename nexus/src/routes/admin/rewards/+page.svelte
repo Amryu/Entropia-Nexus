@@ -494,7 +494,7 @@
   }
   .form-dialog h3 { margin: 0 0 16px; color: var(--text-color); }
   .form-group { margin-bottom: 12px; }
-  .form-group label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+  .form-group label, .form-group .form-label-text { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
   .form-group input, .form-group select, .form-group textarea {
     width: 100%; padding: 8px 10px; border: 1px solid var(--border-color);
     border-radius: 4px; background: var(--primary-color); color: var(--text-color);
@@ -863,54 +863,64 @@
     <div class="form-dialog">
       <h3>{editingRule ? 'Edit Rule' : 'Create Rule'}</h3>
       <div class="form-group">
-        <label>Name *</label>
-        <input type="text" bind:value={ruleForm.name} placeholder="e.g. Add mob spawn" />
+        <label>Name *
+          <input type="text" bind:value={ruleForm.name} placeholder="e.g. Add mob spawn" />
+        </label>
       </div>
       <div class="form-group">
-        <label>Description</label>
-        <textarea bind:value={ruleForm.description} placeholder="Shown on public bounties page"></textarea>
+        <label>Description
+          <textarea bind:value={ruleForm.description} placeholder="Shown on public bounties page"></textarea>
+        </label>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Category</label>
-          <input type="text" bind:value={ruleForm.category} placeholder="e.g. Mapping" />
+          <label>Category
+            <input type="text" bind:value={ruleForm.category} placeholder="e.g. Mapping" />
+          </label>
         </div>
         <div class="form-group">
-          <label>Change Type</label>
-          <select bind:value={ruleForm.change_type}>
-            <option value="">Any</option>
-            <option value="Create">Create</option>
-            <option value="Update">Update</option>
-            <option value="Delete">Delete</option>
-          </select>
+          <label>Change Type
+            <select bind:value={ruleForm.change_type}>
+              <option value="">Any</option>
+              <option value="Create">Create</option>
+              <option value="Update">Update</option>
+              <option value="Delete">Delete</option>
+            </select>
+          </label>
         </div>
       </div>
       <div class="form-group">
-        <label>Entities (comma-separated, leave empty for any)</label>
-        <input type="text" bind:value={ruleForm.entities} placeholder="e.g. Area, Location" />
+        <label>Entities (comma-separated, leave empty for any)
+          <input type="text" bind:value={ruleForm.entities} placeholder="e.g. Area, Location" />
+        </label>
       </div>
       <div class="form-group">
-        <label>Data Fields (comma-separated, optional)</label>
-        <input type="text" bind:value={ruleForm.data_fields} placeholder="e.g. Tiers, DamageTypes" />
+        <label>Data Fields (comma-separated, optional)
+          <input type="text" bind:value={ruleForm.data_fields} placeholder="e.g. Tiers, DamageTypes" />
+        </label>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Min Amount (PED) *</label>
-          <input type="number" step="0.01" min="0" bind:value={ruleForm.min_amount} />
+          <label>Min Amount (PED) *
+            <input type="number" step="0.01" min="0" bind:value={ruleForm.min_amount} />
+          </label>
         </div>
         <div class="form-group">
-          <label>Max Amount (PED) *</label>
-          <input type="number" step="0.01" min="0" bind:value={ruleForm.max_amount} />
+          <label>Max Amount (PED) *
+            <input type="number" step="0.01" min="0" bind:value={ruleForm.max_amount} />
+          </label>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Contribution Score</label>
-          <input type="number" step="0.01" min="0" bind:value={ruleForm.contribution_score} placeholder="Optional" />
+          <label>Contribution Score
+            <input type="number" step="0.01" min="0" bind:value={ruleForm.contribution_score} placeholder="Optional" />
+          </label>
         </div>
         <div class="form-group">
-          <label>Sort Order</label>
-          <input type="number" bind:value={ruleForm.sort_order} />
+          <label>Sort Order
+            <input type="number" bind:value={ruleForm.sort_order} />
+          </label>
         </div>
       </div>
       <div class="form-actions">
@@ -929,12 +939,14 @@
     <div class="form-dialog">
       <h3>Create Payout</h3>
       <div class="form-group">
-        <label>User ID *</label>
-        <input type="text" bind:value={payoutForm.user_id} placeholder="Discord user ID" />
+        <label>User ID *
+          <input type="text" bind:value={payoutForm.user_id} placeholder="Discord user ID" />
+        </label>
       </div>
       <div class="form-group">
-        <label>Amount (PED) *</label>
-        <input type="number" step="0.01" min="0.01" bind:value={payoutForm.amount} />
+        <label>Amount (PED) *
+          <input type="number" step="0.01" min="0.01" bind:value={payoutForm.amount} />
+        </label>
       </div>
       <div class="form-group">
         <label class="checkbox-label">
@@ -942,8 +954,9 @@
         </label>
       </div>
       <div class="form-group">
-        <label>Note</label>
-        <textarea bind:value={payoutForm.note} placeholder="Optional note about this payout"></textarea>
+        <label>Note
+          <textarea bind:value={payoutForm.note} placeholder="Optional note about this payout"></textarea>
+        </label>
       </div>
       <div class="form-actions">
         <button class="btn" onclick={() => showPayoutForm = false}>Cancel</button>
@@ -959,7 +972,7 @@
     <div class="form-dialog">
       <h3>Assign Reward</h3>
       <div class="form-group">
-        <label>Change</label>
+        <span class="form-label-text">Change</span>
         <div style="font-size: 14px; color: var(--text-color);">
           <a href="/admin/changes/{retroAssignTarget.id}">#{retroAssignTarget.id}</a>
           {#if retroAssignTarget.entity_name}
@@ -979,7 +992,7 @@
 
       {#if retroMatchingRules.length > 0}
         <div class="form-group">
-          <label>Rule</label>
+          <label>Rule
           <select bind:value={retroRewardForm.rule_id} onchange={onRetroRuleSelect}>
             <option value="">Custom (no rule)</option>
             {#each retroMatchingRules as rule}
@@ -988,23 +1001,27 @@
               </option>
             {/each}
           </select>
+          </label>
         </div>
       {/if}
 
       <div class="form-row">
         <div class="form-group">
-          <label>Amount (PED) *</label>
-          <input type="number" step="0.01" min="0.01" bind:value={retroRewardForm.amount} />
+          <label>Amount (PED) *
+            <input type="number" step="0.01" min="0.01" bind:value={retroRewardForm.amount} />
+          </label>
         </div>
         <div class="form-group">
-          <label>Score</label>
-          <input type="number" step="0.01" min="0" bind:value={retroRewardForm.contribution_score} placeholder="Optional" />
+          <label>Score
+            <input type="number" step="0.01" min="0" bind:value={retroRewardForm.contribution_score} placeholder="Optional" />
+          </label>
         </div>
       </div>
 
       <div class="form-group">
-        <label>Note</label>
-        <textarea bind:value={retroRewardForm.note} placeholder="Optional note"></textarea>
+        <label>Note
+          <textarea bind:value={retroRewardForm.note} placeholder="Optional note"></textarea>
+        </label>
       </div>
 
       <div class="form-actions">

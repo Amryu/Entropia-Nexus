@@ -3,7 +3,6 @@
   import { untrack } from 'svelte';
   import { generateMobAreaName } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
-  import { clickable } from '$lib/actions/clickable.js';
 
   /**
    * @typedef {Object} Props
@@ -712,7 +711,7 @@
       {#if mobSearchResults.length > 0}
         <div class="mob-results">
           {#each mobSearchResults as mob}
-            <div class="mob-result" onclick={() => addMob(mob)} use:clickable role="button" tabindex="0">
+            <div class="mob-result" onclick={() => addMob(mob)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} role="button" tabindex="0">
               {mob.Name}
             </div>
           {/each}
@@ -750,7 +749,7 @@
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog && dialogMob}
   <div class="dialog-overlay" role="presentation" onclick={closeMaturityDialog}>
-    <div class="maturity-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="maturity-dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>{dialogMob.mobName}</h3>
         <button class="dialog-close" onclick={closeMaturityDialog}>×</button>

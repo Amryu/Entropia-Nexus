@@ -2,15 +2,16 @@
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import { invalidateAll } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   let { data } = $props();
 
-  let society = $state(data.societyData.society);
-  let members = $state(data.societyData.members || []);
-  let isLeader = $state(data.societyData.isLeader);
-  let pendingCount = $state(data.societyData.pendingCount || 0);
+  let society = $derived(data.societyData.society);
+  let members = $derived(data.societyData.members || []);
+  let isLeader = $derived(data.societyData.isLeader);
+  let pendingCount = $derived(data.societyData.pendingCount || 0);
 
   let showPendingDialog = $state(false);
   let pendingTableKey = $state(0);
@@ -22,11 +23,11 @@
   let isDisbanding = $state(false);
   let showDisbandDialog = $state(false);
   let disbandStep = $state(1);
-  let isMember = $state(data.societyData.isMember);
+  let isMember = $derived(data.societyData.isMember);
   let isEditingDescription = $state(false);
-  let descriptionDraft = $state(society.description || '');
-  let discordDraft = $state(society.discord_code || '');
-  let discordPublicDraft = $state(society.discord_public || false);
+  let descriptionDraft = $state('');
+  let discordDraft = $state('');
+  let discordPublicDraft = $state(false);
   let descriptionError = $state('');
   let descriptionStatus = $state('');
   let isSavingDescription = $state(false);
@@ -163,14 +164,7 @@
 
   async function refreshSocietyData() {
     try {
-      const response = await fetch(`/api/societies/${society.id}`);
-      if (!response.ok) return;
-      const payload = await response.json();
-      society = payload.society;
-      members = payload.members || [];
-      isLeader = payload.isLeader;
-      isMember = payload.isMember;
-      pendingCount = payload.pendingCount || 0;
+      await invalidateAll();
     } catch (err) {
       console.error('Failed to refresh society data:', err);
     }
@@ -216,9 +210,9 @@
       if (!response.ok) {
         throw new Error(payload?.error || 'Failed to update society.');
       }
-      society = payload.society || society;
       descriptionStatus = 'Society updated.';
       isEditingDescription = false;
+      await invalidateAll();
     } catch (err) {
       descriptionError = err.message || 'Failed to update description.';
     } finally {
@@ -300,13 +294,13 @@
       </div>
       {#if isEditingDescription}
         <div class="society-edit-fields">
-          <label class="society-edit-label">Discord</label>
+          <label class="society-edit-label">Discord
           <input
             type="text"
             class="society-edit-input"
             bind:value={discordDraft}
             placeholder="Invite link or code"
-          />
+          /></label>
           <label class="society-edit-checkbox">
             <input type="checkbox" bind:checked={discordPublicDraft} />
             Public — visible to everyone (otherwise members only)
@@ -381,8 +375,8 @@
 </div>
 
 {#if showPendingDialog}
-  <div class="dialog-backdrop" onclick={() => (showPendingDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showPendingDialog = false)}>
-    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="pending-invites-title">
+  <div class="dialog-backdrop" role="presentation" onclick={() => (showPendingDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showPendingDialog = false)}>
+    <div class="dialog dialog-wide" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="pending-invites-title">
       <div class="dialog-header">
         <h3 id="pending-invites-title">Pending Society Invites</h3>
         <button class="close-btn" onclick={() => (showPendingDialog = false)} aria-label="Close dialog">&#10005;</button>
@@ -416,8 +410,8 @@
 {/if}
 
 {#if showDisbandDialog}
-  <div class="dialog-backdrop" onclick={closeDisbandDialog} onkeydown={(e) => e.key === 'Escape' && closeDisbandDialog()}>
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="disband-title">
+  <div class="dialog-backdrop" role="presentation" onclick={closeDisbandDialog} onkeydown={(e) => e.key === 'Escape' && closeDisbandDialog()}>
+    <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="disband-title">
       <div class="dialog-header">
         <h3 id="disband-title">Disband Society</h3>
         <button class="close-btn" onclick={closeDisbandDialog} aria-label="Close dialog">&#10005;</button>

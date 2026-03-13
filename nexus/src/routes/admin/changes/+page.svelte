@@ -4,7 +4,6 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
-  import { clickable } from '$lib/actions/clickable.js';
 
   let changes = $state([]);
   let total = $state(0);
@@ -545,8 +544,8 @@
 
   <div class="filters">
     <div class="filter-group">
-      <label>State</label>
-      <select bind:value={stateFilter} onchange={handleFilterChange}>
+      <label for="filter-state">State</label>
+      <select id="filter-state" bind:value={stateFilter} onchange={handleFilterChange}>
         <option value="">All States</option>
         {#each stateOptions as state}
           <option value={state}>{state}</option>
@@ -555,8 +554,8 @@
     </div>
 
     <div class="filter-group">
-      <label>Entity Type</label>
-      <select bind:value={entityFilter} onchange={handleFilterChange}>
+      <label for="filter-entity">Entity Type</label>
+      <select id="filter-entity" bind:value={entityFilter} onchange={handleFilterChange}>
         <option value="">All Entities</option>
         {#each Object.entries(entityCategories) as [category, entities]}
           <optgroup label={category}>
@@ -569,8 +568,9 @@
     </div>
 
     <div class="filter-group">
-      <label>Search by Name</label>
+      <label for="filter-search">Search by Name</label>
       <input
+        id="filter-search"
         type="text"
         placeholder="Search..."
         bind:value={searchFilter}
@@ -613,7 +613,7 @@
       </thead>
       <tbody>
         {#each changes as change}
-          <tr onclick={() => goto(`/admin/changes/${change.id}`)}>
+          <tr onclick={() => goto(`/admin/changes/${change.id}`)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && goto(`/admin/changes/${change.id}`)} role="button" tabindex="0">
             <td>#{change.id}</td>
             <td>
               <div class="entity-name">{change.entityName}</div>
@@ -667,7 +667,7 @@
     <!-- Mobile card view -->
     <div class="mobile-cards">
       {#each changes as change}
-        <div class="mobile-card" use:clickable onclick={() => goto(`/admin/changes/${change.id}`)}>
+        <div class="mobile-card" role="button" tabindex="0" onclick={() => goto(`/admin/changes/${change.id}`)} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), goto(`/admin/changes/${change.id}`))}>
           <div class="mobile-card-header">
             <div class="mobile-card-title">
               <div class="entity-name">{change.entityName}</div>

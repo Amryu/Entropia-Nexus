@@ -50,7 +50,7 @@
 </script>
 
 <div class="duration-selector">
-  <label class="duration-label">Duration</label>
+  <label class="duration-label" for="auction-duration">Duration</label>
   <div class="presets">
     {#each presets as days}
       <button
@@ -66,6 +66,7 @@
   <div class="custom-input">
     <input
       type="number"
+      id="auction-duration"
       {value}
       min="1"
       max={maxDuration}
@@ -135,11 +136,13 @@
     background: var(--secondary-color);
     color: var(--text-color);
     border-radius: 6px;
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 
   .duration-input::-webkit-outer-spin-button,
   .duration-input::-webkit-inner-spin-button {
+    appearance: none;
     -webkit-appearance: none;
   }
 

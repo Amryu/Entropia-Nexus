@@ -162,12 +162,12 @@
         <p>Your public client has been created. No client secret is needed.</p>
       {/if}
       <div class="secret-field">
-        <label>Client ID</label>
+        <span class="secret-field-label">Client ID</span>
         <code>{newClientResult.clientId}</code>
       </div>
       {#if newClientResult.clientSecret}
         <div class="secret-field">
-          <label>Client Secret</label>
+          <span class="secret-field-label">Client Secret</span>
           <code>{newClientResult.clientSecret}</code>
         </div>
       {/if}
@@ -182,7 +182,7 @@
       <h3>Secret Rotated</h3>
       <p>Save your new client secret now. It will not be shown again.</p>
       <div class="secret-field">
-        <label>New Client Secret</label>
+        <span class="secret-field-label">New Client Secret</span>
         <code>{rotatedSecret.secret}</code>
       </div>
       <button class="btn-secondary" onclick={dismissRotatedSecret}>I've saved it</button>
@@ -217,7 +217,7 @@
         <textarea id="redirects" bind:value={formRedirectUri} rows="3" placeholder="https://example.com/callback"></textarea>
       </div>
       <div class="form-group">
-        <label>Client Type</label>
+        <span class="form-group-label">Client Type</span>
         <div class="type-selector">
           <label class="type-option" class:selected={formIsConfidential}>
             <input type="radio" bind:group={formIsConfidential} value={true} />
@@ -334,7 +334,7 @@
 
                 <div class="generated-url">
                   <div class="url-header">
-                    <label>Generated URL</label>
+                    <span class="url-header-label">Generated URL</span>
                     <button class="btn-copy" onclick={() => copyUrl(client.id, getAuthUrl(client, selectedScopes, selectedRedirectUri))}>
                       {copied[client.id] ? 'Copied!' : 'Copy'}
                     </button>
@@ -413,7 +413,7 @@
     margin-bottom: 0.75rem;
   }
 
-  .secret-field label {
+  .secret-field-label {
     display: block;
     font-size: 0.8rem;
     color: var(--text-secondary);
@@ -455,7 +455,8 @@
     margin-bottom: 1rem;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group-label {
     display: block;
     font-size: 0.85rem;
     color: var(--text-secondary);
@@ -796,7 +797,7 @@
     margin-bottom: 0.25rem;
   }
 
-  .url-header label {
+  .url-header-label {
     font-size: 0.8rem;
     color: var(--text-secondary);
     font-weight: 500;

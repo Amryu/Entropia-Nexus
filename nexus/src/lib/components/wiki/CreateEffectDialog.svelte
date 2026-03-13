@@ -22,11 +22,20 @@
 
   let isEditMode = $derived(!!effect);
 
-  let name = $state(effect?.Name || '');
-  let canonicalName = $state(effect?.CanonicalName || '');
-  let unit = $state(effect?.Properties?.Unit || '');
-  let isPositive = $state(effect?.Properties?.IsPositive ?? true);
-  let description = $state(effect?.Properties?.Description || '');
+  let name = $state('');
+  let canonicalName = $state('');
+  let unit = $state('');
+  let isPositive = $state(true);
+  let description = $state('');
+
+  // Sync form fields when the effect prop changes (e.g. dialog reopens with different effect)
+  $effect(() => {
+    name = effect?.Name || '';
+    canonicalName = effect?.CanonicalName || '';
+    unit = effect?.Properties?.Unit || '';
+    isPositive = effect?.Properties?.IsPositive ?? true;
+    description = effect?.Properties?.Description || '';
+  });
 
   let canSubmit = $derived(name.trim().length > 0);
 
