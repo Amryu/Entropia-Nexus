@@ -38,6 +38,49 @@
   let editCount = $derived(changeList.filter(c => c.action !== 'delete' && (c.original || dbChangeIdMap.has(c.key))).length);
   let deleteCount = $derived(changeList.filter(c => c.action === 'delete').length);
 
+  /** Validate a single change. Returns an error string or null. */
+  function validateChange(change) {
+    if (change.action === 'delete') return null;
+    const mod = change.modified;
+    if (!mod) return null;
+
+    const name = mod.name || change.original?.Name || '';
+    if (!name.trim()) return 'Name is required';
+
+    const effectiveLocationType = mod.locationType ||
+      ((change.original?.Properties?.Shape || change.original?.Properties?.AreaType || change.original?.Properties?.Type === 'Area') ? 'Area' : change.original?.Properties?.Type) ||
+      null;
+    const effectiveAreaType = mod.areaType ?? change.original?.Properties?.AreaType ?? null;
+
+    if (effectiveLocationType === 'Area' && effectiveAreaType === 'MobArea') {
+      // Check pending mob data, or fall back to original location's maturities
+      const hasMobs = mod.mobData?.maturities?.length || change.original?.Maturities?.length;
+      if (!hasMobs) return 'Mob area requires at least one mob maturity';
+    }
+
+    if (effectiveLocationType === 'Area' && effectiveAreaType === 'WaveEventArea') {
+      // Check pending wave data, or fall back to original location's waves
+      const waves = mod.waveData?.waves ?? change.original?.Waves;
+      if (!waves?.length) return 'Wave event area requires at least one wave';
+      for (const wave of waves) {
+        if (!wave.MobMaturities?.length) return `Wave ${wave.WaveIndex} has no maturities`;
+      }
+    }
+
+    return null;
+  }
+
+  let validationErrors = $derived((() => {
+    const errors = {};
+    for (const change of changeList) {
+      const err = validateChange(change);
+      if (err) errors[change.key] = err;
+    }
+    return errors;
+  })());
+
+  let hasValidationErrors = $derived(Object.keys(validationErrors).length > 0);
+
   function buildEntityBody(change) {
     // Delete changes: construct body from original
     if (change.action === 'delete') {
@@ -178,6 +221,11 @@
   }
 
   async function submitAll() {
+    if (hasValidationErrors) {
+      addToast('Fix validation errors before submitting', { type: 'error' });
+      return;
+    }
+
     submitting = true;
     let successCount = 0;
 
@@ -198,6 +246,10 @@
   }
 
   async function directApplyAll() {
+    if (hasValidationErrors) {
+      addToast('Fix validation errors before applying', { type: 'error' });
+      return;
+    }
     if (!confirm(`Directly apply ${changeList.length} change(s)? This will be applied immediately.`)) return;
     directApplying = true;
     let successCount = 0;
@@ -385,7 +437,6 @@
   }
 
   .change-name {
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -488,6 +539,26 @@
   .row-delete-btn:disabled { opacity: 0.5; cursor: default; }
   .row-remove-btn { color: var(--text-muted); }
   .row-remove-btn:hover { background: var(--hover-color); color: var(--text-color); }
+
+  .change-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .change-row.has-error {
+    background: rgba(239, 68, 68, 0.06);
+  }
+
+  .validation-error {
+    font-size: 10px;
+    color: #ef4444;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 </style>
 
 {#if changeList.length === 0}
@@ -513,14 +584,20 @@
 
     <div class="changes-list">
       {#each changeList as change (change.key)}
-        {@const name = change.modified?.name || change.original?.Name || 'Unknown'}
+        {@const name = change.modified?.name || change.original?.Name || '(Unnamed)'}
         {@const type = change.action === 'delete' ? getEffectiveType(change.original) : (change.modified?.areaType || change.modified?.locationType || '')}
         {@const statusKey = changeStatuses[change.key]}
         {@const hasDbChange = dbChangeIdMap.has(change.key)}
         {@const displayAction = change.action === 'delete' ? 'delete' : ((change.original || dbChangeIdMap.has(change.key)) ? 'edit' : 'add')}
-        <div class="change-row">
+        {@const validationError = validationErrors[change.key]}
+        <div class="change-row" class:has-error={!!validationError}>
           <span class="action-indicator" style="color: {getActionColor(displayAction)}">{getActionLabel(displayAction)}</span>
-          <span class="change-name">{name}</span>
+          <div class="change-info">
+            <span class="change-name">{name}</span>
+            {#if validationError}
+              <span class="validation-error">{validationError}</span>
+            {/if}
+          </div>
           <span class="change-type">{type}</span>
           {#if statusKey}
             <span class="status-indicator {statusKey}">{getStatusIcon(change.key)}</span>
@@ -536,11 +613,11 @@
 
     <div class="changes-actions">
       {#if isAdmin}
-        <button class="btn btn-apply" onclick={directApplyAll} disabled={submitting || directApplying || changeList.length === 0}>
+        <button class="btn btn-apply" onclick={directApplyAll} disabled={submitting || directApplying || changeList.length === 0 || hasValidationErrors}>
           {directApplying ? 'Applying...' : `Direct Apply ${changeList.length} Change(s)`}
         </button>
       {/if}
-      <button class="btn btn-primary" onclick={submitAll} disabled={submitting || directApplying || changeList.length === 0}>
+      <button class="btn btn-primary" onclick={submitAll} disabled={submitting || directApplying || changeList.length === 0 || hasValidationErrors}>
         {submitting ? 'Submitting...' : `Submit ${changeList.length} Change(s)`}
       </button>
       <button class="btn btn-danger" onclick={clearAll} disabled={submitting || directApplying}>

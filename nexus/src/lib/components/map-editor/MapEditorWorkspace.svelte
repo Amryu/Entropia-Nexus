@@ -32,7 +32,7 @@
    * @property {any} [pendingChanges] - --- Bindable state (parent reads/controls) ---
    * @property {string} [rightPanel] - 'editor' | 'mobEditor' | <any other value shows output slot>
    * @property {any} [mapComponent]
-   * @property {number} [changeCount]
+   * @property {number} [changeCount] - (deprecated, computed in parent)
    * @property {any} [dbChangeIdMap]
    * @property {import('svelte').Snippet} [output]
    */
@@ -53,7 +53,7 @@
     pendingChanges = $bindable(new Map()),
     rightPanel = $bindable('editor'),
     mapComponent = $bindable(undefined),
-    changeCount = $bindable(0),
+    changeCount = $bindable(0), // kept for reset() compat; parent should compute independently
     dbChangeIdMap = $bindable(new Map()),
     output
   } = $props();
@@ -506,7 +506,7 @@
     if (waveEditorContext?.location) {
       const loc = waveEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
-      if (!existing?.original) {
+      if (existing && !existing.original) {
         existing.modified.waveData = { waves: waveData.waves };
         pendingChanges.set(loc.Id, existing);
       } else {
@@ -702,10 +702,8 @@
   // user selects a location locked by another user's pending change.
   let isReadOnly = $derived(!!selectedDbChange || (!isAdmin && selectedId != null
     && selectedId > 0 && lockedLocationMap.has(selectedId)));
-  // Count pending changes excluding DB-seeded but unmodified entries
-  // Use $derived for synchronous updates (ChangesSummary uses $derived too, avoiding desync with $effect)
-  let computedChangeCount = $derived(Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length);
-  $effect(() => { changeCount = computedChangeCount; });
+  // Change count is computed in the parent page directly from its own $state Map
+  // to avoid derived→effect→bindable propagation issues with Map mutations.
 </script>
 
 <style>

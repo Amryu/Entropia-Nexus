@@ -79,7 +79,7 @@
   let leafletEditMode = $state(false);
   let editorPendingChanges = $state(new Map());
   let editorRightPanel = $state('editor');
-  let editorChangeCount = $state(0);
+  let editorChangeCount = $derived(Array.from(editorPendingChanges.values()).filter(c => !c._dbSeeded).length);
   let editorDbChangeIdMap = $state(new Map());
   let allMobs = $state([]);
   let seededChangeId = null;
@@ -1107,7 +1107,6 @@
         focusKey={leafletFocusKey}
         bind:pendingChanges={editorPendingChanges}
         bind:rightPanel={editorRightPanel}
-        bind:changeCount={editorChangeCount}
         bind:dbChangeIdMap={editorDbChangeIdMap}
       >
         {#snippet output()}
