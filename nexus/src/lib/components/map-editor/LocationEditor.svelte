@@ -503,9 +503,11 @@
     const _lat = latitude;
     const _locType = locationType;
     const _active = location || isNew;
+    const _populating = _populatingForm;
 
     clearTimeout(previewTimeout);
     previewTimeout = setTimeout(() => {
+      if (_populating) return;
       if (!_active) {
         onpreview?.(null);
         return;
