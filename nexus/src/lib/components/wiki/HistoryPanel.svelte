@@ -8,18 +8,24 @@
   import { onMount } from 'svelte';
   import { apiCall } from '$lib/util.js';
 
-  /** @type {string} Entity type (e.g., 'weapon', 'mob') */
-  export let entityType = '';
+  
 
-  /** @type {number|string} Entity ID */
-  export let entityId = '';
+  
 
-  /** @type {number} Max number of changes to show */
-  export let maxItems = 5;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [entityType]
+   * @property {number|string} [entityId]
+   * @property {number} [maxItems]
+   */
 
-  let changes = [];
-  let isLoading = true;
-  let error = null;
+  /** @type {Props} */
+  let { entityType = '', entityId = '', maxItems = 5 } = $props();
+
+  let changes = $state([]);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   onMount(async () => {
     if (entityType && entityId) {
@@ -97,7 +103,7 @@
     }
   }
 
-  $: adminHistoryUrl = `/admin/history/${entityType}/${encodeURIComponent(entityId)}`;
+  let adminHistoryUrl = $derived(`/admin/history/${entityType}/${encodeURIComponent(entityId)}`);
 </script>
 
 <div class="history-panel">

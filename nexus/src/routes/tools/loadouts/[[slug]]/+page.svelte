@@ -1,4 +1,7 @@
 ﻿<script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import '../loadouts.css';
@@ -19,26 +22,13 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
 
-  export let data;
-  $: user = data?.session?.user;
-  $: isLoggedIn = !!user;
+  let { data } = $props();
 
-  // Shared loadout mode (read-only view)
-  $: sharedLoadout = data?.additional?.sharedLoadout || data?.object || null;
-  $: shareError = data?.additional?.shareError || null;
-  $: shareCode = data?.additional?.shareCode || null;
-  $: isSharedMode = !!sharedLoadout;
-  $: sharedLoadoutData = sharedLoadout?.data ?? null;
-  $: sharedDisplayName = sharedLoadoutData?.Name || sharedLoadout?.name || 'Shared Loadout';
 
   // Track if loadouts have been initialized (for mode transitions)
-  let loadoutsInitialized = false;
-  let loadoutsDataLoaded = false;
+  let loadoutsInitialized = $state(false);
+  let loadoutsDataLoaded = $state(false);
 
-  // Initialize loadouts when entering normal mode (either on mount or after leaving shared mode)
-  $: if (browser && !isSharedMode && !loadoutsInitialized) {
-    initializeLoadoutsOnModeChange();
-  }
 
   async function initializeLoadoutsOnModeChange() {
     loadoutsInitialized = true;
@@ -64,9 +54,9 @@
   }
 
   // Copy shared loadout state
-  let isCopying = false;
-  let copyStatus = null;
-  let copyError = null;
+  let isCopying = $state(false);
+  let copyStatus = $state(null);
+  let copyError = $state(null);
 
   const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
   const LOCAL_STORAGE_KEY = 'loadouts';
@@ -120,12 +110,12 @@
       : (process.env.INTERNAL_API_URL || 'http://api:3000');
   }
 
-  let settings = {
+  let settings = $state({
     onlyShowReasonableAmplifiers: true,
-  }
+  })
 
   const OVERAMP_MODE_KEY = 'loadout-overamp-mode';
-  let overampMode = (typeof localStorage !== 'undefined' && localStorage.getItem(OVERAMP_MODE_KEY)) || 'percent';
+  let overampMode = $state((typeof localStorage !== 'undefined' && localStorage.getItem(OVERAMP_MODE_KEY)) || 'percent');
   function toggleOverampMode() {
     overampMode = overampMode === 'percent' ? 'delta' : 'percent';
     if (typeof localStorage !== 'undefined') {
@@ -133,109 +123,109 @@
     }
   }
 
-  let weapons = [];
-  let amplifiers = [];
-  let scopes = [];
-  let sights = [];
-  let absorbers = [];
-  let matrices = [];
-  let implants = [];
-  let armorsets = [];
-  let armors = [];
-  let armorplatings = [];
+  let weapons = $state([]);
+  let amplifiers = $state([]);
+  let scopes = $state([]);
+  let sights = $state([]);
+  let absorbers = $state([]);
+  let matrices = $state([]);
+  let implants = $state([]);
+  let armorsets = $state([]);
+  let armors = $state([]);
+  let armorplatings = $state([]);
   let enhancers = [];
-  let clothing = [];
-  let pets = [];
-  let medicalTools = [];
-  let medicalChips = [];
-  let stimulants = [];
-  let effectsCatalog = [];
-  let effectCaps = {};
+  let clothing = $state([]);
+  let pets = $state([]);
+  let medicalTools = $state([]);
+  let medicalChips = $state([]);
+  let stimulants = $state([]);
+  let effectsCatalog = $state([]);
+  let effectCaps = $state({});
 
-  let entitiesLoading = true;
-  let entitiesVersion = 0;
+  let entitiesLoading = $state(true);
+  let entitiesVersion = $state(0);
 
-  let localLoadouts = [];
-  let onlineLoadouts = [];
-  let loadouts = [];
-  let loadout = null;
-  let activeSource = 'local';
-  let activeOnlineId = null;
-  let loadoutSearch = '';
-  let onlineLoading = false;
-  let onlineError = null;
-  let isDirty = false;
-  let autosaveDueAt = null;
+  let localLoadouts = $state([]);
+  let onlineLoadouts = $state([]);
+  let loadouts = $state([]);
+  let loadout = $state(null);
+  let activeSource = $state('local');
+  let activeOnlineId = $state(null);
+  let loadoutSearch = $state('');
+  let onlineLoading = $state(false);
+  let onlineError = $state(null);
+  let isDirty = $state(false);
+  let autosaveDueAt = $state(null);
   let autosaveTimeout = null;
   let autosaveTicker = null;
-  let autosaveNow = Date.now();
-  let isSaving = false;
-  let saveError = null;
-  let showShareDialog = false;
-  let sharePublic = false;
-  let shareLink = '';
-  let shareCopyStatus = '';
+  let autosaveNow = $state(Date.now());
+  let isSaving = $state(false);
+  let saveError = $state(null);
+  let showShareDialog = $state(false);
+  let sharePublic = $state(false);
+  let shareLink = $state('');
+  let shareCopyStatus = $state('');
   let shareCopyTimeout = null;
-  let showImportDialog = false;
-  let showImportSourceDialog = false;
-  let importInProgress = false;
-  let importError = null;
-  let importSuccess = false;
+  let showImportDialog = $state(false);
+  let showImportSourceDialog = $state(false);
+  let importInProgress = $state(false);
+  let importError = $state(null);
+  let importSuccess = $state(false);
   let hasPromptedImport = false;
   let showFileImport = false;
-  let fileInput;
+  let fileInput = $state();
 
   // Delete confirmation dialog
-  let showDeleteDialog = false;
+  let showDeleteDialog = $state(false);
 
   // URL selection tracking
-  let urlSelectionAttempted = false;
+  let urlSelectionAttempted = $state(false);
 
-  let activePicker = null;
-  let showPickerDialog = false;
-  let showPickerPreview = false;
-  let pickerPreviewRow = null;
-  let pickerPreviewItem = null;
+  let activePicker = $state(null);
+  let showPickerDialog = $state(false);
+  let showPickerPreview = $state(false);
+  let pickerPreviewRow = $state(null);
+  let pickerPreviewItem = $state(null);
   let suppressDirty = false;
   let isNavigationSave = false;
-  let clothingReplaceNotice = '';
-  let loadoutVersion = 0;
-  let evaluation = null;
-  let allEffects = [];
-  let offensiveEffects = [];
-  let defensiveEffects = [];
-  let utilityEffects = [];
-  let offensiveTotals = { damage: 0, reload: 0, critChance: 0, critDamage: 0 };
-  let expandedEffectKeys = new Set();
+  let clothingReplaceNotice = $state('');
+  let loadoutVersion = $state(0);
+  let evaluation = $state(null);
+  let allEffects = $state([]);
+  let offensiveEffects = $state([]);
+  let defensiveEffects = $state([]);
+  let utilityEffects = $state([]);
+  let offensiveTotals = $state({ damage: 0, reload: 0, critChance: 0, critDamage: 0 });
+  let expandedEffectKeys = $state(new Set());
 
   // Set management
   const MAX_SETS = 10;
-  let activeSetIndices = { Weapon: 0, Armor: 0, Healing: 0, Accessories: 0 };
+  let activeSetIndices = $state({ Weapon: 0, Armor: 0, Healing: 0, Accessories: 0 });
   let setMenuOpen = null; // 'Weapon', 'Armor', etc. or null
-  let setAddMenuOpen = null; // section name or null
-  let setTabMenuOpen = null; // { section, index } or null — dropdown on active tab
-  let setRenameDialog = null; // { section, index, name } or null
+  let setAddMenuOpen = $state(null); // section name or null
+  let setTabMenuOpen = $state(null); // { section, index } or null — dropdown on active tab
+  let setRenameDialog = $state(null); // { section, index, name } or null
 
-  let compareMode = false;
-  let compareType = 'weapons'; // 'weapons' | 'armor'
-  let compareDisplay = 'values'; // 'values' | 'delta'
-  let compareNameQuery = '';
-  let compareHiddenLoadoutIds = new Set();
-  let compareHiddenOpen = false;
-  let compareColumnsOpen = false;
-  let compareSetsOpen = false;
-  let compareSetSections = new Set(); // Which sections to permute: 'Weapon', 'Armor', etc.
-  let compareSetPermutations = []; // Array of { loadout, label, setIndices }
-  let compareSetMode = false; // Derived: compareSetSections.size > 0
-  let compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'critChance', 'critDamage', 'reload', 'cost'];
-  let compareColumnKeysArmor = ['name', 'armorName', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance'];
-  let compareAnchorId = null;
-  let compareAnchorEval = null;
-  let compareEffectiveDisplay = 'values';
-  let compareVisibleKeys = [];
-  let compareRows = [];
-  let hiddenCompareRows = [];
-  let compareColumns = [];
+  let compareMode = $state(false);
+  let compareType = $state('weapons'); // 'weapons' | 'armor'
+  let compareDisplay = $state('values'); // 'values' | 'delta'
+  let compareNameQuery = $state('');
+  let compareHiddenLoadoutIds = $state(new Set());
+  let compareHiddenOpen = $state(false);
+  let compareColumnsOpen = $state(false);
+  let compareSetsOpen = $state(false);
+  let compareSetSections = $state(new Set()); // Which sections to permute: 'Weapon', 'Armor', etc.
+  let compareSetPermutations = $state([]); // Array of { loadout, label, setIndices }
+  let compareSetMode = $state(false); // Derived: compareSetSections.size > 0
+  let compareColumnKeysWeapons = $state(['name', 'efficiency', 'dps', 'dpp', 'critChance', 'critDamage', 'reload', 'cost']);
+  let compareColumnKeysArmor = $state(['name', 'armorName', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance']);
+  let compareAnchorId = $state(null);
+  let compareAnchorEval = $state(null);
+  let compareEffectiveDisplay = $state('values');
+  let compareVisibleKeys = $state([]);
+  let compareRows = $state([]);
+  let hiddenCompareRows = $state([]);
+  let compareColumns = $state([]);
 
   const COMPARE_COLUMNS_STORAGE_KEYS = {
     weapons: 'nexus.loadouts.compare.columns.weapons',
@@ -413,14 +403,14 @@
     if (compareSetsOpen) compareSetsOpen = false;
   }
 
-  let windowWidth = browser ? window.innerWidth : 0;
-  let hasMeasuredLayout = false;
-  let drawerOpen = false;
+  let windowWidth = $state(browser ? window.innerWidth : 0);
+  let hasMeasuredLayout = $state(false);
+  let drawerOpen = $state(false);
   let touchStartX = 0;
   let touchStartY = 0;
-  let swipeOffset = 0;
-  let swipeActive = false;
-  let mobilePanelsEl;
+  let swipeOffset = $state(0);
+  let swipeActive = $state(false);
+  let mobilePanelsEl = $state();
 
   const mobilePanelItems = [
     { key: 'info', label: 'Stats', icon: 'icon-stats' },
@@ -431,7 +421,7 @@
     { key: 'accessories', label: 'Accessories & Buffs', icon: 'icon-accessories' },
   ];
   const mobilePanels = mobilePanelItems.map((panel) => panel.key);
-  let activeMobilePanel = 'weapons';
+  let activeMobilePanel = $state('weapons');
 
   function toggleEffectExpanded(key) {
     if (!key) return;
@@ -441,23 +431,7 @@
     expandedEffectKeys = new Set(expandedEffectKeys);
   }
 
-  $: isMobileLayout = hasMeasuredLayout ? windowWidth < 900 : false;
-  $: activeMobilePanelIndex = Math.max(0, mobilePanels.indexOf(activeMobilePanel));
-  $: mobilePanelTranslate = isMobileLayout
-    ? `translateX(calc(-${activeMobilePanelIndex * 100}% + ${swipeOffset}px))`
-    : 'translateX(0)';
 
-  $: breadcrumbs = isSharedMode
-    ? [
-        { label: 'Tools', href: '/tools' },
-        { label: 'Loadouts', href: '/tools/loadouts' },
-        { label: 'Shared' }
-      ]
-    : [
-        { label: 'Tools', href: '/tools' },
-        { label: 'Loadouts', href: '/tools/loadouts' },
-        ...(loadout?.Name ? [{ label: loadout.Name }] : [])
-      ];
 
   function alphabeticalSort(a, b) {
     if (a?.Name === null) return 1;
@@ -501,112 +475,9 @@
     return null;
   };
 
-  $: ringItems = (clothing || []).filter(item => isRingSlot(item?.Properties?.Slot));
 
-  // Use effective loadout for reactive statements (shared mode uses sharedLoadoutData)
-  $: effectiveLoadoutData = isSharedMode ? sharedLoadoutData : loadout;
-  $: selectedClothing = (effectiveLoadoutData?.Gear?.Clothing || []).filter(item => !isRingSlot(item?.Slot));
-  $: selectedConsumables = effectiveLoadoutData?.Gear?.Consumables || [];
-  $: leftRing = effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Left') : null;
-  $: rightRing = effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Right') : null;
-  $: selectedHealingIsChip = !!effectiveLoadoutData?.Gear?.Healing?.Name
-    && medicalChips.some(c => c.Name === effectiveLoadoutData.Gear.Healing.Name);
-  $: nonActiveHotBonuses = (() => {
-    if (!loadout?.Sets?.Healing || loadout.Sets.Healing.length <= 1) return [];
-    const activeIdx = activeSetIndices.Healing;
-    const bonuses = [];
-    for (let i = 0; i < loadout.Sets.Healing.length; i++) {
-      if (i === activeIdx) continue;
-      const setEntry = loadout.Sets.Healing[i];
-      const healName = setEntry.gear?.Name;
-      if (!healName) continue;
-      const chip = medicalChips.find(c => c.Name === healName);
-      if (!chip) continue;
-      const hotEffect = chip.EffectsOnUse?.find(e => e.Name === 'Heal Over Time');
-      if (!hotEffect) continue;
-      const effHeal = ((chip.Properties.MaxHeal ?? 0) + (chip.Properties.MinHeal ?? chip.Properties.MaxHeal ?? 0)) / 2;
-      const hotPct = Number(hotEffect.Values?.Strength ?? hotEffect.Strength ?? 0);
-      const hotDuration = Number(hotEffect.DurationSeconds ?? hotEffect.Values?.DurationSeconds ?? 0);
-      const cooldown = chip.Properties.Mindforce?.Cooldown ?? (chip.Properties.UsesPerMinute ? 60 / chip.Properties.UsesPerMinute : 0);
-      if (hotDuration <= 0 || hotPct <= 0) continue;
-      const hotHeal = hotPct >= 100 ? effHeal * 1.5 : effHeal * hotPct / 100;
-      const healMult = stats.healMultiplier ?? 1;
-      const hotHPS = (hotHeal * healMult) / hotDuration;
-      const mainHPS = stats.hps ?? 0;
-      const overhead = 0.5;
-      const lostHPS = cooldown > 0 ? mainHPS * overhead / cooldown : 0;
-      bonuses.push({ name: healName, hotHPS, lostHPS, netHPS: hotHPS - lostHPS, cooldown, setIndex: i });
-    }
-    return bonuses;
-  })();
-  $: activePet = effectiveLoadoutData?.Gear?.Pet?.Name
-    ? pets.find(pet => pet.Name === effectiveLoadoutData.Gear.Pet.Name)
-    : null;
-  $: activePetEffects = activePet?.Effects || [];
-  $: {
-    // Ensure this recomputes when caps/catalog/entities/loadout change.
-    // Use sharedLoadoutData in shared mode, otherwise use loadout
-    loadoutVersion;
-    effectCaps;
-    effectsCatalog;
-    entitiesVersion;
-    const effectiveLoadout = isSharedMode ? sharedLoadoutData : loadout;
-    evaluation = effectiveLoadout
-      ? evaluateLoadout(
-          effectiveLoadout,
-          {
-            armorSlots,
-            weapons,
-            amplifiers,
-            scopes,
-            sights,
-            absorbers,
-            matrices,
-            implants,
-            armors,
-            armorPlatings: armorplatings,
-            armorSets: armorsets,
-            clothing,
-            pets,
-            stimulants,
-            medicalTools,
-            medicalChips
-          },
-          { effectsCatalog, effectCaps, isLimitedName }
-        )
-      : null;
-    allEffects = evaluation?.effects?.all ?? [];
-    offensiveEffects = evaluation?.effects?.offensive ?? [];
-    defensiveEffects = evaluation?.effects?.defensive ?? [];
-    utilityEffects = evaluation?.effects?.utility ?? [];
-    offensiveTotals = evaluation?.offensiveTotals ?? { damage: 0, reload: 0, critChance: 0, critDamage: 0 };
-  }
 
-  $: stats = evaluation?.stats || {};
 
-  // Auto-select loadout from URL when data becomes available (skip in shared mode)
-  $: if (browser && !isSharedMode && data?.additional?.loadoutId && !urlSelectionAttempted && !loadout && loadoutsDataLoaded) {
-    urlSelectionAttempted = true;
-    const urlId = data.additional.loadoutId;
-    // Try online loadouts first (database ID)
-    if (activeSource === 'online' && onlineLoadouts.length > 0) {
-      const record = onlineLoadouts.find(r => r.id === urlId);
-      if (record) {
-        setActiveLoadout(record.data, { recordId: record.id });
-      } else {
-        updateUrlSlug(null);
-      }
-    }
-    // Try local loadouts (internal loadout ID)
-    else if (activeSource === 'local' && localLoadouts.length > 0) {
-      const local = localLoadouts.find(l => l.Id === urlId);
-      if (local) {
-        setActiveLoadout(local);
-      } else {
-        updateUrlSlug(null);
-      }
-    }
-  }
 
   function getEvalContext() {
     return {
@@ -635,41 +506,9 @@
       : null;
   }
 
-  let compareEvalCache = new Map();
+  let compareEvalCache = $state(new Map());
 
-  $: if (compareMode) {
-    // Build a snapshot cache when entering compare (avoids per-render recomputation).
-    // We intentionally don't depend on loadoutVersion to avoid recomputing on every edit.
-    entitiesVersion;
-    effectsCatalog;
-    effectCaps;
-    // Re-evaluate when set permutations change
-    compareSetPermutations;
 
-    const ctx = getEvalContext();
-    const next = new Map();
-    // Always evaluate all loadouts (for normal compare and for anchor reference)
-    for (const lo of loadouts) {
-      if (!lo?.Id) continue;
-      next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
-    }
-    // Also evaluate set permutations
-    for (const perm of compareSetPermutations) {
-      const lo = perm.loadout;
-      if (!lo?.Id) continue;
-      next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
-    }
-    compareEvalCache = next;
-  } else {
-    compareEvalCache = new Map();
-  }
-
-  $: compareAnchorId = loadout?.Id ?? null;
-  $: compareAnchorEval = compareAnchorId ? compareEvalCache.get(compareAnchorId) : null;
-  $: compareEffectiveDisplay = compareDisplay === 'delta' && compareAnchorEval ? 'delta' : 'values';
-  $: compareVisibleKeys = isMobileLayout
-    ? COMPARE_MOBILE_KEYS[compareType]
-    : (compareType === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor);
 
   function compareValue(value, anchorValue) {
     if (value == null) return null;
@@ -760,21 +599,8 @@
     return row;
   }
 
-  // --- Set permutation comparison ---
-  $: compareSetMode = compareSetSections.size > 0;
 
-  // Available set sections for the current loadout (only sections with >1 set)
-  $: compareSetAvailableSections = (() => {
-    if (!loadout?.Sets) return [];
-    return ['Weapon', 'Armor', 'Healing', 'Accessories']
-      .filter(s => Array.isArray(loadout.Sets[s]) && loadout.Sets[s].length > 1);
-  })();
 
-  // When the current loadout changes, prune selected sections that are no longer valid
-  $: if (compareSetSections.size > 0 && compareSetAvailableSections.length > 0) {
-    const pruned = new Set(Array.from(compareSetSections).filter(s => compareSetAvailableSections.includes(s)));
-    if (pruned.size !== compareSetSections.size) compareSetSections = pruned;
-  }
 
   function getSetDisplayName(section, setEntry, index) {
     // Only use user-assigned names (skip auto-generated "Set N")
@@ -870,12 +696,6 @@
     });
   }
 
-  // Rebuild permutations when relevant state changes
-  $: if (compareMode && compareSetMode && loadout) {
-    compareSetPermutations = buildSetPermutations(loadout, compareSetSections);
-  } else {
-    compareSetPermutations = [];
-  }
 
   function toggleCompareSetSection(section) {
     const next = new Set(compareSetSections);
@@ -884,44 +704,8 @@
     compareSetSections = next;
   }
 
-  $: {
-    compareType;
-    compareEffectiveDisplay;
-    compareAnchorId;
-    compareAnchorEval;
-    const allowHidden = isMobileLayout;
 
-    if (compareMode && compareSetMode) {
-      // In set mode, show only the permutations
-      const query = compareNameQuery?.trim()?.toLowerCase() || '';
-      compareRows = compareSetPermutations
-        .map(p => p.loadout)
-        .filter(lo => !query || (lo?.Name || '').toLowerCase().includes(query))
-        .map(buildCompareRow);
-    } else {
-      compareRows = compareMode
-        ? loadouts
-            .filter(lo => lo?.Id && (allowHidden || !compareHiddenLoadoutIds.has(lo.Id)))
-            .filter(lo => !compareNameQuery?.trim() || (lo?.Name || '').toLowerCase().includes(compareNameQuery.trim().toLowerCase()))
-            .map(buildCompareRow)
-        : [];
-    }
-  }
 
-  $: hiddenCompareRows = loadouts
-    .filter(lo => lo?.Id && compareHiddenLoadoutIds.has(lo.Id))
-    .map(lo => ({ id: lo.Id, name: lo.Name }));
-
-  $: if (compareHiddenLoadoutIds.size > 0) {
-    const existing = new Set(loadouts.filter(lo => lo?.Id).map(lo => lo.Id));
-    const pruned = new Set(Array.from(compareHiddenLoadoutIds).filter(id => existing.has(id)));
-    if (pruned.size !== compareHiddenLoadoutIds.size) {
-      compareHiddenLoadoutIds = pruned;
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(COMPARE_HIDDEN_ROWS_STORAGE_KEY, JSON.stringify(Array.from(compareHiddenLoadoutIds)));
-      }
-    }
-  }
 
   function buildCompareColumns() {
     const type = compareType;
@@ -1204,12 +988,6 @@
     return cols;
   }
 
-  $: {
-    compareType;
-    compareVisibleKeys;
-    compareEffectiveDisplay;
-    compareColumns = compareMode ? buildCompareColumns() : [];
-  }
 
   function createEmptyLoadout() {
     const newArmorObject = () => ({
@@ -2122,21 +1900,8 @@
     }
   });
 
-  $: if (activeSource === 'local') {
-    writeLocalLoadouts(localLoadouts);
-  }
 
-  $: autosaveSeconds = autosaveDueAt ? Math.max(0, Math.ceil((autosaveDueAt - autosaveNow) / 1000)) : null;
 
-  $: activeLoadoutKey = activeSource === 'online' ? activeOnlineId : loadout?.Id;
-  $: activeRecord = activeSource === 'online'
-    ? onlineLoadouts.find(r => r.id === activeOnlineId)
-    : null;
-  $: isPublicLoadout = !!activeRecord?.public;
-  $: linkedItemSetName = activeRecord?.linked_item_set || null;
-  $: isLinkedToItemSet = !!linkedItemSetName;
-  $: pickerConfig = activePicker ? (isMobileLayout, settings.onlyShowReasonableAmplifiers, overampMode, getPickerConfig(activePicker)) : null;
-  $: pickerRowHeight = isMobileLayout ? 30 : 34;
 
   function getLoadoutListLabel(item) {
     if (!item) return 'Untitled';
@@ -2575,53 +2340,12 @@
     setActiveSource(source);
   }
 
-  $: sidebarLoadouts = activeSource === 'online'
-    ? onlineLoadouts.map(record => ({ id: record.id, data: record.data }))
-    : localLoadouts.map(item => ({ id: item.Id, data: item }));
 
-  $: if (activeSource === 'online') {
-    loadouts = onlineLoadouts.map(r => r.data);
-  } else {
-    loadouts = localLoadouts;
-  }
 
-  $: filteredLoadouts = sidebarLoadouts.filter(item => {
-    const name = getLoadoutListLabel(item.data).toLowerCase();
-    const query = loadoutSearch.trim().toLowerCase();
-    return !query || name.includes(query);
-  });
 
-  $: if(loadout?.Gear.Weapon.Enhancers) {
-    loadout.Gear.Weapon.Enhancers.Damage = clamp(loadout.Gear.Weapon.Enhancers.Damage, 0, 10);
-    loadout.Gear.Weapon.Enhancers.Accuracy = clamp(loadout.Gear.Weapon.Enhancers.Accuracy, 0, 10);
-    loadout.Gear.Weapon.Enhancers.Range = clamp(loadout.Gear.Weapon.Enhancers.Range, 0, 10);
-    loadout.Gear.Weapon.Enhancers.Economy = clamp(loadout.Gear.Weapon.Enhancers.Economy, 0, 10);
-    loadout.Gear.Weapon.Enhancers.SkillMod = clamp(loadout.Gear.Weapon.Enhancers.SkillMod, 0, 10);
-  }
 
-  $: if(loadout?.Gear.Armor.Enhancers) {
-    loadout.Gear.Armor.Enhancers.Defense = clamp(loadout.Gear.Armor.Enhancers.Defense, 0, 10);
-    loadout.Gear.Armor.Enhancers.Durability = clamp(loadout.Gear.Armor.Enhancers.Durability, 0, 10);
-  }
 
-  $: if(loadout?.Gear?.Healing?.Enhancers) {
-    loadout.Gear.Healing.Enhancers.Economy = clamp(loadout.Gear.Healing.Enhancers.Economy, 0, 10);
-    loadout.Gear.Healing.Enhancers.SkillMod = clamp(loadout.Gear.Healing.Enhancers.SkillMod, 0, 10);
-  }
 
-  $: if (loadout && loadout.Markup == null) {
-    resetMarkup();
-  }
-  $: if (loadout?.Markup) {
-    if (loadout.Markup.ArmorSet == null) loadout.Markup.ArmorSet = 100;
-    if (loadout.Markup.PlateSet == null) loadout.Markup.PlateSet = 100;
-    if (!loadout.Markup.Armors) loadout.Markup.Armors = {};
-    if (!loadout.Markup.Plates) loadout.Markup.Plates = {};
-    armorSlots.forEach(slot => {
-      if (loadout.Markup.Armors[slot] == null) loadout.Markup.Armors[slot] = 100;
-      if (loadout.Markup.Plates[slot] == null) loadout.Markup.Plates[slot] = 100;
-    });
-  }
 
   // Reset a single markup key to 100% when the item is not (L)
   function resetMarkupIfUnlimited(markupKey, itemName) {
@@ -2667,12 +2391,6 @@
     markDirty();
   }
 
-  $: if (loadout?.Gear?.Armor?.ManageIndividual === false && loadout?.Gear?.Armor?.SetName === null) {
-    resetArmor();
-  } else if (loadout?.Gear?.Armor?.ManageIndividual === true) {
-    loadout.Gear.Armor.SetName = null;
-    loadout.Gear.Armor.PlateName = null;
-  }
 
 
   function getWeapon(name) {
@@ -3766,6 +3484,331 @@
     return sections;
   }
 
+  let user = $derived(data?.session?.user);
+  let isLoggedIn = $derived(!!user);
+  // Shared loadout mode (read-only view)
+  let sharedLoadout = $derived(data?.additional?.sharedLoadout || data?.object || null);
+  let shareError = $derived(data?.additional?.shareError || null);
+  let shareCode = $derived(data?.additional?.shareCode || null);
+  let isSharedMode = $derived(!!sharedLoadout);
+  let sharedLoadoutData = $derived(sharedLoadout?.data ?? null);
+  let sharedDisplayName = $derived(sharedLoadoutData?.Name || sharedLoadout?.name || 'Shared Loadout');
+  // Initialize loadouts when entering normal mode (either on mount or after leaving shared mode)
+  run(() => {
+    if (browser && !isSharedMode && !loadoutsInitialized) {
+      initializeLoadoutsOnModeChange();
+    }
+  });
+  let isMobileLayout = $derived(hasMeasuredLayout ? windowWidth < 900 : false);
+  let activeMobilePanelIndex = $derived(Math.max(0, mobilePanels.indexOf(activeMobilePanel)));
+  let mobilePanelTranslate = $derived(isMobileLayout
+    ? `translateX(calc(-${activeMobilePanelIndex * 100}% + ${swipeOffset}px))`
+    : 'translateX(0)');
+  let breadcrumbs = $derived(isSharedMode
+    ? [
+        { label: 'Tools', href: '/tools' },
+        { label: 'Loadouts', href: '/tools/loadouts' },
+        { label: 'Shared' }
+      ]
+    : [
+        { label: 'Tools', href: '/tools' },
+        { label: 'Loadouts', href: '/tools/loadouts' },
+        ...(loadout?.Name ? [{ label: loadout.Name }] : [])
+      ]);
+  let ringItems = $derived((clothing || []).filter(item => isRingSlot(item?.Properties?.Slot)));
+  // Use effective loadout for reactive statements (shared mode uses sharedLoadoutData)
+  let effectiveLoadoutData = $derived(isSharedMode ? sharedLoadoutData : loadout);
+  let selectedClothing = $derived((effectiveLoadoutData?.Gear?.Clothing || []).filter(item => !isRingSlot(item?.Slot)));
+  let selectedConsumables = $derived(effectiveLoadoutData?.Gear?.Consumables || []);
+  let leftRing = $derived(effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Left') : null);
+  let rightRing = $derived(effectiveLoadoutData?.Gear?.Clothing ? getClothingSlotFromData(effectiveLoadoutData, 'Ring', 'Right') : null);
+  let selectedHealingIsChip = $derived(!!effectiveLoadoutData?.Gear?.Healing?.Name
+    && medicalChips.some(c => c.Name === effectiveLoadoutData.Gear.Healing.Name));
+  run(() => {
+    // Ensure this recomputes when caps/catalog/entities/loadout change.
+    // Use sharedLoadoutData in shared mode, otherwise use loadout
+    loadoutVersion;
+    effectCaps;
+    effectsCatalog;
+    entitiesVersion;
+    const effectiveLoadout = isSharedMode ? sharedLoadoutData : loadout;
+    evaluation = effectiveLoadout
+      ? evaluateLoadout(
+          effectiveLoadout,
+          {
+            armorSlots,
+            weapons,
+            amplifiers,
+            scopes,
+            sights,
+            absorbers,
+            matrices,
+            implants,
+            armors,
+            armorPlatings: armorplatings,
+            armorSets: armorsets,
+            clothing,
+            pets,
+            stimulants,
+            medicalTools,
+            medicalChips
+          },
+          { effectsCatalog, effectCaps, isLimitedName }
+        )
+      : null;
+    allEffects = evaluation?.effects?.all ?? [];
+    offensiveEffects = evaluation?.effects?.offensive ?? [];
+    defensiveEffects = evaluation?.effects?.defensive ?? [];
+    utilityEffects = evaluation?.effects?.utility ?? [];
+    offensiveTotals = evaluation?.offensiveTotals ?? { damage: 0, reload: 0, critChance: 0, critDamage: 0 };
+  });
+  let stats = $derived(evaluation?.stats || {});
+  let nonActiveHotBonuses = $derived((() => {
+    if (!loadout?.Sets?.Healing || loadout.Sets.Healing.length <= 1) return [];
+    const activeIdx = activeSetIndices.Healing;
+    const bonuses = [];
+    for (let i = 0; i < loadout.Sets.Healing.length; i++) {
+      if (i === activeIdx) continue;
+      const setEntry = loadout.Sets.Healing[i];
+      const healName = setEntry.gear?.Name;
+      if (!healName) continue;
+      const chip = medicalChips.find(c => c.Name === healName);
+      if (!chip) continue;
+      const hotEffect = chip.EffectsOnUse?.find(e => e.Name === 'Heal Over Time');
+      if (!hotEffect) continue;
+      const effHeal = ((chip.Properties.MaxHeal ?? 0) + (chip.Properties.MinHeal ?? chip.Properties.MaxHeal ?? 0)) / 2;
+      const hotPct = Number(hotEffect.Values?.Strength ?? hotEffect.Strength ?? 0);
+      const hotDuration = Number(hotEffect.DurationSeconds ?? hotEffect.Values?.DurationSeconds ?? 0);
+      const cooldown = chip.Properties.Mindforce?.Cooldown ?? (chip.Properties.UsesPerMinute ? 60 / chip.Properties.UsesPerMinute : 0);
+      if (hotDuration <= 0 || hotPct <= 0) continue;
+      const hotHeal = hotPct >= 100 ? effHeal * 1.5 : effHeal * hotPct / 100;
+      const healMult = stats.healMultiplier ?? 1;
+      const hotHPS = (hotHeal * healMult) / hotDuration;
+      const mainHPS = stats.hps ?? 0;
+      const overhead = 0.5;
+      const lostHPS = cooldown > 0 ? mainHPS * overhead / cooldown : 0;
+      bonuses.push({ name: healName, hotHPS, lostHPS, netHPS: hotHPS - lostHPS, cooldown, setIndex: i });
+    }
+    return bonuses;
+  })());
+  let activePet = $derived(effectiveLoadoutData?.Gear?.Pet?.Name
+    ? pets.find(pet => pet.Name === effectiveLoadoutData.Gear.Pet.Name)
+    : null);
+  let activePetEffects = $derived(activePet?.Effects || []);
+  // Auto-select loadout from URL when data becomes available (skip in shared mode)
+  run(() => {
+    if (browser && !isSharedMode && data?.additional?.loadoutId && !urlSelectionAttempted && !loadout && loadoutsDataLoaded) {
+      urlSelectionAttempted = true;
+      const urlId = data.additional.loadoutId;
+      // Try online loadouts first (database ID)
+      if (activeSource === 'online' && onlineLoadouts.length > 0) {
+        const record = onlineLoadouts.find(r => r.id === urlId);
+        if (record) {
+          setActiveLoadout(record.data, { recordId: record.id });
+        } else {
+          updateUrlSlug(null);
+        }
+      }
+      // Try local loadouts (internal loadout ID)
+      else if (activeSource === 'local' && localLoadouts.length > 0) {
+        const local = localLoadouts.find(l => l.Id === urlId);
+        if (local) {
+          setActiveLoadout(local);
+        } else {
+          updateUrlSlug(null);
+        }
+      }
+    }
+  });
+  // Available set sections for the current loadout (only sections with >1 set)
+  let compareSetAvailableSections = $derived((() => {
+    if (!loadout?.Sets) return [];
+    return ['Weapon', 'Armor', 'Healing', 'Accessories']
+      .filter(s => Array.isArray(loadout.Sets[s]) && loadout.Sets[s].length > 1);
+  })());
+  // When the current loadout changes, prune selected sections that are no longer valid
+  run(() => {
+    if (compareSetSections.size > 0 && compareSetAvailableSections.length > 0) {
+      const pruned = new Set(Array.from(compareSetSections).filter(s => compareSetAvailableSections.includes(s)));
+      if (pruned.size !== compareSetSections.size) compareSetSections = pruned;
+    }
+  });
+  // --- Set permutation comparison ---
+  run(() => {
+    compareSetMode = compareSetSections.size > 0;
+  });
+  // Rebuild permutations when relevant state changes
+  run(() => {
+    if (compareMode && compareSetMode && loadout) {
+      compareSetPermutations = buildSetPermutations(loadout, compareSetSections);
+    } else {
+      compareSetPermutations = [];
+    }
+  });
+  run(() => {
+    if (activeSource === 'online') {
+      loadouts = onlineLoadouts.map(r => r.data);
+    } else {
+      loadouts = localLoadouts;
+    }
+  });
+  run(() => {
+    if (compareMode) {
+      // Build a snapshot cache when entering compare (avoids per-render recomputation).
+      // We intentionally don't depend on loadoutVersion to avoid recomputing on every edit.
+      entitiesVersion;
+      effectsCatalog;
+      effectCaps;
+      // Re-evaluate when set permutations change
+      compareSetPermutations;
+
+      const ctx = getEvalContext();
+      const next = new Map();
+      // Always evaluate all loadouts (for normal compare and for anchor reference)
+      for (const lo of loadouts) {
+        if (!lo?.Id) continue;
+        next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
+      }
+      // Also evaluate set permutations
+      for (const perm of compareSetPermutations) {
+        const lo = perm.loadout;
+        if (!lo?.Id) continue;
+        next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
+      }
+      compareEvalCache = next;
+    } else {
+      compareEvalCache = new Map();
+    }
+  });
+  run(() => {
+    compareAnchorId = loadout?.Id ?? null;
+  });
+  run(() => {
+    compareAnchorEval = compareAnchorId ? compareEvalCache.get(compareAnchorId) : null;
+  });
+  run(() => {
+    compareEffectiveDisplay = compareDisplay === 'delta' && compareAnchorEval ? 'delta' : 'values';
+  });
+  run(() => {
+    compareVisibleKeys = isMobileLayout
+      ? COMPARE_MOBILE_KEYS[compareType]
+      : (compareType === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor);
+  });
+  run(() => {
+    if (compareHiddenLoadoutIds.size > 0) {
+      const existing = new Set(loadouts.filter(lo => lo?.Id).map(lo => lo.Id));
+      const pruned = new Set(Array.from(compareHiddenLoadoutIds).filter(id => existing.has(id)));
+      if (pruned.size !== compareHiddenLoadoutIds.size) {
+        compareHiddenLoadoutIds = pruned;
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(COMPARE_HIDDEN_ROWS_STORAGE_KEY, JSON.stringify(Array.from(compareHiddenLoadoutIds)));
+        }
+      }
+    }
+  });
+  run(() => {
+    compareType;
+    compareEffectiveDisplay;
+    compareAnchorId;
+    compareAnchorEval;
+    const allowHidden = isMobileLayout;
+
+    if (compareMode && compareSetMode) {
+      // In set mode, show only the permutations
+      const query = compareNameQuery?.trim()?.toLowerCase() || '';
+      compareRows = compareSetPermutations
+        .map(p => p.loadout)
+        .filter(lo => !query || (lo?.Name || '').toLowerCase().includes(query))
+        .map(buildCompareRow);
+    } else {
+      compareRows = compareMode
+        ? loadouts
+            .filter(lo => lo?.Id && (allowHidden || !compareHiddenLoadoutIds.has(lo.Id)))
+            .filter(lo => !compareNameQuery?.trim() || (lo?.Name || '').toLowerCase().includes(compareNameQuery.trim().toLowerCase()))
+            .map(buildCompareRow)
+        : [];
+    }
+  });
+  run(() => {
+    hiddenCompareRows = loadouts
+      .filter(lo => lo?.Id && compareHiddenLoadoutIds.has(lo.Id))
+      .map(lo => ({ id: lo.Id, name: lo.Name }));
+  });
+  run(() => {
+    compareType;
+    compareVisibleKeys;
+    compareEffectiveDisplay;
+    compareColumns = compareMode ? buildCompareColumns() : [];
+  });
+  run(() => {
+    if (activeSource === 'local') {
+      writeLocalLoadouts(localLoadouts);
+    }
+  });
+  let autosaveSeconds = $derived(autosaveDueAt ? Math.max(0, Math.ceil((autosaveDueAt - autosaveNow) / 1000)) : null);
+  let activeLoadoutKey = $derived(activeSource === 'online' ? activeOnlineId : loadout?.Id);
+  let activeRecord = $derived(activeSource === 'online'
+    ? onlineLoadouts.find(r => r.id === activeOnlineId)
+    : null);
+  let isPublicLoadout = $derived(!!activeRecord?.public);
+  let linkedItemSetName = $derived(activeRecord?.linked_item_set || null);
+  let isLinkedToItemSet = $derived(!!linkedItemSetName);
+  let pickerConfig = $derived(activePicker ? (isMobileLayout, settings.onlyShowReasonableAmplifiers, overampMode, getPickerConfig(activePicker)) : null);
+  let pickerRowHeight = $derived(isMobileLayout ? 30 : 34);
+  let sidebarLoadouts = $derived(activeSource === 'online'
+    ? onlineLoadouts.map(record => ({ id: record.id, data: record.data }))
+    : localLoadouts.map(item => ({ id: item.Id, data: item })));
+  let filteredLoadouts = $derived(sidebarLoadouts.filter(item => {
+    const name = getLoadoutListLabel(item.data).toLowerCase();
+    const query = loadoutSearch.trim().toLowerCase();
+    return !query || name.includes(query);
+  }));
+  run(() => {
+    if(loadout?.Gear.Weapon.Enhancers) {
+      loadout.Gear.Weapon.Enhancers.Damage = clamp(loadout.Gear.Weapon.Enhancers.Damage, 0, 10);
+      loadout.Gear.Weapon.Enhancers.Accuracy = clamp(loadout.Gear.Weapon.Enhancers.Accuracy, 0, 10);
+      loadout.Gear.Weapon.Enhancers.Range = clamp(loadout.Gear.Weapon.Enhancers.Range, 0, 10);
+      loadout.Gear.Weapon.Enhancers.Economy = clamp(loadout.Gear.Weapon.Enhancers.Economy, 0, 10);
+      loadout.Gear.Weapon.Enhancers.SkillMod = clamp(loadout.Gear.Weapon.Enhancers.SkillMod, 0, 10);
+    }
+  });
+  run(() => {
+    if(loadout?.Gear.Armor.Enhancers) {
+      loadout.Gear.Armor.Enhancers.Defense = clamp(loadout.Gear.Armor.Enhancers.Defense, 0, 10);
+      loadout.Gear.Armor.Enhancers.Durability = clamp(loadout.Gear.Armor.Enhancers.Durability, 0, 10);
+    }
+  });
+  run(() => {
+    if(loadout?.Gear?.Healing?.Enhancers) {
+      loadout.Gear.Healing.Enhancers.Economy = clamp(loadout.Gear.Healing.Enhancers.Economy, 0, 10);
+      loadout.Gear.Healing.Enhancers.SkillMod = clamp(loadout.Gear.Healing.Enhancers.SkillMod, 0, 10);
+    }
+  });
+  run(() => {
+    if (loadout && loadout.Markup == null) {
+      resetMarkup();
+    }
+  });
+  run(() => {
+    if (loadout?.Markup) {
+      if (loadout.Markup.ArmorSet == null) loadout.Markup.ArmorSet = 100;
+      if (loadout.Markup.PlateSet == null) loadout.Markup.PlateSet = 100;
+      if (!loadout.Markup.Armors) loadout.Markup.Armors = {};
+      if (!loadout.Markup.Plates) loadout.Markup.Plates = {};
+      armorSlots.forEach(slot => {
+        if (loadout.Markup.Armors[slot] == null) loadout.Markup.Armors[slot] = 100;
+        if (loadout.Markup.Plates[slot] == null) loadout.Markup.Plates[slot] = 100;
+      });
+    }
+  });
+  run(() => {
+    if (loadout?.Gear?.Armor?.ManageIndividual === false && loadout?.Gear?.Armor?.SetName === null) {
+      resetArmor();
+    } else if (loadout?.Gear?.Armor?.ManageIndividual === true) {
+      loadout.Gear.Armor.SetName = null;
+      loadout.Gear.Armor.PlateName = null;
+    }
+  });
 </script>
 
 
@@ -3782,7 +3825,7 @@
   {/if}
 </svelte:head>
 
-<svelte:window bind:innerWidth={windowWidth} on:click={closeSetMenus} />
+<svelte:window bind:innerWidth={windowWidth} onclick={closeSetMenus} />
 
 <WikiPage
   title={isSharedMode ? 'Loadout Manager' : 'Loadouts'}
@@ -3796,16 +3839,17 @@
   editable={false}
   canEdit={false}
 >
+  <!-- @migration-task: migrate this slot by hand, `header-actions` is an invalid identifier -->
   <div slot="header-actions" class="loadout-header-actions">
     {#if isSharedMode}
-      <button class="action-btn" on:click={handleMakeCopy} disabled={!sharedLoadoutData || isCopying}>
+      <button class="action-btn" onclick={handleMakeCopy} disabled={!sharedLoadoutData || isCopying}>
         <span class="action-label">{isCopying ? 'Copying...' : 'Make a copy'}</span>
       </button>
     {:else if activeSource === 'online'}
       <button
         class="action-btn save"
         class:dirty={isDirty}
-        on:click={handleManualSave}
+        onclick={handleManualSave}
         disabled={!loadout || isSaving || !isDirty || isLinkedToItemSet}
         aria-label={isSaving ? 'Saving...' : (isDirty ? 'Save loadout' : 'Saved')}
         title={isSaving ? 'Saving...' : (isDirty ? 'Save' : 'Saved')}
@@ -3830,7 +3874,7 @@
       {#if compareMode}
         <button
           class="action-btn cancel"
-          on:click={() => {
+          onclick={() => {
             compareMode = false;
           }}
           aria-label="Stop comparing"
@@ -3844,7 +3888,7 @@
       {:else}
         <button
           class="action-btn"
-          on:click={() => {
+          onclick={() => {
             compareMode = true;
           }}
           aria-label="Compare loadouts"
@@ -3861,7 +3905,7 @@
       <button
         class="action-btn share"
         class:public={isPublicLoadout && !!loadout}
-        on:click={openShareDialog}
+        onclick={openShareDialog}
         disabled={!loadout}
         aria-label="Share loadout"
         title={isPublicLoadout ? 'Public link enabled' : 'Share'}
@@ -3874,97 +3918,99 @@
     {/if}
   </div>
 
-  <div slot="sidebar" let:isMobile>
-    {#if isSharedMode}
-      <div class="loadout-sidebar" class:mobile={isMobile}>
-        <div class="sidebar-header">
-          <div class="sidebar-title">{sharedDisplayName}</div>
-          <div class="sidebar-meta">
-            <span class="sidebar-badge">Shared</span>
-            <span class="sidebar-badge readonly">Read-only</span>
+  {#snippet sidebar({ isMobile })}
+    <div  >
+      {#if isSharedMode}
+        <div class="loadout-sidebar" class:mobile={isMobile}>
+          <div class="sidebar-header">
+            <div class="sidebar-title">{sharedDisplayName}</div>
+            <div class="sidebar-meta">
+              <span class="sidebar-badge">Shared</span>
+              <span class="sidebar-badge readonly">Read-only</span>
+            </div>
+            <div class="sidebar-status code">Code: {shareCode || sharedLoadout?.share_code || 'N/A'}</div>
           </div>
-          <div class="sidebar-status code">Code: {shareCode || sharedLoadout?.share_code || 'N/A'}</div>
+          <div class="sidebar-actions share-actions">
+            <button class="sidebar-btn accent" onclick={handleMakeCopy} disabled={!sharedLoadoutData || isCopying}>
+              {isCopying ? 'Copying...' : 'Make a copy'}
+            </button>
+            <a class="sidebar-btn neutral" href="/tools/loadouts">Back to Loadout Manager</a>
+          </div>
+          <div class="sidebar-status strong">This loadout is read-only. Make a copy to edit.</div>
         </div>
-        <div class="sidebar-actions share-actions">
-          <button class="sidebar-btn accent" on:click={handleMakeCopy} disabled={!sharedLoadoutData || isCopying}>
-            {isCopying ? 'Copying...' : 'Make a copy'}
-          </button>
-          <a class="sidebar-btn neutral" href="/tools/loadouts">Back to Loadout Manager</a>
-        </div>
-        <div class="sidebar-status strong">This loadout is read-only. Make a copy to edit.</div>
-      </div>
-    {:else}
-      <div class="loadout-sidebar" class:mobile={isMobile}>
-        <div class="nav-header">
-          <h2 class="nav-title">Loadouts</h2>
-        </div>
-        <div class="sidebar-body">
-          <div class="sidebar-toggle">
-            <button
-              class:active={activeSource === 'online'}
-              disabled={!isLoggedIn}
-              title={!isLoggedIn ? 'Log in to use online loadouts' : 'Online loadouts'}
-              on:click={() => switchSource('online')}
-            >Online</button>
-            <button
-              class:active={activeSource === 'local'}
-              on:click={() => switchSource('local')}
-            >Local</button>
+      {:else}
+        <div class="loadout-sidebar" class:mobile={isMobile}>
+          <div class="nav-header">
+            <h2 class="nav-title">Loadouts</h2>
           </div>
-          <div class="sidebar-search">
-            <input type="text" placeholder="Search loadouts..." bind:value={loadoutSearch} />
-          </div>
-          <div class="sidebar-actions">
-            <button class="sidebar-btn create" on:click={handleNewLoadout} disabled={entitiesLoading}>New</button>
-            <button class="sidebar-btn danger" on:click={confirmDeleteLoadout} disabled={!loadout || isLinkedToItemSet} title={isLinkedToItemSet ? 'Linked to item set' : ''}>Delete</button>
-            <button class="sidebar-btn neutral" on:click={exportActiveLoadout} disabled={!loadout}>Export</button>
-            <button class="sidebar-btn neutral" on:click={openImportSourceDialog}>Import</button>
-            <button class="sidebar-btn neutral" on:click={handleCloneLoadout} disabled={!loadout}>Clone</button>
-          </div>
-          <input type="file" bind:this={fileInput} on:change={handleFileChange} class="file-input-hidden" />
-          {#if activeSource === 'online' && onlineLoading}
-            <div class="sidebar-status">Loading online loadouts...</div>
-          {:else if activeSource === 'online' && onlineError}
-            <div class="sidebar-status error">{onlineError}</div>
-          {/if}
-          <div class="sidebar-list">
-          {#if filteredLoadouts.length === 0}
-            <div class="sidebar-empty">No loadouts found.</div>
-          {:else}
-            {#each filteredLoadouts as item}
+          <div class="sidebar-body">
+            <div class="sidebar-toggle">
               <button
-                class="sidebar-item"
-                class:active={item.id === activeLoadoutKey}
-                on:click={() => setActiveLoadout(item.data)}
-              >
-                <span class="item-name">{getLoadoutListLabel(item.data)}</span>
-                {#if activeSource === 'online'}
-                  {@const record = onlineLoadouts.find(r => r.id === item.id)}
-                  <span
-                    class="item-visibility"
-                    title={record?.public ? 'Public loadout' : 'Private loadout'}
-                  >
-                    {#if record?.public}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 5c4.5 0 7.5 3.5 9 7-1.5 3.5-4.5 7-9 7s-7.5-3.5-9-7c1.5-3.5 4.5-7 9-7z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    {:else}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="4" y="11" width="16" height="9" rx="2" ry="2" />
-                        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                      </svg>
-                    {/if}
-                  </span>
-                {/if}
-              </button>
-            {/each}
-          {/if}
+                class:active={activeSource === 'online'}
+                disabled={!isLoggedIn}
+                title={!isLoggedIn ? 'Log in to use online loadouts' : 'Online loadouts'}
+                onclick={() => switchSource('online')}
+              >Online</button>
+              <button
+                class:active={activeSource === 'local'}
+                onclick={() => switchSource('local')}
+              >Local</button>
+            </div>
+            <div class="sidebar-search">
+              <input type="text" placeholder="Search loadouts..." bind:value={loadoutSearch} />
+            </div>
+            <div class="sidebar-actions">
+              <button class="sidebar-btn create" onclick={handleNewLoadout} disabled={entitiesLoading}>New</button>
+              <button class="sidebar-btn danger" onclick={confirmDeleteLoadout} disabled={!loadout || isLinkedToItemSet} title={isLinkedToItemSet ? 'Linked to item set' : ''}>Delete</button>
+              <button class="sidebar-btn neutral" onclick={exportActiveLoadout} disabled={!loadout}>Export</button>
+              <button class="sidebar-btn neutral" onclick={openImportSourceDialog}>Import</button>
+              <button class="sidebar-btn neutral" onclick={handleCloneLoadout} disabled={!loadout}>Clone</button>
+            </div>
+            <input type="file" bind:this={fileInput} onchange={handleFileChange} class="file-input-hidden" />
+            {#if activeSource === 'online' && onlineLoading}
+              <div class="sidebar-status">Loading online loadouts...</div>
+            {:else if activeSource === 'online' && onlineError}
+              <div class="sidebar-status error">{onlineError}</div>
+            {/if}
+            <div class="sidebar-list">
+            {#if filteredLoadouts.length === 0}
+              <div class="sidebar-empty">No loadouts found.</div>
+            {:else}
+              {#each filteredLoadouts as item}
+                <button
+                  class="sidebar-item"
+                  class:active={item.id === activeLoadoutKey}
+                  onclick={() => setActiveLoadout(item.data)}
+                >
+                  <span class="item-name">{getLoadoutListLabel(item.data)}</span>
+                  {#if activeSource === 'online'}
+                    {@const record = onlineLoadouts.find(r => r.id === item.id)}
+                    <span
+                      class="item-visibility"
+                      title={record?.public ? 'Public loadout' : 'Private loadout'}
+                    >
+                      {#if record?.public}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 5c4.5 0 7.5 3.5 9 7-1.5 3.5-4.5 7-9 7s-7.5-3.5-9-7c1.5-3.5 4.5-7 9-7z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      {:else}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="4" y="11" width="16" height="9" rx="2" ry="2" />
+                          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                        </svg>
+                      {/if}
+                    </span>
+                  {/if}
+                </button>
+              {/each}
+            {/if}
+            </div>
           </div>
         </div>
-      </div>
-    {/if}
-  </div>
+      {/if}
+    </div>
+  {/snippet}
 
   <svg class="icon-sprite" aria-hidden="true">
     <symbol id="icon-plus" viewBox="0 0 24 24">
@@ -4034,48 +4080,50 @@
   {#if compareMode}
     <div class="compare-layout">
       <DataSection title="Compare" collapsible={false}>
-        <button
-          slot="actions"
-          type="button"
-          class="compare-exit-btn"
-          on:click={() => { compareMode = false; }}
-          aria-label="Stop comparing"
-          title="Stop comparing"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <use href="#icon-cancel"></use>
-          </svg>
-        </button>
+        {#snippet actions()}
+                <button
+            
+            type="button"
+            class="compare-exit-btn"
+            onclick={() => { compareMode = false; }}
+            aria-label="Stop comparing"
+            title="Stop comparing"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <use href="#icon-cancel"></use>
+            </svg>
+          </button>
+              {/snippet}
         <div class="compare-toolbar">
           <div class="compare-toolbar-left">
-            <div class="compare-segment" on:click|stopPropagation>
-              <button type="button" class:active={compareType === 'weapons'} on:click={() => (compareType = 'weapons')}>Weapons</button>
-              <button type="button" class:active={compareType === 'armor'} on:click={() => (compareType = 'armor')}>Armor</button>
+            <div class="compare-segment" onclick={stopPropagation(bubble('click'))}>
+              <button type="button" class:active={compareType === 'weapons'} onclick={() => (compareType = 'weapons')}>Weapons</button>
+              <button type="button" class:active={compareType === 'armor'} onclick={() => (compareType = 'armor')}>Armor</button>
             </div>
-            <div class="compare-segment" on:click|stopPropagation>
-              <button type="button" class:active={compareDisplay === 'values'} on:click={() => (compareDisplay = 'values')}>Values</button>
-              <button type="button" class:active={compareDisplay === 'delta'} disabled={!compareAnchorEval} on:click={() => (compareDisplay = 'delta')}>Delta</button>
+            <div class="compare-segment" onclick={stopPropagation(bubble('click'))}>
+              <button type="button" class:active={compareDisplay === 'values'} onclick={() => (compareDisplay = 'values')}>Values</button>
+              <button type="button" class:active={compareDisplay === 'delta'} disabled={!compareAnchorEval} onclick={() => (compareDisplay = 'delta')}>Delta</button>
             </div>
             {#if compareSetAvailableSections.length > 0}
-              <div class="compare-menu" on:click|stopPropagation>
+              <div class="compare-menu" onclick={stopPropagation(bubble('click'))}>
                 <button
                   type="button"
                   class="compare-menu-btn"
                   class:active={compareSetMode}
-                  on:click|stopPropagation={() => {
+                  onclick={stopPropagation(() => {
                     compareSetsOpen = !compareSetsOpen;
                     compareHiddenOpen = false;
                     compareColumnsOpen = false;
-                  }}
+                  })}
                 >
                   Sets{compareSetSections.size > 0 ? ` (${compareSetSections.size})` : ''}
                 </button>
                 {#if compareSetsOpen}
-                  <div class="compare-popover" on:click|stopPropagation>
+                  <div class="compare-popover" onclick={stopPropagation(bubble('click'))}>
                     <div class="compare-popover-header">
                       <div class="compare-popover-title">Compare set permutations</div>
                       {#if compareSetSections.size > 0}
-                        <button type="button" class="compare-popover-reset" on:click={() => { compareSetSections = new Set(); }}>Clear</button>
+                        <button type="button" class="compare-popover-reset" onclick={() => { compareSetSections = new Set(); }}>Clear</button>
                       {/if}
                     </div>
                     <div class="compare-columns-grid">
@@ -4084,7 +4132,7 @@
                           <input
                             type="checkbox"
                             checked={compareSetSections.has(section)}
-                            on:change={() => toggleCompareSetSection(section)}
+                            onchange={() => toggleCompareSetSection(section)}
                           />
                           <span>{section} ({loadout?.Sets?.[section]?.length ?? 0} sets)</span>
                         </label>
@@ -4102,7 +4150,7 @@
           </div>
 
           <div class="compare-toolbar-right">
-            <div class="compare-search" on:click|stopPropagation>
+            <div class="compare-search" onclick={stopPropagation(bubble('click'))}>
               <input type="text" placeholder="Search loadouts..." bind:value={compareNameQuery} />
             </div>
 
@@ -4111,22 +4159,22 @@
                 <button
                   type="button"
                   class="compare-menu-btn"
-                  on:click|stopPropagation={() => {
+                  onclick={stopPropagation(() => {
                     compareHiddenOpen = !compareHiddenOpen;
                     compareColumnsOpen = false;
                     compareSetsOpen = false;
-                  }}
+                  })}
                 >
                   Hidden{hiddenCompareRows.length ? ` (${hiddenCompareRows.length})` : ''}
                 </button>
                 {#if compareHiddenOpen}
-                  <div class="compare-popover" on:click|stopPropagation>
+                  <div class="compare-popover" onclick={stopPropagation(bubble('click'))}>
                     {#if hiddenCompareRows.length === 0}
                       <div class="compare-popover-empty">No hidden loadouts.</div>
                     {:else}
                       <div class="compare-popover-list">
                         {#each hiddenCompareRows as item (item.id)}
-                          <button type="button" class="compare-popover-item" on:click={() => setCompareHidden(item.id, false)}>
+                          <button type="button" class="compare-popover-item" onclick={() => setCompareHidden(item.id, false)}>
                             <span class="compare-popover-name">{item.name}</span>
                             <span class="compare-popover-action">Show</span>
                           </button>
@@ -4143,19 +4191,19 @@
                 <button
                   type="button"
                   class="compare-menu-btn"
-                  on:click|stopPropagation={() => {
+                  onclick={stopPropagation(() => {
                     compareColumnsOpen = !compareColumnsOpen;
                     compareHiddenOpen = false;
                     compareSetsOpen = false;
-                  }}
+                  })}
                 >
                   Columns
                 </button>
                 {#if compareColumnsOpen}
-                  <div class="compare-popover" on:click|stopPropagation>
+                  <div class="compare-popover" onclick={stopPropagation(bubble('click'))}>
                     <div class="compare-popover-header">
                       <div class="compare-popover-title">Shown columns</div>
-                      <button type="button" class="compare-popover-reset" on:click={() => resetCompareColumns(compareType)}>Reset</button>
+                      <button type="button" class="compare-popover-reset" onclick={() => resetCompareColumns(compareType)}>Reset</button>
                     </div>
                     <div class="compare-columns-grid">
                       {#each COMPARE_COLUMN_ORDER[compareType] as key (key)}
@@ -4164,7 +4212,7 @@
                             <input
                               type="checkbox"
                               checked={compareVisibleKeys.includes(key)}
-                              on:change={() => toggleCompareColumn(compareType, key)}
+                              onchange={() => toggleCompareColumn(compareType, key)}
                             />
                             <span>{getCompareColumnLabel(key)}</span>
                           </label>
@@ -4181,7 +4229,7 @@
         <div
           class="compare-table-wrap"
           style={`--compare-row-height: ${isMobileLayout ? 34 : 38}px;`}
-          on:click|capture={handleCompareWrapperClick}
+          onclickcapture={handleCompareWrapperClick}
         >
           <FancyTable
             columns={compareColumns}
@@ -4826,7 +4874,7 @@
     <div class="mobile-empty-state">
       <p>Create a new loadout or select an existing one.</p>
       <div class="mobile-empty-actions">
-        <button class="mobile-empty-btn create" on:click={handleNewLoadout} disabled={entitiesLoading}>
+        <button class="mobile-empty-btn create" onclick={handleNewLoadout} disabled={entitiesLoading}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
@@ -4834,7 +4882,7 @@
           New Loadout
         </button>
         {#if isMobileLayout && loadouts.length > 0}
-        <button class="mobile-empty-btn browse" on:click={() => drawerOpen = true}>
+        <button class="mobile-empty-btn browse" onclick={() => drawerOpen = true}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="7" height="7" rx="1" />
             <rect x="14" y="3" width="7" height="7" rx="1" />
@@ -4860,7 +4908,7 @@
             <button
               class="mobile-panel-button"
               class:active={activeMobilePanel === panel.key}
-              on:click={() => setMobilePanelIndex(index)}
+              onclick={() => setMobilePanelIndex(index)}
               aria-label={panel.label}
               title={panel.label}
             >
@@ -4877,9 +4925,9 @@
     <div
       class="mobile-panels"
       bind:this={mobilePanelsEl}
-      on:touchstart={handleTouchStart}
-      on:touchmove={handleTouchMove}
-      on:touchend={handleTouchEnd}
+      ontouchstart={handleTouchStart}
+      ontouchmove={handleTouchMove}
+      ontouchend={handleTouchEnd}
     >
       <div
         class="mobile-panels-track"
@@ -4888,7 +4936,7 @@
       >
     <aside class="loadout-sidebar-float">
       <div class="mobile-panel" class:active={activeMobilePanel === 'info'}>
-        <div class="loadout-infobox-card" on:input|capture={markDirty} on:change|capture={markDirty}>
+        <div class="loadout-infobox-card" oninputcapture={markDirty} onchangecapture={markDirty}>
         <div class="infobox-header">
           {#if loadout}
             <input class="infobox-name-input" type="text" bind:value={loadout.Name} placeholder="Loadout name" />
@@ -4927,7 +4975,7 @@
                       {@const totalBase = (effect?.cappedItem ?? 0) + (effect?.cappedAction ?? 0) + (effect?.rawBonus ?? 0)}
                       {#if hasCaps}
                         <li>
-                          <button type="button" class="effect-item equip effect-toggle" class:open={expanded} on:click={() => toggleEffectExpanded(effectKey)}>
+                          <button type="button" class="effect-item equip effect-toggle" class:open={expanded} onclick={() => toggleEffectExpanded(effectKey)}>
                               <span class="effect-name">{effect.name}</span>
                               <span class="effect-details">
                                 <span
@@ -4999,7 +5047,7 @@
                       {@const totalBase = (effect?.cappedItem ?? 0) + (effect?.cappedAction ?? 0) + (effect?.rawBonus ?? 0)}
                       {#if hasCaps}
                         <li>
-                          <button type="button" class="effect-item equip effect-toggle" class:open={expanded} on:click={() => toggleEffectExpanded(effectKey)}>
+                          <button type="button" class="effect-item equip effect-toggle" class:open={expanded} onclick={() => toggleEffectExpanded(effectKey)}>
                               <span class="effect-name">{effect.name}</span>
                               <span class="effect-details">
                                 <span
@@ -5071,7 +5119,7 @@
                       {@const totalBase = (effect?.cappedItem ?? 0) + (effect?.cappedAction ?? 0) + (effect?.rawBonus ?? 0)}
                       {#if hasCaps}
                         <li>
-                          <button type="button" class="effect-item equip effect-toggle" class:open={expanded} on:click={() => toggleEffectExpanded(effectKey)}>
+                          <button type="button" class="effect-item equip effect-toggle" class:open={expanded} onclick={() => toggleEffectExpanded(effectKey)}>
                               <span class="effect-name">{effect.name}</span>
                               <span class="effect-details">
                                 <span
@@ -5210,7 +5258,7 @@
       </div>
       {#if loadout}
         <div class="mobile-panel" class:active={activeMobilePanel === 'settings'}>
-          <div class="loadout-settings-panel" on:input|capture={markDirty} on:change|capture={markDirty}>
+          <div class="loadout-settings-panel" oninputcapture={markDirty} onchangecapture={markDirty}>
             <DataSection title="Settings" collapsible={false}>
               <div class="settings-grid">
                 <div class="settings-group-title">Profession Levels</div>
@@ -5252,7 +5300,7 @@
       {/if}
     </aside>
 
-    <article class="wiki-article loadout-article" on:input|capture={markDirty} on:change|capture={markDirty}>
+    <article class="wiki-article loadout-article" oninputcapture={markDirty} onchangecapture={markDirty}>
       {#if $loading || entitiesLoading}
         <div class="loading-text">Loading game data...</div>
       {:else if loadout != null}
@@ -5269,40 +5317,40 @@
                     <button
                       class="set-tab"
                       class:active={activeSetIndices.Weapon === i}
-                      on:click|stopPropagation={() => handleSetTabClick('Weapon', i)}
+                      onclick={stopPropagation(() => handleSetTabClick('Weapon', i))}
                     >
                       <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                       {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                       {#if activeSetIndices.Weapon === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                     </button>
                     {#if setTabMenuOpen?.section === 'Weapon' && setTabMenuOpen?.index === i}
-                      <div class="set-tab-menu" on:click|stopPropagation>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Weapon', i)}>Rename</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Weapon', i)}>
+                      <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Weapon', i))}>Rename</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Weapon', i))}>
                           {setEntry.isDefault ? 'Already default' : 'Set as default'}
                         </button>
                         <div class="set-tab-menu-divider"></div>
-                        <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Weapon', i)}>Delete set</button>
+                        <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Weapon', i))}>Delete set</button>
                       </div>
                     {/if}
                   </div>
                 {/each}
-                <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
+                <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; })} title="Add set">+
                   {#if setAddMenuOpen === 'Weapon'}
                     <div class="set-tab-menu">
-                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', false)}>New empty set</button>
-                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', true)}>Copy current set</button>
+                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', false))}>New empty set</button>
+                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', true))}>Copy current set</button>
                     </div>
                   {/if}
                 </button>
               </div>
             {:else}
               <div class="set-tabs">
-                <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
+                <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; })} title="Add set">+
                   {#if setAddMenuOpen === 'Weapon'}
                     <div class="set-tab-menu">
-                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', false)}>New empty set</button>
-                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', true)}>Copy current set</button>
+                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', false))}>New empty set</button>
+                      <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Weapon', true))}>Copy current set</button>
                     </div>
                   {/if}
                 </button>
@@ -5314,7 +5362,7 @@
                 <div class="form-grid">
                   <div class="form-label">Weapon</div>
                   <div class="control-row">
-                    <button class="slot select-button" on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => openPicker('weapon')}>
+                    <button class="slot select-button" oncontextmenu={e => clearSlot(e, "weapon")} onclick={() => openPicker('weapon')}>
                       {#if loadout?.Gear.Weapon.Name != null}
                         {loadout.Gear.Weapon.Name}
                       {:else}
@@ -5330,7 +5378,7 @@
                   </div>
                   <div class="form-label">Amplifier</div>
                   <div class="control-row">
-                    <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "amplifier")} on:click={() => openPicker('amplifier')}>
+                    <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} oncontextmenu={e => clearSlot(e, "amplifier")} onclick={() => openPicker('amplifier')}>
                       {#if loadout?.Gear.Weapon.Name != null}
                         {#if loadout?.Gear.Weapon.Amplifier?.Name != null}
                           {loadout.Gear.Weapon.Amplifier.Name}
@@ -5350,7 +5398,7 @@
                   </div>
                   <div class="form-label">Absorber</div>
                   <div class="control-row">
-                    <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "absorber")} on:click={() => openPicker('absorber')}>
+                    <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} oncontextmenu={e => clearSlot(e, "absorber")} onclick={() => openPicker('absorber')}>
                       {#if loadout?.Gear.Weapon.Name != null}
                         {#if loadout?.Gear.Weapon.Absorber?.Name != null}
                           {loadout.Gear.Weapon.Absorber.Name}
@@ -5371,7 +5419,7 @@
                   {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Ranged'}
                     <div class="form-label">Scope</div>
                     <div class="control-row">
-                      <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "scope")} on:click={() => openPicker('scope')}>
+                      <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} oncontextmenu={e => clearSlot(e, "scope")} onclick={() => openPicker('scope')}>
                         {#if loadout?.Gear.Weapon.Scope?.Name != null}
                           {loadout.Gear.Weapon.Scope.Name}
                         {:else}
@@ -5395,7 +5443,7 @@
                       <span>Scope Sight</span>
                     </div>
                     <div class="control-row scope-sight-row">
-                      <button class="slot select-button" disabled={loadout?.Gear.Weapon.Scope == null} on:contextmenu={e => clearSlot(e, "scope-sight")} on:click={() => openPicker('scope-sight')}>
+                      <button class="slot select-button" disabled={loadout?.Gear.Weapon.Scope == null} oncontextmenu={e => clearSlot(e, "scope-sight")} onclick={() => openPicker('scope-sight')}>
                         {#if loadout.Gear.Weapon.Scope != null}
                           {#if loadout?.Gear.Weapon.Scope?.Sight?.Name != null}
                             {loadout.Gear.Weapon.Scope.Sight.Name}
@@ -5415,7 +5463,7 @@
                     </div>
                     <div class="form-label">Sight</div>
                     <div class="control-row">
-                      <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "sight")} on:click={() => openPicker('sight')}>
+                      <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} oncontextmenu={e => clearSlot(e, "sight")} onclick={() => openPicker('sight')}>
                         {#if loadout?.Gear.Weapon.Sight?.Name != null}
                           {loadout.Gear.Weapon.Sight.Name}
                         {:else}
@@ -5432,7 +5480,7 @@
                   {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Melee'}
                     <div class="form-label">Matrix</div>
                     <div class="control-row">
-                      <button class="slot select-button" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Melee'} on:contextmenu={e => clearSlot(e, "matrix")} on:click={() => openPicker('matrix')}>
+                      <button class="slot select-button" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Melee'} oncontextmenu={e => clearSlot(e, "matrix")} onclick={() => openPicker('matrix')}>
                         {#if loadout?.Gear.Weapon.Matrix?.Name != null}
                           {loadout.Gear.Weapon.Matrix.Name}
                         {:else}
@@ -5449,7 +5497,7 @@
                   {/if}
                   <div class="form-label">Implant</div>
                   <div class="control-row">
-                    <button class="slot select-button" on:contextmenu={e => clearSlot(e, "implant")} on:click={() => openPicker('implant')}>
+                    <button class="slot select-button" oncontextmenu={e => clearSlot(e, "implant")} onclick={() => openPicker('implant')}>
                       {#if loadout?.Gear.Weapon.Implant?.Name != null}
                         {loadout.Gear.Weapon.Implant.Name}
                       {:else}
@@ -5475,7 +5523,7 @@
                     {/if}
                   </div>
                 </div>
-                <button class="reset-btn compact" on:click={resetMarkup}>Reset all markup</button>
+                <button class="reset-btn compact" onclick={resetMarkup}>Reset all markup</button>
               </div>
               <div class="panel-block">
                 <h3 class="panel-title">Enhancers & Options</h3>
@@ -5487,7 +5535,7 @@
                       min="0"
                       max="10"
                       bind:value={loadout.Gear.Weapon.Enhancers.Damage}
-                      on:input={(e) => enforceEnhancerCap('weapon', 'Damage', e.target.value)}
+                      oninput={(e) => enforceEnhancerCap('weapon', 'Damage', e.target.value)}
                     />
                   </div>
                   <div class="enhancer-field">
@@ -5497,7 +5545,7 @@
                       min="0"
                       max="10"
                       bind:value={loadout.Gear.Weapon.Enhancers.Accuracy}
-                      on:input={(e) => enforceEnhancerCap('weapon', 'Accuracy', e.target.value)}
+                      oninput={(e) => enforceEnhancerCap('weapon', 'Accuracy', e.target.value)}
                     />
                   </div>
                   <div class="enhancer-field">
@@ -5507,7 +5555,7 @@
                       min="0"
                       max="10"
                       bind:value={loadout.Gear.Weapon.Enhancers.Range}
-                      on:input={(e) => enforceEnhancerCap('weapon', 'Range', e.target.value)}
+                      oninput={(e) => enforceEnhancerCap('weapon', 'Range', e.target.value)}
                     />
                   </div>
                   <div class="enhancer-field">
@@ -5517,7 +5565,7 @@
                       min="0"
                       max="10"
                       bind:value={loadout.Gear.Weapon.Enhancers.Economy}
-                      on:input={(e) => enforceEnhancerCap('weapon', 'Economy', e.target.value)}
+                      oninput={(e) => enforceEnhancerCap('weapon', 'Economy', e.target.value)}
                     />
                   </div>
                   <div class="enhancer-field">
@@ -5527,7 +5575,7 @@
                       min="0"
                       max="10"
                       bind:value={loadout.Gear.Weapon.Enhancers.SkillMod}
-                      on:input={(e) => enforceEnhancerCap('weapon', 'SkillMod', e.target.value)}
+                      oninput={(e) => enforceEnhancerCap('weapon', 'SkillMod', e.target.value)}
                     />
                   </div>
                 </div>
@@ -5546,40 +5594,40 @@
                       <button
                         class="set-tab"
                         class:active={activeSetIndices.Armor === i}
-                        on:click|stopPropagation={() => handleSetTabClick('Armor', i)}
+                        onclick={stopPropagation(() => handleSetTabClick('Armor', i))}
                       >
                         <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                         {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                         {#if activeSetIndices.Armor === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Armor' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" on:click|stopPropagation>
-                          <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Armor', i)}>Rename</button>
-                          <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Armor', i)}>
+                        <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
+                          <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Armor', i))}>Rename</button>
+                          <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Armor', i))}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
                           </button>
                           <div class="set-tab-menu-divider"></div>
-                          <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Armor', i)}>Delete set</button>
+                          <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Armor', i))}>Delete set</button>
                         </div>
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
+                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; })} title="Add set">+
                     {#if setAddMenuOpen === 'Armor'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', false)}>New empty set</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', true)}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', false))}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', true))}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
+                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; })} title="Add set">+
                     {#if setAddMenuOpen === 'Armor'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', false)}>New empty set</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', true)}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', false))}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Armor', true))}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
@@ -5597,7 +5645,7 @@
                     <div class="armor-grid-header">Plate MU</div>
                     {#each armorSlots as slot}
                       <div class="armor-label">{slot}</div>
-                      <button class="slot select-button" on:contextmenu={e => clearSlot(e, `armor-${slot}`)} on:click={() => openPicker(`armor-${slot}`)}>
+                      <button class="slot select-button" oncontextmenu={e => clearSlot(e, `armor-${slot}`)} onclick={() => openPicker(`armor-${slot}`)}>
                         {#if loadout?.Gear.Armor[slot].Name != null}
                           {loadout.Gear.Armor[slot].Name}
                         {:else}
@@ -5612,7 +5660,7 @@
                       {:else}
                         <span class="placeholder-muted"></span>
                       {/if}
-                      <button class="slot select-button" disabled={loadout?.Gear.Armor[slot].Name == null} on:contextmenu={e => clearSlot(e, `armorplating-${slot}`)} on:click={() => openPicker(`armorplating-${slot}`)}>
+                      <button class="slot select-button" disabled={loadout?.Gear.Armor[slot].Name == null} oncontextmenu={e => clearSlot(e, `armorplating-${slot}`)} onclick={() => openPicker(`armorplating-${slot}`)}>
                         {#if loadout?.Gear.Armor[slot].Name != null}
                           {#if loadout?.Gear.Armor[slot].Plate?.Name != null}
                             {loadout.Gear.Armor[slot].Plate.Name}
@@ -5636,7 +5684,7 @@
                 {:else}
                   <div class="form-grid">
                     <div class="form-label">Armor Set</div>
-                    <button class="slot select-button" on:contextmenu={e => clearSlot(e, "armorset")} on:click={() => openPicker('armorset')}>
+                    <button class="slot select-button" oncontextmenu={e => clearSlot(e, "armorset")} onclick={() => openPicker('armorset')}>
                       {#if loadout?.Gear.Armor.SetName != null}
                         {loadout.Gear.Armor.SetName}
                       {:else}
@@ -5651,7 +5699,7 @@
                       </div>
                     {/if}
                     <div class="form-label">Plate Set</div>
-                    <button class="slot select-button" disabled={loadout?.Gear.Armor.SetName == null} on:contextmenu={e => clearSlot(e, "armorplating")} on:click={() => openPicker('armorplating')}>
+                    <button class="slot select-button" disabled={loadout?.Gear.Armor.SetName == null} oncontextmenu={e => clearSlot(e, "armorplating")} onclick={() => openPicker('armorplating')}>
                       {#if loadout?.Gear.Armor.SetName != null}
                         {#if loadout?.Gear.Armor.PlateName != null}
                           {loadout.Gear.Armor.PlateName}
@@ -5682,7 +5730,7 @@
                     min="0"
                     max="10"
                     bind:value={loadout.Gear.Armor.Enhancers.Defense}
-                    on:input={(e) => enforceEnhancerCap('armor', 'Defense', e.target.value)}
+                    oninput={(e) => enforceEnhancerCap('armor', 'Defense', e.target.value)}
                   />
                 </div>
                 <div class="enhancer-field">
@@ -5692,7 +5740,7 @@
                     min="0"
                     max="10"
                     bind:value={loadout.Gear.Armor.Enhancers.Durability}
-                    on:input={(e) => enforceEnhancerCap('armor', 'Durability', e.target.value)}
+                    oninput={(e) => enforceEnhancerCap('armor', 'Durability', e.target.value)}
                   />
                 </div>
                 </div>
@@ -5713,40 +5761,40 @@
                       <button
                         class="set-tab"
                         class:active={activeSetIndices.Healing === i}
-                        on:click|stopPropagation={() => handleSetTabClick('Healing', i)}
+                        onclick={stopPropagation(() => handleSetTabClick('Healing', i))}
                       >
                         <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                         {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                         {#if activeSetIndices.Healing === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Healing' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" on:click|stopPropagation>
-                          <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Healing', i)}>Rename</button>
-                          <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Healing', i)}>
+                        <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
+                          <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Healing', i))}>Rename</button>
+                          <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Healing', i))}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
                           </button>
                           <div class="set-tab-menu-divider"></div>
-                          <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Healing', i)}>Delete set</button>
+                          <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Healing', i))}>Delete set</button>
                         </div>
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
+                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; })} title="Add set">+
                     {#if setAddMenuOpen === 'Healing'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', false)}>New empty set</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', true)}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', false))}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', true))}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
+                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; })} title="Add set">+
                     {#if setAddMenuOpen === 'Healing'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', false)}>New empty set</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', true)}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', false))}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Healing', true))}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
@@ -5758,7 +5806,7 @@
                   <div class="form-grid">
                     <div class="form-label">Healing Tool / Chip</div>
                     <div class="control-row">
-                      <button class="slot select-button" on:contextmenu={e => clearSlot(e, 'healingtool')} on:click={() => openPicker('healingtool')}>
+                      <button class="slot select-button" oncontextmenu={e => clearSlot(e, 'healingtool')} onclick={() => openPicker('healingtool')}>
                         {#if loadout?.Gear?.Healing?.Name != null}
                           {loadout.Gear.Healing.Name}
                         {:else}
@@ -5825,40 +5873,40 @@
                       <button
                         class="set-tab"
                         class:active={activeSetIndices.Accessories === i}
-                        on:click|stopPropagation={() => handleSetTabClick('Accessories', i)}
+                        onclick={stopPropagation(() => handleSetTabClick('Accessories', i))}
                       >
                         <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
                         {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
                         {#if activeSetIndices.Accessories === i}<span class="set-tab-chevron">&#9662;</span>{/if}
                       </button>
                       {#if setTabMenuOpen?.section === 'Accessories' && setTabMenuOpen?.index === i}
-                        <div class="set-tab-menu" on:click|stopPropagation>
-                          <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Accessories', i)}>Rename</button>
-                          <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Accessories', i)}>
+                        <div class="set-tab-menu" onclick={stopPropagation(bubble('click'))}>
+                          <button class="set-tab-menu-item" onclick={stopPropagation(() => openSetRename('Accessories', i))}>Rename</button>
+                          <button class="set-tab-menu-item" onclick={stopPropagation(() => setDefaultSet('Accessories', i))}>
                             {setEntry.isDefault ? 'Already default' : 'Set as default'}
                           </button>
                           <div class="set-tab-menu-divider"></div>
-                          <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Accessories', i)}>Delete set</button>
+                          <button class="set-tab-menu-item danger" onclick={stopPropagation(() => deleteSet('Accessories', i))}>Delete set</button>
                         </div>
                       {/if}
                     </div>
                   {/each}
-                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
+                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; })} title="Add set">+
                     {#if setAddMenuOpen === 'Accessories'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', false)}>New empty set</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', true)}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', false))}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', true))}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
                 </div>
               {:else}
                 <div class="set-tabs">
-                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
+                  <button class="set-tab-add" onclick={stopPropagation(() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; })} title="Add set">+
                     {#if setAddMenuOpen === 'Accessories'}
                       <div class="set-tab-menu">
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', false)}>New empty set</button>
-                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', true)}>Copy current set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', false))}>New empty set</button>
+                        <button class="set-tab-menu-item" onclick={stopPropagation(() => addNewSet('Accessories', true))}>Copy current set</button>
                       </div>
                     {/if}
                   </button>
@@ -5870,7 +5918,7 @@
                   <div class="accessory-grid rings-pet-grid">
                     <div class="accessory-item">
                       <div class="form-label">Left Ring</div>
-                      <button class="slot select-button" on:contextmenu={e => clearSlot(e, 'ring-left')} on:click={() => openPicker('ring-left')}>
+                      <button class="slot select-button" oncontextmenu={e => clearSlot(e, 'ring-left')} onclick={() => openPicker('ring-left')}>
                         {#if leftRing?.Name}
                           {leftRing.Name}
                         {:else}
@@ -5880,7 +5928,7 @@
                     </div>
                     <div class="accessory-item">
                       <div class="form-label">Right Ring</div>
-                      <button class="slot select-button" on:contextmenu={e => clearSlot(e, 'ring-right')} on:click={() => openPicker('ring-right')}>
+                      <button class="slot select-button" oncontextmenu={e => clearSlot(e, 'ring-right')} onclick={() => openPicker('ring-right')}>
                         {#if rightRing?.Name}
                           {rightRing.Name}
                         {:else}
@@ -5893,8 +5941,8 @@
                       <button
                         class="slot select-button"
                         class:pet-active={!!loadout?.Gear?.Pet?.Name}
-                        on:contextmenu={e => clearSlot(e, 'pet')}
-                        on:click={() => openPicker('pet')}
+                        oncontextmenu={e => clearSlot(e, 'pet')}
+                        onclick={() => openPicker('pet')}
                       >
                         {#if loadout?.Gear?.Pet?.Name}
                           {loadout.Gear.Pet.Name}
@@ -5922,7 +5970,7 @@
                             class="pet-effect-card"
                             class:active={loadout?.Gear?.Pet?.Effect === effectKey || loadout?.Gear?.Pet?.Effect === effectName}
                             disabled={!loadout?.Gear?.Pet?.Name}
-                            on:click={() => togglePetEffect(effectKey)}
+                            onclick={() => togglePetEffect(effectKey)}
                           >
                             <div class="pet-effect-name">{effectName}</div>
                             <div class="pet-effect-meta">
@@ -5948,7 +5996,7 @@
                 <div class="accessory-section">
                   <div class="accessory-section-header">
                     <h3 class="panel-title">Clothing</h3>
-                    <button class="add-accessory" on:click={() => openPicker('clothing')}>Add Clothing</button>
+                    <button class="add-accessory" onclick={() => openPicker('clothing')}>Add Clothing</button>
                   </div>
                   <div class="clothing-hint">Slots are unique. Picking a piece for an occupied slot replaces it.</div>
                   {#if clothingReplaceNotice}
@@ -5968,7 +6016,7 @@
                               <span class="clothing-effects">{getClothingEffectLabel(item)}</span>
                             </div>
                           </div>
-                          <button class="clothing-remove" on:click={() => removeClothingItem(entry.Name, entry.Slot)}>Remove</button>
+                          <button class="clothing-remove" onclick={() => removeClothingItem(entry.Name, entry.Slot)}>Remove</button>
                         </div>
                       {/each}
                     </div>
@@ -5977,7 +6025,7 @@
                 <div class="accessory-section">
                   <div class="accessory-section-header">
                     <h3 class="panel-title">Consumables</h3>
-                    <button class="add-accessory" on:click={() => openPicker('consumable')}>Add Consumable</button>
+                    <button class="add-accessory" onclick={() => openPicker('consumable')}>Add Consumable</button>
                   </div>
                   <div class="clothing-hint">Only the strongest consumable effect per type is applied.</div>
                   {#if selectedConsumables.length === 0}
@@ -5995,7 +6043,7 @@
                               <span class="clothing-effects">{formatEffectCount(getConsumableEffectCount(item))}</span>
                             </div>
                           </div>
-                          <button class="clothing-remove" on:click={() => removeConsumableItem(entryName)}>Remove</button>
+                          <button class="clothing-remove" onclick={() => removeConsumableItem(entryName)}>Remove</button>
                         </div>
                       {/each}
                     </div>
@@ -6032,8 +6080,8 @@
 </WikiPage>
 
 {#if showPickerDialog && pickerConfig}
-  <div class="dialog-backdrop picker-backdrop" on:click={closePicker} on:keydown={(e) => e.key === 'Escape' && closePicker()}>
-    <div class="dialog picker-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="picker-dialog-title">
+  <div class="dialog-backdrop picker-backdrop" onclick={closePicker} onkeydown={(e) => e.key === 'Escape' && closePicker()}>
+    <div class="dialog picker-dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="picker-dialog-title">
       <div class="dialog-header">
         <h3 id="picker-dialog-title">{pickerConfig.title}</h3>
         {#if activePicker === 'amplifier'}
@@ -6041,11 +6089,11 @@
             <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} />
             <span>Hide overcapped</span>
           </label>
-          <button class="picker-header-toggle" on:click={toggleOverampMode} title="Toggle between % overamp and damage delta">
+          <button class="picker-header-toggle" onclick={toggleOverampMode} title="Toggle between % overamp and damage delta">
             {overampMode === 'percent' ? '%' : 'Δ'}
           </button>
         {/if}
-        <button class="close-btn" on:click={closePicker} aria-label="Close dialog">
+        <button class="close-btn" onclick={closePicker} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -6111,8 +6159,8 @@
       </div>
       {#if showPickerPreview && pickerPreviewRow}
         <div class="dialog-footer">
-          <button class="dialog-btn secondary" on:click={returnToPickerList}>Back</button>
-          <button class="dialog-btn" on:click={confirmPickerSelection}>Select</button>
+          <button class="dialog-btn secondary" onclick={returnToPickerList}>Back</button>
+          <button class="dialog-btn" onclick={confirmPickerSelection}>Select</button>
         </div>
       {/if}
     </div>
@@ -6219,11 +6267,11 @@
 </style>
 
 {#if showImportSourceDialog}
-  <div class="dialog-backdrop" on:click={() => showImportSourceDialog = false} on:keydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
-    <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="import-source-title">
+  <div class="dialog-backdrop" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
+    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="import-source-title">
       <div class="dialog-header">
         <h3 id="import-source-title">Import Loadout</h3>
-        <button class="close-btn" on:click={() => showImportSourceDialog = false} aria-label="Close dialog">
+        <button class="close-btn" onclick={() => showImportSourceDialog = false} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -6237,13 +6285,13 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button class="dialog-btn secondary" on:click={() => showImportSourceDialog = false}>Close</button>
+        <button class="dialog-btn secondary" onclick={() => showImportSourceDialog = false}>Close</button>
         {#if isLoggedIn}
-          <button class="dialog-btn secondary" on:click={handleImportLocal} disabled={localLoadouts.length === 0}>
+          <button class="dialog-btn secondary" onclick={handleImportLocal} disabled={localLoadouts.length === 0}>
             Import local ({localLoadouts.length})
           </button>
         {/if}
-        <button class="dialog-btn" on:click={handleImportFromFile}>Import from file</button>
+        <button class="dialog-btn" onclick={handleImportFromFile}>Import from file</button>
       </div>
     </div>
   </div>
@@ -6252,11 +6300,11 @@
 
 
 {#if showShareDialog}
-  <div class="dialog-backdrop" on:click={() => showShareDialog = false} on:keydown={(e) => e.key === 'Escape' && (showShareDialog = false)}>
-    <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
+  <div class="dialog-backdrop" onclick={() => showShareDialog = false} onkeydown={(e) => e.key === 'Escape' && (showShareDialog = false)}>
+    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
       <div class="dialog-header">
         <h3 id="share-dialog-title">Share Loadout</h3>
-        <button class="close-btn" on:click={() => showShareDialog = false} aria-label="Close dialog">
+        <button class="close-btn" onclick={() => showShareDialog = false} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -6265,7 +6313,7 @@
       </div>
       <div class="dialog-body">
         <label class="toggle-row">
-          <input type="checkbox" bind:checked={sharePublic} on:change={handleShareToggle} />
+          <input type="checkbox" bind:checked={sharePublic} onchange={handleShareToggle} />
           <span>Public link</span>
         </label>
         {#if sharePublic}
@@ -6276,7 +6324,7 @@
               class="btn-copy"
               class:copied={shareCopyStatus === 'Copied'}
               class:error={shareCopyStatus === 'Copy failed'}
-              on:click={handleCopyShareLink}
+              onclick={handleCopyShareLink}
               disabled={!shareLink}
             >{shareCopyStatus || 'Copy'}</button>
           </div>
@@ -6285,19 +6333,19 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button class="dialog-btn secondary" on:click={() => showShareDialog = false}>Cancel</button>
-        <button class="dialog-btn" on:click={applyShareSettings} disabled={!loadout}>Ok</button>
+        <button class="dialog-btn secondary" onclick={() => showShareDialog = false}>Cancel</button>
+        <button class="dialog-btn" onclick={applyShareSettings} disabled={!loadout}>Ok</button>
       </div>
     </div>
   </div>
 {/if}
 
 {#if showImportDialog}
-  <div class="dialog-backdrop" on:click={() => showImportDialog = false} on:keydown={(e) => e.key === 'Escape' && (showImportDialog = false)}>
-    <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+  <div class="dialog-backdrop" onclick={() => showImportDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)}>
+    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
       <div class="dialog-header">
         <h3 id="import-dialog-title">Import Local Loadouts</h3>
-        <button class="close-btn" on:click={() => showImportDialog = false} aria-label="Close dialog">
+        <button class="close-btn" onclick={() => showImportDialog = false} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -6316,9 +6364,9 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button class="dialog-btn secondary" on:click={() => showImportDialog = false} disabled={importInProgress}>Close</button>
+        <button class="dialog-btn secondary" onclick={() => showImportDialog = false} disabled={importInProgress}>Close</button>
         {#if !importSuccess}
-          <button class="dialog-btn" on:click={importLocalLoadouts} disabled={importInProgress || localLoadouts.length === 0}>
+          <button class="dialog-btn" onclick={importLocalLoadouts} disabled={importInProgress || localLoadouts.length === 0}>
             {importInProgress ? 'Importing...' : 'Import'}
           </button>
         {/if}
@@ -6328,8 +6376,8 @@
 {/if}
 
 {#if showDeleteDialog}
-<div class="dialog-backdrop" on:click={cancelDelete} on:keydown={(e) => e.key === 'Escape' && cancelDelete()}>
-  <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+<div class="dialog-backdrop" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
+  <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
     <div class="dialog-header">
       <h3 id="delete-dialog-title">Delete Loadout</h3>
     </div>
@@ -6337,25 +6385,25 @@
       <p>Are you sure you want to delete this loadout? This action cannot be undone.</p>
     </div>
     <div class="dialog-footer">
-      <button class="dialog-btn secondary" on:click={cancelDelete}>Cancel</button>
-      <button class="dialog-btn danger" on:click={deleteActiveLoadout}>Delete</button>
+      <button class="dialog-btn secondary" onclick={cancelDelete}>Cancel</button>
+      <button class="dialog-btn danger" onclick={deleteActiveLoadout}>Delete</button>
     </div>
   </div>
 </div>
 {/if}
 
 {#if setRenameDialog}
-<div class="dialog-backdrop" on:click={() => setRenameDialog = null} on:keydown={(e) => e.key === 'Escape' && (setRenameDialog = null)}>
-  <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true">
+<div class="dialog-backdrop" onclick={() => setRenameDialog = null} onkeydown={(e) => e.key === 'Escape' && (setRenameDialog = null)}>
+  <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
     <div class="dialog-header">
       <h3>Rename Set</h3>
     </div>
     <div class="dialog-body">
-      <input type="text" bind:value={setRenameDialog.name} maxlength="120" on:keydown={(e) => e.key === 'Enter' && applySetRename()} style="width:100%; padding:8px; background:var(--bg-color, var(--secondary-color)); color:var(--text-color); border:1px solid var(--border-color, #555); border-radius:6px; box-sizing:border-box;" />
+      <input type="text" bind:value={setRenameDialog.name} maxlength="120" onkeydown={(e) => e.key === 'Enter' && applySetRename()} style="width:100%; padding:8px; background:var(--bg-color, var(--secondary-color)); color:var(--text-color); border:1px solid var(--border-color, #555); border-radius:6px; box-sizing:border-box;" />
     </div>
     <div class="dialog-footer">
-      <button class="dialog-btn secondary" on:click={() => setRenameDialog = null}>Cancel</button>
-      <button class="dialog-btn" on:click={applySetRename}>Rename</button>
+      <button class="dialog-btn secondary" onclick={() => setRenameDialog = null}>Cancel</button>
+      <button class="dialog-btn" onclick={applySetRename}>Rename</button>
     </div>
   </div>
 </div>

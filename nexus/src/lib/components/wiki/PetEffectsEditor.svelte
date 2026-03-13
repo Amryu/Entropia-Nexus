@@ -10,38 +10,48 @@
   - Properties.Unlock: { Level, CostPED, CostEssence, CostRareEssence, Criteria, CriteriaValue }
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from './SearchInput.svelte';
   import CreateEffectDialog from './CreateEffectDialog.svelte';
 
-  /** @type {Array} Effects array to display/edit */
-  export let effects = [];
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldName = 'Effects';
+  
 
-  /** @type {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}}] */
-  export let availableEffects = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [effects]
+   * @property {string} [fieldName]
+   * @property {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}} [availableEffects]
+   */
 
-  let showCreateDialog = false;
-  let localAvailableEffects = [];
-  $: localAvailableEffects = [...(availableEffects || [])];
+  /** @type {Props} */
+  let { effects = [], fieldName = 'Effects', availableEffects = [] } = $props();
+
+  let showCreateDialog = $state(false);
+  let localAvailableEffects = $state([]);
+  run(() => {
+    localAvailableEffects = [...(availableEffects || [])];
+  });
 
   // Sort effects by unlock level for display
-  $: sortedEffects = [...(effects || [])].sort((a, b) =>
+  let sortedEffects = $derived([...(effects || [])].sort((a, b) =>
     (a.Properties?.Unlock?.Level || 0) - (b.Properties?.Unlock?.Level || 0)
-  );
+  ));
 
   // Available effect options with sublabel for SearchInput
-  $: effectOptions = localAvailableEffects.map(e => ({
+  let effectOptions = $derived(localAvailableEffects.map(e => ({
     label: e.Name,
     value: e.Name,
     sublabel: e.CanonicalName || null
-  }));
+  })));
 
   // Show section if has effects or in edit mode
-  $: shouldShow = $editMode || (effects?.length > 0);
+  let shouldShow = $derived($editMode || (effects?.length > 0));
 
   // Get unit for an effect name from availableEffects list
   function getEffectUnit(effectName) {
@@ -135,7 +145,7 @@
   }
 
   // Expanded state for each effect's unlock section
-  let expandedUnlock = {};
+  let expandedUnlock = $state({});
 
   function toggleUnlock(index) {
     expandedUnlock[index] = !expandedUnlock[index];
@@ -159,7 +169,7 @@
                   on:change={(e) => updateEffect(i, 'Name', e.detail.value)}
                 />
               </div>
-              <button class="btn-remove" on:click={() => removeEffect(i)} title="Remove effect">
+              <button class="btn-remove" onclick={() => removeEffect(i)} title="Remove effect">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -175,7 +185,7 @@
                     type="number"
                     value={effect.Properties?.Strength ?? 0}
                     step="0.1"
-                    on:change={(e) => updateEffect(i, 'Properties.Strength', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updateEffect(i, 'Properties.Strength', parseFloat(e.target.value) || 0)}
                   />
                   <span class="unit">{getEffectUnit(effect.Name)}</span>
                 </div>
@@ -188,7 +198,7 @@
                     value={effect.Properties?.NutrioConsumptionPerHour ?? 0}
                     step="1"
                     min="0"
-                    on:change={(e) => updateEffect(i, 'Properties.NutrioConsumptionPerHour', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updateEffect(i, 'Properties.NutrioConsumptionPerHour', parseFloat(e.target.value) || 0)}
                   />
                   <span class="unit">/h</span>
                 </div>
@@ -197,7 +207,7 @@
 
             <!-- Unlock conditions -->
             <div class="unlock-section">
-              <button class="unlock-toggle" on:click={() => toggleUnlock(i)}>
+              <button class="unlock-toggle" onclick={() => toggleUnlock(i)}>
                 <svg class="chevron" class:expanded={expandedUnlock[i]} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
@@ -219,7 +229,7 @@
                         type="number"
                         value={effect.Properties?.Unlock?.Level ?? 1}
                         min="1"
-                        on:change={(e) => updateEffect(i, 'Properties.Unlock.Level', parseInt(e.target.value) || 1)}
+                        onchange={(e) => updateEffect(i, 'Properties.Unlock.Level', parseInt(e.target.value) || 1)}
                       />
                     </div>
                     <div class="field-group small">
@@ -229,7 +239,7 @@
                         value={effect.Properties?.Unlock?.CostPED ?? 0}
                         min="0"
                         step="0.01"
-                        on:change={(e) => updateEffect(i, 'Properties.Unlock.CostPED', parseFloat(e.target.value) || 0)}
+                        onchange={(e) => updateEffect(i, 'Properties.Unlock.CostPED', parseFloat(e.target.value) || 0)}
                       />
                     </div>
                   </div>
@@ -240,7 +250,7 @@
                         type="number"
                         value={effect.Properties?.Unlock?.CostEssence ?? 0}
                         min="0"
-                        on:change={(e) => updateEffect(i, 'Properties.Unlock.CostEssence', parseInt(e.target.value) || 0)}
+                        onchange={(e) => updateEffect(i, 'Properties.Unlock.CostEssence', parseInt(e.target.value) || 0)}
                       />
                     </div>
                     <div class="field-group small">
@@ -249,7 +259,7 @@
                         type="number"
                         value={effect.Properties?.Unlock?.CostRareEssence ?? 0}
                         min="0"
-                        on:change={(e) => updateEffect(i, 'Properties.Unlock.CostRareEssence', parseInt(e.target.value) || 0)}
+                        onchange={(e) => updateEffect(i, 'Properties.Unlock.CostRareEssence', parseInt(e.target.value) || 0)}
                       />
                     </div>
                   </div>
@@ -260,7 +270,7 @@
                         type="text"
                         value={effect.Properties?.Unlock?.Criteria || ''}
                         placeholder="e.g., Hunt creatures"
-                        on:change={(e) => updateEffect(i, 'Properties.Unlock.Criteria', e.target.value || null)}
+                        onchange={(e) => updateEffect(i, 'Properties.Unlock.Criteria', e.target.value || null)}
                       />
                     </div>
                     <div class="field-group small">
@@ -270,7 +280,7 @@
                         value={effect.Properties?.Unlock?.CriteriaValue ?? ''}
                         min="0"
                         placeholder="—"
-                        on:change={(e) => updateEffect(i, 'Properties.Unlock.CriteriaValue', e.target.value ? parseInt(e.target.value) : null)}
+                        onchange={(e) => updateEffect(i, 'Properties.Unlock.CriteriaValue', e.target.value ? parseInt(e.target.value) : null)}
                       />
                     </div>
                   </div>
@@ -281,14 +291,14 @@
         {/each}
 
         <div class="btn-row">
-          <button class="btn-add" on:click={addEffect}>
+          <button class="btn-add" onclick={addEffect}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Add Effect
           </button>
-          <button class="btn-add btn-create" on:click={() => showCreateDialog = true}>
+          <button class="btn-add btn-create" onclick={() => showCreateDialog = true}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <polyline points="14 2 14 8 20 8" />

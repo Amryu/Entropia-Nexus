@@ -4,36 +4,46 @@
   Managers are added by their verified Entropia name.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util';
 
   const dispatch = createEventDispatcher();
 
-  /** Shop name/identifier for API calls */
-  export let shopName = '';
+  
 
-  /** Whether the dialog is open */
-  export let open = false;
+  
 
-  /** Current managers list */
-  export let managers = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [shopName] - Shop name/identifier for API calls
+   * @property {boolean} [open] - Whether the dialog is open
+   * @property {any} [managers] - Current managers list
+   */
+
+  /** @type {Props} */
+  let { shopName = '', open = $bindable(false), managers = [] } = $props();
 
   // Local state
-  let localManagers = [];
-  let newManagerName = '';
+  let localManagers = $state([]);
+  let newManagerName = $state('');
   let loading = false;
-  let saving = false;
-  let error = null;
-  let success = null;
+  let saving = $state(false);
+  let error = $state(null);
+  let success = $state(null);
 
   // Sync with prop
-  $: if (open) {
-    localManagers = [...(managers || []).map(m => ({ Name: m.Name || m.name || m }))];
-    error = null;
-    success = null;
-    newManagerName = '';
-  }
+  run(() => {
+    if (open) {
+      localManagers = [...(managers || []).map(m => ({ Name: m.Name || m.name || m }))];
+      error = null;
+      success = null;
+      newManagerName = '';
+    }
+  });
 
   function close() {
     open = false;
@@ -111,11 +121,11 @@
 </script>
 
 {#if open}
-  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="managers-dialog-title">
       <div class="dialog-header">
         <h3 id="managers-dialog-title">Manage Shop Managers</h3>
-        <button class="close-btn" on:click={close} aria-label="Close dialog">
+        <button class="close-btn" onclick={close} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -133,13 +143,13 @@
           <input
             type="text"
             bind:value={newManagerName}
-            on:input={handleInput}
-            on:keydown={handleKeydown}
+            oninput={handleInput}
+            onkeydown={handleKeydown}
             placeholder="Enter Entropia name..."
             class="manager-input"
             disabled={saving}
           />
-          <button class="add-btn" on:click={addManager} disabled={!newManagerName.trim() || saving}>
+          <button class="add-btn" onclick={addManager} disabled={!newManagerName.trim() || saving}>
             Add
           </button>
         </div>
@@ -154,7 +164,7 @@
                 <span class="manager-name">{manager.Name}</span>
                 <button
                   class="remove-btn"
-                  on:click={() => removeManager(index)}
+                  onclick={() => removeManager(index)}
                   disabled={saving}
                   aria-label="Remove {manager.Name}"
                 >
@@ -178,10 +188,10 @@
       </div>
 
       <div class="dialog-footer">
-        <button class="cancel-btn" on:click={close} disabled={saving}>
+        <button class="cancel-btn" onclick={close} disabled={saving}>
           Cancel
         </button>
-        <button class="save-btn" on:click={save} disabled={saving}>
+        <button class="save-btn" onclick={save} disabled={saving}>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>

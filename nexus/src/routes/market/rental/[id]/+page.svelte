@@ -14,23 +14,14 @@
   import { addToast } from '$lib/stores/toasts';
   import { sanitizeMarketHtml, containsHtml } from '$lib/sanitize.js';
 
-  export let data;
+  let { data } = $props();
 
-  $: offer = data.offer;
-  $: availability = data.availability || { blockedDates: [], bookedDates: [] };
-  $: user = data.session?.user;
-  $: isOwner = user && offer && String(user.id) === String(offer.user_id);
-  $: isVerified = !!user?.verified;
-  $: canRequest = isVerified && !isOwner && offer?.status === 'available';
 
-  $: pricingPreview = offer ? generatePricingPreview(Number(offer.price_per_day), offer.discounts || []) : [];
 
-  // Build unavailable dates set for the request dialog
-  $: unavailableDates = buildUnavailableDates(availability);
 
-  let showRequestDialog = false;
-  let selectedStart = null;
-  let selectedEnd = null;
+  let showRequestDialog = $state(false);
+  let selectedStart = $state(null);
+  let selectedEnd = $state(null);
 
   function buildUnavailableDates(avail) {
     const set = new Set();
@@ -58,6 +49,15 @@
     // Reload page to reflect updated availability
     goto(`/market/rental/${offer.id}`, { invalidateAll: true });
   }
+  let offer = $derived(data.offer);
+  let availability = $derived(data.availability || { blockedDates: [], bookedDates: [] });
+  let user = $derived(data.session?.user);
+  let isOwner = $derived(user && offer && String(user.id) === String(offer.user_id));
+  let isVerified = $derived(!!user?.verified);
+  let canRequest = $derived(isVerified && !isOwner && offer?.status === 'available');
+  let pricingPreview = $derived(offer ? generatePricingPreview(Number(offer.price_per_day), offer.discounts || []) : []);
+  // Build unavailable dates set for the request dialog
+  let unavailableDates = $derived(buildUnavailableDates(availability));
 </script>
 
 <svelte:head>
@@ -74,7 +74,7 @@
       <span>{offer?.title || 'Offer'}</span>
     </div>
 
-    <button class="back-btn" on:click={() => goto('/market/rental')}>
+    <button class="back-btn" onclick={() => goto('/market/rental')}>
       &larr; Back to Listings
     </button>
 
@@ -100,7 +100,7 @@
               <a href="/market/rental/{offer.id}/edit" class="btn-secondary">Edit Offer</a>
             {/if}
             {#if canRequest}
-              <button class="btn-primary" on:click={() => showRequestDialog = true}>
+              <button class="btn-primary" onclick={() => showRequestDialog = true}>
                 Request Rental
               </button>
             {/if}

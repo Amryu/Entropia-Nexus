@@ -5,10 +5,12 @@
 
   const dispatch = createEventDispatcher();
 
-  export let items = [];
-  export let columns = [];
-  export let columnWidths = [];
-  export let columnFunctions = [];
+  let {
+    items = [],
+    columns = [],
+    columnWidths = [],
+    columnFunctions = []
+  } = $props();
 </script>
 
 <div class="table-wrapper">

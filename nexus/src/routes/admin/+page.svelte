@@ -3,9 +3,9 @@
   import { onMount } from 'svelte';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  let stats = null;
-  let isLoading = true;
-  let error = null;
+  let stats = $state(null);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   onMount(async () => {
     try {

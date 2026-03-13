@@ -1,25 +1,33 @@
 <script>
+  import { preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
 
-  export let offer = null; // null for create, object for edit
-  export let saving = false;
-  export let serviceMode = 'on_demand'; // 'on_demand', 'scheduled', or 'both'
+  /**
+   * @typedef {Object} Props
+   * @property {any} [offer] - null for create, object for edit
+   * @property {boolean} [saving]
+   * @property {string} [serviceMode] - 'on_demand', 'scheduled', or 'both'
+   */
+
+  /** @type {Props} */
+  let { offer = null, saving = false, serviceMode = 'on_demand' } = $props();
 
   const dispatch = createEventDispatcher();
 
   // Form state
-  let offerType = offer?.uses_count ? 'uses' : (offer?.validity_days ? 'duration' : 'uses');
-  let usesCount = offer?.uses_count || 1;
-  let validityDays = offer?.validity_days || 30;
-  let price = offer?.price ? parseFloat(offer.price).toFixed(2) : '';
-  let waivesPickupFee = offer?.waives_pickup_fee || false;
-  let description = offer?.description || '';
+  let offerType = $state(offer?.uses_count ? 'uses' : (offer?.validity_days ? 'duration' : 'uses'));
+  let usesCount = $state(offer?.uses_count || 1);
+  let validityDays = $state(offer?.validity_days || 30);
+  let price = $state(offer?.price ? parseFloat(offer.price).toFixed(2) : '');
+  let waivesPickupFee = $state(offer?.waives_pickup_fee || false);
+  let description = $state(offer?.description || '');
 
   // Auto-generate name based on type and amount
-  $: name = offerType === 'uses'
+  let name = $derived(offerType === 'uses'
     ? `${usesCount}-Trip Pass`
-    : `${validityDays}-Day Pass`;
+    : `${validityDays}-Day Pass`);
 
   function handleSubmit() {
 
@@ -58,7 +66,7 @@
 <div class="ticket-offer-editor">
   <h3>{offer ? 'Edit Ticket Offer' : 'Create Ticket Offer'}</h3>
 
-  <form on:submit|preventDefault={handleSubmit}>
+  <form onsubmit={preventDefault(handleSubmit)}>
     <div class="form-group">
       <label>Ticket Name</label>
       <div class="auto-name">{name}</div>
@@ -115,12 +123,12 @@
 
     <div class="form-actions">
       {#if offer}
-        <button type="button" class="delete-btn" on:click={handleDelete} disabled={saving}>
+        <button type="button" class="delete-btn" onclick={handleDelete} disabled={saving}>
           Delete
         </button>
       {/if}
       <div class="right-actions">
-        <button type="button" class="cancel-btn" on:click={handleCancel} disabled={saving}>
+        <button type="button" class="cancel-btn" onclick={handleCancel} disabled={saving}>
           Cancel
         </button>
         <button type="submit" class="save-btn" disabled={saving}>

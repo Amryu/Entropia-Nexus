@@ -5,15 +5,15 @@
   import { apiCall, getTypeName } from '$lib/util.js';
   import { clickable } from '$lib/actions/clickable.js';
 
-  let searchQuery = '';
-  let selectedType = '';
-  let results = [];
-  let entityTypes = [];
-  let isLoading = false;
+  let searchQuery = $state('');
+  let selectedType = $state('');
+  let results = $state([]);
+  let entityTypes = $state([]);
+  let isLoading = $state(false);
   let isLoadingTypes = true;
-  let error = null;
-  let total = 0;
-  let offset = 0;
+  let error = $state(null);
+  let total = $state(0);
+  let offset = $state(0);
   const limit = 50;
 
   onMount(async () => {
@@ -394,15 +394,15 @@
       class="search-input"
       placeholder="Search by entity name..."
       bind:value={searchQuery}
-      on:keydown={handleKeydown}
+      onkeydown={handleKeydown}
     />
-    <select class="type-select" bind:value={selectedType} on:change={handleTypeChange}>
+    <select class="type-select" bind:value={selectedType} onchange={handleTypeChange}>
       <option value="">All Types</option>
       {#each entityTypes as type}
         <option value={type.entityType}>{getTypeName(type.entityType)} ({type.count})</option>
       {/each}
     </select>
-    <button class="search-btn" on:click={handleSearch} disabled={isLoading}>
+    <button class="search-btn" onclick={handleSearch} disabled={isLoading}>
       {isLoading ? 'Searching...' : 'Search'}
     </button>
   </div>
@@ -420,7 +420,7 @@
 
     <div class="results-list">
       {#each results as item}
-        <div class="result-item" use:clickable on:click={() => viewEntity(item)}>
+        <div class="result-item" use:clickable onclick={() => viewEntity(item)}>
           <div class="result-main">
             <div class="result-name">{item.entityName || 'Unnamed'}</div>
             <div class="result-meta">
@@ -442,10 +442,10 @@
 
     {#if total > limit}
       <div class="pagination">
-        <button on:click={loadPrevious} disabled={offset === 0 || isLoading}>
+        <button onclick={loadPrevious} disabled={offset === 0 || isLoading}>
           Previous
         </button>
-        <button on:click={loadMore} disabled={offset + results.length >= total || isLoading}>
+        <button onclick={loadMore} disabled={offset + results.length >= total || isLoading}>
           Next
         </button>
       </div>

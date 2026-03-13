@@ -1,4 +1,7 @@
 <script>
+  import { createBubbler, stopPropagation, self } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   //@ts-nocheck
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -21,48 +24,54 @@
   import VirtualGrid from './VirtualGrid.svelte';
   import ContainerTreeView from './ContainerTreeView.svelte';
 
-  export let user = null;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [user]
+   */
+
+  /** @type {Props} */
+  let { user = null } = $props();
 
   // --- Data state ---
-  let inventoryItems = [];
-  let allSlimItems = [];       // Flat array of all exchange slim items
-  let itemLookup = new Map();  // item_id → slim item
-  let userMarkups = new Map(); // item_id → markup value
+  let inventoryItems = $state([]);
+  let allSlimItems = $state([]);       // Flat array of all exchange slim items
+  let itemLookup = $state(new Map());  // item_id → slim item
+  let userMarkups = $state(new Map()); // item_id → markup value
   let importHistory = [];
-  let userSellOrders = new Map(); // item_id → [{ id, planet, computed_state }]
-  let containerNames = new Map(); // container_path → custom_name
-  let rawInGameSnapshots = [];   // Raw in-game price snapshots for period switching
-  let loading = true;
-  let error = null;
+  let userSellOrders = $state(new Map()); // item_id → [{ id, planet, computed_state }]
+  let containerNames = $state(new Map()); // container_path → custom_name
+  let rawInGameSnapshots = $state([]);   // Raw in-game price snapshots for period switching
+  let loading = $state(true);
+  let error = $state(null);
 
   // --- View state ---
-  let viewMode = 'list';         // 'list' | 'grid' | 'tree'
-  let selectedPlanet = 'all';
-  let selectedCategory = 'all';
-  let searchTerm = '';
-  let markupFilter = 'all';     // 'all' | 'has-markup' | 'no-markup'
-  let markupSource = 'ingame';  // 'ingame' | 'exchange'
-  let ingamePeriod = '1d';      // '1d' | '7d' | '30d' | '365d' | '3650d'
-  let mobileSidebarOpen = false;
+  let viewMode = $state('list');         // 'list' | 'grid' | 'tree'
+  let selectedPlanet = $state('all');
+  let selectedCategory = $state('all');
+  let searchTerm = $state('');
+  let markupFilter = $state('all');     // 'all' | 'has-markup' | 'no-markup'
+  let markupSource = $state('ingame');  // 'ingame' | 'exchange'
+  let ingamePeriod = $state('1d');      // '1d' | '7d' | '30d' | '365d' | '3650d'
+  let mobileSidebarOpen = $state(false);
 
   // --- Dialogs ---
-  let showImportDialog = false;
-  let showItemDialog = false;
-  let editingItem = null;
-  let showDetailDialog = false;
-  let detailItem = null;
-  let showHistoryPanel = false;
+  let showImportDialog = $state(false);
+  let showItemDialog = $state(false);
+  let editingItem = $state(null);
+  let showDetailDialog = $state(false);
+  let detailItem = $state(null);
+  let showHistoryPanel = $state(false);
 
   // --- Bulk selection ---
-  let selectedItems = new Set();
-  let showBulkMarkupDialog = false;
-  let bulkMarkupValue = '';
+  let selectedItems = $state(new Set());
+  let showBulkMarkupDialog = $state(false);
+  let bulkMarkupValue = $state('');
 
   // --- Delta state ---
-  let showDeltaPanel = false;
-  let latestImport = null;
-  let latestDeltas = [];
-  let loadingDeltas = false;
+  let showDeltaPanel = $state(false);
+  let latestImport = $state(null);
+  let latestDeltas = $state([]);
+  let loadingDeltas = $state(false);
 
   // --- Constants ---
   const ALL_CATEGORIES = [
@@ -202,7 +211,7 @@
   }
 
   // --- In-game price lookup (rebuilt when period changes) ---
-  $: inGameLookup = buildInGameLookup(rawInGameSnapshots, ingamePeriod);
+  let inGameLookup = $derived(buildInGameLookup(rawInGameSnapshots, ingamePeriod));
 
   // --- Markup source handlers ---
   function setMarkupSource(src) {
@@ -215,7 +224,7 @@
   }
 
   // --- Enriched items ---
-  $: enrichedItems = inventoryItems.map(item => {
+  let enrichedItems = $derived(inventoryItems.map(item => {
     const slim = itemLookup.get(item.item_id);
     const type = slim?.t || null;
     const category = getTopCategory(type);
@@ -289,10 +298,10 @@
       _isAbsolute: slim ? isAbsoluteMarkup(slim) : true,
       _sellOrders: matchingOrders,
     };
-  });
+  }));
 
   // --- Filtering ---
-  $: filteredItems = enrichedItems.filter(item => {
+  let filteredItems = $derived(enrichedItems.filter(item => {
     // Planet filter
     if (selectedPlanet !== 'all' && item.container !== selectedPlanet) return false;
 
@@ -310,20 +319,20 @@
     if (markupFilter === 'no-markup' && item._markup != null) return false;
 
     return true;
-  });
+  }));
 
   // --- Planet counts ---
-  $: planetCounts = (() => {
+  let planetCounts = $derived((() => {
     const counts = new Map();
     counts.set('all', enrichedItems.length);
     for (const item of enrichedItems) {
       counts.set(item.container, (counts.get(item.container) || 0) + 1);
     }
     return counts;
-  })();
+  })());
 
   // --- Available planets from inventory ---
-  $: availablePlanets = (() => {
+  let availablePlanets = $derived((() => {
     const planets = new Set();
     for (const item of enrichedItems) {
       planets.add(item.container);
@@ -334,10 +343,10 @@
       if (b === 'Carried') return -1;
       return a.localeCompare(b);
     });
-  })();
+  })());
 
   // --- Category counts (from filtered by planet) ---
-  $: categoryCounts = (() => {
+  let categoryCounts = $derived((() => {
     const planetFiltered = selectedPlanet === 'all'
       ? enrichedItems
       : enrichedItems.filter(i => i.container === selectedPlanet);
@@ -348,20 +357,20 @@
       counts.set(cat, (counts.get(cat) || 0) + 1);
     }
     return counts;
-  })();
+  })());
 
   // --- Summary values ---
-  $: summaryTT = filteredItems.reduce((sum, item) => sum + (item._ttValue || 0), 0);
-  $: summaryTotal = filteredItems.reduce((sum, item) => sum + (item._totalValue || 0), 0);
-  $: summaryUnknown = filteredItems.filter(item => !item._slim).reduce((sum, item) => sum + (item._ttValue || 0), 0);
-  $: summaryCount = filteredItems.length;
-  $: summaryLabel = (() => {
+  let summaryTT = $derived(filteredItems.reduce((sum, item) => sum + (item._ttValue || 0), 0));
+  let summaryTotal = $derived(filteredItems.reduce((sum, item) => sum + (item._totalValue || 0), 0));
+  let summaryUnknown = $derived(filteredItems.filter(item => !item._slim).reduce((sum, item) => sum + (item._ttValue || 0), 0));
+  let summaryCount = $derived(filteredItems.length);
+  let summaryLabel = $derived((() => {
     const parts = [];
     if (selectedPlanet !== 'all') parts.push(selectedPlanet);
     if (selectedCategory !== 'all') parts.push(selectedCategory);
     if (searchTerm) parts.push(`"${searchTerm}"`);
     return parts.length > 0 ? parts.join(' / ') : 'All Items';
-  })();
+  })());
 
   // --- View mode handlers ---
   function setViewMode(mode) {
@@ -385,11 +394,11 @@
   }
 
   // --- Image error tracking ---
-  let failedImages = new Set();
+  let failedImages = $state(new Set());
 
   // --- Markup editing ---
-  let editingMarkupId = null;
-  let editingMarkupValue = '';
+  let editingMarkupId = $state(null);
+  let editingMarkupValue = $state('');
   let markupSaveTimer = null;
 
   function startMarkupEdit(item) {
@@ -704,7 +713,7 @@
       <div class="inventory-header">
         <h1>Inventory</h1>
         <div class="header-actions">
-          <button class="btn btn-ghost btn-sm" on:click={toggleDeltaPanel}
+          <button class="btn btn-ghost btn-sm" onclick={toggleDeltaPanel}
             title={latestImport ? 'Show changes from last import' : 'Import your inventory first to see changes'}
             disabled={!latestImport}>
             Changes
@@ -714,12 +723,12 @@
               </span>
             {/if}
           </button>
-          <button class="btn btn-ghost btn-sm" on:click={() => showHistoryPanel = true}
+          <button class="btn btn-ghost btn-sm" onclick={() => showHistoryPanel = true}
             title={latestImport ? 'View import history and value chart' : 'Import your inventory first to see history'}
             disabled={!latestImport}>
             History
           </button>
-          <button class="btn btn-primary btn-sm" on:click={() => showImportDialog = true}>
+          <button class="btn btn-primary btn-sm" onclick={() => showImportDialog = true}>
             Import
           </button>
         </div>
@@ -760,7 +769,7 @@
               <span class="badge badge-subtle badge-error">{latestImport.summary?.removed || 0} removed</span>
               <span class="badge badge-subtle badge-warning">{latestImport.summary?.updated || 0} changed</span>
             </span>
-            <button class="btn btn-ghost btn-xs" on:click={() => showDeltaPanel = false}>Close</button>
+            <button class="btn btn-ghost btn-xs" onclick={() => showDeltaPanel = false}>Close</button>
           </div>
           {#if loadingDeltas}
             <p class="text-muted">Loading changes...</p>
@@ -791,13 +800,13 @@
               <button
                 class="planet-pill"
                 class:active={selectedPlanet === 'all'}
-                on:click={() => selectPlanet('all')}
+                onclick={() => selectPlanet('all')}
               >All <span class="pill-count">{planetCounts.get('all') || 0}</span></button>
               {#each availablePlanets as planet}
                 <button
                   class="planet-pill"
                   class:active={selectedPlanet === planet}
-                  on:click={() => selectPlanet(planet)}
+                  onclick={() => selectPlanet(planet)}
                 >{planet} <span class="pill-count">{planetCounts.get(planet) || 0}</span></button>
               {/each}
             </div>
@@ -810,13 +819,13 @@
               <button
                 class="category-item"
                 class:active={selectedCategory === 'all'}
-                on:click={() => selectCategory('all')}
+                onclick={() => selectCategory('all')}
               >All <span class="cat-count">{categoryCounts.get('all') || 0}</span></button>
               {#each ALL_CATEGORIES.filter(c => categoryCounts.get(c) > 0) as cat}
                 <button
                   class="category-item"
                   class:active={selectedCategory === cat}
-                  on:click={() => selectCategory(cat)}
+                  onclick={() => selectCategory(cat)}
                 >{cat} <span class="cat-count">{categoryCounts.get(cat) || 0}</span></button>
               {/each}
             </div>
@@ -824,13 +833,13 @@
         </div>
 
         <!-- Mobile sidebar toggle -->
-        <button class="sidebar-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
+        <button class="sidebar-toggle" onclick={() => mobileSidebarOpen = !mobileSidebarOpen}>
           {mobileSidebarOpen ? '✕' : '☰'} Filters
         </button>
 
         <!-- Mobile sidebar overlay -->
         {#if mobileSidebarOpen}
-          <div class="sidebar-overlay" on:click={() => mobileSidebarOpen = false} use:clickable></div>
+          <div class="sidebar-overlay" onclick={() => mobileSidebarOpen = false} use:clickable></div>
         {/if}
 
         <!-- Main content -->
@@ -843,22 +852,22 @@
                 class="search-input"
                 placeholder="Search items..."
                 bind:value={searchTerm}
-                on:input={handleSearch}
+                oninput={handleSearch}
               />
-              <select class="markup-filter" bind:value={markupFilter} on:change={updateUrl}>
+              <select class="markup-filter" bind:value={markupFilter} onchange={updateUrl}>
                 <option value="all">All items</option>
                 <option value="has-markup">Has markup</option>
                 <option value="no-markup">No markup</option>
               </select>
               <label class="toolbar-label">
                 <span class="toolbar-label-text">MU Source:</span>
-                <select class="markup-source" bind:value={markupSource} on:change={() => setMarkupSource(markupSource)}>
+                <select class="markup-source" bind:value={markupSource} onchange={() => setMarkupSource(markupSource)}>
                   <option value="ingame">In-Game</option>
                   <option value="exchange">Exchange</option>
                 </select>
               </label>
               {#if markupSource === 'ingame'}
-                <select class="period-select" bind:value={ingamePeriod} on:change={() => setIngamePeriod(ingamePeriod)}>
+                <select class="period-select" bind:value={ingamePeriod} onchange={() => setIngamePeriod(ingamePeriod)}>
                   {#each INGAME_PERIODS as p}
                     <option value={p.key}>{p.label}</option>
                   {/each}
@@ -869,18 +878,18 @@
               <!-- View toggle -->
               <div class="toggle-group">
                 <button class="toggle-btn" class:active={viewMode === 'list'}
-                  on:click={() => setViewMode('list')} title="List view">List</button>
+                  onclick={() => setViewMode('list')} title="List view">List</button>
                 <button class="toggle-btn" class:active={viewMode === 'grid'}
-                  on:click={() => setViewMode('grid')} title="Grid view">Grid</button>
+                  onclick={() => setViewMode('grid')} title="Grid view">Grid</button>
                 <button class="toggle-btn" class:active={viewMode === 'tree'}
-                  on:click={() => setViewMode('tree')} title="Tree view">Tree</button>
+                  onclick={() => setViewMode('tree')} title="Tree view">Tree</button>
               </div>
               <!-- Bulk actions -->
               {#if selectedItems.size > 0}
-                <button class="btn btn-sm btn-accent" on:click={() => showBulkMarkupDialog = true}>
+                <button class="btn btn-sm btn-accent" onclick={() => showBulkMarkupDialog = true}>
                   Set Markup ({selectedItems.size})
                 </button>
-                <button class="btn btn-sm btn-ghost" on:click={clearSelection}>Clear</button>
+                <button class="btn btn-sm btn-ghost" onclick={clearSelection}>Clear</button>
               {/if}
             </div>
           </div>
@@ -899,7 +908,7 @@
             <div class="empty-state">
               <h2>No items in your inventory</h2>
               <p>Import your inventory from Entropia Universe to get started.</p>
-              <button class="btn btn-primary" on:click={() => showImportDialog = true}>
+              <button class="btn btn-primary" onclick={() => showImportDialog = true}>
                 Import Inventory
               </button>
             </div>
@@ -913,137 +922,143 @@
               emptyMessage="No items match your filters"
               defaultSort={{ column: 'item_name', order: 'ASC' }}
             >
-              <svelte:fragment slot="cell" let:column let:row>
-                {#if column.key === 'item_name'}
-                  <span class="item-name-link" on:click={() => openItemDialog(row)} use:clickable>
-                    {@html `${row.item_name}${row._slim ? itemTypeBadge(row._type) : ''}${sellBadge(row)}`}
-                  </span>
-                {:else if column.key === '_markup'}
-                  {#if editingMarkupId === row.item_id}
-                    <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
-                    <input
-                      type="number"
-                      class="markup-input"
-                      bind:value={editingMarkupValue}
-                      on:input={handleMarkupInput}
-                      on:blur={finishMarkupEdit}
-                      on:keydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
-                      autofocus
-                      step="0.01"
-                      placeholder={row._isAbsolute ? '+0' : '100%'}
-                    />
-                  {:else}
-                    <span
-                      class="markup-cell"
-                      class:has-markup={row._markup != null}
-                      class:has-market={row._markup == null && row._marketPrice != null}
-                      on:click={() => row.item_id > 0 && startMarkupEdit(row)}
-                      title="Click to edit markup"
-                      use:clickable
-                    >
-                      {#if row._markup != null}
-                        {row._isAbsolute ? formatMarkupValue(row._markup, true) : formatMarkupValue(row._markup, false)}
-                      {:else if row._marketPrice != null}
-                        {row._isAbsolute ? formatMarkupValue(row._marketPrice, true) : formatMarkupValue(row._marketPrice, false)}
-                      {:else}
-                        <span class="text-muted">{row._isAbsolute ? '+0' : '100%'}</span>
-                      {/if}
+              {#snippet cell({ column, row })}
+                                      
+                  {#if column.key === 'item_name'}
+                    <span class="item-name-link" onclick={() => openItemDialog(row)} use:clickable>
+                      {@html `${row.item_name}${row._slim ? itemTypeBadge(row._type) : ''}${sellBadge(row)}`}
                     </span>
+                  {:else if column.key === '_markup'}
+                    {#if editingMarkupId === row.item_id}
+                      <!-- svelte-ignore a11y_autofocus -- intentional focus on inline edit activation -->
+                      <input
+                        type="number"
+                        class="markup-input"
+                        bind:value={editingMarkupValue}
+                        oninput={handleMarkupInput}
+                        onblur={finishMarkupEdit}
+                        onkeydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
+                        autofocus
+                        step="0.01"
+                        placeholder={row._isAbsolute ? '+0' : '100%'}
+                      />
+                    {:else}
+                      <span
+                        class="markup-cell"
+                        class:has-markup={row._markup != null}
+                        class:has-market={row._markup == null && row._marketPrice != null}
+                        onclick={() => row.item_id > 0 && startMarkupEdit(row)}
+                        title="Click to edit markup"
+                        use:clickable
+                      >
+                        {#if row._markup != null}
+                          {row._isAbsolute ? formatMarkupValue(row._markup, true) : formatMarkupValue(row._markup, false)}
+                        {:else if row._marketPrice != null}
+                          {row._isAbsolute ? formatMarkupValue(row._marketPrice, true) : formatMarkupValue(row._marketPrice, false)}
+                        {:else}
+                          <span class="text-muted">{row._isAbsolute ? '+0' : '100%'}</span>
+                        {/if}
+                      </span>
+                    {/if}
                   {/if}
-                {/if}
-              </svelte:fragment>
+                
+                                      {/snippet}
             </FancyTable>
 
           {:else if viewMode === 'grid'}
             <!-- Grid view (virtualized) -->
             <div class="grid-padding">
-            <VirtualGrid items={filteredItems} minCardWidth={200} cardHeight={180} gap={12} let:item>
-              <div class="grid-card" on:click={() => openItemDialog(item)} use:clickable>
-                <div class="grid-card-header">
-                  {#if getItemImageUrl(item, 48) && !failedImages.has(item.item_id)}
-                    <img
-                      src={getItemImageUrl(item, 48)}
-                      width="48" height="48"
-                      loading="lazy"
-                      alt=""
-                      class="grid-card-thumb"
-                      on:error={() => { failedImages.add(item.item_id); failedImages = failedImages; }}
-                    />
-                  {:else}
-                    <span class="grid-card-thumb grid-card-thumb-placeholder"></span>
-                  {/if}
-                  <div class="grid-card-title">
-                    <span class="grid-card-name" title={item.item_name}>{item.item_name}</span>
-                    {#if item._category !== 'Other'}
-                      <span class="badge badge-subtle badge-info grid-card-category">{item._category}</span>
+            <VirtualGrid items={filteredItems} minCardWidth={200} cardHeight={180} gap={12} >
+              {#snippet children({ item })}
+                                                <div class="grid-card" onclick={() => openItemDialog(item)} use:clickable>
+                  <div class="grid-card-header">
+                    {#if getItemImageUrl(item, 48) && !failedImages.has(item.item_id)}
+                      <img
+                        src={getItemImageUrl(item, 48)}
+                        width="48" height="48"
+                        loading="lazy"
+                        alt=""
+                        class="grid-card-thumb"
+                        onerror={() => { failedImages.add(item.item_id); failedImages = failedImages; }}
+                      />
+                    {:else}
+                      <span class="grid-card-thumb grid-card-thumb-placeholder"></span>
                     {/if}
-                  </div>
-                </div>
-                <div class="grid-card-body">
-                  <div class="grid-stat">
-                    <span class="grid-stat-label">Qty</span>
-                    <span class="grid-stat-value">{item.quantity?.toLocaleString()}</span>
-                  </div>
-                  <div class="grid-stat">
-                    <span class="grid-stat-label">TT</span>
-                    <span class="grid-stat-value">{item._ttValue != null ? formatPedRaw(item._ttValue) : '-'}</span>
-                  </div>
-                  <div class="grid-stat">
-                    <span class="grid-stat-label">MU</span>
-                    <span class="grid-stat-value grid-mu-cell">
-                      {#if editingMarkupId === item.item_id}
-                        <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
-                        <input
-                          type="number"
-                          class="grid-mu-input"
-                          bind:value={editingMarkupValue}
-                          on:input={handleMarkupInput}
-                          on:blur={finishMarkupEdit}
-                          on:keydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
-                          on:click|stopPropagation
-                          autofocus
-                          step="0.01"
-                          placeholder={item._isAbsolute ? '+0' : '100%'}
-                        />
-                      {:else}
-                        <span
-                          class="markup-cell"
-                          class:has-markup={item._markup != null}
-                          class:has-market={item._markup == null && item._marketPrice != null}
-                          on:click|stopPropagation={() => item.item_id > 0 && startMarkupEdit(item)}
-                          title="Click to edit markup"
-                          use:clickable
-                        >
-                          {#if item._markup != null}
-                            {item._isAbsolute ? formatMarkupValue(item._markup, true) : formatMarkupValue(item._markup, false)}
-                          {:else if item._marketPrice != null}
-                            {item._isAbsolute ? formatMarkupValue(item._marketPrice, true) : formatMarkupValue(item._marketPrice, false)}
-                          {:else}
-                            <span class="text-muted">{item._isAbsolute ? '+0' : '100%'}</span>
-                          {/if}
-                        </span>
+                    <div class="grid-card-title">
+                      <span class="grid-card-name" title={item.item_name}>{item.item_name}</span>
+                      {#if item._category !== 'Other'}
+                        <span class="badge badge-subtle badge-info grid-card-category">{item._category}</span>
                       {/if}
-                    </span>
+                    </div>
                   </div>
-                  <div class="grid-stat">
-                    <span class="grid-stat-label">Value</span>
-                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-exchange={item._valueSource === 'exchange' || item._valueSource === 'ingame'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
-                      {item._totalValue != null ? formatPedRaw(item._totalValue) : '-'}
-                    </span>
+                  <div class="grid-card-body">
+                    <div class="grid-stat">
+                      <span class="grid-stat-label">Qty</span>
+                      <span class="grid-stat-value">{item.quantity?.toLocaleString()}</span>
+                    </div>
+                    <div class="grid-stat">
+                      <span class="grid-stat-label">TT</span>
+                      <span class="grid-stat-value">{item._ttValue != null ? formatPedRaw(item._ttValue) : '-'}</span>
+                    </div>
+                    <div class="grid-stat">
+                      <span class="grid-stat-label">MU</span>
+                      <span class="grid-stat-value grid-mu-cell">
+                        {#if editingMarkupId === item.item_id}
+                          <!-- svelte-ignore a11y_autofocus -- intentional focus on inline edit activation -->
+                          <input
+                            type="number"
+                            class="grid-mu-input"
+                            bind:value={editingMarkupValue}
+                            oninput={handleMarkupInput}
+                            onblur={finishMarkupEdit}
+                            onkeydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
+                            onclick={stopPropagation(bubble('click'))}
+                            autofocus
+                            step="0.01"
+                            placeholder={item._isAbsolute ? '+0' : '100%'}
+                          />
+                        {:else}
+                          <span
+                            class="markup-cell"
+                            class:has-markup={item._markup != null}
+                            class:has-market={item._markup == null && item._marketPrice != null}
+                            onclick={stopPropagation(() => item.item_id > 0 && startMarkupEdit(item))}
+                            title="Click to edit markup"
+                            use:clickable
+                          >
+                            {#if item._markup != null}
+                              {item._isAbsolute ? formatMarkupValue(item._markup, true) : formatMarkupValue(item._markup, false)}
+                            {:else if item._marketPrice != null}
+                              {item._isAbsolute ? formatMarkupValue(item._marketPrice, true) : formatMarkupValue(item._marketPrice, false)}
+                            {:else}
+                              <span class="text-muted">{item._isAbsolute ? '+0' : '100%'}</span>
+                            {/if}
+                          </span>
+                        {/if}
+                      </span>
+                    </div>
+                    <div class="grid-stat">
+                      <span class="grid-stat-label">Value</span>
+                      <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-exchange={item._valueSource === 'exchange' || item._valueSource === 'ingame'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
+                        {item._totalValue != null ? formatPedRaw(item._totalValue) : '-'}
+                      </span>
+                    </div>
                   </div>
+                  {#if item.container || item._sellOrders?.length}
+                    <div class="grid-card-footer">
+                      {#if item.container}<span>{item.container}</span>{/if}
+                      {#if item._sellOrders?.length}
+                        <span class="badge badge-subtle badge-success" style="font-size:0.6rem;padding:1px 4px;">SALE</span>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
-                {#if item.container || item._sellOrders?.length}
-                  <div class="grid-card-footer">
-                    {#if item.container}<span>{item.container}</span>{/if}
-                    {#if item._sellOrders?.length}
-                      <span class="badge badge-subtle badge-success" style="font-size:0.6rem;padding:1px 4px;">SALE</span>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-              <svelte:fragment slot="empty">
-                <p class="text-muted grid-empty">No items match your filters</p>
-              </svelte:fragment>
+                {/snippet}
+                                              {#snippet empty()}
+                                              
+                  <p class="text-muted grid-empty">No items match your filters</p>
+                
+                                              {/snippet}
             </VirtualGrid>
             </div>
 
@@ -1112,11 +1127,11 @@
 
 <!-- Bulk markup dialog -->
 {#if showBulkMarkupDialog}
-  <div class="modal-overlay" on:click|self={() => showBulkMarkupDialog = false} use:clickable>
+  <div class="modal-overlay" onclick={self(() => showBulkMarkupDialog = false)} use:clickable>
     <div class="modal" role="dialog" aria-modal="true">
       <div class="modal-header">
         <h3>Set Markup for {selectedItems.size} Items</h3>
-        <button class="close-btn" on:click={() => showBulkMarkupDialog = false}>&times;</button>
+        <button class="close-btn" onclick={() => showBulkMarkupDialog = false}>&times;</button>
       </div>
       <p class="text-muted">
         Markup type (% or +PED) is determined automatically per item type.
@@ -1132,8 +1147,8 @@
         />
       </div>
       <div class="actions">
-        <button class="btn btn-ghost" on:click={() => showBulkMarkupDialog = false}>Cancel</button>
-        <button class="btn btn-primary" on:click={applyBulkMarkup}>Apply</button>
+        <button class="btn btn-ghost" onclick={() => showBulkMarkupDialog = false}>Cancel</button>
+        <button class="btn btn-primary" onclick={applyBulkMarkup}>Apply</button>
       </div>
     </div>
   </div>

@@ -6,6 +6,8 @@
   Legacy editConfig preserved in vehicles-legacy/+page.svelte
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -44,39 +46,41 @@
     changeMetadata
   } from '$lib/stores/wikiEditState';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.materials === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'materials', url: '/api/materials' },
-      { key: 'vehicleAttachmentTypes', url: '/api/vehicleattachmenttypes' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.materials === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'materials', url: '/api/materials' },
+        { key: 'vehicleAttachmentTypes', url: '/api/vehicleattachmenttypes' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: vehicle = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: allItems = data.allItems || [];
-  $: pendingChange = data.pendingChange;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: isCreateMode = data.isCreateMode || false;
-  $: materialsList = data.materials || [];
-  $: vehicleAttachmentTypesList = data.vehicleAttachmentTypes || [];
-  $: vehicleEntityId = vehicle?.Id ?? vehicle?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, vehicleEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let vehicle = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let allItems = $derived(data.allItems || []);
+  let pendingChange = $derived(data.pendingChange);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let materialsList = $derived(data.materials || []);
+  let vehicleAttachmentTypesList = $derived(data.vehicleAttachmentTypes || []);
+  let vehicleEntityId = $derived(vehicle?.Id ?? vehicle?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, vehicleEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Verified users can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // Type options for vehicles
   const typeOptions = [
@@ -118,29 +122,33 @@
   };
 
   // Initialize edit state when user/vehicle changes
-  $: if (user) {
-    const existingChange = data.existingChange || null;
-    const initialEntity = isCreateMode
-      ? (existingChange?.data || emptyVehicle)
-      : vehicle;
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(initialEntity, 'Vehicle', isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const existingChange = data.existingChange || null;
+      const initialEntity = isCreateMode
+        ? (existingChange?.data || emptyVehicle)
+        : vehicle;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(initialEntity, 'Vehicle', isCreateMode, editChange);
+    }
+  });
 
   // Set pending change in store when it changes
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active vehicle: use currentEntity in edit mode, pendingChange data when viewing, otherwise original
-  $: activeVehicle = $editMode
+  let activeVehicle = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : vehicle;
+      : vehicle);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -148,10 +156,10 @@
   });
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Type filters for sidebar
-  $: navFilters = [];
+  let navFilters = $derived([]);
 
   // Full column definitions for vehicles
   const columnDefs = {
@@ -169,27 +177,27 @@
     totalDefense: { key: 'totalDefense', header: 'Defense', width: '60px', filterPlaceholder: '>0', getValue: (item) => getTotalDefense(item), format: (v) => v != null && v > 0 ? v.toFixed(1) : '-' }
   };
 
-  $: navTableColumns = [columnDefs.type, columnDefs.speed, columnDefs.fuel];
+  let navTableColumns = $derived([columnDefs.type, columnDefs.speed, columnDefs.fuel]);
   const navFullWidthColumns = [columnDefs.type, columnDefs.speed, columnDefs.fuel, columnDefs.passengers, columnDefs.maxSI, columnDefs.weight, columnDefs.maxTT, columnDefs.durability];
   const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Vehicles', href: '/items/vehicles' },
     ...(activeVehicle?.Name ? [{ label: activeVehicle.Name }] : isCreateMode ? [{ label: 'New Vehicle' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeVehicle?.Properties?.Description ||
-    `${activeVehicle?.Name || 'Vehicle'} - ${activeVehicle?.Properties?.Type || ''} vehicle in Entropia Universe.`;
+  let seoDescription = $derived(activeVehicle?.Properties?.Description ||
+    `${activeVehicle?.Name || 'Vehicle'} - ${activeVehicle?.Properties?.Type || ''} vehicle in Entropia Universe.`);
 
-  $: canonicalUrl = activeVehicle?.Name
+  let canonicalUrl = $derived(activeVehicle?.Name
     ? `https://entropianexus.com/items/vehicles/${encodeURIComponentSafe(activeVehicle.Name)}`
-    : 'https://entropianexus.com/items/vehicles';
+    : 'https://entropianexus.com/items/vehicles');
 
   // Image URL for SEO
-  $: entityImageUrl = vehicle?.Id ? `/api/img/vehicle/${vehicle.Id}` : null;
+  let entityImageUrl = $derived(vehicle?.Id ? `/api/img/vehicle/${vehicle.Id}` : null);
 
   // ========== CALCULATION FUNCTIONS ==========
   function getTotalDefense(item) {
@@ -200,17 +208,17 @@
   }
 
   // ========== COMPUTED VALUES ==========
-  $: totalDefense = getTotalDefense(activeVehicle);
+  let totalDefense = $derived(getTotalDefense(activeVehicle));
 
   // Defense types for grid display
   const defenseTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     defense: true,
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -283,11 +291,11 @@
         </div>
         <div class="banner-actions">
           {#if $viewingPendingChange}
-            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>
+            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>
               View Current
             </button>
           {:else}
-            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>
+            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>
               View Pending
             </button>
           {/if}
@@ -481,7 +489,7 @@
                     <select
                       class="vehicle-select"
                       value={slot.Name || ''}
-                      on:change={(e) => {
+                      onchange={(e) => {
                         const value = e.target.value;
                         const slots = [...(activeVehicle?.AttachmentSlots || [])];
                         slots[index] = { Name: value };
@@ -496,7 +504,7 @@
                     <button
                       type="button"
                       class="remove-slot-btn"
-                      on:click={() => {
+                      onclick={() => {
                         const slots = [...(activeVehicle?.AttachmentSlots || [])];
                         slots.splice(index, 1);
                         updateField('AttachmentSlots', slots);
@@ -513,7 +521,7 @@
                 <button
                   type="button"
                   class="add-slot-btn"
-                  on:click={() => {
+                  onclick={() => {
                     const slots = [...(activeVehicle?.AttachmentSlots || []), { Name: '' }];
                     updateField('AttachmentSlots', slots);
                   }}

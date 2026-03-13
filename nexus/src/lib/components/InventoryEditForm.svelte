@@ -1,25 +1,31 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { apiCall, apiPut } from "$lib/util";
   import EditFormControlGroup from "./EditFormControlGroup.svelte";
 
-  export let object;
-  export let user;
-  export let canEdit = false;
- 
-  let disabled = false;
-  let saving = false;
-  let saveMessage = '';
- 
-  $: disabled = !canEdit || !user?.verified;
+  /**
+   * @typedef {Object} Props
+   * @property {any} object
+   * @property {any} user
+   * @property {boolean} [canEdit]
+   */
 
-  let isLoading = true;
-  let dependencies = {};
+  /** @type {Props} */
+  let { object, user, canEdit = false } = $props();
+ 
+  let disabled = $state(false);
+  let saving = $state(false);
+  let saveMessage = $state('');
+ 
+
+  let isLoading = $state(true);
+  let dependencies = $state({});
 
   // Work on a normalized copy so controls match PascalCase fields
-  let formObject = null;
+  let formObject = $state(null);
 
-  $: formObject = normalizeObject(object);
 
   function normalizeObject(src) {
     if (!src) return null;
@@ -204,6 +210,12 @@
   function cancel() {
     window.location.reload();
   }
+  run(() => {
+    disabled = !canEdit || !user?.verified;
+  });
+  run(() => {
+    formObject = normalizeObject(object);
+  });
 </script>
 
 <style>
@@ -293,7 +305,7 @@
             {saveMessage}
           </div>
         {/if}
-        <button class="save-button" type="button" on:click={save} disabled={disabled || saving}>
+        <button class="save-button" type="button" onclick={save} disabled={disabled || saving}>
           {saving ? 'Saving...' : 'Save Inventory'}
         </button>
       </div>

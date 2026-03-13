@@ -8,10 +8,10 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  export let skills = [];
+  let { skills = [] } = $props();
 
-  $: sortedSkills = skills ? [...skills].sort((a, b) => b.Weight - a.Weight) : [];
-  $: totalWeight = sortedSkills.reduce((sum, s) => sum + (s.Weight || 0), 0);
+  let sortedSkills = $derived(skills ? [...skills].sort((a, b) => b.Weight - a.Weight) : []);
+  let totalWeight = $derived(sortedSkills.reduce((sum, s) => sum + (s.Weight || 0), 0));
 
   function getWeightPercent(weight) {
     if (!totalWeight || totalWeight === 0) return 0;
@@ -19,14 +19,14 @@
   }
 
   // Transform data for FancyTable
-  $: tableData = sortedSkills.map(skillEntry => ({
+  let tableData = $derived(sortedSkills.map(skillEntry => ({
     name: skillEntry.Skill.Name,
     nameLink: `/information/skills/${encodeURIComponentSafe(skillEntry.Skill.Name)}`,
     weight: skillEntry.Weight,
     percent: getWeightPercent(skillEntry.Weight),
     hpIncrease: skillEntry.Skill.Properties?.HpIncrease > 0 ? skillEntry.Skill.Properties.HpIncrease : null,
     isHidden: skillEntry.Skill.Properties?.IsHidden || false
-  }));
+  })));
 
   const columns = [
     {
@@ -67,9 +67,9 @@
   ];
 
   // Footer with total
-  $: footer = tableData.length > 0 ? [
+  let footer = $derived(tableData.length > 0 ? [
     { name: 'Total', weight: totalWeight, percent: '100.0', hpIncrease: '', isHidden: '' }
-  ] : null;
+  ] : null);
 </script>
 
 <div class="skills-table-container">

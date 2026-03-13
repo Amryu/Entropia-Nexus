@@ -6,6 +6,8 @@
   Article: Description → Skill Components → Skill Unlocks
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -42,27 +44,10 @@
     changeMetadata
   } from '$lib/stores/wikiEditState.js';
 
-  export let data;
+  let { data } = $props();
 
-  $: profession = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
 
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: professionEntityId = profession?.Id ?? profession?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, professionEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
-  // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
-  // Build navigation items from professions
-  $: navItems = allItems;
 
   // Empty entity template for create mode
   const emptyEntity = {
@@ -73,29 +58,8 @@
     Unlocks: []
   };
 
-  // Initialize edit state when entity or user changes
-  $: if (user) {
-    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : profession;
-    if (entity) {
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(entity, 'Profession', isCreateMode, editChange);
-    }
-  }
 
-  // Set existing pending change when data loads
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → profession)
-  $: activeEntity = $editMode
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.changes)
-      ? applyChangesToEntity(profession, $existingPendingChange.changes)
-      : profession;
 
   // Helper to apply pending changes to entity for display
   function applyChangesToEntity(entity, changes) {
@@ -194,29 +158,15 @@
     { value: 'Miscellaneous', label: 'Miscellaneous' }
   ];
 
-  // Breadcrumbs
-  $: breadcrumbs = [
-    { label: 'Information', href: '/information' },
-    { label: 'Professions', href: '/information/professions' },
-    ...(activeEntity ? [{ label: activeEntity.Name || 'New Profession' }] : [])
-  ];
 
-  // SEO
-  $: seoDescription = activeEntity?.Description ||
-    `${activeEntity?.Name || 'Profession'} - ${activeEntity?.Category?.Name || ''} profession in Entropia Universe.`;
 
-  $: canonicalUrl = profession
-    ? `https://entropianexus.com/information/professions/${encodeURIComponentSafe(profession.Name)}`
-    : 'https://entropianexus.com/information/professions';
 
-  // Image URL for SEO
-  $: entityImageUrl = profession?.Id ? `/api/img/profession/${profession.Id}` : null;
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     skills: true,
     unlocks: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -263,11 +213,67 @@
     return `category-${lower}`;
   }
 
+  let profession = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let professionEntityId = $derived(profession?.Id ?? profession?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, professionEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  // Can edit if user is verified or admin
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
+  // Build navigation items from professions
+  let navItems = $derived(allItems);
+  // Initialize edit state when entity or user changes
+  run(() => {
+    if (user) {
+      const entity = isCreateMode ? (existingChange?.data || emptyEntity) : profession;
+      if (entity) {
+        const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+        initEditState(entity, 'Profession', isCreateMode, editChange);
+      }
+    }
+  });
+  // Set existing pending change when data loads
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → profession)
+  let activeEntity = $derived($editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(profession, $existingPendingChange.changes)
+      : profession);
+  // Breadcrumbs
+  let breadcrumbs = $derived([
+    { label: 'Information', href: '/information' },
+    { label: 'Professions', href: '/information/professions' },
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Profession' }] : [])
+  ]);
+  // SEO
+  let seoDescription = $derived(activeEntity?.Description ||
+    `${activeEntity?.Name || 'Profession'} - ${activeEntity?.Category?.Name || ''} profession in Entropia Universe.`);
+  let canonicalUrl = $derived(profession
+    ? `https://entropianexus.com/information/professions/${encodeURIComponentSafe(profession.Name)}`
+    : 'https://entropianexus.com/information/professions');
+  // Image URL for SEO
+  let entityImageUrl = $derived(profession?.Id ? `/api/img/profession/${profession.Id}` : null);
   // Reactive calculations
-  $: skillCount = getSkillCount(activeEntity);
-  $: unlockCount = getUnlockCount(activeEntity);
-  $: totalWeight = getTotalWeight(activeEntity);
-  $: topSkill = getTopSkill(activeEntity);
+  let skillCount = $derived(getSkillCount(activeEntity));
+  let unlockCount = $derived(getUnlockCount(activeEntity));
+  let totalWeight = $derived(getTotalWeight(activeEntity));
+  let topSkill = $derived(getTopSkill(activeEntity));
 </script>
 
 <WikiSEO

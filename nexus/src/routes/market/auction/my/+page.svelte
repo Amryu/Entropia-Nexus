@@ -8,12 +8,12 @@
   import AuctionStatusBadge from '$lib/components/auction/AuctionStatusBadge.svelte';
   import AuctionCountdown from '$lib/components/auction/AuctionCountdown.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: myAuctions = data.auctions || [];
-  $: myBids = data.bids || [];
+  let myAuctions = $derived(data.auctions || []);
+  let myBids = $derived(data.bids || []);
 
-  let activeTab = 'auctions';
+  let activeTab = $state('auctions');
 </script>
 
 <svelte:head>
@@ -38,13 +38,13 @@
     <div class="tabs">
       <button
         class="tab" class:active={activeTab === 'auctions'}
-        on:click={() => activeTab = 'auctions'}
+        onclick={() => activeTab = 'auctions'}
       >
         My Auctions ({myAuctions.length})
       </button>
       <button
         class="tab" class:active={activeTab === 'bids'}
-        on:click={() => activeTab = 'bids'}
+        onclick={() => activeTab = 'bids'}
       >
         My Bids ({myBids.length})
       </button>

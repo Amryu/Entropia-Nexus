@@ -9,6 +9,8 @@
   - Owner data (managers, inventory): Uses existing dialogs with direct save
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -48,20 +50,9 @@
     changeMetadata
   } from '$lib/stores/wikiEditState';
 
-  export let data;
+  let { data } = $props();
 
-  $: shop = data.object;
-  $: user = data.session?.user;
-  $: pendingChange = data.pendingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
 
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: shopEntityId = shop?.Id ?? shop?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, shopEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.grants?.includes('wiki.approve')));
   // Constants for section names (matches legacy)
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
   const PLANET_OPTIONS = [
@@ -122,20 +113,16 @@
     HasAdditionalArea: false
   };
 
-  // Check if shop has an owner (used to disable certain fields)
-  $: hasOwner = activeEntity?.Owner?.Name != null;
 
-  // Check if shop has Additional area
-  $: hasAdditionalArea = activeEntity?.Sections?.some(s => s.Name === SECTION_NAMES[2]) || activeEntity?.HasAdditionalArea || false;
 
   // Owner search state for shop owner picker
-  let ownerSearchQuery = '';
-  let ownerSearchResults = [];
-  let showOwnerSuggestions = false;
-  let isOwnerSearching = false;
+  let ownerSearchQuery = $state('');
+  let ownerSearchResults = $state([]);
+  let showOwnerSuggestions = $state(false);
+  let isOwnerSearching = $state(false);
   let ownerSearchTimeout = null;
   // Local display name for owner during editing (not saved to entity)
-  let selectedOwnerDisplayName = '';
+  let selectedOwnerDisplayName = $state('');
 
   // Search users as they type (for shop owner)
   async function handleOwnerSearchInput() {
@@ -183,10 +170,6 @@
     showOwnerSuggestions = false;
   }
 
-  // Get owner display name - use local state in edit mode, or entity's Owner object in view mode
-  $: ownerDisplayName = $editMode
-    ? (selectedOwnerDisplayName || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : ''))
-    : (activeEntity?.Owner?.Name || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : 'No Owner'));
 
   // Handle waypoint input changes
   function handleWaypointChange(detail) {
@@ -230,43 +213,15 @@
     return section?.ItemPoints ?? section?.MaxItemPoints ?? null;
   }
 
-  // Wiki edit permissions - verified users can edit wiki data
-  $: canEditWiki = user?.verified || user?.administrator;
 
-  // Initialize edit state when user or entity changes
-  $: if (user) {
-    const editChange = isCreateMode ? (data.existingChange || null) : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(
-      isCreateMode ? (data.existingChange?.data || emptyEntity) : shop,
-      'Shop',
-      isCreateMode,
-      editChange
-    );
-  }
 
-  // Set pending change when available
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Active entity - shows edited data in edit mode, pending change data when viewing, otherwise original
-  $: activeEntity = $editMode
-    ? ($currentEntity || emptyEntity)
-    : $viewingPendingChange && $existingPendingChange?.data
-      ? $existingPendingChange.data
-      : (shop || (isCreateMode ? emptyEntity : null));
 
   // Cleanup on destroy
   onDestroy(() => {
     resetEditState();
   });
-  $: allItems = data.allItems || [];
 
-  // Build navigation items from shops
-  $: navItems = allItems;
 
   // Navigation filters - filter by planet
   const navFilters = [
@@ -334,25 +289,13 @@
 
   const allAvailableColumns = Object.values(shopColumnDefs);
 
-  // Breadcrumbs
-  $: breadcrumbs = [
-    { label: 'Market', href: '/market' },
-    { label: 'Shops', href: '/market/shops' },
-    ...(activeEntity?.Name ? [{ label: activeEntity.Name }] : [])
-  ];
 
-  // SEO
-  $: seoDescription = activeEntity?.Description ||
-    `${activeEntity?.Name || 'Shop'} - Player shop on ${getPlanetDisplayName(activeEntity?.Planet?.Name) || 'Calypso'} in Entropia Universe.`;
 
-  $: canonicalUrl = activeEntity?.Name
-    ? `https://entropianexus.com/market/shops/${encodeURIComponentSafe(activeEntity.Name)}`
-    : 'https://entropianexus.com/market/shops';
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     inventory: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -379,8 +322,8 @@
   }
 
   // ========== ITEM DETAILS FETCHING ==========
-  let itemDetails = {};
-  let itemsLoading = false;
+  let itemDetails = $state({});
+  let itemsLoading = $state(false);
 
   async function fetchItemDetails() {
     if (!shop?.InventoryGroups) return;
@@ -411,10 +354,6 @@
     itemsLoading = false;
   }
 
-  // Refetch when shop changes
-  $: if (shop?.Id) {
-    fetchItemDetails();
-  }
 
   // ========== SHOP CALCULATIONS ==========
   function getTotalItems(s) {
@@ -485,27 +424,11 @@
     return s?.Managers?.some(manager => manager.user_id === u?.id) || false;
   }
 
-  // Reactive calculations - use activeEntity for display
-  $: totalItems = getTotalItems(activeEntity);
-  $: totalGroups = getTotalGroups(activeEntity);
-  $: hasLocation = hasCoordinates(activeEntity);
-  $: coordinates = formatCoordinates(activeEntity);
-  $: waypointValue = {
-    planet: activeEntity?.Planet?.Name || 'Calypso',
-    x: activeEntity?.Coordinates?.Longitude ?? null,
-    y: activeEntity?.Coordinates?.Latitude ?? null,
-    z: activeEntity?.Coordinates?.Altitude ?? null,
-    name: activeEntity?.Name || ''
-  };
-  $: sectionNames = getSectionNames(activeEntity);
-  // Owner/manager permissions still based on original shop data
-  $: canEdit = canUserEditShop(shop, user);
-  $: isOwner = isShopOwner(shop, user);
 
   // ========== DIALOG STATE ==========
-  let managersDialogOpen = false;
-  let inventoryDialogOpen = false;
-  let shopManagers = [];
+  let managersDialogOpen = $state(false);
+  let inventoryDialogOpen = $state(false);
+  let shopManagers = $state([]);
 
   // Fetch managers when opening dialog
   async function openManagersDialog() {
@@ -556,6 +479,91 @@
       fetchItemDetails();
     }
   }
+  let shop = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let pendingChange = $derived(data.pendingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let shopEntityId = $derived(shop?.Id ?? shop?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, shopEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.grants?.includes('wiki.approve'))));
+  // Active entity - shows edited data in edit mode, pending change data when viewing, otherwise original
+  let activeEntity = $derived($editMode
+    ? ($currentEntity || emptyEntity)
+    : $viewingPendingChange && $existingPendingChange?.data
+      ? $existingPendingChange.data
+      : (shop || (isCreateMode ? emptyEntity : null)));
+  // Check if shop has an owner (used to disable certain fields)
+  let hasOwner = $derived(activeEntity?.Owner?.Name != null);
+  // Check if shop has Additional area
+  let hasAdditionalArea = $derived(activeEntity?.Sections?.some(s => s.Name === SECTION_NAMES[2]) || activeEntity?.HasAdditionalArea || false);
+  // Get owner display name - use local state in edit mode, or entity's Owner object in view mode
+  let ownerDisplayName = $derived($editMode
+    ? (selectedOwnerDisplayName || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : ''))
+    : (activeEntity?.Owner?.Name || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : 'No Owner')));
+  // Wiki edit permissions - verified users can edit wiki data
+  let canEditWiki = $derived(user?.verified || user?.administrator);
+  // Initialize edit state when user or entity changes
+  run(() => {
+    if (user) {
+      const editChange = isCreateMode ? (data.existingChange || null) : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(
+        isCreateMode ? (data.existingChange?.data || emptyEntity) : shop,
+        'Shop',
+        isCreateMode,
+        editChange
+      );
+    }
+  });
+  // Set pending change when available
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  let allItems = $derived(data.allItems || []);
+  // Build navigation items from shops
+  let navItems = $derived(allItems);
+  // Breadcrumbs
+  let breadcrumbs = $derived([
+    { label: 'Market', href: '/market' },
+    { label: 'Shops', href: '/market/shops' },
+    ...(activeEntity?.Name ? [{ label: activeEntity.Name }] : [])
+  ]);
+  // SEO
+  let seoDescription = $derived(activeEntity?.Description ||
+    `${activeEntity?.Name || 'Shop'} - Player shop on ${getPlanetDisplayName(activeEntity?.Planet?.Name) || 'Calypso'} in Entropia Universe.`);
+  let canonicalUrl = $derived(activeEntity?.Name
+    ? `https://entropianexus.com/market/shops/${encodeURIComponentSafe(activeEntity.Name)}`
+    : 'https://entropianexus.com/market/shops');
+  // Refetch when shop changes
+  run(() => {
+    if (shop?.Id) {
+      fetchItemDetails();
+    }
+  });
+  // Reactive calculations - use activeEntity for display
+  let totalItems = $derived(getTotalItems(activeEntity));
+  let totalGroups = $derived(getTotalGroups(activeEntity));
+  let hasLocation = $derived(hasCoordinates(activeEntity));
+  let coordinates = $derived(formatCoordinates(activeEntity));
+  let waypointValue = $derived({
+    planet: activeEntity?.Planet?.Name || 'Calypso',
+    x: activeEntity?.Coordinates?.Longitude ?? null,
+    y: activeEntity?.Coordinates?.Latitude ?? null,
+    z: activeEntity?.Coordinates?.Altitude ?? null,
+    name: activeEntity?.Name || ''
+  });
+  let sectionNames = $derived(getSectionNames(activeEntity));
+  // Owner/manager permissions still based on original shop data
+  let canEdit = $derived(canUserEditShop(shop, user));
+  let isOwner = $derived(isShopOwner(shop, user));
 </script>
 
 <WikiSEO
@@ -634,7 +642,7 @@
           <div class="section-header-row">
             <h4 class="section-title">Owner</h4>
             {#if isOwner}
-              <button class="edit-section-btn" on:click={openManagersDialog} title="Manage shop managers">
+              <button class="edit-section-btn" onclick={openManagersDialog} title="Manage shop managers">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                   <circle cx="9" cy="7" r="4"></circle>
@@ -652,7 +660,7 @@
                   {#if activeEntity?.OwnerId || selectedOwnerDisplayName}
                     <div class="selected-owner-chip">
                       <span class="owner-name">{ownerDisplayName}</span>
-                      <button type="button" class="chip-remove" on:click={clearOwner}>×</button>
+                      <button type="button" class="chip-remove" onclick={clearOwner}>×</button>
                     </div>
                   {:else}
                     <div class="owner-search-wrapper">
@@ -660,9 +668,9 @@
                         type="text"
                         class="owner-search-input"
                         bind:value={ownerSearchQuery}
-                        on:input={handleOwnerSearchInput}
-                        on:focus={() => { if (ownerSearchResults.length > 0) showOwnerSuggestions = true; }}
-                        on:blur={() => { setTimeout(() => showOwnerSuggestions = false, 150); }}
+                        oninput={handleOwnerSearchInput}
+                        onfocus={() => { if (ownerSearchResults.length > 0) showOwnerSuggestions = true; }}
+                        onblur={() => { setTimeout(() => showOwnerSuggestions = false, 150); }}
                         placeholder="Search for owner..."
                         autocomplete="off"
                       />
@@ -676,7 +684,7 @@
                           <button
                             type="button"
                             class="owner-suggestion-item"
-                            on:click={() => selectOwner(result)}
+                            onclick={() => selectOwner(result)}
                           >
                             <span class="suggestion-name">{result.global_name || result.username}</span>
                             {#if result.eu_name}
@@ -890,17 +898,19 @@
           subtitle="{totalItems} item{totalItems !== 1 ? 's' : ''}"
           on:toggle={savePanelStates}
         >
-          <svelte:fragment slot="actions">
-            {#if canEdit}
-              <button class="edit-btn" on:click={openInventoryDialog} title="Edit inventory">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-                <span>Edit</span>
-              </button>
-            {/if}
-          </svelte:fragment>
+          {#snippet actions()}
+                  
+              {#if canEdit}
+                <button class="edit-btn" onclick={openInventoryDialog} title="Edit inventory">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  <span>Edit</span>
+                </button>
+              {/if}
+            
+                  {/snippet}
           {#if $editMode}
             <div class="inventory-edit-notice">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

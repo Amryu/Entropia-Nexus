@@ -10,20 +10,26 @@
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
 
-  /** @type {{ Name: string, CanonicalName?: string, Properties?: { Unit?: string, IsPositive?: boolean, Description?: string } } | null} */
-  export let effect = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ Name: string, CanonicalName?: string, Properties?: { Unit?: string, IsPositive?: boolean, Description?: string } } | null} [effect]
+   */
+
+  /** @type {Props} */
+  let { effect = null } = $props();
 
   const dispatch = createEventDispatcher();
 
-  $: isEditMode = !!effect;
+  let isEditMode = $derived(!!effect);
 
-  let name = effect?.Name || '';
-  let canonicalName = effect?.CanonicalName || '';
-  let unit = effect?.Properties?.Unit || '';
-  let isPositive = effect?.Properties?.IsPositive ?? true;
-  let description = effect?.Properties?.Description || '';
+  let name = $state(effect?.Name || '');
+  let canonicalName = $state(effect?.CanonicalName || '');
+  let unit = $state(effect?.Properties?.Unit || '');
+  let isPositive = $state(effect?.Properties?.IsPositive ?? true);
+  let description = $state(effect?.Properties?.Description || '');
 
-  $: canSubmit = name.trim().length > 0;
+  let canSubmit = $derived(name.trim().length > 0);
 
   function handleSubmit() {
     if (!canSubmit) return;
@@ -60,8 +66,8 @@
   class="modal-overlay"
   role="button"
   tabindex="0"
-  on:click={handleOverlayClick}
-  on:keydown={handleKeydown}
+  onclick={handleOverlayClick}
+  onkeydown={handleKeydown}
 >
   <div class="modal" role="dialog" aria-modal="true">
     <h3>{isEditMode ? 'Edit Effect' : 'Create New Effect'}</h3>
@@ -100,8 +106,8 @@
     </div>
 
     <div class="actions">
-      <button class="btn-cancel" on:click={handleCancel}>Cancel</button>
-      <button class="btn-submit" on:click={handleSubmit} disabled={!canSubmit}>{isEditMode ? 'Save' : 'Create'}</button>
+      <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
+      <button class="btn-submit" onclick={handleSubmit} disabled={!canSubmit}>{isEditMode ? 'Save' : 'Create'}</button>
     </div>
   </div>
 </div>

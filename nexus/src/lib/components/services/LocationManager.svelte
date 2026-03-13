@@ -1,16 +1,27 @@
 <script>
-  // @ts-nocheck
-  export let serviceId;
-  export let currentPlanetId = null;
-  export let planets = [];
-  export let locationDisplay = 'Location not set';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} serviceId
+   * @property {any} [currentPlanetId]
+   * @property {any} [planets]
+   * @property {string} [locationDisplay]
+   */
+
+  /** @type {Props} */
+  let {
+    serviceId,
+    currentPlanetId = $bindable(null),
+    planets = [],
+    locationDisplay = $bindable('Location not set')
+  } = $props();
 
   // Filter to main planets only (IDs 1-7: Calypso, Arkadia, Monria, ROCKtropia, Toulan, Next Island, Cyrene)
-  $: mainPlanets = planets.filter(p => p.Id >= 1 && p.Id <= 7);
+  let mainPlanets = $derived(planets.filter(p => p.Id >= 1 && p.Id <= 7));
 
-  let editing = false;
-  let updating = false;
-  let editedPlanetId = currentPlanetId;
+  let editing = $state(false);
+  let updating = $state(false);
+  let editedPlanetId = $state(currentPlanetId);
 
   function startEdit() {
     editing = true;
@@ -56,7 +67,7 @@
 {#if !editing}
   <span class="location-display">
     {locationDisplay}
-    <button class="edit-btn" on:click={startEdit} title="Edit location">
+    <button class="edit-btn" onclick={startEdit} title="Edit location">
       ✎
     </button>
   </span>
@@ -68,10 +79,10 @@
         <option value={planet.Id}>{planet.Name}</option>
       {/each}
     </select>
-    <button class="save-btn" on:click={saveLocation} disabled={updating}>
+    <button class="save-btn" onclick={saveLocation} disabled={updating}>
       {updating ? '...' : '✓'}
     </button>
-    <button class="cancel-btn" on:click={cancelEdit} disabled={updating}>
+    <button class="cancel-btn" onclick={cancelEdit} disabled={updating}>
       ✕
     </button>
   </span>

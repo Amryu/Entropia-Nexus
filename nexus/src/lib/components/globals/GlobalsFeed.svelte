@@ -4,30 +4,38 @@
   Used on the home page to show latest globals.
 -->
 <script>
+  import { stopPropagation } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount, onDestroy } from 'svelte';
   import { getTypeConfig } from '$lib/data/globals-constants.js';
   import { timeAgo, formatValue } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
 
-  let showMediaDialog = false;
-  let mediaDialogGlobal = null;
+  let showMediaDialog = $state(false);
+  let mediaDialogGlobal = $state(null);
 
   function openMediaDialog(g) {
     mediaDialogGlobal = g;
     showMediaDialog = true;
   }
 
-  /** @type {Array<object>} Initial globals from server-side load */
-  export let initialGlobals = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array<object>} [initialGlobals]
+   */
+
+  /** @type {Props} */
+  let { initialGlobals = [] } = $props();
 
   const POLL_INTERVAL = 5000;
   const MAX_ITEMS = 15;
 
-  let globals = [...initialGlobals].slice(0, MAX_ITEMS);
+  let globals = $state([...initialGlobals].slice(0, MAX_ITEMS));
   let pollTimer = null;
   let latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
-  let newIds = new Set();
+  let newIds = $state(new Set());
 
   async function poll() {
     try {
@@ -99,7 +107,7 @@
             {/if}
           </span>
           {#if g.media_image || g.media_video}
-            <button class="feed-media-btn" title="View media" on:click|stopPropagation={() => openMediaDialog(g)}>
+            <button class="feed-media-btn" title="View media" onclick={stopPropagation(() => openMediaDialog(g))}>
               {#if g.media_image}
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
               {:else}

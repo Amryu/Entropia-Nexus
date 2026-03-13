@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
@@ -10,54 +12,34 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {{ id: number|string, name: string } | null} */
-  export let user = null;
+  
 
-  /** @type {Array} All slim items from the exchange categorized data */
-  export let allItems = [];
-  /** @type {boolean} Whether buy/sell action buttons should be shown */
-  export let canTrade = true;
+  
+  
 
-  let orders = [];
-  let loading = false;
-  let error = null;
-  export let sideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
+  let orders = $state([]);
+  let loading = $state(false);
+  let error = $state(null);
+  /**
+   * @typedef {Object} Props
+   * @property {{ id: number|string, name: string } | null} [user]
+   * @property {Array} [allItems]
+   * @property {boolean} [canTrade]
+   * @property {string} [sideFilter] - 'all' | 'BUY' | 'SELL'
+   */
 
-  $: if (user?.id) loadOrders(user.id);
+  /** @type {Props} */
+  let {
+    user = null,
+    allItems = [],
+    canTrade = true,
+    sideFilter = 'all'
+  } = $props();
 
-  // Build item lookup by ID: item_id -> slim item { i, n, t, v, ... }
-  $: itemLookup = (() => {
-    const map = new Map();
-    for (const item of allItems || []) {
-      if (item?.i != null) map.set(item.i, item);
-    }
-    return map;
-  })();
 
-  $: filteredOrders = sideFilter === 'all'
-    ? orders
-    : orders.filter(o => o.type === sideFilter);
 
-  // Enrich orders with computed fields for filtering and sorting
-  $: enrichedOrders = filteredOrders.map(o => {
-    const item = itemLookup.get(o.item_id);
-    const mu = o.markup != null ? Number(o.markup) : null;
-    return {
-      ...o,
-      _item_name: o.details?.item_name || 'Unknown',
-      _category: getTopCategory(item?.t),
-      _value: getOrderStackValue(item, o) ?? null,
-      _total: (() => {
-        const u = computeUnitPrice(item, mu, o);
-        if (u == null) return null;
-        const isSet = item?.t === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
-        return isSet ? u : u * (o.quantity || 1);
-      })(),
-    };
-  });
 
-  // Set of order IDs already in the trade list
-  $: tradeListOrderIds = new Set($tradeList.map(i => i.orderId));
+
 
   async function loadOrders(userId) {
     loading = true;
@@ -95,7 +77,80 @@
     return `<span class="detail-tags">${tags.join('')}</span>`;
   }
 
-  $: columns = (() => {
+
+  function handleClick(e) {
+    if (!canTrade) return;
+    const btn = e.target.closest('[data-order-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    const orderId = parseInt(btn.dataset.orderAction, 10);
+    const side = btn.dataset.actionSide;
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    dispatch('orderAction', {
+      orderId: order.id,
+      itemId: order.item_id,
+      itemName: order.details?.item_name || 'Unknown',
+      sellerId: user?.id,
+      sellerName: order.seller_name || user?.name || 'Unknown',
+      planet: order.planet || '',
+      quantity: order.quantity || 1,
+      unitPrice: Number(order.markup) || 0,
+      markup: Number(order.markup) || 0,
+      side: order.type || 'SELL',
+      order,
+    });
+  }
+
+  function handleRowClick(e) {
+    const row = e.detail?.row;
+    if (!row) return;
+    const item = itemLookup.get(row.item_id);
+    const name = item?.n || row.details?.item_name;
+    if (name) {
+      goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
+    } else if (row.item_id) {
+      goto(`/market/exchange/listings/${row.item_id}`);
+    }
+  }
+
+  run(() => {
+    if (user?.id) loadOrders(user.id);
+  });
+  // Build item lookup by ID: item_id -> slim item { i, n, t, v, ... }
+  let itemLookup = $derived((() => {
+    const map = new Map();
+    for (const item of allItems || []) {
+      if (item?.i != null) map.set(item.i, item);
+    }
+    return map;
+  })());
+  let filteredOrders = $derived(sideFilter === 'all'
+    ? orders
+    : orders.filter(o => o.type === sideFilter));
+  // Enrich orders with computed fields for filtering and sorting
+  let enrichedOrders = $derived(filteredOrders.map(o => {
+    const item = itemLookup.get(o.item_id);
+    const mu = o.markup != null ? Number(o.markup) : null;
+    return {
+      ...o,
+      _item_name: o.details?.item_name || 'Unknown',
+      _category: getTopCategory(item?.t),
+      _value: getOrderStackValue(item, o) ?? null,
+      _total: (() => {
+        const u = computeUnitPrice(item, mu, o);
+        if (u == null) return null;
+        const isSet = item?.t === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
+        return isSet ? u : u * (o.quantity || 1);
+      })(),
+    };
+  }));
+  // Set of order IDs already in the trade list
+  let tradeListOrderIds = $derived(new Set($tradeList.map(i => i.orderId)));
+  let columns = $derived((() => {
     const cols = [
       {
         key: '_item_name', header: 'Item', main: true, sortable: true, searchable: true,
@@ -156,50 +211,10 @@
     tradeListOrderIds;
     canTrade;
     return cols;
-  })();
-
-  function handleClick(e) {
-    if (!canTrade) return;
-    const btn = e.target.closest('[data-order-action]');
-    if (!btn) return;
-    e.stopPropagation();
-    e.preventDefault();
-
-    const orderId = parseInt(btn.dataset.orderAction, 10);
-    const side = btn.dataset.actionSide;
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
-
-    dispatch('orderAction', {
-      orderId: order.id,
-      itemId: order.item_id,
-      itemName: order.details?.item_name || 'Unknown',
-      sellerId: user?.id,
-      sellerName: order.seller_name || user?.name || 'Unknown',
-      planet: order.planet || '',
-      quantity: order.quantity || 1,
-      unitPrice: Number(order.markup) || 0,
-      markup: Number(order.markup) || 0,
-      side: order.type || 'SELL',
-      order,
-    });
-  }
-
-  function handleRowClick(e) {
-    const row = e.detail?.row;
-    if (!row) return;
-    const item = itemLookup.get(row.item_id);
-    const name = item?.n || row.details?.item_name;
-    if (name) {
-      goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
-    } else if (row.item_id) {
-      goto(`/market/exchange/listings/${row.item_id}`);
-    }
-  }
-
+  })());
 </script>
 
-<div class="user-orders-panel" role="presentation" on:click|capture={handleClick}>
+<div class="user-orders-panel" role="presentation" onclickcapture={handleClick}>
 
   {#if loading}
     <div class="panel-loading">Loading orders...</div>

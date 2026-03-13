@@ -6,15 +6,15 @@
   import TicketOfferCard from '$lib/components/services/TicketOfferCard.svelte';
   import TicketOfferEditor from '$lib/components/services/TicketOfferEditor.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: service = data.service;
-  $: ticketOffers = data.ticketOffers || [];
+  let service = $derived(data.service);
+  let ticketOffers = $derived(data.ticketOffers || []);
 
-  let showEditor = false;
-  let editingOffer = null;
-  let saving = false;
-  let error = '';
+  let showEditor = $state(false);
+  let editingOffer = $state(null);
+  let saving = $state(false);
+  let error = $state('');
 
   function handleCreateNew() {
     editingOffer = null;
@@ -120,7 +120,7 @@
       />
     {:else}
       <div class="actions-bar">
-        <button class="create-btn" on:click={handleCreateNew}>
+        <button class="create-btn" onclick={handleCreateNew}>
           + Create New Ticket Offer
         </button>
       </div>

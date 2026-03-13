@@ -9,16 +9,27 @@
 
   const dispatch = createEventDispatcher();
 
-  /** Currently active preset period */
-  export let period = '7d';
-  /** Custom range start (YYYY-MM-DD string or null) */
-  export let from = null;
-  /** Custom range end (YYYY-MM-DD string or null) */
-  export let to = null;
-  /** Whether controls should be disabled (e.g. during loading) */
-  export let disabled = false;
+  
+  
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [period] - Currently active preset period
+   * @property {any} [from] - Custom range start (YYYY-MM-DD string or null)
+   * @property {any} [to] - Custom range end (YYYY-MM-DD string or null)
+   * @property {boolean} [disabled] - Whether controls should be disabled (e.g. during loading)
+   */
 
-  let showCustom = !!(from && to);
+  /** @type {Props} */
+  let {
+    period = $bindable('7d'),
+    from = $bindable(null),
+    to = $bindable(null),
+    disabled = false
+  } = $props();
+
+  let showCustom = $state(!!(from && to));
 
   function selectPreset(value) {
     showCustom = false;
@@ -47,7 +58,7 @@
         class="period-btn"
         class:active={!showCustom && period === p.value}
         {disabled}
-        on:click={() => selectPreset(p.value)}
+        onclick={() => selectPreset(p.value)}
       >
         {p.label}
       </button>
@@ -56,7 +67,7 @@
       class="period-btn"
       class:active={showCustom}
       {disabled}
-      on:click={openCustom}
+      onclick={openCustom}
     >
       Custom
     </button>
@@ -67,7 +78,7 @@
         type="date"
         class="date-input"
         bind:value={from}
-        on:change={onCustomChange}
+        onchange={onCustomChange}
         {disabled}
       />
       <span class="range-separator">to</span>
@@ -75,7 +86,7 @@
         type="date"
         class="date-input"
         bind:value={to}
-        on:change={onCustomChange}
+        onchange={onCustomChange}
         {disabled}
       />
     </div>

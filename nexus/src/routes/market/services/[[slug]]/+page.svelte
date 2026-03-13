@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { run, stopPropagation, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
 
@@ -42,53 +45,34 @@
   import * as LoadoutCalc from '$lib/utils/loadoutCalculations';
   import { loadAllServiceEntities, loadServiceTypeEntities } from '$lib/utils/entityLoader';
 
-  export let data;
+  let { data } = $props();
 
-  $: services = data.services || [];
-  $: servicesByType = data.servicesByType || { healing: [], dps: [], transportation: [], custom: [] };
-  $: planets = data.planets || [];
-  $: selectedService = data.service;
-  $: availability = data.availability || [];
-  $: activeRequest = data.activeRequest;
-  $: user = data.session?.user;
-  $: isOwner = user && selectedService && (user.id === selectedService.user_id || user.id === selectedService.owner_user_id || user.grants?.includes('admin.panel'));
-  // Check if user can manage flights (owner, pilot, or admin)
-  $: canManageFlights = isOwner || (user && selectedService && pilots.some(p => p.user_id === user.id));
 
   // Entity data - lazy loaded on client
-  let clothingItems = [];
-  let medicalTools = [];
-  let medicalChips = [];
-  let armorSets = [];
-  let consumables = [];
-  let weapons = [];
-  let pets = [];
-  let armors = [];
-  let armorPlatings = [];
-  let weaponAmplifiers = [];
-  let absorbers = [];
-  let weaponVisionAttachments = [];
-  let mindforceImplants = [];
-  let entitiesLoading = true;
+  let clothingItems = $state([]);
+  let medicalTools = $state([]);
+  let medicalChips = $state([]);
+  let armorSets = $state([]);
+  let consumables = $state([]);
+  let weapons = $state([]);
+  let pets = $state([]);
+  let armors = $state([]);
+  let armorPlatings = $state([]);
+  let weaponAmplifiers = $state([]);
+  let absorbers = $state([]);
+  let weaponVisionAttachments = $state([]);
+  let mindforceImplants = $state([]);
+  let entitiesLoading = $state(true);
 
-  // Filter to main planets only for transportation services
-  $: mainPlanets = planets.filter(p => p.Id >= 1 && p.Id <= 7);
 
   // Ticket offers for transportation services
-  let ticketOffers = [];
-  let upcomingFlights = [];
+  let ticketOffers = $state([]);
+  let upcomingFlights = $state([]);
   let purchasingTicket = false;
-  let mounted = false;
-  $: pilots = data.pilots || [];
-  let showAllFlights = false; // For expandable flight list
-  let flightUpdateInterval = null;
+  let mounted = $state(false);
+  let showAllFlights = $state(false); // For expandable flight list
+  let flightUpdateInterval = $state(null);
 
-  // Computed: separate running, scheduled, and cancelled flights
-  $: runningFlights = upcomingFlights.filter(f => f.status === 'running');
-  $: scheduledFlights = upcomingFlights.filter(f => (f.status === 'scheduled' || f.status === 'boarding') && f.status !== 'cancelled');
-  $: activeFlights = upcomingFlights.filter(f => f.status !== 'cancelled');
-  $: cancelledFlights = upcomingFlights.filter(f => f.status === 'cancelled');
-  $: nextActiveFlight = activeFlights[0] || null;
 
   // Load entity data on mount
   async function loadEntities() {
@@ -149,35 +133,6 @@
     }
   }
 
-  // Fetch ticket offers when a transportation service is selected (client-side only)
-  $: if (mounted && selectedService?.type === 'transportation' && selectedService?.id) {
-    fetch(`/api/services/${selectedService.id}/ticket-offers`)
-      .then(r => r.json())
-      .then(offers => { ticketOffers = Array.isArray(offers) ? offers : []; })
-      .catch(() => { ticketOffers = []; });
-
-    // Fetch upcoming flights immediately
-    fetchUpcomingFlights();
-
-    // Clear any existing interval
-    if (flightUpdateInterval) {
-      clearInterval(flightUpdateInterval);
-    }
-
-    // Set up polling to update flights every 15 seconds
-    flightUpdateInterval = setInterval(() => {
-      fetchUpcomingFlights();
-    }, 15000);
-  } else {
-    ticketOffers = [];
-    upcomingFlights = [];
-
-    // Clear interval when not viewing transportation service
-    if (flightUpdateInterval) {
-      clearInterval(flightUpdateInterval);
-      flightUpdateInterval = null;
-    }
-  }
 
 
   // Restore a cancelled flight
@@ -270,13 +225,13 @@
   }
 
   // Check-in dialog state
-  let showCheckinDialog = false;
-  let checkinFlight = null;
-  let checkinLocation = '';
-  let checkinPlanetId = null;
-  let checkinExitLocation = '';
-  let checkinExitPlanetId = null;
-  let checkinSubmitting = false;
+  let showCheckinDialog = $state(false);
+  let checkinFlight = $state(null);
+  let checkinLocation = $state('');
+  let checkinPlanetId = $state(null);
+  let checkinExitLocation = $state('');
+  let checkinExitPlanetId = $state(null);
+  let checkinSubmitting = $state(false);
 
   function openCheckinDialog(flight) {
     if (!user) {
@@ -367,113 +322,23 @@
   }
 
   // State for active medical tool and consumable toggles
-  let activeMedicalEquipment = null;
-  let enabledConsumables = {}; // Track each consumable individually by item_name
-  let enabledTierEnhancers = {}; // Track tier enhancer slots for equipment with tiers
+  let activeMedicalEquipment = $state(null);
+  let enabledConsumables = $state({}); // Track each consumable individually by item_name
+  let enabledTierEnhancers = $state({}); // Track tier enhancer slots for equipment with tiers
 
   // State for DPS services
-  let activeWeapon = null;
-  let selectedAmplifier = null;
-  let selectedAbsorber = null;
-  let selectedScope = null;
-  let selectedScopeSight = null;
-  let selectedSight = null;
-  let selectedMatrix = null;
-  let selectedImplant = null;
+  let activeWeapon = $state(null);
+  let selectedAmplifier = $state(null);
+  let selectedAbsorber = $state(null);
+  let selectedScope = $state(null);
+  let selectedScopeSight = $state(null);
+  let selectedSight = $state(null);
+  let selectedMatrix = $state(null);
+  let selectedImplant = $state(null);
   let activePet = null; // Only one pet can be active
-  let activePetEffects = {}; // Map of pet names to active state
+  let activePetEffects = $state({}); // Map of pet names to active state
   let playerHP = 150; // Player's configured base HP
 
-  // Reset active tool and consumables when service changes
-  $: if (selectedService) {
-    const medicalEquipment = selectedService.equipment?.filter(e => 
-      e.is_primary !== false && (e.item_type === 'medicaltools' || e.item_type === 'medicalchips')
-    ) || [];
-    
-    // Set active to primary or first available
-    const primary = medicalEquipment.find(e => e.is_primary);
-    activeMedicalEquipment = primary || medicalEquipment[0] || null;
-
-    // Initialize consumables state - enhancers ON, others OFF
-    enabledConsumables = {};
-    const allConsumables = selectedService.equipment?.filter(e => e.item_type === 'consumables') || [];
-    for (const consumable of allConsumables) {
-      const consumableData = consumables.find(item => item.Name === consumable.item_name);
-      const isEnhancer = consumableData?.Properties?.Type === 'Enhancer';
-      enabledConsumables[consumable.item_name] = isEnhancer;
-    }
-    
-    // Initialize tier enhancers state - ON by default for all equipment with tier > 0
-    enabledTierEnhancers = {};
-    const allEquipment = selectedService.equipment || [];
-    for (const equip of allEquipment) {
-      if (equip.tier && equip.tier > 0) {
-        enabledTierEnhancers[equip.item_name] = true;
-      }
-    }
-    
-    // Initialize DPS-specific state if DPS service
-    if (selectedService.type === 'dps') {
-      // Find primary weapon equipment entry
-      const weaponEquipment = selectedService.equipment?.filter(e => 
-        e.is_primary !== false && e.item_type === 'weapons'
-      ) || [];
-      const primaryWeaponEquip = weaponEquipment.find(e => e.is_primary) || weaponEquipment[0] || null;
-      
-      // Look up the actual weapon data from the weapons array
-      if (primaryWeaponEquip?.item_name && weapons.length > 0) {
-        const weaponData = weapons.find(w => w.Name === primaryWeaponEquip.item_name);
-        if (weaponData) {
-          activeWeapon = weaponData;
-        } else {
-          activeWeapon = null;
-        }
-      } else {
-        activeWeapon = null;
-      }
-      
-      // Initialize weapon attachments from saved data
-      const attachments = primaryWeaponEquip?.attachments || {};
-      
-      selectedAmplifier = attachments.amplifier_id 
-        ? weaponAmplifiers.find(a => a.ItemId === attachments.amplifier_id) || null
-        : null;
-      
-      selectedAbsorber = attachments.absorber_id
-        ? absorbers.find(a => a.ItemId === attachments.absorber_id) || null
-        : null;
-      
-      selectedScope = attachments.scope_id
-        ? weaponVisionAttachments.find(v => v.ItemId === attachments.scope_id) || null
-        : null;
-      
-      selectedSight = attachments.sight_id
-        ? weaponVisionAttachments.find(v => v.ItemId === attachments.sight_id) || null
-        : null;
-
-      // Load scope sight (nested attachment on scope)
-      selectedScopeSight = attachments.scope_sight_id
-        ? weaponVisionAttachments.find(v => v.ItemId === attachments.scope_sight_id) || null
-        : null;
-
-      // Load matrix (melee weapon amplifier)
-      selectedMatrix = attachments.matrix_id
-        ? weaponAmplifiers.find(a => a.ItemId === attachments.matrix_id && a.Properties?.Type === 'Matrix') || null
-        : null;
-
-      // Load implant (mindforce weapon attachment)
-      selectedImplant = attachments.implant_id
-        ? mindforceImplants.find(i => i.ItemId === attachments.implant_id) || null
-        : null;
-      
-      // Initialize pet state - all OFF by default
-      activePetEffects = {};
-      const allPets = selectedService.equipment?.filter(e => e.item_type === 'pets') || [];
-      for (const pet of allPets) {
-        activePetEffects[pet.item_name] = false;
-      }
-    }
-  }
 
   // Helper to check if equipment is active in calculations
   function isEquipmentActive(equip) {
@@ -497,8 +362,8 @@
 
   const CATEGORY_SLUGS = ['healing', 'dps', 'transportation', 'custom'];
 
-  let currentType = 'healing';
-  let selectedPlanetId = null;
+  let currentType = $state('healing');
+  let selectedPlanetId = $state(null);
 
   // Initialize from URL slug or localStorage
   if (typeof window !== 'undefined') {
@@ -521,16 +386,16 @@
     }
   }
 
-  let showRequestModal = false;
-  let requestMessage = '';
+  let showRequestModal = $state(false);
+  let requestMessage = $state('');
   let selectedDate = '';
   let selectedTime = '';
-  let requestPlanetId = null;
-  let requestDestinationPlanetId = null;
-  let requestError = '';
-  let requestSubmitting = false;
-  let requestFormTab = 'request'; // 'request' or 'question'
-  let questionMessage = '';
+  let requestPlanetId = $state(null);
+  let requestDestinationPlanetId = $state(null);
+  let requestError = $state('');
+  let requestSubmitting = $state(false);
+  let requestFormTab = $state('request'); // 'request' or 'question'
+  let questionMessage = $state('');
 
   const serviceTypeOptions = [
     { value: 'healing', label: 'Healing' },
@@ -539,44 +404,14 @@
     { value: 'custom', label: 'Custom' }
   ];
 
-  // Update currentType reactively when navigating between category slugs
-  $: {
-    const slug = $page.params.slug;
-    if (slug && CATEGORY_SLUGS.includes(slug)) {
-      currentType = slug;
-    }
-  }
 
-  // Save selected service type and planet to localStorage
-  $: if (typeof localStorage !== 'undefined' && currentType) {
-    localStorage.setItem('lastServiceType', currentType);
-  }
 
-  $: if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('lastServicePlanet', selectedPlanetId === null ? 'all' : selectedPlanetId.toString());
-  }
 
-  // Filter services by planet
-  $: currentServices = (() => {
-    let list = servicesByType[currentType] || [];
-    
-    // Apply planet filter
-    if (selectedPlanetId !== null) {
-      list = list.filter(s => 
-        s.planet_id === selectedPlanetId || s.willing_to_travel
-      );
-    }
-    
-    return list;
-  })();
 
   // Check if user has a ticket or single-use option available
-  let userHasTicket = false;
-  let hasSingleUseOffer = false;
+  let userHasTicket = $state(false);
+  let hasSingleUseOffer = $state(false);
 
-  $: if (selectedService?.type === 'transportation' && ticketOffers) {
-    hasSingleUseOffer = ticketOffers.some(offer => offer.uses_count === 1);
-  }
 
   async function openRequestModal(tab = 'request') {
     if (!user) {
@@ -756,8 +591,8 @@
   }
 
   // State for attachment details dialog
-  let showAttachmentDialog = false;
-  let attachmentDialogData = null;
+  let showAttachmentDialog = $state(false);
+  let attachmentDialogData = $state(null);
 
   function openAttachmentDialog(equip) {
     attachmentDialogData = {
@@ -922,6 +757,184 @@
     // Redirect to loadout manager
     goto('/tools/loadouts');
   }
+  let services = $derived(data.services || []);
+  let servicesByType = $derived(data.servicesByType || { healing: [], dps: [], transportation: [], custom: [] });
+  let planets = $derived(data.planets || []);
+  let selectedService = $derived(data.service);
+  let availability = $derived(data.availability || []);
+  let activeRequest = $derived(data.activeRequest);
+  let user = $derived(data.session?.user);
+  let isOwner = $derived(user && selectedService && (user.id === selectedService.user_id || user.id === selectedService.owner_user_id || user.grants?.includes('admin.panel')));
+  let pilots = $derived(data.pilots || []);
+  // Check if user can manage flights (owner, pilot, or admin)
+  let canManageFlights = $derived(isOwner || (user && selectedService && pilots.some(p => p.user_id === user.id)));
+  // Filter to main planets only for transportation services
+  let mainPlanets = $derived(planets.filter(p => p.Id >= 1 && p.Id <= 7));
+  // Fetch ticket offers when a transportation service is selected (client-side only)
+  run(() => {
+    if (mounted && selectedService?.type === 'transportation' && selectedService?.id) {
+      fetch(`/api/services/${selectedService.id}/ticket-offers`)
+        .then(r => r.json())
+        .then(offers => { ticketOffers = Array.isArray(offers) ? offers : []; })
+        .catch(() => { ticketOffers = []; });
+
+      // Fetch upcoming flights immediately
+      fetchUpcomingFlights();
+
+      // Clear any existing interval
+      if (flightUpdateInterval) {
+        clearInterval(flightUpdateInterval);
+      }
+
+      // Set up polling to update flights every 15 seconds
+      flightUpdateInterval = setInterval(() => {
+        fetchUpcomingFlights();
+      }, 15000);
+    } else {
+      ticketOffers = [];
+      upcomingFlights = [];
+
+      // Clear interval when not viewing transportation service
+      if (flightUpdateInterval) {
+        clearInterval(flightUpdateInterval);
+        flightUpdateInterval = null;
+      }
+    }
+  });
+  // Computed: separate running, scheduled, and cancelled flights
+  let runningFlights = $derived(upcomingFlights.filter(f => f.status === 'running'));
+  let scheduledFlights = $derived(upcomingFlights.filter(f => (f.status === 'scheduled' || f.status === 'boarding') && f.status !== 'cancelled'));
+  let activeFlights = $derived(upcomingFlights.filter(f => f.status !== 'cancelled'));
+  let cancelledFlights = $derived(upcomingFlights.filter(f => f.status === 'cancelled'));
+  let nextActiveFlight = $derived(activeFlights[0] || null);
+  // Reset active tool and consumables when service changes
+  run(() => {
+    if (selectedService) {
+      const medicalEquipment = selectedService.equipment?.filter(e => 
+        e.is_primary !== false && (e.item_type === 'medicaltools' || e.item_type === 'medicalchips')
+      ) || [];
+      
+      // Set active to primary or first available
+      const primary = medicalEquipment.find(e => e.is_primary);
+      activeMedicalEquipment = primary || medicalEquipment[0] || null;
+
+      // Initialize consumables state - enhancers ON, others OFF
+      enabledConsumables = {};
+      const allConsumables = selectedService.equipment?.filter(e => e.item_type === 'consumables') || [];
+      for (const consumable of allConsumables) {
+        const consumableData = consumables.find(item => item.Name === consumable.item_name);
+        const isEnhancer = consumableData?.Properties?.Type === 'Enhancer';
+        enabledConsumables[consumable.item_name] = isEnhancer;
+      }
+      
+      // Initialize tier enhancers state - ON by default for all equipment with tier > 0
+      enabledTierEnhancers = {};
+      const allEquipment = selectedService.equipment || [];
+      for (const equip of allEquipment) {
+        if (equip.tier && equip.tier > 0) {
+          enabledTierEnhancers[equip.item_name] = true;
+        }
+      }
+      
+      // Initialize DPS-specific state if DPS service
+      if (selectedService.type === 'dps') {
+        // Find primary weapon equipment entry
+        const weaponEquipment = selectedService.equipment?.filter(e => 
+          e.is_primary !== false && e.item_type === 'weapons'
+        ) || [];
+        const primaryWeaponEquip = weaponEquipment.find(e => e.is_primary) || weaponEquipment[0] || null;
+        
+        // Look up the actual weapon data from the weapons array
+        if (primaryWeaponEquip?.item_name && weapons.length > 0) {
+          const weaponData = weapons.find(w => w.Name === primaryWeaponEquip.item_name);
+          if (weaponData) {
+            activeWeapon = weaponData;
+          } else {
+            activeWeapon = null;
+          }
+        } else {
+          activeWeapon = null;
+        }
+        
+        // Initialize weapon attachments from saved data
+        const attachments = primaryWeaponEquip?.attachments || {};
+        
+        selectedAmplifier = attachments.amplifier_id 
+          ? weaponAmplifiers.find(a => a.ItemId === attachments.amplifier_id) || null
+          : null;
+        
+        selectedAbsorber = attachments.absorber_id
+          ? absorbers.find(a => a.ItemId === attachments.absorber_id) || null
+          : null;
+        
+        selectedScope = attachments.scope_id
+          ? weaponVisionAttachments.find(v => v.ItemId === attachments.scope_id) || null
+          : null;
+        
+        selectedSight = attachments.sight_id
+          ? weaponVisionAttachments.find(v => v.ItemId === attachments.sight_id) || null
+          : null;
+
+        // Load scope sight (nested attachment on scope)
+        selectedScopeSight = attachments.scope_sight_id
+          ? weaponVisionAttachments.find(v => v.ItemId === attachments.scope_sight_id) || null
+          : null;
+
+        // Load matrix (melee weapon amplifier)
+        selectedMatrix = attachments.matrix_id
+          ? weaponAmplifiers.find(a => a.ItemId === attachments.matrix_id && a.Properties?.Type === 'Matrix') || null
+          : null;
+
+        // Load implant (mindforce weapon attachment)
+        selectedImplant = attachments.implant_id
+          ? mindforceImplants.find(i => i.ItemId === attachments.implant_id) || null
+          : null;
+        
+        // Initialize pet state - all OFF by default
+        activePetEffects = {};
+        const allPets = selectedService.equipment?.filter(e => e.item_type === 'pets') || [];
+        for (const pet of allPets) {
+          activePetEffects[pet.item_name] = false;
+        }
+      }
+    }
+  });
+  // Update currentType reactively when navigating between category slugs
+  run(() => {
+    const slug = $page.params.slug;
+    if (slug && CATEGORY_SLUGS.includes(slug)) {
+      currentType = slug;
+    }
+  });
+  // Save selected service type and planet to localStorage
+  run(() => {
+    if (typeof localStorage !== 'undefined' && currentType) {
+      localStorage.setItem('lastServiceType', currentType);
+    }
+  });
+  run(() => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('lastServicePlanet', selectedPlanetId === null ? 'all' : selectedPlanetId.toString());
+    }
+  });
+  // Filter services by planet
+  let currentServices = $derived((() => {
+    let list = servicesByType[currentType] || [];
+    
+    // Apply planet filter
+    if (selectedPlanetId !== null) {
+      list = list.filter(s => 
+        s.planet_id === selectedPlanetId || s.willing_to_travel
+      );
+    }
+    
+    return list;
+  })());
+  run(() => {
+    if (selectedService?.type === 'transportation' && ticketOffers) {
+      hasSingleUseOffer = ticketOffers.some(offer => offer.uses_count === 1);
+    }
+  });
 </script>
 
 <svelte:head>
@@ -972,14 +985,14 @@
           {#if isOwner}
             <a href="/market/services/{selectedService.id}/edit" class="btn-secondary">Edit Service</a>
           {/if}
-          <button class="btn-secondary" on:click={() => openRequestModal('question')}>Ask a Question</button>
+          <button class="btn-secondary" onclick={() => openRequestModal('question')}>Ask a Question</button>
           {#if selectedService.type === 'transportation' && !(selectedService.transportation_details?.service_mode === 'scheduled')}
             {#if activeRequest && !isOwner}
               <a href="/market/services/my/requests/{activeRequest.id}" class="btn-success">
                 View Active Request
               </a>
             {:else}
-              <button class="btn-primary" on:click={() => openRequestModal('request')}>
+              <button class="btn-primary" onclick={() => openRequestModal('request')}>
                 {#if isOwner && user.id === selectedService.user_id}
                   Preview Flight Request
                 {:else}
@@ -1000,7 +1013,7 @@
           <button
             class="tab-btn"
             class:active={currentType === option.value}
-            on:click={() => goto(`/market/services/${option.value}`)}
+            onclick={() => goto(`/market/services/${option.value}`)}
           >
             {option.label}
             <span class="tab-count">({servicesByType[option.value]?.length || 0})</span>
@@ -1726,7 +1739,7 @@
                     {/if}
                   </div>
                   {#if canCheckInNow}
-                    <button on:click={() => openCheckinDialog(nextActiveFlight)} class="check-in-btn">Check In Now</button>
+                    <button onclick={() => openCheckinDialog(nextActiveFlight)} class="check-in-btn">Check In Now</button>
                   {/if}
                 </div>
               </div>
@@ -1765,7 +1778,7 @@
                         {/if}
                       </div>
                       {#if canCheckInNow && !isOwner}
-                        <button on:click={() => openCheckinDialog(flight)} class="check-in-btn">Check In Now</button>
+                        <button onclick={() => openCheckinDialog(flight)} class="check-in-btn">Check In Now</button>
                       {/if}
                     </div>
                   {/each}
@@ -1777,7 +1790,7 @@
               <!-- Scheduled Flights (expandable for customers, always visible for owners) -->
               <div class="info-section">
                 {#if !isOwner && scheduledFlights.length > 1}
-                  <button on:click={() => showAllFlights = !showAllFlights} class="expand-flights-btn">
+                  <button onclick={() => showAllFlights = !showAllFlights} class="expand-flights-btn">
                     {showAllFlights ? '▼' : '►'} {showAllFlights ? 'Hide' : 'Show'} All Scheduled Flights ({scheduledFlights.length})
                   </button>
                 {:else}
@@ -1806,7 +1819,7 @@
                           {/if}
                         </div>
                         {#if canCheckInNow && !isOwner}
-                          <button on:click={() => openCheckinDialog(flight)} class="check-in-btn">Check In Now</button>
+                          <button onclick={() => openCheckinDialog(flight)} class="check-in-btn">Check In Now</button>
                         {/if}
                       </div>
                     {/each}
@@ -1841,7 +1854,7 @@
                         {/if}
                       </div>
                       {#if canRestoreNow}
-                        <button on:click={() => restoreFlight(flight.id)} class="restore-btn">Restore Flight</button>
+                        <button onclick={() => restoreFlight(flight.id)} class="restore-btn">Restore Flight</button>
                       {/if}
                     </div>
                   {/each}
@@ -1947,7 +1960,7 @@
                               <span class="primary-badge">Primary</span>
                             {/if}
                             {#if hasAttachments(equip)}
-                              <button class="attachments-badge" on:click|stopPropagation={() => openAttachmentDialog(equip)} title="View attachments">
+                              <button class="attachments-badge" onclick={stopPropagation(() => openAttachmentDialog(equip))} title="View attachments">
                                 {countAttachments(equip)} attachment{countAttachments(equip) > 1 ? 's' : ''}
                               </button>
                             {/if}
@@ -1965,7 +1978,7 @@
                               class="toggle-btn tier-toggle" 
                               class:active={enabledTierEnhancers[equip.item_name]}
                               disabled={activeWeapon?.Name !== equip.item_name}
-                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                              onclick={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
                             >
                               {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
                             </button>
@@ -1973,7 +1986,7 @@
                           <button 
                             class="use-btn" 
                             class:active={activeWeapon?.Name === equip.item_name}
-                            on:click={() => activeWeapon = weaponData}
+                            onclick={() => activeWeapon = weaponData}
                           >
                             {activeWeapon?.Name === equip.item_name ? 'Active' : 'Use'}
                           </button>
@@ -2044,7 +2057,7 @@
                               <button 
                                 class="toggle-btn" 
                                 class:active={isThisAbilityActive}
-                                on:click={() => {
+                                onclick={() => {
                                   if (isThisAbilityActive) {
                                     // Turn off this ability (deactivate pet)
                                     activePetEffects[equip.item_name] = false;
@@ -2116,7 +2129,7 @@
                               class="toggle-btn tier-toggle" 
                               class:active={enabledTierEnhancers[equip.item_name]}
                               disabled={activeMedicalEquipment?.item_name !== equip.item_name}
-                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                              onclick={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
                             >
                               {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
                             </button>
@@ -2124,7 +2137,7 @@
                           <button 
                             class="use-btn" 
                             class:active={activeMedicalEquipment?.item_name === equip.item_name}
-                            on:click={() => activeMedicalEquipment = equip}
+                            onclick={() => activeMedicalEquipment = equip}
                           >
                             {activeMedicalEquipment?.item_name === equip.item_name ? 'Active' : 'Use'}
                           </button>
@@ -2164,7 +2177,7 @@
                               <span class="primary-badge">Primary</span>
                             {/if}
                             {#if hasAttachments(equip)}
-                              <button class="attachments-badge" on:click|stopPropagation={() => openAttachmentDialog(equip)} title="View attachments">
+                              <button class="attachments-badge" onclick={stopPropagation(() => openAttachmentDialog(equip))} title="View attachments">
                                 {countAttachments(equip)} attachment{countAttachments(equip) > 1 ? 's' : ''}
                               </button>
                             {/if}
@@ -2181,7 +2194,7 @@
                             <button 
                               class="toggle-btn tier-toggle" 
                               class:active={enabledTierEnhancers[equip.item_name]}
-                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                              onclick={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
                             >
                               {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
                             </button>
@@ -2238,7 +2251,7 @@
                             <button 
                               class="toggle-btn tier-toggle" 
                               class:active={enabledTierEnhancers[equip.item_name]}
-                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                              onclick={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
                             >
                               {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
                             </button>
@@ -2288,7 +2301,7 @@
                         <button 
                           class="toggle-btn" 
                           class:active={enabledConsumables[equip.item_name]}
-                          on:click={() => enabledConsumables[equip.item_name] = !enabledConsumables[equip.item_name]}
+                          onclick={() => enabledConsumables[equip.item_name] = !enabledConsumables[equip.item_name]}
                         >
                           {enabledConsumables[equip.item_name] ? 'Enabled' : 'Disabled'}
                         </button>
@@ -2338,11 +2351,11 @@
 </div>
 
 {#if showRequestModal}
-  <div class="modal-backdrop" on:click={closeRequestModal}>
-    <div class="modal" on:click|stopPropagation>
+  <div class="modal-backdrop" onclick={closeRequestModal}>
+    <div class="modal" onclick={stopPropagation(bubble('click'))}>
       <div class="modal-header">
         <h2>{selectedService.title}</h2>
-        <button class="modal-close" on:click={closeRequestModal}>&times;</button>
+        <button class="modal-close" onclick={closeRequestModal}>&times;</button>
       </div>
 
       {#if selectedService.type === 'transportation'}
@@ -2350,14 +2363,14 @@
           <button
             class="modal-tab"
             class:active={requestFormTab === 'request'}
-            on:click={() => requestFormTab = 'request'}
+            onclick={() => requestFormTab = 'request'}
           >
             Request Flight
           </button>
           <button
             class="modal-tab"
             class:active={requestFormTab === 'question'}
-            on:click={() => requestFormTab = 'question'}
+            onclick={() => requestFormTab = 'question'}
           >
             Ask a Question
           </button>
@@ -2454,7 +2467,7 @@
       </div>
 
       <div class="modal-footer">
-        <button class="modal-btn cancel-btn" on:click={closeRequestModal} disabled={requestSubmitting}>
+        <button class="modal-btn cancel-btn" onclick={closeRequestModal} disabled={requestSubmitting}>
           Cancel
         </button>
         {#if requestFormTab === 'request'}
@@ -2462,7 +2475,7 @@
           {@const missingFlightInfo = selectedService?.type === 'transportation' && (!requestPlanetId || !requestDestinationPlanetId)}
           <button
             class="modal-btn submit-btn"
-            on:click={submitRequest}
+            onclick={submitRequest}
             disabled={requestSubmitting || needsTicket || missingFlightInfo || (user.id === selectedService.user_id && !user.grants?.includes('admin.panel'))}
           >
             {requestSubmitting ? 'Submitting...' : 'Submit Request'}
@@ -2471,7 +2484,7 @@
           {#if !(activeRequest && activeRequest.discord_thread_id && !isOwner)}
             <button
               class="modal-btn submit-btn"
-              on:click={submitQuestion}
+              onclick={submitQuestion}
               disabled={requestSubmitting || !questionMessage.trim()}
             >
               {requestSubmitting ? 'Sending...' : 'Send Question'}
@@ -2488,11 +2501,11 @@
   {@const att = attachmentDialogData.attachments}
   {@const item = attachmentDialogData.item}
   {@const weaponClass = att.weaponClass}
-  <div class="modal-backdrop" on:click={closeAttachmentDialog}>
-    <div class="attachment-dialog" on:click|stopPropagation>
+  <div class="modal-backdrop" onclick={closeAttachmentDialog}>
+    <div class="attachment-dialog" onclick={stopPropagation(bubble('click'))}>
       <div class="dialog-header">
         <h3>Attachments for {item.item_name}</h3>
-        <button class="modal-close" on:click={closeAttachmentDialog}>&times;</button>
+        <button class="modal-close" onclick={closeAttachmentDialog}>&times;</button>
       </div>
       <div class="dialog-body">
         {#if weaponClass}
@@ -2687,7 +2700,7 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button class="btn secondary" on:click={closeAttachmentDialog}>Close</button>
+        <button class="btn secondary" onclick={closeAttachmentDialog}>Close</button>
       </div>
     </div>
   </div>
@@ -2695,11 +2708,11 @@
 
 <!-- Check-in Dialog -->
 {#if showCheckinDialog && checkinFlight}
-  <div class="modal-backdrop" on:click={closeCheckinDialog}>
-    <div class="modal" on:click|stopPropagation>
+  <div class="modal-backdrop" onclick={closeCheckinDialog}>
+    <div class="modal" onclick={stopPropagation(bubble('click'))}>
       <div class="modal-header">
         <h2>Check In to Flight</h2>
-        <button class="modal-close" on:click={closeCheckinDialog}>&times;</button>
+        <button class="modal-close" onclick={closeCheckinDialog}>&times;</button>
       </div>
 
       <div class="modal-body">
@@ -2786,12 +2799,12 @@
       </div>
 
       <div class="modal-footer">
-        <button class="modal-btn cancel-btn" on:click={closeCheckinDialog} disabled={checkinSubmitting}>
+        <button class="modal-btn cancel-btn" onclick={closeCheckinDialog} disabled={checkinSubmitting}>
           Cancel
         </button>
         <button
           class="modal-btn submit-btn"
-          on:click={submitCheckin}
+          onclick={submitCheckin}
           disabled={checkinSubmitting || !checkinLocation.trim() || !checkinPlanetId || (checkinFlight.route_type === 'flexible' && (!checkinExitLocation.trim() || !checkinExitPlanetId))}
         >
           {checkinSubmitting ? 'Checking In...' : 'Check In'}

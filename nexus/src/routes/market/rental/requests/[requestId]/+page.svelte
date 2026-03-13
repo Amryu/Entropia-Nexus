@@ -11,24 +11,24 @@
   import { formatPrice, formatDateDisplay } from '$lib/utils/rentalPricing.js';
   import { addToast } from '$lib/stores/toasts';
 
-  export let data;
+  let { data } = $props();
 
-  $: req = data.request;
-  $: user = data.session?.user;
-  $: isOwner = user && req && (String(user.id) === String(req.offer_owner_id) || user.grants?.includes('admin.panel'));
-  $: isRequester = user && req && String(user.id) === String(req.requester_id);
-  $: extensions = req?.extensions || [];
+  let req = $derived(data.request);
+  let user = $derived(data.session?.user);
+  let isOwner = $derived(user && req && (String(user.id) === String(req.offer_owner_id) || user.grants?.includes('admin.panel')));
+  let isRequester = $derived(user && req && String(user.id) === String(req.requester_id));
+  let extensions = $derived(req?.extensions || []);
 
   // Action permissions
-  $: canCancel = isRequester && req?.status === 'open';
-  $: canAccept = isOwner && req?.status === 'open';
-  $: canReject = isOwner && req?.status === 'open';
-  $: canStart = isOwner && req?.status === 'accepted';
-  $: canComplete = isOwner && req?.status === 'in_progress';
-  $: hasActions = canCancel || canAccept || canReject || canStart || canComplete;
+  let canCancel = $derived(isRequester && req?.status === 'open');
+  let canAccept = $derived(isOwner && req?.status === 'open');
+  let canReject = $derived(isOwner && req?.status === 'open');
+  let canStart = $derived(isOwner && req?.status === 'accepted');
+  let canComplete = $derived(isOwner && req?.status === 'in_progress');
+  let hasActions = $derived(canCancel || canAccept || canReject || canStart || canComplete);
 
-  let actionLoading = false;
-  let actionError = '';
+  let actionLoading = $state(false);
+  let actionError = $state('');
 
   async function updateStatus(newStatus, confirmMsg) {
     if (confirmMsg && !confirm(confirmMsg)) return;
@@ -79,7 +79,7 @@
       <span>Request #{req?.id}</span>
     </div>
 
-    <button class="back-btn" on:click={() => goto('/market/rental/my')}>
+    <button class="back-btn" onclick={() => goto('/market/rental/my')}>
       &larr; Back to My Rentals
     </button>
 
@@ -235,7 +235,7 @@
                 <button
                   class="btn-publish"
                   disabled={actionLoading}
-                  on:click={() => updateStatus('accepted', 'Accept this rental request?')}
+                  onclick={() => updateStatus('accepted', 'Accept this rental request?')}
                 >
                   Accept
                 </button>
@@ -244,7 +244,7 @@
                 <button
                   class="btn-delete"
                   disabled={actionLoading}
-                  on:click={() => updateStatus('rejected', 'Reject this rental request?')}
+                  onclick={() => updateStatus('rejected', 'Reject this rental request?')}
                 >
                   Reject
                 </button>
@@ -253,7 +253,7 @@
                 <button
                   class="btn-primary"
                   disabled={actionLoading}
-                  on:click={() => updateStatus('in_progress', 'Mark this rental as started? This means the item has been handed over.')}
+                  onclick={() => updateStatus('in_progress', 'Mark this rental as started? This means the item has been handed over.')}
                 >
                   Start Rental
                 </button>
@@ -262,7 +262,7 @@
                 <button
                   class="btn-primary"
                   disabled={actionLoading}
-                  on:click={() => updateStatus('completed', 'Mark this rental as completed? This means the item has been returned.')}
+                  onclick={() => updateStatus('completed', 'Mark this rental as completed? This means the item has been returned.')}
                 >
                   Mark Complete
                 </button>
@@ -271,7 +271,7 @@
                 <button
                   class="btn-delete"
                   disabled={actionLoading}
-                  on:click={() => updateStatus('cancelled', 'Cancel this rental request?')}
+                  onclick={() => updateStatus('cancelled', 'Cancel this rental request?')}
                 >
                   Cancel Request
                 </button>

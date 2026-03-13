@@ -1,5 +1,7 @@
 <script lang="ts">
-  /**
+  
+  interface Props {
+    /**
    * Skeleton loading placeholder component
    *
    * Props:
@@ -9,21 +11,30 @@
    * - lines: number - Number of text lines (only for variant='text')
    * - animate: boolean - Whether to animate (default: true)
    */
-  export let variant: 'text' | 'circle' | 'rect' | 'card' = 'text';
-  export let width: string = '100%';
-  export let height: string | null = null;
-  export let lines: number = 1;
-  export let animate: boolean = true;
+    variant?: 'text' | 'circle' | 'rect' | 'card';
+    width?: string;
+    height?: string | null;
+    lines?: number;
+    animate?: boolean;
+  }
+
+  let {
+    variant = 'text',
+    width = '100%',
+    height = null,
+    lines = 1,
+    animate = true
+  }: Props = $props();
 
   // Default heights based on variant
-  $: defaultHeight = {
+  let defaultHeight = $derived({
     text: '1rem',
     circle: '40px',
     rect: '100px',
     card: '120px'
-  }[variant];
+  }[variant]);
 
-  $: actualHeight = height || defaultHeight;
+  let actualHeight = $derived(height || defaultHeight);
 </script>
 
 {#if variant === 'text' && lines > 1}

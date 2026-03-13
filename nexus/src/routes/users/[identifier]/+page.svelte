@@ -1,4 +1,7 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { browser } from '$app/environment';
   import { slide } from 'svelte/transition';
@@ -18,50 +21,34 @@
   import { TYPE_FILTERS } from '$lib/data/globals-constants.js';
   import { formatPedShort, timeAgo, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
 
-  export let data;
+  let { data } = $props();
 
   // Track the profile ID to detect when we navigate to a different profile
-  let currentProfileId = null;
+  let currentProfileId = $state(null);
 
-  // Make data-derived state reactive so it updates when navigating between profiles
-  $: profile = data.profileData.profile;
-  $: scores = data.profileData.scores;
-  $: services = data.profileData.services || [];
-  $: shops = data.profileData.shops || [];
-  $: orders = data.profileData.orders || [];
-  $: rentals = data.profileData.rentals || [];
-  $: avatar = data.profileData.avatar || {};
-  $: isOwner = data.profileData.permissions?.isOwner;
-  $: society = profile?.society || null;
-  $: pendingSocietyRequest = profile?.pendingSocietyRequest || null;
 
-  // Reset UI state when profile changes
-  $: if (profile?.id && profile.id !== currentProfileId) {
-    currentProfileId = profile.id;
-    resetUIState();
-  }
 
-  let isEditing = false;
-  let saveError = '';
-  let saveStatus = '';
-  let tabInitialized = false;
-  let imageFailed = false;
-  let showImageDialog = false;
-  let showSocietyDialog = false;
-  let societyMode = 'join';
-  let societySearchQuery = '';
-  let societySearchResults = [];
-  let societySearchLoading = false;
-  let societySearchError = '';
-  let societyCreateName = '';
-  let societyCreateAbbr = '';
-  let societyCreateDescription = '';
-  let societyCreateDiscord = '';
-  let societyActionError = '';
-  let societyActionStatus = '';
+  let isEditing = $state(false);
+  let saveError = $state('');
+  let saveStatus = $state('');
+  let tabInitialized = $state(false);
+  let imageFailed = $state(false);
+  let showImageDialog = $state(false);
+  let showSocietyDialog = $state(false);
+  let societyMode = $state('join');
+  let societySearchQuery = $state('');
+  let societySearchResults = $state([]);
+  let societySearchLoading = $state(false);
+  let societySearchError = $state('');
+  let societyCreateName = $state('');
+  let societyCreateAbbr = $state('');
+  let societyCreateDescription = $state('');
+  let societyCreateDiscord = $state('');
+  let societyActionError = $state('');
+  let societyActionStatus = $state('');
   let societySearchTimeout = null;
 
-  let discordFlash = false;
+  let discordFlash = $state(false);
   function copyDiscordName() {
     if (!profile?.socialDiscord) return;
     navigator.clipboard.writeText(profile.socialDiscord);
@@ -79,51 +66,51 @@
   const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
   const isRingSlot = (slot) => /ring|finger/i.test(slot || '');
 
-  let avatarDetailTab = 'Stats';
-  let avatarTabsInitialized = false;
-  let referenceLoading = false;
-  let referenceError = '';
-  let referenceReady = false;
-  let showcaseRecord = null;
-  let showcaseLoadout = null;
-  let showcaseShareCode = null;
-  let showcaseName = 'Showcase Loadout';
-  let avatarSubTabs = [];
-  let leftRing = null;
-  let rightRing = null;
-  let selectedClothing = [];
-  let clothingEntries = [];
-  let evaluation = null;
-  let stats = {};
-  let effectsAll = [];
-  let expandedEffectKeys = new Set();
-  let isHydratingShowcase = false;
+  let avatarDetailTab = $state('Stats');
+  let avatarTabsInitialized = $state(false);
+  let referenceLoading = $state(false);
+  let referenceError = $state('');
+  let referenceReady = $state(false);
+  let showcaseRecord = $state(null);
+  let showcaseLoadout = $state(null);
+  let showcaseShareCode = $state(null);
+  let showcaseName = $state('Showcase Loadout');
+  let avatarSubTabs = $state([]);
+  let leftRing = $state(null);
+  let rightRing = $state(null);
+  let selectedClothing = $state([]);
+  let clothingEntries = $state([]);
+  let evaluation = $state(null);
+  let stats = $state({});
+  let effectsAll = $state([]);
+  let expandedEffectKeys = $state(new Set());
+  let isHydratingShowcase = $state(false);
 
-  let weapons = [];
-  let amplifiers = [];
-  let scopes = [];
-  let sights = [];
-  let absorbers = [];
-  let matrices = [];
-  let implants = [];
-  let armorsets = [];
-  let armors = [];
-  let armorplatings = [];
-  let clothing = [];
-  let pets = [];
-  let stimulants = [];
-  let medicalTools = [];
-  let effectsCatalog = [];
-  let effectCaps = {};
+  let weapons = $state([]);
+  let amplifiers = $state([]);
+  let scopes = $state([]);
+  let sights = $state([]);
+  let absorbers = $state([]);
+  let matrices = $state([]);
+  let implants = $state([]);
+  let armorsets = $state([]);
+  let armors = $state([]);
+  let armorplatings = $state([]);
+  let clothing = $state([]);
+  let pets = $state([]);
+  let stimulants = $state([]);
+  let medicalTools = $state([]);
+  let effectsCatalog = $state([]);
+  let effectCaps = $state({});
 
-  let form = {
+  let form = $state({
     biographyHtml: '',
     defaultTab: 'General',
     showcaseLoadoutCode: '',
     socialDiscord: '',
     socialYoutube: '',
     socialTwitch: ''
-  };
+  });
 
   // Reset UI state when navigating to a different profile
   function resetUIState() {
@@ -157,19 +144,14 @@
     };
   }
 
-  $: hasAvatarData = !!(form.showcaseLoadoutCode || avatar?.showcaseLoadout);
-  $: hasServices = services.length > 0;
-  $: hasShops = shops.length > 0;
-  $: hasOrders = orders.length > 0;
-  $: hasRentals = rentals.length > 0;
 
   // Globals tab state (lazy-loaded)
-  let globalsData = null;
-  let globalsLoading = false;
-  let globalsLoaded = false;
-  let globalsTypeFilter = '';
-  let globalsSort = { col: 'total_value', asc: false };
-  let globalsPage = 0;
+  let globalsData = $state(null);
+  let globalsLoading = $state(false);
+  let globalsLoaded = $state(false);
+  let globalsTypeFilter = $state('');
+  let globalsSort = $state({ col: 'total_value', asc: false });
+  let globalsPage = $state(0);
   const GLOBALS_PAGE_SIZE = 10;
   const GLOBALS_TYPE_FILTERS = TYPE_FILTERS.filter(tf => tf.value !== 'examine');
 
@@ -186,48 +168,15 @@
     globalsLoaded = true;
   }
 
-  $: if (activeTab === 'Globals' && !globalsLoaded) {
-    loadGlobalsData();
-  }
 
   function onGlobalsSort(col) {
     globalsSort = toggleSort(globalsSort, col);
     globalsPage = 0;
   }
 
-  // Merge hunting/mining/crafting into a unified table
-  $: globalsUnifiedRows = (() => {
-    if (!globalsData) return [];
-    const rows = [];
-    for (const mob of (globalsData.hunting || [])) {
-      rows.push({ target: mob.target, type: 'hunting', typeLabel: 'Hunting', count: mob.kills, total_value: mob.total_value, avg_value: mob.avg_value || 0, best_value: mob.best_value });
-    }
-    for (const res of (globalsData.mining?.resources || [])) {
-      rows.push({ target: res.target, type: 'mining', typeLabel: 'Mining', count: res.finds, total_value: res.total_value, avg_value: res.avg_value || 0, best_value: res.best_value });
-    }
-    for (const item of (globalsData.crafting?.items || [])) {
-      rows.push({ target: item.target, type: 'crafting', typeLabel: 'Crafting', count: item.crafts, total_value: item.total_value, avg_value: item.avg_value || 0, best_value: item.best_value });
-    }
-    return rows;
-  })();
 
-  $: globalsFilteredRows = (() => {
-    if (!globalsTypeFilter) return globalsUnifiedRows;
-    if (globalsTypeFilter === 'kill,team_kill') return globalsUnifiedRows.filter(r => r.type === 'hunting');
-    if (globalsTypeFilter === 'deposit') return globalsUnifiedRows.filter(r => r.type === 'mining');
-    if (globalsTypeFilter === 'craft') return globalsUnifiedRows.filter(r => r.type === 'crafting');
-    return globalsUnifiedRows;
-  })();
 
-  $: globalsSortedRows = sortedData(globalsFilteredRows, globalsSort);
-  $: globalsTotalPages = Math.ceil(globalsSortedRows.length / GLOBALS_PAGE_SIZE);
-  $: globalsDisplayRows = globalsSortedRows.slice(globalsPage * GLOBALS_PAGE_SIZE, (globalsPage + 1) * GLOBALS_PAGE_SIZE);
 
-  // ATH rankings data
-  $: globalsAthRankings = globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] };
-  // Rare items and discoveries
-  $: globalsRareItems = (globalsData?.rare_items || []).slice(0, 5);
-  $: globalsDiscoveries = (globalsData?.achievements || []).filter(a => a.type === 'discovery').slice(0, 5);
   function sortOrdersByCategory(orderList) {
     return orderList
       .map(o => ({ ...o, category: getItemCategoryPath(o.item_type, o.item_sub_type) }))
@@ -239,8 +188,6 @@
         return nameA.localeCompare(nameB);
       });
   }
-  $: buyOrders = sortOrdersByCategory(orders.filter(o => o.type === 'BUY'));
-  $: sellOrders = sortOrdersByCategory(orders.filter(o => o.type === 'SELL'));
 
   function formatRentalAvailability(offer) {
     if (offer.status === 'available') return null;
@@ -262,99 +209,18 @@
     return best;
   }
 
-  $: availableTabs = [
-    { id: 'General', label: 'General', available: true },
-    { id: 'Avatar', label: 'Avatar', available: hasAvatarData || (isOwner && isEditing) },
-    { id: 'Globals', label: 'Globals', available: !!profile.euName },
-    { id: 'Services', label: 'Services', available: hasServices },
-    { id: 'Rentals', label: 'Rentals', available: hasRentals },
-    { id: 'Shops', label: 'Shops', available: hasShops },
-    { id: 'Orders', label: 'Orders', available: hasOrders }
-  ].filter(tab => tab.available);
 
-  let activeTab = 'General';
+  let activeTab = $state('General');
 
-  $: if (!tabInitialized && availableTabs.length > 0) {
-    const desired = profile.defaultTab || 'General';
-    activeTab = availableTabs.find(tab => tab.id === desired)?.id || availableTabs[0].id;
-    tabInitialized = true;
-  }
 
-  $: if (tabInitialized && !availableTabs.find(tab => tab.id === activeTab)) {
-    activeTab = availableTabs[0]?.id || 'General';
-  }
 
-  $: showcaseRecord = avatar?.showcaseLoadout || null;
-  $: showcaseLoadoutRaw = showcaseRecord?.data || null;
-  $: showcaseLoadout = resolveDefaultSets(showcaseLoadoutRaw);
-  $: showcaseShareCode = showcaseRecord?.share_code || showcaseRecord?.shareCode || null;
-  $: showcaseName = showcaseRecord?.name || showcaseLoadout?.Name || 'Showcase Loadout';
 
-  $: avatarSubTabs = [
-    { id: 'Stats', label: 'Detailed Stats' },
-    { id: 'Weapons', label: 'Weapons' },
-    { id: 'Armor', label: 'Armor' },
-    { id: 'Healing', label: 'Healing' },
-    { id: 'Accessories', label: 'Rings, Clothing & Pet' }
-  ];
 
-  $: if (!avatarTabsInitialized && avatarSubTabs.length > 0) {
-    avatarDetailTab = 'Stats';
-    avatarTabsInitialized = true;
-  }
 
-  $: if (avatarTabsInitialized && !avatarSubTabs.find(tab => tab.id === avatarDetailTab)) {
-    avatarDetailTab = avatarSubTabs[0]?.id || 'Stats';
-  }
 
-  $: profileSlug = profile.euName ? encodeURIComponentSafe(profile.euName) : profile.id;
-  $: displayImageUrl = imageFailed
-    ? profile.discordAvatarUrl
-    : (profile.profileImageUrl || profile.discordAvatarUrl);
 
-  $: clothingEntries = (showcaseLoadout?.Gear?.Clothing || []).map(entry => (
-    typeof entry === 'string' ? { Name: entry } : entry
-  ));
-  $: leftRing = clothingEntries.length ? getClothingSlot('Ring', 'Left') : null;
-  $: rightRing = clothingEntries.length ? getClothingSlot('Ring', 'Right') : null;
-  $: selectedClothing = clothingEntries.filter(item => !isRingSlot(item?.Slot));
-  $: evaluation = showcaseLoadout
-    ? evaluateLoadout(
-        showcaseLoadout,
-        {
-          armorSlots,
-          weapons,
-          amplifiers,
-          scopes,
-          sights,
-          absorbers,
-          matrices,
-          implants,
-          armors,
-          armorPlatings: armorplatings,
-          armorSets: armorsets,
-          clothing,
-          pets,
-          stimulants,
-          medicalTools
-        },
-        { effectsCatalog, effectCaps }
-      )
-    : null;
-  $: stats = evaluation?.stats || {};
-  $: effectsAll = evaluation?.effects?.all || [];
-  $: defenseBreakdown = {
-    ...(stats.totalDefenseByType || {}),
-    Block: stats.blockChance ?? 0
-  };
 
-  $: if (showcaseLoadout && browser && !referenceReady && !referenceLoading) {
-    loadAvatarReferences();
-  }
 
-  $: if (browser && showcaseRecord && !showcaseRecord?.data && showcaseShareCode && !isHydratingShowcase) {
-    hydrateShowcaseLoadout(showcaseShareCode);
-  }
 
   // -- Offer table columns for the Orders tab --
   function formatOfferAge(dateStr) {
@@ -421,9 +287,6 @@
     }
   ];
 
-  $: ordersPageUrl = profile?.euName
-    ? `/market/exchange/orders/${encodeURIComponentSafe(profile.euName)}`
-    : null;
 
   function startEdit() {
     isEditing = true;
@@ -790,6 +653,186 @@
       isHydratingShowcase = false;
     }
   }
+  // Make data-derived state reactive so it updates when navigating between profiles
+  let profile = $derived(data.profileData.profile);
+  let scores = $derived(data.profileData.scores);
+  let services = $derived(data.profileData.services || []);
+  let shops = $derived(data.profileData.shops || []);
+  let orders = $derived(data.profileData.orders || []);
+  let rentals = $derived(data.profileData.rentals || []);
+  let avatar = $derived(data.profileData.avatar || {});
+  let isOwner = $derived(data.profileData.permissions?.isOwner);
+  let society = $derived(profile?.society || null);
+  let pendingSocietyRequest = $derived(profile?.pendingSocietyRequest || null);
+  // Reset UI state when profile changes
+  run(() => {
+    if (profile?.id && profile.id !== currentProfileId) {
+      currentProfileId = profile.id;
+      resetUIState();
+    }
+  });
+  let hasAvatarData = $derived(!!(form.showcaseLoadoutCode || avatar?.showcaseLoadout));
+  let hasServices = $derived(services.length > 0);
+  let hasShops = $derived(shops.length > 0);
+  let hasOrders = $derived(orders.length > 0);
+  let hasRentals = $derived(rentals.length > 0);
+  let availableTabs = $derived([
+    { id: 'General', label: 'General', available: true },
+    { id: 'Avatar', label: 'Avatar', available: hasAvatarData || (isOwner && isEditing) },
+    { id: 'Globals', label: 'Globals', available: !!profile.euName },
+    { id: 'Services', label: 'Services', available: hasServices },
+    { id: 'Rentals', label: 'Rentals', available: hasRentals },
+    { id: 'Shops', label: 'Shops', available: hasShops },
+    { id: 'Orders', label: 'Orders', available: hasOrders }
+  ].filter(tab => tab.available));
+  run(() => {
+    if (!tabInitialized && availableTabs.length > 0) {
+      const desired = profile.defaultTab || 'General';
+      activeTab = availableTabs.find(tab => tab.id === desired)?.id || availableTabs[0].id;
+      tabInitialized = true;
+    }
+  });
+  run(() => {
+    if (tabInitialized && !availableTabs.find(tab => tab.id === activeTab)) {
+      activeTab = availableTabs[0]?.id || 'General';
+    }
+  });
+  run(() => {
+    if (activeTab === 'Globals' && !globalsLoaded) {
+      loadGlobalsData();
+    }
+  });
+  // Merge hunting/mining/crafting into a unified table
+  let globalsUnifiedRows = $derived((() => {
+    if (!globalsData) return [];
+    const rows = [];
+    for (const mob of (globalsData.hunting || [])) {
+      rows.push({ target: mob.target, type: 'hunting', typeLabel: 'Hunting', count: mob.kills, total_value: mob.total_value, avg_value: mob.avg_value || 0, best_value: mob.best_value });
+    }
+    for (const res of (globalsData.mining?.resources || [])) {
+      rows.push({ target: res.target, type: 'mining', typeLabel: 'Mining', count: res.finds, total_value: res.total_value, avg_value: res.avg_value || 0, best_value: res.best_value });
+    }
+    for (const item of (globalsData.crafting?.items || [])) {
+      rows.push({ target: item.target, type: 'crafting', typeLabel: 'Crafting', count: item.crafts, total_value: item.total_value, avg_value: item.avg_value || 0, best_value: item.best_value });
+    }
+    return rows;
+  })());
+  let globalsFilteredRows = $derived((() => {
+    if (!globalsTypeFilter) return globalsUnifiedRows;
+    if (globalsTypeFilter === 'kill,team_kill') return globalsUnifiedRows.filter(r => r.type === 'hunting');
+    if (globalsTypeFilter === 'deposit') return globalsUnifiedRows.filter(r => r.type === 'mining');
+    if (globalsTypeFilter === 'craft') return globalsUnifiedRows.filter(r => r.type === 'crafting');
+    return globalsUnifiedRows;
+  })());
+  let globalsSortedRows = $derived(sortedData(globalsFilteredRows, globalsSort));
+  let globalsTotalPages = $derived(Math.ceil(globalsSortedRows.length / GLOBALS_PAGE_SIZE));
+  let globalsDisplayRows = $derived(globalsSortedRows.slice(globalsPage * GLOBALS_PAGE_SIZE, (globalsPage + 1) * GLOBALS_PAGE_SIZE));
+  // ATH rankings data
+  let globalsAthRankings = $derived(globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] });
+  // Rare items and discoveries
+  let globalsRareItems = $derived((globalsData?.rare_items || []).slice(0, 5));
+  let globalsDiscoveries = $derived((globalsData?.achievements || []).filter(a => a.type === 'discovery').slice(0, 5));
+  let buyOrders = $derived(sortOrdersByCategory(orders.filter(o => o.type === 'BUY')));
+  let sellOrders = $derived(sortOrdersByCategory(orders.filter(o => o.type === 'SELL')));
+  run(() => {
+    showcaseRecord = avatar?.showcaseLoadout || null;
+  });
+  let showcaseLoadoutRaw = $derived(showcaseRecord?.data || null);
+  run(() => {
+    showcaseLoadout = resolveDefaultSets(showcaseLoadoutRaw);
+  });
+  run(() => {
+    showcaseShareCode = showcaseRecord?.share_code || showcaseRecord?.shareCode || null;
+  });
+  run(() => {
+    showcaseName = showcaseRecord?.name || showcaseLoadout?.Name || 'Showcase Loadout';
+  });
+  run(() => {
+    avatarSubTabs = [
+      { id: 'Stats', label: 'Detailed Stats' },
+      { id: 'Weapons', label: 'Weapons' },
+      { id: 'Armor', label: 'Armor' },
+      { id: 'Healing', label: 'Healing' },
+      { id: 'Accessories', label: 'Rings, Clothing & Pet' }
+    ];
+  });
+  run(() => {
+    if (!avatarTabsInitialized && avatarSubTabs.length > 0) {
+      avatarDetailTab = 'Stats';
+      avatarTabsInitialized = true;
+    }
+  });
+  run(() => {
+    if (avatarTabsInitialized && !avatarSubTabs.find(tab => tab.id === avatarDetailTab)) {
+      avatarDetailTab = avatarSubTabs[0]?.id || 'Stats';
+    }
+  });
+  let profileSlug = $derived(profile.euName ? encodeURIComponentSafe(profile.euName) : profile.id);
+  let displayImageUrl = $derived(imageFailed
+    ? profile.discordAvatarUrl
+    : (profile.profileImageUrl || profile.discordAvatarUrl));
+  run(() => {
+    clothingEntries = (showcaseLoadout?.Gear?.Clothing || []).map(entry => (
+      typeof entry === 'string' ? { Name: entry } : entry
+    ));
+  });
+  run(() => {
+    leftRing = clothingEntries.length ? getClothingSlot('Ring', 'Left') : null;
+  });
+  run(() => {
+    rightRing = clothingEntries.length ? getClothingSlot('Ring', 'Right') : null;
+  });
+  run(() => {
+    selectedClothing = clothingEntries.filter(item => !isRingSlot(item?.Slot));
+  });
+  run(() => {
+    evaluation = showcaseLoadout
+      ? evaluateLoadout(
+          showcaseLoadout,
+          {
+            armorSlots,
+            weapons,
+            amplifiers,
+            scopes,
+            sights,
+            absorbers,
+            matrices,
+            implants,
+            armors,
+            armorPlatings: armorplatings,
+            armorSets: armorsets,
+            clothing,
+            pets,
+            stimulants,
+            medicalTools
+          },
+          { effectsCatalog, effectCaps }
+        )
+      : null;
+  });
+  run(() => {
+    stats = evaluation?.stats || {};
+  });
+  run(() => {
+    effectsAll = evaluation?.effects?.all || [];
+  });
+  let defenseBreakdown = $derived({
+    ...(stats.totalDefenseByType || {}),
+    Block: stats.blockChance ?? 0
+  });
+  run(() => {
+    if (showcaseLoadout && browser && !referenceReady && !referenceLoading) {
+      loadAvatarReferences();
+    }
+  });
+  run(() => {
+    if (browser && showcaseRecord && !showcaseRecord?.data && showcaseShareCode && !isHydratingShowcase) {
+      hydrateShowcaseLoadout(showcaseShareCode);
+    }
+  });
+  let ordersPageUrl = $derived(profile?.euName
+    ? `/market/exchange/orders/${encodeURIComponentSafe(profile.euName)}`
+    : null);
 </script>
 
 <svelte:head>
@@ -800,9 +843,9 @@
 <div class="profile-page">
   <div class="profile-header">
     <div class="profile-image">
-      <button class="profile-image-button" type="button" on:click={openImageDialog} class:editable={isOwner && isEditing}>
+      <button class="profile-image-button" type="button" onclick={openImageDialog} class:editable={isOwner && isEditing}>
         {#if displayImageUrl}
-          <img src={displayImageUrl} alt={profile.euName || profile.discordName} on:error={() => (imageFailed = true)} />
+          <img src={displayImageUrl} alt={profile.euName || profile.discordName} onerror={() => (imageFailed = true)} />
         {:else}
           <div class="profile-image-placeholder">No Image</div>
         {/if}
@@ -818,7 +861,7 @@
         {#if profile.socialDiscord || profile.socialYoutube || profile.socialTwitch}
           <div class="social-icons">
             {#if profile.socialDiscord}
-              <button class="social-link social-discord" class:discord-copied={discordFlash} title="Copy Discord: {profile.socialDiscord}" on:click={copyDiscordName}>
+              <button class="social-link social-discord" class:discord-copied={discordFlash} title="Copy Discord: {profile.socialDiscord}" onclick={copyDiscordName}>
                 <svg viewBox="0 0 127.14 96.36" width="23" height="23"><path fill="currentColor" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0 105.89 105.89 0 0 0 19.39 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2.03a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2.03a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53.05s5-12.68 11.45-12.68S54 46.07 53.89 53.05 48.84 65.69 42.45 65.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53.05s5-12.68 11.44-12.68S96.23 46.07 96.12 53.05 91.08 65.69 84.69 65.69Z"/></svg>
               </button>
             {/if}
@@ -850,7 +893,7 @@
             <span class="meta-value">—</span>
           {/if}
           {#if isOwner && (!profile.societyId || profile.societyId <= 0)}
-            <button class="btn btn-secondary btn-small society-action" on:click={() => { showSocietyDialog = true; societyActionError = ''; societyActionStatus = ''; }}>
+            <button class="btn btn-secondary btn-small society-action" onclick={() => { showSocietyDialog = true; societyActionError = ''; societyActionStatus = ''; }}>
               Join / Create
             </button>
           {/if}
@@ -865,10 +908,10 @@
     {#if isOwner}
       <div class="profile-actions">
         {#if isEditing}
-          <button class="btn btn-primary" on:click={saveProfile}>Save</button>
-          <button class="btn btn-secondary" on:click={cancelEdit}>Cancel</button>
+          <button class="btn btn-primary" onclick={saveProfile}>Save</button>
+          <button class="btn btn-secondary" onclick={cancelEdit}>Cancel</button>
         {:else}
-          <button class="btn btn-primary edit-icon-btn" on:click={startEdit} title="Edit Profile" aria-label="Edit Profile">
+          <button class="btn btn-primary edit-icon-btn" onclick={startEdit} title="Edit Profile" aria-label="Edit Profile">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
@@ -881,7 +924,7 @@
 
   <div class="profile-tabs">
     {#each availableTabs as tab}
-      <button class:active={activeTab === tab.id} on:click={() => activeTab = tab.id}>{tab.label}</button>
+      <button class:active={activeTab === tab.id} onclick={() => activeTab = tab.id}>{tab.label}</button>
     {/each}
   </div>
 
@@ -997,7 +1040,7 @@
             <div class="avatar-details">
               <div class="avatar-subtabs">
                 {#each avatarSubTabs as tab}
-                  <button class:active={avatarDetailTab === tab.id} on:click={() => avatarDetailTab = tab.id}>
+                  <button class:active={avatarDetailTab === tab.id} onclick={() => avatarDetailTab = tab.id}>
                     {tab.label}
                   </button>
                 {/each}
@@ -1055,7 +1098,7 @@
                               {@const expanded = expandedEffectKeys.has(effectKey)}
                               {@const totalBase = (effect?.cappedItem ?? 0) + (effect?.cappedAction ?? 0) + (effect?.rawBonus ?? 0)}
                               {#if hasCaps}
-                                <button type="button" class="effect-item equip effect-toggle" class:open={expanded} on:click={() => toggleEffectExpanded(effectKey)}>
+                                <button type="button" class="effect-item equip effect-toggle" class:open={expanded} onclick={() => toggleEffectExpanded(effectKey)}>
                                   <span class="effect-name">{effect.name}</span>
                                   <span class="effect-details">
                                     <span
@@ -1579,7 +1622,7 @@
               <button
                 class="globals-type-btn"
                 class:active={globalsTypeFilter === tf.value}
-                on:click={() => { globalsTypeFilter = tf.value; globalsPage = 0; }}
+                onclick={() => { globalsTypeFilter = tf.value; globalsPage = 0; }}
               >
                 {tf.label}
               </button>
@@ -1592,12 +1635,12 @@
               <table class="globals-compact-table">
                 <thead>
                   <tr>
-                    <th class="col-target" on:click={() => onGlobalsSort('target')}>Target{sortIcon(globalsSort, 'target')}</th>
+                    <th class="col-target" onclick={() => onGlobalsSort('target')}>Target{sortIcon(globalsSort, 'target')}</th>
                     <th class="col-type">Type</th>
-                    <th class="col-num right" on:click={() => onGlobalsSort('count')}>Count{sortIcon(globalsSort, 'count')}</th>
-                    <th class="col-num right" on:click={() => onGlobalsSort('total_value')}>Total Value{sortIcon(globalsSort, 'total_value')}</th>
-                    <th class="col-num right" on:click={() => onGlobalsSort('avg_value')}>Avg{sortIcon(globalsSort, 'avg_value')}</th>
-                    <th class="col-num right" on:click={() => onGlobalsSort('best_value')}>Best{sortIcon(globalsSort, 'best_value')}</th>
+                    <th class="col-num right" onclick={() => onGlobalsSort('count')}>Count{sortIcon(globalsSort, 'count')}</th>
+                    <th class="col-num right" onclick={() => onGlobalsSort('total_value')}>Total Value{sortIcon(globalsSort, 'total_value')}</th>
+                    <th class="col-num right" onclick={() => onGlobalsSort('avg_value')}>Avg{sortIcon(globalsSort, 'avg_value')}</th>
+                    <th class="col-num right" onclick={() => onGlobalsSort('best_value')}>Best{sortIcon(globalsSort, 'best_value')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1616,9 +1659,9 @@
             </div>
             {#if globalsTotalPages > 1}
               <div class="globals-pagination">
-                <button class="page-btn" disabled={globalsPage <= 0} on:click={() => globalsPage--}>Previous</button>
+                <button class="page-btn" disabled={globalsPage <= 0} onclick={() => globalsPage--}>Previous</button>
                 <span class="page-info">Page {globalsPage + 1} of {globalsTotalPages}</span>
-                <button class="page-btn" disabled={globalsPage >= globalsTotalPages - 1} on:click={() => globalsPage++}>Next</button>
+                <button class="page-btn" disabled={globalsPage >= globalsTotalPages - 1} onclick={() => globalsPage++}>Next</button>
               </div>
             {/if}
           {:else}
@@ -1683,22 +1726,22 @@
 </div>
 
 {#if showSocietyDialog}
-  <div class="dialog-backdrop" on:click={() => showSocietyDialog = false} on:keydown={(e) => e.key === 'Escape' && (showSocietyDialog = false)}>
-    <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="society-dialog-title">
+  <div class="dialog-backdrop" onclick={() => showSocietyDialog = false} onkeydown={(e) => e.key === 'Escape' && (showSocietyDialog = false)}>
+    <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="society-dialog-title">
       <div class="dialog-header">
         <h3 id="society-dialog-title">{societyMode === 'join' ? 'Join a Society' : 'Create a Society'}</h3>
-        <button class="close-btn" on:click={() => showSocietyDialog = false} aria-label="Close dialog">&#10005;</button>
+        <button class="close-btn" onclick={() => showSocietyDialog = false} aria-label="Close dialog">&#10005;</button>
       </div>
       <div class="dialog-body">
         <div class="mode-toggle">
-          <button class:active={societyMode === 'join'} on:click={() => societyMode = 'join'}>Join</button>
-          <button class:active={societyMode === 'create'} on:click={() => societyMode = 'create'}>Create</button>
+          <button class:active={societyMode === 'join'} onclick={() => societyMode = 'join'}>Join</button>
+          <button class:active={societyMode === 'create'} onclick={() => societyMode = 'create'}>Create</button>
         </div>
 
         {#if societyMode === 'join'}
           <div class="field-group">
             <label>Search Societies</label>
-            <input type="text" placeholder="Type to search..." value={societySearchQuery} on:input={(e) => handleSocietySearchInput(e.target.value)} />
+            <input type="text" placeholder="Type to search..." value={societySearchQuery} oninput={(e) => handleSocietySearchInput(e.target.value)} />
             {#if societySearchLoading}
               <div class="hint">Searching...</div>
             {:else if societySearchError}
@@ -1715,7 +1758,7 @@
                         <div class="society-meta">{item.abbreviation}</div>
                       {/if}
                     </div>
-                    <button class="dialog-btn" on:click={() => handleJoinSociety(item)}>Request Join</button>
+                    <button class="dialog-btn" onclick={() => handleJoinSociety(item)}>Request Join</button>
                   </div>
                 {/each}
               </div>
@@ -1748,9 +1791,9 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button class="dialog-btn secondary" on:click={() => showSocietyDialog = false}>Close</button>
+        <button class="dialog-btn secondary" onclick={() => showSocietyDialog = false}>Close</button>
         {#if societyMode === 'create'}
-          <button class="dialog-btn" on:click={handleCreateSociety} disabled={!societyCreateName.trim()}>Create Society</button>
+          <button class="dialog-btn" onclick={handleCreateSociety} disabled={!societyCreateName.trim()}>Create Society</button>
         {/if}
       </div>
     </div>

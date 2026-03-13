@@ -6,24 +6,37 @@
   Dispatches 'error' event on failure.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string} Turnstile site key */
-  export let siteKey = '';
+  
 
-  /** @type {'auto'|'light'|'dark'} Theme */
-  export let theme = 'auto';
+  
 
-  /** @type {string|null} Current token (null if not verified) */
-  export let token = null;
+  
 
-  /** @type {boolean} Whether to reset the widget (bind and set true to trigger) */
-  export let reset = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [siteKey]
+   * @property {'auto'|'light'|'dark'} [theme]
+   * @property {string|null} [token]
+   * @property {boolean} [reset]
+   */
 
-  let container;
+  /** @type {Props} */
+  let {
+    siteKey = '',
+    theme = 'auto',
+    token = $bindable(null),
+    reset = $bindable(false)
+  } = $props();
+
+  let container = $state();
   let widgetId = null;
   let scriptLoaded = false;
 
@@ -79,10 +92,12 @@
     }
   }
 
-  $: if (reset && browser) {
-    resetWidget();
-    reset = false;
-  }
+  run(() => {
+    if (reset && browser) {
+      resetWidget();
+      reset = false;
+    }
+  });
 
   onMount(() => {
     if (!siteKey) return;

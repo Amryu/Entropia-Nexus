@@ -7,30 +7,36 @@
   import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  /** @type {number} */
-  export let globalId;
+  
 
-  /** @type {string} Player name on the global (for ownership check) */
-  export let playerName = '';
+  
 
-  /** @type {object|null} User session (null = not logged in) */
-  export let user = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} globalId
+   * @property {string} [playerName]
+   * @property {object|null} [user]
+   */
+
+  /** @type {Props} */
+  let { globalId, playerName = '', user = null } = $props();
 
   /** Only show upload for the user's own globals (or admins) */
-  $: isOwner = user && playerName && user.eu_name
-    && user.eu_name.toLowerCase() === playerName.toLowerCase();
-  $: isAdmin = user?.administrator || user?.grants?.includes('admin.panel');
-  $: canUpload = isOwner || isAdmin;
+  let isOwner = $derived(user && playerName && user.eu_name
+    && user.eu_name.toLowerCase() === playerName.toLowerCase());
+  let isAdmin = $derived(user?.administrator || user?.grants?.includes('admin.panel'));
+  let canUpload = $derived(isOwner || isAdmin);
 
   const dispatch = createEventDispatcher();
-  let showMenu = false;
-  let showVideoInput = false;
-  let videoUrl = '';
-  let uploading = false;
-  let fileInput;
-  let btnEl;
-  let menuEl;
-  let menuPos = { top: 0, right: 0 };
+  let showMenu = $state(false);
+  let showVideoInput = $state(false);
+  let videoUrl = $state('');
+  let uploading = $state(false);
+  let fileInput = $state();
+  let btnEl = $state();
+  let menuEl = $state();
+  let menuPos = $state({ top: 0, right: 0 });
 
   function toggleMenu() {
     if (uploading) return;
@@ -122,7 +128,7 @@
   }
 </script>
 
-<svelte:body on:mousedown={handleClickOutside} />
+<svelte:body onmousedown={handleClickOutside} />
 
 {#if canUpload}
   <div class="media-upload-wrapper">
@@ -130,7 +136,7 @@
       class="media-upload-btn"
       class:uploading
       title="Add media to this global"
-      on:click={toggleMenu}
+      onclick={toggleMenu}
       disabled={uploading}
       bind:this={btnEl}
     >
@@ -146,10 +152,10 @@
     {#if showMenu}
       <div class="upload-menu" bind:this={menuEl} style="top: {menuPos.top}px; right: {menuPos.right}px;">
         {#if !showVideoInput}
-          <button class="menu-item" on:click={() => fileInput?.click()}>
+          <button class="menu-item" onclick={() => fileInput?.click()}>
             Upload Screenshot
           </button>
-          <button class="menu-item" on:click={() => { showVideoInput = true; }}>
+          <button class="menu-item" onclick={() => { showVideoInput = true; }}>
             Add Video Link
           </button>
         {:else}
@@ -158,9 +164,9 @@
               type="text"
               bind:value={videoUrl}
               placeholder="Video URL (YouTube, Twitch, Vimeo)"
-              on:keydown={(e) => { if (e.key === 'Enter') submitVideo(); }}
+              onkeydown={(e) => { if (e.key === 'Enter') submitVideo(); }}
             />
-            <button class="submit-btn" on:click={submitVideo} disabled={!videoUrl.trim()}>
+            <button class="submit-btn" onclick={submitVideo} disabled={!videoUrl.trim()}>
               Add
             </button>
           </div>
@@ -173,7 +179,7 @@
       accept="image/png,image/jpeg,image/webp"
       style="display:none"
       bind:this={fileInput}
-      on:change={handleFileSelect}
+      onchange={handleFileSelect}
     />
   </div>
 {/if}

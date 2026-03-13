@@ -3,6 +3,9 @@
   Wiki layout with sidebar toggle between missions and mission chains.
 -->
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -37,41 +40,12 @@
     updateField
   } from '$lib/stores/wikiEditState.js';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.mobMaturities === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'mobMaturities', url: '/api/mobmaturities' },
-      { key: 'locations', url: '/api/locations' },
-      { key: 'events', url: '/api/events' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
 
-  $: view = data.view || 'missions';
-  $: isChainView = view === 'chains';
-  $: user = data.session?.user;
-  $: missionsList = data.missions || [];
-  $: missionChainsList = data.missionChains || [];
-  $: pendingChange = data.pendingChange;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: isCreateMode = data.isCreateMode || false;
-  $: graphData = isChainView ? data.object?.Graph : data.graph;
-  $: currentChangeId = $page.url.searchParams.get('changeId');
 
-  $: entityType = isChainView ? 'MissionChain' : 'Mission';
-  $: entity = data.object;
-  $: entityId = entity?.Id ?? null;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, entityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   const emptyMission = {
     Id: null,
@@ -101,36 +75,10 @@
   };
 
   // Track initialization to prevent re-init during editing
-  let lastInitKey = null;
-  $: {
-    // Create a stable key for the current entity context
-    const initKey = `${entityType}-${entity?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
-    if (user && initKey !== lastInitKey) {
-      lastInitKey = initKey;
-      const existingChange = data.existingChange || null;
-      const initialEntity = isCreateMode
-        ? (existingChange?.data || (isChainView ? emptyChain : emptyMission))
-        : entity;
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(initialEntity, entityType, isCreateMode, editChange);
-    }
-  }
+  let lastInitKey = $state(null);
 
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  $: activeEntity = $editMode
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.data)
-      ? $existingPendingChange.data
-      : entity;
 
-  $: activeMission = isChainView ? null : activeEntity;
-  $: activeChain = isChainView ? activeEntity : null;
 
   onDestroy(() => {
     resetEditState();
@@ -144,27 +92,10 @@
   ];
 
   // Cooldown duration state for Recurring missions
-  let cooldownValue = 1;
-  let cooldownUnit = 'days';
-  let lastParsedMissionId = null;
+  let cooldownValue = $state(1);
+  let cooldownUnit = $state('days');
+  let lastParsedMissionId = $state(null);
 
-  // Parse existing cooldown duration only when switching to a different mission
-  // In create mode, use 'create' sentinel so the guard fires once (not on every activeMission change)
-  $: {
-    const missionIdentity = activeMission?.Id ?? (isCreateMode ? 'create' : null);
-    if (missionIdentity !== lastParsedMissionId) {
-      lastParsedMissionId = missionIdentity;
-      if (activeMission?.Properties?.CooldownDuration) {
-        const parsed = parseCooldownDuration(activeMission.Properties.CooldownDuration);
-        cooldownValue = parsed.value;
-        cooldownUnit = parsed.unit;
-      } else {
-        // Default for new missions
-        cooldownValue = 1;
-        cooldownUnit = 'days';
-      }
-    }
-  }
 
   // Parse PostgreSQL INTERVAL format (e.g., "1 day", "2 hours", "30 minutes", "00:30:00")
   function parseCooldownDuration(duration) {
@@ -222,113 +153,27 @@
     updateField('Properties.CooldownDuration', isoValue);
   }
 
-  // When type changes to Recurring and no cooldown is set yet, persist the default value
-  $: if ($editMode && activeMission?.Properties?.Type === 'Recurring' && !activeMission?.Properties?.CooldownDuration) {
-    updateCooldownDuration();
-  }
 
   // Main planets only (excludes asteroids, etc.)
   const MAIN_PLANET_NAMES = new Set([
     'Calypso', 'Arkadia', 'Cyrene', 'Monria', 'ROCKtropia', 'Toulan', 'Next Island', 'Space'
   ]);
 
-  $: planetOptions = (data.planetsList || [])
-    .filter(p => p.Id > 0 && MAIN_PLANET_NAMES.has(p.Name))
-    .map(p => ({ value: p.Name, label: p.Name }));
 
-  $: planetIdOptions = (data.planetsList || [])
-    .filter(p => p.Id > 0 && MAIN_PLANET_NAMES.has(p.Name))
-    .map(p => ({ value: String(p.Id), label: p.Name }));
 
-  $: chainOptions = missionChainsList.map(chain => ({
-    value: chain.Name,
-    label: chain.Name
-  }));
 
   // Track chain names that are trusted (from entity, pending change, or created via dialog)
   // These bypass validation since they will be created when the change is saved
-  let trustedChainNames = new Set();
+  let trustedChainNames = $state(new Set());
 
-  // Initialize trusted chain names when edit state changes
-  $: {
-    const newTrusted = new Set();
-    // Trust the original entity's chain
-    if (entity?.MissionChain?.Name) {
-      newTrusted.add(entity.MissionChain.Name);
-    }
-    // Trust chain from existing pending change
-    if (data.existingChange?.data?.MissionChain?.Name) {
-      newTrusted.add(data.existingChange.data.MissionChain.Name);
-    }
-    // Keep any chains added via the dialog during this session
-    for (const name of trustedChainNames) {
-      if (!chainOptions.some(opt => opt.value === name)) {
-        // Only keep if it's not already in chainOptions (meaning it was created this session)
-        newTrusted.add(name);
-      }
-    }
-    trustedChainNames = newTrusted;
-  }
 
-  // Check if the current chain name is valid (exists in the list of chains OR is trusted)
-  $: currentChainName = activeMission?.MissionChain?.Name || '';
-  $: isValidChain = !currentChainName || chainOptions.some(opt => opt.value === currentChainName) || trustedChainNames.has(currentChainName);
-  $: hasValidChainSelected = currentChainName && isValidChain;
 
-  $: missionOptions = missionsList
-    .filter(mission => mission?.Id && mission?.Name && mission?.Id !== activeMission?.Id)
-    .map(mission => ({
-      value: String(mission.Id),
-      label: mission.Name
-    }));
 
-  $: npcOptions = (data.locations || [])
-    .filter(location => location?.Properties?.Type === 'Npc')
-    .map(location => {
-      const planetName = location?.Planet?.Name;
-      const suffix = planetName ? ` (${planetName})` : '';
-      return {
-        value: String(location.Id),
-        label: `${location.Name}${suffix}`
-      };
-    });
 
-  $: locationOptions = (data.locations || []).map(location => {
-    const type = location?.Properties?.Type;
-    const planetName = location?.Planet?.Name;
-    const suffixParts = [type, planetName].filter(Boolean);
-    const suffix = suffixParts.length ? ` (${suffixParts.join(' · ')})` : '';
-    return {
-      value: String(location.Id),
-      label: `${location?.Name || 'Unknown'}${suffix}`
-    };
-  });
 
-  $: itemsIndex = Object.fromEntries(
-    (data.itemsList || []).map(item => [item.Id, item.Name])
-  );
 
-  // Full item info map for type checking (damageable vs stackable)
-  $: itemsMap = Object.fromEntries(
-    (data.itemsList || []).map(item => [item.Id, { Name: item.Name, Type: item.Properties?.Type || '' }])
-  );
 
-  // Resolve full planet object with Id for Explore objectives
-  $: missionPlanetResolved = (() => {
-    const planetName = activeMission?.Planet?.Name;
-    if (!planetName) return null;
-    const planet = (data.planetsList || []).find(p => p.Name === planetName);
-    return planet ? { Id: planet.Id, Name: planet.Name } : { Id: null, Name: planetName };
-  })();
 
-  // Events for event-type missions
-  $: eventOptions = [
-    { value: '', label: 'None' },
-    ...(data.events || []).map(event => ({
-      value: String(event.Id),
-      label: event.Name + (event.Properties?.IsActive ? ' (Active)' : '')
-    }))
-  ];
 
   // Get event name by ID for display
   function getEventName(eventId) {
@@ -352,29 +197,8 @@
     return text.length > 0;
   }
 
-  // Build mob maturity lookup map
-  $: mobMaturityMap = (data.mobMaturities || []).reduce((acc, m) => {
-    acc[m.Id] = m;
-    return acc;
-  }, {});
 
-  // Build mob ID to name lookup from maturities
-  // API returns Mob: { Name, Links: { $Url: "/mobs/<id>" } } — extract MobId from URL
-  $: mobIdToName = (data.mobMaturities || []).reduce((acc, m) => {
-    const mobName = m.Mob?.Name;
-    const mobUrl = m.Mob?.Links?.$Url;
-    const mobId = mobUrl ? parseInt(mobUrl.split('/').pop(), 10) : null;
-    if (mobId && mobName) {
-      acc[mobId] = mobName;
-    }
-    return acc;
-  }, {});
 
-  // Build mob species ID to name lookup
-  $: mobSpeciesIdToName = (data.mobSpeciesList || []).reduce((acc, s) => {
-    acc[s.Id] = s.Name;
-    return acc;
-  }, {});
 
   function getSpeciesNameFromId(speciesId) {
     return mobSpeciesIdToName[speciesId] || `Species #${speciesId}`;
@@ -660,11 +484,6 @@
     return value.toFixed(4);
   }
 
-  // Start location options (reuses locationOptions with None option)
-  $: startLocationOptions = [
-    { value: '', label: 'None' },
-    ...locationOptions
-  ];
 
   // Build waypoint string for start location
   function getStartLocationWaypoint(startLocation) {
@@ -681,65 +500,7 @@
     return `[${parts.join(', ')}]`;
   }
 
-  // Extract map-displayable objectives from mission steps
-  $: mapObjectives = (() => {
-    if (!activeMission?.Steps?.length) return [];
-    const objectives = [];
 
-    for (const step of activeMission.Steps) {
-      const stepIndex = step.Index ?? 0;
-      for (const obj of (step.Objectives || [])) {
-        if (!obj?.Type || !obj?.Payload) continue;
-
-        // Extract coordinates based on objective type
-        if (obj.Type === 'Explore' && obj.Payload.longitude != null) {
-          objectives.push({
-            stepIndex,
-            title: step.Title,
-            type: obj.Type,
-            coordinates: {
-              Longitude: obj.Payload.longitude,
-              Latitude: obj.Payload.latitude,
-              Altitude: obj.Payload.altitude
-            },
-            planetId: obj.Payload.planetId
-          });
-        } else if ((obj.Type === 'Dialog' || obj.Type === 'Interact' || obj.Type === 'HandIn') && obj.Payload.targetLocationId) {
-          // Look up location coordinates
-          const locationId = Number(obj.Payload.targetLocationId) || Number(obj.Payload.npcLocationId);
-          const location = (data.locations || []).find(l => l.Id === locationId);
-          if (location?.Properties?.Coordinates) {
-            objectives.push({
-              stepIndex,
-              title: step.Title,
-              type: obj.Type,
-              coordinates: location.Properties.Coordinates,
-              planetId: location.Planet?.Id
-            });
-          }
-        }
-      }
-    }
-
-    return objectives;
-  })();
-
-  // Resolve mission planet with full data for map embed
-  $: mapPlanet = (() => {
-    const planetName = activeMission?.Planet?.Name;
-    if (!planetName) return null;
-    const planet = (data.planetsList || []).find(p => p.Name === planetName);
-    if (!planet) return { Name: planetName };
-    return {
-      Id: planet.Id,
-      Name: planet.Name,
-      TechnicalName: planet.Properties?.TechnicalName,
-      X: planet.Properties?.Map?.X,
-      Y: planet.Properties?.Map?.Y,
-      Width: planet.Properties?.Map?.Width,
-      Height: planet.Properties?.Map?.Height
-    };
-  })();
 
   const navFilters = [getPlanetNavFilter('Planet.Name')];
 
@@ -758,23 +519,8 @@
       : `${basePath}/${slug}`;
   }
 
-  $: breadcrumbs = [
-    { label: 'Information', href: '/information' },
-    { label: 'Missions', href: '/information/missions' },
-    ...(activeEntity?.Name
-      ? [{ label: activeEntity.Name }]
-      : isCreateMode
-        ? [{ label: isChainView ? 'New Mission Chain' : 'New Mission' }]
-        : [])
-  ];
 
-  $: seoDescription = activeMission?.Properties?.Description
-    || activeChain?.Properties?.Description
-    || `${activeEntity?.Name || 'Mission'} reference data for Entropia Universe.`;
 
-  $: canonicalUrl = activeEntity?.Name
-    ? `https://entropianexus.com/information/missions/${encodeURIComponentSafe(activeEntity.Name)}${isChainView ? '?view=chains' : ''}`
-    : 'https://entropianexus.com/information/missions';
 
   const seoColumns = [
     {
@@ -863,44 +609,16 @@
     }
   };
 
-  $: missionNavTableColumns = [
-    missionColumnDefs.type,
-    missionColumnDefs.planet,
-    missionColumnDefs.chain
-  ];
 
-  $: missionNavFullWidthColumns = [
-    missionColumnDefs.type,
-    missionColumnDefs.planet,
-    missionColumnDefs.chain,
-    missionColumnDefs.cooldown,
-    missionColumnDefs.steps
-  ];
 
-  $: missionAllAvailableColumns = Object.values(missionColumnDefs);
 
-  $: chainNavTableColumns = [
-    chainColumnDefs.type,
-    chainColumnDefs.planet,
-    chainColumnDefs.missionCount
-  ];
 
-  $: chainNavFullWidthColumns = [
-    chainColumnDefs.type,
-    chainColumnDefs.planet,
-    chainColumnDefs.missionCount
-  ];
 
-  $: chainAllAvailableColumns = Object.values(chainColumnDefs);
 
-  $: activeNavTableColumns = isChainView ? chainNavTableColumns : missionNavTableColumns;
-  $: activeNavFullWidthColumns = isChainView ? chainNavFullWidthColumns : missionNavFullWidthColumns;
-  $: activeAllAvailableColumns = isChainView ? chainAllAvailableColumns : missionAllAvailableColumns;
-  $: activePageTypeId = isChainView ? 'missions-chains' : 'missions';
 
-  let showGraphDialog = false;
-  let showChainDialog = false;
-  let chainDialogMode = 'edit'; // 'create' or 'edit'
+  let showGraphDialog = $state(false);
+  let showChainDialog = $state(false);
+  let chainDialogMode = $state('edit'); // 'create' or 'edit'
 
   function openChainDialog(mode) {
     chainDialogMode = mode;
@@ -981,12 +699,6 @@
     return results.slice(0, 2);
   }
 
-  $: previewPrev = (!isChainView && activeMission?.Id)
-    ? getNeighborNodes(graphData, activeMission.Id, 'prev', 2)
-    : [];
-  $: previewNext = (!isChainView && activeMission?.Id)
-    ? getNeighborNodes(graphData, activeMission.Id, 'next', 2)
-    : [];
 
   function getNodeName(id) {
     if (!graphData?.nodes) return `#${id}`;
@@ -1047,7 +759,6 @@
     return { layers, disconnected };
   }
 
-  $: graphLayers = computeGraphLayers(graphData);
 
   function addPrerequisite() {
     const current = activeMission?.Dependencies?.Prerequisites || [];
@@ -1117,6 +828,304 @@
   function handleDialogRemoveDependent(event) {
     removeDependent(event.detail.index);
   }
+  run(() => {
+    if ($editMode && data.mobMaturities === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'mobMaturities', url: '/api/mobmaturities' },
+        { key: 'locations', url: '/api/locations' },
+        { key: 'events', url: '/api/events' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
+  let view = $derived(data.view || 'missions');
+  let isChainView = $derived(view === 'chains');
+  let user = $derived(data.session?.user);
+  let missionsList = $derived(data.missions || []);
+  let missionChainsList = $derived(data.missionChains || []);
+  let pendingChange = $derived(data.pendingChange);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let graphData = $derived(isChainView ? data.object?.Graph : data.graph);
+  let currentChangeId = $derived($page.url.searchParams.get('changeId'));
+  let entityType = $derived(isChainView ? 'MissionChain' : 'Mission');
+  let entity = $derived(data.object);
+  let entityId = $derived(entity?.Id ?? null);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, entityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  run(() => {
+    // Create a stable key for the current entity context
+    const initKey = `${entityType}-${entity?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
+    if (user && initKey !== lastInitKey) {
+      lastInitKey = initKey;
+      const existingChange = data.existingChange || null;
+      const initialEntity = isCreateMode
+        ? (existingChange?.data || (isChainView ? emptyChain : emptyMission))
+        : entity;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(initialEntity, entityType, isCreateMode, editChange);
+    }
+  });
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  let activeEntity = $derived($editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.data)
+      ? $existingPendingChange.data
+      : entity);
+  let activeMission = $derived(isChainView ? null : activeEntity);
+  let activeChain = $derived(isChainView ? activeEntity : null);
+  // Parse existing cooldown duration only when switching to a different mission
+  // In create mode, use 'create' sentinel so the guard fires once (not on every activeMission change)
+  run(() => {
+    const missionIdentity = activeMission?.Id ?? (isCreateMode ? 'create' : null);
+    if (missionIdentity !== lastParsedMissionId) {
+      lastParsedMissionId = missionIdentity;
+      if (activeMission?.Properties?.CooldownDuration) {
+        const parsed = parseCooldownDuration(activeMission.Properties.CooldownDuration);
+        cooldownValue = parsed.value;
+        cooldownUnit = parsed.unit;
+      } else {
+        // Default for new missions
+        cooldownValue = 1;
+        cooldownUnit = 'days';
+      }
+    }
+  });
+  // When type changes to Recurring and no cooldown is set yet, persist the default value
+  run(() => {
+    if ($editMode && activeMission?.Properties?.Type === 'Recurring' && !activeMission?.Properties?.CooldownDuration) {
+      updateCooldownDuration();
+    }
+  });
+  let planetOptions = $derived((data.planetsList || [])
+    .filter(p => p.Id > 0 && MAIN_PLANET_NAMES.has(p.Name))
+    .map(p => ({ value: p.Name, label: p.Name })));
+  let planetIdOptions = $derived((data.planetsList || [])
+    .filter(p => p.Id > 0 && MAIN_PLANET_NAMES.has(p.Name))
+    .map(p => ({ value: String(p.Id), label: p.Name })));
+  let chainOptions = $derived(missionChainsList.map(chain => ({
+    value: chain.Name,
+    label: chain.Name
+  })));
+  // Initialize trusted chain names when edit state changes
+  run(() => {
+    const newTrusted = new Set();
+    // Trust the original entity's chain
+    if (entity?.MissionChain?.Name) {
+      newTrusted.add(entity.MissionChain.Name);
+    }
+    // Trust chain from existing pending change
+    if (data.existingChange?.data?.MissionChain?.Name) {
+      newTrusted.add(data.existingChange.data.MissionChain.Name);
+    }
+    // Keep any chains added via the dialog during this session
+    for (const name of trustedChainNames) {
+      if (!chainOptions.some(opt => opt.value === name)) {
+        // Only keep if it's not already in chainOptions (meaning it was created this session)
+        newTrusted.add(name);
+      }
+    }
+    trustedChainNames = newTrusted;
+  });
+  // Check if the current chain name is valid (exists in the list of chains OR is trusted)
+  let currentChainName = $derived(activeMission?.MissionChain?.Name || '');
+  let isValidChain = $derived(!currentChainName || chainOptions.some(opt => opt.value === currentChainName) || trustedChainNames.has(currentChainName));
+  let hasValidChainSelected = $derived(currentChainName && isValidChain);
+  let missionOptions = $derived(missionsList
+    .filter(mission => mission?.Id && mission?.Name && mission?.Id !== activeMission?.Id)
+    .map(mission => ({
+      value: String(mission.Id),
+      label: mission.Name
+    })));
+  let npcOptions = $derived((data.locations || [])
+    .filter(location => location?.Properties?.Type === 'Npc')
+    .map(location => {
+      const planetName = location?.Planet?.Name;
+      const suffix = planetName ? ` (${planetName})` : '';
+      return {
+        value: String(location.Id),
+        label: `${location.Name}${suffix}`
+      };
+    }));
+  let locationOptions = $derived((data.locations || []).map(location => {
+    const type = location?.Properties?.Type;
+    const planetName = location?.Planet?.Name;
+    const suffixParts = [type, planetName].filter(Boolean);
+    const suffix = suffixParts.length ? ` (${suffixParts.join(' · ')})` : '';
+    return {
+      value: String(location.Id),
+      label: `${location?.Name || 'Unknown'}${suffix}`
+    };
+  }));
+  let itemsIndex = $derived(Object.fromEntries(
+    (data.itemsList || []).map(item => [item.Id, item.Name])
+  ));
+  // Full item info map for type checking (damageable vs stackable)
+  let itemsMap = $derived(Object.fromEntries(
+    (data.itemsList || []).map(item => [item.Id, { Name: item.Name, Type: item.Properties?.Type || '' }])
+  ));
+  // Resolve full planet object with Id for Explore objectives
+  let missionPlanetResolved = $derived((() => {
+    const planetName = activeMission?.Planet?.Name;
+    if (!planetName) return null;
+    const planet = (data.planetsList || []).find(p => p.Name === planetName);
+    return planet ? { Id: planet.Id, Name: planet.Name } : { Id: null, Name: planetName };
+  })());
+  // Events for event-type missions
+  let eventOptions = $derived([
+    { value: '', label: 'None' },
+    ...(data.events || []).map(event => ({
+      value: String(event.Id),
+      label: event.Name + (event.Properties?.IsActive ? ' (Active)' : '')
+    }))
+  ]);
+  // Build mob maturity lookup map
+  let mobMaturityMap = $derived((data.mobMaturities || []).reduce((acc, m) => {
+    acc[m.Id] = m;
+    return acc;
+  }, {}));
+  // Build mob ID to name lookup from maturities
+  // API returns Mob: { Name, Links: { $Url: "/mobs/<id>" } } — extract MobId from URL
+  let mobIdToName = $derived((data.mobMaturities || []).reduce((acc, m) => {
+    const mobName = m.Mob?.Name;
+    const mobUrl = m.Mob?.Links?.$Url;
+    const mobId = mobUrl ? parseInt(mobUrl.split('/').pop(), 10) : null;
+    if (mobId && mobName) {
+      acc[mobId] = mobName;
+    }
+    return acc;
+  }, {}));
+  // Build mob species ID to name lookup
+  let mobSpeciesIdToName = $derived((data.mobSpeciesList || []).reduce((acc, s) => {
+    acc[s.Id] = s.Name;
+    return acc;
+  }, {}));
+  // Start location options (reuses locationOptions with None option)
+  let startLocationOptions = $derived([
+    { value: '', label: 'None' },
+    ...locationOptions
+  ]);
+  // Extract map-displayable objectives from mission steps
+  let mapObjectives = $derived((() => {
+    if (!activeMission?.Steps?.length) return [];
+    const objectives = [];
+
+    for (const step of activeMission.Steps) {
+      const stepIndex = step.Index ?? 0;
+      for (const obj of (step.Objectives || [])) {
+        if (!obj?.Type || !obj?.Payload) continue;
+
+        // Extract coordinates based on objective type
+        if (obj.Type === 'Explore' && obj.Payload.longitude != null) {
+          objectives.push({
+            stepIndex,
+            title: step.Title,
+            type: obj.Type,
+            coordinates: {
+              Longitude: obj.Payload.longitude,
+              Latitude: obj.Payload.latitude,
+              Altitude: obj.Payload.altitude
+            },
+            planetId: obj.Payload.planetId
+          });
+        } else if ((obj.Type === 'Dialog' || obj.Type === 'Interact' || obj.Type === 'HandIn') && obj.Payload.targetLocationId) {
+          // Look up location coordinates
+          const locationId = Number(obj.Payload.targetLocationId) || Number(obj.Payload.npcLocationId);
+          const location = (data.locations || []).find(l => l.Id === locationId);
+          if (location?.Properties?.Coordinates) {
+            objectives.push({
+              stepIndex,
+              title: step.Title,
+              type: obj.Type,
+              coordinates: location.Properties.Coordinates,
+              planetId: location.Planet?.Id
+            });
+          }
+        }
+      }
+    }
+
+    return objectives;
+  })());
+  // Resolve mission planet with full data for map embed
+  let mapPlanet = $derived((() => {
+    const planetName = activeMission?.Planet?.Name;
+    if (!planetName) return null;
+    const planet = (data.planetsList || []).find(p => p.Name === planetName);
+    if (!planet) return { Name: planetName };
+    return {
+      Id: planet.Id,
+      Name: planet.Name,
+      TechnicalName: planet.Properties?.TechnicalName,
+      X: planet.Properties?.Map?.X,
+      Y: planet.Properties?.Map?.Y,
+      Width: planet.Properties?.Map?.Width,
+      Height: planet.Properties?.Map?.Height
+    };
+  })());
+  let breadcrumbs = $derived([
+    { label: 'Information', href: '/information' },
+    { label: 'Missions', href: '/information/missions' },
+    ...(activeEntity?.Name
+      ? [{ label: activeEntity.Name }]
+      : isCreateMode
+        ? [{ label: isChainView ? 'New Mission Chain' : 'New Mission' }]
+        : [])
+  ]);
+  let seoDescription = $derived(activeMission?.Properties?.Description
+    || activeChain?.Properties?.Description
+    || `${activeEntity?.Name || 'Mission'} reference data for Entropia Universe.`);
+  let canonicalUrl = $derived(activeEntity?.Name
+    ? `https://entropianexus.com/information/missions/${encodeURIComponentSafe(activeEntity.Name)}${isChainView ? '?view=chains' : ''}`
+    : 'https://entropianexus.com/information/missions');
+  let missionNavTableColumns = $derived([
+    missionColumnDefs.type,
+    missionColumnDefs.planet,
+    missionColumnDefs.chain
+  ]);
+  let missionNavFullWidthColumns = $derived([
+    missionColumnDefs.type,
+    missionColumnDefs.planet,
+    missionColumnDefs.chain,
+    missionColumnDefs.cooldown,
+    missionColumnDefs.steps
+  ]);
+  let missionAllAvailableColumns = $derived(Object.values(missionColumnDefs));
+  let chainNavTableColumns = $derived([
+    chainColumnDefs.type,
+    chainColumnDefs.planet,
+    chainColumnDefs.missionCount
+  ]);
+  let chainNavFullWidthColumns = $derived([
+    chainColumnDefs.type,
+    chainColumnDefs.planet,
+    chainColumnDefs.missionCount
+  ]);
+  let chainAllAvailableColumns = $derived(Object.values(chainColumnDefs));
+  let activeNavTableColumns = $derived(isChainView ? chainNavTableColumns : missionNavTableColumns);
+  let activeNavFullWidthColumns = $derived(isChainView ? chainNavFullWidthColumns : missionNavFullWidthColumns);
+  let activeAllAvailableColumns = $derived(isChainView ? chainAllAvailableColumns : missionAllAvailableColumns);
+  let activePageTypeId = $derived(isChainView ? 'missions-chains' : 'missions');
+  let previewPrev = $derived((!isChainView && activeMission?.Id)
+    ? getNeighborNodes(graphData, activeMission.Id, 'prev', 2)
+    : []);
+  let previewNext = $derived((!isChainView && activeMission?.Id)
+    ? getNeighborNodes(graphData, activeMission.Id, 'next', 2)
+    : []);
+  let graphLayers = $derived(computeGraphLayers(graphData));
 </script>
 
 <WikiSEO
@@ -1144,28 +1153,31 @@
   {userPendingUpdates}
   {editDepsLoading}
 >
-  <div slot="sidebar" class="missions-sidebar">
-    <WikiNavigation
-      items={isChainView ? missionChainsList : missionsList}
-      filters={navFilters}
-      basePath="/information/missions"
-      title="Missions"
-      currentSlug={activeEntity?.Name}
-      {currentChangeId}
-      customGetItemHref={getSidebarHref}
-      {userPendingCreates}
-      {userPendingUpdates}
-      tableColumns={activeNavTableColumns}
-      fullWidthColumns={activeNavFullWidthColumns}
-      allAvailableColumns={activeAllAvailableColumns}
-      pageTypeId={activePageTypeId}
-    >
-      <div slot="after-header" class="sidebar-toggle">
-        <button class:active={!isChainView} on:click={() => switchSidebar('missions')}>Missions</button>
-        <button class:active={isChainView} on:click={() => switchSidebar('chains')}>Mission Chains</button>
-      </div>
-    </WikiNavigation>
-  </div>
+  {#snippet sidebar()}
+    <div  class="missions-sidebar">
+      <WikiNavigation
+        items={isChainView ? missionChainsList : missionsList}
+        filters={navFilters}
+        basePath="/information/missions"
+        title="Missions"
+        currentSlug={activeEntity?.Name}
+        {currentChangeId}
+        customGetItemHref={getSidebarHref}
+        {userPendingCreates}
+        {userPendingUpdates}
+        tableColumns={activeNavTableColumns}
+        fullWidthColumns={activeNavFullWidthColumns}
+        allAvailableColumns={activeAllAvailableColumns}
+        pageTypeId={activePageTypeId}
+      >
+        <!-- @migration-task: migrate this slot by hand, `after-header` is an invalid identifier -->
+  <div slot="after-header" class="sidebar-toggle">
+          <button class:active={!isChainView} onclick={() => switchSidebar('missions')}>Missions</button>
+          <button class:active={isChainView} onclick={() => switchSidebar('chains')}>Mission Chains</button>
+        </div>
+      </WikiNavigation>
+    </div>
+  {/snippet}
 
   {#if activeEntity || isCreateMode}
     {#if $existingPendingChange && !$editMode && !isCreateMode}
@@ -1178,9 +1190,9 @@
         </div>
         <div class="banner-actions">
           {#if $viewingPendingChange}
-            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>View Current</button>
+            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>View Current</button>
           {:else}
-            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>View Pending</button>
+            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>View Pending</button>
           {/if}
         </div>
       </div>
@@ -1240,7 +1252,7 @@
                         min="1"
                         max={cooldownUnit === 'minutes' ? 43200 : cooldownUnit === 'hours' ? 720 : 30}
                         value={cooldownValue}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           cooldownValue = Math.max(1, parseInt(e.target.value) || 1);
                           updateCooldownDuration();
                         }}
@@ -1248,7 +1260,7 @@
                       <select
                         class="cooldown-unit-select"
                         bind:value={cooldownUnit}
-                        on:change={updateCooldownDuration}
+                        onchange={updateCooldownDuration}
                       >
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
@@ -1267,7 +1279,7 @@
                     <select
                       class="cooldown-starts-select"
                       value={activeMission?.Properties?.CooldownStartsOn || 'Completion'}
-                      on:change={(e) => updateField('Properties.CooldownStartsOn', e.target.value)}
+                      onchange={(e) => updateField('Properties.CooldownStartsOn', e.target.value)}
                     >
                       <option value="Accept">Accept</option>
                       <option value="Completion">Completion</option>
@@ -1294,14 +1306,14 @@
                       type="button"
                       class="chain-btn"
                       title="Create new chain"
-                      on:click={() => openChainDialog('create')}
+                      onclick={() => openChainDialog('create')}
                     >+</button>
                     {#if hasValidChainSelected}
                       <button
                         type="button"
                         class="chain-btn"
                         title="Edit chain"
-                        on:click={() => openChainDialog('edit')}
+                        onclick={() => openChainDialog('edit')}
                       >&#9998;</button>
                     {/if}
                   </div>
@@ -1523,7 +1535,7 @@
             {:else}
               <div class="empty-text">No nearby missions in the graph.</div>
             {/if}
-            <button class="graph-btn" on:click={() => showGraphDialog = true}>
+            <button class="graph-btn" onclick={() => showGraphDialog = true}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
               Full Graph
             </button>
@@ -1638,13 +1650,13 @@
                           placeholder="Select mission"
                           on:select={(e) => updatePrerequisite(idx, e.detail.value)}
                         />
-                        <button type="button" class="btn-icon danger" on:click={() => removePrerequisite(idx)} title="Remove prerequisite">×</button>
+                        <button type="button" class="btn-icon danger" onclick={() => removePrerequisite(idx)} title="Remove prerequisite">×</button>
                       </div>
                     {/each}
                   {:else}
                     <div class="empty-text">None</div>
                   {/if}
-                  <button type="button" class="btn-add" on:click={addPrerequisite}>
+                  <button type="button" class="btn-add" onclick={addPrerequisite}>
                     <span>+</span> Add Prerequisite
                   </button>
                 </div>
@@ -1662,13 +1674,13 @@
                             updateDependent(idx, mission);
                           }}
                         />
-                        <button type="button" class="btn-icon danger" on:click={() => removeDependent(idx)} title="Remove unlock">×</button>
+                        <button type="button" class="btn-icon danger" onclick={() => removeDependent(idx)} title="Remove unlock">×</button>
                       </div>
                     {/each}
                   {:else}
                     <div class="empty-text">None</div>
                   {/if}
-                  <button type="button" class="btn-add" on:click={addDependent}>
+                  <button type="button" class="btn-add" onclick={addDependent}>
                     <span>+</span> Add Unlock
                   </button>
                 </div>
@@ -1717,7 +1729,7 @@
             {:else}
               <div class="empty-text">No missions in this chain yet.</div>
             {/if}
-            <button class="graph-btn" on:click={() => showGraphDialog = true}>
+            <button class="graph-btn" onclick={() => showGraphDialog = true}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
               Full Graph
             </button>
@@ -1733,12 +1745,12 @@
   {/if}
 
   {#if showGraphDialog}
-    <div class="dialog-overlay" on:click={() => showGraphDialog = false}>
-      <div class="graph-dialog" on:click|stopPropagation>
+    <div class="dialog-overlay" onclick={() => showGraphDialog = false}>
+      <div class="graph-dialog" onclick={stopPropagation(bubble('click'))}>
         <div class="graph-dialog-header">
           <h3>{activeMission?.MissionChain?.Name || 'Mission Graph'}</h3>
           <span class="graph-dialog-count">{graphData?.nodes?.length || 0} missions</span>
-          <button class="dialog-close" on:click={() => showGraphDialog = false}>×</button>
+          <button class="dialog-close" onclick={() => showGraphDialog = false}>×</button>
         </div>
         <div class="graph-flow">
           {#if graphLayers.layers.length}
@@ -1757,7 +1769,7 @@
                       <a
                         class="graph-chip"
                         href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}
-                        on:click={() => showGraphDialog = false}
+                        onclick={() => showGraphDialog = false}
                       >{node.Name}</a>
                     {/if}
                   {/each}
@@ -1780,7 +1792,7 @@
                     <a
                       class="graph-chip disconnected"
                       href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}
-                      on:click={() => showGraphDialog = false}
+                      onclick={() => showGraphDialog = false}
                     >{node.Name}</a>
                   {/if}
                 {/each}

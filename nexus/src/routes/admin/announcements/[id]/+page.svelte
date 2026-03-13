@@ -9,20 +9,20 @@
   const id = $page.params.id;
   const isNew = id === 'new';
 
-  let title = '';
-  let summary = '';
-  let link = '';
-  let image_url = '';
-  let content_html = '';
-  let pinned = false;
-  let published = false;
+  let title = $state('');
+  let summary = $state('');
+  let link = $state('');
+  let image_url = $state('');
+  let content_html = $state('');
+  let pinned = $state(false);
+  let published = $state(false);
 
-  let isLoading = !isNew;
-  let saving = false;
-  let deleting = false;
-  let error = null;
-  let showImageDialog = false;
-  let savedId = isNew ? null : id;
+  let isLoading = $state(!isNew);
+  let saving = $state(false);
+  let deleting = $state(false);
+  let error = $state(null);
+  let showImageDialog = $state(false);
+  let savedId = $state(isNew ? null : id);
 
   onMount(async () => {
     if (!isNew) {
@@ -169,8 +169,7 @@
         <label>Content</label>
         <span class="hint" style="margin-bottom: 0.375rem;">Full article body. Supports rich text formatting. Paste markdown and it will be auto-converted.</span>
         {#await import('$lib/components/wiki/RichTextEditor.svelte') then module}
-          <svelte:component
-            this={module.default}
+          <module.default
             content={content_html}
             placeholder="Write announcement content..."
             showHeadings={true}
@@ -189,12 +188,12 @@
           <div class="image-preview">
             <img src={image_url} alt="Announcement banner" />
             <div class="image-actions">
-              <button type="button" class="btn btn-sm" on:click={() => (showImageDialog = true)}>Change</button>
-              <button type="button" class="btn btn-sm btn-danger" on:click={removeImage}>Remove</button>
+              <button type="button" class="btn btn-sm" onclick={() => (showImageDialog = true)}>Change</button>
+              <button type="button" class="btn btn-sm btn-danger" onclick={removeImage}>Remove</button>
             </div>
           </div>
         {:else if savedId}
-          <button type="button" class="btn btn-upload" on:click={() => (showImageDialog = true)}>
+          <button type="button" class="btn btn-upload" onclick={() => (showImageDialog = true)}>
             Upload Banner Image
           </button>
           <span class="hint">Recommended: wide banner image (e.g. 1200x630)</span>
@@ -224,17 +223,17 @@
       </div>
 
       <div class="form-actions">
-        <button class="btn btn-cancel" on:click={() => goto('/admin/announcements')}>
+        <button class="btn btn-cancel" onclick={() => goto('/admin/announcements')}>
           Cancel
         </button>
 
         {#if !isNew}
-          <button class="btn btn-danger" on:click={handleDelete} disabled={deleting}>
+          <button class="btn btn-danger" onclick={handleDelete} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
           </button>
         {/if}
 
-        <button class="btn btn-primary" on:click={handleSave} disabled={saving || !title.trim()}>
+        <button class="btn btn-primary" onclick={handleSave} disabled={saving || !title.trim()}>
           {saving ? 'Saving...' : isNew && !savedId ? 'Create' : 'Save'}
         </button>
       </div>

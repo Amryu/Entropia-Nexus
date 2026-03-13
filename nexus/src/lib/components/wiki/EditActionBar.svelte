@@ -25,49 +25,61 @@
   import { apiPost, apiPut, encodeURIComponentSafe } from '$lib/util';
 
   // In create mode, Name must be filled in before save/submit
-  $: nameIsEmpty = $isCreateMode && (!$currentEntity?.Name || $currentEntity.Name.trim() === '');
-  $: hasValidationIssues = $hasErrors || nameIsEmpty;
+  let nameIsEmpty = $derived($isCreateMode && (!$currentEntity?.Name || $currentEntity.Name.trim() === ''));
+  let hasValidationIssues = $derived($hasErrors || nameIsEmpty);
 
   // Determine current change state - Pending means already submitted for review
-  $: isPending = $existingPendingChange?.state === 'Pending' || $changeMetadata.state === 'Pending';
+  let isPending = $derived($existingPendingChange?.state === 'Pending' || $changeMetadata.state === 'Pending');
 
   // DirectApply/ApplyFailed: change was submitted for direct application
-  $: isDirectApplyState = $changeMetadata.state === 'DirectApply' || $changeMetadata.state === 'ApplyFailed'
-    || $existingPendingChange?.state === 'DirectApply' || $existingPendingChange?.state === 'ApplyFailed';
+  let isDirectApplyState = $derived($changeMetadata.state === 'DirectApply' || $changeMetadata.state === 'ApplyFailed'
+    || $existingPendingChange?.state === 'DirectApply' || $existingPendingChange?.state === 'ApplyFailed');
 
-  /** @type {Function|null} Custom save handler */
-  export let onSave = null;
+  
 
-  /** @type {Function|null} Custom submit handler */
-  export let onSubmit = null;
+  
 
-  /** @type {string} Base path for navigation (used in create mode cancel) */
-  export let basePath = '';
+  
 
-  /** @type {object|null} Current user */
-  export let user = null;
+  
 
-  /** @type {string} Entity name for Update mode navigation */
-  export let entityName = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Function|null} [onSave]
+   * @property {Function|null} [onSubmit]
+   * @property {string} [basePath]
+   * @property {object|null} [user]
+   * @property {string} [entityName]
+   */
 
-  let saving = false;
-  let submitting = false;
-  let directApplying = false;
-  let deleting = false;
-  let statusMessage = '';
-  let statusType = ''; // success, error
+  /** @type {Props} */
+  let {
+    onSave = null,
+    onSubmit = null,
+    basePath = '',
+    user = null,
+    entityName = ''
+  } = $props();
+
+  let saving = $state(false);
+  let submitting = $state(false);
+  let directApplying = $state(false);
+  let deleting = $state(false);
+  let statusMessage = $state('');
+  let statusType = $state(''); // success, error
   let pollTimer = null;
 
   onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });
 
   // Admin-only: allow Direct Apply (pass-through without review)
-  $: isUserAdmin = user?.grants?.includes('admin.panel') || user?.administrator;
+  let isUserAdmin = $derived(user?.grants?.includes('admin.panel') || user?.administrator);
 
   // Check if user can delete the change (author or admin)
-  $: canDelete = user && $changeMetadata.id && (
+  let canDelete = $derived(user && $changeMetadata.id && (
     ($existingPendingChange && ($existingPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) ||
     (!$existingPendingChange && user.verified)
-  );
+  ));
 
   function buildPutUrl(changeId, state) {
     let url = `/api/changes/${changeId}?state=${state}`;
@@ -463,14 +475,14 @@
       </div>
 
       <div class="action-buttons">
-        <button class="btn btn-cancel" on:click={handleCancel} disabled={saving || submitting || directApplying || deleting}>
+        <button class="btn btn-cancel" onclick={handleCancel} disabled={saving || submitting || directApplying || deleting}>
           Cancel
         </button>
 
         {#if canDelete}
           <button
             class="btn btn-danger"
-            on:click={handleDelete}
+            onclick={handleDelete}
             disabled={saving || submitting || directApplying || deleting}
             title="Delete this pending change"
           >
@@ -482,7 +494,7 @@
           class="btn"
           class:btn-secondary={!isPending}
           class:btn-primary={isPending}
-          on:click={handleSaveDraft}
+          onclick={handleSaveDraft}
           disabled={saving || submitting || directApplying || deleting || !$hasChanges || hasValidationIssues}
           title={nameIsEmpty ? 'Name is required' : ''}
         >
@@ -492,7 +504,7 @@
         {#if !isPending}
           <button
             class="btn btn-primary"
-            on:click={handleSubmit}
+            onclick={handleSubmit}
             disabled={saving || submitting || directApplying || deleting || hasValidationIssues}
             title={nameIsEmpty ? 'Name is required' : ''}
           >
@@ -503,7 +515,7 @@
         {#if isUserAdmin}
           <button
             class="btn btn-accent"
-            on:click={handleDirectApply}
+            onclick={handleDirectApply}
             disabled={saving || submitting || directApplying || deleting || hasValidationIssues}
             title="Apply changes immediately without review (admin only)"
           >

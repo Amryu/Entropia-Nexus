@@ -1,19 +1,31 @@
 <script>
-  // @ts-nocheck
-  export let data;
-  export let path = '';
-  export let collapsedPaths;
-  export let toggleCollapse;
+  import JsonTreeNode from './JsonTreeNode.svelte';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} data
+   * @property {string} [path]
+   * @property {any} collapsedPaths
+   * @property {any} toggleCollapse
+   */
 
-  $: isArray = Array.isArray(data);
-  $: isObject = data !== null && typeof data === 'object' && !isArray;
-  $: isCollapsed = collapsedPaths.has(path);
+  /** @type {Props} */
+  let {
+    data,
+    path = '',
+    collapsedPaths,
+    toggleCollapse
+  } = $props();
+
+  let isArray = $derived(Array.isArray(data));
+  let isObject = $derived(data !== null && typeof data === 'object' && !isArray);
+  let isCollapsed = $derived(collapsedPaths.has(path));
 </script>
 
 {#if isArray}
   <span class="bracket">[</span>
   {#if data.length > 0}
-    <button class="collapse-btn" on:click={() => toggleCollapse(path)}>
+    <button class="collapse-btn" onclick={() => toggleCollapse(path)}>
       {isCollapsed ? '+' : '-'}
     </button>
   {/if}
@@ -26,7 +38,7 @@
         {@const itemPath = `${path}[${i}]`}
         <div class="json-line">
           <span class="json-index">{i}:</span>
-          <svelte:self
+          <JsonTreeNode
             data={item}
             path={itemPath}
             {collapsedPaths}
@@ -42,7 +54,7 @@
   {@const keys = Object.keys(data)}
   <span class="bracket">{'{'}</span>
   {#if keys.length > 0}
-    <button class="collapse-btn" on:click={() => toggleCollapse(path)}>
+    <button class="collapse-btn" onclick={() => toggleCollapse(path)}>
       {isCollapsed ? '+' : '-'}
     </button>
   {/if}
@@ -56,7 +68,7 @@
         <div class="json-line">
           <span class="json-key">"{key}"</span>
           <span class="colon">:</span>
-          <svelte:self
+          <JsonTreeNode
             data={data[key]}
             path={keyPath}
             {collapsedPaths}

@@ -6,8 +6,14 @@
 <script>
   import { page } from '$app/stores';
 
-  /** Function that returns a URLSearchParams for current filters */
-  export let buildParams = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [buildParams] - Function that returns a URLSearchParams for current filters
+   */
+
+  /** @type {Props} */
+  let { buildParams = null } = $props();
 
   const TABS = [
     { label: 'Overview', path: '/globals' },
@@ -29,14 +35,14 @@
     return qs ? `${tab.path}?${qs}` : tab.path;
   }
 
-  $: activeIdx = (() => {
+  let activeIdx = $derived((() => {
     const path = $page.url.pathname;
     const view = $page.url.searchParams.get('view');
     if (path === '/globals' && view === 'live') return 1;
     if (path === '/globals' && !view) return 0;
     const sub = TABS.findIndex((t, i) => i > 1 && path.startsWith(t.path));
     return sub >= 0 ? sub : 0;
-  })();
+  })());
 </script>
 
 <nav class="globals-tab-nav">

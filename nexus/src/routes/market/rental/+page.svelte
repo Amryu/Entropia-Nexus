@@ -10,23 +10,23 @@
   import RentalOfferCard from '$lib/components/rental/RentalOfferCard.svelte';
   import LoginToCreateButton from '$lib/components/LoginToCreateButton.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: offers = data.offers || [];
-  $: planets = data.planets || [];
-  $: filters = data.filters || {};
-  $: user = data.session?.user;
-  $: isVerified = !!user?.verified;
+  let offers = $derived(data.offers || []);
+  let planets = $derived(data.planets || []);
+  let filters = $derived(data.filters || {});
+  let user = $derived(data.session?.user);
+  let isVerified = $derived(!!user?.verified);
 
-  $: planetMap = Object.fromEntries(planets.map(p => [p.Id, p.Name]));
+  let planetMap = $derived(Object.fromEntries(planets.map(p => [p.Id, p.Name])));
 
-  let searchQuery = '';
+  let searchQuery = $state('');
 
-  $: filteredOffers = offers.filter(o => {
+  let filteredOffers = $derived(offers.filter(o => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return o.title?.toLowerCase().includes(q) || o.owner_name?.toLowerCase().includes(q);
-  });
+  }));
 
   function handlePlanetFilter(e) {
     const planetId = e.target.value;
@@ -71,7 +71,7 @@
 
     <div class="filters">
       <div class="filter-group">
-        <select value={filters.planet_id || ''} on:change={handlePlanetFilter}>
+        <select value={filters.planet_id || ''} onchange={handlePlanetFilter}>
           <option value="">All Planets</option>
           {#each planets as planet}
             <option value={planet.Id}>{planet.Name}</option>

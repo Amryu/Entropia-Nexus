@@ -5,7 +5,7 @@
   import { encodeURIComponentSafe } from '$lib/util';
 
   // Status filter (applied client-side after fetch)
-  let statusFilter = '';
+  let statusFilter = $state('');
 
   // Column definitions for FancyTable
   const columns = [
@@ -159,7 +159,7 @@
 
   // Reference to table for reloading when status filter changes
   let tableRef;
-  let tableKey = 0;
+  let tableKey = $state(0);
 
   function handleStatusChange() {
     // Force table to reload by changing key
@@ -341,7 +341,7 @@
 
     <div class="filter-group">
       <label for="status-filter">Status:</label>
-      <select id="status-filter" bind:value={statusFilter} on:change={handleStatusChange}>
+      <select id="status-filter" bind:value={statusFilter} onchange={handleStatusChange}>
         <option value="">All Users</option>
         <option value="admin">Admins</option>
         <option value="verified">Verified</option>

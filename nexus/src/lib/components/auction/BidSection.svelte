@@ -4,6 +4,8 @@
   Handles bid placement, buyout, and disclaimer checks.
 -->
 <script>
+  import { self } from 'svelte/legacy';
+
   import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { getMinNextBid, isBuyoutOnly } from '$lib/common/auctionUtils.js';
@@ -11,32 +13,43 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {object} Auction data */
-  export let auction;
+  
 
-  /** @type {string} Turnstile site key */
-  export let turnstileSiteKey = '';
+  
 
-  /** @type {boolean} Whether user has accepted bidder disclaimer */
-  export let disclaimerAccepted = false;
+  
 
-  /** @type {boolean} Whether user is the seller */
-  export let isSeller = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} auction
+   * @property {string} [turnstileSiteKey]
+   * @property {boolean} [disclaimerAccepted]
+   * @property {boolean} [isSeller]
+   */
 
-  let bidAmount = '';
-  let turnstileToken = null;
-  let resetTurnstile = false;
-  let submitting = false;
+  /** @type {Props} */
+  let {
+    auction,
+    turnstileSiteKey = '',
+    disclaimerAccepted = false,
+    isSeller = false
+  } = $props();
+
+  let bidAmount = $state('');
+  let turnstileToken = $state(null);
+  let resetTurnstile = $state(false);
+  let submitting = $state(false);
 
   // Confirmation state
-  let confirmAction = null; // 'bid' | 'buyout'
-  let confirmBidAmount = 0;
+  let confirmAction = $state(null); // 'bid' | 'buyout'
+  let confirmBidAmount = $state(0);
 
-  $: hasBids = auction.bid_count > 0;
-  $: minBid = hasBids ? getMinNextBid(parseFloat(auction.current_bid), true) : parseFloat(auction.starting_bid);
-  $: buyoutOnly = isBuyoutOnly(auction);
-  $: isActive = auction.status === 'active';
-  $: hasBuyout = auction.buyout_price != null;
+  let hasBids = $derived(auction.bid_count > 0);
+  let minBid = $derived(hasBids ? getMinNextBid(parseFloat(auction.current_bid), true) : parseFloat(auction.starting_bid));
+  let buyoutOnly = $derived(isBuyoutOnly(auction));
+  let isActive = $derived(auction.status === 'active');
+  let hasBuyout = $derived(auction.buyout_price != null);
 
   function handleTurnstileVerified(e) {
     turnstileToken = e.detail.token;
@@ -161,7 +174,7 @@
         </div>
         <button
           class="btn btn-primary"
-          on:click={handleBid}
+          onclick={handleBid}
           disabled={submitting || !turnstileToken}
         >
           {submitting ? 'Placing...' : 'Place Bid'}
@@ -173,7 +186,7 @@
     {#if hasBuyout}
       <button
         class="btn btn-buyout"
-        on:click={handleBuyout}
+        onclick={handleBuyout}
         disabled={submitting || !turnstileToken}
       >
         {submitting ? 'Processing...' : `Buy Now — ${parseFloat(auction.buyout_price).toFixed(2)} PED`}
@@ -192,7 +205,7 @@
 {/if}
 
 {#if confirmAction}
-  <div class="modal-overlay" role="presentation" on:click|self={() => confirmAction = null}>
+  <div class="modal-overlay" role="presentation" onclick={self(() => confirmAction = null)}>
     <div class="confirm-dialog" role="dialog" aria-modal="true">
       {#if confirmAction === 'bid'}
         <p class="confirm-message">Place a bid of <strong>{confirmBidAmount.toFixed(2)} PED</strong> on this auction?</p>
@@ -200,11 +213,11 @@
         <p class="confirm-message">Buy out this auction for <strong>{parseFloat(auction.buyout_price).toFixed(2)} PED</strong>?</p>
       {/if}
       <div class="confirm-actions">
-        <button class="btn btn-cancel" on:click={() => confirmAction = null}>Cancel</button>
+        <button class="btn btn-cancel" onclick={() => confirmAction = null}>Cancel</button>
         {#if confirmAction === 'bid'}
-          <button class="btn btn-primary" on:click={doBid}>Confirm Bid</button>
+          <button class="btn btn-primary" onclick={doBid}>Confirm Bid</button>
         {:else}
-          <button class="btn btn-buyout-confirm" on:click={doBuyout}>Confirm Buyout</button>
+          <button class="btn btn-buyout-confirm" onclick={doBuyout}>Confirm Buyout</button>
         {/if}
       </div>
     </div>

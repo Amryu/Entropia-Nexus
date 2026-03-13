@@ -4,6 +4,8 @@
   summary stats, activity chart, top players, and recent globals.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
@@ -22,12 +24,12 @@
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
   import GzButton from '$lib/components/globals/GzButton.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: user = data?.session?.user || null;
+  let user = $derived(data?.session?.user || null);
 
-  let showMediaDialog = false;
-  let mediaDialogGlobal = null;
+  let showMediaDialog = $state(false);
+  let mediaDialogGlobal = $state(null);
 
   function openMediaDialog(g) {
     mediaDialogGlobal = g;
@@ -56,22 +58,22 @@
     mediaDialogGlobal = null;
   }
 
-  $: ({ targetData: initialData, targetName } = data);
+  let { targetData: initialData, targetName } = $derived(data);
 
-  let summary = null;
-  let topPlayers = [];
-  let activity = [];
-  let recent = [];
-  let recentSort = { col: 'timestamp', asc: false };
-  $: sortedRecent = recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort);
-  let primaryType = null;
-  let maturities = [];
-  let wikiUrl = null;
+  let summary = $state(null);
+  let topPlayers = $state([]);
+  let activity = $state([]);
+  let recent = $state([]);
+  let recentSort = $state({ col: 'timestamp', asc: false });
+  let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
+  let primaryType = $state(null);
+  let maturities = $state([]);
+  let wikiUrl = $state(null);
 
-  let period = 'all';
-  let dateFrom = null;
-  let dateTo = null;
-  let loading = false;
+  let period = $state('all');
+  let dateFrom = $state(null);
+  let dateTo = $state(null);
+  let loading = $state(false);
 
   function onDateRangeChange(e) {
     period = e.detail.period;
@@ -81,17 +83,17 @@
   }
 
   // Selected maturity filter
-  let selectedMaturities = [];
+  let selectedMaturities = $state([]);
   let maturityDropdownOpen = false;
 
   // Top Players chart sort toggle
-  let playerChartSortBy = 'value';
+  let playerChartSortBy = $state('value');
 
   // Leaderboard
-  let leaderboardSort = 'value';
-  let leaderboardPage = 1;
-  let leaderboard = null;
-  let leaderboardLoading = false;
+  let leaderboardSort = $state('value');
+  let leaderboardPage = $state(1);
+  let leaderboard = $state(null);
+  let leaderboardLoading = $state(false);
 
   async function fetchLeaderboard() {
     leaderboardLoading = true;
@@ -137,15 +139,17 @@
 
   // Apply initial SSR data — inlined so Svelte tracks write dependencies
   // (applyData is opaque to the compiler, breaking SSR reactive ordering)
-  $: if (initialData) {
-    summary = initialData.summary;
-    topPlayers = initialData.top_players || [];
-    activity = initialData.activity || [];
-    recent = initialData.recent || [];
-    primaryType = initialData.primary_type;
-    maturities = initialData.maturities || [];
-    wikiUrl = initialData.wiki_url || null;
-  }
+  run(() => {
+    if (initialData) {
+      summary = initialData.summary;
+      topPlayers = initialData.top_players || [];
+      activity = initialData.activity || [];
+      recent = initialData.recent || [];
+      primaryType = initialData.primary_type;
+      maturities = initialData.maturities || [];
+      wikiUrl = initialData.wiki_url || null;
+    }
+  });
 
   async function refetchData() {
     loading = true;
@@ -192,8 +196,8 @@
   }
 
   // Charts
-  let activityCanvas;
-  let topPlayersCanvas;
+  let activityCanvas = $state();
+  let topPlayersCanvas = $state();
   let activityChart = null;
   let topPlayersChart = null;
 
@@ -418,7 +422,7 @@
         <div class="maturity-header">
           <span class="maturity-label">Filter by maturity</span>
           {#if selectedMaturities.length > 0}
-            <button class="maturity-clear" on:click={clearMaturityFilter}>Clear filter</button>
+            <button class="maturity-clear" onclick={clearMaturityFilter}>Clear filter</button>
           {/if}
         </div>
         <div class="maturity-chips">
@@ -426,7 +430,7 @@
             <button
               class="maturity-chip"
               class:selected={selectedMaturities.includes(m.target)}
-              on:click={() => toggleMaturity(m.target)}
+              onclick={() => toggleMaturity(m.target)}
             >
               {m.target}
               <span class="maturity-count">({m.count})</span>
@@ -490,8 +494,8 @@
           <div class="chart-card-header">
             <h2>Top Players</h2>
             <div class="sort-toggle">
-              <button class="sort-btn" class:active={playerChartSortBy === 'value'} on:click={() => { playerChartSortBy = 'value'; buildTopPlayersChart(); }}>Value</button>
-              <button class="sort-btn" class:active={playerChartSortBy === 'count'} on:click={() => { playerChartSortBy = 'count'; buildTopPlayersChart(); }}>Count</button>
+              <button class="sort-btn" class:active={playerChartSortBy === 'value'} onclick={() => { playerChartSortBy = 'value'; buildTopPlayersChart(); }}>Value</button>
+              <button class="sort-btn" class:active={playerChartSortBy === 'count'} onclick={() => { playerChartSortBy = 'count'; buildTopPlayersChart(); }}>Count</button>
             </div>
           </div>
           <div class="chart-container">
@@ -507,12 +511,12 @@
             <table class="data-table compact-table">
               <thead>
                 <tr>
-                  <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'player')}>Player{sortIcon(recentSort, 'player')}</th>
-                  <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
+                  <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'player')}>Player{sortIcon(recentSort, 'player')}</th>
+                  <th class="sortable right" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                   <th></th>
                   <th class="col-media"></th>
                   <th class="col-gz"></th>
-                  <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                  <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -528,7 +532,7 @@
                     </td>
                     <td class="col-media">
                       {#if g.media_image || g.media_video}
-                        <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(g)}>
                           {#if g.media_image}
                             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                           {:else}
@@ -555,9 +559,9 @@
       <div class="leaderboard-header">
         <h2>Leaderboard</h2>
         <div class="sort-toggle">
-          <button class="sort-btn" class:active={leaderboardSort === 'value'} on:click={() => onLeaderboardSortChange('value')}>By Value</button>
-          <button class="sort-btn" class:active={leaderboardSort === 'count'} on:click={() => onLeaderboardSortChange('count')}>By Count</button>
-          <button class="sort-btn" class:active={leaderboardSort === 'best'} on:click={() => onLeaderboardSortChange('best')}>By Highest</button>
+          <button class="sort-btn" class:active={leaderboardSort === 'value'} onclick={() => onLeaderboardSortChange('value')}>By Value</button>
+          <button class="sort-btn" class:active={leaderboardSort === 'count'} onclick={() => onLeaderboardSortChange('count')}>By Count</button>
+          <button class="sort-btn" class:active={leaderboardSort === 'best'} onclick={() => onLeaderboardSortChange('best')}>By Highest</button>
         </div>
       </div>
       {#if leaderboardLoading && !leaderboard}
@@ -594,9 +598,9 @@
         </div>
         {#if leaderboard.pages > 1}
           <div class="pagination">
-            <button class="page-btn" disabled={leaderboardPage <= 1} on:click={() => goToLeaderboardPage(leaderboardPage - 1)}>Previous</button>
+            <button class="page-btn" disabled={leaderboardPage <= 1} onclick={() => goToLeaderboardPage(leaderboardPage - 1)}>Previous</button>
             <span class="page-info">Page {leaderboard.page} of {leaderboard.pages}</span>
-            <button class="page-btn" disabled={leaderboardPage >= leaderboard.pages} on:click={() => goToLeaderboardPage(leaderboardPage + 1)}>Next</button>
+            <button class="page-btn" disabled={leaderboardPage >= leaderboard.pages} onclick={() => goToLeaderboardPage(leaderboardPage + 1)}>Next</button>
           </div>
         {/if}
       {:else}

@@ -7,9 +7,9 @@
   import '$lib/style.css';
   import { onMount } from 'svelte';
 
-  let categories = {};
-  let contributors = [];
-  let isLoading = true;
+  let categories = $state({});
+  let contributors = $state([]);
+  let isLoading = $state(true);
 
   onMount(async () => {
     try {

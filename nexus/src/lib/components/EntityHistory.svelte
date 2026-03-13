@@ -5,9 +5,15 @@
 
   import '$lib/style.css';
 
-  export let user;
-  export let versions = [];
-  export let change = null;
+  /**
+   * @typedef {Object} Props
+   * @property {any} user
+   * @property {any} [versions]
+   * @property {any} [change]
+   */
+
+  /** @type {Props} */
+  let { user, versions = [], change = null } = $props();
 </script>
 
 <style>

@@ -1,30 +1,40 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
 
   import '$lib/style.css';
 
   import Table from './Table.svelte';
 
-  export let loadouts = null;
-  export let currentLoadout = null;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [loadouts]
+   * @property {any} [currentLoadout]
+   */
 
-  let search = '';
-  let sortedLoadouts;
+  /** @type {Props} */
+  let { loadouts = $bindable(null), currentLoadout = $bindable(null) } = $props();
 
-  let fileInput;
+  let search = $state('');
+  let sortedLoadouts = $state();
 
-  $: if (loadouts !== null) {
-    sortedLoadouts = loadouts.sort((a, b) => a.Name.localeCompare(b.Name));
-  }
+  let fileInput = $state();
+
+  run(() => {
+    if (loadouts !== null) {
+      sortedLoadouts = loadouts.sort((a, b) => a.Name.localeCompare(b.Name));
+    }
+  });
   
-  let filteredLoadouts;
+  let filteredLoadouts = $state();
 
-  $: {
+  run(() => {
     const searchTerm = search?.toLowerCase();
     filteredLoadouts = !search.trim() ? sortedLoadouts : sortedLoadouts.filter((item) => {
       return item.Name.toLowerCase().includes(searchTerm);
     });
-  }
+  });
 
   function handleFileChange() {
     const file = fileInput.files[0];
@@ -217,14 +227,14 @@
 
   <div class="info-container">
     <div class="button-container">
-      <button class="square-button" on:click={createNewLoadout} title='Add'>Add</button>
-      <button class="square-button" on:click={deleteCurrentLoadout} disabled={currentLoadout === null} title='Delete'>Delete</button>
-      <button class="square-button" on:click={exportLoadout} disabled={currentLoadout === null} title='Export'>Export</button>
-      <button class="square-button" on:click={importLoadout} title='Import'>Import</button>
-      <input type="file" bind:this={fileInput} on:change={handleFileChange} style="display: none;">
+      <button class="square-button" onclick={createNewLoadout} title='Add'>Add</button>
+      <button class="square-button" onclick={deleteCurrentLoadout} disabled={currentLoadout === null} title='Delete'>Delete</button>
+      <button class="square-button" onclick={exportLoadout} disabled={currentLoadout === null} title='Export'>Export</button>
+      <button class="square-button" onclick={importLoadout} title='Import'>Import</button>
+      <input type="file" bind:this={fileInput} onchange={handleFileChange} style="display: none;">
     </div>
   </div>
-  <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} on:focus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
+  <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} onfocus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
 
   <div style="display: flex; overflow-x: auto; overflow-y: hidden; flex-grow: 1;">
     {#if !filteredLoadouts || filteredLoadouts.length === 0}
@@ -232,7 +242,7 @@
       <br />
       No items found...<br />
       <br />
-      <input type="button" value="Clear Search" on:click="{() => search = ''}" />
+      <input type="button" value="Clear Search" onclick={() => search = ''} />
     </div>
     {:else}
       <Table

@@ -1,44 +1,46 @@
 <script>
+  import { stopPropagation, self } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  let activeTab = 'contributors';
-  let isLoading = true;
+  let activeTab = $state('contributors');
+  let isLoading = $state(true);
   let error = null;
 
   // Summary stats
-  let summary = { total_earned: 0, total_paid: 0, total_pending: 0, reward_count: 0, pending_payout_count: 0, total_score: 0 };
+  let summary = $state({ total_earned: 0, total_paid: 0, total_pending: 0, reward_count: 0, pending_payout_count: 0, total_score: 0 });
 
   // Contributors tab
-  let contributors = [];
-  let contributorsTotal = 0;
-  let contributorsPage = 1;
-  let contributorsTotalPages = 1;
-  let contributorSearch = '';
-  let expandedContributor = null;
-  let contributorDetail = null;
-  let showRetroAssignForm = false;
-  let isRetroAssigning = false;
-  let isLoadingRetroRules = false;
-  let retroAssignTarget = null;
-  let retroMatchingRules = [];
-  let retroRewardForm = getEmptyRetroRewardForm();
+  let contributors = $state([]);
+  let contributorsTotal = $state(0);
+  let contributorsPage = $state(1);
+  let contributorsTotalPages = $state(1);
+  let contributorSearch = $state('');
+  let expandedContributor = $state(null);
+  let contributorDetail = $state(null);
+  let showRetroAssignForm = $state(false);
+  let isRetroAssigning = $state(false);
+  let isLoadingRetroRules = $state(false);
+  let retroAssignTarget = $state(null);
+  let retroMatchingRules = $state([]);
+  let retroRewardForm = $state(getEmptyRetroRewardForm());
 
   // Rules tab
-  let rules = [];
-  let editingRule = null;
-  let showRuleForm = false;
-  let ruleForm = getEmptyRuleForm();
+  let rules = $state([]);
+  let editingRule = $state(null);
+  let showRuleForm = $state(false);
+  let ruleForm = $state(getEmptyRuleForm());
 
   // Payouts tab
-  let payouts = [];
-  let payoutsTotal = 0;
-  let payoutsPage = 1;
-  let payoutsTotalPages = 1;
-  let payoutStatusFilter = '';
-  let showPayoutForm = false;
-  let payoutForm = { user_id: '', amount: '', is_bonus: false, note: '' };
+  let payouts = $state([]);
+  let payoutsTotal = $state(0);
+  let payoutsPage = $state(1);
+  let payoutsTotalPages = $state(1);
+  let payoutStatusFilter = $state('');
+  let showPayoutForm = $state(false);
+  let payoutForm = $state({ user_id: '', amount: '', is_bonus: false, note: '' });
 
   function getEmptyRuleForm() {
     return { name: '', description: '', category: '', entities: '', change_type: '', data_fields: '', min_amount: '', max_amount: '', contribution_score: '', sort_order: '0' };
@@ -561,13 +563,13 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab" class:active={activeTab === 'contributors'} on:click={() => activeTab = 'contributors'}>
+    <button class="tab" class:active={activeTab === 'contributors'} onclick={() => activeTab = 'contributors'}>
       Contributors ({contributorsTotal})
     </button>
-    <button class="tab" class:active={activeTab === 'rules'} on:click={() => activeTab = 'rules'}>
+    <button class="tab" class:active={activeTab === 'rules'} onclick={() => activeTab = 'rules'}>
       Rules ({rules.length})
     </button>
-    <button class="tab" class:active={activeTab === 'payouts'} on:click={() => activeTab = 'payouts'}>
+    <button class="tab" class:active={activeTab === 'payouts'} onclick={() => activeTab = 'payouts'}>
       Payouts ({payoutsTotal})
     </button>
   </div>
@@ -575,8 +577,8 @@
   <!-- Contributors Tab -->
   {#if activeTab === 'contributors'}
     <div class="controls">
-      <input class="search-input" type="text" placeholder="Search contributors..." bind:value={contributorSearch} on:keydown={contributorSearchKeydown} />
-      <button class="btn" on:click={() => { contributorsPage = 1; loadContributors(); }}>Search</button>
+      <input class="search-input" type="text" placeholder="Search contributors..." bind:value={contributorSearch} onkeydown={contributorSearchKeydown} />
+      <button class="btn" onclick={() => { contributorsPage = 1; loadContributors(); }}>Search</button>
     </div>
 
     {#if contributors.length === 0 && !isLoading}
@@ -597,7 +599,7 @@
         </thead>
         <tbody>
           {#each contributors as c (c.id)}
-            <tr class="clickable-row" class:expanded={expandedContributor === c.id} on:click={() => loadContributorDetail(c.id)}>
+            <tr class="clickable-row" class:expanded={expandedContributor === c.id} onclick={() => loadContributorDetail(c.id)}>
               <td>
                 <div class="user-cell">
                   {#if c.avatar}
@@ -621,7 +623,7 @@
               <td class="amount-cell">{formatAmount(c.total_score)}</td>
               <td>
                 {#if parseFloat(c.total_earned) - parseFloat(c.total_paid) > 0}
-                  <button class="btn btn-sm" on:click|stopPropagation={() => startPayoutForUser(c.id, (parseFloat(c.total_earned) - parseFloat(c.total_paid)).toFixed(2))}>
+                  <button class="btn btn-sm" onclick={stopPropagation(() => startPayoutForUser(c.id, (parseFloat(c.total_earned) - parseFloat(c.total_paid)).toFixed(2)))}>
                     Pay
                   </button>
                 {/if}
@@ -675,7 +677,7 @@
                                   <td>{change.type}</td>
                                   <td>{formatDate(change.last_update || change.created_at)}</td>
                                   <td style="text-align: right;">
-                                    <button class="btn btn-sm" on:click={() => startRetroAssign(change)}>Assign</button>
+                                    <button class="btn btn-sm" onclick={() => startRetroAssign(change)}>Assign</button>
                                   </td>
                                 </tr>
                               {/each}
@@ -717,9 +719,9 @@
 
       {#if contributorsTotalPages > 1}
         <div class="pagination">
-          <button class="btn btn-sm" disabled={contributorsPage <= 1} on:click={() => { contributorsPage--; loadContributors(); }}>Previous</button>
+          <button class="btn btn-sm" disabled={contributorsPage <= 1} onclick={() => { contributorsPage--; loadContributors(); }}>Previous</button>
           <span>Page {contributorsPage} of {contributorsTotalPages}</span>
-          <button class="btn btn-sm" disabled={contributorsPage >= contributorsTotalPages} on:click={() => { contributorsPage++; loadContributors(); }}>Next</button>
+          <button class="btn btn-sm" disabled={contributorsPage >= contributorsTotalPages} onclick={() => { contributorsPage++; loadContributors(); }}>Next</button>
         </div>
       {/if}
     {/if}
@@ -728,7 +730,7 @@
   <!-- Rules Tab -->
   {#if activeTab === 'rules'}
     <div class="controls">
-      <button class="btn btn-primary" on:click={startCreateRule}>Create Rule</button>
+      <button class="btn btn-primary" onclick={startCreateRule}>Create Rule</button>
     </div>
 
     {#if rules.length === 0}
@@ -768,14 +770,14 @@
               </td>
               <td class="amount-cell">{rule.contribution_score != null ? formatAmount(rule.contribution_score) : '-'}</td>
               <td>
-                <button class="badge {rule.active ? 'badge-active' : 'badge-inactive'}" style="cursor:pointer; border: none;" on:click={() => toggleRuleActive(rule)}>
+                <button class="badge {rule.active ? 'badge-active' : 'badge-inactive'}" style="cursor:pointer; border: none;" onclick={() => toggleRuleActive(rule)}>
                   {rule.active ? 'Active' : 'Inactive'}
                 </button>
               </td>
               <td>
                 <div style="display: flex; gap: 4px;">
-                  <button class="btn btn-sm" on:click={() => startEditRule(rule)}>Edit</button>
-                  <button class="btn btn-sm btn-danger" on:click={() => deleteRule(rule.id)}>Del</button>
+                  <button class="btn btn-sm" onclick={() => startEditRule(rule)}>Edit</button>
+                  <button class="btn btn-sm btn-danger" onclick={() => deleteRule(rule.id)}>Del</button>
                 </div>
               </td>
             </tr>
@@ -788,8 +790,8 @@
   <!-- Payouts Tab -->
   {#if activeTab === 'payouts'}
     <div class="controls">
-      <button class="btn btn-primary" on:click={() => { showPayoutForm = true; }}>Create Payout</button>
-      <select class="filter-select" bind:value={payoutStatusFilter} on:change={() => { payoutsPage = 1; loadPayouts(); }}>
+      <button class="btn btn-primary" onclick={() => { showPayoutForm = true; }}>Create Payout</button>
+      <select class="filter-select" bind:value={payoutStatusFilter} onchange={() => { payoutsPage = 1; loadPayouts(); }}>
         <option value="">All Status</option>
         <option value="pending">Pending</option>
         <option value="completed">Completed</option>
@@ -838,7 +840,7 @@
               <td>{p.completed_at ? formatDate(p.completed_at) : '-'}</td>
               <td>
                 {#if p.status === 'pending'}
-                  <button class="btn btn-sm btn-success" on:click={() => completePayout(p.id)}>Complete</button>
+                  <button class="btn btn-sm btn-success" onclick={() => completePayout(p.id)}>Complete</button>
                 {/if}
               </td>
             </tr>
@@ -848,9 +850,9 @@
 
       {#if payoutsTotalPages > 1}
         <div class="pagination">
-          <button class="btn btn-sm" disabled={payoutsPage <= 1} on:click={() => { payoutsPage--; loadPayouts(); }}>Previous</button>
+          <button class="btn btn-sm" disabled={payoutsPage <= 1} onclick={() => { payoutsPage--; loadPayouts(); }}>Previous</button>
           <span>Page {payoutsPage} of {payoutsTotalPages}</span>
-          <button class="btn btn-sm" disabled={payoutsPage >= payoutsTotalPages} on:click={() => { payoutsPage++; loadPayouts(); }}>Next</button>
+          <button class="btn btn-sm" disabled={payoutsPage >= payoutsTotalPages} onclick={() => { payoutsPage++; loadPayouts(); }}>Next</button>
         </div>
       {/if}
     {/if}
@@ -859,7 +861,7 @@
 
 <!-- Rule Form Dialog -->
 {#if showRuleForm}
-  <div class="form-overlay" on:click|self={() => showRuleForm = false} role="presentation">
+  <div class="form-overlay" onclick={self(() => showRuleForm = false)} role="presentation">
     <div class="form-dialog">
       <h3>{editingRule ? 'Edit Rule' : 'Create Rule'}</h3>
       <div class="form-group">
@@ -914,8 +916,8 @@
         </div>
       </div>
       <div class="form-actions">
-        <button class="btn" on:click={() => showRuleForm = false}>Cancel</button>
-        <button class="btn btn-primary" on:click={saveRule}>
+        <button class="btn" onclick={() => showRuleForm = false}>Cancel</button>
+        <button class="btn btn-primary" onclick={saveRule}>
           {editingRule ? 'Save Changes' : 'Create Rule'}
         </button>
       </div>
@@ -925,7 +927,7 @@
 
 <!-- Payout Form Dialog -->
 {#if showPayoutForm}
-  <div class="form-overlay" on:click|self={() => showPayoutForm = false} role="presentation">
+  <div class="form-overlay" onclick={self(() => showPayoutForm = false)} role="presentation">
     <div class="form-dialog">
       <h3>Create Payout</h3>
       <div class="form-group">
@@ -946,8 +948,8 @@
         <textarea bind:value={payoutForm.note} placeholder="Optional note about this payout"></textarea>
       </div>
       <div class="form-actions">
-        <button class="btn" on:click={() => showPayoutForm = false}>Cancel</button>
-        <button class="btn btn-primary" on:click={createPayout}>Create Payout</button>
+        <button class="btn" onclick={() => showPayoutForm = false}>Cancel</button>
+        <button class="btn btn-primary" onclick={createPayout}>Create Payout</button>
       </div>
     </div>
   </div>
@@ -955,7 +957,7 @@
 
 <!-- Retroactive Reward Assignment Dialog -->
 {#if showRetroAssignForm && retroAssignTarget}
-  <div class="form-overlay" on:click|self={closeRetroAssignForm} role="presentation">
+  <div class="form-overlay" onclick={self(closeRetroAssignForm)} role="presentation">
     <div class="form-dialog">
       <h3>Assign Reward</h3>
       <div class="form-group">
@@ -980,7 +982,7 @@
       {#if retroMatchingRules.length > 0}
         <div class="form-group">
           <label>Rule</label>
-          <select bind:value={retroRewardForm.rule_id} on:change={onRetroRuleSelect}>
+          <select bind:value={retroRewardForm.rule_id} onchange={onRetroRuleSelect}>
             <option value="">Custom (no rule)</option>
             {#each retroMatchingRules as rule}
               <option value={String(rule.id)}>
@@ -1008,8 +1010,8 @@
       </div>
 
       <div class="form-actions">
-        <button class="btn" on:click={closeRetroAssignForm}>Cancel</button>
-        <button class="btn btn-primary" on:click={assignRetroReward} disabled={isRetroAssigning || isLoadingRetroRules}>
+        <button class="btn" onclick={closeRetroAssignForm}>Cancel</button>
+        <button class="btn btn-primary" onclick={assignRetroReward} disabled={isRetroAssigning || isLoadingRetroRules}>
           {isRetroAssigning ? 'Assigning...' : 'Assign Reward'}
         </button>
       </div>

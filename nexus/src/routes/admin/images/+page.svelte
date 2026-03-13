@@ -3,14 +3,13 @@
   import { enhance } from '$app/forms';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  export let data;
-  export let form;
+  let { data, form } = $props();
 
-  $: pendingImages = data.pendingImages || [];
-  $: approvedImages = data.approvedImages || [];
+  let pendingImages = $derived(data.pendingImages || []);
+  let approvedImages = $derived(data.approvedImages || []);
 
   // Tab state
-  let activeTab = 'pending';
+  let activeTab = $state('pending');
 
   function formatDate(isoString) {
     if (!isoString) return 'Unknown';
@@ -120,7 +119,7 @@
     <button
       class="tab"
       class:active={activeTab === 'pending'}
-      on:click={() => activeTab = 'pending'}
+      onclick={() => activeTab = 'pending'}
     >
       Pending
       {#if pendingImages.length > 0}
@@ -130,7 +129,7 @@
     <button
       class="tab"
       class:active={activeTab === 'approved'}
-      on:click={() => activeTab = 'approved'}
+      onclick={() => activeTab = 'approved'}
     >
       Approved
       {#if approvedImages.length > 0}
@@ -276,7 +275,7 @@
             </div>
 
             <div class="image-actions single">
-              <form method="POST" action="?/delete" use:enhance on:submit={(e) => confirmDelete(e, image.linkCount)}>
+              <form method="POST" action="?/delete" use:enhance onsubmit={(e) => confirmDelete(e, image.linkCount)}>
                 <input type="hidden" name="entityType" value={image.entityType} />
                 <input type="hidden" name="entityId" value={image.entityId} />
                 <button type="submit" class="btn btn-delete">

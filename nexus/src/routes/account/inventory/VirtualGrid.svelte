@@ -1,45 +1,40 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   import { onMount, onDestroy } from 'svelte';
 
-  export let items = [];
-  export let minCardWidth = 200;
-  export let cardHeight = 160;
-  export let gap = 12;
-  export let buffer = 3;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [items]
+   * @property {number} [minCardWidth]
+   * @property {number} [cardHeight]
+   * @property {number} [gap]
+   * @property {number} [buffer]
+   * @property {import('svelte').Snippet<[any]>} [children]
+   * @property {import('svelte').Snippet} [empty]
+   */
 
-  let containerEl;
-  let containerWidth = 0;
-  let scrollParent = null;
-  let offsetInParent = 0;
-  let viewportHeight = 0;
-  let scrollTop = 0;
+  /** @type {Props} */
+  let {
+    items = [],
+    minCardWidth = 200,
+    cardHeight = 160,
+    gap = 12,
+    buffer = 3,
+    children,
+    empty
+  } = $props();
 
-  // Recompute offset when items change (layout may shift)
-  $: if (items && containerEl && scrollParent) updateOffset();
+  let containerEl = $state();
+  let containerWidth = $state(0);
+  let scrollParent = $state(null);
+  let offsetInParent = $state(0);
+  let viewportHeight = $state(0);
+  let scrollTop = $state(0);
 
-  // Computed layout
-  $: columns = Math.max(1, Math.floor((containerWidth + gap) / (minCardWidth + gap)));
-  $: totalRows = Math.ceil(items.length / columns);
-  $: rowHeightWithGap = cardHeight + gap;
-  $: totalHeight = totalRows * rowHeightWithGap - (totalRows > 0 ? gap : 0);
 
-  // Visible range based on parent scroll
-  $: relativeScroll = Math.max(0, scrollTop - offsetInParent);
-  $: startRow = Math.max(0, Math.floor(relativeScroll / rowHeightWithGap) - buffer);
-  $: endRow = Math.min(totalRows, Math.ceil((relativeScroll + viewportHeight) / rowHeightWithGap) + buffer);
 
-  $: visibleItems = (() => {
-    const result = [];
-    for (let row = startRow; row < endRow; row++) {
-      for (let col = 0; col < columns; col++) {
-        const idx = row * columns + col;
-        if (idx < items.length) {
-          result.push({ item: items[idx], row, col, index: idx });
-        }
-      }
-    }
-    return result;
-  })();
+
 
   function findScrollParent(el) {
     let node = el.parentElement;
@@ -102,6 +97,31 @@
     resizeObserver?.disconnect();
     if (rafId) cancelAnimationFrame(rafId);
   });
+  // Recompute offset when items change (layout may shift)
+  run(() => {
+    if (items && containerEl && scrollParent) updateOffset();
+  });
+  // Computed layout
+  let columns = $derived(Math.max(1, Math.floor((containerWidth + gap) / (minCardWidth + gap))));
+  let totalRows = $derived(Math.ceil(items.length / columns));
+  let rowHeightWithGap = $derived(cardHeight + gap);
+  let totalHeight = $derived(totalRows * rowHeightWithGap - (totalRows > 0 ? gap : 0));
+  // Visible range based on parent scroll
+  let relativeScroll = $derived(Math.max(0, scrollTop - offsetInParent));
+  let startRow = $derived(Math.max(0, Math.floor(relativeScroll / rowHeightWithGap) - buffer));
+  let endRow = $derived(Math.min(totalRows, Math.ceil((relativeScroll + viewportHeight) / rowHeightWithGap) + buffer));
+  let visibleItems = $derived((() => {
+    const result = [];
+    for (let row = startRow; row < endRow; row++) {
+      for (let col = 0; col < columns; col++) {
+        const idx = row * columns + col;
+        if (idx < items.length) {
+          result.push({ item: items[idx], row, col, index: idx });
+        }
+      }
+    }
+    return result;
+  })());
 </script>
 
 <div class="virtual-grid-container" bind:this={containerEl} style="height: {totalHeight}px;">
@@ -116,13 +136,13 @@
         height: {cardHeight}px;
       "
     >
-      <slot {item} {index} />
+      {@render children?.({ item, index, })}
     </div>
   {/each}
   {#if items.length === 0}
-    <slot name="empty">
+    {#if empty}{@render empty()}{:else}
       <p class="text-muted" style="text-align:center;padding:2rem;">No items</p>
-    </slot>
+    {/if}
   {/if}
 </div>
 

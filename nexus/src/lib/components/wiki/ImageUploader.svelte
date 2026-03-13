@@ -10,31 +10,43 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string|null} Current image URL */
-  export let currentImage = null;
+  
 
-  /** @type {string} Entity type for API */
-  export let entityType = '';
+  
 
-  /** @type {number|string} Entity ID for API */
-  export let entityId = '';
+  
 
-  /** @type {boolean} Whether the uploader is in edit mode */
-  export let editable = false;
+  
 
-  /** @type {number} Max file size in MB */
-  export let maxSizeMB = 2;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string|null} [currentImage]
+   * @property {string} [entityType]
+   * @property {number|string} [entityId]
+   * @property {boolean} [editable]
+   * @property {number} [maxSizeMB]
+   */
+
+  /** @type {Props} */
+  let {
+    currentImage = null,
+    entityType = '',
+    entityId = '',
+    editable = false,
+    maxSizeMB = 2
+  } = $props();
 
   // Component state
-  let fileInput;
-  let selectedImage = null;
-  let isCropping = false;
-  let isUploading = false;
-  let uploadError = null;
-  let cropperRef;
+  let fileInput = $state();
+  let selectedImage = $state(null);
+  let isCropping = $state(false);
+  let isUploading = $state(false);
+  let uploadError = $state(null);
+  let cropperRef = $state();
 
   // Computed max size in bytes
-  $: maxSizeBytes = maxSizeMB * 1024 * 1024;
+  let maxSizeBytes = $derived(maxSizeMB * 1024 * 1024);
 
   function handleFileSelect(event) {
     const file = event.target.files?.[0];
@@ -158,10 +170,10 @@
     <div
       class="image-preview"
       class:editable
-      on:click={editable ? openFileDialog : null}
-      on:keydown={editable ? (e) => e.key === 'Enter' && openFileDialog() : null}
-      on:drop={editable ? handleDrop : null}
-      on:dragover={editable ? handleDragOver : null}
+      onclick={editable ? openFileDialog : null}
+      onkeydown={editable ? (e) => e.key === 'Enter' && openFileDialog() : null}
+      ondrop={editable ? handleDrop : null}
+      ondragover={editable ? handleDragOver : null}
       role={editable ? 'button' : 'img'}
       tabindex={editable ? 0 : -1}
     >
@@ -210,7 +222,7 @@
     bind:this={fileInput}
     type="file"
     accept="image/*"
-    on:change={handleFileSelect}
+    onchange={handleFileSelect}
     class="hidden-input"
   />
 </div>

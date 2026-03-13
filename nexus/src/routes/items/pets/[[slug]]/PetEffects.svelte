@@ -2,7 +2,7 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  export let pet;
+  let { pet } = $props();
 </script>
 
 <h2>Pet Skills</h2>

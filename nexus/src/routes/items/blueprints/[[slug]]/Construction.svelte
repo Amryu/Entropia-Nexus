@@ -1,16 +1,15 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { clampDecimals, getItemLink } from '$lib/util';
   import '$lib/style.css';
 
-  export let blueprint;
+  let { blueprint } = $props();
 
-  let markup;
-  let markupInputs;
+  let markup = $state();
+  let markupInputs = $state();
 
-  $: if (blueprint) {
-    resetMarkup();
-  }
 
   function resetMarkup() {
     markup = new Array(blueprint.Materials?.length ?? 0).fill(100);
@@ -43,26 +42,8 @@
     markupInputs = markupInputs;
   }
 
-  // Calculate totals
-  $: totalTT = (blueprint.Materials ?? []).reduce((acc, mat) => {
-    const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
-    return acc + (matTT * (mat.Amount || 0));
-  }, 0);
 
-  $: totalWithMarkup = (blueprint.Materials ?? []).reduce((acc, mat, i) => {
-    const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
-    return acc + (matTT * (mat.Amount || 0) * (markup[i] || 100) / 100);
-  }, 0);
 
-  // Weighted average MU: sum(tt * mu) / sum(tt)
-  $: weightedAvgMU = (() => {
-    const sumTTxMU = (blueprint.Materials ?? []).reduce((acc, mat, i) => {
-      const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
-      const tt = matTT * (mat.Amount || 0);
-      return acc + (tt * (markup[i] || 100));
-    }, 0);
-    return totalTT > 0 ? sumTTxMU / totalTT : 100;
-  })();
 
   // Helper to get line TT
   function getLineTT(mat) {
@@ -74,6 +55,29 @@
   function getLineTotal(mat, mu) {
     return getLineTT(mat) * (mu || 100) / 100;
   }
+  run(() => {
+    if (blueprint) {
+      resetMarkup();
+    }
+  });
+  // Calculate totals
+  let totalTT = $derived((blueprint.Materials ?? []).reduce((acc, mat) => {
+    const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
+    return acc + (matTT * (mat.Amount || 0));
+  }, 0));
+  let totalWithMarkup = $derived((blueprint.Materials ?? []).reduce((acc, mat, i) => {
+    const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
+    return acc + (matTT * (mat.Amount || 0) * (markup[i] || 100) / 100);
+  }, 0));
+  // Weighted average MU: sum(tt * mu) / sum(tt)
+  let weightedAvgMU = $derived((() => {
+    const sumTTxMU = (blueprint.Materials ?? []).reduce((acc, mat, i) => {
+      const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
+      const tt = matTT * (mat.Amount || 0);
+      return acc + (tt * (markup[i] || 100));
+    }, 0);
+    return totalTT > 0 ? sumTTxMU / totalTT : 100;
+  })());
 </script>
 
 <style>
@@ -260,8 +264,8 @@
               <input
                 type="text"
                 bind:value={markupInputs[index]}
-                on:input={(e) => handleMarkupChange(index, e.target.value)}
-                on:blur={() => handleMarkupBlur(index)}
+                oninput={(e) => handleMarkupChange(index, e.target.value)}
+                onblur={() => handleMarkupBlur(index)}
               />
             </td>
             <td class="text-right">{clampDecimals(getLineTotal(material, markup[index]), 2, 8)}</td>

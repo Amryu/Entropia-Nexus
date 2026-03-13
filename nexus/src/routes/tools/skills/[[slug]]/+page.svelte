@@ -4,6 +4,9 @@
   Uses WikiPage for consistent layout with mobile drawer support.
 -->
 <script>
+  import { run, stopPropagation, self, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import '../../tools.css';
@@ -30,7 +33,7 @@
   import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
   import { clickable } from '$lib/actions/clickable.js';
 
-  export let data;
+  let { data } = $props();
 
   const { skillsMetadata, professionsMetadata } = data;
 
@@ -38,96 +41,78 @@
   const LOCAL_STORAGE_KEY = 'skills';
 
   // Current skill values: { "Agility": 0.0002, ... }
-  let skillValues = {};
+  let skillValues = $state({});
   let healthValue = null;
 
   // Online/Local mode
-  let activeSource = 'local';
-  let isLoggedIn = false;
-  let isSaving = false;
-  let saveError = null;
+  let activeSource = $state('local');
+  let isLoggedIn = $state(false);
+  let isSaving = $state(false);
+  let saveError = $state(null);
   let lastSavedAt = null;
-  let showImportPrompt = false;
+  let showImportPrompt = $state(false);
 
   // View state
-  let activeView = 'skills'; // 'skills' | 'professions'
-  let selectedSkill = null;
-  let selectedProfession = null;
-  let searchTerm = '';
-  let categoryFilter = 'all';
-  let showZero = true;
+  let activeView = $state('skills'); // 'skills' | 'professions'
+  let selectedSkill = $state(null);
+  let selectedProfession = $state(null);
+  let searchTerm = $state('');
+  let categoryFilter = $state('all');
+  let showZero = $state(true);
 
   // WikiPage integration
-  let drawerOpen = false;
-  let windowWidth = 0;
-  $: isMobileLayout = windowWidth < 900;
+  let drawerOpen = $state(false);
+  let windowWidth = $state(0);
 
-  $: user = $page.data?.user;
-  $: breadcrumbs = [
-    { label: 'Tools', href: '/tools' },
-    { label: 'Skills Calculator' }
-  ];
 
   // Import dialog
-  let showImportDialog = false;
-  let importMode = 'paste'; // 'paste' | 'manual'
-  let importText = '';
-  let importPreview = null;
-  let importError = null;
-  let manualSearchTerm = '';
-  let manualSkillEdits = {};
+  let showImportDialog = $state(false);
+  let importMode = $state('paste'); // 'paste' | 'manual'
+  let importText = $state('');
+  let importPreview = $state(null);
+  let importError = $state(null);
+  let manualSearchTerm = $state('');
+  let manualSkillEdits = $state({});
 
   // Import history
-  let showHistoryPanel = false;
-  let importHistory = [];
-  let historyLoading = false;
-  let expandedImportId = null;
-  let expandedDeltas = [];
+  let showHistoryPanel = $state(false);
+  let importHistory = $state([]);
+  let historyLoading = $state(false);
+  let expandedImportId = $state(null);
+  let expandedDeltas = $state([]);
 
   // Unlocks view
-  let showUnlocksView = false;
+  let showUnlocksView = $state(false);
 
   // Optimizer
-  let showOptimizer = false;
-  let targetType = 'profession'; // 'profession' | 'hp'
-  let targetProfession = '';
-  let targetLevel = 0;
-  let targetHPValue = 0;
-  let optimizerResult = null;
-  let methodOverrides = {};
-  let implantWarnings = new Set();
-  let optimizerMarkups = {};
+  let showOptimizer = $state(false);
+  let targetType = $state('profession'); // 'profession' | 'hp'
+  let targetProfession = $state('');
+  let targetLevel = $state(0);
+  let targetHPValue = $state(0);
+  let optimizerResult = $state(null);
+  let methodOverrides = $state({});
+  let implantWarnings = $state(new Set());
+  let optimizerMarkups = $state({});
 
   // Markup sources
-  let markupSource = 'custom';
-  let customMarkups = {};
-  let wapByName = new Map();
-  let nameToId = new Map();
-  let inventoryMarkupMap = new Map();
-  let ingameByName = new Map();
+  let markupSource = $state('custom');
+  let customMarkups = $state({});
+  let wapByName = $state(new Map());
+  let nameToId = $state(new Map());
+  let inventoryMarkupMap = $state(new Map());
+  let ingameByName = $state(new Map());
 
   // PED value cache (fetched from server)
-  let pedValueCache = {};
-  let totalSkillValue = 0;
-  let pedValuesLoading = false;
+  let pedValueCache = $state({});
+  let totalSkillValue = $state(0);
+  let pedValuesLoading = $state(false);
   let pedValueDebounceTimer = null;
   const PED_VALUE_DEBOUNCE_MS = 400;
 
-  // ─── Derived data ─────────────────────────────────────────────────────
 
-  $: skillLookup = new Map(skillsMetadata.map(s => [s.Name, s]));
-  $: professionLookup = new Map(professionsMetadata.map(p => [p.Name, p]));
 
-  $: skillCategories = [...new Set(skillsMetadata.map(s => s.Category).filter(Boolean))].sort();
-  $: professionCategories = [...new Set(professionsMetadata.map(p => p.Category).filter(Boolean))].sort();
 
-  $: attributeSkills = buildAttributeSkillSet(skillsMetadata);
-  $: professionLevels = calculateAllProfessionLevels(skillValues, professionsMetadata, skillsMetadata);
-  $: totalHP = calculateHP(skillValues, skillsMetadata);
-  $: nonZeroSkillCount = Object.values(skillValues).filter(v => v > 0).length;
-
-  // Debounced PED value fetch from server
-  $: if (skillValues) debouncedFetchPEDValues();
 
   function debouncedFetchPEDValues() {
     if (pedValueDebounceTimer) clearTimeout(pedValueDebounceTimer);
@@ -146,146 +131,15 @@
       pedValuesLoading = false;
     }
   }
-  $: totalSkillPoints = Object.values(skillValues).reduce((s, v) => s + (v > 0 ? v : 0), 0);
 
-  $: unlocksRemaining = skillsMetadata.filter(s => s.IsHidden && (skillValues[s.Name] || 0) === 0).length;
-  $: totalHiddenSkills = skillsMetadata.filter(s => s.IsHidden).length;
 
-  // All hidden skill unlock info for the Unlocks view
-  $: allUnlocks = skillsMetadata
-    .filter(s => s.IsHidden)
-    .map(skill => {
-      const currentVal = skillValues[skill.Name] || 0;
-      const isUnlocked = currentVal > 0;
-      const unlockPaths = (skill.Unlocks || []).map(u => {
-        const profLevel = professionLevels.get(u.Profession) || 0;
-        return {
-          profession: u.Profession,
-          requiredLevel: u.Level,
-          currentLevel: profLevel,
-          progress: u.Level > 0 ? Math.min(profLevel / u.Level, 1) : 1,
-          remaining: Math.max(u.Level - profLevel, 0)
-        };
-      });
-      unlockPaths.sort((a, b) => b.progress - a.progress || a.remaining - b.remaining);
-      return {
-        name: skill.Name,
-        category: skill.Category,
-        isUnlocked,
-        currentVal,
-        closestPath: unlockPaths[0] || null,
-        allPaths: unlockPaths
-      };
-    })
-    .sort((a, b) => {
-      if (a.isUnlocked !== b.isUnlocked) return a.isUnlocked ? 1 : -1;
-      const pa = a.closestPath?.progress || 0;
-      const pb = b.closestPath?.progress || 0;
-      return pb - pa;
-    });
 
-  // Filtered skills list
-  $: filteredSkills = skillsMetadata
-    .filter(s => {
-      if (categoryFilter !== 'all' && s.Category !== categoryFilter) return false;
-      if (!showZero && (skillValues[s.Name] || 0) === 0) return false;
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        return s.Name.toLowerCase().includes(term);
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      const va = skillValues[a.Name] || 0;
-      const vb = skillValues[b.Name] || 0;
-      if (vb !== va) return vb - va;
-      return a.Name.localeCompare(b.Name);
-    });
 
-  // Filtered professions list
-  $: filteredProfessions = professionsMetadata
-    .filter(p => {
-      if (categoryFilter !== 'all' && p.Category !== categoryFilter) return false;
-      if (!showZero && (professionLevels.get(p.Name) || 0) === 0) return false;
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        return p.Name.toLowerCase().includes(term);
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      const la = professionLevels.get(a.Name) || 0;
-      const lb = professionLevels.get(b.Name) || 0;
-      if (lb !== la) return lb - la;
-      return a.Name.localeCompare(b.Name);
-    });
 
-  // Detail panel data
-  $: selectedSkillData = selectedSkill ? skillLookup.get(selectedSkill) : null;
-  $: selectedProfessionData = selectedProfession ? professionLookup.get(selectedProfession) : null;
 
-  // Skills relevant to current optimizer target
-  $: optimizerSkills = (() => {
-    if (targetType === 'profession' && targetProfession) {
-      const prof = professionLookup.get(targetProfession);
-      return (prof?.Skills || [])
-        .filter(s => skillLookup.get(s.Name)?.IsExtractable !== false)
-        .map(s => ({ Name: s.Name, Weight: s.Weight }));
-    } else if (targetType === 'hp') {
-      return skillsMetadata
-        .filter(s => s.HPIncrease != null && s.HPIncrease > 0 && s.IsExtractable !== false)
-        .map(s => ({ Name: s.Name, HPIncrease: s.HPIncrease }));
-    }
-    return [];
-  })();
 
-  // Default all skills to 'chip' when optimizer skills change
-  $: {
-    const newOverrides = {};
-    for (const s of optimizerSkills) {
-      const existing = methodOverrides[s.Name];
-      const meta = skillLookup.get(s.Name);
-      if (existing) {
-        // Keep existing override, but force non-extractable skills away from 'chip'
-        newOverrides[s.Name] = (!meta?.IsExtractable && existing === 'chip') ? 'auto' : existing;
-      } else {
-        // Default: 'chip' for extractable, 'auto' for non-extractable
-        newOverrides[s.Name] = meta?.IsExtractable ? 'chip' : 'auto';
-      }
-    }
-    methodOverrides = newOverrides;
-  }
 
-  // Markups for optimizer and method table display
-  $: {
-    void markupSource; void customMarkups; void wapByName; void nameToId; void inventoryMarkupMap; void ingameByName;
-    if ((targetType === 'profession' && targetProfession) || targetType === 'hp') {
-      const skillNames = targetType === 'profession'
-        ? (professionLookup.get(targetProfession)?.Skills || []).map(s => s.Name)
-        : skillsMetadata.filter(s => s.HPIncrease > 0).map(s => s.Name);
-      const result = getMarkupsForSkills(skillNames);
-      optimizerMarkups = result.markups;
-      implantWarnings = result.warnings;
-    } else {
-      optimizerMarkups = {};
-      implantWarnings = new Set();
-    }
-  }
 
-  // Optimizer reactive
-  $: {
-    if (targetType === 'profession' && targetProfession && targetLevel > 0) {
-      const prof = professionLookup.get(targetProfession);
-      if (prof) {
-        const currentLevel = professionLevels.get(targetProfession) || 0;
-        optimizerResult = findCheapestPath(skillValues, prof.Skills, currentLevel, targetLevel, optimizerMarkups, methodOverrides, attributeSkills);
-      }
-    } else if (targetType === 'hp' && targetHPValue > totalHP) {
-      optimizerResult = findCheapestHPPath(skillValues, skillsMetadata, totalHP, targetHPValue, optimizerMarkups, methodOverrides);
-    } else {
-      optimizerResult = null;
-    }
-  }
 
   // ─── Functions ────────────────────────────────────────────────────────
 
@@ -594,6 +448,157 @@
   }
 
   onMount(initialize);
+  let isMobileLayout = $derived(windowWidth < 900);
+  let user = $derived($page.data?.user);
+  let breadcrumbs = $derived([
+    { label: 'Tools', href: '/tools' },
+    { label: 'Skills Calculator' }
+  ]);
+  // ─── Derived data ─────────────────────────────────────────────────────
+
+  let skillLookup = $derived(new Map(skillsMetadata.map(s => [s.Name, s])));
+  let professionLookup = $derived(new Map(professionsMetadata.map(p => [p.Name, p])));
+  let skillCategories = $derived([...new Set(skillsMetadata.map(s => s.Category).filter(Boolean))].sort());
+  let professionCategories = $derived([...new Set(professionsMetadata.map(p => p.Category).filter(Boolean))].sort());
+  let attributeSkills = $derived(buildAttributeSkillSet(skillsMetadata));
+  let professionLevels = $derived(calculateAllProfessionLevels(skillValues, professionsMetadata, skillsMetadata));
+  let totalHP = $derived(calculateHP(skillValues, skillsMetadata));
+  let nonZeroSkillCount = $derived(Object.values(skillValues).filter(v => v > 0).length);
+  // Debounced PED value fetch from server
+  run(() => {
+    if (skillValues) debouncedFetchPEDValues();
+  });
+  let totalSkillPoints = $derived(Object.values(skillValues).reduce((s, v) => s + (v > 0 ? v : 0), 0));
+  let unlocksRemaining = $derived(skillsMetadata.filter(s => s.IsHidden && (skillValues[s.Name] || 0) === 0).length);
+  let totalHiddenSkills = $derived(skillsMetadata.filter(s => s.IsHidden).length);
+  // All hidden skill unlock info for the Unlocks view
+  let allUnlocks = $derived(skillsMetadata
+    .filter(s => s.IsHidden)
+    .map(skill => {
+      const currentVal = skillValues[skill.Name] || 0;
+      const isUnlocked = currentVal > 0;
+      const unlockPaths = (skill.Unlocks || []).map(u => {
+        const profLevel = professionLevels.get(u.Profession) || 0;
+        return {
+          profession: u.Profession,
+          requiredLevel: u.Level,
+          currentLevel: profLevel,
+          progress: u.Level > 0 ? Math.min(profLevel / u.Level, 1) : 1,
+          remaining: Math.max(u.Level - profLevel, 0)
+        };
+      });
+      unlockPaths.sort((a, b) => b.progress - a.progress || a.remaining - b.remaining);
+      return {
+        name: skill.Name,
+        category: skill.Category,
+        isUnlocked,
+        currentVal,
+        closestPath: unlockPaths[0] || null,
+        allPaths: unlockPaths
+      };
+    })
+    .sort((a, b) => {
+      if (a.isUnlocked !== b.isUnlocked) return a.isUnlocked ? 1 : -1;
+      const pa = a.closestPath?.progress || 0;
+      const pb = b.closestPath?.progress || 0;
+      return pb - pa;
+    }));
+  // Filtered skills list
+  let filteredSkills = $derived(skillsMetadata
+    .filter(s => {
+      if (categoryFilter !== 'all' && s.Category !== categoryFilter) return false;
+      if (!showZero && (skillValues[s.Name] || 0) === 0) return false;
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        return s.Name.toLowerCase().includes(term);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const va = skillValues[a.Name] || 0;
+      const vb = skillValues[b.Name] || 0;
+      if (vb !== va) return vb - va;
+      return a.Name.localeCompare(b.Name);
+    }));
+  // Filtered professions list
+  let filteredProfessions = $derived(professionsMetadata
+    .filter(p => {
+      if (categoryFilter !== 'all' && p.Category !== categoryFilter) return false;
+      if (!showZero && (professionLevels.get(p.Name) || 0) === 0) return false;
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        return p.Name.toLowerCase().includes(term);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const la = professionLevels.get(a.Name) || 0;
+      const lb = professionLevels.get(b.Name) || 0;
+      if (lb !== la) return lb - la;
+      return a.Name.localeCompare(b.Name);
+    }));
+  // Detail panel data
+  let selectedSkillData = $derived(selectedSkill ? skillLookup.get(selectedSkill) : null);
+  let selectedProfessionData = $derived(selectedProfession ? professionLookup.get(selectedProfession) : null);
+  // Skills relevant to current optimizer target
+  let optimizerSkills = $derived((() => {
+    if (targetType === 'profession' && targetProfession) {
+      const prof = professionLookup.get(targetProfession);
+      return (prof?.Skills || [])
+        .filter(s => skillLookup.get(s.Name)?.IsExtractable !== false)
+        .map(s => ({ Name: s.Name, Weight: s.Weight }));
+    } else if (targetType === 'hp') {
+      return skillsMetadata
+        .filter(s => s.HPIncrease != null && s.HPIncrease > 0 && s.IsExtractable !== false)
+        .map(s => ({ Name: s.Name, HPIncrease: s.HPIncrease }));
+    }
+    return [];
+  })());
+  // Default all skills to 'chip' when optimizer skills change
+  run(() => {
+    const newOverrides = {};
+    for (const s of optimizerSkills) {
+      const existing = methodOverrides[s.Name];
+      const meta = skillLookup.get(s.Name);
+      if (existing) {
+        // Keep existing override, but force non-extractable skills away from 'chip'
+        newOverrides[s.Name] = (!meta?.IsExtractable && existing === 'chip') ? 'auto' : existing;
+      } else {
+        // Default: 'chip' for extractable, 'auto' for non-extractable
+        newOverrides[s.Name] = meta?.IsExtractable ? 'chip' : 'auto';
+      }
+    }
+    methodOverrides = newOverrides;
+  });
+  // Markups for optimizer and method table display
+  run(() => {
+    void markupSource; void customMarkups; void wapByName; void nameToId; void inventoryMarkupMap; void ingameByName;
+    if ((targetType === 'profession' && targetProfession) || targetType === 'hp') {
+      const skillNames = targetType === 'profession'
+        ? (professionLookup.get(targetProfession)?.Skills || []).map(s => s.Name)
+        : skillsMetadata.filter(s => s.HPIncrease > 0).map(s => s.Name);
+      const result = getMarkupsForSkills(skillNames);
+      optimizerMarkups = result.markups;
+      implantWarnings = result.warnings;
+    } else {
+      optimizerMarkups = {};
+      implantWarnings = new Set();
+    }
+  });
+  // Optimizer reactive
+  run(() => {
+    if (targetType === 'profession' && targetProfession && targetLevel > 0) {
+      const prof = professionLookup.get(targetProfession);
+      if (prof) {
+        const currentLevel = professionLevels.get(targetProfession) || 0;
+        optimizerResult = findCheapestPath(skillValues, prof.Skills, currentLevel, targetLevel, optimizerMarkups, methodOverrides, attributeSkills);
+      }
+    } else if (targetType === 'hp' && targetHPValue > totalHP) {
+      optimizerResult = findCheapestHPPath(skillValues, skillsMetadata, totalHP, targetHPValue, optimizerMarkups, methodOverrides);
+    } else {
+      optimizerResult = null;
+    }
+  });
 </script>
 
 <svelte:head>
@@ -617,27 +622,28 @@
   canEdit={false}
 >
   <!-- Header Actions -->
+  <!-- @migration-task: migrate this slot by hand, `header-actions` is an invalid identifier -->
   <div slot="header-actions" class="tool-header-actions">
-    <button class="action-btn" on:click={() => { showImportDialog = true; importMode = 'paste'; importText = ''; importPreview = null; importError = null; manualSkillEdits = {}; manualSearchTerm = ''; }} title="Import skills">
+    <button class="action-btn" onclick={() => { showImportDialog = true; importMode = 'paste'; importText = ''; importPreview = null; importError = null; manualSkillEdits = {}; manualSearchTerm = ''; }} title="Import skills">
       <svg class="action-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
       </svg>
       <span class="action-label">Import</span>
     </button>
-    <button class="action-btn" on:click={() => handleExport('nexus')} title="Export skills">
+    <button class="action-btn" onclick={() => handleExport('nexus')} title="Export skills">
       <svg class="action-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
       </svg>
       <span class="action-label">Export</span>
     </button>
-    <button class="action-btn" class:active={showUnlocksView} on:click={() => { showUnlocksView = !showUnlocksView; }} title="Skill unlocks overview">
+    <button class="action-btn" class:active={showUnlocksView} onclick={() => { showUnlocksView = !showUnlocksView; }} title="Skill unlocks overview">
       <svg class="action-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 019.9-1"/>
       </svg>
       <span class="action-label">Unlocks</span>
     </button>
     {#if isLoggedIn && activeSource === 'online'}
-      <button class="action-btn" on:click={() => { showHistoryPanel = !showHistoryPanel; if (showHistoryPanel) loadImportHistory(); }} title="Import history">
+      <button class="action-btn" onclick={() => { showHistoryPanel = !showHistoryPanel; if (showHistoryPanel) loadImportHistory(); }} title="Import history">
         <svg class="action-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
         </svg>
@@ -646,8 +652,8 @@
     {/if}
     {#if isLoggedIn}
       <div class="source-toggle">
-        <button class="toggle-btn" class:active={activeSource === 'local'} on:click={() => setActiveSource('local')}>Local</button>
-        <button class="toggle-btn" class:active={activeSource === 'online'} on:click={() => setActiveSource('online')}>Online</button>
+        <button class="toggle-btn" class:active={activeSource === 'local'} onclick={() => setActiveSource('local')}>Local</button>
+        <button class="toggle-btn" class:active={activeSource === 'online'} onclick={() => setActiveSource('online')}>Online</button>
       </div>
     {/if}
     {#if isSaving}
@@ -656,7 +662,7 @@
       <span class="save-indicator error" title={saveError}>Error</span>
     {/if}
     {#if isMobileLayout}
-      <button class="action-btn" class:active={showOptimizer} on:click={() => showOptimizer = !showOptimizer} title="Toggle optimizer">
+      <button class="action-btn" class:active={showOptimizer} onclick={() => showOptimizer = !showOptimizer} title="Toggle optimizer">
         <svg class="action-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" />
         </svg>
@@ -666,92 +672,94 @@
   </div>
 
   <!-- Sidebar -->
-  <div slot="sidebar" let:isMobile class="sidebar-root">
-    <div class="nav-header">
-      <h2 class="nav-title">Skills</h2>
-    </div>
-    <div class="sidebar-body">
-      <!-- Skills/Professions toggle -->
-      <div class="sidebar-toggle">
-        <button class:active={activeView === 'skills'} on:click={() => { activeView = 'skills'; categoryFilter = 'all'; searchTerm = ''; }}>Skills</button>
-        <button class:active={activeView === 'professions'} on:click={() => { activeView = 'professions'; categoryFilter = 'all'; searchTerm = ''; }}>Professions</button>
+  {#snippet sidebar({ isMobile })}
+    <div   class="sidebar-root">
+      <div class="nav-header">
+        <h2 class="nav-title">Skills</h2>
       </div>
+      <div class="sidebar-body">
+        <!-- Skills/Professions toggle -->
+        <div class="sidebar-toggle">
+          <button class:active={activeView === 'skills'} onclick={() => { activeView = 'skills'; categoryFilter = 'all'; searchTerm = ''; }}>Skills</button>
+          <button class:active={activeView === 'professions'} onclick={() => { activeView = 'professions'; categoryFilter = 'all'; searchTerm = ''; }}>Professions</button>
+        </div>
 
-      <!-- Search -->
-      <div class="sidebar-search">
-        <input type="text" placeholder="Search {activeView}..." bind:value={searchTerm} />
-      </div>
+        <!-- Search -->
+        <div class="sidebar-search">
+          <input type="text" placeholder="Search {activeView}..." bind:value={searchTerm} />
+        </div>
 
-      <!-- Filters -->
-      <div class="sidebar-filters">
-        <select class="sidebar-select" bind:value={categoryFilter}>
-          <option value="all">All Categories</option>
-          {#each (activeView === 'skills' ? skillCategories : professionCategories) as cat}
-            <option value={cat}>{cat}</option>
-          {/each}
-        </select>
-        <label class="zero-toggle">
-          <input type="checkbox" bind:checked={showZero} />
-          <span>Show 0s</span>
-        </label>
-      </div>
+        <!-- Filters -->
+        <div class="sidebar-filters">
+          <select class="sidebar-select" bind:value={categoryFilter}>
+            <option value="all">All Categories</option>
+            {#each (activeView === 'skills' ? skillCategories : professionCategories) as cat}
+              <option value={cat}>{cat}</option>
+            {/each}
+          </select>
+          <label class="zero-toggle">
+            <input type="checkbox" bind:checked={showZero} />
+            <span>Show 0s</span>
+          </label>
+        </div>
 
-      <!-- List -->
-      <div class="sidebar-list">
-        {#if activeView === 'skills'}
-          {#each filteredSkills as skill (skill.Name)}
-            {@const val = skillValues[skill.Name] || 0}
-            <button
-              class="sidebar-item"
-              class:active={selectedSkill === skill.Name}
-              class:hidden-skill={skill.IsHidden}
-              on:click={() => { selectSkill(skill.Name); if (isMobile) drawerOpen = false; }}
-            >
-              <span class="item-name">{skill.Name}</span>
-              {#if skill.IsHidden}
-                <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} on:click|stopPropagation={() => toggleSkillUnlock(skill.Name)} use:clickable={{ tabindex: -1 }}>
-                  {#if val > 0}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                  {:else}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
-                  {/if}
-                </span>
-              {/if}
-              <span class="item-value">{formatNumber(val)}</span>
-            </button>
+        <!-- List -->
+        <div class="sidebar-list">
+          {#if activeView === 'skills'}
+            {#each filteredSkills as skill (skill.Name)}
+              {@const val = skillValues[skill.Name] || 0}
+              <button
+                class="sidebar-item"
+                class:active={selectedSkill === skill.Name}
+                class:hidden-skill={skill.IsHidden}
+                onclick={() => { selectSkill(skill.Name); if (isMobile) drawerOpen = false; }}
+              >
+                <span class="item-name">{skill.Name}</span>
+                {#if skill.IsHidden}
+                  <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} onclick={stopPropagation(() => toggleSkillUnlock(skill.Name))} use:clickable={{ tabindex: -1 }}>
+                    {#if val > 0}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    {:else}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
+                    {/if}
+                  </span>
+                {/if}
+                <span class="item-value">{formatNumber(val)}</span>
+              </button>
+            {:else}
+              <div class="sidebar-empty">
+                {#if !showZero && nonZeroSkillCount === 0}
+                  No skills imported yet.
+                {:else}
+                  No matching skills.
+                {/if}
+              </div>
+            {/each}
           {:else}
-            <div class="sidebar-empty">
-              {#if !showZero && nonZeroSkillCount === 0}
-                No skills imported yet.
-              {:else}
-                No matching skills.
-              {/if}
-            </div>
-          {/each}
-        {:else}
-          {#each filteredProfessions as prof (prof.Name)}
-            {@const level = professionLevels.get(prof.Name) || 0}
-            <button
-              class="sidebar-item"
-              class:active={selectedProfession === prof.Name}
-              on:click={() => { selectProfession(prof.Name); if (isMobile) drawerOpen = false; }}
-            >
-              <span class="item-name">{prof.Name}</span>
-              <span class="item-value">{formatLevel(level)}</span>
-            </button>
-          {:else}
-            <div class="sidebar-empty">
-              {#if !showZero && nonZeroSkillCount === 0}
-                Import skills to see profession levels.
-              {:else}
-                No matching professions.
-              {/if}
-            </div>
-          {/each}
-        {/if}
+            {#each filteredProfessions as prof (prof.Name)}
+              {@const level = professionLevels.get(prof.Name) || 0}
+              <button
+                class="sidebar-item"
+                class:active={selectedProfession === prof.Name}
+                onclick={() => { selectProfession(prof.Name); if (isMobile) drawerOpen = false; }}
+              >
+                <span class="item-name">{prof.Name}</span>
+                <span class="item-value">{formatLevel(level)}</span>
+              </button>
+            {:else}
+              <div class="sidebar-empty">
+                {#if !showZero && nonZeroSkillCount === 0}
+                  Import skills to see profession levels.
+                {:else}
+                  No matching professions.
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        </div>
       </div>
     </div>
-  </div>
+  {/snippet}
 
   <!-- Main Content -->
   <div class="skills-content">
@@ -759,8 +767,8 @@
     {#if showImportPrompt}
       <div class="import-prompt">
         <span>You have local skill data. Import it to your online account?</span>
-        <button class="sidebar-btn accent" on:click={handleImportFromLocal}>Import</button>
-        <button class="sidebar-btn neutral" on:click={() => showImportPrompt = false}>Dismiss</button>
+        <button class="sidebar-btn accent" onclick={handleImportFromLocal}>Import</button>
+        <button class="sidebar-btn neutral" onclick={() => showImportPrompt = false}>Dismiss</button>
       </div>
     {/if}
 
@@ -804,12 +812,12 @@
               </div>
               {#each allUnlocks as unlock (unlock.name)}
                 <div class="unlock-row" class:unlocked={unlock.isUnlocked}>
-                  <button class="unlock-skill-name" on:click={() => { showUnlocksView = false; selectSkill(unlock.name); }}>
+                  <button class="unlock-skill-name" onclick={() => { showUnlocksView = false; selectSkill(unlock.name); }}>
                     {unlock.name}
                   </button>
                   <div class="unlock-prof-cell">
                     {#if unlock.closestPath}
-                      <button class="unlock-prof-link" on:click={() => { showUnlocksView = false; selectProfession(unlock.closestPath.profession); }}>
+                      <button class="unlock-prof-link" onclick={() => { showUnlocksView = false; selectProfession(unlock.closestPath.profession); }}>
                         {unlock.closestPath.profession}
                       </button>
                       <span class="unlock-prof-level">
@@ -833,11 +841,11 @@
                   </div>
                   <div class="unlock-actions">
                     {#if !unlock.isUnlocked && unlock.closestPath}
-                      <button class="target-btn" title="Target in optimizer" on:click={() => targetUnlock(unlock.closestPath.profession, unlock.closestPath.requiredLevel)}>
+                      <button class="target-btn" title="Target in optimizer" onclick={() => targetUnlock(unlock.closestPath.profession, unlock.closestPath.requiredLevel)}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
                       </button>
                     {/if}
-                    <button class="unlock-btn" class:unlocked={unlock.isUnlocked} title={unlock.isUnlocked ? 'Lock skill' : 'Unlock skill'} on:click={() => toggleSkillUnlock(unlock.name)}>
+                    <button class="unlock-btn" class:unlocked={unlock.isUnlocked} title={unlock.isUnlocked ? 'Lock skill' : 'Unlock skill'} onclick={() => toggleSkillUnlock(unlock.name)}>
                       {#if unlock.isUnlocked}
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       {:else}
@@ -865,7 +873,7 @@
               </div>
               {#if selectedSkillData.IsHidden}
                 <div class="stat">
-                  <button class="unlock-btn detail-unlock" class:unlocked={(skillValues[selectedSkillData.Name] || 0) > 0} on:click={() => toggleSkillUnlock(selectedSkillData.Name)} title={(skillValues[selectedSkillData.Name] || 0) > 0 ? 'Lock skill (set to 0)' : 'Unlock skill (set to 1)'}>
+                  <button class="unlock-btn detail-unlock" class:unlocked={(skillValues[selectedSkillData.Name] || 0) > 0} onclick={() => toggleSkillUnlock(selectedSkillData.Name)} title={(skillValues[selectedSkillData.Name] || 0) > 0 ? 'Lock skill (set to 0)' : 'Unlock skill (set to 1)'}>
                     {#if (skillValues[selectedSkillData.Name] || 0) > 0}
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       <span>Locked</span>
@@ -908,7 +916,7 @@
                   </div>
                   {#each selectedSkillData.Professions.sort((a, b) => b.Weight - a.Weight) as p}
                     {@const contribution = (skillValues[selectedSkillData.Name] || 0) * p.Weight / 10000}
-                    <button class="detail-table-row clickable" on:click={() => selectProfession(p.Name)}>
+                    <button class="detail-table-row clickable" onclick={() => selectProfession(p.Name)}>
                       <span class="prof-link">{p.Name}</span>
                       <span class="col-right">{p.Weight}</span>
                       <span class="col-right">{formatLevel(contribution)}</span>
@@ -929,11 +937,11 @@
                   </div>
                   {#each selectedSkillData.Unlocks.sort((a, b) => a.Level - b.Level) as u}
                     <div class="detail-table-row unlock-row-actions">
-                      <button class="clickable" on:click={() => selectProfession(u.Profession)}>
+                      <button class="clickable" onclick={() => selectProfession(u.Profession)}>
                         <span class="unlock-level">{u.Level}</span>
                       </button>
-                      <button class="prof-link clickable" on:click={() => selectProfession(u.Profession)}>{u.Profession}</button>
-                      <button class="target-btn" title="Target in optimizer" on:click={() => targetUnlock(u.Profession, u.Level)}>
+                      <button class="prof-link clickable" onclick={() => selectProfession(u.Profession)}>{u.Profession}</button>
+                      <button class="target-btn" title="Target in optimizer" onclick={() => targetUnlock(u.Profession, u.Level)}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
                       </button>
                     </div>
@@ -981,7 +989,7 @@
                   {@const val = skillValues[s.Name] || 0}
                   {@const contrib = val * s.Weight / 10000}
                   {@const pct = totalWeight > 0 ? (s.Weight / totalWeight * 100) : 0}
-                  <button class="detail-table-row clickable" on:click={() => selectSkill(s.Name)}>
+                  <button class="detail-table-row clickable" onclick={() => selectSkill(s.Name)}>
                     <span class="skill-link">
                       {s.Name}
                       <span class="weight-bar-container">
@@ -1009,11 +1017,11 @@
                     {@const unlockSkillName = u.Skill?.Name || u.Name}
                     {@const unlockLevel = u.Level ?? 0}
                     <div class="detail-table-row unlock-row-actions">
-                      <button class="clickable" on:click={() => selectSkill(unlockSkillName)}>
+                      <button class="clickable" onclick={() => selectSkill(unlockSkillName)}>
                         <span class="unlock-level">{unlockLevel}</span>
                       </button>
-                      <button class="skill-link clickable" on:click={() => selectSkill(unlockSkillName)}>{unlockSkillName}</button>
-                      <button class="target-btn" title="Target in optimizer" on:click={() => targetUnlock(selectedProfessionData.Name, unlockLevel)}>
+                      <button class="skill-link clickable" onclick={() => selectSkill(unlockSkillName)}>{unlockSkillName}</button>
+                      <button class="target-btn" title="Target in optimizer" onclick={() => targetUnlock(selectedProfessionData.Name, unlockLevel)}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
                       </button>
                     </div>
@@ -1036,7 +1044,7 @@
       <!-- Optimizer overlay -->
       <div class="optimizer-section" class:expanded={showOptimizer}>
         {#if !isMobileLayout || showOptimizer}
-          <button class="optimizer-toggle" on:click={() => showOptimizer = !showOptimizer}>
+          <button class="optimizer-toggle" onclick={() => showOptimizer = !showOptimizer}>
             <span>Optimizer</span>
             <svg class="toggle-chevron" class:open={showOptimizer} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="18 15 12 9 6 15" />
@@ -1050,15 +1058,15 @@
             <div class="control-group">
               <span class="control-label">Target</span>
               <div class="target-toggle">
-                <button class="mu-btn" class:active={targetType === 'profession'} on:click={() => targetType = 'profession'}>Profession</button>
-                <button class="mu-btn" class:active={targetType === 'hp'} on:click={() => targetType = 'hp'}>HP</button>
+                <button class="mu-btn" class:active={targetType === 'profession'} onclick={() => targetType = 'profession'}>Profession</button>
+                <button class="mu-btn" class:active={targetType === 'hp'} onclick={() => targetType = 'hp'}>HP</button>
               </div>
             </div>
 
             {#if targetType === 'profession'}
               <div class="control-group">
                 <label for="target-prof">Profession</label>
-                <select id="target-prof" bind:value={targetProfession} on:change={() => {
+                <select id="target-prof" bind:value={targetProfession} onchange={() => {
                   const currentLvl = professionLevels.get(targetProfession) || 0;
                   targetLevel = Math.ceil(currentLvl) || 1;
                 }}>
@@ -1082,10 +1090,10 @@
             <div class="control-group">
               <span class="control-label">MU Source</span>
               <div class="mu-buttons">
-                <button class="mu-btn" class:active={markupSource === 'custom'} on:click={() => markupSource = 'custom'}>Custom</button>
-                <button class="mu-btn" class:active={markupSource === 'inventory'} disabled={inventoryMarkupMap.size === 0} on:click={() => markupSource = 'inventory'}>Inventory</button>
-                <button class="mu-btn" class:active={markupSource === 'ingame'} disabled={ingameByName.size === 0} on:click={() => markupSource = 'ingame'}>In-Game</button>
-                <button class="mu-btn" class:active={markupSource === 'exchange'} disabled={wapByName.size === 0} on:click={() => markupSource = 'exchange'}>Exchange</button>
+                <button class="mu-btn" class:active={markupSource === 'custom'} onclick={() => markupSource = 'custom'}>Custom</button>
+                <button class="mu-btn" class:active={markupSource === 'inventory'} disabled={inventoryMarkupMap.size === 0} onclick={() => markupSource = 'inventory'}>Inventory</button>
+                <button class="mu-btn" class:active={markupSource === 'ingame'} disabled={ingameByName.size === 0} onclick={() => markupSource = 'ingame'}>In-Game</button>
+                <button class="mu-btn" class:active={markupSource === 'exchange'} disabled={wapByName.size === 0} onclick={() => markupSource = 'exchange'}>Exchange</button>
               </div>
             </div>
           </div>
@@ -1097,9 +1105,9 @@
               <div class="method-config-header">
                 <h4>Skill Methods</h4>
                 <div class="bulk-toggle">
-                  <button class="mu-btn" on:click={() => bulkSetMethod('codex')} title="Set all to Codex">All Codex</button>
-                  <button class="mu-btn" on:click={() => bulkSetMethod('chip')} title="Set all to Chip">All Chip</button>
-                  <button class="mu-btn" on:click={() => bulkSetMethod('none')} title="Disable all">All None</button>
+                  <button class="mu-btn" onclick={() => bulkSetMethod('codex')} title="Set all to Codex">All Codex</button>
+                  <button class="mu-btn" onclick={() => bulkSetMethod('chip')} title="Set all to Chip">All Chip</button>
+                  <button class="mu-btn" onclick={() => bulkSetMethod('none')} title="Disable all">All None</button>
                 </div>
               </div>
               <div class="method-table-header">
@@ -1131,7 +1139,7 @@
                           type="number"
                           class="mu-input"
                           value={customMarkups[skill.Name] ?? Math.round(mu)}
-                          on:change={(e) => { customMarkups = { ...customMarkups, [skill.Name]: Number(e.target.value) || 100 }; }}
+                          onchange={(e) => { customMarkups = { ...customMarkups, [skill.Name]: Number(e.target.value) || 100 }; }}
                           min="0"
                           step="1"
                         />
@@ -1146,19 +1154,19 @@
                         class:active={currentMethod === 'codex'}
                         disabled={!codexCat}
                         title={!codexCat ? 'Not available via Codex' : `Codex Cat ${codexCat.slice(-1)}`}
-                        on:click={() => setMethodOverride(skill.Name, currentMethod === 'codex' ? 'auto' : 'codex')}
+                        onclick={() => setMethodOverride(skill.Name, currentMethod === 'codex' ? 'auto' : 'codex')}
                       >Codex</button>
                       <button
                         class="method-btn"
                         class:active={currentMethod === 'chip'}
                         disabled={!isExtractable}
                         title={!isExtractable ? 'Not extractable' : 'Chip in via ESI'}
-                        on:click={() => setMethodOverride(skill.Name, currentMethod === 'chip' ? 'auto' : 'chip')}
+                        onclick={() => setMethodOverride(skill.Name, currentMethod === 'chip' ? 'auto' : 'chip')}
                       >Chip</button>
                       <button
                         class="method-btn none"
                         class:active={currentMethod === 'none'}
-                        on:click={() => setMethodOverride(skill.Name, currentMethod === 'none' ? 'auto' : 'none')}
+                        onclick={() => setMethodOverride(skill.Name, currentMethod === 'none' ? 'auto' : 'none')}
                       >None</button>
                     </div>
                   </div>
@@ -1231,17 +1239,17 @@
 
 <!-- Import Dialog -->
 {#if showImportDialog}
-  <div class="dialog-overlay" on:click|self={() => showImportDialog = false} on:keydown={(e) => e.key === 'Escape' && (showImportDialog = false)} role="presentation">
+  <div class="dialog-overlay" onclick={self(() => showImportDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showImportDialog = false)} role="presentation">
     <div class="dialog">
       <div class="dialog-header">
         <h2>Import Skills</h2>
-        <button class="dialog-close" on:click={() => showImportDialog = false}>&times;</button>
+        <button class="dialog-close" onclick={() => showImportDialog = false}>&times;</button>
       </div>
       <div class="dialog-body">
         {#if !importPreview}
           <div class="import-tabs">
-            <button class="import-tab" class:active={importMode === 'paste'} on:click={() => importMode = 'paste'}>Paste JSON</button>
-            <button class="import-tab" class:active={importMode === 'manual'} on:click={() => importMode = 'manual'}>Manual Entry</button>
+            <button class="import-tab" class:active={importMode === 'paste'} onclick={() => importMode = 'paste'}>Paste JSON</button>
+            <button class="import-tab" class:active={importMode === 'manual'} onclick={() => importMode = 'manual'}>Manual Entry</button>
           </div>
 
           {#if importMode === 'paste'}
@@ -1256,8 +1264,8 @@
               <div class="import-error">{importError}</div>
             {/if}
             <div class="dialog-actions">
-              <button class="btn-secondary" on:click={() => showImportDialog = false}>Cancel</button>
-              <button class="btn-primary" on:click={handleImportPreview}>Preview</button>
+              <button class="btn-secondary" onclick={() => showImportDialog = false}>Cancel</button>
+              <button class="btn-primary" onclick={handleImportPreview}>Preview</button>
             </div>
           {:else}
             <p class="dialog-hint">Search and set individual skill values.</p>
@@ -1272,7 +1280,7 @@
                     type="number"
                     class="manual-skill-input"
                     value={manualSkillEdits[skill.Name] ?? skillValues[skill.Name] ?? 0}
-                    on:change={(e) => { manualSkillEdits = { ...manualSkillEdits, [skill.Name]: Number(e.target.value) || 0 }; }}
+                    onchange={(e) => { manualSkillEdits = { ...manualSkillEdits, [skill.Name]: Number(e.target.value) || 0 }; }}
                     min="0"
                     step="0.0001"
                   />
@@ -1283,8 +1291,8 @@
               <div class="import-error">{importError}</div>
             {/if}
             <div class="dialog-actions">
-              <button class="btn-secondary" on:click={() => showImportDialog = false}>Cancel</button>
-              <button class="btn-primary" on:click={handleManualImport} disabled={Object.keys(manualSkillEdits).length === 0}>
+              <button class="btn-secondary" onclick={() => showImportDialog = false}>Cancel</button>
+              <button class="btn-primary" onclick={handleManualImport} disabled={Object.keys(manualSkillEdits).length === 0}>
                 Apply {Object.keys(manualSkillEdits).length} Change{Object.keys(manualSkillEdits).length !== 1 ? 's' : ''}
               </button>
             </div>
@@ -1323,8 +1331,8 @@
             {/if}
           </div>
           <div class="dialog-actions">
-            <button class="btn-secondary" on:click={() => { importPreview = null; }}>Back</button>
-            <button class="btn-primary" on:click={handleImportConfirm}>Confirm Import</button>
+            <button class="btn-secondary" onclick={() => { importPreview = null; }}>Back</button>
+            <button class="btn-primary" onclick={handleImportConfirm}>Confirm Import</button>
           </div>
         {/if}
       </div>
@@ -1334,11 +1342,11 @@
 
 <!-- Import History Panel -->
 {#if showHistoryPanel}
-  <div class="dialog-overlay" on:click|self={() => showHistoryPanel = false} on:keydown={(e) => e.key === 'Escape' && (showHistoryPanel = false)} role="presentation">
+  <div class="dialog-overlay" onclick={self(() => showHistoryPanel = false)} onkeydown={(e) => e.key === 'Escape' && (showHistoryPanel = false)} role="presentation">
     <div class="dialog dialog-wide">
       <div class="dialog-header">
         <h2>Import History</h2>
-        <button class="dialog-close" on:click={() => showHistoryPanel = false}>&times;</button>
+        <button class="dialog-close" onclick={() => showHistoryPanel = false}>&times;</button>
       </div>
       <div class="dialog-body">
         {#if historyLoading}
@@ -1348,7 +1356,7 @@
         {:else}
           <div class="history-list">
             {#each importHistory as imp}
-              <button class="history-item" on:click={() => toggleImportDeltas(imp.id)}>
+              <button class="history-item" onclick={() => toggleImportDeltas(imp.id)}>
                 <div class="history-row">
                   <span class="history-date">{new Date(imp.imported_at).toLocaleString()}</span>
                   <span class="history-count">{imp.skill_count} skills</span>
@@ -1362,7 +1370,7 @@
                   <span class="history-expand">{expandedImportId === imp.id ? '▼' : '▶'}</span>
                 </div>
                 {#if expandedImportId === imp.id && expandedDeltas.length > 0}
-                  <div class="history-deltas" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
+                  <div class="history-deltas" onclick={stopPropagation(bubble('click'))} onkeydown={stopPropagation(bubble('keydown'))} role="presentation">
                     {#each expandedDeltas as d}
                       {@const change = Number(d.new_value) - Number(d.old_value)}
                       <div class="delta-row">

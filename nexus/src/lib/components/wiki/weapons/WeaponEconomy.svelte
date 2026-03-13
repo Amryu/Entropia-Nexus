@@ -12,27 +12,33 @@
   import { clampDecimals } from '$lib/util';
   import { clickable } from '$lib/actions/clickable.js';
 
-  /** @type {object} Weapon entity */
-  export let weapon = null;
+  
 
-  /** @type {boolean} Compact mode */
-  export let compact = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} [weapon]
+   * @property {boolean} [compact]
+   */
 
-  $: economy = weapon?.Properties?.Economy || {};
-  $: ammo = weapon?.Ammo;
+  /** @type {Props} */
+  let { weapon = null, compact = false } = $props();
+
+  let economy = $derived(weapon?.Properties?.Economy || {});
+  let ammo = $derived(weapon?.Ammo);
 
   // Calculate cost per use
-  $: costPerUse = economy.Decay !== null && economy.Decay !== undefined
+  let costPerUse = $derived(economy.Decay !== null && economy.Decay !== undefined
     ? economy.Decay + ((economy.AmmoBurn || 0) / 100)
-    : null;
+    : null);
 
   // Calculate reload time
-  $: reload = weapon?.Properties?.UsesPerMinute
+  let reload = $derived(weapon?.Properties?.UsesPerMinute
     ? 60 / weapon.Properties.UsesPerMinute
-    : null;
+    : null);
 
   // Toggle state for Reload vs Uses/min - default to showing Reload
-  let showReload = true;
+  let showReload = $state(true);
 
   // Load preference from localStorage on mount
   onMount(() => {
@@ -102,7 +108,7 @@
   {#if !compact}
     <!-- Group 3: Reload/Uses toggle + Ammo -->
     <div class="economy-row last-row">
-      <div class="economy-item toggleable" on:click={toggleReloadUsesMin} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
+      <div class="economy-item toggleable" onclick={toggleReloadUsesMin} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
         {#if showReload}
           <span class="economy-label">
             Reload

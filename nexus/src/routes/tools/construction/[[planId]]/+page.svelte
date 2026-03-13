@@ -1,4 +1,7 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import '../construction.css';
@@ -45,9 +48,7 @@
     findOptimalOutputCondition,
   } from '$lib/utils/constructionCalculator.js';
 
-  export let data;
-  $: user = data?.session?.user;
-  $: isLoggedIn = !!user;
+  let { data } = $props();
 
   const LOCAL_STORAGE_PLANS_KEY = 'construction.plans';
   const LOCAL_STORAGE_OWNERSHIP_KEY = 'construction.ownership';
@@ -81,102 +82,101 @@
   const ratesSiB = calculateSuccessRates(MAX_NON_FAIL_SIB);
 
   // State
-  let blueprintsLoading = true;
-  let blueprintCache = new Map();
+  let blueprintsLoading = $state(true);
+  let blueprintCache = $state(new Map());
   let allBlueprints = [];
 
-  let localPlans = [];
+  let localPlans = $state([]);
   let onlinePlans = [];
-  let plans = [];
-  let activePlan = null;
-  let activePlanId = null;
-  let activeSource = 'local';
-  let planSearch = '';
+  let plans = $state([]);
+  let activePlan = $state(null);
+  let activePlanId = $state(null);
+  let activeSource = $state('local');
+  let planSearch = $state('');
 
-  let globalOwnership = {}; // { blueprintId: false } for not-owned
+  let globalOwnership = $state({}); // { blueprintId: false } for not-owned
   let ownershipLoading = false;
 
-  let currentView = 'planning'; // 'planning' | 'steps' | 'tree' | 'shopping'
-  let showOwnershipPanel = false;
+  let currentView = $state('planning'); // 'planning' | 'steps' | 'tree' | 'shopping'
+  let showOwnershipPanel = $state(false);
   let showSidebar = true;
-  let drawerOpen = false;
-  let windowWidth = browser ? window.innerWidth : 0;
-  $: isMobileLayout = windowWidth < 900;
+  let drawerOpen = $state(false);
+  let windowWidth = $state(browser ? window.innerWidth : 0);
 
-  let onlineLoading = false;
-  let onlineError = null;
-  let isSaving = false;
+  let onlineLoading = $state(false);
+  let onlineError = $state(null);
+  let isSaving = $state(false);
   let saveError = null;
-  let isDirty = false;
+  let isDirty = $state(false);
 
   // Debounced auto-save
-  let saveTimeout = null;
+  let saveTimeout = $state(null);
   const SAVE_DEBOUNCE_MS = 2000;
 
-  let hasLocalData = false;
-  let showImportPrompt = false;
+  let hasLocalData = $state(false);
+  let showImportPrompt = $state(false);
   let dataLoaded = false;
 
   // Delete confirmation dialog
-  let showDeleteDialog = false;
+  let showDeleteDialog = $state(false);
   let planToDelete = null;
 
   // Import/Export
-  let fileInput = null;
-  let showImportSourceDialog = false;
+  let fileInput = $state(null);
+  let showImportSourceDialog = $state(false);
 
   // Hotspot debug dialog
-  let showHotspotDialog = false;
-  let showConditionInfoDialog = false;
+  let showHotspotDialog = $state(false);
+  let showConditionInfoDialog = $state(false);
 
   // Markup state: { materialName: markup%, blueprintId: markup% }
-  let markupValues = {};
+  let markupValues = $state({});
   const DEFAULT_MARKUP = 100;
 
   // Markup source toggle: 'custom' | 'inventory' | 'ingame' | 'exchange'
-  let markupSource = 'custom';
-  let inventoryMarkupMap = new Map(); // itemId → markup%
-  let ingameMarkupMap = new Map(); // itemName → markup%
+  let markupSource = $state('custom');
+  let inventoryMarkupMap = $state(new Map()); // itemId → markup%
+  let ingameMarkupMap = $state(new Map()); // itemName → markup%
 
   // Steps state
-  let checkedSteps = new Set();
-  let collapsedSteps = new Set();
+  let checkedSteps = $state(new Set());
+  let collapsedSteps = $state(new Set());
 
   // Shopping state
-  let checkedShoppingMaterials = new Set();
-  let checkedShoppingProducts = new Set();
+  let checkedShoppingMaterials = $state(new Set());
+  let checkedShoppingProducts = $state(new Set());
 
   // Inventory state for shopping list
-  let inventoryItems = [];
-  let inventoryLoaded = false;
-  let inventoryLoading = false;
-  let inventoryFilter = 'none'; // 'none' | 'all' | 'carried' | planet name
+  let inventoryItems = $state([]);
+  let inventoryLoaded = $state(false);
+  let inventoryLoading = $state(false);
+  let inventoryFilter = $state('none'); // 'none' | 'all' | 'carried' | planet name
 
   // Mass Buy dialog state
-  let showMassBuy = false;
-  let massBuyItems = [];
+  let showMassBuy = $state(false);
+  let massBuyItems = $state([]);
 
   // Exchange data for WAP, sell order counts, and inventory import
-  let exchangeWapMap = new Map(); // itemId → wap markup %
-  let exchangeSellCounts = new Map(); // itemId → sell order count
-  let exchangeSlimItems = []; // flat array for InventoryImportDialog
+  let exchangeWapMap = $state(new Map()); // itemId → wap markup %
+  let exchangeSellCounts = $state(new Map()); // itemId → sell order count
+  let exchangeSlimItems = $state([]); // flat array for InventoryImportDialog
 
   // Track targets for resetting checked state
-  let previousTargetsKey = '';
+  let previousTargetsKey = $state('');
 
   // Calculator configuration
-  let rollChance = DEFAULT_CONFIG.rollChance; // % chance each material wins refund roll
-  let certainty = DEFAULT_CONFIG.certainty; // % confidence level for attempt estimation
-  let nonFailChances = {}; // { blueprintId: nonFailChance% }
-  let conditionPercents = {}; // { blueprintId: conditionPercent (0-20) }
-  let materialCraftConfig = {}; // { materialName: { craft: bool, preferLimited: bool } }
+  let rollChance = $state(DEFAULT_CONFIG.rollChance); // % chance each material wins refund roll
+  let certainty = $state(DEFAULT_CONFIG.certainty); // % confidence level for attempt estimation
+  let nonFailChances = $state({}); // { blueprintId: nonFailChance% }
+  let conditionPercents = $state({}); // { blueprintId: conditionPercent (0-20) }
+  let materialCraftConfig = $state({}); // { materialName: { craft: bool, preferLimited: bool } }
 
   // Configuration panel
-  let showConfigPanel = false;
+  let showConfigPanel = $state(false);
 
   // Blueprint picker popover for steps view
-  let bpPickerMaterial = null; // materialName of the open picker, or null
-  let bpPickerPos = { top: 0, left: 0 }; // fixed position for the popover
+  let bpPickerMaterial = $state(null); // materialName of the open picker, or null
+  let bpPickerPos = $state({ top: 0, left: 0 }); // fixed position for the popover
 
   function openBpPicker(materialName, event) {
     if (bpPickerMaterial === materialName) {
@@ -197,66 +197,13 @@
     closeBpPicker();
   }
 
-  // Product to blueprint map (for material crafting)
-  $: productToBlueprintMap = blueprintCache.size > 0 ? buildProductToBlueprintMap(blueprintCache) : new Map();
 
-  // Compute effective ownership: combines actual ownership with buy preferences
-  // A BP is "effectively not owned" if: not owned OR (owned but user prefers to buy)
-  $: effectiveOwnership = (() => {
-    const effective = { ...globalOwnership };
-    // Add buy preferences - if owned but buying, treat as not owned
-    for (const bpId of Object.keys(buyPreferences)) {
-      if (buyPreferences[bpId] === true && globalOwnership[bpId] !== false) {
-        effective[bpId] = false; // Treat as not owned for calculation
-      }
-    }
-    return effective;
-  })();
 
-  // Sync calculator config into plan data for persistence
-  $: if (activePlan) {
-    const config = {};
-    if (Object.keys(nonFailChances).length > 0) config.nonFailChances = nonFailChances;
-    if (Object.keys(conditionPercents).length > 0) config.conditionPercents = conditionPercents;
-    if (Object.keys(materialCraftConfig).length > 0) config.materialCraftConfig = materialCraftConfig;
-    activePlan.data.config = Object.keys(config).length > 0 ? config : undefined;
-  }
 
-  // Computed - pass configuration to buildCraftingTree
-  $: craftingConfig = { rollChance, certainty, nonFailChances, materialCraftConfig, conditionPercents };
-  $: craftingTree = activePlan && blueprintCache.size > 0
-    ? buildCraftingTree(activePlan.data?.targets || [], effectiveOwnership, blueprintCache, craftingConfig)
-    : [];
-  $: craftingSteps = generateCraftingSteps(craftingTree);
-  $: shoppingList = generateShoppingList(craftingTree);
-  $: blueprintsInTree = getAllBlueprintsInTree(craftingTree);
 
-  // Set of product names that have their own crafting step (i.e. are being crafted, not bought)
-  $: craftedProductNames = new Set(craftingSteps.filter(s => s.owned).map(s => s.blueprint?.Product?.Name).filter(Boolean));
 
-  $: filteredPlans = plans.filter(p =>
-    !planSearch || p.name.toLowerCase().includes(planSearch.toLowerCase())
-  );
 
-  $: breadcrumbs = [
-    { label: 'Tools', href: '/tools' },
-    { label: 'Construction Calculator', href: '/tools/construction' },
-    ...(activePlan?.name ? [{ label: activePlan.name }] : [])
-  ];
 
-  // Reset checked states when targets or ownership changes
-  $: {
-    const targets = activePlan?.data?.targets || [];
-    const currentKey = JSON.stringify(targets.map(t => `${t.blueprintId}:${t.quantity}`)) + JSON.stringify(globalOwnership);
-    if (currentKey !== previousTargetsKey && previousTargetsKey !== '') {
-      // Targets or ownership changed - reset checked states
-      checkedSteps = new Set();
-      collapsedSteps = new Set();
-      checkedShoppingMaterials = new Set();
-      checkedShoppingProducts = new Set();
-    }
-    previousTargetsKey = currentKey;
-  }
 
   function getApiBase() {
     return browser
@@ -376,31 +323,8 @@
     }
   }
 
-  // Reactive: available planets from inventory data
-  $: inventoryPlanets = (() => {
-    const planets = new Set();
-    for (const item of inventoryItems) {
-      if (item.container && item.container !== 'CARRIED') {
-        planets.add(item.container);
-      }
-    }
-    return [...planets].sort();
-  })();
 
-  // Reactive: filtered inventory grouped by item_id → total quantity
-  $: inventoryMap = (() => {
-    if (inventoryFilter === 'none' || !inventoryLoaded) return new Map();
-    const filtered = filterShoppingInventory(inventoryItems, inventoryFilter);
-    const map = new Map();
-    for (const inv of filtered) {
-      if (inv.item_id) {
-        map.set(inv.item_id, (map.get(inv.item_id) || 0) + (inv.quantity || 0));
-      }
-    }
-    return map;
-  })();
 
-  $: showInventoryColumn = inventoryFilter !== 'none' && inventoryLoaded;
 
   function getBlueprintCostPerClick(blueprint, _markupValues) {
     if (!blueprint?.Materials) return { ttCost: 0, muCost: 0 };
@@ -492,7 +416,6 @@
     markDirty();
   }
 
-  $: anyStepSupportsOutput = craftingSteps.some(s => stepSupportsOutputOptimization(s));
 
   // Shopping list toggle helpers
   function toggleShoppingMaterial(materialName) {
@@ -572,145 +495,13 @@
     }
   }
 
-  $: allShoppingItemsChecked = (() => {
-    if (!shoppingList) return true;
-    const matUnchecked = shoppingList.materials.some(m => !checkedShoppingMaterials.has(m.item.Name));
-    const bpUnchecked = (shoppingList.limitedBlueprints || []).some(b => !checkedShoppingProducts.has(b.blueprint.Name));
-    const prodUnchecked = shoppingList.productsToBuy.some(p => !checkedShoppingProducts.has(p.item.Name));
-    return !matUnchecked && !bpUnchecked && !prodUnchecked;
-  })();
 
-  // Build WAP lookup keyed by markup key (mat:Name, bp:Id, prod:Name)
-  // Used by getMarkup() as fallback when no custom value is set
-  $: shoppingItemWapMap = (() => {
-    const map = {};
-    if (exchangeWapMap.size === 0) return map;
-    // Materials from crafting steps
-    for (const step of craftingSteps) {
-      if (!step.owned) continue;
-      for (const mat of step.materials) {
-        if (mat.item?.Id && mat.item?.Name) {
-          const wap = exchangeWapMap.get(mat.item.Id);
-          if (wap != null) map[`mat:${mat.item.Name}`] = wap;
-        }
-      }
-    }
-    // Limited blueprints
-    for (const step of craftingSteps) {
-      if (step.isLimited && step.owned && step.blueprint?.Id) {
-        const wap = exchangeWapMap.get(step.blueprint.Id + BLUEPRINT_ID_OFFSET);
-        if (wap != null) map[`bp:${step.blueprint.Id}`] = wap;
-      }
-    }
-    // Products from shopping list
-    if (shoppingList) {
-      for (const prod of shoppingList.productsToBuy) {
-        if (prod.item?.Id && prod.item?.Name) {
-          const wap = exchangeWapMap.get(prod.item.Id);
-          if (wap != null) map[`prod:${prod.item.Name}`] = wap;
-        }
-      }
-    }
-    return map;
-  })();
 
-  // Inventory markup lookup map (keyed same as shoppingItemWapMap)
-  $: shoppingItemInvMap = (() => {
-    const map = {};
-    if (inventoryMarkupMap.size === 0) return map;
-    for (const step of craftingSteps) {
-      if (!step.owned) continue;
-      for (const mat of step.materials) {
-        if (mat.item?.Id && mat.item?.Name) {
-          const inv = inventoryMarkupMap.get(mat.item.Id);
-          if (inv != null) map[`mat:${mat.item.Name}`] = inv;
-        }
-      }
-    }
-    for (const step of craftingSteps) {
-      if (step.isLimited && step.owned && step.blueprint?.Id) {
-        const inv = inventoryMarkupMap.get(step.blueprint.Id + BLUEPRINT_ID_OFFSET);
-        if (inv != null) map[`bp:${step.blueprint.Id}`] = inv;
-      }
-    }
-    if (shoppingList) {
-      for (const prod of shoppingList.productsToBuy) {
-        if (prod.item?.Id && prod.item?.Name) {
-          const inv = inventoryMarkupMap.get(prod.item.Id);
-          if (inv != null) map[`prod:${prod.item.Name}`] = inv;
-        }
-      }
-    }
-    return map;
-  })();
 
-  // In-game market price lookup map (keyed same as shoppingItemWapMap)
-  $: shoppingItemIngameMap = (() => {
-    const map = {};
-    if (ingameMarkupMap.size === 0) return map;
-    for (const step of craftingSteps) {
-      if (!step.owned) continue;
-      for (const mat of step.materials) {
-        if (mat.item?.Name) {
-          const igm = ingameMarkupMap.get(mat.item.Name);
-          if (igm != null) map[`mat:${mat.item.Name}`] = igm;
-        }
-      }
-    }
-    for (const step of craftingSteps) {
-      if (step.isLimited && step.owned && step.blueprint?.Name) {
-        const igm = ingameMarkupMap.get(step.blueprint.Name);
-        if (igm != null) map[`bp:${step.blueprint.Id}`] = igm;
-      }
-    }
-    if (shoppingList) {
-      for (const prod of shoppingList.productsToBuy) {
-        if (prod.item?.Name) {
-          const igm = ingameMarkupMap.get(prod.item.Name);
-          if (igm != null) map[`prod:${prod.item.Name}`] = igm;
-        }
-      }
-    }
-    return map;
-  })();
 
-  // Get all unique materials needing markup (for the markup section)
-  $: allMaterialsForMarkup = (() => {
-    const materials = new Map();
-    for (const step of craftingSteps) {
-      if (!step.owned) continue;
-      for (const mat of step.materials) {
-        // Skip materials that are being crafted - they have their own step costs
-        if (craftedProductNames.has(mat.item?.Name)) continue;
-        if (!materials.has(mat.item?.Name)) {
-          materials.set(mat.item?.Name, mat.item);
-        }
-      }
-    }
-    return Array.from(materials.entries()).map(([name, item]) => ({ name, item }));
-  })();
 
-  // Get (L) blueprints that need markup (when we need to buy them)
-  $: limitedBlueprintsForMarkup = craftingSteps
-    .filter(s => s.isLimited && s.owned)
-    .map(s => s.blueprint);
 
-  // Get products that need to be bought (unowned blueprints)
-  $: productsToBuyForMarkup = (() => {
-    const products = new Map();
-    for (const step of craftingSteps) {
-      if (step.owned) continue;
-      const product = step.blueprint.Product;
-      const name = product?.Name || step.blueprint.Name;
-      if (!products.has(name)) {
-        products.set(name, product || { Name: name });
-      }
-    }
-    return Array.from(products.entries()).map(([name, item]) => ({ name, item }));
-  })();
 
-  // Check if any steps require residue
-  $: needsResidue = craftingSteps.some(s => s.owned && s.totalResidue > 0);
 
   // Mark plan as dirty (needs saving)
   function markDirty() {
@@ -718,13 +509,6 @@
     isDirty = true;
   }
 
-  // Debounced auto-save: trigger save after delay when isDirty changes
-  $: if (browser && isDirty && activePlan) {
-    if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      handleSavePlan();
-    }, SAVE_DEBOUNCE_MS);
-  }
 
   // Save on page unload
   function handleBeforeUnload() {
@@ -1240,7 +1024,7 @@
 
   // Buy preference - separate from ownership
   // buyPreferences[blueprintId] = true means "prefer to buy even if owned"
-  let buyPreferences = {};
+  let buyPreferences = $state({});
 
   function toggleBuyPreference(blueprintId) {
     if (buyPreferences[blueprintId]) {
@@ -1472,6 +1256,229 @@
     // Reset file input
     if (fileInput) fileInput.value = '';
   }
+  let user = $derived(data?.session?.user);
+  let isLoggedIn = $derived(!!user);
+  let isMobileLayout = $derived(windowWidth < 900);
+  // Product to blueprint map (for material crafting)
+  let productToBlueprintMap = $derived(blueprintCache.size > 0 ? buildProductToBlueprintMap(blueprintCache) : new Map());
+  // Compute effective ownership: combines actual ownership with buy preferences
+  // A BP is "effectively not owned" if: not owned OR (owned but user prefers to buy)
+  let effectiveOwnership = $derived((() => {
+    const effective = { ...globalOwnership };
+    // Add buy preferences - if owned but buying, treat as not owned
+    for (const bpId of Object.keys(buyPreferences)) {
+      if (buyPreferences[bpId] === true && globalOwnership[bpId] !== false) {
+        effective[bpId] = false; // Treat as not owned for calculation
+      }
+    }
+    return effective;
+  })());
+  // Sync calculator config into plan data for persistence
+  run(() => {
+    if (activePlan) {
+      const config = {};
+      if (Object.keys(nonFailChances).length > 0) config.nonFailChances = nonFailChances;
+      if (Object.keys(conditionPercents).length > 0) config.conditionPercents = conditionPercents;
+      if (Object.keys(materialCraftConfig).length > 0) config.materialCraftConfig = materialCraftConfig;
+      activePlan.data.config = Object.keys(config).length > 0 ? config : undefined;
+    }
+  });
+  // Computed - pass configuration to buildCraftingTree
+  let craftingConfig = $derived({ rollChance, certainty, nonFailChances, materialCraftConfig, conditionPercents });
+  let craftingTree = $derived(activePlan && blueprintCache.size > 0
+    ? buildCraftingTree(activePlan.data?.targets || [], effectiveOwnership, blueprintCache, craftingConfig)
+    : []);
+  let craftingSteps = $derived(generateCraftingSteps(craftingTree));
+  let shoppingList = $derived(generateShoppingList(craftingTree));
+  let blueprintsInTree = $derived(getAllBlueprintsInTree(craftingTree));
+  // Set of product names that have their own crafting step (i.e. are being crafted, not bought)
+  let craftedProductNames = $derived(new Set(craftingSteps.filter(s => s.owned).map(s => s.blueprint?.Product?.Name).filter(Boolean)));
+  let filteredPlans = $derived(plans.filter(p =>
+    !planSearch || p.name.toLowerCase().includes(planSearch.toLowerCase())
+  ));
+  let breadcrumbs = $derived([
+    { label: 'Tools', href: '/tools' },
+    { label: 'Construction Calculator', href: '/tools/construction' },
+    ...(activePlan?.name ? [{ label: activePlan.name }] : [])
+  ]);
+  // Reset checked states when targets or ownership changes
+  run(() => {
+    const targets = activePlan?.data?.targets || [];
+    const currentKey = JSON.stringify(targets.map(t => `${t.blueprintId}:${t.quantity}`)) + JSON.stringify(globalOwnership);
+    if (currentKey !== previousTargetsKey && previousTargetsKey !== '') {
+      // Targets or ownership changed - reset checked states
+      checkedSteps = new Set();
+      collapsedSteps = new Set();
+      checkedShoppingMaterials = new Set();
+      checkedShoppingProducts = new Set();
+    }
+    previousTargetsKey = currentKey;
+  });
+  // Reactive: available planets from inventory data
+  let inventoryPlanets = $derived((() => {
+    const planets = new Set();
+    for (const item of inventoryItems) {
+      if (item.container && item.container !== 'CARRIED') {
+        planets.add(item.container);
+      }
+    }
+    return [...planets].sort();
+  })());
+  // Reactive: filtered inventory grouped by item_id → total quantity
+  let inventoryMap = $derived((() => {
+    if (inventoryFilter === 'none' || !inventoryLoaded) return new Map();
+    const filtered = filterShoppingInventory(inventoryItems, inventoryFilter);
+    const map = new Map();
+    for (const inv of filtered) {
+      if (inv.item_id) {
+        map.set(inv.item_id, (map.get(inv.item_id) || 0) + (inv.quantity || 0));
+      }
+    }
+    return map;
+  })());
+  let showInventoryColumn = $derived(inventoryFilter !== 'none' && inventoryLoaded);
+  let anyStepSupportsOutput = $derived(craftingSteps.some(s => stepSupportsOutputOptimization(s)));
+  let allShoppingItemsChecked = $derived((() => {
+    if (!shoppingList) return true;
+    const matUnchecked = shoppingList.materials.some(m => !checkedShoppingMaterials.has(m.item.Name));
+    const bpUnchecked = (shoppingList.limitedBlueprints || []).some(b => !checkedShoppingProducts.has(b.blueprint.Name));
+    const prodUnchecked = shoppingList.productsToBuy.some(p => !checkedShoppingProducts.has(p.item.Name));
+    return !matUnchecked && !bpUnchecked && !prodUnchecked;
+  })());
+  // Build WAP lookup keyed by markup key (mat:Name, bp:Id, prod:Name)
+  // Used by getMarkup() as fallback when no custom value is set
+  let shoppingItemWapMap = $derived((() => {
+    const map = {};
+    if (exchangeWapMap.size === 0) return map;
+    // Materials from crafting steps
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      for (const mat of step.materials) {
+        if (mat.item?.Id && mat.item?.Name) {
+          const wap = exchangeWapMap.get(mat.item.Id);
+          if (wap != null) map[`mat:${mat.item.Name}`] = wap;
+        }
+      }
+    }
+    // Limited blueprints
+    for (const step of craftingSteps) {
+      if (step.isLimited && step.owned && step.blueprint?.Id) {
+        const wap = exchangeWapMap.get(step.blueprint.Id + BLUEPRINT_ID_OFFSET);
+        if (wap != null) map[`bp:${step.blueprint.Id}`] = wap;
+      }
+    }
+    // Products from shopping list
+    if (shoppingList) {
+      for (const prod of shoppingList.productsToBuy) {
+        if (prod.item?.Id && prod.item?.Name) {
+          const wap = exchangeWapMap.get(prod.item.Id);
+          if (wap != null) map[`prod:${prod.item.Name}`] = wap;
+        }
+      }
+    }
+    return map;
+  })());
+  // Inventory markup lookup map (keyed same as shoppingItemWapMap)
+  let shoppingItemInvMap = $derived((() => {
+    const map = {};
+    if (inventoryMarkupMap.size === 0) return map;
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      for (const mat of step.materials) {
+        if (mat.item?.Id && mat.item?.Name) {
+          const inv = inventoryMarkupMap.get(mat.item.Id);
+          if (inv != null) map[`mat:${mat.item.Name}`] = inv;
+        }
+      }
+    }
+    for (const step of craftingSteps) {
+      if (step.isLimited && step.owned && step.blueprint?.Id) {
+        const inv = inventoryMarkupMap.get(step.blueprint.Id + BLUEPRINT_ID_OFFSET);
+        if (inv != null) map[`bp:${step.blueprint.Id}`] = inv;
+      }
+    }
+    if (shoppingList) {
+      for (const prod of shoppingList.productsToBuy) {
+        if (prod.item?.Id && prod.item?.Name) {
+          const inv = inventoryMarkupMap.get(prod.item.Id);
+          if (inv != null) map[`prod:${prod.item.Name}`] = inv;
+        }
+      }
+    }
+    return map;
+  })());
+  // In-game market price lookup map (keyed same as shoppingItemWapMap)
+  let shoppingItemIngameMap = $derived((() => {
+    const map = {};
+    if (ingameMarkupMap.size === 0) return map;
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      for (const mat of step.materials) {
+        if (mat.item?.Name) {
+          const igm = ingameMarkupMap.get(mat.item.Name);
+          if (igm != null) map[`mat:${mat.item.Name}`] = igm;
+        }
+      }
+    }
+    for (const step of craftingSteps) {
+      if (step.isLimited && step.owned && step.blueprint?.Name) {
+        const igm = ingameMarkupMap.get(step.blueprint.Name);
+        if (igm != null) map[`bp:${step.blueprint.Id}`] = igm;
+      }
+    }
+    if (shoppingList) {
+      for (const prod of shoppingList.productsToBuy) {
+        if (prod.item?.Name) {
+          const igm = ingameMarkupMap.get(prod.item.Name);
+          if (igm != null) map[`prod:${prod.item.Name}`] = igm;
+        }
+      }
+    }
+    return map;
+  })());
+  // Get all unique materials needing markup (for the markup section)
+  let allMaterialsForMarkup = $derived((() => {
+    const materials = new Map();
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      for (const mat of step.materials) {
+        // Skip materials that are being crafted - they have their own step costs
+        if (craftedProductNames.has(mat.item?.Name)) continue;
+        if (!materials.has(mat.item?.Name)) {
+          materials.set(mat.item?.Name, mat.item);
+        }
+      }
+    }
+    return Array.from(materials.entries()).map(([name, item]) => ({ name, item }));
+  })());
+  // Get (L) blueprints that need markup (when we need to buy them)
+  let limitedBlueprintsForMarkup = $derived(craftingSteps
+    .filter(s => s.isLimited && s.owned)
+    .map(s => s.blueprint));
+  // Get products that need to be bought (unowned blueprints)
+  let productsToBuyForMarkup = $derived((() => {
+    const products = new Map();
+    for (const step of craftingSteps) {
+      if (step.owned) continue;
+      const product = step.blueprint.Product;
+      const name = product?.Name || step.blueprint.Name;
+      if (!products.has(name)) {
+        products.set(name, product || { Name: name });
+      }
+    }
+    return Array.from(products.entries()).map(([name, item]) => ({ name, item }));
+  })());
+  // Check if any steps require residue
+  let needsResidue = $derived(craftingSteps.some(s => s.owned && s.totalResidue > 0));
+  // Debounced auto-save: trigger save after delay when isDirty changes
+  run(() => {
+    if (browser && isDirty && activePlan) {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        handleSavePlan();
+      }, SAVE_DEBOUNCE_MS);
+    }
+  });
 </script>
 
 <svelte:head>
@@ -1493,26 +1500,27 @@
   editable={false}
   canEdit={false}
 >
+  <!-- @migration-task: migrate this slot by hand, `header-actions` is an invalid identifier -->
   <div slot="header-actions" class="construction-header-actions">
     <div class="view-tabs">
       <button
         class:active={currentView === 'planning'}
-        on:click={() => setView('planning')}
+        onclick={() => setView('planning')}
         title="Plan Setup"
       >Planning</button>
       <button
         class:active={currentView === 'steps'}
-        on:click={() => setView('steps')}
+        onclick={() => setView('steps')}
         title="Step by Step"
       >Steps</button>
       <button
         class:active={currentView === 'tree'}
-        on:click={() => setView('tree')}
+        onclick={() => setView('tree')}
         title="Tree View"
       >Tree</button>
       <button
         class:active={currentView === 'shopping'}
-        on:click={() => setView('shopping')}
+        onclick={() => setView('shopping')}
         title="Shopping List"
       >Shopping</button>
     </div>
@@ -1520,7 +1528,7 @@
       <button
         class="action-btn save"
         class:dirty={isDirty}
-        on:click={handleSavePlan}
+        onclick={handleSavePlan}
         disabled={!activePlan || isSaving || !isDirty}
         aria-label={isSaving ? 'Saving...' : (isDirty ? 'Save plan' : 'Saved')}
         title={isSaving ? 'Saving...' : (isDirty ? 'Save' : 'Saved')}
@@ -1544,7 +1552,7 @@
     <button
       class="action-btn"
       class:active={showConfigPanel}
-      on:click={() => showConfigPanel = !showConfigPanel}
+      onclick={() => showConfigPanel = !showConfigPanel}
       title="Calculator Settings"
     >
       <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1555,7 +1563,7 @@
     </button>
     <button
       class="action-btn"
-      on:click={() => showOwnershipPanel = !showOwnershipPanel}
+      onclick={() => showOwnershipPanel = !showOwnershipPanel}
       title="Blueprint Ownership"
     >
       <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1566,74 +1574,76 @@
     </button>
   </div>
 
-  <div slot="sidebar" let:isMobile>
-    <div class="construction-sidebar" class:mobile={isMobile}>
-      <div class="nav-header">
-        <h2 class="nav-title">Construction Plans <span class="wip-badge">WIP</span></h2>
-      </div>
-      <div class="sidebar-body">
-        <div class="sidebar-toggle">
-          <button
-            class:active={activeSource === 'online'}
-            disabled={!isLoggedIn}
-            title={!isLoggedIn ? 'Log in to use online plans' : 'Online plans'}
-            on:click={() => switchSource('online')}
-          >Online</button>
-          <button
-            class:active={activeSource === 'local'}
-            on:click={() => switchSource('local')}
-          >Local</button>
+  {#snippet sidebar({ isMobile })}
+    <div  >
+      <div class="construction-sidebar" class:mobile={isMobile}>
+        <div class="nav-header">
+          <h2 class="nav-title">Construction Plans <span class="wip-badge">WIP</span></h2>
         </div>
-        <div class="sidebar-search">
-          <input type="text" placeholder="Search plans..." bind:value={planSearch} />
-        </div>
-        <div class="sidebar-actions">
-          <button class="sidebar-btn create" on:click={handleNewPlan}>New</button>
-          <button class="sidebar-btn danger" on:click={() => activePlan && confirmDeletePlan(activePlanId)} disabled={!activePlan}>Delete</button>
-          <button class="sidebar-btn neutral" on:click={exportActivePlan} disabled={!activePlan}>Export</button>
-          <button class="sidebar-btn neutral" on:click={openImportDialog}>Import</button>
-          <button class="sidebar-btn neutral" on:click={handleClonePlan} disabled={!activePlan}>Clone</button>
-        </div>
-        <input type="file" bind:this={fileInput} on:change={handleFileChange} accept=".json" class="file-input-hidden" />
-        {#if hasLocalData && isLoggedIn && activeSource === 'online' && showImportPrompt}
-          <div class="import-prompt">
-            <span>Import data from browser?</span>
-            <div class="import-actions">
-              <button class="sidebar-btn accent" on:click={handleImportFromLocal}>Import</button>
-              <button class="sidebar-btn neutral" on:click={() => showImportPrompt = false}>Dismiss</button>
-            </div>
+        <div class="sidebar-body">
+          <div class="sidebar-toggle">
+            <button
+              class:active={activeSource === 'online'}
+              disabled={!isLoggedIn}
+              title={!isLoggedIn ? 'Log in to use online plans' : 'Online plans'}
+              onclick={() => switchSource('online')}
+            >Online</button>
+            <button
+              class:active={activeSource === 'local'}
+              onclick={() => switchSource('local')}
+            >Local</button>
           </div>
-        {/if}
-        {#if activeSource === 'online' && onlineLoading}
-          <div class="sidebar-status">Loading plans...</div>
-        {:else if activeSource === 'online' && onlineError}
-          <div class="sidebar-status error">{onlineError}</div>
-        {/if}
-        <div class="sidebar-list">
-          {#if filteredPlans.length === 0}
-            <div class="sidebar-empty">No plans found.</div>
-          {:else}
-            {#each filteredPlans as plan}
-              <button
-                class="sidebar-item"
-                class:active={activePlanId === plan.id}
-                on:click={() => selectPlan(plan.id)}
-              >
-                <span class="item-name">{plan.name}</span>
-              </button>
-            {/each}
+          <div class="sidebar-search">
+            <input type="text" placeholder="Search plans..." bind:value={planSearch} />
+          </div>
+          <div class="sidebar-actions">
+            <button class="sidebar-btn create" onclick={handleNewPlan}>New</button>
+            <button class="sidebar-btn danger" onclick={() => activePlan && confirmDeletePlan(activePlanId)} disabled={!activePlan}>Delete</button>
+            <button class="sidebar-btn neutral" onclick={exportActivePlan} disabled={!activePlan}>Export</button>
+            <button class="sidebar-btn neutral" onclick={openImportDialog}>Import</button>
+            <button class="sidebar-btn neutral" onclick={handleClonePlan} disabled={!activePlan}>Clone</button>
+          </div>
+          <input type="file" bind:this={fileInput} onchange={handleFileChange} accept=".json" class="file-input-hidden" />
+          {#if hasLocalData && isLoggedIn && activeSource === 'online' && showImportPrompt}
+            <div class="import-prompt">
+              <span>Import data from browser?</span>
+              <div class="import-actions">
+                <button class="sidebar-btn accent" onclick={handleImportFromLocal}>Import</button>
+                <button class="sidebar-btn neutral" onclick={() => showImportPrompt = false}>Dismiss</button>
+              </div>
+            </div>
           {/if}
+          {#if activeSource === 'online' && onlineLoading}
+            <div class="sidebar-status">Loading plans...</div>
+          {:else if activeSource === 'online' && onlineError}
+            <div class="sidebar-status error">{onlineError}</div>
+          {/if}
+          <div class="sidebar-list">
+            {#if filteredPlans.length === 0}
+              <div class="sidebar-empty">No plans found.</div>
+            {:else}
+              {#each filteredPlans as plan}
+                <button
+                  class="sidebar-item"
+                  class:active={activePlanId === plan.id}
+                  onclick={() => selectPlan(plan.id)}
+                >
+                  <span class="item-name">{plan.name}</span>
+                </button>
+              {/each}
+            {/if}
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  {/snippet}
 
   <!-- Empty state when no plan selected -->
   {#if isMobileLayout && !activePlan}
     <div class="mobile-empty-state">
       <p>Create a new construction plan or select an existing one.</p>
       <div class="mobile-empty-actions">
-        <button class="mobile-empty-btn create" on:click={handleNewPlan}>
+        <button class="mobile-empty-btn create" onclick={handleNewPlan}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
@@ -1641,7 +1651,7 @@
           New Plan
         </button>
         {#if plans.length > 0}
-        <button class="mobile-empty-btn browse" on:click={() => drawerOpen = true}>
+        <button class="mobile-empty-btn browse" onclick={() => drawerOpen = true}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="7" height="7" rx="1" />
             <rect x="14" y="3" width="7" height="7" rx="1" />
@@ -1674,7 +1684,7 @@
               type="text"
               class="plan-name-input"
               value={activePlan.name}
-              on:input={handlePlanNameChange}
+              oninput={handlePlanNameChange}
               placeholder="Plan name"
             />
           </div>
@@ -1722,11 +1732,11 @@
                             class="target-quantity"
                             min="1"
                             value={target.quantity}
-                            on:input={(e) => handleQuantityChange(target.blueprintId, e.target.value)}
+                            oninput={(e) => handleQuantityChange(target.blueprintId, e.target.value)}
                           />
                           <button
                             class="btn-remove"
-                            on:click={() => handleRemoveTarget(target.blueprintId)}
+                            onclick={() => handleRemoveTarget(target.blueprintId)}
                             title="Remove"
                           >×</button>
                         </div>
@@ -1755,16 +1765,16 @@
                   <span class="markup-source-label">Source:</span>
                   <div class="markup-source-buttons">
                     <button class="source-btn" class:active={markupSource === 'custom'}
-                      on:click={() => { markupSource = 'custom'; }}>Custom</button>
+                      onclick={() => { markupSource = 'custom'; }}>Custom</button>
                     <button class="source-btn" class:active={markupSource === 'inventory'}
                       disabled={Object.keys(shoppingItemInvMap).length === 0}
-                      on:click={() => { markupSource = 'inventory'; }}>Inventory</button>
+                      onclick={() => { markupSource = 'inventory'; }}>Inventory</button>
                     <button class="source-btn" class:active={markupSource === 'ingame'}
                       disabled={Object.keys(shoppingItemIngameMap).length === 0}
-                      on:click={() => { markupSource = 'ingame'; }}>In-Game</button>
+                      onclick={() => { markupSource = 'ingame'; }}>In-Game</button>
                     <button class="source-btn" class:active={markupSource === 'exchange'}
                       disabled={Object.keys(shoppingItemWapMap).length === 0}
-                      on:click={() => { markupSource = 'exchange'; }}>Exchange</button>
+                      onclick={() => { markupSource = 'exchange'; }}>Exchange</button>
                   </div>
                 </div>
               </div>
@@ -1787,14 +1797,14 @@
                             class:is-custom={markupSource === 'custom' && isCustom}
                             readonly={markupSource !== 'custom'}
                             value={getMarkup(markupKey)}
-                            on:change={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
+                            onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
                             min="0"
                             step="1"
                           />
                           <span class="markup-suffix">%</span>
                           {#if markupSource === 'custom'}
                             {#if isCustom}
-                              <button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>
+                              <button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>
                             {:else if wap != null}
                               <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
                             {/if}
@@ -1817,7 +1827,7 @@
                             type="number"
                             class="markup-input"
                             value={markupValues['residue'] ?? DEFAULT_MARKUP}
-                            on:change={(e) => setMarkup('residue', e.target.value)}
+                            onchange={(e) => setMarkup('residue', e.target.value)}
                             min="0"
                             step="1"
                           />
@@ -1846,14 +1856,14 @@
                             class:is-custom={markupSource === 'custom' && isCustom}
                             readonly={markupSource !== 'custom'}
                             value={getMarkup(markupKey)}
-                            on:change={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
+                            onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
                             min="0"
                             step="1"
                           />
                           <span class="markup-suffix">%</span>
                           {#if markupSource === 'custom'}
                             {#if isCustom}
-                              <button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>
+                              <button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>
                             {:else if wap != null}
                               <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
                             {/if}
@@ -1889,14 +1899,14 @@
                             class:is-custom={markupSource === 'custom' && isCustom}
                             readonly={markupSource !== 'custom'}
                             value={getMarkup(markupKey)}
-                            on:change={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
+                            onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
                             min="0"
                             step="1"
                           />
                           <span class="markup-suffix">%</span>
                           {#if markupSource === 'custom'}
                             {#if isCustom}
-                              <button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>
+                              <button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>
                             {:else if wap != null}
                               <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
                             {/if}
@@ -1920,7 +1930,7 @@
       {:else if activePlan.data.targets.length === 0}
         <div class="empty-state">
           <p>Add target blueprints in the Planning view to see results here.</p>
-          <button class="btn-switch-view" on:click={() => setView('planning')}>Go to Planning</button>
+          <button class="btn-switch-view" onclick={() => setView('planning')}>Go to Planning</button>
         </div>
       {:else if currentView === 'steps'}
         <div class="steps-view">
@@ -1931,24 +1941,24 @@
                 <div class="global-condition-presets">
                   <button
                     class="global-condition-preset"
-                    on:click={() => applyGlobalCondition('stability')}
+                    onclick={() => applyGlobalCondition('stability')}
                     title="Set all steps to 0% condition — highest success rate"
                   >Stability</button>
                   <button
                     class="global-condition-preset"
-                    on:click={() => applyGlobalCondition('attempts')}
+                    onclick={() => applyGlobalCondition('attempts')}
                     title="Set each step to its optimal condition for fewest attempts"
                   >Attempts</button>
                   <button
                     class="global-condition-preset"
                     disabled={!anyStepSupportsOutput}
-                    on:click={() => applyGlobalCondition('output')}
+                    onclick={() => applyGlobalCondition('output')}
                     title={anyStepSupportsOutput ? 'Set each step to its optimal condition for best output per attempt' : 'No steps benefit from output optimization (all produce single items)'}
                   >Output</button>
                 </div>
                 <button
                   class="condition-info-btn"
-                  on:click={() => showConditionInfoDialog = true}
+                  onclick={() => showConditionInfoDialog = true}
                   title="What is condition?"
                 >?</button>
               </div>
@@ -1964,16 +1974,16 @@
                 {@const isChecked = checkedSteps.has(i)}
                 {@const isCollapsed = collapsedSteps.has(i)}
                 <li class="step-item" class:not-owned={!step.owned} class:checked={isChecked} class:collapsed={isCollapsed}>
-                  <div class="step-header" on:click={() => toggleStepCollapsed(i)} role="button" tabindex="0" on:keypress={(e) => e.key === 'Enter' && toggleStepCollapsed(i)}>
-                    <label class="step-checkbox" on:click|stopPropagation>
-                      <input type="checkbox" checked={isChecked} on:change={() => toggleStepChecked(i)} />
+                  <div class="step-header" onclick={() => toggleStepCollapsed(i)} role="button" tabindex="0" onkeypress={(e) => e.key === 'Enter' && toggleStepCollapsed(i)}>
+                    <label class="step-checkbox" onclick={stopPropagation(bubble('click'))}>
+                      <input type="checkbox" checked={isChecked} onchange={() => toggleStepChecked(i)} />
                     </label>
                     <span class="step-number">{i + 1}</span>
                     <span class="step-title">
                       {#if step.isMaterialChild}
                         <span class="step-type-badge material">Material</span>
                       {/if}
-                      <a href={getBlueprintLink(step.blueprint)} class="step-blueprint" on:click|stopPropagation>
+                      <a href={getBlueprintLink(step.blueprint)} class="step-blueprint" onclick={stopPropagation(bubble('click'))}>
                         {step.blueprint.Name}
                       </a>
                       {#if step.isSiB}<span class="sib-badge">SiB</span>{/if}
@@ -2006,7 +2016,7 @@
                               max={CONDITION_MAX}
                               step="1"
                               value={step.conditionPercent}
-                              on:input={(e) => setConditionPercent(step.blueprint.Id, e.target.value)}
+                              oninput={(e) => setConditionPercent(step.blueprint.Id, e.target.value)}
                             />
                             <span class="condition-value">{step.conditionPercent}%{#if step.conditionPercent > 0} ({step.conditionMultiplier.toFixed(2)}x){/if}</span>
                           </label>
@@ -2014,19 +2024,19 @@
                             <button
                               class="condition-preset"
                               class:active={step.conditionPercent === 0}
-                              on:click={() => setConditionPercent(step.blueprint.Id, 0)}
+                              onclick={() => setConditionPercent(step.blueprint.Id, 0)}
                               title="0% condition — highest success rate, lowest output per success"
                             >Stability</button>
                             <button
                               class="condition-preset"
                               class:active={step.conditionPercent === optAttempts}
-                              on:click={() => setConditionPercent(step.blueprint.Id, optAttempts)}
+                              onclick={() => setConditionPercent(step.blueprint.Id, optAttempts)}
                               title="{optAttempts}% condition — fewest craft attempts needed"
                             >Attempts ({optAttempts}%)</button>
                             <button
                               class="condition-preset"
                               class:active={step.conditionPercent === optOutput}
-                              on:click={() => setConditionPercent(step.blueprint.Id, optOutput)}
+                              onclick={() => setConditionPercent(step.blueprint.Id, optOutput)}
                               title="{optOutput}% condition — best output per attempt ratio"
                             >Output ({optOutput}%)</button>
                           </div>
@@ -2085,7 +2095,7 @@
                                           class="mat-bp-badge"
                                           class:active={bpPickerMaterial === mat.item?.Name}
                                           title="Using: {selectedBp?.Name} — Click to change"
-                                          on:click|stopPropagation={(e) => openBpPicker(mat.item?.Name, e)}
+                                          onclick={stopPropagation((e) => openBpPicker(mat.item?.Name, e))}
                                         >
                                           {bpOptions.length} BPs
                                         </button>
@@ -2096,7 +2106,7 @@
                                     <td class="text-right refund-cell" title="Expected refund: {expectedRefund} units ({clampDecimals(refundPct, 0, 1)}%)">
                                       {expectedRefund > 0 ? `-${expectedRefund}` : '0'} <span class="refund-pct">({clampDecimals(refundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepMatKey] != null} readonly={markupSource !== 'custom'} value={mu} min="0" step="1" on:change={(e) => { if (markupSource === 'custom') setMarkup(stepMatKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepMatKey)}>&times;</button>{:else if shoppingItemWapMap[stepMatKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepMatKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepMatKey] : shoppingItemInvMap[stepMatKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span>{/if}</td>
+                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepMatKey] != null} readonly={markupSource !== 'custom'} value={mu} min="0" step="1" onchange={(e) => { if (markupSource === 'custom') setMarkup(stepMatKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(stepMatKey)}>&times;</button>{:else if shoppingItemWapMap[stepMatKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepMatKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepMatKey] : shoppingItemInvMap[stepMatKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span>{/if}</td>
                                     <td class="text-right">{isCrafting ? '—' : `${clampDecimals(lineCost, 2, 4)} PED`}</td>
                                   </tr>
                                 {/each}
@@ -2110,7 +2120,7 @@
                                     <td class="text-right refund-cell">
                                       {residueRefund > 0 ? `-${clampDecimals(residueRefund, 2)}` : '0'} <span class="refund-pct">({clampDecimals(residueRefundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right"><input type="number" class="markup-input-inline" value={residueMU} min="0" step="1" on:change={(e) => setMarkup('residue', e.target.value)} />%</td>
+                                    <td class="text-right"><input type="number" class="markup-input-inline" value={residueMU} min="0" step="1" onchange={(e) => setMarkup('residue', e.target.value)} />%</td>
                                     <td class="text-right">{clampDecimals(adjustedResidueCost, 2, 4)} PED</td>
                                   </tr>
                                 {/if}
@@ -2160,7 +2170,7 @@
                                   <td><a href={getItemLink(product)}>{productName}</a></td>
                                   <td class="text-right">{step.quantityWanted}</td>
                                   <td class="text-right">{clampDecimals(productTotalTT, 2, 4)} PED</td>
-                                  <td class="text-right"><span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepProdKey] != null} readonly={markupSource !== 'custom'} value={productMU} min="0" step="1" on:change={(e) => { if (markupSource === 'custom') setMarkup(stepProdKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepProdKey)}>&times;</button>{:else if shoppingItemWapMap[stepProdKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepProdKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepProdKey] : shoppingItemInvMap[stepProdKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span></td>
+                                  <td class="text-right"><span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepProdKey] != null} readonly={markupSource !== 'custom'} value={productMU} min="0" step="1" onchange={(e) => { if (markupSource === 'custom') setMarkup(stepProdKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(stepProdKey)}>&times;</button>{:else if shoppingItemWapMap[stepProdKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepProdKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepProdKey] : shoppingItemInvMap[stepProdKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span></td>
                                   <td class="text-right">{clampDecimals(productCost, 2, 4)} PED</td>
                                 </tr>
                               </tbody>
@@ -2215,20 +2225,20 @@
                 <span class="markup-source-label">MU:</span>
                 <div class="markup-source-buttons">
                   <button class="source-btn" class:active={markupSource === 'custom'}
-                    on:click={() => { markupSource = 'custom'; }}>Custom</button>
+                    onclick={() => { markupSource = 'custom'; }}>Custom</button>
                   <button class="source-btn" class:active={markupSource === 'inventory'}
                     disabled={Object.keys(shoppingItemInvMap).length === 0}
-                    on:click={() => { markupSource = 'inventory'; }}>Inventory</button>
+                    onclick={() => { markupSource = 'inventory'; }}>Inventory</button>
                   <button class="source-btn" class:active={markupSource === 'ingame'}
                     disabled={Object.keys(shoppingItemIngameMap).length === 0}
-                    on:click={() => { markupSource = 'ingame'; }}>In-Game</button>
+                    onclick={() => { markupSource = 'ingame'; }}>In-Game</button>
                   <button class="source-btn" class:active={markupSource === 'exchange'}
                     disabled={Object.keys(shoppingItemWapMap).length === 0}
-                    on:click={() => { markupSource = 'exchange'; }}>Exchange</button>
+                    onclick={() => { markupSource = 'exchange'; }}>Exchange</button>
                 </div>
               </div>
               {#if isLoggedIn}
-                <select class="inventory-filter-select" value={inventoryFilter} on:change={handleInventoryFilterChange}>
+                <select class="inventory-filter-select" value={inventoryFilter} onchange={handleInventoryFilterChange}>
                   <option value="none">No Inventory</option>
                   <option value="carried">Only Carried</option>
                   <option value="all">All Storages</option>
@@ -2243,7 +2253,7 @@
                 {#if inventoryLoading}
                   <span class="inventory-loading">Loading...</span>
                 {/if}
-                <button class="btn-order-all" on:click={openMassBuyAll} disabled={allShoppingItemsChecked}>
+                <button class="btn-order-all" onclick={openMassBuyAll} disabled={allShoppingItemsChecked}>
                   Order All
                 </button>
               {/if}
@@ -2299,7 +2309,7 @@
                   {@const cost = adjustedTT * mu / 100}
                   <tr class:checked={isChecked} class:inventory-covered={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.adjustedAmount || item.totalAmount)}>
                     <td class="col-check">
-                      <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingMaterial(item.item.Name)} />
+                      <input type="checkbox" checked={isChecked} onchange={() => toggleShoppingMaterial(item.item.Name)} />
                     </td>
                     <td><span class="type-badge material">Material</span></td>
                     <td>{Math.ceil(item.adjustedAmount || item.totalAmount)} x <a href={getItemLink(item.item)}>{item.item.Name}</a></td>
@@ -2314,16 +2324,16 @@
                         value={mu}
                         min="0"
                         step="1"
-                        on:change={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
+                        onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
                       />%
-                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[markupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[markupKey] : shoppingItemInvMap[markupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[markupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[markupKey] : shoppingItemInvMap[markupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
                       {#if item.item?.Id}
                         <div class="shopping-actions">
                           {#if isLoggedIn}
-                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: getInventoryAdjustedQty(item.item.Id, Math.ceil(item.adjustedAmount || item.totalAmount)), markup: mu }])}>Order</button>
+                            <button class="btn-shop-action btn-order" title="Create buy order" onclick={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: getInventoryAdjustedQty(item.item.Id, Math.ceil(item.adjustedAmount || item.totalAmount)), markup: mu }])}>Order</button>
                           {/if}
                           <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.item.Id)} title="{exchangeSellCounts.get(item.item.Id) || 0} sell order{(exchangeSellCounts.get(item.item.Id) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.item.Id)} ({exchangeSellCounts.get(item.item.Id)}){/if}</a>
                         </div>
@@ -2336,7 +2346,7 @@
                   {@const isResidueChecked = checkedShoppingMaterials.has('Residue')}
                   <tr class="residue-row" class:checked={isResidueChecked}>
                     <td class="col-check">
-                      <input type="checkbox" checked={isResidueChecked} on:change={() => toggleShoppingMaterial('Residue')} />
+                      <input type="checkbox" checked={isResidueChecked} onchange={() => toggleShoppingMaterial('Residue')} />
                     </td>
                     <td><span class="type-badge material">Material</span></td>
                     <td><span class="residue-name">Residue</span> <span class="residue-note">(est.)</span></td>
@@ -2349,7 +2359,7 @@
                         value={residueMU}
                         min="0"
                         step="1"
-                        on:change={(e) => setMarkup('residue', e.target.value)}
+                        onchange={(e) => setMarkup('residue', e.target.value)}
                       />%
                     </td>
                     <td class="text-right">{clampDecimals(adjustedResidueCost, 2, 4)} PED</td>
@@ -2367,7 +2377,7 @@
                   {@const cost = ttValue * mu / 100}
                   <tr class:checked={isChecked} class:inventory-covered={showInventoryColumn && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) >= Math.ceil(item.totalAmount)}>
                     <td class="col-check">
-                      <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingProduct(item.blueprint.Name)} />
+                      <input type="checkbox" checked={isChecked} onchange={() => toggleShoppingProduct(item.blueprint.Name)} />
                     </td>
                     <td><span class="type-badge limited">BP (L)</span></td>
                     <td>
@@ -2385,15 +2395,15 @@
                         value={mu}
                         min="0"
                         step="1"
-                        on:change={(e) => { if (markupSource === 'custom') setMarkup(bpMarkupKey, e.target.value); }}
+                        onchange={(e) => { if (markupSource === 'custom') setMarkup(bpMarkupKey, e.target.value); }}
                       />%
-                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[bpMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[bpMarkupKey] : shoppingItemInvMap[bpMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[bpMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[bpMarkupKey] : shoppingItemInvMap[bpMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
                       <div class="shopping-actions">
                         {#if isLoggedIn}
-                          <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.blueprint.Id + BLUEPRINT_ID_OFFSET, name: item.blueprint.Name, quantity: getInventoryAdjustedQty(item.blueprint.Id + BLUEPRINT_ID_OFFSET, Math.ceil(item.totalAmount)), markup: mu }])}>Order</button>
+                          <button class="btn-shop-action btn-order" title="Create buy order" onclick={() => openMassBuy([{ itemId: item.blueprint.Id + BLUEPRINT_ID_OFFSET, name: item.blueprint.Name, quantity: getInventoryAdjustedQty(item.blueprint.Id + BLUEPRINT_ID_OFFSET, Math.ceil(item.totalAmount)), markup: mu }])}>Order</button>
                         {/if}
                         <a href="/market/exchange/listings/{item.blueprint.Id + BLUEPRINT_ID_OFFSET}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)} title="{exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0} sell order{(exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)} ({exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)}){/if}</a>
                       </div>
@@ -2411,7 +2421,7 @@
                   {@const prodCost = prodTT * prodMU / 100}
                   <tr class="product-row" class:checked={isChecked} class:inventory-covered={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.totalAmount)}>
                     <td class="col-check">
-                      <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingProduct(item.item.Name)} />
+                      <input type="checkbox" checked={isChecked} onchange={() => toggleShoppingProduct(item.item.Name)} />
                     </td>
                     <td><span class="type-badge product">Product</span></td>
                     <td>
@@ -2429,16 +2439,16 @@
                         value={prodMU}
                         min="0"
                         step="1"
-                        on:change={(e) => { if (markupSource === 'custom') setMarkup(prodMarkupKey, e.target.value); }}
+                        onchange={(e) => { if (markupSource === 'custom') setMarkup(prodMarkupKey, e.target.value); }}
                       />%
-                      {#if markupSource === 'custom'}{#if isCustomProdMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if wapProdMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[prodMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[prodMarkupKey] : shoppingItemInvMap[prodMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if markupSource === 'custom'}{#if isCustomProdMU}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if wapProdMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[prodMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[prodMarkupKey] : shoppingItemInvMap[prodMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(prodCost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
                       {#if item.item?.Id}
                         <div class="shopping-actions">
                           {#if isLoggedIn}
-                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: getInventoryAdjustedQty(item.item.Id, Math.ceil(item.totalAmount)), markup: prodMU }])}>Order</button>
+                            <button class="btn-shop-action btn-order" title="Create buy order" onclick={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: getInventoryAdjustedQty(item.item.Id, Math.ceil(item.totalAmount)), markup: prodMU }])}>Order</button>
                           {/if}
                           <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.item.Id)} title="{exchangeSellCounts.get(item.item.Id) || 0} sell order{(exchangeSellCounts.get(item.item.Id) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.item.Id)} ({exchangeSellCounts.get(item.item.Id)}){/if}</a>
                         </div>
@@ -2473,14 +2483,14 @@
 {#if bpPickerMaterial}
   {@const bpOptions = getMaterialBlueprintOptions(bpPickerMaterial)}
   {@const selectedId = getSelectedBlueprintId(bpPickerMaterial) ?? bpOptions?.[0]?.Id}
-  <div class="bp-picker-backdrop" role="presentation" on:click={closeBpPicker}></div>
+  <div class="bp-picker-backdrop" role="presentation" onclick={closeBpPicker}></div>
   <div class="bp-picker-popover" style="top: {bpPickerPos.top}px; left: {bpPickerPos.left}px;">
     <div class="bp-picker-header">Select Blueprint</div>
     {#each bpOptions || [] as bp}
       <button
         class="bp-picker-option"
         class:selected={bp.Id === selectedId}
-        on:click|stopPropagation={() => selectBpFromPicker(bpPickerMaterial, bp.Id)}
+        onclick={stopPropagation(() => selectBpFromPicker(bpPickerMaterial, bp.Id))}
       >
         <span class="bp-picker-radio">{bp.Id === selectedId ? '●' : '○'}</span>
         <span class="bp-picker-name">{bp.Name}</span>
@@ -2491,11 +2501,11 @@
 {/if}
 <!-- Ownership Panel Modal -->
 {#if showConfigPanel}
-  <div class="ownership-overlay" on:click={() => showConfigPanel = false} on:keydown={(e) => e.key === 'Escape' && (showConfigPanel = false)}>
-    <div class="ownership-panel config-panel" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="ownership-overlay" onclick={() => showConfigPanel = false} onkeydown={(e) => e.key === 'Escape' && (showConfigPanel = false)}>
+    <div class="ownership-panel config-panel" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
       <div class="panel-header">
         <h2>Calculator Settings</h2>
-        <button class="btn-close" on:click={() => showConfigPanel = false}>×</button>
+        <button class="btn-close" onclick={() => showConfigPanel = false}>×</button>
       </div>
       <div class="panel-content">
         <div class="config-section">
@@ -2513,7 +2523,7 @@
             <span class="rate-near">{(ratesSiB.nearSuccessRate * 100).toFixed(1)}%</span> near,
             <span class="rate-fail">{(ratesSiB.failRate * 100).toFixed(1)}%</span> fail
           </p>
-          <button class="sidebar-btn" on:click={() => { showConfigPanel = false; showHotspotDialog = true; }}>
+          <button class="sidebar-btn" onclick={() => { showConfigPanel = false; showHotspotDialog = true; }}>
             View hotspot model details
           </button>
         </div>
@@ -2529,7 +2539,7 @@
                 min="50"
                 max="99"
                 step="5"
-                on:change={(e) => setCertainty(e.target.value)}
+                onchange={(e) => setCertainty(e.target.value)}
               />
               <span class="config-unit">%</span>
             </div>
@@ -2548,7 +2558,7 @@
                 min="0"
                 max="100"
                 step="1"
-                on:change={(e) => setRollChance(e.target.value)}
+                onchange={(e) => setRollChance(e.target.value)}
               />
               <span class="config-unit">%</span>
             </div>
@@ -2563,7 +2573,7 @@
             Click the % value next to any non-target blueprint to edit it.
           </p>
           {#if Object.keys(nonFailChances).length > 0}
-            <button class="sidebar-btn" on:click={resetNonFailChances}>
+            <button class="sidebar-btn" onclick={resetNonFailChances}>
               Reset all to defaults
             </button>
           {/if}
@@ -2574,11 +2584,11 @@
 {/if}
 
 {#if showOwnershipPanel}
-  <div class="ownership-overlay" on:click={() => showOwnershipPanel = false} on:keydown={(e) => e.key === 'Escape' && (showOwnershipPanel = false)}>
-    <div class="ownership-panel" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="ownership-overlay" onclick={() => showOwnershipPanel = false} onkeydown={(e) => e.key === 'Escape' && (showOwnershipPanel = false)}>
+    <div class="ownership-panel" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
       <div class="panel-header">
         <h2>Blueprint Ownership</h2>
-        <button class="btn-close" on:click={() => showOwnershipPanel = false}>×</button>
+        <button class="btn-close" onclick={() => showOwnershipPanel = false}>×</button>
       </div>
       <div class="panel-content">
         {#if blueprintsInTree.length === 0}
@@ -2592,7 +2602,7 @@
                   <input
                     type="checkbox"
                     checked={owned}
-                    on:change={() => toggleOwnership(blueprint.Id)}
+                    onchange={() => toggleOwnership(blueprint.Id)}
                   />
                   <span class="ownership-name">
                     {blueprint.Name}
@@ -2611,8 +2621,8 @@
 {/if}
 
 {#if showDeleteDialog}
-<div class="dialog-backdrop" on:click={cancelDelete} on:keydown={(e) => e.key === 'Escape' && cancelDelete()}>
-  <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+<div class="dialog-backdrop" onclick={cancelDelete} onkeydown={(e) => e.key === 'Escape' && cancelDelete()}>
+  <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
     <div class="dialog-header">
       <h3 id="delete-dialog-title">Delete Plan</h3>
     </div>
@@ -2620,16 +2630,16 @@
       <p>Are you sure you want to delete this construction plan? This action cannot be undone.</p>
     </div>
     <div class="dialog-footer">
-      <button class="dialog-btn secondary" on:click={cancelDelete}>Cancel</button>
-      <button class="dialog-btn danger" on:click={handleDeletePlan}>Delete</button>
+      <button class="dialog-btn secondary" onclick={cancelDelete}>Cancel</button>
+      <button class="dialog-btn danger" onclick={handleDeletePlan}>Delete</button>
     </div>
   </div>
 </div>
 {/if}
 
 {#if showImportSourceDialog}
-<div class="dialog-backdrop" on:click={() => showImportSourceDialog = false} on:keydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
-  <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+<div class="dialog-backdrop" onclick={() => showImportSourceDialog = false} onkeydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
+  <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
     <div class="dialog-header">
       <h3 id="import-dialog-title">Import Plan</h3>
     </div>
@@ -2637,13 +2647,13 @@
       <p>Choose import source:</p>
     </div>
     <div class="dialog-footer">
-      <button class="dialog-btn secondary" on:click={() => showImportSourceDialog = false}>Close</button>
+      <button class="dialog-btn secondary" onclick={() => showImportSourceDialog = false}>Close</button>
       {#if isLoggedIn && hasLocalData}
-        <button class="dialog-btn secondary" on:click={() => { showImportSourceDialog = false; handleImportFromLocal(); }}>
+        <button class="dialog-btn secondary" onclick={() => { showImportSourceDialog = false; handleImportFromLocal(); }}>
           Import local ({localPlans.length})
         </button>
       {/if}
-      <button class="dialog-btn" on:click={handleImportFromFile}>Import from file</button>
+      <button class="dialog-btn" onclick={handleImportFromFile}>Import from file</button>
     </div>
   </div>
 </div>
@@ -2651,8 +2661,8 @@
 
 {#if showHotspotDialog}
 {@const breakdown = getHotspotBreakdown()}
-<div class="dialog-backdrop" on:click={() => showHotspotDialog = false} on:keydown={(e) => e.key === 'Escape' && (showHotspotDialog = false)}>
-  <div class="dialog hotspot-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="hotspot-dialog-title">
+<div class="dialog-backdrop" onclick={() => showHotspotDialog = false} onkeydown={(e) => e.key === 'Escape' && (showHotspotDialog = false)}>
+  <div class="dialog hotspot-dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="hotspot-dialog-title">
     <div class="dialog-header">
       <h3 id="hotspot-dialog-title">Hotspot Model</h3>
     </div>
@@ -2755,15 +2765,15 @@
       </p>
     </div>
     <div class="dialog-footer">
-      <button class="dialog-btn secondary" on:click={() => showHotspotDialog = false}>Close</button>
+      <button class="dialog-btn secondary" onclick={() => showHotspotDialog = false}>Close</button>
     </div>
   </div>
 </div>
 {/if}
 
 {#if showConditionInfoDialog}
-<div class="dialog-backdrop" role="presentation" on:click={() => showConditionInfoDialog = false} on:keydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
-  <div class="dialog condition-info-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
+<div class="dialog-backdrop" role="presentation" onclick={() => showConditionInfoDialog = false} onkeydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
+  <div class="dialog condition-info-dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
     <div class="dialog-header">
       <h3 id="condition-info-title">Condition</h3>
     </div>
@@ -2784,7 +2794,7 @@
       </ul>
     </div>
     <div class="dialog-footer">
-      <button class="dialog-btn secondary" on:click={() => showConditionInfoDialog = false}>Close</button>
+      <button class="dialog-btn secondary" onclick={() => showConditionInfoDialog = false}>Close</button>
     </div>
   </div>
 </div>

@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import MapEditorLeaflet from './MapEditorLeaflet.svelte';
   import LocationList from './LocationList.svelte';
@@ -7,56 +9,69 @@
   import WaveEventEditor from './WaveEventEditor.svelte';
   import { isArea } from './mapEditorUtils.js';
 
-  // --- Required props ---
-  export let planet = null;
-  export let locations = [];
-  export let allMobs = [];
-  export let editMode = false;
-  export let loading = false;
-  /** @type {'admin' | 'public'} */
-  export let mode = 'admin';
-  /** Location-like object to focus when opening editor from route mode links */
-  export let focusLocation = null;
-  /** Stable key so focus is only applied once per navigation */
-  export let focusKey = null;
+  
+  
+  
+  
 
   // --- DB pending changes (from all users) ---
-  /** @type {Array} All pending changes for this planet from the database */
-  export let dbPendingChanges = [];
-  export let currentUserId = null;
-  export let isAdmin = false;
+  
 
-  // --- Bindable state (parent reads/controls) ---
-  export let pendingChanges = new Map();
-  export let rightPanel = 'editor'; // 'editor' | 'mobEditor' | <any other value shows output slot>
-  export let mapComponent = undefined;
-  export let changeCount = 0;
-  export let dbChangeIdMap = new Map();
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [planet] - --- Required props ---
+   * @property {any} [locations]
+   * @property {any} [allMobs]
+   * @property {boolean} [editMode]
+   * @property {boolean} [loading]
+   * @property {'admin' | 'public'} [mode]
+   * @property {any} [focusLocation] - Location-like object to focus when opening editor from route mode links
+   * @property {any} [focusKey] - Stable key so focus is only applied once per navigation
+   * @property {Array} [dbPendingChanges]
+   * @property {any} [currentUserId]
+   * @property {boolean} [isAdmin]
+   * @property {any} [pendingChanges] - --- Bindable state (parent reads/controls) ---
+   * @property {string} [rightPanel] - 'editor' | 'mobEditor' | <any other value shows output slot>
+   * @property {any} [mapComponent]
+   * @property {number} [changeCount]
+   * @property {any} [dbChangeIdMap]
+   * @property {import('svelte').Snippet} [output]
+   */
 
-  // --- Locked locations (active changes from other users) ---
-  $: lockedLocationMap = (() => {
-    const map = new Map();
-    for (const c of dbPendingChanges) {
-      if (c.author_id === currentUserId) continue;
-      const entityId = c.data?.Id;
-      if (entityId && c.type === 'Update') {
-        map.set(entityId, c);
-      }
-    }
-    return map;
-  })();
+  /** @type {Props} */
+  let {
+    planet = null,
+    locations = [],
+    allMobs = [],
+    editMode = false,
+    loading = false,
+    mode = 'admin',
+    focusLocation = null,
+    focusKey = null,
+    dbPendingChanges = $bindable([]),
+    currentUserId = null,
+    isAdmin = false,
+    pendingChanges = $bindable(new Map()),
+    rightPanel = $bindable('editor'),
+    mapComponent = $bindable(undefined),
+    changeCount = $bindable(0),
+    dbChangeIdMap = $bindable(new Map()),
+    output
+  } = $props();
+
 
   // --- Internal state ---
-  let selectedId = null;
-  let isNewLocation = false;
-  let drawnShapeData = null;
-  let previewShape = null;
-  let mobEditorContext = null;
-  let filteredLocationIds = null;
+  let selectedId = $state(null);
+  let isNewLocation = $state(false);
+  let drawnShapeData = $state(null);
+  let previewShape = $state(null);
+  let mobEditorContext = $state(null);
+  let filteredLocationIds = $state(null);
   let nextTempId = -1;
-  let lastAppliedFocusKey = null;
-  let waveEditorContext = null;
-  let selectedDbChange = null; // DB pending change selected for read-only viewing
+  let lastAppliedFocusKey = $state(null);
+  let waveEditorContext = $state(null);
+  let selectedDbChange = $state(null); // DB pending change selected for read-only viewing
   let modifiedDbChanges = new Set(); // DB-seeded changes that have been locally modified
 
   // --- Exported method ---
@@ -79,77 +94,6 @@
     if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
   }
 
-  // --- Reactive derivations ---
-  $: selectedLocation = (() => {
-    if (!selectedId) return null;
-    const loc = locations.find(l => l.Id === selectedId);
-    if (loc) {
-      // Merge pending edit data so the editor form reflects map edits
-      const pending = pendingChanges.get(loc.Id);
-      if (pending?.action === 'edit' && pending.modified) {
-        const mod = pending.modified;
-        return {
-          ...loc,
-          Name: mod.name ?? loc.Name,
-          _hasPendingEdit: true,
-          ...(mod.waveData ? { Waves: mod.waveData.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
-          ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
-          Properties: {
-            ...loc.Properties,
-            Type: mod.locationType ? (mod.locationType === 'Area' ? 'Area' : mod.locationType) : loc.Properties?.Type,
-            AreaType: mod.areaType !== undefined ? mod.areaType : loc.Properties?.AreaType,
-            Shape: mod.shape ?? loc.Properties?.Shape,
-            Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
-            Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
-            Coordinates: {
-              ...loc.Properties?.Coordinates,
-              ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
-              ...(mod.latitude !== undefined ? { Latitude: mod.latitude } : {}),
-              ...(mod.altitude !== undefined ? { Altitude: mod.altitude } : {})
-            }
-          }
-        };
-      }
-      return loc;
-    }
-    const pending = pendingChanges.get(selectedId);
-    if (!pending?.original && pending?.modified) {
-      const mod = pending.modified;
-      return {
-        Id: selectedId,
-        Name: mod.name || '',
-        _isPendingAdd: true,
-        ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
-        Properties: {
-          Type: mod.locationType === 'Area' ? (mod.areaType || 'MobArea') : (mod.locationType || 'Area'),
-          AreaType: mod.areaType || null,
-          Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
-          Shape: mod.shape || null,
-          Data: mod.shapeData || null,
-          Description: mod.description || null,
-        }
-      };
-    }
-    // DB pending change (read-only viewing)
-    if (selectedDbChange) {
-      const d = selectedDbChange.data;
-      const props = d?.Properties || {};
-      return {
-        Id: selectedId,
-        Name: d?.Name || '',
-        _isDbChange: true,
-        Properties: {
-          Type: props.Type || 'Location',
-          AreaType: props.AreaType || null,
-          Coordinates: props.Coordinates || {},
-          Shape: props.Shape || null,
-          Data: props.Data || null,
-          Description: props.Description || null,
-        }
-      };
-    }
-    return null;
-  })();
 
   // Show cyan afterimage of the ORIGINAL shape for a given location
   function showAfterimageForOriginal(locId) {
@@ -165,27 +109,8 @@
     }
   }
 
-  // Read-only when: viewing another user's DB pending change, or a non-admin
-  // user selects a location locked by another user's pending change.
-  $: isReadOnly = !!selectedDbChange || (!isAdmin && selectedId != null
-    && selectedId > 0 && lockedLocationMap.has(selectedId));
 
-  // Count pending changes excluding DB-seeded but unmodified entries
-  $: changeCount = Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length;
 
-  $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
-    if (focusLocation._dbChange) {
-      // Route to handleSelectDbChange so admins/owners get an editable pending change
-      // instead of being forced into read-only mode
-      handleSelectDbChange({ detail: focusLocation._dbChange });
-    } else if (focusLocation.Id != null) {
-      const matched = locations.find(l => l.Id == focusLocation.Id);
-      selectedId = matched ? matched.Id : focusLocation.Id;
-      selectedDbChange = null;
-    }
-    mapComponent.panToLocation(focusLocation);
-    lastAppliedFocusKey = focusKey;
-  }
 
   // --- Event handlers ---
   function handleMapSelect(e) {
@@ -367,6 +292,13 @@
       // Preserve the true original from the first edit — `original` from the editor
       // is the merged selectedLocation, not the raw location from locations[].
       const trueOriginal = existingChange?.original || locations.find(l => l.Id === original.Id) || original;
+      // Preserve mobData/waveData set by the mob/wave editors (auto-save doesn't include them)
+      if (existingChange?.modified?.mobData && !modified.mobData) {
+        modified.mobData = existingChange.modified.mobData;
+      }
+      if (existingChange?.modified?.waveData && !modified.waveData) {
+        modified.waveData = existingChange.modified.waveData;
+      }
       pendingChanges.set(original.Id, { action: 'edit', original: trueOriginal, modified });
       // Show afterimage of original for committed edits
       showAfterimageForOriginal(original.Id);
@@ -668,6 +600,112 @@
     }
     return data;
   }
+  // --- Locked locations (active changes from other users) ---
+  let lockedLocationMap = $derived((() => {
+    const map = new Map();
+    for (const c of dbPendingChanges) {
+      if (c.author_id === currentUserId) continue;
+      const entityId = c.data?.Id;
+      if (entityId && c.type === 'Update') {
+        map.set(entityId, c);
+      }
+    }
+    return map;
+  })());
+  run(() => {
+    if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
+      if (focusLocation._dbChange) {
+        // Route to handleSelectDbChange so admins/owners get an editable pending change
+        // instead of being forced into read-only mode
+        handleSelectDbChange({ detail: focusLocation._dbChange });
+      } else if (focusLocation.Id != null) {
+        const matched = locations.find(l => l.Id == focusLocation.Id);
+        selectedId = matched ? matched.Id : focusLocation.Id;
+        selectedDbChange = null;
+      }
+      mapComponent.panToLocation(focusLocation);
+      lastAppliedFocusKey = focusKey;
+    }
+  });
+  // --- Reactive derivations ---
+  let selectedLocation = $derived((() => {
+    if (!selectedId) return null;
+    const loc = locations.find(l => l.Id === selectedId);
+    if (loc) {
+      // Merge pending edit data so the editor form reflects map edits
+      const pending = pendingChanges.get(loc.Id);
+      if (pending?.action === 'edit' && pending.modified) {
+        const mod = pending.modified;
+        return {
+          ...loc,
+          Name: mod.name ?? loc.Name,
+          _hasPendingEdit: true,
+          ...(mod.waveData ? { Waves: mod.waveData.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
+          ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
+          Properties: {
+            ...loc.Properties,
+            Type: mod.locationType ? (mod.locationType === 'Area' ? 'Area' : mod.locationType) : loc.Properties?.Type,
+            AreaType: mod.areaType !== undefined ? mod.areaType : loc.Properties?.AreaType,
+            Shape: mod.shape ?? loc.Properties?.Shape,
+            Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
+            Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
+            Coordinates: {
+              ...loc.Properties?.Coordinates,
+              ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
+              ...(mod.latitude !== undefined ? { Latitude: mod.latitude } : {}),
+              ...(mod.altitude !== undefined ? { Altitude: mod.altitude } : {})
+            }
+          }
+        };
+      }
+      return loc;
+    }
+    const pending = pendingChanges.get(selectedId);
+    if (!pending?.original && pending?.modified) {
+      const mod = pending.modified;
+      return {
+        Id: selectedId,
+        Name: mod.name || '',
+        _isPendingAdd: true,
+        ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
+        Properties: {
+          Type: mod.locationType === 'Area' ? (mod.areaType || 'MobArea') : (mod.locationType || 'Area'),
+          AreaType: mod.areaType || null,
+          Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
+          Shape: mod.shape || null,
+          Data: mod.shapeData || null,
+          Description: mod.description || null,
+        }
+      };
+    }
+    // DB pending change (read-only viewing)
+    if (selectedDbChange) {
+      const d = selectedDbChange.data;
+      const props = d?.Properties || {};
+      return {
+        Id: selectedId,
+        Name: d?.Name || '',
+        _isDbChange: true,
+        Properties: {
+          Type: props.Type || 'Location',
+          AreaType: props.AreaType || null,
+          Coordinates: props.Coordinates || {},
+          Shape: props.Shape || null,
+          Data: props.Data || null,
+          Description: props.Description || null,
+        }
+      };
+    }
+    return null;
+  })());
+  // Read-only when: viewing another user's DB pending change, or a non-admin
+  // user selects a location locked by another user's pending change.
+  let isReadOnly = $derived(!!selectedDbChange || (!isAdmin && selectedId != null
+    && selectedId > 0 && lockedLocationMap.has(selectedId)));
+  // Count pending changes excluding DB-seeded but unmodified entries
+  run(() => {
+    changeCount = Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length;
+  });
 </script>
 
 <style>
@@ -812,7 +850,7 @@
         on:preview={handlePreview}
       />
     {:else}
-      <slot name="output" />
+      {@render output?.()}
     {/if}
   </div>
 </div>

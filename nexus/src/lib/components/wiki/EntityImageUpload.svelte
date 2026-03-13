@@ -14,84 +14,58 @@
   />
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { browser } from '$app/environment';
   import { darkMode } from '../../../stores.js';
   import ImageUploadDialog from './ImageUploadDialog.svelte';
 
-  /** @type {string|number|null} Entity ID */
-  export let entityId = null;
+  
 
-  /** @type {string} Entity name for display */
-  export let entityName = '';
+  
 
-  /** @type {string} Entity type (e.g., 'weapon', 'armorset', 'mob') */
-  export let entityType = '';
+  
 
-  /** @type {object|null} Current user */
-  export let user = null;
+  
 
-  /** @type {boolean} Whether edit mode is active */
-  export let isEditMode = false;
+  
 
-  /** @type {boolean} Whether this is a new entity being created */
-  export let isCreateMode = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string|number|null} [entityId]
+   * @property {string} [entityName]
+   * @property {string} [entityType]
+   * @property {object|null} [user]
+   * @property {boolean} [isEditMode]
+   * @property {boolean} [isCreateMode]
+   */
+
+  /** @type {Props} */
+  let {
+    entityId = null,
+    entityName = '',
+    entityType = '',
+    user = null,
+    isEditMode = false,
+    isCreateMode = false
+  } = $props();
 
   // State
-  let showUploadDialog = false;
-  let pendingImagePreview = null;
-  let imageExists = false;
-  let imageChecked = false;
-  let lastCheckedId = null;
+  let showUploadDialog = $state(false);
+  let pendingImagePreview = $state(null);
+  let imageExists = $state(false);
+  let imageChecked = $state(false);
+  let lastCheckedId = $state(null);
 
   // User's pending image (fetched from server)
-  let userPendingImage = null;
-  let pendingImageFetched = false;
+  let userPendingImage = $state(null);
+  let pendingImageFetched = $state(false);
 
-  // Can upload when editing existing entity (not create mode) and user is verified
-  $: canUploadImage = isEditMode && !isCreateMode && entityId && user?.verified;
 
-  // Check if image exists when entity ID changes (client-side only)
-  $: if (browser && entityId && entityId !== lastCheckedId) {
-    lastCheckedId = entityId;
-    imageExists = false;
-    imageChecked = false;
-    pendingImagePreview = null;
-    userPendingImage = null;
-    pendingImageFetched = false;
 
-    // Check image availability using fetch
-    // 200 = image exists, 204 = no image (not an error)
-    fetch(`/api/img/${entityType}/${entityId}`, { method: 'HEAD' })
-      .then(response => {
-        imageExists = response.status === 200;
-        imageChecked = true;
-      })
-      .catch(() => {
-        imageExists = false;
-        imageChecked = true;
-      });
 
-    // Also fetch user's pending image if logged in
-    if (user) {
-      fetchUserPendingImage();
-    }
-  }
-
-  // Re-fetch pending image when user becomes available (after login)
-  $: if (browser && user && entityId && !pendingImageFetched) {
-    fetchUserPendingImage();
-  }
-
-  // Reset image state in create mode or when no entity is selected
-  $: if (browser && (isCreateMode || !entityId)) {
-    lastCheckedId = null;
-    imageExists = false;
-    imageChecked = false;
-    pendingImagePreview = null;
-    userPendingImage = null;
-    pendingImageFetched = false;
-  }
 
   async function fetchUserPendingImage() {
     if (!browser || !user || !entityId) {
@@ -114,15 +88,7 @@
     }
   }
 
-  // Image URL: just uploaded preview > user's pending image > approved image (if exists) > none
-  $: entityImageUrl = (!isCreateMode && entityId)
-    ? (pendingImagePreview ||
-      userPendingImage?.previewUrl ||
-      (imageChecked && imageExists ? `/api/img/${entityType}/${entityId}?mode=${$darkMode ? 'dark' : 'light'}` : null))
-    : null;
 
-  // Show pending overlay for just-uploaded preview OR user's existing pending image
-  $: showPendingOverlay = !isCreateMode && (pendingImagePreview || (userPendingImage?.previewUrl && entityImageUrl === userPendingImage.previewUrl));
 
   function handleIconClick() {
     if (canUploadImage) {
@@ -153,14 +119,69 @@
       imageChecked = true;
     }
   }
+  // Can upload when editing existing entity (not create mode) and user is verified
+  let canUploadImage = $derived(isEditMode && !isCreateMode && entityId && user?.verified);
+  // Check if image exists when entity ID changes (client-side only)
+  run(() => {
+    if (browser && entityId && entityId !== lastCheckedId) {
+      lastCheckedId = entityId;
+      imageExists = false;
+      imageChecked = false;
+      pendingImagePreview = null;
+      userPendingImage = null;
+      pendingImageFetched = false;
+
+      // Check image availability using fetch
+      // 200 = image exists, 204 = no image (not an error)
+      fetch(`/api/img/${entityType}/${entityId}`, { method: 'HEAD' })
+        .then(response => {
+          imageExists = response.status === 200;
+          imageChecked = true;
+        })
+        .catch(() => {
+          imageExists = false;
+          imageChecked = true;
+        });
+
+      // Also fetch user's pending image if logged in
+      if (user) {
+        fetchUserPendingImage();
+      }
+    }
+  });
+  // Reset image state in create mode or when no entity is selected
+  run(() => {
+    if (browser && (isCreateMode || !entityId)) {
+      lastCheckedId = null;
+      imageExists = false;
+      imageChecked = false;
+      pendingImagePreview = null;
+      userPendingImage = null;
+      pendingImageFetched = false;
+    }
+  });
+  // Re-fetch pending image when user becomes available (after login)
+  run(() => {
+    if (browser && user && entityId && !pendingImageFetched) {
+      fetchUserPendingImage();
+    }
+  });
+  // Image URL: just uploaded preview > user's pending image > approved image (if exists) > none
+  let entityImageUrl = $derived((!isCreateMode && entityId)
+    ? (pendingImagePreview ||
+      userPendingImage?.previewUrl ||
+      (imageChecked && imageExists ? `/api/img/${entityType}/${entityId}?mode=${$darkMode ? 'dark' : 'light'}` : null))
+    : null);
+  // Show pending overlay for just-uploaded preview OR user's existing pending image
+  let showPendingOverlay = $derived(!isCreateMode && (pendingImagePreview || (userPendingImage?.previewUrl && entityImageUrl === userPendingImage.previewUrl)));
 </script>
 
 <div
   class="entity-icon-wrapper"
   class:editable={canUploadImage}
   class:create-mode={isCreateMode && isEditMode}
-  on:click={handleIconClick}
-  on:keydown={handleKeydown}
+  onclick={handleIconClick}
+  onkeydown={handleKeydown}
   role={canUploadImage ? 'button' : undefined}
   tabindex={canUploadImage ? 0 : undefined}
   title={canUploadImage ? 'Click to upload image' : (isCreateMode && isEditMode ? 'Image upload available after entity is approved' : '')}

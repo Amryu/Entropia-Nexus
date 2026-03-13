@@ -1,31 +1,37 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
 
   import Table from './Table.svelte';
   import { encodeURIComponentSafe, navigate } from '$lib/util';
   import { createEventDispatcher } from 'svelte';
 
-  export let items = [];
-  export let title = '';
-  export let basePath = '';
-  export let tableViewInfo = {};
-  export let favourites = [];
+  /**
+   * @typedef {Object} Props
+   * @property {any} [items]
+   * @property {string} [title]
+   * @property {string} [basePath]
+   * @property {any} [tableViewInfo]
+   * @property {any} [favourites]
+   */
 
-  let search = '';
-  let elements;
-  let activeTab = 'Browse';
+  /** @type {Props} */
+  let {
+    items = [],
+    title = '',
+    basePath = '',
+    tableViewInfo = {},
+    favourites = []
+  } = $props();
 
-  $: {
-    elements = items;
-    elements = elements.sort((a, b) => a.Name.localeCompare(b.Name));
-  }
+  let search = $state('');
+  let elements = $state();
+  let activeTab = $state('Browse');
 
-  let filteredElements;
 
-  $: {
-    const searchTerm = search?.toLowerCase();
-    filteredElements = filterElements(elements, searchTerm);
-  }
+  let filteredElements = $state();
+
 
   const dispatch = createEventDispatcher();
 
@@ -71,6 +77,14 @@
     });
     return result.slice(0, 300);
   }
+  run(() => {
+    elements = items;
+    elements = elements.sort((a, b) => a.Name.localeCompare(b.Name));
+  });
+  run(() => {
+    const searchTerm = search?.toLowerCase();
+    filteredElements = filterElements(elements, searchTerm);
+  });
 </script>
 
 <style>
@@ -132,36 +146,36 @@
   <br />
 
   <div class="tabs">
-    <div class="tab {activeTab === 'Browse' ? 'active' : ''}" on:click={() => activeTab = 'Browse'}>Browse</div>
-    <div class="tab {activeTab === 'Search' ? 'active' : ''}" on:click={() => activeTab = 'Search'}>Search</div>
-    <div class="tab {activeTab === 'Favourites' ? 'active' : ''}" on:click={() => activeTab = 'Favourites'}>Favourites</div>
+    <div class="tab {activeTab === 'Browse' ? 'active' : ''}" onclick={() => activeTab = 'Browse'}>Browse</div>
+    <div class="tab {activeTab === 'Search' ? 'active' : ''}" onclick={() => activeTab = 'Search'}>Search</div>
+    <div class="tab {activeTab === 'Favourites' ? 'active' : ''}" onclick={() => activeTab = 'Favourites'}>Favourites</div>
   </div>
 
   {#if activeTab === 'Browse'}
     <div class="info-container">
-      <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} on:focus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
+      <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} onfocus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
     </div>
 
     <ul class="nested-list">
       {#each filteredElements as item}
         <li class="nested-list-item">
           {#if item.children && item.children.length > 0}
-            <span class="arrow {item.expanded ? 'expanded' : ''}" on:click={() => toggleExpand(item)}>&#9654;</span>
+            <span class="arrow {item.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(item)}>&#9654;</span>
           {/if}
-          <span on:click={() => navigate(getItemLink(item))}>{item.Name}</span>
+          <span onclick={() => navigate(getItemLink(item))}>{item.Name}</span>
           {#if item.expanded && item.children && item.children.length > 0}
             <ul class="nested-list">
               {#each item.children as child}
                 <li class="nested-list-item">
                   {#if child.children && child.children.length > 0}
-                    <span class="arrow {child.expanded ? 'expanded' : ''}" on:click={() => toggleExpand(child)}>&#9654;</span>
+                    <span class="arrow {child.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(child)}>&#9654;</span>
                   {/if}
-                  <span on:click={() => navigate(getItemLink(child))}>{child.Name}</span>
+                  <span onclick={() => navigate(getItemLink(child))}>{child.Name}</span>
                   {#if child.expanded && child.children && child.children.length > 0}
                     <ul class="nested-list">
                       {#each child.children as grandchild}
                         <li class="nested-list-item">
-                          <span on:click={() => navigate(getItemLink(grandchild))}>{grandchild.Name}</span>
+                          <span onclick={() => navigate(getItemLink(grandchild))}>{grandchild.Name}</span>
                         </li>
                       {/each}
                     </ul>
@@ -177,13 +191,13 @@
 
   {#if activeTab === 'Search'}
     <div class="info-container">
-      <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} on:focus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
+      <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} onfocus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
     </div>
 
     <ul class="nested-list">
       {#each getFlatFilteredElements(elements, search.toLowerCase()) as item}
         <li class="nested-list-item">
-          <span on:click={() => navigate(getItemLink(item))}>{item.Name}</span>
+          <span onclick={() => navigate(getItemLink(item))}>{item.Name}</span>
         </li>
       {/each}
     </ul>
@@ -194,22 +208,22 @@
       {#each favourites as item}
         <li class="nested-list-item">
           {#if item.children && item.children.length > 0}
-            <span class="arrow {item.expanded ? 'expanded' : ''}" on:click={() => toggleExpand(item)}>&#9654;</span>
+            <span class="arrow {item.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(item)}>&#9654;</span>
           {/if}
-          <span on:click={() => navigate(getItemLink(item))}>{item.Name}</span>
+          <span onclick={() => navigate(getItemLink(item))}>{item.Name}</span>
           {#if item.expanded && item.children && item.children.length > 0}
             <ul class="nested-list">
               {#each item.children as child}
                 <li class="nested-list-item">
                   {#if child.children && child.children.length > 0}
-                    <span class="arrow {child.expanded ? 'expanded' : ''}" on:click={() => toggleExpand(child)}>&#9654;</span>
+                    <span class="arrow {child.expanded ? 'expanded' : ''}" onclick={() => toggleExpand(child)}>&#9654;</span>
                   {/if}
-                  <span on:click={() => navigate(getItemLink(child))}>{child.Name}</span>
+                  <span onclick={() => navigate(getItemLink(child))}>{child.Name}</span>
                   {#if child.expanded && child.children && child.children.length > 0}
                     <ul class="nested-list">
                       {#each child.children as grandchild}
                         <li class="nested-list-item">
-                          <span on:click={() => navigate(getItemLink(grandchild))}>{grandchild.Name}</span>
+                          <span onclick={() => navigate(getItemLink(grandchild))}>{grandchild.Name}</span>
                         </li>
                       {/each}
                     </ul>

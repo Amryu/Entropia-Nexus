@@ -1,4 +1,5 @@
 <script>
+  import ChangeDataViewer from './ChangeDataViewer.svelte';
   // @ts-nocheck
   import { clickable } from '$lib/actions/clickable.js';
   /**
@@ -20,22 +21,34 @@
   import TextViewerDialog from './TextViewerDialog.svelte';
   import { matchArrayItems, hasChanged, getItemIdentifier } from '$lib/utils/compareJson.js';
 
-  export let data = {};
-  export let previousData = null; // For diff highlighting
-  export let entity = ''; // Entity type for context-aware rendering
-  export let showChangesOnly = false; // Only show fields that changed
-  export let parentField = ''; // Track parent field name for better type inference
+  /**
+   * @typedef {Object} Props
+   * @property {any} [data]
+   * @property {any} [previousData] - For diff highlighting
+   * @property {string} [entity] - Entity type for context-aware rendering
+   * @property {boolean} [showChangesOnly] - Only show fields that changed
+   * @property {string} [parentField] - Track parent field name for better type inference
+   */
 
-  let expandedSections = {};
+  /** @type {Props} */
+  let {
+    data = {},
+    previousData = null,
+    entity = '',
+    showChangesOnly = false,
+    parentField = ''
+  } = $props();
+
+  let expandedSections = $state({});
 
   // Create a key that changes when previousData changes to force diff recalculation
   // This ensures background colors update when switching comparison versions
-  $: previousDataKey = previousData ? JSON.stringify(previousData) : 'none';
+  let previousDataKey = $derived(previousData ? JSON.stringify(previousData) : 'none');
 
   // Text viewer dialog state
-  let showTextDialog = false;
-  let textDialogTitle = '';
-  let textDialogContent = '';
+  let showTextDialog = $state(false);
+  let textDialogTitle = $state('');
+  let textDialogContent = $state('');
 
   // Fields that typically contain long text content
   const longTextFields = ['Description', 'Notes', 'Comment', 'Details', 'Info'];
@@ -232,7 +245,7 @@
     return { type: 'none', oldValue: null };
   }
 
-  $: removedKeys = previousData ? Object.keys(previousData).filter(k => !(k in data)) : [];
+  let removedKeys = $derived(previousData ? Object.keys(previousData).filter(k => !(k in data)) : []);
 
   function getSortedKeys(obj) {
     // Priority keys always come first in this order (Name first for better identification)
@@ -607,7 +620,7 @@
             {/if}
             {getFieldLabel(key)}
             {#if isLongText(value, key)}
-              <button type="button" class="expand-text-btn" on:click={() => openTextDialog(getFieldLabel(key), value)} title="View full text">
+              <button type="button" class="expand-text-btn" onclick={() => openTextDialog(getFieldLabel(key), value)} title="View full text">
                 <span class="expand-text-icon">&#x1F50D;</span>
               </button>
             {/if}
@@ -618,7 +631,7 @@
               <span class="arrow">→</span>
               <span class="new-value">{formatValue(value)}</span>
               {#if isLongText(diffInfo.oldValue, key) || isLongText(value, key)}
-                <button type="button" class="expand-text-btn" on:click={() => openTextDialog(`${getFieldLabel(key)} (Old → New)`, `OLD:\n${diffInfo.oldValue || '<empty>'}\n\n---\n\nNEW:\n${value || '<empty>'}`)} title="View full text comparison">
+                <button type="button" class="expand-text-btn" onclick={() => openTextDialog(`${getFieldLabel(key)} (Old → New)`, `OLD:\n${diffInfo.oldValue || '<empty>'}\n\n---\n\nNEW:\n${value || '<empty>'}`)} title="View full text comparison">
                   <span class="expand-text-icon">&#x1F50D;</span>
                 </button>
               {/if}
@@ -662,7 +675,7 @@
           {/if}
         </div>
       {:else}
-          <div class="field-header" class:changed={diffInfo.type === 'changed'} class:added={diffInfo.type === 'added'} on:click={() => toggleSection(key)} use:clickable role="button" tabindex="0">
+          <div class="field-header" class:changed={diffInfo.type === 'changed'} class:added={diffInfo.type === 'added'} onclick={() => toggleSection(key)} use:clickable role="button" tabindex="0">
           <span class="field-key">
             <span class="expand-icon" class:expanded={isExpanded}>▶</span>
             {#if diffInfo.type !== 'none'}
@@ -730,7 +743,7 @@
                           </div>
                         {:else if sortedKeys.length > 0}
                           <div class="array-item-content nested-content">
-                            <svelte:self
+                            <ChangeDataViewer
                               data={Object.fromEntries(sortedKeys.map(k => [k, item[k]]))}
                               previousData={matchedOld
                                 ? Object.fromEntries(sortedKeys.map(k => [k, matchedOld[k]]))
@@ -750,7 +763,7 @@
               </div>
             {:else if typeof value === 'object'}
               <div class="nested-content">
-                <svelte:self
+                <ChangeDataViewer
                   data={value}
                   previousData={diffInfo.oldValue}
                   {entity}

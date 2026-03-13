@@ -8,14 +8,14 @@
 
   const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
 
-  export let data;
+  let { data } = $props();
 
-  $: service = data.service;
-  $: requests = data.requests || [];
-  $: statusFilter = data.statusFilter;
+  let service = $derived(data.service);
+  let requests = $derived(data.requests || []);
+  let statusFilter = $derived(data.statusFilter);
 
-  let actionLoading = null;
-  let actionError = null;
+  let actionLoading = $state(null);
+  let actionError = $state(null);
 
   const statusOptions = [
     { value: '', label: 'All Statuses' },
@@ -102,12 +102,12 @@
   }
 
   // Group by status - separate questions from actual requests
-  $: questionRequests = requests.filter(r => ['pending', 'negotiating'].includes(r.status) && isQuestion(r));
-  $: pendingRequests = requests.filter(r => ['pending', 'negotiating'].includes(r.status) && !isQuestion(r));
-  $: acceptedRequests = requests.filter(r => r.status === 'accepted');
-  $: inProgressRequests = requests.filter(r => r.status === 'in_progress');
-  $: completedRequests = requests.filter(r => r.status === 'completed');
-  $: otherRequests = requests.filter(r => ['declined', 'cancelled', 'aborted'].includes(r.status));
+  let questionRequests = $derived(requests.filter(r => ['pending', 'negotiating'].includes(r.status) && isQuestion(r)));
+  let pendingRequests = $derived(requests.filter(r => ['pending', 'negotiating'].includes(r.status) && !isQuestion(r)));
+  let acceptedRequests = $derived(requests.filter(r => r.status === 'accepted'));
+  let inProgressRequests = $derived(requests.filter(r => r.status === 'in_progress'));
+  let completedRequests = $derived(requests.filter(r => r.status === 'completed'));
+  let otherRequests = $derived(requests.filter(r => ['declined', 'cancelled', 'aborted'].includes(r.status)));
 </script>
 
 <svelte:head>
@@ -142,7 +142,7 @@
   <div class="controls">
     <div class="filter-group">
       <label for="status-filter">Filter:</label>
-      <select id="status-filter" value={statusFilter || ''} on:change={handleStatusChange}>
+      <select id="status-filter" value={statusFilter || ''} onchange={handleStatusChange}>
         {#each statusOptions as option}
           <option value={option.value}>{option.label}</option>
         {/each}
@@ -194,7 +194,7 @@
                 <button
                   class="btn secondary"
                   disabled={actionLoading === request.id}
-                  on:click={() => updateRequestStatus(request.id, 'cancelled')}
+                  onclick={() => updateRequestStatus(request.id, 'cancelled')}
                 >
                   {actionLoading === request.id ? 'Processing...' : 'Close Question'}
                 </button>
@@ -247,7 +247,7 @@
                   <button
                     class="btn primary"
                     disabled={actionLoading === request.id}
-                    on:click={() => updateRequestStatus(request.id, 'negotiating')}
+                    onclick={() => updateRequestStatus(request.id, 'negotiating')}
                   >
                     {actionLoading === request.id ? 'Processing...' : 'Start Conversation'}
                   </button>
@@ -255,7 +255,7 @@
                   <button
                     class="btn primary"
                     disabled={actionLoading === request.id}
-                    on:click={() => updateRequestStatus(request.id, 'accepted')}
+                    onclick={() => updateRequestStatus(request.id, 'accepted')}
                   >
                     {actionLoading === request.id ? 'Processing...' : 'Accept'}
                   </button>
@@ -264,7 +264,7 @@
                   <button
                     class="btn danger"
                     disabled={actionLoading === request.id}
-                    on:click={() => updateRequestStatus(request.id, 'declined')}
+                    onclick={() => updateRequestStatus(request.id, 'declined')}
                   >
                     Decline
                   </button>
@@ -295,7 +295,7 @@
                   <button
                     class="btn primary"
                     disabled={actionLoading === request.id}
-                    on:click={() => updateRequestStatus(request.id, 'in_progress', { actual_start: new Date().toISOString() })}
+                    onclick={() => updateRequestStatus(request.id, 'in_progress', { actual_start: new Date().toISOString() })}
                   >
                     Start Service
                   </button>
@@ -303,7 +303,7 @@
                 <button
                   class="btn secondary"
                   disabled={actionLoading === request.id}
-                  on:click={() => updateRequestStatus(request.id, 'cancelled')}
+                  onclick={() => updateRequestStatus(request.id, 'cancelled')}
                 >
                   Cancel
                 </button>
@@ -333,7 +333,7 @@
                   <button
                     class="btn primary"
                     disabled={actionLoading === request.id}
-                    on:click={() => goto(`/market/services/my/offers/${service.id}/finish/${request.id}`)}
+                    onclick={() => goto(`/market/services/my/offers/${service.id}/finish/${request.id}`)}
                   >
                     Finish
                   </button>
@@ -342,7 +342,7 @@
                   <button
                     class="btn danger"
                     disabled={actionLoading === request.id}
-                    on:click={() => updateRequestStatus(request.id, 'aborted')}
+                    onclick={() => updateRequestStatus(request.id, 'aborted')}
                   >
                     Abort
                   </button>
@@ -405,7 +405,7 @@
                   <button
                     class="btn secondary"
                     disabled={actionLoading === request.id}
-                    on:click={() => updateRequestStatus(request.id, 'pending')}
+                    onclick={() => updateRequestStatus(request.id, 'pending')}
                   >
                     Reactivate
                   </button>

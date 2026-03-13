@@ -7,21 +7,21 @@
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
   import { clickable } from '$lib/actions/clickable.js';
 
-  $: entityType = $page.params.entityType;
-  $: entityId = $page.params.entityId;
+  let entityType = $derived($page.params.entityType);
+  let entityId = $derived($page.params.entityId);
 
-  let changes = [];
-  let originalVersion = null;
-  let auditHistory = [];
-  let entityName = '';
-  let isLoading = true;
-  let error = null;
+  let changes = $state([]);
+  let originalVersion = $state(null);
+  let auditHistory = $state([]);
+  let entityName = $state('');
+  let isLoading = $state(true);
+  let error = $state(null);
 
   // Diff comparison state
-  let leftVersion = null;  // 'original', 'audit-{timestamp}', or 'change-{id}'
-  let rightVersion = null;
-  let leftData = null;
-  let rightData = null;
+  let leftVersion = $state(null);  // 'original', 'audit-{timestamp}', or 'change-{id}'
+  let rightVersion = $state(null);
+  let leftData = $state(null);
+  let rightData = $state(null);
 
   onMount(async () => {
     await loadEntityHistory();
@@ -161,13 +161,13 @@
     goto(`/admin/changes/${changeId}`);
   }
 
-  $: versionOptions = getVersionOptions();
-  $: wikiLink = entityName ? getTypeLink(entityName, entityType) : null;
+  let versionOptions = $derived(getVersionOptions());
+  let wikiLink = $derived(entityName ? getTypeLink(entityName, entityType) : null);
 
   // Audit data is already schema-validated (extra properties stripped by proxy).
   // Change data from the changes system doesn't have extra API fields.
-  $: normalizedLeft = leftData ? JSON.parse(JSON.stringify(leftData)) : null;
-  $: normalizedRight = rightData ? JSON.parse(JSON.stringify(rightData)) : null;
+  let normalizedLeft = $derived(leftData ? JSON.parse(JSON.stringify(leftData)) : null);
+  let normalizedRight = $derived(rightData ? JSON.parse(JSON.stringify(rightData)) : null);
 </script>
 
 <svelte:head>
@@ -488,7 +488,7 @@
           {/if}
         </div>
       </div>
-      <button class="back-btn" on:click={goBack}>Back to Search</button>
+      <button class="back-btn" onclick={goBack}>Back to Search</button>
     </div>
 
     {#if changes.length === 0 && auditHistory.length === 0}
@@ -513,7 +513,7 @@
           {/if}
 
           {#each changes as change}
-            <div class="timeline-item" use:clickable on:click={() => viewChange(change.id)}>
+            <div class="timeline-item" use:clickable onclick={() => viewChange(change.id)}>
               <div class="timeline-marker change"></div>
               <div class="timeline-content">
                 <div class="timeline-title">
@@ -536,7 +536,7 @@
             <div class="comparison-header">
               <div class="version-select-group">
                 <label>Left (Previous)</label>
-                <select class="version-select" value={leftVersion} on:change={(e) => setLeftVersion(e.target.value)}>
+                <select class="version-select" value={leftVersion} onchange={(e) => setLeftVersion(e.target.value)}>
                   <option value="">Select version...</option>
                   {#each versionOptions as option}
                     <option value={option.value}>{option.label}</option>
@@ -545,7 +545,7 @@
               </div>
               <div class="version-select-group">
                 <label>Right (Current)</label>
-                <select class="version-select" value={rightVersion} on:change={(e) => setRightVersion(e.target.value)}>
+                <select class="version-select" value={rightVersion} onchange={(e) => setRightVersion(e.target.value)}>
                   <option value="">Select version...</option>
                   {#each versionOptions as option}
                     <option value={option.value}>{option.label}</option>

@@ -5,16 +5,16 @@
   import { goto } from '$app/navigation';
   import { apiPost } from '$lib/util';
 
-  export let data;
+  let { data } = $props();
 
-  $: services = data.services || [];
+  let services = $derived(data.services || []);
 
-  let sourceServiceId = null;
-  let targetServiceIds = [];
-  let syncMode = 'copy'; // 'copy' or 'new'
-  let loading = false;
-  let error = null;
-  let success = false;
+  let sourceServiceId = $state(null);
+  let targetServiceIds = $state([]);
+  let syncMode = $state('copy'); // 'copy' or 'new'
+  let loading = $state(false);
+  let error = $state(null);
+  let success = $state(false);
 
   function toggleTarget(serviceId) {
     if (targetServiceIds.includes(serviceId)) {
@@ -151,8 +151,8 @@
         <div class="section-header">
           <h2>Target Services</h2>
           <div class="select-actions">
-            <button type="button" class="text-btn" on:click={selectAllTargets}>Select all</button>
-            <button type="button" class="text-btn" on:click={deselectAllTargets}>Deselect all</button>
+            <button type="button" class="text-btn" onclick={selectAllTargets}>Select all</button>
+            <button type="button" class="text-btn" onclick={deselectAllTargets}>Deselect all</button>
           </div>
         </div>
         <p class="section-description">Select which services should receive the new availability</p>
@@ -162,7 +162,7 @@
               <input
                 type="checkbox"
                 checked={targetServiceIds.includes(service.id)}
-                on:change={() => toggleTarget(service.id)}
+                onchange={() => toggleTarget(service.id)}
               />
               <span class="service-title">{service.title}</span>
               <span class="service-type">{getServiceTypeLabel(service.type)}</span>
@@ -177,7 +177,7 @@
           type="button"
           class="btn primary"
           disabled={loading || targetServiceIds.length === 0 || (syncMode === 'copy' && !sourceServiceId)}
-          on:click={handleSync}
+          onclick={handleSync}
         >
           {loading ? 'Syncing...' : `Sync to ${targetServiceIds.length} service${targetServiceIds.length !== 1 ? 's' : ''}`}
         </button>

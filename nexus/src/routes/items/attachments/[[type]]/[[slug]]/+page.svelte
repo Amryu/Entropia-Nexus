@@ -6,6 +6,8 @@
   Supports full wiki editing (except enhancers, which are database-generated).
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -46,56 +48,62 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: attachment = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: effectsList = data.effects || [];
+  let attachment = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let effectsList = $derived(data.effects || []);
 
   // Local filter state - decoupled from URL
-  let selectedFilter = null;
-  let filterInitialized = false;
+  let selectedFilter = $state(null);
+  let filterInitialized = $state(false);
 
-  $: if (!filterInitialized) {
-    selectedFilter = additional.type || null;
-    filterInitialized = true;
-  }
-
-  $: if (filterInitialized && !attachment && !isCreateMode) {
-    if ((additional.type || null) !== selectedFilter) {
+  run(() => {
+    if (!filterInitialized) {
       selectedFilter = additional.type || null;
+      filterInitialized = true;
     }
-  }
-  $: attachmentEntityId = attachment?.Id ?? attachment?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, attachmentEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  });
+
+  run(() => {
+    if (filterInitialized && !attachment && !isCreateMode) {
+      if ((additional.type || null) !== selectedFilter) {
+        selectedFilter = additional.type || null;
+      }
+    }
+  });
+  let attachmentEntityId = $derived(attachment?.Id ?? attachment?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, attachmentEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Permission check - verified users and admins can edit
   // Enhancers are generated in the database and should not be editable
-  $: canEdit = (user?.verified || user?.grants?.includes('wiki.edit')) && additional.type !== 'enhancers';
+  let canEdit = $derived((user?.verified || user?.grants?.includes('wiki.edit')) && additional.type !== 'enhancers');
 
   // For multi-type pages, data.items is an object keyed by type
-  $: allItems = (() => {
+  let allItems = $derived((() => {
     if (!data.items) return [];
     if (selectedFilter && data.items[selectedFilter]) {
       return data.items[selectedFilter];
@@ -108,7 +116,7 @@
       }
     }
     return combined;
-  })();
+  })());
 
   // Type navigation buttons
   const typeButtons = [
@@ -215,27 +223,31 @@
 
   // ========== WIKI EDIT STATE ==========
   // Initialize edit state when user/entity changes
-  $: if (user) {
-    const entityType = getEntityType(additional.type);
-    const emptyEntity = getEmptyEntity(additional.type);
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(attachment || emptyEntity, entityType, isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const entityType = getEntityType(additional.type);
+      const emptyEntity = getEmptyEntity(additional.type);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(attachment || emptyEntity, entityType, isCreateMode, editChange);
+    }
+  });
 
   // Set pending change when it exists
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
-  $: activeEntity = $editMode
+  let activeEntity = $derived($editMode
     ? $currentEntity
     : $viewingPendingChange && $existingPendingChange?.data
       ? $existingPendingChange.data
-      : attachment;
+      : attachment);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -243,16 +255,16 @@
   });
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - uses selectedFilter for active state (local, not URL-based)
-  $: navFilters = typeButtons.map(btn => ({
+  let navFilters = $derived(typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
     active: selectedFilter === btn.type,
     href: selectedFilter === btn.type ? '/items/attachments' : `/items/attachments/${btn.type}`
-  }));
+  })));
 
   // Full column definitions for attachments
   const columnDefs = {
@@ -326,10 +338,10 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(selectedFilter);
-  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
+  let navTableColumns = $derived(getNavTableColumns(selectedFilter));
+  let navFullWidthColumns = $derived(getNavFullWidthColumns(selectedFilter));
   const allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `attachments-${selectedFilter || 'all'}`;
+  let navPageTypeId = $derived(`attachments-${selectedFilter || 'all'}`);
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -341,48 +353,48 @@
   }
 
   // Base path for navigation - uses selectedFilter so it persists
-  $: effectiveBasePath = selectedFilter
+  let effectiveBasePath = $derived(selectedFilter
     ? `/items/attachments/${selectedFilter}`
-    : '/items/attachments';
+    : '/items/attachments');
 
   // Create categories for the "New" dropdown (exclude enhancers which are database-generated)
-  $: createCategories = typeButtons
+  let createCategories = $derived(typeButtons
     .filter(btn => btn.type !== 'enhancers')
     .map(btn => ({
       label: getTypeName(btn.type),
       href: `/items/attachments/${btn.type}`
-    }));
+    })));
 
   // Filter pending creates by selected filter type
-  $: filteredPendingCreates = selectedFilter
+  let filteredPendingCreates = $derived(selectedFilter
     ? (userPendingCreates || []).filter(change => {
         const entityType = getEntityType(selectedFilter);
         return change.entity === entityType;
       })
-    : userPendingCreates || [];
+    : userPendingCreates || []);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Attachments', href: '/items/attachments' },
     ...(additional.type ? [{ label: getTypeName(additional.type) + 's', href: `/items/attachments/${additional.type}` }] : []),
     ...(attachment ? [{ label: attachment.Name }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = attachment?.Properties?.Description ||
-    `${attachment?.Name || 'Attachment'} - ${getTypeName(additional.type)} in Entropia Universe.`;
+  let seoDescription = $derived(attachment?.Properties?.Description ||
+    `${attachment?.Name || 'Attachment'} - ${getTypeName(additional.type)} in Entropia Universe.`);
 
-  $: canonicalUrl = attachment
+  let canonicalUrl = $derived(attachment
     ? `https://entropianexus.com/items/attachments/${additional.type}/${encodeURIComponentSafe(attachment.Name)}`
     : additional.type
     ? `https://entropianexus.com/items/attachments/${additional.type}`
-    : 'https://entropianexus.com/items/attachments';
+    : 'https://entropianexus.com/items/attachments');
 
   // Image URL for SEO
-  $: entityImageUrl = attachment?.Id && additional.type
+  let entityImageUrl = $derived(attachment?.Id && additional.type
     ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${attachment.Id}`
-    : null;
+    : null);
 
   // ========== CALCULATION FUNCTIONS ==========
   function getCost(item) {
@@ -464,17 +476,17 @@
   }
 
   // ========== COMPUTED VALUES ========== (use activeEntity for live updates)
-  $: cost = getCost(activeEntity);
-  $: totalUses = getTotalUses(activeEntity);
-  $: totalDamage = getTotalDamage(activeEntity);
-  $: dpp = getDPP(activeEntity);
-  $: totalDefense = getTotalDefense(activeEntity);
-  $: maxArmorDecay = getMaxArmorDecay(activeEntity);
-  $: totalAbsorptionVal = getTotalAbsorption(activeEntity);
-  $: enhancerEffect = getEnhancerEffect(activeEntity);
+  let cost = $derived(getCost(activeEntity));
+  let totalUses = $derived(getTotalUses(activeEntity));
+  let totalDamage = $derived(getTotalDamage(activeEntity));
+  let dpp = $derived(getDPP(activeEntity));
+  let totalDefense = $derived(getTotalDefense(activeEntity));
+  let maxArmorDecay = $derived(getMaxArmorDecay(activeEntity));
+  let totalAbsorptionVal = $derived(getTotalAbsorption(activeEntity));
+  let enhancerEffect = $derived(getEnhancerEffect(activeEntity));
 
   // Check for effects
-  $: hasEquipEffects = activeEntity?.EffectsOnEquip?.length > 0;
+  let hasEquipEffects = $derived(activeEntity?.EffectsOnEquip?.length > 0);
 
   // Damage types with values for display
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
@@ -489,12 +501,12 @@
   ];
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     damage: true,
     defense: true,
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -709,7 +721,7 @@
                         value={activeEntity?.Properties?.Economy?.Absorption != null
                           ? (activeEntity.Properties.Economy.Absorption * 100).toFixed(1)
                           : ''}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           const value = e.target.value === '' ? null : parseFloat(e.target.value) / 100;
                           updateField('Properties.Economy.Absorption', value);
                         }}
@@ -834,7 +846,7 @@
                         value={activeEntity?.Properties?.Economy?.Absorption != null
                           ? (activeEntity.Properties.Economy.Absorption * 100).toFixed(1)
                           : ''}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           const value = e.target.value === '' ? null : parseFloat(e.target.value) / 100;
                           updateField('Properties.Economy.Absorption', value);
                         }}

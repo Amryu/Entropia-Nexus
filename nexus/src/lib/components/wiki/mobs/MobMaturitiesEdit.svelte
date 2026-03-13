@@ -5,21 +5,35 @@
   Following the editConfig pattern from mobs-legacy.
 -->
 <script>
+  import { stopPropagation, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { editMode, updateField, currentEntity, originalEntity } from '$lib/stores/wikiEditState.js';
 
-  /** @type {Array} Maturities array from the mob */
-  export let maturities = [];
+  
 
-  /** @type {string} Mob type (Animal, Mutant, Robot, Asteroid) */
-  export let type = null;
+  
 
-  /** @type {string} Mob name (for NameMode preview) */
-  export let mobName = '';
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldPath = 'Maturities';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [maturities]
+   * @property {string} [type]
+   * @property {string} [mobName]
+   * @property {string} [fieldPath]
+   */
+
+  /** @type {Props} */
+  let {
+    maturities = [],
+    type = null,
+    mobName = '',
+    fieldPath = 'Maturities'
+  } = $props();
 
   const NAME_MODES = [
     { value: null, label: '—' },
@@ -57,10 +71,10 @@
   // Attack name presets
   const ATTACK_NAMES = ['Primary', 'Secondary', 'Tertiary', 'Quaternary', 'Quinary', 'Senary'];
 
-  $: isAsteroid = type === 'Asteroid';
+  let isAsteroid = $derived(type === 'Asteroid');
 
   // Track open copy menus (by matIndex-attackIndex)
-  let openCopyMenu = null;
+  let openCopyMenu = $state(null);
 
   // UID tracking for maturity identity (survives reordering)
   let uidCounter = 0;
@@ -74,7 +88,7 @@
   }
 
   // Track which maturity panels are expanded (by UID)
-  let expandedMaturities = {};
+  let expandedMaturities = $state({});
 
   // Sort comparator: Level ascending, Health secondary, Bosses at bottom, nulls at end
   function maturitySortComparator(a, b) {
@@ -387,7 +401,7 @@
   }
 </script>
 
-<svelte:window on:click={closeCopyMenu} />
+<svelte:window onclick={closeCopyMenu} />
 
 <div class="maturities-edit">
   <div class="section-header">
@@ -400,7 +414,7 @@
         <div class="maturity-header">
           <button
             class="maturity-header-toggle"
-            on:click={() => toggleMaturity(maturity)}
+            onclick={() => toggleMaturity(maturity)}
             type="button"
           >
             <span class="expand-icon">{expandedMaturities[getUid(maturity)] ? '▼' : '▶'}</span>
@@ -413,7 +427,7 @@
           <div class="maturity-actions">
             <button
               class="btn-icon danger"
-              on:click|stopPropagation={() => removeMaturity(maturity)}
+              onclick={stopPropagation(() => removeMaturity(maturity))}
               title="Remove maturity"
               type="button"
             >×</button>
@@ -431,7 +445,7 @@
                   <input
                     type="text"
                     value={maturity.Name || ''}
-                    on:input={(e) => updateMaturityField(matIndex, 'Name', e.target.value)}
+                    oninput={(e) => updateMaturityField(matIndex, 'Name', e.target.value)}
                     placeholder="e.g., Young, Mature, Old"
                   />
                 </label>
@@ -439,7 +453,7 @@
                   <span class="field-label">Name Mode</span>
                   <select
                     value={maturity.NameMode || ''}
-                    on:change={(e) => updateMaturityField(matIndex, 'NameMode', e.target.value || null)}
+                    onchange={(e) => updateMaturityField(matIndex, 'NameMode', e.target.value || null)}
                   >
                     {#each NAME_MODES as mode}
                       <option value={mode.value || ''}>{mode.label}</option>
@@ -455,7 +469,7 @@
                   <input
                     type="number"
                     value={maturity.Properties?.Level ?? ''}
-                    on:input={(e) => updateMaturityField(matIndex, 'Properties.Level', e.target.value ? parseInt(e.target.value) : null)}
+                    oninput={(e) => updateMaturityField(matIndex, 'Properties.Level', e.target.value ? parseInt(e.target.value) : null)}
                     min="1"
                   />
                 </label>
@@ -464,7 +478,7 @@
                   <input
                     type="number"
                     value={maturity.Properties?.Health ?? ''}
-                    on:input={(e) => updateMaturityField(matIndex, 'Properties.Health', e.target.value ? parseInt(e.target.value) : null)}
+                    oninput={(e) => updateMaturityField(matIndex, 'Properties.Health', e.target.value ? parseInt(e.target.value) : null)}
                     min="1"
                   />
                 </label>
@@ -473,7 +487,7 @@
                     <input
                       type="checkbox"
                       checked={maturity.Properties?.Boss || false}
-                      on:change={(e) => updateMaturityField(matIndex, 'Properties.Boss', e.target.checked)}
+                      onchange={(e) => updateMaturityField(matIndex, 'Properties.Boss', e.target.checked)}
                     />
                     <span class="field-label">Boss</span>
                   </label>
@@ -489,7 +503,7 @@
                       <input
                         type="number"
                         value={maturity.Properties?.Attributes?.[attr] ?? ''}
-                        on:input={(e) => updateMaturityField(matIndex, `Properties.Attributes.${attr}`, e.target.value ? parseInt(e.target.value) : null)}
+                        oninput={(e) => updateMaturityField(matIndex, `Properties.Attributes.${attr}`, e.target.value ? parseInt(e.target.value) : null)}
                         min="0"
                       />
                     </label>
@@ -508,7 +522,7 @@
                     <input
                       type="number"
                       value={maturity.Properties?.RegenerationInterval ?? ''}
-                      on:input={(e) => updateMaturityField(matIndex, 'Properties.RegenerationInterval', e.target.value ? parseFloat(e.target.value) : null)}
+                      oninput={(e) => updateMaturityField(matIndex, 'Properties.RegenerationInterval', e.target.value ? parseFloat(e.target.value) : null)}
                       step="0.1"
                       min="0"
                     />
@@ -518,7 +532,7 @@
                     <input
                       type="number"
                       value={maturity.Properties?.RegenerationAmount ?? ''}
-                      on:input={(e) => updateMaturityField(matIndex, 'Properties.RegenerationAmount', e.target.value ? parseFloat(e.target.value) : null)}
+                      oninput={(e) => updateMaturityField(matIndex, 'Properties.RegenerationAmount', e.target.value ? parseFloat(e.target.value) : null)}
                       step="0.1"
                       min="0"
                     />
@@ -528,7 +542,7 @@
                     <input
                       type="number"
                       value={maturity.Properties?.MissChance ?? ''}
-                      on:input={(e) => updateMaturityField(matIndex, 'Properties.MissChance', e.target.value ? parseFloat(e.target.value) : null)}
+                      oninput={(e) => updateMaturityField(matIndex, 'Properties.MissChance', e.target.value ? parseFloat(e.target.value) : null)}
                       step="0.1"
                       min="0"
                       max="100"
@@ -545,7 +559,7 @@
                       <input
                         type="number"
                         value={maturity.Properties?.Defense?.[dmgType.key] ?? ''}
-                        on:input={(e) => updateMaturityField(matIndex, `Properties.Defense.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : 0)}
+                        oninput={(e) => updateMaturityField(matIndex, `Properties.Defense.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : 0)}
                         step="0.1"
                         min="0"
                       />
@@ -562,7 +576,7 @@
                     <input
                       type="checkbox"
                       checked={maturity.Properties?.Taming?.IsTameable || false}
-                      on:change={(e) => {
+                      onchange={(e) => {
                         updateMaturityField(matIndex, 'Properties.Taming.IsTameable', e.target.checked);
                         if (e.target.checked) {
                           updateMaturityField(matIndex, 'Properties.Taming.TamingLevel', 1);
@@ -578,7 +592,7 @@
                     <input
                       type="number"
                       value={maturity.Properties?.Taming?.TamingLevel ?? ''}
-                      on:input={(e) => updateMaturityField(matIndex, 'Properties.Taming.TamingLevel', e.target.value ? parseInt(e.target.value) : null)}
+                      oninput={(e) => updateMaturityField(matIndex, 'Properties.Taming.TamingLevel', e.target.value ? parseInt(e.target.value) : null)}
                       min="1"
                       disabled={!maturity.Properties?.Taming?.IsTameable}
                     />
@@ -602,7 +616,7 @@
                         <span class="attack-name-title">{getAttackName(attackIndex)}</span>
                         <button
                           class="btn-icon danger small"
-                          on:click={() => removeAttack(matIndex, attackIndex)}
+                          onclick={() => removeAttack(matIndex, attackIndex)}
                           title="Remove attack"
                           type="button"
                         >×</button>
@@ -613,7 +627,7 @@
                           <input
                             type="number"
                             value={attack.TotalDamage ?? ''}
-                            on:input={(e) => updateAttackField(matIndex, attackIndex, 'TotalDamage', e.target.value ? parseFloat(e.target.value) : null)}
+                            oninput={(e) => updateAttackField(matIndex, attackIndex, 'TotalDamage', e.target.value ? parseFloat(e.target.value) : null)}
                             step="0.1"
                             min="0"
                           />
@@ -622,7 +636,7 @@
                           <input
                             type="checkbox"
                             checked={attack.IsAoE || false}
-                            on:change={(e) => updateAttackField(matIndex, attackIndex, 'IsAoE', e.target.checked)}
+                            onchange={(e) => updateAttackField(matIndex, attackIndex, 'IsAoE', e.target.checked)}
                           />
                           <span class="field-label-mini">AoE</span>
                         </label>
@@ -634,33 +648,33 @@
                             <div class="copy-menu-wrapper">
                               <button
                                 class="btn-copy"
-                                on:click|stopPropagation={() => toggleCopyMenu(matIndex, attackIndex)}
+                                onclick={stopPropagation(() => toggleCopyMenu(matIndex, attackIndex))}
                                 type="button"
                               >Copy...</button>
                               {#if showCopyMenu}
-                                  <div class="copy-menu" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
+                                  <div class="copy-menu" onclick={stopPropagation(bubble('click'))} onkeydown={stopPropagation(bubble('keydown'))} role="presentation">
                                   {#if matIndex > 0 && hasPrevData}
-                                    <button type="button" on:click={() => copyComposition(matIndex - 1, attackIndex, matIndex, attackIndex)}>
+                                    <button type="button" onclick={() => copyComposition(matIndex - 1, attackIndex, matIndex, attackIndex)}>
                                       from Previous
                                     </button>
                                   {/if}
                                   {#if matIndex > 0 && hasCurrentData}
-                                    <button type="button" on:click={() => copyComposition(matIndex, attackIndex, matIndex - 1, attackIndex)}>
+                                    <button type="button" onclick={() => copyComposition(matIndex, attackIndex, matIndex - 1, attackIndex)}>
                                       to Previous
                                     </button>
                                   {/if}
                                   {#if matIndex < maturities.length - 1 && hasNextData}
-                                    <button type="button" on:click={() => copyComposition(matIndex + 1, attackIndex, matIndex, attackIndex)}>
+                                    <button type="button" onclick={() => copyComposition(matIndex + 1, attackIndex, matIndex, attackIndex)}>
                                       from Next
                                     </button>
                                   {/if}
                                   {#if matIndex < maturities.length - 1 && hasCurrentData}
-                                    <button type="button" on:click={() => copyComposition(matIndex, attackIndex, matIndex + 1, attackIndex)}>
+                                    <button type="button" onclick={() => copyComposition(matIndex, attackIndex, matIndex + 1, attackIndex)}>
                                       to Next
                                     </button>
                                   {/if}
                                   {#if hasCurrentData && maturities.length > 1}
-                                    <button type="button" on:click={() => copyToAll(matIndex, attackIndex)}>
+                                    <button type="button" onclick={() => copyToAll(matIndex, attackIndex)}>
                                       to All
                                     </button>
                                   {/if}
@@ -679,7 +693,7 @@
                               <input
                                 type="number"
                                 value={attack.Damage?.[dmgType.key] ?? ''}
-                                on:input={(e) => updateAttackField(matIndex, attackIndex, `Damage.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : null)}
+                                oninput={(e) => updateAttackField(matIndex, attackIndex, `Damage.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : null)}
                                 step="0.1"
                                 min="0"
                                 max="100"
@@ -690,7 +704,7 @@
                       </div>
                     </div>
                   {/each}
-                  <button class="btn-add" on:click={() => addAttack(matIndex)} type="button">
+                  <button class="btn-add" onclick={() => addAttack(matIndex)} type="button">
                     <span>+</span> Add Attack
                   </button>
                 </div>
@@ -701,7 +715,7 @@
       </div>
     {/each}
 
-    <button class="btn-add" on:click={addMaturity} type="button">
+    <button class="btn-add" onclick={addMaturity} type="button">
       <span>+</span> Add Maturity
     </button>
   </div>

@@ -12,47 +12,63 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {boolean} Whether dialog is open */
-  export let open = false;
+  
 
-  /** @type {string} Entity type (e.g., 'weapon') */
-  export let entityType = '';
+  
 
-  /** @type {string|number} Entity ID */
-  export let entityId = '';
+  
 
-  /** @type {string} Entity name for display */
-  export let entityName = '';
-  /** @type {boolean} Show delete option (user images) */
-  export let showDelete = false;
-  /** @type {boolean} Whether entity currently has an image */
-  export let hasImage = false;
+  
+  
+  
 
-  /** @type {number} Crop aspect ratio (width/height). Default 1 = square */
-  export let aspect = 1;
+  
 
-  /** @type {number} Maximum output width */
-  export let maxWidth = 320;
+  
 
-  /** @type {number} Maximum output height */
-  export let maxHeight = 320;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [open]
+   * @property {string} [entityType]
+   * @property {string|number} [entityId]
+   * @property {string} [entityName]
+   * @property {boolean} [showDelete]
+   * @property {boolean} [hasImage]
+   * @property {number} [aspect]
+   * @property {number} [maxWidth]
+   * @property {number} [maxHeight]
+   */
+
+  /** @type {Props} */
+  let {
+    open = false,
+    entityType = '',
+    entityId = '',
+    entityName = '',
+    showDelete = false,
+    hasImage = false,
+    aspect = 1,
+    maxWidth = 320,
+    maxHeight = 320
+  } = $props();
 
   // State
-  let fileInput;
-  let imageSrc = '';
-  let crop = { x: 0, y: 0 };
-  let zoom = 1;
-  let croppedAreaPixels = null;
-  let uploading = false;
-  let error = '';
-  let step = 'select'; // 'select', 'crop', 'uploading'
-  let mode = 'upload'; // 'upload' or 'existing'
+  let fileInput = $state();
+  let imageSrc = $state('');
+  let crop = $state({ x: 0, y: 0 });
+  let zoom = $state(1);
+  let croppedAreaPixels = $state(null);
+  let uploading = $state(false);
+  let error = $state('');
+  let step = $state('select'); // 'select', 'crop', 'uploading'
+  let mode = $state('upload'); // 'upload' or 'existing'
 
   // "Use Existing" state
-  let searchQuery = '';
-  let searchResults = [];
-  let selectedSource = null;
-  let searching = false;
+  let searchQuery = $state('');
+  let searchResults = $state([]);
+  let selectedSource = $state(null);
+  let searching = $state(false);
   let searchTimer = null;
 
   function handleClose() {
@@ -341,14 +357,14 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div class="dialog-header">
         <h2 id="dialog-title">{step === 'select' && mode === 'existing' ? 'Link Existing Image' : 'Upload Image'}</h2>
-        <button class="close-btn" on:click={handleClose} aria-label="Close">
+        <button class="close-btn" onclick={handleClose} aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
@@ -362,12 +378,12 @@
             <button
               class="mode-tab"
               class:active={mode === 'upload'}
-              on:click={() => { mode = 'upload'; error = ''; }}
+              onclick={() => { mode = 'upload'; error = ''; }}
             >Upload New</button>
             <button
               class="mode-tab"
               class:active={mode === 'existing'}
-              on:click={() => { mode = 'existing'; error = ''; }}
+              onclick={() => { mode = 'existing'; error = ''; }}
             >Use Existing</button>
           </div>
 
@@ -377,7 +393,7 @@
                 bind:this={fileInput}
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/gif"
-                on:change={handleFileSelect}
+                onchange={handleFileSelect}
                 class="file-input"
                 id="image-upload"
               />
@@ -399,7 +415,7 @@
                 class="search-input"
                 placeholder="Search by name..."
                 bind:value={searchQuery}
-                on:input={handleSearchInput}
+                oninput={handleSearchInput}
               />
 
               {#if searching}
@@ -414,16 +430,16 @@
                     <div
                       class="search-result"
                       class:selected={selectedSource?.entityId === result.entityId}
-                      on:click={() => { selectedSource = result; error = ''; }}
+                      onclick={() => { selectedSource = result; error = ''; }}
                       role="button"
                       tabindex="0"
-                      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { selectedSource = result; error = ''; } }}
+                      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { selectedSource = result; error = ''; } }}
                     >
                       <img
                         src={result.thumbUrl}
                         alt=""
                         class="result-thumb"
-                        on:error={(e) => { e.target.style.display = 'none'; }}
+                        onerror={(e) => { e.target.style.display = 'none'; }}
                       />
                       <span class="result-name">{result.entityName}</span>
                     </div>
@@ -484,23 +500,23 @@
 
       <div class="dialog-footer">
         {#if step === 'crop'}
-          <button class="btn btn-secondary" on:click={() => { step = 'select'; imageSrc = ''; }}>
+          <button class="btn btn-secondary" onclick={() => { step = 'select'; imageSrc = ''; }}>
             Back
           </button>
-          <button class="btn btn-primary" on:click={handleUpload} disabled={uploading || !croppedAreaPixels}>
+          <button class="btn btn-primary" onclick={handleUpload} disabled={uploading || !croppedAreaPixels}>
             Upload
           </button>
         {:else if step === 'select'}
           {#if showDelete && mode === 'upload'}
-            <button class="btn btn-danger" on:click={handleDelete} disabled={uploading || !hasImage}>
+            <button class="btn btn-danger" onclick={handleDelete} disabled={uploading || !hasImage}>
               Delete Image
             </button>
           {/if}
-          <button class="btn btn-secondary" on:click={handleClose}>
+          <button class="btn btn-secondary" onclick={handleClose}>
             Cancel
           </button>
           {#if mode === 'existing'}
-            <button class="btn btn-primary" on:click={handleLink} disabled={uploading || !selectedSource}>
+            <button class="btn btn-primary" onclick={handleLink} disabled={uploading || !selectedSource}>
               Link
             </button>
           {/if}

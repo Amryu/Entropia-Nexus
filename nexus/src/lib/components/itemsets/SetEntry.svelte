@@ -11,14 +11,20 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {object} Set entry: { setType, setId, setName, gender?, pieces[] } */
-  export let entry;
+  
 
-  /** @type {boolean} Whether pieces are shown expanded */
-  export let expanded = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} Set entry: { setType, setId, setName, gender?, pieces[] } entry
+   * @property {boolean} [expanded]
+   */
 
-  $: pieces = entry?.pieces || [];
-  $: hasPieces = pieces.length > 0;
+  /** @type {Props} */
+  let { entry, expanded = $bindable(false) } = $props();
+
+  let pieces = $derived(entry?.pieces || []);
+  let hasPieces = $derived(pieces.length > 0);
 
   function toggleExpanded() {
     expanded = !expanded;
@@ -43,12 +49,12 @@
 
 <div class="set-entry">
   <div class="set-header">
-    <button class="btn-remove" on:click={remove} title="Remove set">
+    <button class="btn-remove" onclick={remove} title="Remove set">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
       </svg>
     </button>
-    <div class="set-info" on:click={toggleExpanded} role="button" tabindex="0" on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleExpanded()}>
+    <div class="set-info" onclick={toggleExpanded} role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleExpanded()}>
       <span class="set-type-badge">{entry.setType === 'ArmorSet' ? 'Armor' : 'Clothing'}</span>
       <span class="set-name">{entry.setName}</span>
       <span class="set-piece-count">{pieces.length}pc</span>
@@ -63,7 +69,7 @@
     <select
       class="gender-select"
       value={entry.gender || ''}
-      on:change={(e) => updateGender(e.target.value)}
+      onchange={(e) => updateGender(e.target.value)}
     >
       <option value="">Gender...</option>
       <option value="Male">Male</option>
@@ -87,7 +93,7 @@
               min="0"
               step="0.01"
               placeholder="0.00"
-              on:change={(e) => updatePieceMeta(idx, 'currentTT', e.target.value === '' ? null : Number(e.target.value))}
+              onchange={(e) => updatePieceMeta(idx, 'currentTT', e.target.value === '' ? null : Number(e.target.value))}
             />
           </div>
         </div>

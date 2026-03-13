@@ -5,6 +5,8 @@
   In edit mode, clicking the icon opens the image upload dialog.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
   import { browser } from '$app/environment';
@@ -13,69 +15,73 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {object|null} Entity object */
-  export let entity = null;
+  
 
-  /** @type {string} Entity name (fallback if entity is null) */
-  export let name = '';
+  
 
-  /** @type {string} Entity type label (e.g., "Melee Weapon") */
-  export let type = '';
+  
 
-  /** @type {string} Entity subtype/class (e.g., "Sword") */
-  export let subtype = '';
+  
 
-  /** @type {string|null} Image URL */
-  export let imageUrl = null;
+  
 
-  /** @type {Array} Key stats to display [{label, value, suffix?}] */
-  export let stats = [];
+  
 
-  /** @type {boolean} Whether to show in compact/horizontal mode */
-  export let compact = false;
+  
 
-  /** @type {string} Layout variant: 'default', 'floating', 'card' */
-  export let variant = 'default';
+  
 
-  /** @type {string} Entity type for uploads (e.g., 'weapon') */
-  export let entityType = '';
+  
 
-  /** @type {string|number|null} Entity ID for uploads */
-  export let entityId = null;
+  
 
-  /** @type {object|null} Current user session */
-  export let user = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object|null} [entity]
+   * @property {string} [name]
+   * @property {string} [type]
+   * @property {string} [subtype]
+   * @property {string|null} [imageUrl]
+   * @property {Array} Key stats to display [{label, value, suffix?} [stats]
+   * @property {boolean} [compact]
+   * @property {string} [variant]
+   * @property {string} [entityType]
+   * @property {string|number|null} [entityId]
+   * @property {object|null} [user]
+   * @property {import('svelte').Snippet} [extra]
+   */
+
+  /** @type {Props} */
+  let {
+    entity = null,
+    name = '',
+    type = '',
+    subtype = '',
+    imageUrl = null,
+    stats = [],
+    compact = false,
+    variant = 'default',
+    entityType = '',
+    entityId = null,
+    user = null,
+    extra
+  } = $props();
 
   // Image upload dialog state
-  let showUploadDialog = false;
-  let pendingImagePreview = null;
-  let imageLoadFailed = false;
+  let showUploadDialog = $state(false);
+  let pendingImagePreview = $state(null);
+  let imageLoadFailed = $state(false);
 
   // User's pending image (fetched from server)
-  let userPendingImage = null;
-  let pendingImageChecked = false;
-  let lastCheckedEntityId = null;
-  let uploadAutoApproved = false;
+  let userPendingImage = $state(null);
+  let pendingImageChecked = $state(false);
+  let lastCheckedEntityId = $state(null);
+  let uploadAutoApproved = $state(false);
 
-  $: displayName = entity?.Name || name;
-  $: displayType = entity?.Properties?.Type || type;
-  $: displaySubtype = entity?.Properties?.Class || subtype;
 
-  // Can upload only when editing an existing entity (not create mode) and user is verified
-  $: canUpload = $editMode && !$isCreateMode && entityId && user?.verified;
 
-  // Reset image load state when imageUrl changes
-  $: if (imageUrl) {
-    imageLoadFailed = false;
-  }
 
-  // Fetch user's pending image when entity changes (if user is logged in)
-  $: if (browser && user && entityType && entityId && entityId !== lastCheckedEntityId) {
-    lastCheckedEntityId = entityId;
-    pendingImageChecked = false;
-    userPendingImage = null;
-    fetchUserPendingImage();
-  }
 
   async function fetchUserPendingImage() {
     if (!browser || !user || !entityType || !entityId) {
@@ -98,13 +104,7 @@
     }
   }
 
-  // Show image priority: just uploaded preview > user's pending image > approved image > placeholder
-  $: displayImageUrl = pendingImagePreview ||
-    (userPendingImage?.previewUrl) ||
-    (!imageLoadFailed ? imageUrl : null);
 
-  // Show pending overlay for just-uploaded preview OR user's existing pending image (not for auto-approved)
-  $: showPendingOverlay = !uploadAutoApproved && (pendingImagePreview || (userPendingImage?.previewUrl && displayImageUrl === userPendingImage.previewUrl));
 
   function handleIconClick() {
     if (canUpload) {
@@ -138,6 +138,32 @@
       showUploadDialog = true;
     }
   }
+  let displayName = $derived(entity?.Name || name);
+  let displayType = $derived(entity?.Properties?.Type || type);
+  let displaySubtype = $derived(entity?.Properties?.Class || subtype);
+  // Can upload only when editing an existing entity (not create mode) and user is verified
+  let canUpload = $derived($editMode && !$isCreateMode && entityId && user?.verified);
+  // Reset image load state when imageUrl changes
+  run(() => {
+    if (imageUrl) {
+      imageLoadFailed = false;
+    }
+  });
+  // Fetch user's pending image when entity changes (if user is logged in)
+  run(() => {
+    if (browser && user && entityType && entityId && entityId !== lastCheckedEntityId) {
+      lastCheckedEntityId = entityId;
+      pendingImageChecked = false;
+      userPendingImage = null;
+      fetchUserPendingImage();
+    }
+  });
+  // Show image priority: just uploaded preview > user's pending image > approved image > placeholder
+  let displayImageUrl = $derived(pendingImagePreview ||
+    (userPendingImage?.previewUrl) ||
+    (!imageLoadFailed ? imageUrl : null));
+  // Show pending overlay for just-uploaded preview OR user's existing pending image (not for auto-approved)
+  let showPendingOverlay = $derived(!uploadAutoApproved && (pendingImagePreview || (userPendingImage?.previewUrl && displayImageUrl === userPendingImage.previewUrl)));
 </script>
 
 <div class="entity-infobox" class:compact class:floating={variant === 'floating'} class:card={variant === 'card'}>
@@ -145,14 +171,14 @@
     class="infobox-icon"
     class:editable={canUpload}
     class:create-mode={$isCreateMode && $editMode}
-    on:click={handleIconClick}
-    on:keydown={handleKeydown}
+    onclick={handleIconClick}
+    onkeydown={handleKeydown}
     role={canUpload ? 'button' : undefined}
     tabindex={canUpload ? 0 : undefined}
     title={canUpload ? 'Click to upload image' : ($isCreateMode && $editMode ? 'Image upload available after entity is approved' : '')}
   >
     {#if displayImageUrl}
-      <img src={displayImageUrl} alt={displayName} class="entity-image" on:error={handleImageError} />
+      <img src={displayImageUrl} alt={displayName} class="entity-image" onerror={handleImageError} />
       {#if showPendingOverlay}
         <div class="pending-overlay">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -226,7 +252,7 @@
       </div>
     {/if}
 
-    <slot name="extra" />
+    {@render extra?.()}
   </div>
 </div>
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run, preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
@@ -7,15 +9,15 @@
   import EquipmentEditor from '$lib/components/services/EquipmentEditor.svelte';
   import { loadEntity } from '$lib/utils/entityLoader';
 
-  export let data;
+  let { data } = $props();
 
-  $: planets = data.planets || [];
+  let planets = $derived(data.planets || []);
 
-  let saving = false;
-  let error = '';
+  let saving = $state(false);
+  let error = $state('');
 
   // Lazy loaded entity data
-  let clothings = [];
+  let clothings = $state([]);
   let clothingsLoading = true;
 
   onMount(async () => {
@@ -30,37 +32,37 @@
   });
 
   // Form data
-  let serviceType = 'healing';
-  let title = '';
-  let description = '';
-  let planetId = null;
-  let willingToTravel = false;
-  let travelFee = null;
+  let serviceType = $state('healing');
+  let title = $state('');
+  let description = $state('');
+  let planetId = $state(null);
+  let willingToTravel = $state(false);
+  let travelFee = $state(null);
 
   // Healing details
-  let paramedicLevel = null;
-  let acceptsTimeBilling = true;
-  let ratePerHour = null;
-  let acceptsDecayBilling = true;
+  let paramedicLevel = $state(null);
+  let acceptsTimeBilling = $state(true);
+  let ratePerHour = $state(null);
+  let acceptsDecayBilling = $state(true);
 
   // DPS details
-  let dpsNotes = '';
-  let hpLevel = null;
+  let dpsNotes = $state('');
+  let hpLevel = $state(null);
 
   // Equipment
-  let equipment = [];
+  let equipment = $state([]);
 
   // Transportation details
-  let transportationType = 'regular';
-  let shipName = '';
-  let serviceMode = 'on_demand';
+  let transportationType = $state('regular');
+  let shipName = $state('');
+  let serviceMode = $state('on_demand');
 
   // Custom type name
-  let customTypeName = '';
+  let customTypeName = $state('');
 
   // Owner fields (transportation only)
-  let differentOwner = false;
-  let ownerDisplayName = '';
+  let differentOwner = $state(false);
+  let ownerDisplayName = $state('');
 
   // Ship name options for regular transportation
   const regularShipOptions = ['Sleipnir', 'Quad-Wing Interceptor'];
@@ -72,15 +74,17 @@
   ];
 
   // Reactive: reset ship name and service mode when transportation type changes
-  $: if (transportationType === 'regular') {
-    shipName = shipName && regularShipOptions.includes(shipName) ? shipName : '';
-    serviceMode = 'on_demand';
-  } else if (transportationType === 'warp_equus') {
-    shipName = 'Quad-Wing Equus';
-    serviceMode = 'on_demand';
-  } else if (transportationType === 'warp_privateer') {
-    shipName = shipName === 'Quad-Wing Equus' || regularShipOptions.includes(shipName) ? '' : shipName;
-  }
+  run(() => {
+    if (transportationType === 'regular') {
+      shipName = shipName && regularShipOptions.includes(shipName) ? shipName : '';
+      serviceMode = 'on_demand';
+    } else if (transportationType === 'warp_equus') {
+      shipName = 'Quad-Wing Equus';
+      serviceMode = 'on_demand';
+    } else if (transportationType === 'warp_privateer') {
+      shipName = shipName === 'Quad-Wing Equus' || regularShipOptions.includes(shipName) ? '' : shipName;
+    }
+  });
 
   const serviceTypes = [
     { value: 'healing', label: 'Healing' },
@@ -96,12 +100,12 @@
   ];
 
   // Dynamic placeholder based on service type
-  $: titlePlaceholder = {
+  let titlePlaceholder = $derived({
     healing: 'e.g., Professional Healing Service',
     dps: 'e.g., High-Level DPS Support',
     transportation: 'e.g., Calypso to Arkadia Warp Service',
     custom: 'e.g., Mining Finder Service'
-  }[serviceType] || 'Enter service title';
+  }[serviceType] || 'Enter service title');
 
   async function handleSubmit() {
     error = '';
@@ -216,7 +220,7 @@
       <div class="error-message">{error}</div>
     {/if}
 
-    <form on:submit|preventDefault={handleSubmit} class="service-form">
+    <form onsubmit={preventDefault(handleSubmit)} class="service-form">
       <div class="form-section">
         <h2>Basic Information</h2>
 
@@ -407,7 +411,7 @@
       {/if}
 
       <div class="form-actions">
-        <button type="button" class="cancel-btn" on:click={() => goto('/market/services')}>Cancel</button>
+        <button type="button" class="cancel-btn" onclick={() => goto('/market/services')}>Cancel</button>
         <button type="submit" class="submit-btn" disabled={saving}>
           {saving ? 'Creating...' : 'Create Service'}
         </button>

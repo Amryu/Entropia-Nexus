@@ -3,6 +3,8 @@
   Unified wiki page for all location types with type filtering.
 -->
 <script>
+  import { run, stopPropagation, preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -35,95 +37,22 @@
     updateField
   } from '$lib/stores/wikiEditState.js';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.mobMaturities === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'mobMaturities', url: '/api/mobmaturities' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
 
-  $: user = data.session?.user;
-  $: allLocations = data.allLocations || data.locations || [];
-  $: facilitiesList = data.facilitiesList || [];
-  $: planetsList = data.planetsList || [];
-  $: mobMaturities = data.mobMaturities || [];
-  $: pendingChange = data.pendingChange;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: isCreateMode = data.isCreateMode || false;
-  $: currentChangeId = $page.url.searchParams.get('changeId');
-  $: disambiguation = data.disambiguation || null;
 
-  // URL-based type (used for breadcrumbs, canonical URLs, etc.)
-  $: currentType = data.type || null;
 
   // Local filter state - only changes when explicitly clicking filter buttons
   // Not when navigating to items (which include type in URL for disambiguation)
-  let selectedFilter = null;
-  let filterInitialized = false;
+  let selectedFilter = $state(null);
+  let filterInitialized = $state(false);
 
-  // Initialize filter from URL once on mount/first data load
-  $: if (!filterInitialized && data.type !== undefined) {
-    selectedFilter = data.type || null;
-    filterInitialized = true;
-  }
 
-  // Update filter when navigating to a filter-only URL (no item selected, not create mode)
-  // This allows filter buttons to work while item clicks don't change the filter
-  $: if (filterInitialized && !data.object && !isCreateMode && !disambiguation) {
-    // We're on a filter view (no specific item), update the filter
-    if (data.type !== selectedFilter) {
-      selectedFilter = data.type || null;
-    }
-  }
 
-  // Build a set of names that appear more than once for sidebar href generation
-  $: duplicateNames = (() => {
-    const nameCounts = {};
-    for (const loc of allLocations) {
-      nameCounts[loc.Name] = (nameCounts[loc.Name] || 0) + 1;
-    }
-    return new Set(Object.keys(nameCounts).filter(name => nameCounts[name] > 1));
-  })();
 
-  // Filter locations based on selected filter (client-side filtering)
-  $: isOtherFilter = selectedFilter === 'other';
-  $: selectedFilterBtn = selectedFilter ? NAV_TYPE_BUTTONS.find(b => b.slug === selectedFilter) : null;
-  $: selectedFilterTypes = selectedFilterBtn?.types ?? (selectedFilter ? getTypesFromSlug(selectedFilter) : null);
-  $: selectedFilterAreaTypes = selectedFilterBtn?.areaTypes ?? null;
-  $: locationsList = isOtherFilter
-    ? allLocations.filter(loc => {
-        const locType = loc.Properties?.Type;
-        return !locType || !CATEGORIZED_TYPES.has(locType);
-      })
-    : (selectedFilterTypes || selectedFilterAreaTypes)
-      ? allLocations.filter(loc => {
-          const locType = loc.Properties?.Type;
-          const locAreaType = loc.Properties?.AreaType;
-          if (selectedFilterAreaTypes && selectedFilterTypes) {
-            return selectedFilterTypes.includes(locType) && selectedFilterAreaTypes.includes(locAreaType);
-          } else if (selectedFilterAreaTypes) {
-            return selectedFilterAreaTypes.includes(locAreaType);
-          } else {
-            return locType && selectedFilterTypes.includes(locType);
-          }
-        })
-      : allLocations;
 
-  $: entityType = 'Location';
-  $: entity = data.object;
-  $: entityId = entity?.Id ?? null;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, entityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Location type definitions (for editing/display)
   const LOCATION_TYPES = [
@@ -199,22 +128,8 @@
     { value: 'Polygon', label: 'Polygon' }
   ];
 
-  // All planets for dropdown (filter out generic "Entropia Universe" entry)
-  $: planetOptions = (planetsList || [])
-    .filter(p => p.Id > 0)
-    .map(p => ({ value: p.Name, label: p.Name }));
 
-  $: facilityOptions = (facilitiesList || []).map(f => ({
-    value: f.Name,
-    label: f.Name
-  }));
 
-  $: parentLocationOptions = (allLocations || [])
-    .filter(loc => loc.Id !== activeLocation?.Id) // Exclude self
-    .map(loc => ({
-      value: String(loc.Id),
-      label: `${loc.Name} (${loc.Properties?.Type || 'Unknown'})`
-    }));
 
   // Get label from options by value (for SearchInput display)
   function getOptionLabel(options, value) {
@@ -231,107 +146,22 @@
     return types?.[0] || 'Teleporter';
   }
 
-  // Empty location template (reactive to use current type filter)
-  $: emptyLocation = {
-    Id: null,
-    Name: '',
-    Properties: {
-      Type: getDefaultType(),
-      Description: '',
-      Coordinates: {
-        Longitude: null,
-        Latitude: null,
-        Altitude: null
-      },
-      TechnicalId: null
-    },
-    Planet: { Name: 'Calypso' },
-    ParentLocation: null,
-    Facilities: [],
-    Sections: [],
-    Waves: []
-  };
 
   // Track initialization to prevent re-init during editing
   // Include currentChangeId in key to handle URL-based navigation between create changes
   // Only reinitialize when data is consistent (changeId matches existingChange.id or both are absent)
-  let lastInitKey = null;
-  $: {
-    // Check if data is consistent - URL changeId should match loaded existingChange.id in create mode
-    const dataIsConsistent = !isCreateMode || !currentChangeId || (data.existingChange?.id && String(data.existingChange.id) === String(currentChangeId));
-    const initKey = `${entityType}-${entity?.Id ?? 'new'}-${isCreateMode}-${currentChangeId ?? 'none'}-${data.existingChange?.id ?? 'none'}`;
-    if (user && initKey !== lastInitKey && dataIsConsistent) {
-      lastInitKey = initKey;
-      const existingChange = data.existingChange || null;
-      const initialEntity = isCreateMode
-        ? (existingChange?.data || emptyLocation)
-        : entity;
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(initialEntity, entityType, isCreateMode, editChange);
-    }
-  }
+  let lastInitKey = $state(null);
 
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Detect if we're in a transitional state (URL changed but data hasn't loaded yet)
-  $: isDataStale = isCreateMode && currentChangeId && data.existingChange?.id && String(data.existingChange.id) !== String(currentChangeId);
 
-  $: activeEntity = $editMode && !isDataStale
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.data)
-      ? $existingPendingChange.data
-      : entity;
 
-  $: activeLocation = activeEntity;
-  // WaveEventArea locations have Type='Area' and AreaType='WaveEventArea'
-  $: locationType = activeLocation?.Properties?.AreaType === 'WaveEventArea'
-    ? 'WaveEventArea'
-    : (activeLocation?.Properties?.Type || 'Teleporter');
 
   // Settlement types that have facilities
   const SETTLEMENT_TYPES = ['Outpost', 'Camp', 'City'];
-  $: isSettlement = SETTLEMENT_TYPES.includes(locationType);
 
-  // Auto-set EstateType when type changes to Estate (required for bot extension handling)
-  $: if ($editMode && locationType === 'Estate' && !activeLocation?.Properties?.EstateType) {
-    updateField('Properties.EstateType', 'Apartment');
-  }
 
-  // Look up the full planet object for the map embed (needs Map properties for coordinate conversion)
-  $: activePlanet = planetsList?.find(p => p.Name === activeLocation?.Planet?.Name) || null;
 
-  // Base path for navigation - include selected filter so it persists when navigating to creates
-  $: effectiveBasePath = selectedFilter
-    ? `/information/locations/${selectedFilter}`
-    : '/information/locations';
 
-  // Filter pending creates to show in correct type category
-  // When on a type filter, only show creates matching that type
-  // When on "Other" filter, show creates with types not in other categories
-  // When on "All" (no filter), show all pending creates
-  $: filteredPendingCreates = isOtherFilter
-    ? (userPendingCreates || []).filter(change => {
-        const changeType = change.data?.Properties?.Type;
-        return !changeType || !CATEGORIZED_TYPES.has(changeType);
-      })
-    : (selectedFilterTypes || selectedFilterAreaTypes)
-      ? (userPendingCreates || []).filter(change => {
-          const changeType = change.data?.Properties?.Type;
-          const changeAreaType = change.data?.Properties?.AreaType;
-          if (selectedFilterAreaTypes && selectedFilterTypes) {
-            return selectedFilterTypes.includes(changeType) && selectedFilterAreaTypes.includes(changeAreaType);
-          } else if (selectedFilterAreaTypes) {
-            return selectedFilterAreaTypes.includes(changeAreaType);
-          } else {
-            return changeType && selectedFilterTypes.includes(changeType);
-          }
-        })
-      : userPendingCreates || [];
 
   onDestroy(() => {
     resetEditState();
@@ -341,17 +171,6 @@
     return type ? type.toLowerCase() : null;
   }
 
-  // Type navigation buttons for WikiNavigation filters prop (href-based, displayed below search)
-  // Uses selectedFilter for active state (local filter state, not URL-based)
-  $: typeNavFilters = [
-    { label: 'All', href: '/information/locations', active: !selectedFilter, title: 'All locations' },
-    ...NAV_TYPE_BUTTONS.map(btn => ({
-      label: btn.label,
-      href: `/information/locations/${btn.slug}`,
-      active: selectedFilter === btn.slug,
-      title: btn.label
-    }))
-  ];
 
   function getSidebarHref(item, basePath) {
     const slug = encodeURIComponentSafe(item.Name);
@@ -371,23 +190,8 @@
   // Planet filter (value-based, includes sub-planets)
   const planetFilters = [getPlanetNavFilter('Planet.Name')];
 
-  $: breadcrumbs = [
-    { label: 'Information', href: '/information' },
-    { label: 'Locations', href: '/information/locations' },
-    ...(currentType ? [{ label: getTypeLabel(currentType) || currentType, href: `/information/locations/${currentType}` }] : []),
-    ...(activeEntity?.Name
-      ? [{ label: activeEntity.Name }]
-      : isCreateMode
-        ? [{ label: 'New Location' }]
-        : [])
-  ];
 
-  $: seoDescription = activeLocation?.Properties?.Description
-    || `${activeLocation?.Name || 'Location'} reference data for Entropia Universe.`;
 
-  $: canonicalUrl = activeEntity?.Name
-    ? `https://entropianexus.com/information/locations/${activeLocation?.Properties?.AreaType === 'WaveEventArea' ? 'waveevents' : (getTypeSlug(activeLocation?.Properties?.Type) || '')}/${encodeURIComponentSafe(activeEntity.Name)}`
-    : 'https://entropianexus.com/information/locations';
 
   const seoColumns = [
     { key: 'Properties.Type', header: 'Type' },
@@ -458,7 +262,6 @@
 
   const allAvailableColumns = Object.values(locationColumnDefs);
 
-  $: navPageTypeId = `locations-${selectedFilter || 'all'}`;
 
   // Facilities management
   function addFacility(facilityName) {
@@ -492,7 +295,7 @@
   }
 
   // Wave event waves management
-  let expandedWaves = {};
+  let expandedWaves = $state({});
 
   function toggleWave(index) {
     expandedWaves[index] = !expandedWaves[index];
@@ -574,7 +377,6 @@
       .slice(0, 3);
   }
 
-  $: closestTeleporters = getClosestTeleporters(activeLocation, allLocations);
 
   // Get map URL for current location
   function getMapUrl(location) {
@@ -583,35 +385,8 @@
     return `/maps/${planetSlug}`;
   }
 
-  // Build waypoint value object for WaypointInput (edit mode)
-  $: waypointValue = {
-    planet: activeLocation?.Planet?.Name || 'Calypso',
-    x: activeLocation?.Properties?.Coordinates?.Longitude ?? null,
-    y: activeLocation?.Properties?.Coordinates?.Latitude ?? null,
-    z: activeLocation?.Properties?.Coordinates?.Altitude ?? null,
-    name: activeLocation?.Name || ''
-  };
 
-  // Build waypoint string for WaypointCopyButton (view mode)
-  $: waypointString = activeLocation?.Properties?.Coordinates?.Longitude != null
-    ? getWaypoint(
-        activeLocation?.Planet?.Name || 'Calypso',
-        activeLocation?.Properties?.Coordinates?.Longitude,
-        activeLocation?.Properties?.Coordinates?.Latitude,
-        activeLocation?.Properties?.Coordinates?.Altitude ?? 100,
-        activeLocation?.Name || ''
-      )
-    : '';
 
-  // Nearby locations for map embed (land areas and teleporters on the same planet)
-  $: nearbyMapLocations = (allLocations || []).filter(loc => {
-    // Must be on the same planet
-    if (loc.Planet?.Name !== activeLocation?.Planet?.Name) return false;
-    // Only include land areas and teleporters
-    const type = loc.Properties?.Type;
-    const areaType = loc.Properties?.AreaType;
-    return type === 'Teleporter' || areaType === 'LandArea';
-  });
 
   // Handle waypoint change in edit mode
   function handleWaypointChange(detail) {
@@ -621,13 +396,13 @@
   }
 
   // User search state for estate owner picker
-  let ownerSearchQuery = '';
-  let ownerSearchResults = [];
-  let showOwnerSuggestions = false;
-  let isOwnerSearching = false;
+  let ownerSearchQuery = $state('');
+  let ownerSearchResults = $state([]);
+  let showOwnerSuggestions = $state(false);
+  let isOwnerSearching = $state(false);
   let ownerSearchTimeout = null;
   // Local display name for owner during editing (not saved to entity)
-  let selectedOwnerDisplayName = '';
+  let selectedOwnerDisplayName = $state('');
 
   // Search users as they type (for estate owner)
   async function handleOwnerSearchInput() {
@@ -675,15 +450,11 @@
     showOwnerSuggestions = false;
   }
 
-  // Get owner display name - use local state in edit mode, or entity's Owner object in view mode
-  $: ownerDisplayName = $editMode
-    ? (selectedOwnerDisplayName || (activeLocation?.Properties?.OwnerId ? `User #${activeLocation.Properties.OwnerId}` : ''))
-    : (activeLocation?.Owner?.Name || (activeLocation?.Properties?.OwnerId ? `User #${activeLocation.Properties.OwnerId}` : 'Unknown'));
 
   // Maturity search state (per wave)
-  let maturitySearchQueries = {};
-  let maturitySearchResults = {};
-  let showMaturitySuggestions = {};
+  let maturitySearchQueries = $state({});
+  let maturitySearchResults = $state({});
+  let showMaturitySuggestions = $state({});
 
   function handleMaturitySearchInput(waveIdx) {
     const query = (maturitySearchQueries[waveIdx] || '').trim().toLowerCase();
@@ -733,8 +504,6 @@
     }, 150);
   }
 
-  // Get current area shape (for shape data editor)
-  $: currentShape = activeLocation?.Properties?.Shape || 'Point';
 
   // Shape data helpers
   function updateShapeData(field, value) {
@@ -763,6 +532,249 @@
     return pairs.join('\n');
   }
 
+  run(() => {
+    if ($editMode && data.mobMaturities === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'mobMaturities', url: '/api/mobmaturities' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
+  let user = $derived(data.session?.user);
+  let allLocations = $derived(data.allLocations || data.locations || []);
+  let facilitiesList = $derived(data.facilitiesList || []);
+  let planetsList = $derived(data.planetsList || []);
+  let mobMaturities = $derived(data.mobMaturities || []);
+  let pendingChange = $derived(data.pendingChange);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let currentChangeId = $derived($page.url.searchParams.get('changeId'));
+  let disambiguation = $derived(data.disambiguation || null);
+  // URL-based type (used for breadcrumbs, canonical URLs, etc.)
+  let currentType = $derived(data.type || null);
+  // Initialize filter from URL once on mount/first data load
+  run(() => {
+    if (!filterInitialized && data.type !== undefined) {
+      selectedFilter = data.type || null;
+      filterInitialized = true;
+    }
+  });
+  // Update filter when navigating to a filter-only URL (no item selected, not create mode)
+  // This allows filter buttons to work while item clicks don't change the filter
+  run(() => {
+    if (filterInitialized && !data.object && !isCreateMode && !disambiguation) {
+      // We're on a filter view (no specific item), update the filter
+      if (data.type !== selectedFilter) {
+        selectedFilter = data.type || null;
+      }
+    }
+  });
+  // Build a set of names that appear more than once for sidebar href generation
+  let duplicateNames = $derived((() => {
+    const nameCounts = {};
+    for (const loc of allLocations) {
+      nameCounts[loc.Name] = (nameCounts[loc.Name] || 0) + 1;
+    }
+    return new Set(Object.keys(nameCounts).filter(name => nameCounts[name] > 1));
+  })());
+  // Filter locations based on selected filter (client-side filtering)
+  let isOtherFilter = $derived(selectedFilter === 'other');
+  let selectedFilterBtn = $derived(selectedFilter ? NAV_TYPE_BUTTONS.find(b => b.slug === selectedFilter) : null);
+  let selectedFilterTypes = $derived(selectedFilterBtn?.types ?? (selectedFilter ? getTypesFromSlug(selectedFilter) : null));
+  let selectedFilterAreaTypes = $derived(selectedFilterBtn?.areaTypes ?? null);
+  let locationsList = $derived(isOtherFilter
+    ? allLocations.filter(loc => {
+        const locType = loc.Properties?.Type;
+        return !locType || !CATEGORIZED_TYPES.has(locType);
+      })
+    : (selectedFilterTypes || selectedFilterAreaTypes)
+      ? allLocations.filter(loc => {
+          const locType = loc.Properties?.Type;
+          const locAreaType = loc.Properties?.AreaType;
+          if (selectedFilterAreaTypes && selectedFilterTypes) {
+            return selectedFilterTypes.includes(locType) && selectedFilterAreaTypes.includes(locAreaType);
+          } else if (selectedFilterAreaTypes) {
+            return selectedFilterAreaTypes.includes(locAreaType);
+          } else {
+            return locType && selectedFilterTypes.includes(locType);
+          }
+        })
+      : allLocations);
+  
+  let entity = $derived(data.object);
+  let entityId = $derived(entity?.Id ?? null);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, entityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  // All planets for dropdown (filter out generic "Entropia Universe" entry)
+  let planetOptions = $derived((planetsList || [])
+    .filter(p => p.Id > 0)
+    .map(p => ({ value: p.Name, label: p.Name })));
+  let facilityOptions = $derived((facilitiesList || []).map(f => ({
+    value: f.Name,
+    label: f.Name
+  })));
+  // Detect if we're in a transitional state (URL changed but data hasn't loaded yet)
+  let isDataStale = $derived(isCreateMode && currentChangeId && data.existingChange?.id && String(data.existingChange.id) !== String(currentChangeId));
+  let activeEntity = $derived($editMode && !isDataStale
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.data)
+      ? $existingPendingChange.data
+      : entity);
+  let activeLocation = $derived(activeEntity);
+  let parentLocationOptions = $derived((allLocations || [])
+    .filter(loc => loc.Id !== activeLocation?.Id) // Exclude self
+    .map(loc => ({
+      value: String(loc.Id),
+      label: `${loc.Name} (${loc.Properties?.Type || 'Unknown'})`
+    })));
+  // Empty location template (reactive to use current type filter)
+  let emptyLocation = $derived({
+    Id: null,
+    Name: '',
+    Properties: {
+      Type: getDefaultType(),
+      Description: '',
+      Coordinates: {
+        Longitude: null,
+        Latitude: null,
+        Altitude: null
+      },
+      TechnicalId: null
+    },
+    Planet: { Name: 'Calypso' },
+    ParentLocation: null,
+    Facilities: [],
+    Sections: [],
+    Waves: []
+  });
+  run(() => {
+    // Check if data is consistent - URL changeId should match loaded existingChange.id in create mode
+    const dataIsConsistent = !isCreateMode || !currentChangeId || (data.existingChange?.id && String(data.existingChange.id) === String(currentChangeId));
+    const initKey = `${entityType}-${entity?.Id ?? 'new'}-${isCreateMode}-${currentChangeId ?? 'none'}-${data.existingChange?.id ?? 'none'}`;
+    if (user && initKey !== lastInitKey && dataIsConsistent) {
+      lastInitKey = initKey;
+      const existingChange = data.existingChange || null;
+      const initialEntity = isCreateMode
+        ? (existingChange?.data || emptyLocation)
+        : entity;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(initialEntity, entityType, isCreateMode, editChange);
+    }
+  });
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  // WaveEventArea locations have Type='Area' and AreaType='WaveEventArea'
+  let locationType = $derived(activeLocation?.Properties?.AreaType === 'WaveEventArea'
+    ? 'WaveEventArea'
+    : (activeLocation?.Properties?.Type || 'Teleporter'));
+  let isSettlement = $derived(SETTLEMENT_TYPES.includes(locationType));
+  // Auto-set EstateType when type changes to Estate (required for bot extension handling)
+  run(() => {
+    if ($editMode && locationType === 'Estate' && !activeLocation?.Properties?.EstateType) {
+      updateField('Properties.EstateType', 'Apartment');
+    }
+  });
+  // Look up the full planet object for the map embed (needs Map properties for coordinate conversion)
+  let activePlanet = $derived(planetsList?.find(p => p.Name === activeLocation?.Planet?.Name) || null);
+  // Base path for navigation - include selected filter so it persists when navigating to creates
+  let effectiveBasePath = $derived(selectedFilter
+    ? `/information/locations/${selectedFilter}`
+    : '/information/locations');
+  // Filter pending creates to show in correct type category
+  // When on a type filter, only show creates matching that type
+  // When on "Other" filter, show creates with types not in other categories
+  // When on "All" (no filter), show all pending creates
+  let filteredPendingCreates = $derived(isOtherFilter
+    ? (userPendingCreates || []).filter(change => {
+        const changeType = change.data?.Properties?.Type;
+        return !changeType || !CATEGORIZED_TYPES.has(changeType);
+      })
+    : (selectedFilterTypes || selectedFilterAreaTypes)
+      ? (userPendingCreates || []).filter(change => {
+          const changeType = change.data?.Properties?.Type;
+          const changeAreaType = change.data?.Properties?.AreaType;
+          if (selectedFilterAreaTypes && selectedFilterTypes) {
+            return selectedFilterTypes.includes(changeType) && selectedFilterAreaTypes.includes(changeAreaType);
+          } else if (selectedFilterAreaTypes) {
+            return selectedFilterAreaTypes.includes(changeAreaType);
+          } else {
+            return changeType && selectedFilterTypes.includes(changeType);
+          }
+        })
+      : userPendingCreates || []);
+  // Type navigation buttons for WikiNavigation filters prop (href-based, displayed below search)
+  // Uses selectedFilter for active state (local filter state, not URL-based)
+  let typeNavFilters = $derived([
+    { label: 'All', href: '/information/locations', active: !selectedFilter, title: 'All locations' },
+    ...NAV_TYPE_BUTTONS.map(btn => ({
+      label: btn.label,
+      href: `/information/locations/${btn.slug}`,
+      active: selectedFilter === btn.slug,
+      title: btn.label
+    }))
+  ]);
+  let breadcrumbs = $derived([
+    { label: 'Information', href: '/information' },
+    { label: 'Locations', href: '/information/locations' },
+    ...(currentType ? [{ label: getTypeLabel(currentType) || currentType, href: `/information/locations/${currentType}` }] : []),
+    ...(activeEntity?.Name
+      ? [{ label: activeEntity.Name }]
+      : isCreateMode
+        ? [{ label: 'New Location' }]
+        : [])
+  ]);
+  let seoDescription = $derived(activeLocation?.Properties?.Description
+    || `${activeLocation?.Name || 'Location'} reference data for Entropia Universe.`);
+  let canonicalUrl = $derived(activeEntity?.Name
+    ? `https://entropianexus.com/information/locations/${activeLocation?.Properties?.AreaType === 'WaveEventArea' ? 'waveevents' : (getTypeSlug(activeLocation?.Properties?.Type) || '')}/${encodeURIComponentSafe(activeEntity.Name)}`
+    : 'https://entropianexus.com/information/locations');
+  let navPageTypeId = $derived(`locations-${selectedFilter || 'all'}`);
+  let closestTeleporters = $derived(getClosestTeleporters(activeLocation, allLocations));
+  // Build waypoint value object for WaypointInput (edit mode)
+  let waypointValue = $derived({
+    planet: activeLocation?.Planet?.Name || 'Calypso',
+    x: activeLocation?.Properties?.Coordinates?.Longitude ?? null,
+    y: activeLocation?.Properties?.Coordinates?.Latitude ?? null,
+    z: activeLocation?.Properties?.Coordinates?.Altitude ?? null,
+    name: activeLocation?.Name || ''
+  });
+  // Build waypoint string for WaypointCopyButton (view mode)
+  let waypointString = $derived(activeLocation?.Properties?.Coordinates?.Longitude != null
+    ? getWaypoint(
+        activeLocation?.Planet?.Name || 'Calypso',
+        activeLocation?.Properties?.Coordinates?.Longitude,
+        activeLocation?.Properties?.Coordinates?.Latitude,
+        activeLocation?.Properties?.Coordinates?.Altitude ?? 100,
+        activeLocation?.Name || ''
+      )
+    : '');
+  // Nearby locations for map embed (land areas and teleporters on the same planet)
+  let nearbyMapLocations = $derived((allLocations || []).filter(loc => {
+    // Must be on the same planet
+    if (loc.Planet?.Name !== activeLocation?.Planet?.Name) return false;
+    // Only include land areas and teleporters
+    const type = loc.Properties?.Type;
+    const areaType = loc.Properties?.AreaType;
+    return type === 'Teleporter' || areaType === 'LandArea';
+  }));
+  // Get owner display name - use local state in edit mode, or entity's Owner object in view mode
+  let ownerDisplayName = $derived($editMode
+    ? (selectedOwnerDisplayName || (activeLocation?.Properties?.OwnerId ? `User #${activeLocation.Properties.OwnerId}` : ''))
+    : (activeLocation?.Owner?.Name || (activeLocation?.Properties?.OwnerId ? `User #${activeLocation.Properties.OwnerId}` : 'Unknown')));
+  // Get current area shape (for shape data editor)
+  let currentShape = $derived(activeLocation?.Properties?.Shape || 'Point');
 </script>
 
 <WikiSEO
@@ -790,25 +802,27 @@
   {userPendingUpdates}
   {editDepsLoading}
 >
-  <svelte:fragment slot="sidebar">
-    <WikiNavigation
-      items={locationsList}
-      linkFilters={typeNavFilters}
-      filters={planetFilters}
-      basePath={effectiveBasePath}
-      title="Locations"
-      currentSlug={activeEntity?.Name}
-      currentItemId={activeEntity?.Id}
-      {currentChangeId}
-      customGetItemHref={getSidebarHref}
-      userPendingCreates={filteredPendingCreates}
-      {userPendingUpdates}
-      tableColumns={navTableColumns}
-      fullWidthColumns={navFullWidthColumns}
-      allAvailableColumns={allAvailableColumns}
-      pageTypeId={navPageTypeId}
-    />
-  </svelte:fragment>
+  {#snippet sidebar()}
+  
+      <WikiNavigation
+        items={locationsList}
+        linkFilters={typeNavFilters}
+        filters={planetFilters}
+        basePath={effectiveBasePath}
+        title="Locations"
+        currentSlug={activeEntity?.Name}
+        currentItemId={activeEntity?.Id}
+        {currentChangeId}
+        customGetItemHref={getSidebarHref}
+        userPendingCreates={filteredPendingCreates}
+        {userPendingUpdates}
+        tableColumns={navTableColumns}
+        fullWidthColumns={navFullWidthColumns}
+        allAvailableColumns={allAvailableColumns}
+        pageTypeId={navPageTypeId}
+      />
+    
+  {/snippet}
 
   {#if disambiguation && disambiguation.length > 0}
     <div class="disambiguation-panel">
@@ -842,9 +856,9 @@
         </div>
         <div class="banner-actions">
           {#if $viewingPendingChange}
-            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>View Current</button>
+            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>View Current</button>
           {:else}
-            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>View Pending</button>
+            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>View Pending</button>
           {/if}
         </div>
       </div>
@@ -975,7 +989,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.x ?? ''}
                       placeholder="X coordinate"
-                      on:input={(e) => updateShapeData('x', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('x', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -987,7 +1001,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.y ?? ''}
                       placeholder="Y coordinate"
-                      on:input={(e) => updateShapeData('y', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('y', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -999,7 +1013,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.radius ?? ''}
                       placeholder="Radius"
-                      on:input={(e) => updateShapeData('radius', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('radius', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -1012,7 +1026,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.x ?? ''}
                       placeholder="X coordinate"
-                      on:input={(e) => updateShapeData('x', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('x', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -1024,7 +1038,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.y ?? ''}
                       placeholder="Y coordinate"
-                      on:input={(e) => updateShapeData('y', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('y', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -1036,7 +1050,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.width ?? ''}
                       placeholder="Width"
-                      on:input={(e) => updateShapeData('width', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('width', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -1048,7 +1062,7 @@
                       class="shape-input"
                       value={activeLocation?.Properties?.Data?.height ?? ''}
                       placeholder="Height"
-                      on:input={(e) => updateShapeData('height', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateShapeData('height', e.target.value ? Number(e.target.value) : null)}
                     />
                   </span>
                 </div>
@@ -1059,7 +1073,7 @@
                     class="polygon-textarea"
                     placeholder="e.g.&#10;1000, 2000&#10;1500, 2500&#10;1200, 3000"
                     value={formatPolygonVertices(activeLocation?.Properties?.Data?.vertices)}
-                    on:input={(e) => {
+                    oninput={(e) => {
                       const vertices = parsePolygonVertices(e.target.value);
                       if (vertices) updateShapeData('vertices', vertices);
                     }}
@@ -1127,7 +1141,7 @@
                     {#if activeLocation?.Properties?.OwnerId || selectedOwnerDisplayName}
                       <div class="selected-owner-chip">
                         <span class="owner-name">{ownerDisplayName}</span>
-                        <button type="button" class="chip-remove" on:click={clearOwner}>×</button>
+                        <button type="button" class="chip-remove" onclick={clearOwner}>×</button>
                       </div>
                     {:else}
                       <div class="owner-search-wrapper">
@@ -1135,9 +1149,9 @@
                           type="text"
                           class="owner-search-input"
                           bind:value={ownerSearchQuery}
-                          on:input={handleOwnerSearchInput}
-                          on:focus={() => { if (ownerSearchResults.length > 0) showOwnerSuggestions = true; }}
-                          on:blur={() => { setTimeout(() => showOwnerSuggestions = false, 150); }}
+                          oninput={handleOwnerSearchInput}
+                          onfocus={() => { if (ownerSearchResults.length > 0) showOwnerSuggestions = true; }}
+                          onblur={() => { setTimeout(() => showOwnerSuggestions = false, 150); }}
                           placeholder="Search for owner..."
                           autocomplete="off"
                         />
@@ -1151,7 +1165,7 @@
                             <button
                               type="button"
                               class="owner-suggestion-item"
-                              on:click={() => selectOwner(result)}
+                              onclick={() => selectOwner(result)}
                             >
                               <span class="suggestion-name">{result.global_name || result.username}</span>
                               {#if result.eu_name}
@@ -1176,7 +1190,7 @@
                     <input
                       type="checkbox"
                       checked={activeLocation?.Properties?.ItemTradeAvailable || false}
-                      on:change={(e) => updateField('Properties.ItemTradeAvailable', e.target.checked)}
+                      onchange={(e) => updateField('Properties.ItemTradeAvailable', e.target.checked)}
                     />
                     <span class="checkbox-text">{activeLocation?.Properties?.ItemTradeAvailable ? 'Enabled' : 'Disabled'}</span>
                   </label>
@@ -1258,7 +1272,7 @@
                     {#each activeLocation?.Facilities || [] as facility}
                       <span class="facility-chip">
                         {facility.Name}
-                        <button type="button" class="chip-remove" on:click={() => removeFacility(facility.Name)}>×</button>
+                        <button type="button" class="chip-remove" onclick={() => removeFacility(facility.Name)}>×</button>
                       </span>
                     {/each}
                   </div>
@@ -1293,7 +1307,7 @@
                     <div class="wave-item-header">
                       <button
                         class="wave-item-header-toggle"
-                        on:click={() => toggleWave(idx)}
+                        onclick={() => toggleWave(idx)}
                         type="button"
                       >
                         <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
@@ -1306,7 +1320,7 @@
                       <div class="wave-actions">
                         <button
                           class="btn-icon danger"
-                          on:click|stopPropagation={() => removeWave(idx)}
+                          onclick={stopPropagation(() => removeWave(idx))}
                           title="Remove wave"
                           type="button"
                         >×</button>
@@ -1322,7 +1336,7 @@
                               type="number"
                               value={wave.TimeToComplete ?? ''}
                               placeholder="Minutes"
-                              on:input={(e) => updateWave(idx, 'TimeToComplete', e.target.value ? Number(e.target.value) : null)}
+                              oninput={(e) => updateWave(idx, 'TimeToComplete', e.target.value ? Number(e.target.value) : null)}
                             />
                           </label>
                         </div>
@@ -1333,7 +1347,7 @@
                             {#each wave.MobMaturities || [] as matId}
                               <span class="maturity-chip">
                                 {getMaturityName(matId)}
-                                <button type="button" class="chip-remove" on:click={() => removeWaveMaturity(idx, matId)}>×</button>
+                                <button type="button" class="chip-remove" onclick={() => removeWaveMaturity(idx, matId)}>×</button>
                               </span>
                             {/each}
                           </div>
@@ -1342,9 +1356,9 @@
                               type="text"
                               class="maturity-search-input"
                               bind:value={maturitySearchQueries[idx]}
-                              on:input={() => handleMaturitySearchInput(idx)}
-                              on:focus={() => handleMaturitySearchInput(idx)}
-                              on:blur={() => hideMaturitySuggestions(idx)}
+                              oninput={() => handleMaturitySearchInput(idx)}
+                              onfocus={() => handleMaturitySearchInput(idx)}
+                              onblur={() => hideMaturitySuggestions(idx)}
                               placeholder="Search maturities..."
                               autocomplete="off"
                             />
@@ -1354,7 +1368,7 @@
                                   <button
                                     type="button"
                                     class="maturity-suggestion-item"
-                                    on:mousedown|preventDefault={() => selectMaturity(idx, mat)}
+                                    onmousedown={preventDefault(() => selectMaturity(idx, mat))}
                                   >
                                     <span class="suggestion-mob">{mat.Mob?.Name || 'Unknown'}</span>
                                     <span class="suggestion-mat">{mat.Name || 'Unknown'}</span>
@@ -1368,7 +1382,7 @@
                     {/if}
                   </div>
                 {/each}
-                <button type="button" class="btn-add" on:click={addWave}>
+                <button type="button" class="btn-add" onclick={addWave}>
                   <span>+</span> Add Wave
                 </button>
               </div>
@@ -1428,19 +1442,19 @@
                       class="section-name"
                       value={section.Name}
                       placeholder="Section name"
-                      on:input={(e) => updateSection(idx, 'Name', e.target.value)}
+                      oninput={(e) => updateSection(idx, 'Name', e.target.value)}
                     />
                     <input
                       type="number"
                       class="section-points"
                       value={section.ItemPoints ?? ''}
                       placeholder="Item points"
-                      on:input={(e) => updateSection(idx, 'ItemPoints', e.target.value ? Number(e.target.value) : null)}
+                      oninput={(e) => updateSection(idx, 'ItemPoints', e.target.value ? Number(e.target.value) : null)}
                     />
-                    <button type="button" class="delete-btn small" on:click={() => removeSection(idx)}>Remove</button>
+                    <button type="button" class="delete-btn small" onclick={() => removeSection(idx)}>Remove</button>
                   </div>
                 {/each}
-                <button type="button" class="btn-add" on:click={addSection}>
+                <button type="button" class="btn-add" onclick={addSection}>
                   <span>+</span> Add Section
                 </button>
               </div>

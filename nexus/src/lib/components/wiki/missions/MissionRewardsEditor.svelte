@@ -10,17 +10,23 @@
   import { updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
-  export let rewards = null;
-  export let fieldPath = 'Rewards';
-  export let itemsIndex = {};
+  /**
+   * @typedef {Object} Props
+   * @property {any} [rewards]
+   * @property {string} [fieldPath]
+   * @property {any} [itemsIndex]
+   */
 
-  let itemNameDrafts = {};
-  let skillNameDrafts = {};
+  /** @type {Props} */
+  let { rewards = null, fieldPath = 'Rewards', itemsIndex = {} } = $props();
+
+  let itemNameDrafts = $state({});
+  let skillNameDrafts = $state({});
 
   // Raw JSON editor state
-  let showRawJson = false;
-  let rawJsonText = '';
-  let jsonParseError = '';
+  let showRawJson = $state(false);
+  let rawJsonText = $state('');
+  let jsonParseError = $state('');
 
   function toggleRawJson() {
     if (!showRawJson) {
@@ -120,14 +126,14 @@
   }
 
   // Reactive: detect choices mode
-  $: hasChoices = isChoicesFormat(rewards);
+  let hasChoices = $derived(isChoicesFormat(rewards));
 
   // Normalize rewards data for consistent access
   // For choices: rewardsData is the array of packages (from Items column)
   // For flat: rewardsData is the {Items, Skills, Unlocks} object
-  $: rewardsData = hasChoices
+  let rewardsData = $derived(hasChoices
     ? (rewards?.Items || [emptyPackage()])
-    : (rewards || emptyPackage());
+    : (rewards || emptyPackage()));
 
   function updateRewards(next) {
     // If given an array of packages (choices mode updates), wrap in consistent format
@@ -341,10 +347,10 @@
 <div class="mission-rewards-editor">
   <div class="rewards-header">
     <label class="choices-toggle">
-      <input type="checkbox" checked={hasChoices} on:change={toggleChoices} disabled={showRawJson} />
+      <input type="checkbox" checked={hasChoices} onchange={toggleChoices} disabled={showRawJson} />
       <span>Enable Choices</span>
     </label>
-    <button type="button" class="json-toggle-btn" on:click={toggleRawJson}>
+    <button type="button" class="json-toggle-btn" onclick={toggleRawJson}>
       {showRawJson ? 'Form Editor' : 'Edit as JSON'}
     </button>
   </div>
@@ -356,8 +362,8 @@
         <div class="json-error">{jsonParseError}</div>
       {/if}
       <div class="json-actions">
-        <button type="button" class="json-cancel-btn" on:click={() => { showRawJson = false; }}>Cancel</button>
-        <button type="button" class="json-apply-btn" on:click={applyRawJson}>Apply JSON</button>
+        <button type="button" class="json-cancel-btn" onclick={() => { showRawJson = false; }}>Cancel</button>
+        <button type="button" class="json-apply-btn" onclick={applyRawJson}>Apply JSON</button>
       </div>
     </div>
   {:else if hasChoices}
@@ -367,7 +373,7 @@
         <div class="choice-header">
           <span class="choice-label">Choice {choiceIndex + 1}</span>
           {#if rewardsData.length > 1}
-            <button type="button" class="btn-icon danger small" on:click={() => removeChoiceGroup(choiceIndex)} title="Remove choice">×</button>
+            <button type="button" class="btn-icon danger small" onclick={() => removeChoiceGroup(choiceIndex)} title="Remove choice">×</button>
           {/if}
         </div>
 
@@ -390,25 +396,25 @@
                       on:change={(e) => handleItemSearchChange(choiceIndex, itemIndex, e.detail.value)}
                       on:select={(e) => handleItemSearchSelect(choiceIndex, itemIndex, e.detail.data)}
                     />
-                    <button type="button" class="btn-icon danger" on:click={() => removeItem(choiceIndex, itemIndex)} title="Remove">×</button>
+                    <button type="button" class="btn-icon danger" onclick={() => removeItem(choiceIndex, itemIndex)} title="Remove">×</button>
                   </div>
                   <select value={item.rarity || ''}
-                    on:change={(e) => updateItem(choiceIndex, itemIndex, 'rarity', e.target.value || null)}>
+                    onchange={(e) => updateItem(choiceIndex, itemIndex, 'rarity', e.target.value || null)}>
                     {#each RARITY_OPTIONS as opt}
                       <option value={opt.value}>{opt.label}</option>
                     {/each}
                   </select>
                   <input type="number" min="0" step="1" placeholder="Min Qty" value={item.minQuantity ?? ''}
-                    on:input={(e) => updateItem(choiceIndex, itemIndex, 'minQuantity', e.target.value ? Number(e.target.value) : null)} />
+                    oninput={(e) => updateItem(choiceIndex, itemIndex, 'minQuantity', e.target.value ? Number(e.target.value) : null)} />
                   <input type="number" min="0" step="1" placeholder="Max Qty" value={item.maxQuantity ?? ''}
-                    on:input={(e) => updateItem(choiceIndex, itemIndex, 'maxQuantity', e.target.value ? Number(e.target.value) : null)} />
+                    oninput={(e) => updateItem(choiceIndex, itemIndex, 'maxQuantity', e.target.value ? Number(e.target.value) : null)} />
                   <input type="number" min="0" step="0.01" placeholder="TT (opt)" value={item.pedValue ?? ''}
-                    on:input={(e) => updateItem(choiceIndex, itemIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
+                    oninput={(e) => updateItem(choiceIndex, itemIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
                 </div>
               </div>
             {/each}
           {/if}
-          <button type="button" class="btn-add small" on:click={() => addItem(choiceIndex)}><span>+</span> Add Item</button>
+          <button type="button" class="btn-add small" onclick={() => addItem(choiceIndex)}><span>+</span> Add Item</button>
         </div>
 
         <!-- Skills section -->
@@ -433,15 +439,15 @@
                       on:change={(e) => handleSkillSearchChange(choiceIndex, skillIndex, e.detail.value)}
                       on:select={(e) => handleSkillSearchSelect(choiceIndex, skillIndex, e.detail.data)}
                     />
-                    <button type="button" class="btn-icon danger" on:click={() => removeSkill(choiceIndex, skillIndex)} title="Remove">×</button>
+                    <button type="button" class="btn-icon danger" onclick={() => removeSkill(choiceIndex, skillIndex)} title="Remove">×</button>
                   </div>
                   <input type="number" min="0" step="0.01" placeholder="PED Value" value={skill.pedValue ?? ''}
-                    on:input={(e) => updateSkill(choiceIndex, skillIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
+                    oninput={(e) => updateSkill(choiceIndex, skillIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
                 </div>
               </div>
             {/each}
           {/if}
-          <button type="button" class="btn-add small" on:click={() => addSkill(choiceIndex)}><span>+</span> Add Skill</button>
+          <button type="button" class="btn-add small" onclick={() => addSkill(choiceIndex)}><span>+</span> Add Skill</button>
         </div>
 
         <!-- Unlocks section -->
@@ -455,18 +461,18 @@
                 <div class="reward-row unlock-row">
                   <div class="search-delete-row">
                     <input type="text" placeholder="Unlock description" value={unlock ?? ''}
-                      on:input={(e) => updateUnlock(choiceIndex, unlockIndex, e.target.value)} />
-                    <button type="button" class="btn-icon danger" on:click={() => removeUnlock(choiceIndex, unlockIndex)} title="Remove">×</button>
+                      oninput={(e) => updateUnlock(choiceIndex, unlockIndex, e.target.value)} />
+                    <button type="button" class="btn-icon danger" onclick={() => removeUnlock(choiceIndex, unlockIndex)} title="Remove">×</button>
                   </div>
                 </div>
               </div>
             {/each}
           {/if}
-          <button type="button" class="btn-add small" on:click={() => addUnlock(choiceIndex)}><span>+</span> Add Unlock</button>
+          <button type="button" class="btn-add small" onclick={() => addUnlock(choiceIndex)}><span>+</span> Add Unlock</button>
         </div>
       </div>
     {/each}
-    <button type="button" class="btn-add choice-add" on:click={addChoiceGroup}><span>+</span> Add Choice</button>
+    <button type="button" class="btn-add choice-add" onclick={addChoiceGroup}><span>+</span> Add Choice</button>
 
   {:else}
     <!-- Flat mode: single reward package -->
@@ -488,25 +494,25 @@
                   on:change={(e) => handleItemSearchChange(0, itemIndex, e.detail.value)}
                   on:select={(e) => handleItemSearchSelect(0, itemIndex, e.detail.data)}
                 />
-                <button type="button" class="btn-icon danger" on:click={() => removeItem(0, itemIndex)} title="Remove">×</button>
+                <button type="button" class="btn-icon danger" onclick={() => removeItem(0, itemIndex)} title="Remove">×</button>
               </div>
               <select value={item.rarity || ''}
-                on:change={(e) => updateItem(0, itemIndex, 'rarity', e.target.value || null)}>
+                onchange={(e) => updateItem(0, itemIndex, 'rarity', e.target.value || null)}>
                 {#each RARITY_OPTIONS as opt}
                   <option value={opt.value}>{opt.label}</option>
                 {/each}
               </select>
               <input type="number" min="0" step="1" placeholder="Min Qty" value={item.minQuantity ?? ''}
-                on:input={(e) => updateItem(0, itemIndex, 'minQuantity', e.target.value ? Number(e.target.value) : null)} />
+                oninput={(e) => updateItem(0, itemIndex, 'minQuantity', e.target.value ? Number(e.target.value) : null)} />
               <input type="number" min="0" step="1" placeholder="Max Qty" value={item.maxQuantity ?? ''}
-                on:input={(e) => updateItem(0, itemIndex, 'maxQuantity', e.target.value ? Number(e.target.value) : null)} />
+                oninput={(e) => updateItem(0, itemIndex, 'maxQuantity', e.target.value ? Number(e.target.value) : null)} />
               <input type="number" min="0" step="0.01" placeholder="TT (opt)" value={item.pedValue ?? ''}
-                on:input={(e) => updateItem(0, itemIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
+                oninput={(e) => updateItem(0, itemIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
             </div>
           </div>
         {/each}
       {/if}
-      <button type="button" class="btn-add" on:click={() => addItem(0)}><span>+</span> Add Item</button>
+      <button type="button" class="btn-add" onclick={() => addItem(0)}><span>+</span> Add Item</button>
     </div>
 
     <div class="reward-section">
@@ -530,15 +536,15 @@
                   on:change={(e) => handleSkillSearchChange(0, skillIndex, e.detail.value)}
                   on:select={(e) => handleSkillSearchSelect(0, skillIndex, e.detail.data)}
                 />
-                <button type="button" class="btn-icon danger" on:click={() => removeSkill(0, skillIndex)} title="Remove">×</button>
+                <button type="button" class="btn-icon danger" onclick={() => removeSkill(0, skillIndex)} title="Remove">×</button>
               </div>
               <input type="number" min="0" step="0.01" placeholder="PED Value" value={skill.pedValue ?? ''}
-                on:input={(e) => updateSkill(0, skillIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
+                oninput={(e) => updateSkill(0, skillIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
             </div>
           </div>
         {/each}
       {/if}
-      <button type="button" class="btn-add" on:click={() => addSkill(0)}><span>+</span> Add Skill</button>
+      <button type="button" class="btn-add" onclick={() => addSkill(0)}><span>+</span> Add Skill</button>
     </div>
 
     <div class="reward-section">
@@ -551,14 +557,14 @@
             <div class="reward-row unlock-row">
               <div class="search-delete-row">
                 <input type="text" placeholder="Unlock description" value={unlock ?? ''}
-                  on:input={(e) => updateUnlock(0, unlockIndex, e.target.value)} />
-                <button type="button" class="btn-icon danger" on:click={() => removeUnlock(0, unlockIndex)} title="Remove">×</button>
+                  oninput={(e) => updateUnlock(0, unlockIndex, e.target.value)} />
+                <button type="button" class="btn-icon danger" onclick={() => removeUnlock(0, unlockIndex)} title="Remove">×</button>
               </div>
             </div>
           </div>
         {/each}
       {/if}
-      <button type="button" class="btn-add" on:click={() => addUnlock(0)}><span>+</span> Add Unlock</button>
+      <button type="button" class="btn-add" onclick={() => addUnlock(0)}><span>+</span> Add Unlock</button>
     </div>
   {/if}
 </div>

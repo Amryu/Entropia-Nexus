@@ -1,6 +1,13 @@
 <script>
   // @ts-nocheck
   import { page } from '$app/stores';
+  /**
+   * @typedef {Object} Props
+   * @property {import('svelte').Snippet} [children]
+   */
+
+  /** @type {Props} */
+  let { children } = $props();
 
   const navItems = [
     {
@@ -13,7 +20,7 @@
     }
   ];
 
-  let mobileSidebarOpen = false;
+  let mobileSidebarOpen = $state(false);
 
   function closeSidebar() {
     mobileSidebarOpen = false;
@@ -36,7 +43,7 @@
               href={item.href}
               class="nav-item"
               class:active={$page.url.pathname === item.href}
-              on:click={closeSidebar}
+              onclick={closeSidebar}
             >
               {item.label}
             </a>
@@ -47,10 +54,10 @@
   </aside>
 
   {#if mobileSidebarOpen}
-    <div class="sidebar-overlay" role="presentation" on:click={closeSidebar}></div>
+    <div class="sidebar-overlay" role="presentation" onclick={closeSidebar}></div>
   {/if}
 
-  <button class="sidebar-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
+  <button class="sidebar-toggle" onclick={() => mobileSidebarOpen = !mobileSidebarOpen}>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="6" x2="21" y2="6" />
@@ -60,7 +67,7 @@
   </button>
 
   <div class="settings-content">
-    <slot />
+    {@render children?.()}
   </div>
 </div>
 

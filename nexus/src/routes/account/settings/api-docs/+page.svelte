@@ -2,10 +2,10 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
 
-  export let data;
+  let { data } = $props();
 
-  let activeId = '';
-  let tocOpen = false;
+  let activeId = $state('');
+  let tocOpen = $state(false);
 
   function scrollTo(id) {
     const el = document.getElementById(id);
@@ -53,7 +53,7 @@
 
 <div class="api-docs">
   <div class="toc-mobile">
-    <button class="toc-toggle" on:click={() => tocOpen = !tocOpen}>
+    <button class="toc-toggle" onclick={() => tocOpen = !tocOpen}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="3" y1="6" x2="21" y2="6" />
         <line x1="3" y1="12" x2="15" y2="12" />
@@ -65,7 +65,7 @@
     {#if tocOpen}
       <nav class="toc-dropdown">
         {#each data.headings.filter(h => h.level === 2) as heading}
-          <button class="toc-link" class:active={activeId === heading.id} on:click={() => scrollTo(heading.id)}>
+          <button class="toc-link" class:active={activeId === heading.id} onclick={() => scrollTo(heading.id)}>
             {heading.text}
           </button>
         {/each}
@@ -84,7 +84,7 @@
           class="toc-item"
           class:sub={heading.level === 3}
           class:active={activeId === heading.id}
-          on:click={() => scrollTo(heading.id)}
+          onclick={() => scrollTo(heading.id)}
         >
           {heading.text}
         </button>

@@ -1,47 +1,64 @@
 <script>
+  import { preventDefault, stopPropagation, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { createFolder, renameFolder, deleteFolder, removeFavourite, moveToFolder } from '../../favouritesStore.js';
   import { clickable } from '$lib/actions/clickable.js';
 
-  export let favouritesData = { folders: [], items: [] };
-  export let allItems = [];
-  export let onSelectItem = null;
-  export let onSelectFolder = null;
-  export let selectedFolderId = null; // 'all' | 'root' | folder id | null
-  export let selectedItemId = null; // currently selected item id
-  export let showNewFolderButton = true;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [favouritesData]
+   * @property {any} [allItems]
+   * @property {any} [onSelectItem]
+   * @property {any} [onSelectFolder]
+   * @property {any} [selectedFolderId] - 'all' | 'root' | folder id | null
+   * @property {any} [selectedItemId] - currently selected item id
+   * @property {boolean} [showNewFolderButton]
+   */
 
-  let expandedFolders = new Set();
-  let editingFolderId = null;
-  let editingFolderName = '';
-  let dragItemId = null;
-  let dragOverTarget = null; // folder id or 'root'
+  /** @type {Props} */
+  let {
+    favouritesData = { folders: [], items: [] },
+    allItems = [],
+    onSelectItem = null,
+    onSelectFolder = null,
+    selectedFolderId = null,
+    selectedItemId = null,
+    showNewFolderButton = true
+  } = $props();
+
+  let expandedFolders = $state(new Set());
+  let editingFolderId = $state(null);
+  let editingFolderName = $state('');
+  let dragItemId = $state(null);
+  let dragOverTarget = $state(null); // folder id or 'root'
 
   // Build a lookup map for item names by ID
-  $: itemMap = (() => {
+  let itemMap = $derived((() => {
     const map = {};
     for (const item of (allItems || [])) {
       if (item?.i != null) map[item.i] = item;
     }
     return map;
-  })();
+  })());
 
   // Sort folders by order
-  $: sortedFolders = [...(favouritesData?.folders || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  let sortedFolders = $derived([...(favouritesData?.folders || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
 
   // Root items (not in any folder)
-  $: rootItems = favouritesData?.items || [];
+  let rootItems = $derived(favouritesData?.items || []);
 
   // Gather all favourite item IDs across all folders + root
-  $: allFavItemIds = (() => {
+  let allFavItemIds = $derived((() => {
     const ids = new Set(rootItems);
     for (const f of sortedFolders) {
       for (const id of (f.items || [])) ids.add(id);
     }
     return [...ids];
-  })();
+  })());
 
-  $: hasFavourites = rootItems.length > 0 || sortedFolders.some(f => f.items?.length > 0);
+  let hasFavourites = $derived(rootItems.length > 0 || sortedFolders.some(f => f.items?.length > 0));
 
   function toggleFolder(folderId) {
     if (expandedFolders.has(folderId)) {
@@ -130,7 +147,7 @@
     <div
       class="fav-folder-header clickable"
       class:selected={selectedFolderId === 'all'}
-      on:click={() => handleFolderSelect('all', allFavItemIds)}
+      onclick={() => handleFolderSelect('all', allFavItemIds)}
       use:clickable
     >
       <span class="expand-spacer"></span>
@@ -143,51 +160,51 @@
       <div
         class="fav-folder"
         class:drag-over={dragOverTarget === folder.id}
-        on:dragover|preventDefault={(e) => handleDragOver(e, folder.id)}
-        on:dragleave={() => handleDragLeave(folder.id)}
-        on:drop={(e) => handleDrop(e, folder.id)}
+        ondragover={preventDefault((e) => handleDragOver(e, folder.id))}
+        ondragleave={() => handleDragLeave(folder.id)}
+        ondrop={(e) => handleDrop(e, folder.id)}
         role="group"
       >
         <div
           class="fav-folder-header clickable"
           class:selected={selectedFolderId === folder.id}
-          on:click={() => handleFolderSelect(folder.id, folder.items || [])}
+          onclick={() => handleFolderSelect(folder.id, folder.items || [])}
           use:clickable
         >
           <span
             class="expand-toggle"
             class:expanded={expandedFolders.has(folder.id)}
-            on:click|stopPropagation={() => toggleFolder(folder.id)}
+            onclick={stopPropagation(() => toggleFolder(folder.id))}
             use:clickable={{ tabindex: -1 }}
           >{expandedFolders.has(folder.id) ? '▾' : '▸'}</span>
 
           {#if editingFolderId === folder.id}
-            <!-- svelte-ignore a11y-autofocus -- intentional focus on rename activation -->
-            <!-- svelte-ignore a11y-click-events-have-key-events -- stopPropagation on input to prevent folder toggle -->
+            <!-- svelte-ignore a11y_autofocus -- intentional focus on rename activation -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -- stopPropagation on input to prevent folder toggle -->
             <input
               class="folder-rename-input"
               type="text"
               bind:value={editingFolderName}
-              on:blur={finishRename}
-              on:keydown={handleRenameKeydown}
-              on:click|stopPropagation
+              onblur={finishRename}
+              onkeydown={handleRenameKeydown}
+              onclick={stopPropagation(bubble('click'))}
               autofocus
             />
           {:else}
             <span
               class="folder-name"
-              on:dblclick|stopPropagation={() => startRename(folder)}
+              ondblclick={stopPropagation(() => startRename(folder))}
             >{folder.name}</span>
           {/if}
 
           <span class="folder-count">{(folder.items || []).length}</span>
           <div class="folder-actions">
-            <button class="folder-action-btn" on:click|stopPropagation={() => startRename(folder)} title="Rename">
+            <button class="folder-action-btn" onclick={stopPropagation(() => startRename(folder))} title="Rename">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z"/>
               </svg>
             </button>
-            <button class="folder-action-btn delete" on:click|stopPropagation={() => handleDeleteFolder(folder.id)} title="Delete folder">
+            <button class="folder-action-btn delete" onclick={stopPropagation(() => handleDeleteFolder(folder.id))} title="Delete folder">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4l8 8M12 4l-8 8"/>
               </svg>
@@ -203,16 +220,16 @@
                 class:dragging={dragItemId === itemId}
                 class:selected={selectedItemId === itemId}
                 draggable="true"
-                on:click={() => handleItemClick(itemId)}
-                on:dragstart={(e) => handleDragStart(e, itemId)}
-                on:dragend={handleDragEnd}
+                onclick={() => handleItemClick(itemId)}
+                ondragstart={(e) => handleDragStart(e, itemId)}
+                ondragend={handleDragEnd}
                 use:clickable
               >
                 <span class="expand-spacer"></span>
                 <span class="fav-item-name">
                   {itemMap[itemId]?.n || `Item #${itemId}`}
                 </span>
-                <button class="fav-remove-btn" on:click|stopPropagation={() => removeFavourite(itemId)} title="Remove">x</button>
+                <button class="fav-remove-btn" onclick={stopPropagation(() => removeFavourite(itemId))} title="Remove">x</button>
               </div>
             {/each}
             {#if (folder.items || []).length === 0}
@@ -228,9 +245,9 @@
       <div
         class="fav-root-items"
         class:drag-over={dragOverTarget === 'root'}
-        on:dragover|preventDefault={(e) => handleDragOver(e, 'root')}
-        on:dragleave={() => handleDragLeave('root')}
-        on:drop={(e) => handleDrop(e, null)}
+        ondragover={preventDefault((e) => handleDragOver(e, 'root'))}
+        ondragleave={() => handleDragLeave('root')}
+        ondrop={(e) => handleDrop(e, null)}
         role="group"
       >
         {#each rootItems as itemId (itemId)}
@@ -239,16 +256,16 @@
             class:dragging={dragItemId === itemId}
             class:selected={selectedItemId === itemId}
             draggable="true"
-            on:click={() => handleItemClick(itemId)}
-            on:dragstart={(e) => handleDragStart(e, itemId)}
-            on:dragend={handleDragEnd}
+            onclick={() => handleItemClick(itemId)}
+            ondragstart={(e) => handleDragStart(e, itemId)}
+            ondragend={handleDragEnd}
             use:clickable
           >
             <span class="expand-spacer"></span>
             <span class="fav-item-name">
               {itemMap[itemId]?.n || `Item #${itemId}`}
             </span>
-            <button class="fav-remove-btn" on:click|stopPropagation={() => removeFavourite(itemId)} title="Remove">x</button>
+            <button class="fav-remove-btn" onclick={stopPropagation(() => removeFavourite(itemId))} title="Remove">x</button>
           </div>
         {/each}
       </div>
@@ -256,7 +273,7 @@
 
     {#if showNewFolderButton}
       <!-- New folder button -->
-      <button class="new-folder-btn" on:click={handleNewFolder}>+ Folder</button>
+      <button class="new-folder-btn" onclick={handleNewFolder}>+ Folder</button>
     {/if}
   </div>
 {:else}

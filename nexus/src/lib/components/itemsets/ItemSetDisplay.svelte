@@ -8,21 +8,27 @@
   import { TIERABLE_TYPES, CONDITION_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
   import { getTypeLink } from '$lib/util.js';
 
-  /** @type {object} Full item set object with data */
-  export let itemSet;
+  
 
-  /** @type {boolean} Whether to show the set name as a header */
-  export let showHeader = true;
+  
 
-  /** @type {boolean} Whether to render item names as links */
-  export let linkItems = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} itemSet
+   * @property {boolean} [showHeader]
+   * @property {boolean} [linkItems]
+   */
+
+  /** @type {Props} */
+  let { itemSet, showHeader = true, linkItems = false } = $props();
 
   function getItemHref(name, type) {
     if (!linkItems) return null;
     return getTypeLink(name, type) || null;
   }
 
-  $: items = itemSet?.data?.items || [];
+  let items = $derived(itemSet?.data?.items || []);
 
   function formatTT(value) {
     if (value == null) return null;

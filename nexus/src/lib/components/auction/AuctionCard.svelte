@@ -9,21 +9,27 @@
   import { isBuyoutOnly } from '$lib/common/auctionUtils.js';
   import { globalIdToEntityId } from '$lib/common/itemTypes.js';
 
-  /** @type {object} Auction data */
-  export let auction;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} auction
+   */
 
-  $: buyoutOnly = isBuyoutOnly(auction);
-  $: hasBids = auction.bid_count > 0;
-  $: isActive = auction.status === 'active';
-  $: isFrozen = auction.status === 'frozen';
-  $: items = auction.item_set_data?.items || [];
-  $: firstItem = items[0] || null;
-  $: firstItemEntityId = (firstItem?.itemId && firstItem?.type)
+  /** @type {Props} */
+  let { auction } = $props();
+
+  let buyoutOnly = $derived(isBuyoutOnly(auction));
+  let hasBids = $derived(auction.bid_count > 0);
+  let isActive = $derived(auction.status === 'active');
+  let isFrozen = $derived(auction.status === 'frozen');
+  let items = $derived(auction.item_set_data?.items || []);
+  let firstItem = $derived(items[0] || null);
+  let firstItemEntityId = $derived((firstItem?.itemId && firstItem?.type)
     ? globalIdToEntityId(firstItem.itemId, firstItem.type)
-    : null;
-  $: imageUrl = (firstItemEntityId != null && firstItem?.type)
+    : null);
+  let imageUrl = $derived((firstItemEntityId != null && firstItem?.type)
     ? `/api/img/${firstItem.type.toLowerCase()}/${firstItemEntityId}`
-    : null;
+    : null);
 </script>
 
 <a href="/market/auction/{auction.id}" class="auction-card">

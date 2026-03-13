@@ -5,25 +5,40 @@
   with maturity configuration dialog.
 -->
 <script>
+  import { stopPropagation, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { editMode, updateField, currentEntity } from '$lib/stores/wikiEditState.js';
   import { clickable } from '$lib/actions/clickable.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
-  /** @type {Array} Spawns array from the mob */
-  export let spawns = [];
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldPath = 'Spawns';
+  
 
-  /** @type {string} Current mob name */
-  export let mobName = '';
+  
 
-  /** @type {Array} Available maturities from the current mob */
-  export let maturities = [];
+  
 
-  /** @type {Array} All mobs list for shared spawn feature */
-  export let allMobs = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [spawns]
+   * @property {string} [fieldPath]
+   * @property {string} [mobName]
+   * @property {Array} [maturities]
+   * @property {Array} [allMobs]
+   */
+
+  /** @type {Props} */
+  let {
+    spawns = [],
+    fieldPath = 'Spawns',
+    mobName = '',
+    maturities = [],
+    allMobs = []
+  } = $props();
 
   // Constants
   const DEFAULT_SPAWN_RADIUS = 100;
@@ -37,13 +52,13 @@
   ];
 
   // Track which spawn panels are expanded
-  let expandedSpawns = {};
+  let expandedSpawns = $state({});
 
   // Maturity dialog state: { spawnIndex, mobName } or null
-  let maturityDialog = null;
+  let maturityDialog = $state(null);
 
   // Mob search options for SearchInput (local mode)
-  $: mobSearchOptions = (allMobs || []).map(m => ({ label: m.Name, value: m.Name }));
+  let mobSearchOptions = $derived((allMobs || []).map(m => ({ label: m.Name, value: m.Name })));
 
   // === Spawn Constructor ===
   function createSpawn() {
@@ -281,7 +296,7 @@
   }
 
   // Build dialog maturity entries from spawn data + full maturities
-  $: dialogEntries = (() => {
+  let dialogEntries = $derived((() => {
     if (!maturityDialog) return [];
     const spawn = spawns[maturityDialog.spawnIndex];
     const targetMobName = maturityDialog.mobName;
@@ -305,7 +320,7 @@
     }));
     sortMaturities(entries);
     return entries;
-  })();
+  })());
 
   function toggleDialogMaturity(matName) {
     if (!maturityDialog) return;
@@ -439,7 +454,7 @@
         <div class="spawn-header">
           <button
             class="spawn-header-toggle"
-            on:click={() => toggleSpawn(spawnIndex)}
+            onclick={() => toggleSpawn(spawnIndex)}
             type="button"
           >
             <span class="expand-icon">{expandedSpawns[spawnIndex] ? '▼' : '▶'}</span>
@@ -459,7 +474,7 @@
           <div class="spawn-actions">
             <button
               class="btn-icon danger"
-              on:click|stopPropagation={() => removeSpawn(spawnIndex)}
+              onclick={stopPropagation(() => removeSpawn(spawnIndex))}
               title="Remove spawn"
               type="button"
             >×</button>
@@ -476,7 +491,7 @@
                   <span class="field-label">Shape</span>
                   <select
                     value={spawn.Properties?.Shape || 'Point'}
-                    on:change={(e) => updateSpawnField(spawnIndex, 'Properties.Shape', e.target.value)}
+                    onchange={(e) => updateSpawnField(spawnIndex, 'Properties.Shape', e.target.value)}
                   >
                     {#each SHAPE_OPTIONS as shape}
                       <option value={shape}>{shape}</option>
@@ -487,7 +502,7 @@
                   <span class="field-label">Density</span>
                   <select
                     value={spawn.Properties?.Density || 3}
-                    on:change={(e) => updateSpawnField(spawnIndex, 'Properties.Density', parseInt(e.target.value))}
+                    onchange={(e) => updateSpawnField(spawnIndex, 'Properties.Density', parseInt(e.target.value))}
                   >
                     {#each DENSITY_OPTIONS as opt}
                       <option value={opt.value}>{opt.label}</option>
@@ -498,7 +513,7 @@
                   <input
                     type="checkbox"
                     checked={spawn.Properties?.IsShared || false}
-                    on:change={(e) => updateSpawnField(spawnIndex, 'Properties.IsShared', e.target.checked)}
+                    onchange={(e) => updateSpawnField(spawnIndex, 'Properties.IsShared', e.target.checked)}
                   />
                   <span class="field-label">Is Shared</span>
                 </label>
@@ -506,7 +521,7 @@
                   <input
                     type="checkbox"
                     checked={spawn.Properties?.IsEvent || false}
-                    on:change={(e) => updateSpawnField(spawnIndex, 'Properties.IsEvent', e.target.checked)}
+                    onchange={(e) => updateSpawnField(spawnIndex, 'Properties.IsEvent', e.target.checked)}
                   />
                   <span class="field-label">Is Event</span>
                 </label>
@@ -522,7 +537,7 @@
                     type="text"
                     class="waypoint-paste"
                     placeholder="Paste waypoint: [Planet, X, Y, Z, Name]"
-                    on:change={(e) => handleWaypointPaste(spawnIndex, e)}
+                    onchange={(e) => handleWaypointPaste(spawnIndex, e)}
                   />
                   <div class="waypoint-display">
                     Current: {getWaypointDisplay(spawn)}
@@ -535,7 +550,7 @@
                         value={typeof spawn.Properties?.Data === 'string'
                           ? JSON.parse(spawn.Properties.Data || '{}').x || 0
                           : spawn.Properties?.Data?.x || 0}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           const data = typeof spawn.Properties?.Data === 'string'
                             ? JSON.parse(spawn.Properties.Data || '{}')
                             : { ...spawn.Properties?.Data } || {};
@@ -551,7 +566,7 @@
                         value={typeof spawn.Properties?.Data === 'string'
                           ? JSON.parse(spawn.Properties.Data || '{}').y || 0
                           : spawn.Properties?.Data?.y || 0}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           const data = typeof spawn.Properties?.Data === 'string'
                             ? JSON.parse(spawn.Properties.Data || '{}')
                             : { ...spawn.Properties?.Data } || {};
@@ -565,7 +580,7 @@
                       <input
                         type="number"
                         value={spawn.Properties?.Coordinates?.Altitude || 0}
-                        on:input={(e) => updateSpawnField(spawnIndex, 'Properties.Coordinates.Altitude', parseFloat(e.target.value) || 0)}
+                        oninput={(e) => updateSpawnField(spawnIndex, 'Properties.Coordinates.Altitude', parseFloat(e.target.value) || 0)}
                       />
                     </label>
                   </div>
@@ -578,7 +593,7 @@
                       value={typeof spawn.Properties?.Data === 'string'
                         ? spawn.Properties.Data
                         : JSON.stringify(spawn.Properties?.Data || {}, null, 2)}
-                      on:input={(e) => {
+                      oninput={(e) => {
                         try {
                           const parsed = JSON.parse(e.target.value);
                           updateSpawnField(spawnIndex, 'Properties.Data', parsed);
@@ -587,14 +602,14 @@
                         }
                       }}
                       rows="4"
-                    />
+></textarea>
                   </label>
                   <label class="field">
                     <span class="field-label">Altitude</span>
                     <input
                       type="number"
                       value={spawn.Properties?.Coordinates?.Altitude || 0}
-                      on:input={(e) => updateSpawnField(spawnIndex, 'Properties.Coordinates.Altitude', parseFloat(e.target.value) || 0)}
+                      oninput={(e) => updateSpawnField(spawnIndex, 'Properties.Coordinates.Altitude', parseFloat(e.target.value) || 0)}
                     />
                   </label>
                 </div>
@@ -614,14 +629,14 @@
                       <div class="mob-entry-actions">
                         <button
                           class="configure-btn"
-                          on:click={() => openMaturityDialog(spawnIndex, mobName)}
+                          onclick={() => openMaturityDialog(spawnIndex, mobName)}
                           type="button"
                         >
                           Configure ({getSelectedCount(spawn, mobName)}/{getTotalCount(mobName)})
                         </button>
                         <button
                           class="btn-icon danger small"
-                          on:click={() => removeMobFromSpawn(spawnIndex, mobName)}
+                          onclick={() => removeMobFromSpawn(spawnIndex, mobName)}
                           title="Remove all maturities of this mob"
                           type="button"
                         >×</button>
@@ -631,7 +646,7 @@
                 {:else}
                   <button
                     class="btn-add-mob"
-                    on:click={() => addCurrentMobToSpawn(spawnIndex)}
+                    onclick={() => addCurrentMobToSpawn(spawnIndex)}
                     type="button"
                   >
                     <span>+</span> Add {mobName} (current mob)
@@ -646,14 +661,14 @@
                       <div class="mob-entry-actions">
                         <button
                           class="configure-btn"
-                          on:click={() => openMaturityDialog(spawnIndex, otherMobName)}
+                          onclick={() => openMaturityDialog(spawnIndex, otherMobName)}
                           type="button"
                         >
                           Configure ({getSelectedCount(spawn, otherMobName)}/{getTotalCount(otherMobName)})
                         </button>
                         <button
                           class="btn-icon danger small"
-                          on:click={() => removeMobFromSpawn(spawnIndex, otherMobName)}
+                          onclick={() => removeMobFromSpawn(spawnIndex, otherMobName)}
                           title="Remove mob"
                           type="button"
                         >×</button>
@@ -680,7 +695,7 @@
       </div>
     {/each}
 
-    <button class="btn-add" on:click={addSpawn} type="button">
+    <button class="btn-add" onclick={addSpawn} type="button">
       <span>+</span> Add Spawn
     </button>
   </div>
@@ -688,16 +703,16 @@
 
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog}
-  <div class="dialog-overlay" role="presentation" on:click={closeMaturityDialog}>
-    <div class="maturity-dialog" role="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={closeMaturityDialog}>
+    <div class="maturity-dialog" role="dialog" onclick={stopPropagation(bubble('click'))}>
       <div class="dialog-header">
         <h3>{maturityDialog.mobName}</h3>
-        <button class="dialog-close" on:click={closeMaturityDialog} type="button">×</button>
+        <button class="dialog-close" onclick={closeMaturityDialog} type="button">×</button>
       </div>
 
       <div class="dialog-actions">
-        <button on:click={selectAllDialogMaturities} type="button">All</button>
-        <button on:click={deselectAllDialogMaturities} type="button">None</button>
+        <button onclick={selectAllDialogMaturities} type="button">All</button>
+        <button onclick={deselectAllDialogMaturities} type="button">None</button>
       </div>
 
       <div class="dialog-content">
@@ -716,7 +731,7 @@
                 <input
                   type="checkbox"
                   checked={mat.selected}
-                  on:change={() => toggleDialogMaturity(mat.name)}
+                  onchange={() => toggleDialogMaturity(mat.name)}
                 />
               </label>
               <span class="mat-name">
@@ -733,7 +748,7 @@
                   <button
                     class="rare-btn"
                     class:active={mat.isRare}
-                    on:click={() => toggleDialogRare(mat.name)}
+                    onclick={() => toggleDialogRare(mat.name)}
                     title="Toggle rare spawn"
                     type="button"
                   >R</button>
@@ -745,7 +760,7 @@
       </div>
 
       <div class="dialog-footer">
-        <button on:click={closeMaturityDialog} type="button">Done</button>
+        <button onclick={closeMaturityDialog} type="button">Done</button>
       </div>
     </div>
   </div>

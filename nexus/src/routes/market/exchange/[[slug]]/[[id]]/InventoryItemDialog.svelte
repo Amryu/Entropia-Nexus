@@ -1,36 +1,43 @@
 <script>
+  import { run, self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { inventory } from '../../exchangeStore.js';
   import { isBlueprint, isItemTierable, isLimited, itemHasCondition } from '../../orderUtils';
   import { apiCall } from '$lib/util.js';
 
-  export let show = false;
-  export let item = null;
-  export let allItems = [];
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {any} [item]
+   * @property {any} [allItems]
+   */
+
+  /** @type {Props} */
+  let { show = false, item = $bindable(null), allItems = [] } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let itemDetails = null;
-  let loadingDetails = false;
-  let saving = false;
-  let saved = false;
+  let itemDetails = $state(null);
+  let loadingDetails = $state(false);
+  let saving = $state(false);
+  let saved = $state(false);
   let saveTimeout = null;
-  let error = null;
+  let error = $state(null);
 
   // Editable fields — bound to inputs
-  let editQuantity = 0;
-  let editValue = '';
-  let editTier = '';
-  let editTiR = '';
-  let editQR = '';
-  let editLevel = '';
-  let editUnlockedSkills = [];
+  let editQuantity = $state(0);
+  let editValue = $state('');
+  let editTier = $state('');
+  let editTiR = $state('');
+  let editQR = $state('');
+  let editLevel = $state('');
+  let editUnlockedSkills = $state([]);
 
   // Cache fetched item details by item_id
   const detailsCache = new Map();
 
-  $: if (show && item) openItem(item);
 
   async function openItem(inv) {
     error = null;
@@ -85,18 +92,6 @@
     }
   }
 
-  $: isFungible = item && !item.instance_key;
-  $: tierable = itemDetails && isItemTierable(itemDetails);
-  $: blueprint = itemDetails && isBlueprint(itemDetails);
-  $: limited = itemDetails && isLimited(itemDetails);
-  $: hasCondition = itemDetails && itemHasCondition(itemDetails);
-  $: showValue = !isFungible && hasCondition;
-  $: showTier = tierable;
-  $: showTiR = tierable;
-  $: showQR = blueprint && !limited;
-  $: tirMax = limited ? 4000 : 200;
-  $: isPetItem = itemDetails?.Properties?.Type === 'Pet' || itemDetails?.Type === 'Pet';
-  $: petEffects = isPetItem && itemDetails?.Effects ? itemDetails.Effects : [];
 
   function scheduleSave() {
     saved = false;
@@ -189,10 +184,25 @@
     if (saveTimeout) clearTimeout(saveTimeout);
     dispatch('close');
   }
+  run(() => {
+    if (show && item) openItem(item);
+  });
+  let isFungible = $derived(item && !item.instance_key);
+  let tierable = $derived(itemDetails && isItemTierable(itemDetails));
+  let blueprint = $derived(itemDetails && isBlueprint(itemDetails));
+  let limited = $derived(itemDetails && isLimited(itemDetails));
+  let hasCondition = $derived(itemDetails && itemHasCondition(itemDetails));
+  let showValue = $derived(!isFungible && hasCondition);
+  let showTier = $derived(tierable);
+  let showTiR = $derived(tierable);
+  let showQR = $derived(blueprint && !limited);
+  let tirMax = $derived(limited ? 4000 : 200);
+  let isPetItem = $derived(itemDetails?.Properties?.Type === 'Pet' || itemDetails?.Type === 'Pet');
+  let petEffects = $derived(isPetItem && itemDetails?.Effects ? itemDetails.Effects : []);
 </script>
 
 {#if show && item}
-  <div class="modal-overlay" role="presentation" on:click|self={handleClose}>
+  <div class="modal-overlay" role="presentation" onclick={self(handleClose)}>
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">{item.item_name || 'Item'}</h3>
@@ -200,7 +210,7 @@
           {#if saving}<span class="indicator saving">Saving...</span>{/if}
           {#if saved}<span class="indicator saved">Saved</span>{/if}
         </div>
-        <button class="close-btn" on:click={handleClose}>&times;</button>
+        <button class="close-btn" onclick={handleClose}>&times;</button>
       </div>
 
       {#if error}
@@ -220,7 +230,7 @@
                 min="0"
                 step="1"
                 bind:value={editQuantity}
-                on:input={scheduleSave}
+                oninput={scheduleSave}
               />
             </div>
           {/if}
@@ -235,7 +245,7 @@
                 step="0.01"
                 placeholder="—"
                 bind:value={editValue}
-                on:input={scheduleSave}
+                oninput={scheduleSave}
               />
             </div>
           {/if}
@@ -251,7 +261,7 @@
                 step="0.01"
                 placeholder="0.00"
                 bind:value={editTier}
-                on:input={scheduleSave}
+                oninput={scheduleSave}
               />
             </div>
           {/if}
@@ -267,7 +277,7 @@
                 step="1"
                 placeholder="1"
                 bind:value={editTiR}
-                on:input={scheduleSave}
+                oninput={scheduleSave}
               />
               <span class="field-hint">max {tirMax}</span>
             </div>
@@ -284,7 +294,7 @@
                 step="0.1"
                 placeholder="0"
                 bind:value={editQR}
-                on:input={scheduleSave}
+                oninput={scheduleSave}
               />
             </div>
           {/if}
@@ -300,7 +310,7 @@
                 step="1"
                 placeholder="0"
                 bind:value={editLevel}
-                on:input={scheduleSave}
+                oninput={scheduleSave}
               />
             </div>
 
@@ -316,7 +326,7 @@
                       <input
                         type="checkbox"
                         checked={editUnlockedSkills.includes(effectName)}
-                        on:change={(e) => {
+                        onchange={(e) => {
                           if (e.target.checked) {
                             editUnlockedSkills = [...editUnlockedSkills, effectName];
                           } else {
@@ -340,7 +350,7 @@
       {/if}
 
       <div class="modal-actions">
-        <button class="btn-primary" on:click={handleClose}>Done</button>
+        <button class="btn-primary" onclick={handleClose}>Done</button>
       </div>
     </div>
   </div>

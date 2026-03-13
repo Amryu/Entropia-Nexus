@@ -5,6 +5,9 @@
   Includes inline management controls for users with guide grants.
 -->
 <script>
+  import { run, createBubbler, stopPropagation, preventDefault } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import GuideNavigation from '$lib/components/guides/GuideNavigation.svelte';
@@ -12,43 +15,43 @@
   import { sanitizeHtml } from '$lib/sanitize.js';
   import { goto, invalidateAll } from '$app/navigation';
 
-  export let data;
+  let { data } = $props();
 
-  $: tree = Array.isArray(data.tree) ? data.tree : [];
-  $: lesson = data.lesson;
-  $: paragraphs = data.paragraphs || [];
-  $: slug = data.slug;
-  $: lessonApiPath = data.lessonApiPath || '';
-  $: isOverview = !slug;
+  let tree = $derived(Array.isArray(data.tree) ? data.tree : []);
+  let lesson = $derived(data.lesson);
+  let paragraphs = $derived(data.paragraphs || []);
+  let slug = $derived(data.slug);
+  let lessonApiPath = $derived(data.lessonApiPath || '');
+  let isOverview = $derived(!slug);
 
-  $: session = data.session;
-  $: user = session?.user;
-  $: canCreate = user?.grants?.includes('guide.create');
-  $: canEdit = user?.grants?.includes('guide.edit');
-  $: canDelete = user?.grants?.includes('guide.delete');
-  $: canManageGuides = canCreate || canEdit;
+  let session = $derived(data.session);
+  let user = $derived(session?.user);
+  let canCreate = $derived(user?.grants?.includes('guide.create'));
+  let canEdit = $derived(user?.grants?.includes('guide.edit'));
+  let canDelete = $derived(user?.grants?.includes('guide.delete'));
+  let canManageGuides = $derived(canCreate || canEdit);
 
   // Edit mode for lesson view
-  let editMode = false;
+  let editMode = $state(false);
 
   // Dialog state
-  let showDialog = false;
-  let dialogType = ''; // 'category', 'chapter', 'lesson', 'edit-category', 'edit-chapter', 'edit-lesson'
-  let dialogTitle = '';
+  let showDialog = $state(false);
+  let dialogType = $state(''); // 'category', 'chapter', 'lesson', 'edit-category', 'edit-chapter', 'edit-lesson'
+  let dialogTitle = $state('');
   let dialogParentId = null; // categoryId for chapters, chapterId for lessons
   let dialogGrandparentId = null; // categoryId for lessons
   let dialogEditItem = null;
 
   // Dialog form fields
-  let dialogName = '';
-  let dialogDescription = '';
-  let dialogSlug = '';
-  let dialogError = '';
-  let dialogSaving = false;
+  let dialogName = $state('');
+  let dialogDescription = $state('');
+  let dialogSlug = $state('');
+  let dialogError = $state('');
+  let dialogSaving = $state(false);
 
   // Banner upload state
-  let bannerUploading = false;
-  let bannerError = '';
+  let bannerUploading = $state(false);
+  let bannerError = $state('');
   // Cache-busting version per category to force re-render after upload
   let bannerVersions = {};
 
@@ -88,7 +91,7 @@
   }
 
   // Find prev/next lessons for navigation
-  $: allLessons = (() => {
+  let allLessons = $derived((() => {
     const list = [];
     for (const cat of tree) {
       for (const ch of cat.chapters || []) {
@@ -98,19 +101,21 @@
       }
     }
     return list;
-  })();
+  })());
 
-  $: currentIndex = allLessons.findIndex(l => l.slug === slug);
-  $: prevLesson = currentIndex > 0 ? allLessons[currentIndex - 1] : null;
-  $: nextLesson = currentIndex >= 0 && currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null;
-  $: currentCategoryId = currentIndex >= 0 ? allLessons[currentIndex].categoryId : null;
+  let currentIndex = $derived(allLessons.findIndex(l => l.slug === slug));
+  let prevLesson = $derived(currentIndex > 0 ? allLessons[currentIndex - 1] : null);
+  let nextLesson = $derived(currentIndex >= 0 && currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null);
+  let currentCategoryId = $derived(currentIndex >= 0 ? allLessons[currentIndex].categoryId : null);
 
   // Breadcrumb data
-  $: categoryTitle = lesson?.category_title;
-  $: chapterTitle = lesson?.chapter_title;
+  let categoryTitle = $derived(lesson?.category_title);
+  let chapterTitle = $derived(lesson?.chapter_title);
 
   // Reset edit mode when navigating between lessons
-  $: if (slug) editMode = false;
+  run(() => {
+    if (slug) editMode = false;
+  });
 
   async function toggleEditMode() {
     if (editMode) {
@@ -199,9 +204,11 @@
   }
 
   // Auto-generate slug from title for new lessons
-  $: if (dialogType === 'lesson' && dialogName) {
-    dialogSlug = autoSlug(dialogName);
-  }
+  run(() => {
+    if (dialogType === 'lesson' && dialogName) {
+      dialogSlug = autoSlug(dialogName);
+    }
+  });
 
   async function submitDialog() {
     dialogSaving = true;
@@ -334,7 +341,7 @@
       <h1>Guides</h1>
       <p class="subtitle">Step-by-step guides and tutorials for Entropia Universe</p>
       {#if canCreate}
-        <button class="header-action-btn" on:click={openCreateCategory}>+ New Category</button>
+        <button class="header-action-btn" onclick={openCreateCategory}>+ New Category</button>
       {/if}
     </header>
 
@@ -352,25 +359,25 @@
       <div class="category-list">
         {#each tree as category}
           <section class="guide-category">
-            <img class="category-banner" src={bannerUrl(category.id)} alt="" loading="lazy" on:error={(e) => e.target.style.display = 'none'} on:load={(e) => e.target.style.display = ''} />
+            <img class="category-banner" src={bannerUrl(category.id)} alt="" loading="lazy" onerror={(e) => e.target.style.display = 'none'} onload={(e) => e.target.style.display = ''} />
             {#if canManageGuides}
               <div class="category-actions">
                 {#if canEdit}
-                  <button class="cat-action-btn" on:click={() => openEditCategory(category)} title="Edit category">
+                  <button class="cat-action-btn" onclick={() => openEditCategory(category)} title="Edit category">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
                   <label class="cat-action-btn" title="Upload banner image" class:uploading={bannerUploading}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden on:change={(e) => handleBannerFileSelect(category.id, e)} disabled={bannerUploading} />
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange={(e) => handleBannerFileSelect(category.id, e)} disabled={bannerUploading} />
                   </label>
                 {/if}
                 {#if canCreate}
-                  <button class="cat-action-btn" on:click={() => openCreateChapter(category.id)} title="Add chapter">
+                  <button class="cat-action-btn" onclick={() => openCreateChapter(category.id)} title="Add chapter">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   </button>
                 {/if}
                 {#if canDelete}
-                  <button class="cat-action-btn danger" on:click={() => deleteCategory(category.id)} title="Delete category">
+                  <button class="cat-action-btn danger" onclick={() => deleteCategory(category.id)} title="Delete category">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                 {/if}
@@ -399,17 +406,17 @@
                       {#if canManageGuides}
                         <div class="inline-actions">
                           {#if canEdit}
-                            <button class="inline-btn" on:click={() => openEditChapter(category.id, chapter)} title="Edit chapter">
+                            <button class="inline-btn" onclick={() => openEditChapter(category.id, chapter)} title="Edit chapter">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
                           {/if}
                           {#if canCreate}
-                            <button class="inline-btn" on:click={() => openCreateLesson(category.id, chapter.id)} title="Add lesson">
+                            <button class="inline-btn" onclick={() => openCreateLesson(category.id, chapter.id)} title="Add lesson">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                             </button>
                           {/if}
                           {#if canDelete}
-                            <button class="inline-btn danger" on:click={() => deleteChapter(category.id, chapter.id)} title="Delete chapter">
+                            <button class="inline-btn danger" onclick={() => deleteChapter(category.id, chapter.id)} title="Delete chapter">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>
                           {/if}
@@ -424,7 +431,7 @@
                               {lessonItem.title}
                             </a>
                             {#if canDelete}
-                              <button class="inline-btn-sm danger" on:click={() => deleteLesson(category.id, chapter.id, lessonItem.id, lessonItem.slug)} title="Delete lesson">
+                              <button class="inline-btn-sm danger" onclick={() => deleteLesson(category.id, chapter.id, lessonItem.id, lessonItem.slug)} title="Delete lesson">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                               </button>
                             {/if}
@@ -472,17 +479,17 @@
         <article class="lesson-article">
           <div class="lesson-header">
             {#if currentCategoryId}
-              <img class="lesson-header-banner" src={bannerUrl(currentCategoryId)} alt="" loading="lazy" on:error={(e) => e.target.style.display = 'none'} on:load={(e) => e.target.style.display = ''} />
+              <img class="lesson-header-banner" src={bannerUrl(currentCategoryId)} alt="" loading="lazy" onerror={(e) => e.target.style.display = 'none'} onload={(e) => e.target.style.display = ''} />
             {/if}
             <h1 class="lesson-title">{lesson.title}</h1>
             {#if canManageGuides}
               <div class="lesson-actions">
                 {#if canEdit}
-                  <button class="lesson-action-btn" on:click={openEditLesson} title="Edit lesson title & slug">
+                  <button class="lesson-action-btn" onclick={openEditLesson} title="Edit lesson title & slug">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
                 {/if}
-                <button class="lesson-action-btn" class:active={editMode} on:click={toggleEditMode} title={editMode ? 'Exit edit mode' : 'Edit paragraphs'}>
+                <button class="lesson-action-btn" class:active={editMode} onclick={toggleEditMode} title={editMode ? 'Exit edit mode' : 'Edit paragraphs'}>
                   {#if editMode}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   {:else}
@@ -546,15 +553,15 @@
 
 <!-- CREATE/EDIT DIALOG -->
 {#if showDialog}
-  <div class="dialog-overlay" role="dialog" on:click={closeDialog} on:keydown={(e) => e.key === 'Escape' && closeDialog()}>
-    <div class="dialog" role="presentation" on:click|stopPropagation>
+  <div class="dialog-overlay" role="dialog" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
+    <div class="dialog" role="presentation" onclick={stopPropagation(bubble('click'))}>
       <h3 class="dialog-title">{dialogTitle}</h3>
 
       {#if dialogError}
         <div class="dialog-error">{dialogError}</div>
       {/if}
 
-      <form on:submit|preventDefault={submitDialog}>
+      <form onsubmit={preventDefault(submitDialog)}>
         <div class="dialog-field">
           <label for="dialog-name">Title</label>
           <input id="dialog-name" type="text" bind:value={dialogName} required placeholder="Enter title..." />
@@ -576,7 +583,7 @@
         {/if}
 
         <div class="dialog-actions">
-          <button type="button" class="btn-cancel" on:click={closeDialog}>Cancel</button>
+          <button type="button" class="btn-cancel" onclick={closeDialog}>Cancel</button>
           <button type="submit" class="btn-save" disabled={dialogSaving || !dialogName.trim()}>
             {dialogSaving ? 'Saving...' : (dialogType.startsWith('edit') ? 'Save' : 'Create')}
           </button>

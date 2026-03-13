@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run, preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
@@ -9,20 +11,20 @@
   import PilotManager from '$lib/components/services/PilotManager.svelte';
   import { loadEntity } from '$lib/utils/entityLoader';
 
-  export let data;
+  let { data } = $props();
 
   // Check if this is a newly created service
-  $: isNewService = $page.url.searchParams.get('new') === '1';
+  let isNewService = $derived($page.url.searchParams.get('new') === '1');
 
-  $: planets = data.planets || [];
-  $: service = data.service;
-  $: pilots = data.pilots || [];
+  let planets = $derived(data.planets || []);
+  let service = $derived(data.service);
+  let pilots = $derived(data.pilots || []);
 
-  let saving = false;
-  let error = '';
+  let saving = $state(false);
+  let error = $state('');
 
   // Lazy loaded entity data
-  let clothings = [];
+  let clothings = $state([]);
   let clothingsLoading = true;
 
   onMount(async () => {
@@ -37,43 +39,43 @@
   });
 
   // Form data - initialized from data.service (not the reactive variable)
-  let serviceType = data.service?.type || 'healing';
-  let title = data.service?.title || '';
-  let description = data.service?.description || '';
-  let planetId = data.service?.planet_id || null;
-  let willingToTravel = data.service?.willing_to_travel || false;
-  let travelFee = data.service?.travel_fee ? parseFloat(data.service.travel_fee).toFixed(2) : null;
+  let serviceType = $state(data.service?.type || 'healing');
+  let title = $state(data.service?.title || '');
+  let description = $state(data.service?.description || '');
+  let planetId = $state(data.service?.planet_id || null);
+  let willingToTravel = $state(data.service?.willing_to_travel || false);
+  let travelFee = $state(data.service?.travel_fee ? parseFloat(data.service.travel_fee).toFixed(2) : null);
 
   // Healing details
-  let paramedicLevel = data.service?.healing_details?.paramedic_level || null;
-  let acceptsTimeBilling = data.service?.healing_details?.accepts_time_billing !== false;
-  let ratePerHour = data.service?.healing_details?.rate_per_hour ? parseFloat(data.service.healing_details.rate_per_hour).toFixed(2) : (data.service?.dps_details?.rate_per_hour ? parseFloat(data.service.dps_details.rate_per_hour).toFixed(2) : null);
-  let acceptsDecayBilling = data.service?.healing_details?.accepts_decay_billing !== false || data.service?.dps_details?.accepts_decay_billing !== false;
+  let paramedicLevel = $state(data.service?.healing_details?.paramedic_level || null);
+  let acceptsTimeBilling = $state(data.service?.healing_details?.accepts_time_billing !== false);
+  let ratePerHour = $state(data.service?.healing_details?.rate_per_hour ? parseFloat(data.service.healing_details.rate_per_hour).toFixed(2) : (data.service?.dps_details?.rate_per_hour ? parseFloat(data.service.dps_details.rate_per_hour).toFixed(2) : null));
+  let acceptsDecayBilling = $state(data.service?.healing_details?.accepts_decay_billing !== false || data.service?.dps_details?.accepts_decay_billing !== false);
 
   // DPS details
-  let dpsNotes = data.service?.dps_details?.notes || '';
+  let dpsNotes = $state(data.service?.dps_details?.notes || '');
 
   // Equipment
-  let equipment = data.service?.equipment || [];
+  let equipment = $state(data.service?.equipment || []);
 
   // Transportation details
-  let transportationType = data.service?.transportation_details?.transportation_type || 'regular';
-  let shipName = data.service?.transportation_details?.ship_name || '';
-  let serviceMode = data.service?.transportation_details?.service_mode || 'on_demand';
+  let transportationType = $state(data.service?.transportation_details?.transportation_type || 'regular');
+  let shipName = $state(data.service?.transportation_details?.ship_name || '');
+  let serviceMode = $state(data.service?.transportation_details?.service_mode || 'on_demand');
 
   // Custom type name
-  let customTypeName = data.service?.custom_type_name || '';
+  let customTypeName = $state(data.service?.custom_type_name || '');
 
   // Owner fields (transportation only)
-  let differentOwner = !!(data.service?.owner_display_name || data.service?.owner_user_id);
-  let ownerDisplayName = data.service?.owner_display_name || '';
+  let differentOwner = $state(!!(data.service?.owner_display_name || data.service?.owner_user_id));
+  let ownerDisplayName = $state(data.service?.owner_display_name || '');
 
   // Pickup (transportation)
-  let allowsPickup = data.service?.transportation_details?.allows_pickup || false;
-  let pickupFee = data.service?.transportation_details?.pickup_fee || '';
+  let allowsPickup = $state(data.service?.transportation_details?.allows_pickup || false);
+  let pickupFee = $state(data.service?.transportation_details?.pickup_fee || '');
 
   // Discord code (warp services only)
-  let discordCode = data.service?.transportation_details?.discord_code || '';
+  let discordCode = $state(data.service?.transportation_details?.discord_code || '');
 
   // Ship name options for regular transportation
   const regularShipOptions = ['Sleipnir', 'Quad-Wing Interceptor'];
@@ -85,15 +87,17 @@
   ];
 
   // Reactive: reset ship name and service mode when transportation type changes
-  $: if (transportationType === 'regular') {
-    shipName = shipName && regularShipOptions.includes(shipName) ? shipName : '';
-    serviceMode = 'on_demand';
-  } else if (transportationType === 'warp_equus') {
-    shipName = 'Quad-Wing Equus';
-    serviceMode = 'on_demand';
-  } else if (transportationType === 'warp_privateer') {
-    shipName = shipName === 'Quad-Wing Equus' || regularShipOptions.includes(shipName) ? '' : shipName;
-  }
+  run(() => {
+    if (transportationType === 'regular') {
+      shipName = shipName && regularShipOptions.includes(shipName) ? shipName : '';
+      serviceMode = 'on_demand';
+    } else if (transportationType === 'warp_equus') {
+      shipName = 'Quad-Wing Equus';
+      serviceMode = 'on_demand';
+    } else if (transportationType === 'warp_privateer') {
+      shipName = shipName === 'Quad-Wing Equus' || regularShipOptions.includes(shipName) ? '' : shipName;
+    }
+  });
 
   const serviceTypes = [
     { value: 'healing', label: 'Healing' },
@@ -109,12 +113,12 @@
   ];
 
   // Dynamic placeholder based on service type
-  $: titlePlaceholder = {
+  let titlePlaceholder = $derived({
     healing: 'e.g., Professional Healing Service',
     dps: 'e.g., High-Level DPS Support',
     transportation: 'e.g., Calypso to Arkadia Warp Service',
     custom: 'e.g., Mining Finder Service'
-  }[serviceType] || 'Enter service title';
+  }[serviceType] || 'Enter service title');
 
   async function handleSubmit() {
     error = '';
@@ -249,7 +253,7 @@
     <div class="error-message">{error}</div>
   {/if}
 
-  <form on:submit|preventDefault={handleSubmit} class="service-form">
+  <form onsubmit={preventDefault(handleSubmit)} class="service-form">
     <div class="form-section">
       <h2>Basic Information</h2>
 
@@ -484,11 +488,11 @@
     </div>
 
     <div class="form-actions">
-      <button type="button" class={service.is_active ? "delete-btn" : "activate-btn"} on:click={handleToggleActive} disabled={saving}>
+      <button type="button" class={service.is_active ? "delete-btn" : "activate-btn"} onclick={handleToggleActive} disabled={saving}>
         {service.is_active ? 'Deactivate Service' : 'Activate Service'}
       </button>
       <div class="right-actions">
-        <button type="button" class="cancel-btn" on:click={() => goto(`/market/services/${service.id}`)}>Cancel</button>
+        <button type="button" class="cancel-btn" onclick={() => goto(`/market/services/${service.id}`)}>Cancel</button>
         <button type="submit" class="submit-btn" disabled={saving}>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>

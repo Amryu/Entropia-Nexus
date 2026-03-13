@@ -1,4 +1,6 @@
 <script>
+  import { run, self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { page } from '$app/stores';
@@ -7,33 +9,45 @@
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
-  /** @type {boolean} */
-  export let show = false;
+  
 
-  /** @type {object|null} The order being responded to */
-  export let order = null;
+  
 
-  /** @type {'buy'|'sell'} What the user is doing (buy = responding to a sell order) */
-  export let side = 'buy';
+  
 
-  /** @type {object|null} Item details for display */
-  export let item = null;
+  
 
-  /** Whether to show the "Add to Trade List" button */
-  export let showAddToList = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {object|null} [order]
+   * @property {'buy'|'sell'} [side]
+   * @property {object|null} [item]
+   * @property {boolean} [showAddToList] - Whether to show the "Add to Trade List" button
+   */
+
+  /** @type {Props} */
+  let {
+    show = false,
+    order = null,
+    side = 'buy',
+    item = null,
+    showAddToList = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let quantity = 1;
-  let submitting = false;
-  let error = null;
-  let minQty = 1;
-  let maxQty = 1;
-  let effectiveMinQty = 1;
-  let currentOrderId = null;
-  let initializedOrderId = null;
-  let wasOpen = false;
-  let qtyNumber = 1;
+  let quantity = $state(1);
+  let submitting = $state(false);
+  let error = $state(null);
+  let minQty = $state(1);
+  let maxQty = $state(1);
+  let effectiveMinQty = $state(1);
+  let currentOrderId = $state(null);
+  let initializedOrderId = $state(null);
+  let wasOpen = $state(false);
+  let qtyNumber = $state(1);
 
   /** Called by parent to signal that the async operation failed */
   export function setError(msg) {
@@ -41,49 +55,63 @@
     submitting = false;
   }
 
-  $: minQty = Math.max(1, Math.floor(Number(order?.min_quantity ?? 1) || 1));
-  $: maxQty = Math.max(1, Math.floor(Number(order?.quantity ?? 1) || 1));
-  $: effectiveMinQty = Math.min(minQty, maxQty);
-  $: currentOrderId = order?.id ?? order?.Id ?? null;
-  $: if (show && order) {
-    if (!wasOpen || initializedOrderId !== currentOrderId) {
-      quantity = maxQty;
-      error = null;
-      submitting = false;
-      initializedOrderId = currentOrderId;
+  run(() => {
+    minQty = Math.max(1, Math.floor(Number(order?.min_quantity ?? 1) || 1));
+  });
+  run(() => {
+    maxQty = Math.max(1, Math.floor(Number(order?.quantity ?? 1) || 1));
+  });
+  run(() => {
+    effectiveMinQty = Math.min(minQty, maxQty);
+  });
+  run(() => {
+    currentOrderId = order?.id ?? order?.Id ?? null;
+  });
+  run(() => {
+    if (show && order) {
+      if (!wasOpen || initializedOrderId !== currentOrderId) {
+        quantity = maxQty;
+        error = null;
+        submitting = false;
+        initializedOrderId = currentOrderId;
+      }
+      wasOpen = true;
     }
-    wasOpen = true;
-  }
-  $: if (!show && wasOpen) {
-    wasOpen = false;
-    initializedOrderId = null;
-  }
+  });
+  run(() => {
+    if (!show && wasOpen) {
+      wasOpen = false;
+      initializedOrderId = null;
+    }
+  });
 
-  $: isOwnOrder = (() => {
+  let isOwnOrder = $derived((() => {
     const userId = $page?.data?.session?.user?.id;
     const sellerId = order?.user_id ?? order?.SellerId ?? order?.UserId ?? null;
     return userId && sellerId && String(userId) === String(sellerId);
-  })();
-  $: qtyNumber = Number(quantity);
-  $: qtyValid = Number.isInteger(qtyNumber) && qtyNumber >= effectiveMinQty && qtyNumber <= maxQty;
+  })());
+  run(() => {
+    qtyNumber = Number(quantity);
+  });
+  let qtyValid = $derived(Number.isInteger(qtyNumber) && qtyNumber >= effectiveMinQty && qtyNumber <= maxQty);
 
-  $: isCond = hasCondition(item);
-  $: isAbsMu = isAbsoluteMarkup(item);
-  $: isBpNonL = isBlueprintNonL(item);
-  $: maxTT = getMaxTT(item);
-  $: isPetItem = isPet(item) || isPet(order);
-  $: petLevel = getPetLevel(order);
+  let isCond = $derived(hasCondition(item));
+  let isAbsMu = $derived(isAbsoluteMarkup(item));
+  let isBpNonL = $derived(isBlueprintNonL(item));
+  let maxTT = $derived(getMaxTT(item));
+  let isPetItem = $derived(isPet(item) || isPet(order));
+  let petLevel = $derived(getPetLevel(order));
 
-  $: markupDisplay = formatMarkupValue(order?.markup, isAbsMu);
+  let markupDisplay = $derived(formatMarkupValue(order?.markup, isAbsMu));
 
   // Non-L BP TT value is QR/100, not MaxTT
-  $: bpTTValue = isBpNonL ? (Number(order?.details?.QualityRating) || 0) / 100 : null;
+  let bpTTValue = $derived(isBpNonL ? (Number(order?.details?.QualityRating) || 0) / 100 : null);
 
-  $: itemType = item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
-  $: isSet = itemType === 'ArmorPlating' && Number(order?.quantity) === PLATE_SET_SIZE;
+  let itemType = $derived(item?.Properties?.Type ?? item?.Type ?? item?.t ?? null);
+  let isSet = $derived(itemType === 'ArmorPlating' && Number(order?.quantity) === PLATE_SET_SIZE);
 
   // Compute unit price (TT + MU per unit; for sets, includes all plates)
-  $: unitPrice = (() => {
+  let unitPrice = $derived((() => {
     if (order?.markup == null) return null;
     const mu = Number(order.markup);
     if (isBpNonL) return bpTTValue + mu;
@@ -91,24 +119,24 @@
     // Armor plate sets: TT value covers all 7 plates
     const tt = isSet ? maxTT * PLATE_SET_SIZE : maxTT;
     return isAbsMu ? tt + mu : tt * (mu / 100);
-  })();
+  })());
 
   // Compute total TT and total price for the selected quantity
-  $: totalTT = isBpNonL ? bpTTValue * quantity : (maxTT != null ? maxTT * quantity : null);
+  let totalTT = $derived(isBpNonL ? bpTTValue * quantity : (maxTT != null ? maxTT * quantity : null));
   // For sets, unitPrice already covers the full set; don't multiply by qty again
-  $: totalPrice = unitPrice != null ? (isSet ? unitPrice : unitPrice * quantity) : null;
+  let totalPrice = $derived(unitPrice != null ? (isSet ? unitPrice : unitPrice * quantity) : null);
 
   // Item metadata for display
-  $: tierable = isItemTierable(item);
-  $: blueprint = isBlueprint(item);
-  $: orderTier = order?.details?.Tier ?? order?.details?.tier ?? null;
-  $: orderTiR = order?.details?.TierIncreaseRate ?? order?.details?.tir ?? null;
-  $: orderQR = order?.details?.QualityRating ?? null;
-  $: orderCurrentTT = order?.details?.CurrentTT ?? null;
+  let tierable = $derived(isItemTierable(item));
+  let blueprint = $derived(isBlueprint(item));
+  let orderTier = $derived(order?.details?.Tier ?? order?.details?.tier ?? null);
+  let orderTiR = $derived(order?.details?.TierIncreaseRate ?? order?.details?.tir ?? null);
+  let orderQR = $derived(order?.details?.QualityRating ?? null);
+  let orderCurrentTT = $derived(order?.details?.CurrentTT ?? null);
 
-  $: partnerLabel = side === 'buy' ? 'Seller' : 'Buyer';
-  $: actionLabel = side === 'buy' ? 'Buy Now' : 'Sell Now';
-  $: canConfirm = !submitting && !isOwnOrder && qtyValid;
+  let partnerLabel = $derived(side === 'buy' ? 'Seller' : 'Buyer');
+  let actionLabel = $derived(side === 'buy' ? 'Buy Now' : 'Sell Now');
+  let canConfirm = $derived(!submitting && !isOwnOrder && qtyValid);
 
   function getNormalizedQuantity() {
     const parsed = Math.floor(Number(quantity));
@@ -155,13 +183,13 @@
     class="modal-overlay"
     role="button"
     tabindex="-1"
-    on:click|self={close}
-    on:keydown={(e) => e.key === 'Escape' && close()}
+    onclick={self(close)}
+    onkeydown={(e) => e.key === 'Escape' && close()}
   >
     <div class="quick-trade-dialog">
       <div class="dialog-header">
         <h3>{side === 'buy' ? 'Buy Item' : 'Sell Item'}</h3>
-        <button class="close-btn" on:click={close}>&times;</button>
+        <button class="close-btn" onclick={close}>&times;</button>
       </div>
 
       <div class="dialog-body">
@@ -236,7 +264,7 @@
               min={effectiveMinQty}
               max={maxQty}
               bind:value={quantity}
-              on:blur={normalizeQuantity}
+              onblur={normalizeQuantity}
             />
             <span class="qty-hint">
               {#if effectiveMinQty < maxQty}
@@ -277,11 +305,11 @@
       </div>
 
       <div class="dialog-actions">
-        <button class="btn btn-secondary" on:click={close}>Cancel</button>
+        <button class="btn btn-secondary" onclick={close}>Cancel</button>
         {#if isOwnOrder}
           <button
             class="btn btn-edit"
-            on:click={() => dispatch('editOwn', { order })}
+            onclick={() => dispatch('editOwn', { order })}
           >
             Edit Order
           </button>
@@ -289,7 +317,7 @@
           {#if showAddToList}
             <button
               class="btn btn-list"
-              on:click={() => dispatch('addToList', { order, quantity: getNormalizedQuantity() ?? quantity, side })}
+              onclick={() => dispatch('addToList', { order, quantity: getNormalizedQuantity() ?? quantity, side })}
               disabled={submitting || !qtyValid}
             >
               Add to Trade List
@@ -297,7 +325,7 @@
           {/if}
           <button
             class="btn {side === 'buy' ? 'btn-buy' : 'btn-sell'}"
-            on:click={confirm}
+            onclick={confirm}
             disabled={!canConfirm}
           >
             {submitting ? 'Sending...' : actionLabel}

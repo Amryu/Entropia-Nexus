@@ -1,27 +1,40 @@
 <script>
+  import { run, stopPropagation } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util.js';
 
-  export let mobs = [];          // All mobs from /mobs (cached by parent)
-  export let location = null;    // Existing WaveEvent location (if editing)
-  export let isNew = false;
-  export let pendingWaveData = null; // { waves: [...] } from pending changes
+  /**
+   * @typedef {Object} Props
+   * @property {any} [mobs] - All mobs from /mobs (cached by parent)
+   * @property {any} [location] - Existing WaveEvent location (if editing)
+   * @property {boolean} [isNew]
+   * @property {any} [pendingWaveData] - { waves: [...] } from pending changes
+   */
+
+  /** @type {Props} */
+  let {
+    mobs = [],
+    location = null,
+    isNew = false,
+    pendingWaveData = null
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
   // Working copy of waves
-  let waves = [];
-  let expandedWaves = new Set();
+  let waves = $state([]);
+  let expandedWaves = $state(new Set());
   // mob maturity cache: mobId → [{ Id, Name, Health, Level, Boss }]
-  let mobMaturityCache = {};
+  let mobMaturityCache = $state({});
   // per-wave maturity search
-  let waveSearchQueries = [];  // one search string per wave index
-  let maturitySearchWaveIdx = null;
-  let maturitySearchResults = [];
+  let waveSearchQueries = $state([]);  // one search string per wave index
+  let maturitySearchWaveIdx = $state(null);
+  let maturitySearchResults = $state([]);
 
   // Initialize from pending data or existing location Waves
-  $: {
+  run(() => {
     const source = pendingWaveData?.waves ?? location?.Waves ?? [];
     if (waves.length === 0 && source.length > 0) {
       waves = source.map(w => ({
@@ -32,7 +45,7 @@
       }));
       waveSearchQueries = waves.map(() => '');
     }
-  }
+  });
 
   // Mob name lookup by maturity ID — built lazily from cache
   function getMaturityLabel(maturityId) {
@@ -62,7 +75,7 @@
   }
 
   // Preload maturities for all mobs referenced in current waves
-  $: {
+  run(() => {
     const referencedMobIds = new Set();
     for (const wave of waves) {
       for (const matId of wave.MobMaturities) {
@@ -77,7 +90,7 @@
         }
       }
     }
-  }
+  });
 
   function addWave() {
     const nextIndex = waves.length > 0
@@ -419,13 +432,13 @@
 
     {#each waves as wave, idx}
       <div class="wave-item">
-        <div class="wave-header" on:click={() => toggleWave(idx)} role="button" tabindex="0" on:keydown={e => e.key === 'Enter' && toggleWave(idx)}>
+        <div class="wave-header" onclick={() => toggleWave(idx)} role="button" tabindex="0" onkeydown={e => e.key === 'Enter' && toggleWave(idx)}>
           <span class="expand-icon">{expandedWaves.has(idx) ? '▼' : '▶'}</span>
           <span class="wave-label">Wave {wave.WaveIndex}</span>
           <span class="wave-summary">
             {#if wave.TimeToComplete}{wave.TimeToComplete} min · {/if}{wave.MobMaturities.length} mob{wave.MobMaturities.length !== 1 ? 's' : ''}
           </span>
-          <button class="wave-remove" on:click|stopPropagation={() => removeWave(idx)} title="Remove wave">×</button>
+          <button class="wave-remove" onclick={stopPropagation(() => removeWave(idx))} title="Remove wave">×</button>
         </div>
 
         {#if expandedWaves.has(idx)}
@@ -437,7 +450,7 @@
                 type="number"
                 min="1"
                 value={wave.WaveIndex}
-                on:change={e => updateWave(idx, 'WaveIndex', parseInt(e.target.value) || wave.WaveIndex)}
+                onchange={e => updateWave(idx, 'WaveIndex', parseInt(e.target.value) || wave.WaveIndex)}
               />
             </div>
 
@@ -449,7 +462,7 @@
                 min="1"
                 placeholder="No limit"
                 value={wave.TimeToComplete ?? ''}
-                on:change={e => updateWave(idx, 'TimeToComplete', e.target.value ? parseInt(e.target.value) : null)}
+                onchange={e => updateWave(idx, 'TimeToComplete', e.target.value ? parseInt(e.target.value) : null)}
               />
             </div>
 
@@ -459,7 +472,7 @@
                 {#each wave.MobMaturities as matId}
                   <span class="maturity-chip">
                     {getMaturityLabel(matId)}
-                    <button on:click={() => removeMaturity(idx, matId)} title="Remove">×</button>
+                    <button onclick={() => removeMaturity(idx, matId)} title="Remove">×</button>
                   </span>
                 {/each}
               </div>
@@ -470,18 +483,18 @@
                   type="text"
                   placeholder="Search mob name to add..."
                   bind:value={waveSearchQueries[idx]}
-                  on:input={() => handleMaturitySearch(idx)}
-                  on:focus={() => { maturitySearchWaveIdx = idx; }}
+                  oninput={() => handleMaturitySearch(idx)}
+                  onfocus={() => { maturitySearchWaveIdx = idx; }}
                 />
                 {#if maturitySearchWaveIdx === idx && maturitySearchResults.length > 0}
                   <div class="search-results">
                     {#each maturitySearchResults as result}
                       <div
                         class="search-result-item"
-                        on:click={() => addMaturity(idx, result.matId)}
+                        onclick={() => addMaturity(idx, result.matId)}
                         role="button"
                         tabindex="0"
-                        on:keydown={e => e.key === 'Enter' && addMaturity(idx, result.matId)}
+                        onkeydown={e => e.key === 'Enter' && addMaturity(idx, result.matId)}
                       >
                         {result.label}
                       </div>
@@ -495,7 +508,7 @@
       </div>
     {/each}
 
-    <button class="btn-add-wave" on:click={addWave}>+ Add Wave</button>
+    <button class="btn-add-wave" onclick={addWave}>+ Add Wave</button>
   </div>
 
   <div style="flex: 1"></div>
@@ -503,7 +516,7 @@
   <div class="divider"></div>
 
   <div class="actions">
-    <button class="btn btn-primary" on:click={handleSave}>Save</button>
-    <button class="btn" on:click={handleCancel}>Cancel</button>
+    <button class="btn btn-primary" onclick={handleSave}>Save</button>
+    <button class="btn" onclick={handleCancel}>Cancel</button>
   </div>
 </div>

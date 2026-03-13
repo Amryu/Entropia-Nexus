@@ -24,13 +24,13 @@
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
   import GzButton from '$lib/components/globals/GzButton.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: user = data?.session?.user || null;
+  let user = $derived(data?.session?.user || null);
 
   // Media dialog state
-  let showMediaDialog = false;
-  let mediaDialogGlobal = null;
+  let showMediaDialog = $state(false);
+  let mediaDialogGlobal = $state(null);
 
   function openMediaDialog(g) {
     mediaDialogGlobal = g;
@@ -71,61 +71,61 @@
     crafting: { count: 0, value: 0 },
   };
 
-  let globals = [...(data.globals || [])];
-  let summary = { ...EMPTY_SUMMARY, ...(data.summary || {}) };
+  let globals = $state([...(data.globals || [])]);
+  let summary = $state({ ...EMPTY_SUMMARY, ...(data.summary || {}) });
 
   // Filters
-  let typeFilter = '';
-  let playerFilter = '';
-  let targetFilter = '';
-  let locationFilter = '';
-  let minValue = '';
-  let hofOnly = false;
-  let period = '7d';
-  let dateFrom = null;
-  let dateTo = null;
+  let typeFilter = $state('');
+  let playerFilter = $state('');
+  let targetFilter = $state('');
+  let locationFilter = $state('');
+  let minValue = $state('');
+  let hofOnly = $state(false);
+  let period = $state('7d');
+  let dateFrom = $state(null);
+  let dateTo = $state(null);
 
   // Sort toggles for charts
-  let playersSortBy = 'value';
-  let targetsSortBy = 'count';
-  let targetsGroupBy = 'mob';
+  let playersSortBy = $state('value');
+  let targetsSortBy = $state('count');
+  let targetsGroupBy = $state('mob');
 
   // Charts
-  let activityCanvas;
-  let topPlayersCanvas;
-  let topTargetsCanvas;
+  let activityCanvas = $state();
+  let topPlayersCanvas = $state();
+  let topTargetsCanvas = $state();
   let activityChart = null;
   let topPlayersChart = null;
   let topTargetsChart = null;
 
   // Stats data
-  let stats = null;
-  let statsLoading = false;
+  let stats = $state(null);
+  let statsLoading = $state(false);
 
   // Top loots
-  let topLoots = null;
-  let topLootsLoading = false;
-  let topLootsTab = 'hunting';
-  let topLootsPage = 1;
-  let topLootsPages = 1;
-  let topLootsTotal = 0;
-  let topLootsSort = { col: '', asc: false }; // empty = default server sort
+  let topLoots = $state(null);
+  let topLootsLoading = $state(false);
+  let topLootsTab = $state('hunting');
+  let topLootsPage = $state(1);
+  let topLootsPages = $state(1);
+  let topLootsTotal = $state(0);
+  let topLootsSort = $state({ col: '', asc: false }); // empty = default server sort
 
   // Remember type filter when switching to special tabs
   let savedTypeFilter = '';
-  let filtersDisabled = false;
+  let filtersDisabled = $state(false);
 
   // Live table
   let pollTimer = null;
   let latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
-  let loadingMore = false;
-  let tableLoading = false;
-  let hasMore = globals.length >= 50;
-  let newIds = new Set();
-  let liveSort = { col: 'timestamp', asc: false };
-  $: sortedGlobals = liveSort.col === 'timestamp' && !liveSort.asc
+  let loadingMore = $state(false);
+  let tableLoading = $state(false);
+  let hasMore = $state(globals.length >= 50);
+  let newIds = $state(new Set());
+  let liveSort = $state({ col: 'timestamp', asc: false });
+  let sortedGlobals = $derived(liveSort.col === 'timestamp' && !liveSort.asc
     ? globals
-    : sortedData(globals, liveSort);
+    : sortedData(globals, liveSort));
 
   const POLL_INTERVAL = 5000;
 
@@ -290,7 +290,7 @@
     fetchTopLoots();
   }
 
-  $: currentTabConfig = TOP_LOOTS_TABS.find(t => t.value === topLootsTab) || TOP_LOOTS_TABS[0];
+  let currentTabConfig = $derived(TOP_LOOTS_TABS.find(t => t.value === topLootsTab) || TOP_LOOTS_TABS[0]);
 
   function onDateRangeChange(e) {
     period = e.detail.period;
@@ -323,7 +323,7 @@
   }
 
   // Filter relevance helpers
-  $: showTopTargets = !typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill');
+  let showTopTargets = $derived(!typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill'));
 
   // Get index of Y-axis label clicked (for horizontal bar charts)
   function getClickedLabelIndex(evt, chart) {
@@ -562,12 +562,12 @@
     if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
   }
 
-  $: currentView = $page.url.searchParams.get('view');
-  $: isLiveView = currentView === 'live';
+  let currentView = $derived($page.url.searchParams.get('view'));
+  let isLiveView = $derived(currentView === 'live');
 
-  let playerSearchInput;
-  let targetSearchInput;
-  let locationSearchInput;
+  let playerSearchInput = $state();
+  let targetSearchInput = $state();
+  let locationSearchInput = $state();
 
   function handlePlayerSelect(e) {
     playerFilter = e.detail.name;
@@ -635,7 +635,7 @@
           class="type-btn"
           class:active={!filtersDisabled && typeFilter === tf.value}
           disabled={filtersDisabled}
-          on:click={() => onTypeFilter(tf.value)}
+          onclick={() => onTypeFilter(tf.value)}
         >
           {tf.label}
         </button>
@@ -646,7 +646,7 @@
         {#if playerFilter}
           <div class="filter-chip">
             <span>{playerFilter}</span>
-            <button class="chip-clear" on:click={clearPlayerFilter}>&times;</button>
+            <button class="chip-clear" onclick={clearPlayerFilter}>&times;</button>
           </div>
         {:else}
           <SearchInput
@@ -665,7 +665,7 @@
         {#if targetFilter}
           <div class="filter-chip">
             <span>{targetFilter}</span>
-            <button class="chip-clear" on:click={clearTargetFilter}>&times;</button>
+            <button class="chip-clear" onclick={clearTargetFilter}>&times;</button>
           </div>
         {:else}
           <SearchInput
@@ -684,7 +684,7 @@
         {#if locationFilter}
           <div class="filter-chip">
             <span>{locationFilter}</span>
-            <button class="chip-clear" on:click={clearLocationFilter}>&times;</button>
+            <button class="chip-clear" onclick={clearLocationFilter}>&times;</button>
           </div>
         {:else}
           <SearchInput
@@ -699,9 +699,9 @@
           />
         {/if}
       </div>
-      <input type="number" placeholder="Min PED" bind:value={minValue} on:input={onFilterChange} class="filter-input filter-input-short" />
+      <input type="number" placeholder="Min PED" bind:value={minValue} oninput={onFilterChange} class="filter-input filter-input-short" />
       <label class="hof-toggle" class:disabled={filtersDisabled}>
-        <input type="checkbox" bind:checked={hofOnly} on:change={onFilterChange} disabled={filtersDisabled} />
+        <input type="checkbox" bind:checked={hofOnly} onchange={onFilterChange} disabled={filtersDisabled} />
         HoF only
       </label>
     </div>
@@ -788,8 +788,8 @@
           <h3>Top Players</h3>
           <div class="chart-controls">
             <div class="sort-toggle">
-              <button class="sort-btn" class:active={playersSortBy === 'value'} on:click={() => onPlayersSortChange('value')}>Value</button>
-              <button class="sort-btn" class:active={playersSortBy === 'count'} on:click={() => onPlayersSortChange('count')}>Count</button>
+              <button class="sort-btn" class:active={playersSortBy === 'value'} onclick={() => onPlayersSortChange('value')}>Value</button>
+              <button class="sort-btn" class:active={playersSortBy === 'count'} onclick={() => onPlayersSortChange('count')}>Count</button>
             </div>
             <a href={buildFilterUrl('/globals/players')} class="view-all-link">View all &rarr;</a>
           </div>
@@ -809,13 +809,13 @@
           <div class="chart-controls">
             {#if showTopTargets}
               <div class="sort-toggle">
-                <button class="sort-btn" class:active={targetsGroupBy === 'maturity'} on:click={() => onTargetsGroupChange('maturity')}>Maturities</button>
-                <button class="sort-btn" class:active={targetsGroupBy === 'mob'} on:click={() => onTargetsGroupChange('mob')}>Mobs</button>
+                <button class="sort-btn" class:active={targetsGroupBy === 'maturity'} onclick={() => onTargetsGroupChange('maturity')}>Maturities</button>
+                <button class="sort-btn" class:active={targetsGroupBy === 'mob'} onclick={() => onTargetsGroupChange('mob')}>Mobs</button>
               </div>
             {/if}
             <div class="sort-toggle">
-              <button class="sort-btn" class:active={targetsSortBy === 'count'} on:click={() => onTargetsSortChange('count')}>Count</button>
-              <button class="sort-btn" class:active={targetsSortBy === 'value'} on:click={() => onTargetsSortChange('value')}>Value</button>
+              <button class="sort-btn" class:active={targetsSortBy === 'count'} onclick={() => onTargetsSortChange('count')}>Count</button>
+              <button class="sort-btn" class:active={targetsSortBy === 'value'} onclick={() => onTargetsSortChange('value')}>Value</button>
             </div>
             <a href={buildFilterUrl('/globals/targets')} class="view-all-link">View all &rarr;</a>
           </div>
@@ -848,7 +848,7 @@
           class="sort-btn"
           class:active={topLootsTab === tab.value}
           class:special={tab.isSpecial}
-          on:click={() => onTopLootsTabChange(tab.value)}
+          onclick={() => onTopLootsTabChange(tab.value)}
         >
           {tab.label}
         </button>
@@ -863,17 +863,17 @@
             <thead>
               <tr>
                 <th class="col-rank">#</th>
-                <th class="col-player sortable" on:click={() => onTopLootsSort('player')}>Player{sortIcon(topLootsSort, 'player')}</th>
+                <th class="col-player sortable" onclick={() => onTopLootsSort('player')}>Player{sortIcon(topLootsSort, 'player')}</th>
                 {#if topLootsTab !== 'pvp'}
-                  <th class="col-target sortable" on:click={() => onTopLootsSort('target')}>{currentTabConfig.isSpecial ? 'Item' : 'Target'}{sortIcon(topLootsSort, 'target')}</th>
+                  <th class="col-target sortable" onclick={() => onTopLootsSort('target')}>{currentTabConfig.isSpecial ? 'Item' : 'Target'}{sortIcon(topLootsSort, 'target')}</th>
                 {/if}
                 {#if currentTabConfig.hasValue}
-                  <th class="col-value right sortable" on:click={() => onTopLootsSort('value')}>Value{sortIcon(topLootsSort, 'value')}</th>
+                  <th class="col-value right sortable" onclick={() => onTopLootsSort('value')}>Value{sortIcon(topLootsSort, 'value')}</th>
                 {/if}
                 <th class="col-badge"></th>
                 <th class="col-media"></th>
                 <th class="col-gz"></th>
-                <th class="col-time sortable" on:click={() => onTopLootsSort('time')}>Time{sortIcon(topLootsSort, 'time')}</th>
+                <th class="col-time sortable" onclick={() => onTopLootsSort('time')}>Time{sortIcon(topLootsSort, 'time')}</th>
               </tr>
             </thead>
             <tbody>
@@ -902,7 +902,7 @@
                   </td>
                   <td class="col-media">
                     {#if loot.media_image || loot.media_video}
-                      <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                      <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                         {#if loot.media_image}
                           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                         {:else}
@@ -922,9 +922,9 @@
         </div>
         {#if topLootsPages > 1}
           <div class="pagination">
-            <button class="page-btn" disabled={topLootsPage <= 1} on:click={() => goToTopLootsPage(topLootsPage - 1)}>&lsaquo;</button>
+            <button class="page-btn" disabled={topLootsPage <= 1} onclick={() => goToTopLootsPage(topLootsPage - 1)}>&lsaquo;</button>
             <span class="page-info">Page {topLootsPage} of {topLootsPages}</span>
-            <button class="page-btn" disabled={topLootsPage >= topLootsPages} on:click={() => goToTopLootsPage(topLootsPage + 1)}>&rsaquo;</button>
+            <button class="page-btn" disabled={topLootsPage >= topLootsPages} onclick={() => goToTopLootsPage(topLootsPage + 1)}>&rsaquo;</button>
           </div>
         {/if}
       {:else}
@@ -949,12 +949,12 @@
         <table class="globals-table">
           <thead>
             <tr>
-              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'timestamp')}>Time{sortIcon(liveSort, 'timestamp')}</th>
-              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'type')}>Type{sortIcon(liveSort, 'type')}</th>
-              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'player')}>Player{sortIcon(liveSort, 'player')}</th>
-              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'target')}>Target{sortIcon(liveSort, 'target')}</th>
-              <th class="sortable right" on:click={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
-              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
+              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'timestamp')}>Time{sortIcon(liveSort, 'timestamp')}</th>
+              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'type')}>Type{sortIcon(liveSort, 'type')}</th>
+              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'player')}>Player{sortIcon(liveSort, 'player')}</th>
+              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'target')}>Target{sortIcon(liveSort, 'target')}</th>
+              <th class="sortable right" onclick={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
+              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
               <th></th>
               <th class="col-media"></th>
               <th class="col-gz"></th>
@@ -988,7 +988,7 @@
                 </td>
                 <td class="col-media">
                   {#if g.media_image || g.media_video}
-                    <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                    <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(g)}>
                       {#if g.media_image}
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                       {:else}
@@ -1007,7 +1007,7 @@
       </div>
       {#if hasMore}
         <div class="load-more">
-          <button class="load-more-btn" on:click={loadMore} disabled={loadingMore}>
+          <button class="load-more-btn" onclick={loadMore} disabled={loadingMore}>
             {loadingMore ? 'Loading...' : 'Load more'}
           </button>
         </div>

@@ -4,6 +4,8 @@
   Self-contained: fetches data on mount, manages its own chart and period selection.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler } from 'chart.js';
@@ -15,59 +17,65 @@
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
 
-  export let mobName = '';
+  /**
+   * @typedef {Object} Props
+   * @property {string} [mobName]
+   */
 
-  let globalsData = null;
-  let loading = false;
-  let period = '30d';
-  let mounted = false;
-  let lastLoadedMobName = '';
-  let refreshTimer = null;
+  /** @type {Props} */
+  let { mobName = '' } = $props();
+
+  let globalsData = $state(null);
+  let loading = $state(false);
+  let period = $state('30d');
+  let mounted = $state(false);
+  let lastLoadedMobName = $state('');
+  let refreshTimer = $state(null);
   const REFRESH_INTERVAL = 15000;
 
   // Chart
-  let activityCanvas;
-  let activityChart = null;
+  let activityCanvas = $state();
+  let activityChart = $state(null);
 
   // Top section toggle
-  let topView = 'total'; // 'total', 'count', or 'highest'
+  let topView = $state('total'); // 'total', 'count', or 'highest'
 
   // Pagination
   const PAGE_SIZE = 10;
-  let topPage = 1;
-  let recentPage = 1;
+  let topPage = $state(1);
+  let recentPage = $state(1);
 
   // Recent table sort
-  let recentSort = { col: 'timestamp', asc: false };
+  let recentSort = $state({ col: 'timestamp', asc: false });
 
   // Media dialog
-  let showMediaDialog = false;
-  let mediaDialogGlobal = null;
+  let showMediaDialog = $state(false);
+  let mediaDialogGlobal = $state(null);
 
   function openMediaDialog(g) {
     mediaDialogGlobal = g;
     showMediaDialog = true;
   }
 
-  $: summary = globalsData?.summary || null;
-  $: activity = globalsData?.activity || [];
-  $: topPlayers = globalsData?.top_players || [];
-  $: recent = globalsData?.recent || [];
-  $: bucketUnit = globalsData?.bucket_unit || 'day';
-  $: sortedRecent = recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort);
+  let summary = $derived(globalsData?.summary || null);
+  let activity = $derived(globalsData?.activity || []);
+  let topPlayers = $derived(globalsData?.top_players || []);
+  let recent = $derived(globalsData?.recent || []);
+  let bucketUnit = $derived(globalsData?.bucket_unit || 'day');
+  let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
 
   // Top sorted views
-  $: topByHighest = [...topPlayers].sort((a, b) => (b.best_value || 0) - (a.best_value || 0));
-  $: topByCount = [...topPlayers].sort((a, b) => (b.count || 0) - (a.count || 0));
-  $: allTop = topView === 'total' ? topPlayers
+  let topByHighest = $derived([...topPlayers].sort((a, b) => (b.best_value || 0) - (a.best_value || 0)));
+  let topByCount = $derived([...topPlayers].sort((a, b) => (b.count || 0) - (a.count || 0)));
+  let allTop = $derived(topView === 'total' ? topPlayers
     : topView === 'count' ? topByCount
-    : topByHighest;
-  $: topPages = Math.ceil(allTop.length / PAGE_SIZE);
-  $: displayedTop = allTop.slice((topPage - 1) * PAGE_SIZE, topPage * PAGE_SIZE);
+    : topByHighest);
+  let topPages = $derived(Math.ceil(allTop.length / PAGE_SIZE));
+  let displayedTop = $derived(allTop.slice((topPage - 1) * PAGE_SIZE, topPage * PAGE_SIZE));
 
   // Recent pagination
-  $: recentPages = Math.ceil(sortedRecent.length / PAGE_SIZE);
-  $: displayedRecent = sortedRecent.slice((recentPage - 1) * PAGE_SIZE, recentPage * PAGE_SIZE);
+  let recentPages = $derived(Math.ceil(sortedRecent.length / PAGE_SIZE));
+  let displayedRecent = $derived(sortedRecent.slice((recentPage - 1) * PAGE_SIZE, recentPage * PAGE_SIZE));
 
   async function loadGlobalsData() {
     if (!mobName) return;
@@ -206,24 +214,28 @@
   });
 
   // Reload globals when navigating to a different mob within the same page instance.
-  $: if (mounted && mobName && mobName !== lastLoadedMobName) {
-    lastLoadedMobName = mobName;
-    globalsData = null;
-    topPage = 1;
-    recentPage = 1;
-    recentSort = { col: 'timestamp', asc: false };
-    loadGlobalsData();
-  }
-
-  $: if (mounted && !mobName && lastLoadedMobName) {
-    lastLoadedMobName = '';
-    globalsData = null;
-    clearInterval(refreshTimer);
-    if (activityChart) {
-      activityChart.destroy();
-      activityChart = null;
+  run(() => {
+    if (mounted && mobName && mobName !== lastLoadedMobName) {
+      lastLoadedMobName = mobName;
+      globalsData = null;
+      topPage = 1;
+      recentPage = 1;
+      recentSort = { col: 'timestamp', asc: false };
+      loadGlobalsData();
     }
-  }
+  });
+
+  run(() => {
+    if (mounted && !mobName && lastLoadedMobName) {
+      lastLoadedMobName = '';
+      globalsData = null;
+      clearInterval(refreshTimer);
+      if (activityChart) {
+        activityChart.destroy();
+        activityChart = null;
+      }
+    }
+  });
 
   onDestroy(() => {
     clearInterval(refreshTimer);
@@ -237,7 +249,7 @@
     <span class="period-label">Period</span>
     <div class="period-toggle">
       {#each ['24h', '7d', '30d', '90d', '1y', 'all'] as p}
-        <button class="period-btn" class:active={period === p} on:click={() => changePeriod(p)}>{p}</button>
+        <button class="period-btn" class:active={period === p} onclick={() => changePeriod(p)}>{p}</button>
       {/each}
     </div>
   </div>
@@ -292,9 +304,9 @@
           <div class="card-header">
             <h3>Top Players</h3>
             <div class="view-toggle">
-              <button class="toggle-btn" class:active={topView === 'total'} on:click={() => { topView = 'total'; topPage = 1; }}>Total</button>
-              <button class="toggle-btn" class:active={topView === 'count'} on:click={() => { topView = 'count'; topPage = 1; }}>Count</button>
-              <button class="toggle-btn" class:active={topView === 'highest'} on:click={() => { topView = 'highest'; topPage = 1; }}>Highest</button>
+              <button class="toggle-btn" class:active={topView === 'total'} onclick={() => { topView = 'total'; topPage = 1; }}>Total</button>
+              <button class="toggle-btn" class:active={topView === 'count'} onclick={() => { topView = 'count'; topPage = 1; }}>Count</button>
+              <button class="toggle-btn" class:active={topView === 'highest'} onclick={() => { topView = 'highest'; topPage = 1; }}>Highest</button>
             </div>
           </div>
           <div class="table-wrapper">
@@ -324,9 +336,9 @@
           </div>
           {#if topPages > 1}
             <div class="pagination">
-              <button class="page-btn" disabled={topPage <= 1} on:click={() => topPage--}>&lsaquo;</button>
+              <button class="page-btn" disabled={topPage <= 1} onclick={() => topPage--}>&lsaquo;</button>
               <span class="page-info">{topPage} / {topPages}</span>
-              <button class="page-btn" disabled={topPage >= topPages} on:click={() => topPage++}>&rsaquo;</button>
+              <button class="page-btn" disabled={topPage >= topPages} onclick={() => topPage++}>&rsaquo;</button>
             </div>
           {/if}
         </div>
@@ -339,11 +351,11 @@
             <table class="data-table compact">
               <thead>
                 <tr>
-                  <th class="sortable" on:click={() => { recentSort = toggleSort(recentSort, 'player'); recentPage = 1; }}>Player{sortIcon(recentSort, 'player')}</th>
-                  <th class="sortable right" on:click={() => { recentSort = toggleSort(recentSort, 'value'); recentPage = 1; }}>Value{sortIcon(recentSort, 'value')}</th>
+                  <th class="sortable" onclick={() => { recentSort = toggleSort(recentSort, 'player'); recentPage = 1; }}>Player{sortIcon(recentSort, 'player')}</th>
+                  <th class="sortable right" onclick={() => { recentSort = toggleSort(recentSort, 'value'); recentPage = 1; }}>Value{sortIcon(recentSort, 'value')}</th>
                   <th></th>
                   <th class="col-media"></th>
-                  <th class="sortable" on:click={() => { recentSort = toggleSort(recentSort, 'timestamp'); recentPage = 1; }}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                  <th class="sortable" onclick={() => { recentSort = toggleSort(recentSort, 'timestamp'); recentPage = 1; }}>Time{sortIcon(recentSort, 'timestamp')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -359,7 +371,7 @@
                     </td>
                     <td class="col-media">
                       {#if g.media_image || g.media_video}
-                        <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(g)}>
                           {#if g.media_image}
                             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                           {:else}
@@ -376,9 +388,9 @@
           </div>
           {#if recentPages > 1}
             <div class="pagination">
-              <button class="page-btn" disabled={recentPage <= 1} on:click={() => recentPage--}>&lsaquo;</button>
+              <button class="page-btn" disabled={recentPage <= 1} onclick={() => recentPage--}>&lsaquo;</button>
               <span class="page-info">{recentPage} / {recentPages}</span>
-              <button class="page-btn" disabled={recentPage >= recentPages} on:click={() => recentPage++}>&rsaquo;</button>
+              <button class="page-btn" disabled={recentPage >= recentPages} onclick={() => recentPage++}>&rsaquo;</button>
             </div>
           {/if}
         </div>

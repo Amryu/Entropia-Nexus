@@ -9,24 +9,24 @@
   import { goto } from '$app/navigation';
   import { navigating } from '$app/stores';
 
-  export let data;
+  let { data } = $props();
 
   // Show loading state during navigation
-  $: isLoading = $navigating !== null;
+  let isLoading = $derived($navigating !== null);
 
-  $: services = data.services || [];
-  $: incomingRequests = data.incomingRequests || [];
-  $: outgoingRequests = data.outgoingRequests || [];
-  $: user = data.session?.user;
+  let services = $derived(data.services || []);
+  let incomingRequests = $derived(data.incomingRequests || []);
+  let outgoingRequests = $derived(data.outgoingRequests || []);
+  let user = $derived(data.session?.user);
 
-  $: activeServices = services.filter(s => s.is_active);
-  $: inactiveServices = services.filter(s => !s.is_active);
-  $: transportationServices = services.filter(s => s.type === 'transportation' && s.is_active);
+  let activeServices = $derived(services.filter(s => s.is_active));
+  let inactiveServices = $derived(services.filter(s => !s.is_active));
+  let transportationServices = $derived(services.filter(s => s.type === 'transportation' && s.is_active));
 
   // Get recent/pending requests for dashboard overview
-  $: pendingIncoming = incomingRequests.filter(r => r.status === 'pending').slice(0, 5);
-  $: activeInProgress = incomingRequests.filter(r => r.status === 'in_progress').slice(0, 5);
-  $: pendingOutgoing = outgoingRequests.filter(r => ['pending', 'accepted'].includes(r.status)).slice(0, 5);
+  let pendingIncoming = $derived(incomingRequests.filter(r => r.status === 'pending').slice(0, 5));
+  let activeInProgress = $derived(incomingRequests.filter(r => r.status === 'in_progress').slice(0, 5));
+  let pendingOutgoing = $derived(outgoingRequests.filter(r => ['pending', 'accepted'].includes(r.status)).slice(0, 5));
 
   function getServiceTypeLabel(type) {
     const labels = {
@@ -173,7 +173,7 @@
         </div>
         <div class="request-cards">
           {#each pendingIncoming as request}
-            <div class="request-card" on:click={() => goto(`/market/services/my/offers/${request.service_id}`)} on:keypress={(e) => e.key === 'Enter' && goto(`/market/services/my/offers/${request.service_id}`)} role="button" tabindex="0">
+            <div class="request-card" onclick={() => goto(`/market/services/my/offers/${request.service_id}`)} onkeypress={(e) => e.key === 'Enter' && goto(`/market/services/my/offers/${request.service_id}`)} role="button" tabindex="0">
               <div class="request-info">
                 <span class="requester">{request.requester_name}</span>
                 <span class="service-name">{request.service_title}</span>
@@ -194,7 +194,7 @@
         </div>
         <div class="request-cards">
           {#each activeInProgress as request}
-            <div class="request-card" on:click={() => goto(`/market/services/my/offers/${request.service_id}`)} on:keypress={(e) => e.key === 'Enter' && goto(`/market/services/my/offers/${request.service_id}`)} role="button" tabindex="0">
+            <div class="request-card" onclick={() => goto(`/market/services/my/offers/${request.service_id}`)} onkeypress={(e) => e.key === 'Enter' && goto(`/market/services/my/offers/${request.service_id}`)} role="button" tabindex="0">
               <div class="request-info">
                 <span class="requester">{request.requester_name}</span>
                 <span class="service-name">{request.service_title}</span>
@@ -215,7 +215,7 @@
         </div>
         <div class="request-cards">
           {#each pendingOutgoing as request}
-            <div class="request-card" on:click={() => goto(`/market/services/my/requests/${request.id}`)} on:keypress={(e) => e.key === 'Enter' && goto(`/market/services/my/requests/${request.id}`)} role="button" tabindex="0">
+            <div class="request-card" onclick={() => goto(`/market/services/my/requests/${request.id}`)} onkeypress={(e) => e.key === 'Enter' && goto(`/market/services/my/requests/${request.id}`)} role="button" tabindex="0">
               <div class="request-info">
                 <span class="provider">{request.provider_name}</span>
                 <span class="service-name">{request.service_title}</span>

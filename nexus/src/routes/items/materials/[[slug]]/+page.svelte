@@ -7,6 +7,8 @@
   Supports full wiki editing with wikiEditState integration.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -48,37 +50,39 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.availableItems === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'availableItems', url: '/api/items' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.availableItems === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'availableItems', url: '/api/items' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: material = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: availableItems = data.availableItems || [];
-  $: materialEntityId = material?.Id ?? material?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, materialEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let material = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let availableItems = $derived(data.availableItems || []);
+  let materialEntityId = $derived(material?.Id ?? material?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, materialEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Permission check - verified users can edit
-  $: canEdit = user?.verified === true;
+  let canEdit = $derived(user?.verified === true);
 
   // Empty entity template for create mode
   const emptyMaterial = {
@@ -94,29 +98,33 @@
   };
 
   // Initialize edit state when entity/user changes
-  $: if (user) {
-    if (data.isCreateMode) {
-      const initialData = existingChange?.data || emptyMaterial;
-      initEditState(initialData, 'Material', true, existingChange);
-    } else if (material) {
-      initEditState(material, 'Material', false, canUsePendingChange ? resolvedPendingChange : null);
+  run(() => {
+    if (user) {
+      if (data.isCreateMode) {
+        const initialData = existingChange?.data || emptyMaterial;
+        initEditState(initialData, 'Material', true, existingChange);
+      } else if (material) {
+        initEditState(material, 'Material', false, canUsePendingChange ? resolvedPendingChange : null);
+      }
     }
-  }
+  });
 
   // Handle pending changes from API
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity - use this everywhere in templates
-  $: activeMaterial = $editMode
+  let activeMaterial = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : material;
+      : material);
 
   // Cleanup on unmount
   onDestroy(() => {
@@ -124,11 +132,11 @@
   });
 
   // Build material type options for SearchInput (unique types from loaded materials)
-  $: materialTypeOptions = [...new Set(allItems.filter(m => m?.Properties?.Type).map(m => m.Properties.Type))].sort()
-    .map(t => ({ label: t, value: t }));
+  let materialTypeOptions = $derived([...new Set(allItems.filter(m => m?.Properties?.Type).map(m => m.Properties.Type))].sort()
+    .map(t => ({ label: t, value: t })));
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - none for materials (simple list)
   const navFilters = [];
@@ -146,30 +154,30 @@
   const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Materials', href: '/items/materials' },
     ...(activeMaterial?.Name ? [{ label: activeMaterial.Name }] : data.isCreateMode ? [{ label: 'New Material' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeMaterial?.Properties?.Description ||
-    `${activeMaterial?.Name || 'Material'} - crafting material in Entropia Universe.`;
+  let seoDescription = $derived(activeMaterial?.Properties?.Description ||
+    `${activeMaterial?.Name || 'Material'} - crafting material in Entropia Universe.`);
 
-  $: canonicalUrl = activeMaterial?.Name
+  let canonicalUrl = $derived(activeMaterial?.Name
     ? `https://entropianexus.com/items/materials/${encodeURIComponentSafe(activeMaterial.Name)}`
-    : 'https://entropianexus.com/items/materials';
+    : 'https://entropianexus.com/items/materials');
 
   // SEO Image URL (if entity has an image)
-  $: entityImageUrl = material?.Id ? `/api/img/material/${material.Id}` : null;
+  let entityImageUrl = $derived(material?.Id ? `/api/img/material/${material.Id}` : null);
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     marketPrices: true,
     acquisition: true,
     usage: true,
     refining: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -247,7 +255,7 @@
         </span>
         <button
           class="banner-toggle"
-          on:click={() => setViewingPendingChange(!$viewingPendingChange)}
+          onclick={() => setViewingPendingChange(!$viewingPendingChange)}
         >
           {$viewingPendingChange ? 'View Original' : 'View Changes'}
         </button>

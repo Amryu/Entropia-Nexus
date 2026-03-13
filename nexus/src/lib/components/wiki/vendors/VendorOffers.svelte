@@ -8,7 +8,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { clampDecimals, getItemLink, getTypeName } from '$lib/util';
 
-  export let offers = [];
+  let { offers = [] } = $props();
 
   // Type badge colors
   const typeColors = {
@@ -42,7 +42,7 @@
   }
 
   // Transform data for FancyTable
-  $: tableData = (offers || [])
+  let tableData = $derived((offers || [])
     .sort((a, b) => a.Item.Name.localeCompare(b.Item.Name))
     .map(offer => {
       const itemLink = getItemLink(offer.Item);
@@ -61,7 +61,7 @@
         specialCost: specialCost,
         isLimited: offer.IsLimited || false
       };
-    });
+    }));
 
   const columns = [
     {

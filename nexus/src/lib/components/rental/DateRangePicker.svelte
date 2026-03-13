@@ -10,35 +10,45 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string|null} Minimum selectable date (YYYY-MM-DD) */
-  export let minDate = null;
+  
 
-  /** @type {string|null} Maximum selectable date (YYYY-MM-DD) */
-  export let maxDate = null;
+  
 
-  /** @type {Set<string>} Set of unavailable date strings */
-  export let unavailableDates = new Set();
+  
 
-  /** @type {string|null} Selected start date */
-  export let selectedStart = null;
+  
 
-  /** @type {string|null} Selected end date */
-  export let selectedEnd = null;
+  
 
-  /** @type {number} Price per day for preview */
-  export let pricePerDay = 0;
+  
 
-  /** @type {Array} Discount thresholds for preview */
-  export let discounts = [];
+  
 
-  /** @type {number} Deposit amount for preview */
-  export let deposit = 0;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string|null} [minDate]
+   * @property {string|null} [maxDate]
+   * @property {Set<string>} [unavailableDates]
+   * @property {string|null} [selectedStart]
+   * @property {string|null} [selectedEnd]
+   * @property {number} [pricePerDay]
+   * @property {Array} [discounts]
+   * @property {number} [deposit]
+   */
 
-  $: effectiveMin = minDate || getToday();
-  $: effectiveMax = maxDate || getMaxDate();
-  $: totalDays = selectedStart && selectedEnd ? countDays(selectedStart, selectedEnd) : 0;
-  $: pricing = totalDays > 0 ? calculateRentalPrice(pricePerDay, discounts, totalDays) : null;
-  $: hasConflict = selectedStart && selectedEnd ? checkConflict(selectedStart, selectedEnd) : false;
+  /** @type {Props} */
+  let {
+    minDate = null,
+    maxDate = null,
+    unavailableDates = new Set(),
+    selectedStart = $bindable(null),
+    selectedEnd = $bindable(null),
+    pricePerDay = 0,
+    discounts = [],
+    deposit = 0
+  } = $props();
+
 
   function getToday() {
     return toDateStr(new Date());
@@ -82,6 +92,11 @@
     }
     dispatch('change', { start: selectedStart, end: selectedEnd });
   }
+  let effectiveMin = $derived(minDate || getToday());
+  let effectiveMax = $derived(maxDate || getMaxDate());
+  let totalDays = $derived(selectedStart && selectedEnd ? countDays(selectedStart, selectedEnd) : 0);
+  let pricing = $derived(totalDays > 0 ? calculateRentalPrice(pricePerDay, discounts, totalDays) : null);
+  let hasConflict = $derived(selectedStart && selectedEnd ? checkConflict(selectedStart, selectedEnd) : false);
 </script>
 
 <div class="date-range-picker">
@@ -94,7 +109,7 @@
         value={selectedStart || ''}
         min={effectiveMin}
         max={effectiveMax}
-        on:change={handleStartChange}
+        onchange={handleStartChange}
       />
     </div>
     <div class="date-separator">&rarr;</div>
@@ -106,7 +121,7 @@
         value={selectedEnd || ''}
         min={selectedStart || effectiveMin}
         max={effectiveMax}
-        on:change={handleEndChange}
+        onchange={handleEndChange}
       />
     </div>
   </div>

@@ -7,17 +7,17 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
 
-  export let data;
+  let { data } = $props();
 
   const BATCH_SIZE = 20;
-  let visibleCount = BATCH_SIZE;
-  let sentinel;
+  let visibleCount = $state(BATCH_SIZE);
+  let sentinel = $state();
   let observer;
 
-  $: upcoming = data.upcoming || [];
-  $: allPast = data.past || [];
-  $: visiblePast = allPast.slice(0, visibleCount);
-  $: hasMore = visibleCount < allPast.length;
+  let upcoming = $derived(data.upcoming || []);
+  let allPast = $derived(data.past || []);
+  let visiblePast = $derived(allPast.slice(0, visibleCount));
+  let hasMore = $derived(visibleCount < allPast.length);
 
   function formatEventDate(dateStr) {
     const d = new Date(dateStr);

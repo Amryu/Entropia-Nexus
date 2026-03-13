@@ -10,6 +10,9 @@
   - Validate chain connectivity before saving
 -->
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
@@ -17,62 +20,67 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string|null} Current chain name (null for new chain) */
-  export let chainName = null;
+  
 
-  /** @type {string|null} Current chain description */
-  export let chainDescription = null;
+  
 
-  /** @type {string|null} Current chain planet name */
-  export let chainPlanet = null;
+  
 
-  /** @type {boolean} Whether this is creating a new chain */
-  export let isCreating = false;
+  
 
-  /** @type {Array} All available mission chains */
-  export let allChains = [];
+  
 
-  /** @type {Array} All missions */
-  export let allMissions = [];
+  
 
-  /** @type {Object|null} Current mission being edited */
-  export let currentMission = null;
+  
 
-  /** @type {Object|null} Graph data for the chain { nodes, edges } */
-  export let graphData = null;
+  
 
-  /** @type {Array} Planet options for new chain */
-  export let planetOptions = [];
+  
 
-  /** @type {string} Current mission's planet name */
-  export let currentPlanetName = 'Calypso';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string|null} [chainName]
+   * @property {string|null} [chainDescription]
+   * @property {string|null} [chainPlanet]
+   * @property {boolean} [isCreating]
+   * @property {Array} [allChains]
+   * @property {Array} [allMissions]
+   * @property {Object|null} [currentMission]
+   * @property {Object|null} Graph data for the chain { nodes, edges } [graphData]
+   * @property {Array} [planetOptions]
+   * @property {string} [currentPlanetName]
+   */
+
+  /** @type {Props} */
+  let {
+    chainName = null,
+    chainDescription = null,
+    chainPlanet = null,
+    isCreating = false,
+    allChains = [],
+    allMissions = [],
+    currentMission = null,
+    graphData = null,
+    planetOptions = [],
+    currentPlanetName = 'Calypso'
+  } = $props();
 
   // Local state
-  let newChainName = '';
-  let newChainPlanet = currentPlanetName;
-  let newChainDescription = '';
-  let nameError = '';
+  let newChainName = $state('');
+  let newChainPlanet = $state(currentPlanetName);
+  let newChainDescription = $state('');
+  let nameError = $state('');
 
   // For editing existing chain
-  let editChainName = '';
-  let editChainDescription = '';
-  let editChainPlanet = '';
-  let editNameError = '';
+  let editChainName = $state('');
+  let editChainDescription = $state('');
+  let editChainPlanet = $state('');
+  let editNameError = $state('');
 
-  // Initialize edit values when chain data changes
-  $: if (!isCreating && chainName) {
-    editChainName = chainName || '';
-    editChainDescription = chainDescription || '';
-    editChainPlanet = chainPlanet || currentPlanetName;
-  }
 
-  // Get missions in the current chain
-  $: chainMissions = graphData?.nodes || [];
 
-  // Build adjacency lists for the chain graph
-  $: adjacencyLists = buildAdjacencyLists(graphData);
-  $: adjacencyNext = adjacencyLists.adjacencyNext;
-  $: adjacencyPrev = adjacencyLists.adjacencyPrev;
 
   function buildAdjacencyLists(graph) {
     const next = new Map(); // missionId -> [missionIds that this unlocks]
@@ -95,8 +103,6 @@
     return { adjacencyNext: next, adjacencyPrev: prev };
   }
 
-  // Organize missions into layers based on dependencies (topological sort)
-  $: organizedMissions = organizeMissionsByDependencies(chainMissions, adjacencyPrev);
 
   function organizeMissionsByDependencies(missions, prevMap) {
     if (!missions.length) return { layers: [], disconnected: [] };
@@ -149,8 +155,6 @@
     return { layers, disconnected };
   }
 
-  // Check if chain is fully connected (all missions reachable from at least one root)
-  $: connectivityStatus = checkConnectivity(chainMissions, adjacencyNext, adjacencyPrev);
 
   function checkConnectivity(missions, nextMap, prevMap) {
     if (missions.length <= 1) return { isConnected: true, disconnectedIds: [] };
@@ -191,19 +195,8 @@
     };
   }
 
-  // Current mission's prerequisites and dependents
-  $: currentPrerequisites = currentMission?.Dependencies?.Prerequisites || [];
-  $: currentDependents = currentMission?.Dependencies?.Dependents || [];
 
-  // Mission options for prerequisite/dependent selection (exclude current mission)
-  $: missionOptionsForDeps = allMissions
-    .filter(m => m?.Id && m?.Name && String(m.Id) !== String(currentMission?.Id))
-    .map(m => ({ value: String(m.Id), label: m.Name }));
 
-  // Chain missions options (for quick adding from chain)
-  $: chainMissionOptions = chainMissions
-    .filter(m => String(m.Id) !== String(currentMission?.Id))
-    .map(m => ({ value: String(m.Id), label: m.Name }));
 
   // Get label from options by value (for SearchInput display)
   function getOptionLabel(options, value) {
@@ -322,13 +315,42 @@
   function isDisconnected(id) {
     return connectivityStatus.disconnectedIds.includes(String(id));
   }
+  // Initialize edit values when chain data changes
+  run(() => {
+    if (!isCreating && chainName) {
+      editChainName = chainName || '';
+      editChainDescription = chainDescription || '';
+      editChainPlanet = chainPlanet || currentPlanetName;
+    }
+  });
+  // Get missions in the current chain
+  let chainMissions = $derived(graphData?.nodes || []);
+  // Build adjacency lists for the chain graph
+  let adjacencyLists = $derived(buildAdjacencyLists(graphData));
+  let adjacencyNext = $derived(adjacencyLists.adjacencyNext);
+  let adjacencyPrev = $derived(adjacencyLists.adjacencyPrev);
+  // Organize missions into layers based on dependencies (topological sort)
+  let organizedMissions = $derived(organizeMissionsByDependencies(chainMissions, adjacencyPrev));
+  // Check if chain is fully connected (all missions reachable from at least one root)
+  let connectivityStatus = $derived(checkConnectivity(chainMissions, adjacencyNext, adjacencyPrev));
+  // Current mission's prerequisites and dependents
+  let currentPrerequisites = $derived(currentMission?.Dependencies?.Prerequisites || []);
+  let currentDependents = $derived(currentMission?.Dependencies?.Dependents || []);
+  // Mission options for prerequisite/dependent selection (exclude current mission)
+  let missionOptionsForDeps = $derived(allMissions
+    .filter(m => m?.Id && m?.Name && String(m.Id) !== String(currentMission?.Id))
+    .map(m => ({ value: String(m.Id), label: m.Name })));
+  // Chain missions options (for quick adding from chain)
+  let chainMissionOptions = $derived(chainMissions
+    .filter(m => String(m.Id) !== String(currentMission?.Id))
+    .map(m => ({ value: String(m.Id), label: m.Name })));
 </script>
 
-<div class="dialog-overlay" on:click={handleClose}>
-  <div class="chain-dialog" on:click|stopPropagation>
+<div class="dialog-overlay" onclick={handleClose}>
+  <div class="chain-dialog" onclick={stopPropagation(bubble('click'))}>
     <div class="dialog-header">
       <h3>{isCreating ? 'Create New Chain' : 'Edit Chain'}</h3>
-      <button class="dialog-close" on:click={handleClose}>Close</button>
+      <button class="dialog-close" onclick={handleClose}>Close</button>
     </div>
 
     <div class="dialog-body">
@@ -342,7 +364,7 @@
               bind:value={newChainName}
               placeholder="Enter chain name..."
               class:error={nameError}
-              on:input={() => nameError = ''}
+              oninput={() => nameError = ''}
             />
             {#if nameError}
               <span class="field-error">{nameError}</span>
@@ -366,8 +388,8 @@
             />
           </div>
           <div class="form-actions">
-            <button class="btn primary" on:click={handleCreateChain}>Create Chain</button>
-            <button class="btn secondary" on:click={handleClose}>Cancel</button>
+            <button class="btn primary" onclick={handleCreateChain}>Create Chain</button>
+            <button class="btn secondary" onclick={handleClose}>Cancel</button>
           </div>
         </div>
       {:else}
@@ -385,8 +407,8 @@
                     bind:value={editChainName}
                     placeholder="Chain name..."
                     class:error={editNameError}
-                    on:input={() => editNameError = ''}
-                    on:blur={handleChainNameChange}
+                    oninput={() => editNameError = ''}
+                    onblur={handleChainNameChange}
                   />
                   {#if editNameError}
                     <span class="field-error">{editNameError}</span>
@@ -394,7 +416,7 @@
                 </div>
                 <div class="form-field">
                   <label for="edit-chain-planet">Planet</label>
-                  <select id="edit-chain-planet" bind:value={editChainPlanet} on:change={handleChainPlanetChange}>
+                  <select id="edit-chain-planet" bind:value={editChainPlanet} onchange={handleChainPlanetChange}>
                     {#each planetOptions as opt}
                       <option value={opt.value}>{opt.label}</option>
                     {/each}
@@ -497,7 +519,7 @@
                         placeholder="Select mission..."
                         on:select={(e) => handleUpdatePrerequisite(idx, e.detail.value)}
                       />
-                      <button type="button" class="btn-icon danger" on:click={() => handleRemovePrerequisite(idx)} title="Remove">
+                      <button type="button" class="btn-icon danger" onclick={() => handleRemovePrerequisite(idx)} title="Remove">
                         &times;
                       </button>
                     </div>
@@ -505,7 +527,7 @@
                 {:else}
                   <div class="empty-text">No prerequisites</div>
                 {/if}
-                <button type="button" class="btn-add" on:click={handleAddPrerequisite}>
+                <button type="button" class="btn-add" onclick={handleAddPrerequisite}>
                   <span>+</span> Add Prerequisite
                 </button>
               </div>
@@ -524,7 +546,7 @@
                         placeholder="Select mission..."
                         on:select={(e) => handleUpdateDependent(idx, e.detail.value)}
                       />
-                      <button type="button" class="btn-icon danger" on:click={() => handleRemoveDependent(idx)} title="Remove">
+                      <button type="button" class="btn-icon danger" onclick={() => handleRemoveDependent(idx)} title="Remove">
                         &times;
                       </button>
                     </div>
@@ -532,7 +554,7 @@
                 {:else}
                   <div class="empty-text">No unlocks</div>
                 {/if}
-                <button type="button" class="btn-add" on:click={handleAddDependent}>
+                <button type="button" class="btn-add" onclick={handleAddDependent}>
                   <span>+</span> Add Unlock
                 </button>
               </div>

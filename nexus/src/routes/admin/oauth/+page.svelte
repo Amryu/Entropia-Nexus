@@ -2,9 +2,9 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
 
-  let clients = [];
-  let isLoading = true;
-  let error = null;
+  let clients = $state([]);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   onMount(() => {
     loadClients();

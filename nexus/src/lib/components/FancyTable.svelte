@@ -1,218 +1,134 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import { clickable } from '$lib/actions/clickable.js';
 
+  
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
   /**
-   * FancyTable - A modern table component with virtualization and lazy loading
-   *
-   * Props:
-   * - columns: Array of column definitions
-   *   { key: string, header: string, sortable?: boolean, searchable?: boolean, width?: string,
-   *     widthBasis?: 'content' | 'header' | 'both', formatter?: (value, row) => string,
-   *     cellClass?: (value, row) => string, hideOnMobile?: boolean, mobileWidth?: string,
-   *     main?: boolean, rawValue?: boolean, slotted?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number,
-   *     sortPhases?: Array<{ sortValue: (row) => any, order: 'ASC'|'DESC', color?: string }> }
-   *   - main: If true, column grows to fill available space using minmax(width, 1fr)
-   *   - rawValue: If true, renders value as text instead of HTML (allows reactive content)
-   *   - slotted: If true, renders cell via the "cell" slot (receives column, row, value)
-   * - data: Array of row objects (for non-lazy mode)
-   * - fetchData: async (offset, limit, sortBy, sortOrder, filters) => { rows, total } (for lazy loading)
-   * - rowHeight: Height of each row in pixels (default: 44)
-   * - pageSize: Number of rows to fetch at a time (default: 50)
-   * - sortable: Enable sorting (default: true)
-   * - searchable: Enable search inputs (default: true)
-   * - stickyHeader: Keep header visible when scrolling (default: true)
-   * - emptyMessage: Message to show when no data (default: 'No data available')
-   * - loading: External loading state
-   * - defaultWidthBasis: 'content' | 'header' | 'both' (default: 'both')
-   * - horizontalScroll: Enable horizontal scrolling (default: true)
-   * - fitContent: When true, table shrinks to fit its content height instead of filling parent (default: false)
-   *
-   * Events:
-   * - rowClick: { row, index }
-   * - rowHover: { row, index } | null
-   * - sort: { column, order }
+   * @typedef {Object} Props
+   * @property {any} [columns] - FancyTable - A modern table component with virtualization and lazy loading
+Props:
+- columns: Array of column definitions
+{ key: string, header: string, sortable?: boolean, searchable?: boolean, width?: string,
+widthBasis?: 'content' | 'header' | 'both', formatter?: (value, row) => string,
+cellClass?: (value, row) => string, hideOnMobile?: boolean, mobileWidth?: string,
+main?: boolean, rawValue?: boolean, slotted?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number,
+sortPhases?: Array<{ sortValue: (row) => any, order: 'ASC'|'DESC', color?: string }> }
+- main: If true, column grows to fill available space using minmax(width, 1fr)
+- rawValue: If true, renders value as text instead of HTML (allows reactive content)
+- slotted: If true, renders cell via the "cell" slot (receives column, row, value)
+- data: Array of row objects (for non-lazy mode)
+- fetchData: async (offset, limit, sortBy, sortOrder, filters) => { rows, total } (for lazy loading)
+- rowHeight: Height of each row in pixels (default: 44)
+- pageSize: Number of rows to fetch at a time (default: 50)
+- sortable: Enable sorting (default: true)
+- searchable: Enable search inputs (default: true)
+- stickyHeader: Keep header visible when scrolling (default: true)
+- emptyMessage: Message to show when no data (default: 'No data available')
+- loading: External loading state
+- defaultWidthBasis: 'content' | 'header' | 'both' (default: 'both')
+- horizontalScroll: Enable horizontal scrolling (default: true)
+- fitContent: When true, table shrinks to fit its content height instead of filling parent (default: false)
+Events:
+- rowClick: { row, index }
+- rowHover: { row, index } | null
+- sort: { column, order }
+   * @property {any} [data]
+   * @property {any} [fetchData] - async (offset, limit, sortBy, sortOrder, filters) => { rows, total }
+   * @property {number} [rowHeight]
+   * @property {number} [pageSize]
+   * @property {boolean} [sortable]
+   * @property {boolean} [searchable]
+   * @property {boolean} [stickyHeader]
+   * @property {string} [emptyMessage]
+   * @property {boolean} [loading]
+   * @property {string} [defaultWidthBasis]
+   * @property {boolean} [horizontalScroll]
+   * @property {boolean} [compact]
+   * @property {boolean} [fitContent]
+   * @property {{ column: string, order: 'ASC'|'DESC' }|null} [defaultSort]
+   * @property {boolean} [preserveDataOrder]
+   * @property {(row: object) => string|null} [rowClass]
+   * @property {Array|null} [footer]
+   * @property {string|null} [footerLabelKey]
+   * @property {import('svelte').Snippet<[any]>} [cell]
    */
 
-  export let columns = [];
-  export let data = [];
-  export let fetchData = null; // async (offset, limit, sortBy, sortOrder, filters) => { rows, total }
-  export let rowHeight = 44;
-  export let pageSize = 50;
-  export let sortable = true;
-  export let searchable = true;
-  export let stickyHeader = true;
-  export let emptyMessage = 'No data available';
-  export let loading = false;
-  export let defaultWidthBasis = 'both';
-  export let horizontalScroll = true;
-  export let compact = false;
-
-  /** @type {boolean} When true, table shrinks to fit content height instead of filling parent */
-  export let fitContent = false;
-
-  /** @type {{ column: string, order: 'ASC'|'DESC' }|null} Initial sort to apply */
-  export let defaultSort = null;
-
-  /** @type {boolean} When true, skip column sorting and preserve the data array order (e.g. external relevance sort) */
-  export let preserveDataOrder = false;
-
-  /**
-   * @type {(row: object) => string|null} Function to generate extra CSS classes for rows
-   * Example: (row) => row.boss ? 'boss-row' : null
-   */
-  export let rowClass = null;
-
-  /**
-   * @type {Array|null} Footer rows for displaying aggregates
-   * Each row: Array of cell values matching columns, or object with key->value
-   * Example: [{ label: 'Total', tt: '10.00', mu: '115%', total: '11.50' }]
-   */
-  export let footer = null;
-
-  /**
-   * @type {string|null} Footer label column key (which column contains the row label)
-   * If set, that column spans any unlabeled columns before it
-   */
-  export let footerLabelKey = null;
+  /** @type {Props} */
+  let {
+    columns = [],
+    data = [],
+    fetchData = null,
+    rowHeight = 44,
+    pageSize = 50,
+    sortable = true,
+    searchable = true,
+    stickyHeader = true,
+    emptyMessage = 'No data available',
+    loading = false,
+    defaultWidthBasis = 'both',
+    horizontalScroll = true,
+    compact = false,
+    fitContent = false,
+    defaultSort = null,
+    preserveDataOrder = false,
+    rowClass = null,
+    footer = null,
+    footerLabelKey = null,
+    cell
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
   // Internal state
-  let containerEl;
-  let scrollEl;
-  let headerEl;
-  let footerEl;
-  let internalData = [];
-  let totalRows = 0;
-  let sortColumn = defaultSort?.column ?? null;
-  let sortOrder = defaultSort?.order ?? 'ASC';
-  let sortPhaseIdx = 0;
-  let userSorted = false;
+  let containerEl = $state();
+  let scrollEl = $state();
+  let headerEl = $state();
+  let footerEl = $state();
+  let internalData = $state([]);
+  let totalRows = $state(0);
+  let sortColumn = $state(defaultSort?.column ?? null);
+  let sortOrder = $state(defaultSort?.order ?? 'ASC');
+  let sortPhaseIdx = $state(0);
+  let userSorted = $state(false);
 
-  // React to external defaultSort changes (e.g. viewport switch) unless user manually sorted
-  $: if (!userSorted && defaultSort && (defaultSort.column !== sortColumn || defaultSort.order !== sortOrder)) {
-    sortColumn = defaultSort.column ?? null;
-    sortOrder = defaultSort.order ?? 'ASC';
-    sortPhaseIdx = 0;
-  }
 
   // React to preserveDataOrder transitions (e.g. search active/cleared)
-  let prevPreserveDataOrder = false;
-  $: if (preserveDataOrder !== prevPreserveDataOrder) {
-    prevPreserveDataOrder = preserveDataOrder;
-    if (preserveDataOrder) {
-      sortColumn = null;
-      userSorted = false;
-    } else {
-      sortColumn = defaultSort?.column ?? null;
-      sortOrder = defaultSort?.order ?? 'ASC';
-      sortPhaseIdx = 0;
-      userSorted = false;
-    }
-  }
+  let prevPreserveDataOrder = $state(false);
 
-  let filters = {};
+  let filters = $state({});
   let filterTimeouts = {};
-  let isLoading = false;
+  let isLoading = $state(false);
   let loadedRanges = new Set(); // Track which page ranges have been loaded
-  let visibleStart = 0;
-  let visibleEnd = 0;
-  let containerHeight = 0;
+  let visibleStart = $state(0);
+  let visibleEnd = $state(0);
+  let containerHeight = $state(0);
   let scrollbarWidth = 0;
   let resizeObserver;
 
   // Track mobile state (must be before computed values that depend on it)
-  let isMobile = false;
+  let isMobile = $state(false);
 
   function updateMobileState() {
     isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   }
 
-  // Computed
-  $: isLazyMode = typeof fetchData === 'function';
-  $: displayData = isLazyMode ? internalData : filteredSortedData;
-  $: totalCount = isLazyMode ? totalRows : filteredSortedData.length;
-  // Use smaller row height on mobile
-  $: effectiveRowHeight = isMobile ? Math.min(rowHeight, 32) : rowHeight;
-  $: totalHeight = totalCount * effectiveRowHeight;
-  $: headerHeight = (searchable ? 2 : 1) * effectiveRowHeight;
-  $: contentHeight = containerHeight > 0
-    ? Math.max(effectiveRowHeight, Math.floor(containerHeight / effectiveRowHeight) * effectiveRowHeight)
-    : 0;
-  $: visibleCapacity = contentHeight > 0 ? Math.floor(contentHeight / effectiveRowHeight) : 0;
-  $: fillRowCount = fitContent ? 0 : (totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0);
-  $: virtualContainerHeight = fitContent ? totalHeight : Math.max(totalHeight, contentHeight || 0);
 
-  // Filter and sort data in non-lazy mode
-  $: filteredSortedData = (() => {
-    if (isLazyMode) return [];
-
-    let result = [...data];
-
-    // Apply filters
-    for (const [key, value] of Object.entries(filters)) {
-      if (value && value.trim()) {
-        const filterValue = value.toLowerCase().trim();
-        result = result.filter(row => {
-          const cellValue = String(row[key] ?? '').toLowerCase();
-
-          // Support filter operators
-          if (filterValue.startsWith('!')) {
-            return !cellValue.includes(filterValue.slice(1));
-          }
-          if (filterValue.startsWith('>=')) {
-            return parseFloat(cellValue) >= parseFloat(filterValue.slice(2));
-          }
-          if (filterValue.startsWith('<=')) {
-            return parseFloat(cellValue) <= parseFloat(filterValue.slice(2));
-          }
-          if (filterValue.startsWith('>')) {
-            return parseFloat(cellValue) > parseFloat(filterValue.slice(1));
-          }
-          if (filterValue.startsWith('<')) {
-            return parseFloat(cellValue) < parseFloat(filterValue.slice(1));
-          }
-          if (filterValue.startsWith('=')) {
-            return cellValue === filterValue.slice(1);
-          }
-          return cellValue.includes(filterValue);
-        });
-      }
-    }
-
-    // Apply sorting (skip when preserveDataOrder — parent controls order)
-    if (sortColumn && !preserveDataOrder) {
-      const columnDef = columns.find(col => col.key === sortColumn);
-      const phaseSortValue = columnDef?.sortPhases?.[sortPhaseIdx]?.sortValue;
-      result.sort((a, b) => {
-        if (columnDef?.sortFn) {
-          const cmp = columnDef.sortFn(a, b);
-          return sortOrder === 'ASC' ? cmp : -cmp;
-        }
-
-        const aVal = phaseSortValue ? phaseSortValue(a) : (columnDef?.sortValue ? columnDef.sortValue(a) : a[sortColumn]);
-        const bVal = phaseSortValue ? phaseSortValue(b) : (columnDef?.sortValue ? columnDef.sortValue(b) : b[sortColumn]);
-
-        // Handle nulls
-        if (aVal == null && bVal == null) return 0;
-        if (aVal == null) return 1;
-        if (bVal == null) return -1;
-
-        // Numeric comparison
-        if (typeof aVal === 'number' && typeof bVal === 'number') {
-          return sortOrder === 'ASC' ? aVal - bVal : bVal - aVal;
-        }
-
-        // String comparison
-        const comparison = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
-        return sortOrder === 'ASC' ? comparison : -comparison;
-      });
-    }
-
-    return result;
-  })();
 
   // Initialize
   onMount(() => {
@@ -252,12 +168,6 @@
     Object.values(filterTimeouts).forEach(clearTimeout);
   });
 
-  // When display data changes (data, filters, sort, columns), recalculate visible range after DOM update
-  $: if (displayData && !isLazyMode) {
-    tick().then(() => {
-      if (scrollEl) updateVisibleRange();
-    });
-  }
 
   async function loadInitialData() {
     if (!isLazyMode) return;
@@ -444,8 +354,122 @@
     return '';
   }
 
+
+
+  run(() => {
+    if (preserveDataOrder !== prevPreserveDataOrder) {
+      prevPreserveDataOrder = preserveDataOrder;
+      if (preserveDataOrder) {
+        sortColumn = null;
+        userSorted = false;
+      } else {
+        sortColumn = defaultSort?.column ?? null;
+        sortOrder = defaultSort?.order ?? 'ASC';
+        sortPhaseIdx = 0;
+        userSorted = false;
+      }
+    }
+  });
+  // React to external defaultSort changes (e.g. viewport switch) unless user manually sorted
+  run(() => {
+    if (!userSorted && defaultSort && (defaultSort.column !== sortColumn || defaultSort.order !== sortOrder)) {
+      sortColumn = defaultSort.column ?? null;
+      sortOrder = defaultSort.order ?? 'ASC';
+      sortPhaseIdx = 0;
+    }
+  });
+  // Computed
+  let isLazyMode = $derived(typeof fetchData === 'function');
+  // Filter and sort data in non-lazy mode
+  let filteredSortedData = $derived((() => {
+    if (isLazyMode) return [];
+
+    let result = [...data];
+
+    // Apply filters
+    for (const [key, value] of Object.entries(filters)) {
+      if (value && value.trim()) {
+        const filterValue = value.toLowerCase().trim();
+        result = result.filter(row => {
+          const cellValue = String(row[key] ?? '').toLowerCase();
+
+          // Support filter operators
+          if (filterValue.startsWith('!')) {
+            return !cellValue.includes(filterValue.slice(1));
+          }
+          if (filterValue.startsWith('>=')) {
+            return parseFloat(cellValue) >= parseFloat(filterValue.slice(2));
+          }
+          if (filterValue.startsWith('<=')) {
+            return parseFloat(cellValue) <= parseFloat(filterValue.slice(2));
+          }
+          if (filterValue.startsWith('>')) {
+            return parseFloat(cellValue) > parseFloat(filterValue.slice(1));
+          }
+          if (filterValue.startsWith('<')) {
+            return parseFloat(cellValue) < parseFloat(filterValue.slice(1));
+          }
+          if (filterValue.startsWith('=')) {
+            return cellValue === filterValue.slice(1);
+          }
+          return cellValue.includes(filterValue);
+        });
+      }
+    }
+
+    // Apply sorting (skip when preserveDataOrder — parent controls order)
+    if (sortColumn && !preserveDataOrder) {
+      const columnDef = columns.find(col => col.key === sortColumn);
+      const phaseSortValue = columnDef?.sortPhases?.[sortPhaseIdx]?.sortValue;
+      result.sort((a, b) => {
+        if (columnDef?.sortFn) {
+          const cmp = columnDef.sortFn(a, b);
+          return sortOrder === 'ASC' ? cmp : -cmp;
+        }
+
+        const aVal = phaseSortValue ? phaseSortValue(a) : (columnDef?.sortValue ? columnDef.sortValue(a) : a[sortColumn]);
+        const bVal = phaseSortValue ? phaseSortValue(b) : (columnDef?.sortValue ? columnDef.sortValue(b) : b[sortColumn]);
+
+        // Handle nulls
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+
+        // Numeric comparison
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          return sortOrder === 'ASC' ? aVal - bVal : bVal - aVal;
+        }
+
+        // String comparison
+        const comparison = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
+        return sortOrder === 'ASC' ? comparison : -comparison;
+      });
+    }
+
+    return result;
+  })());
+  let displayData = $derived(isLazyMode ? internalData : filteredSortedData);
+  let totalCount = $derived(isLazyMode ? totalRows : filteredSortedData.length);
+  // Use smaller row height on mobile
+  let effectiveRowHeight = $derived(isMobile ? Math.min(rowHeight, 32) : rowHeight);
+  let totalHeight = $derived(totalCount * effectiveRowHeight);
+  let headerHeight = $derived((searchable ? 2 : 1) * effectiveRowHeight);
+  let contentHeight = $derived(containerHeight > 0
+    ? Math.max(effectiveRowHeight, Math.floor(containerHeight / effectiveRowHeight) * effectiveRowHeight)
+    : 0);
+  let visibleCapacity = $derived(contentHeight > 0 ? Math.floor(contentHeight / effectiveRowHeight) : 0);
+  let fillRowCount = $derived(fitContent ? 0 : (totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0));
+  let virtualContainerHeight = $derived(fitContent ? totalHeight : Math.max(totalHeight, contentHeight || 0));
+  // When display data changes (data, filters, sort, columns), recalculate visible range after DOM update
+  run(() => {
+    if (displayData && !isLazyMode) {
+      tick().then(() => {
+        if (scrollEl) updateVisibleRange();
+      });
+    }
+  });
   // Visible rows for virtual rendering
-  $: visibleRows = (() => {
+  let visibleRows = $derived((() => {
     const count = displayData.length;
     if (count === 0) return [];
     let start = Math.min(visibleStart, count);
@@ -461,11 +485,10 @@
       index: start + i,
       top: (start + i) * effectiveRowHeight
     }));
-  })();
-
+  })());
   // Calculate auto widths for columns without explicit width
   // Sample up to 200 rows instead of iterating all data for performance
-  $: columnAutoWidths = columns.reduce((acc, column) => {
+  let columnAutoWidths = $derived(columns.reduce((acc, column) => {
     if (column.width) return acc;
 
     const basis = column.widthBasis || defaultWidthBasis;
@@ -496,12 +519,11 @@
     const safeLength = Math.max(minLength, length);
     acc[column.key] = `calc(${safeLength}ch + ${padding}px)`;
     return acc;
-  }, {});
-
+  }, {}));
   // Compute grid-template-columns from column widths
   // - main columns use minmax() to allow growing with available space
   // - use mobileWidth on mobile for responsive layouts
-  $: gridTemplateColumns = columns
+  let gridTemplateColumns = $derived(columns
     .filter(col => (!isMobile || !col.hideOnMobile) && (isMobile || !col.hideOnDesktop))
     .map(col => {
       const width = (isMobile && col.mobileWidth)
@@ -518,7 +540,7 @@
       }
       return width;
     })
-    .join(' ');
+    .join(' '));
 </script>
 
 <style>
@@ -1066,7 +1088,7 @@
           class:hide-on-mobile={column.hideOnMobile}
           class:hide-on-desktop={column.hideOnDesktop}
           use:clickable
-          on:click={() => handleSort(column)}
+          onclick={() => handleSort(column)}
         >
           {column.header}
           {#if sortColumn === column.key}
@@ -1087,7 +1109,7 @@
                 type="text"
                 class="filter-input"
                 placeholder="Filter..."
-                on:input={(e) => handleFilterInput(column.key, e.target.value)}
+                oninput={(e) => handleFilterInput(column.key, e.target.value)}
               />
             {/if}
           </div>
@@ -1101,7 +1123,7 @@
     class="table-body"
     class:horizontal-scroll={horizontalScroll}
     bind:this={scrollEl}
-    on:scroll={handleScroll}
+    onscroll={handleScroll}
   >
     {#if (isLoading || loading) && displayData.length === 0}
       <div class="loading-overlay">
@@ -1122,19 +1144,19 @@
             class:last-row={index === totalCount - 1}
             style="top: {top}px; height: {effectiveRowHeight}px; grid-template-columns: {gridTemplateColumns};"
             use:clickable
-            on:click={() => handleRowClick(row, index)}
-            on:mouseover={() => handleRowHover(row, index)}
-            on:focus={() => handleRowHover(row, index)}
-            on:mouseout={() => handleRowHover(null, null)}
-            on:blur={() => handleRowHover(null, null)}
+            onclick={() => handleRowClick(row, index)}
+            onmouseover={() => handleRowHover(row, index)}
+            onfocus={() => handleRowHover(row, index)}
+            onmouseout={() => handleRowHover(null, null)}
+            onblur={() => handleRowHover(null, null)}
           >
             {#each columns as column}
               <div class="table-cell {getCellClass(row, column)}" class:hide-on-mobile={column.hideOnMobile}
           class:hide-on-desktop={column.hideOnDesktop}>
-                {#if $$slots.cell && column.slotted}
-                  <slot name="cell" {column} {row} value={row[column.key]} />
+                {#if cell && column.slotted}
+                  {@render cell?.({ column, row, value: row[column.key], })}
                 {:else if column.component}
-                  <svelte:component this={column.component} {row} value={row[column.key]} />
+                  <column.component {row} value={row[column.key]} />
                 {:else if column.rawValue}
                   {getCellValue(row, column)}
                 {:else}

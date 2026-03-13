@@ -8,20 +8,20 @@
   const id = $page.params.id;
   const isNew = id === 'new';
 
-  let name = '';
-  let platform = 'youtube';
-  let channel_id = '';
-  let channel_url = '';
-  let description = '';
-  let avatar_url = '';
-  let active = true;
-  let display_order = 0;
-  let youtube_playlist_id = '';
+  let name = $state('');
+  let platform = $state('youtube');
+  let channel_id = $state('');
+  let channel_url = $state('');
+  let description = $state('');
+  let avatar_url = $state('');
+  let active = $state(true);
+  let display_order = $state(0);
+  let youtube_playlist_id = $state('');
 
-  let isLoading = !isNew;
-  let saving = false;
-  let deleting = false;
-  let error = null;
+  let isLoading = $state(!isNew);
+  let saving = $state(false);
+  let deleting = $state(false);
+  let error = $state(null);
 
   onMount(async () => {
     if (!isNew) {
@@ -212,17 +212,17 @@
       </div>
 
       <div class="form-actions">
-        <button class="btn btn-cancel" on:click={() => goto('/admin/creators')}>
+        <button class="btn btn-cancel" onclick={() => goto('/admin/creators')}>
           Cancel
         </button>
 
         {#if !isNew}
-          <button class="btn btn-danger" on:click={handleDelete} disabled={deleting}>
+          <button class="btn btn-danger" onclick={handleDelete} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
           </button>
         {/if}
 
-        <button class="btn btn-primary" on:click={handleSave} disabled={saving || !name.trim() || !channel_url.trim()}>
+        <button class="btn btn-primary" onclick={handleSave} disabled={saving || !name.trim() || !channel_url.trim()}>
           {saving ? 'Saving...' : isNew ? 'Add Creator' : 'Save'}
         </button>
       </div>

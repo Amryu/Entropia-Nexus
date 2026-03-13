@@ -1,42 +1,51 @@
 <script>
-  // @ts-nocheck
-  export let data;
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
 
-  let stats = data.stats;
-  let alerts = data.alerts;
-  let alertTotal = data.alertTotal || 0;
-  let alertPage = 1;
+  const bubble = createBubbler();
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} data
+   */
+
+  /** @type {Props} */
+  let { data } = $props();
+
+  let stats = $state(data.stats);
+  let alerts = $state(data.alerts);
+  let alertTotal = $state(data.alertTotal || 0);
+  let alertPage = $state(1);
   const ALERTS_PER_PAGE = 10;
-  let alertsLoading = false;
-  let users = data.users;
-  let allowedClients = data.allowedClients || [];
-  let tradeChannels = data.tradeChannels || [];
+  let alertsLoading = $state(false);
+  let users = $state(data.users);
+  let allowedClients = $state(data.allowedClients || []);
+  let tradeChannels = $state(data.tradeChannels || []);
 
-  let showBanDialog = false;
-  let showPurgeDialog = false;
-  let showResolveDialog = false;
-  let showAddClientDialog = false;
+  let showBanDialog = $state(false);
+  let showPurgeDialog = $state(false);
+  let showResolveDialog = $state(false);
+  let showAddClientDialog = $state(false);
   let selectedUserId = null;
-  let selectedUserName = '';
+  let selectedUserName = $state('');
   let selectedAlertId = null;
-  let banReason = '';
-  let resolveNotes = '';
-  let actionError = '';
-  let actionLoading = false;
+  let banReason = $state('');
+  let resolveNotes = $state('');
+  let actionError = $state('');
+  let actionLoading = $state(false);
 
   // Add client dialog state
   let oauthClients = []; // All registered OAuth apps (fetched on demand)
   let oauthClientsLoaded = false;
-  let addClientNotes = '';
+  let addClientNotes = $state('');
 
   // Add channel dialog state
-  let showAddChannelDialog = false;
-  let newChannelName = '';
-  let newChannelPlanet = '';
+  let showAddChannelDialog = $state(false);
+  let newChannelName = $state('');
+  let newChannelPlanet = $state('');
   const KNOWN_PLANETS = ['Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Toulan', 'Next Island', 'Monria', 'FOMA'];
 
   // Active section tab
-  let activeTab = 'alerts';
+  let activeTab = $state('alerts');
 
   function formatNumber(n) {
     return parseInt(n || 0).toLocaleString();
@@ -52,7 +61,7 @@
     return Math.round((parseInt(part) / parseInt(total)) * 100) + '%';
   }
 
-  $: alertTotalPages = Math.max(1, Math.ceil(alertTotal / ALERTS_PER_PAGE));
+  let alertTotalPages = $derived(Math.max(1, Math.ceil(alertTotal / ALERTS_PER_PAGE)));
 
   async function loadAlertPage(page) {
     alertsLoading = true;
@@ -383,16 +392,16 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab" class:active={activeTab === 'alerts'} on:click={() => activeTab = 'alerts'}>
+    <button class="tab" class:active={activeTab === 'alerts'} onclick={() => activeTab = 'alerts'}>
       Alerts {parseInt(stats.pending_alerts) > 0 ? `(${stats.pending_alerts})` : ''}
     </button>
-    <button class="tab" class:active={activeTab === 'users'} on:click={() => activeTab = 'users'}>
+    <button class="tab" class:active={activeTab === 'users'} onclick={() => activeTab = 'users'}>
       Contributors
     </button>
-    <button class="tab" class:active={activeTab === 'allowed'} on:click={() => activeTab = 'allowed'}>
+    <button class="tab" class:active={activeTab === 'allowed'} onclick={() => activeTab = 'allowed'}>
       Allowed Clients ({formatNumber(stats.allowed_clients)})
     </button>
-    <button class="tab" class:active={activeTab === 'channels'} on:click={() => activeTab = 'channels'}>
+    <button class="tab" class:active={activeTab === 'channels'} onclick={() => activeTab = 'channels'}>
       Trade Channels ({formatNumber(stats.configured_channels)})
     </button>
   </div>
@@ -464,11 +473,11 @@
               {/if}
             </div>
             <div class="alert-actions">
-              <button class="btn btn-small btn-secondary" on:click={() => openResolve(alert.id)}>
+              <button class="btn btn-small btn-secondary" onclick={() => openResolve(alert.id)}>
                 Resolve
               </button>
               {#each (alert.user_ids || []) as uid}
-                <button class="btn btn-small btn-danger" on:click={() => openBan(uid, '')}>
+                <button class="btn btn-small btn-danger" onclick={() => openBan(uid, '')}>
                   Ban User {uid}
                 </button>
               {/each}
@@ -478,11 +487,11 @@
 
         {#if alertTotalPages > 1}
           <div class="pagination">
-            <button class="btn btn-small btn-secondary" disabled={alertPage <= 1 || alertsLoading} on:click={() => loadAlertPage(alertPage - 1)}>
+            <button class="btn btn-small btn-secondary" disabled={alertPage <= 1 || alertsLoading} onclick={() => loadAlertPage(alertPage - 1)}>
               Previous
             </button>
             <span class="pagination-info">Page {alertPage} of {alertTotalPages}</span>
-            <button class="btn btn-small btn-secondary" disabled={alertPage >= alertTotalPages || alertsLoading} on:click={() => loadAlertPage(alertPage + 1)}>
+            <button class="btn btn-small btn-secondary" disabled={alertPage >= alertTotalPages || alertsLoading} onclick={() => loadAlertPage(alertPage + 1)}>
               Next
             </button>
           </div>
@@ -524,15 +533,15 @@
                 </td>
                 <td class="actions-cell">
                   {#if user.banned}
-                    <button class="btn btn-small btn-success" on:click={() => handleUnban(user.user_id)}>
+                    <button class="btn btn-small btn-success" onclick={() => handleUnban(user.user_id)}>
                       Unban
                     </button>
                   {:else}
-                    <button class="btn btn-small btn-danger" on:click={() => openBan(user.user_id, user.username)}>
+                    <button class="btn btn-small btn-danger" onclick={() => openBan(user.user_id, user.username)}>
                       Ban
                     </button>
                   {/if}
-                  <button class="btn btn-small btn-warning" on:click={() => openPurge(user.user_id, user.username)}>
+                  <button class="btn btn-small btn-warning" onclick={() => openPurge(user.user_id, user.username)}>
                     Purge
                   </button>
                 </td>
@@ -549,7 +558,7 @@
     <div class="section">
       <div class="section-header">
         <p class="section-description">Only approved OAuth applications can submit ingestion data. Distribution endpoints remain open to all verified users.</p>
-        <button class="btn btn-primary" on:click={openAddClient}>Add Application</button>
+        <button class="btn btn-primary" onclick={openAddClient}>Add Application</button>
       </div>
 
       {#if allowedClients.length === 0}
@@ -575,7 +584,7 @@
                 <td>{formatDate(client.allowed_at)}</td>
                 <td class="notes-cell">{client.notes || '-'}</td>
                 <td>
-                  <button class="btn btn-small btn-danger" on:click={() => handleRemoveClient(client.client_id)}>
+                  <button class="btn btn-small btn-danger" onclick={() => handleRemoveClient(client.client_id)}>
                     Remove
                   </button>
                 </td>
@@ -592,7 +601,7 @@
     <div class="section">
       <div class="section-header">
         <p class="section-description">Configure which trade channels are accepted for ingestion. Only messages from listed channels will be processed.</p>
-        <button class="btn btn-primary" on:click={openAddChannel}>Add Channel</button>
+        <button class="btn btn-primary" onclick={openAddChannel}>Add Channel</button>
       </div>
 
       {#if tradeChannels.length === 0}
@@ -616,7 +625,7 @@
                 <td>{ch.added_by_name || '-'}</td>
                 <td>{formatDate(ch.added_at)}</td>
                 <td>
-                  <button class="btn btn-small btn-danger" on:click={() => handleRemoveChannel(ch.channel_name)}>
+                  <button class="btn btn-small btn-danger" onclick={() => handleRemoveChannel(ch.channel_name)}>
                     Remove
                   </button>
                 </td>
@@ -631,8 +640,8 @@
 
 <!-- Ban Dialog -->
 {#if showBanDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showBanDialog = false}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showBanDialog = false}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <h3>Ban from Ingestion</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         This will block the user from submitting and receiving ingestion data.
@@ -653,8 +662,8 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showBanDialog = false}>Cancel</button>
-        <button class="btn btn-danger" on:click={handleBan} disabled={actionLoading}>
+        <button class="btn btn-secondary" onclick={() => showBanDialog = false}>Cancel</button>
+        <button class="btn btn-danger" onclick={handleBan} disabled={actionLoading}>
           {actionLoading ? 'Banning...' : 'Ban User'}
         </button>
       </div>
@@ -664,8 +673,8 @@
 
 <!-- Purge Dialog -->
 {#if showPurgeDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showPurgeDialog = false}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showPurgeDialog = false}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <h3>Purge User Data</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         This will permanently delete all ingested data (globals, trades, and market prices)
@@ -679,8 +688,8 @@
       {/if}
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showPurgeDialog = false}>Cancel</button>
-        <button class="btn btn-danger" on:click={handlePurge} disabled={actionLoading}>
+        <button class="btn btn-secondary" onclick={() => showPurgeDialog = false}>Cancel</button>
+        <button class="btn btn-danger" onclick={handlePurge} disabled={actionLoading}>
           {actionLoading ? 'Purging...' : 'Purge All Data'}
         </button>
       </div>
@@ -690,8 +699,8 @@
 
 <!-- Resolve Alert Dialog -->
 {#if showResolveDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showResolveDialog = false}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showResolveDialog = false}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <h3>Resolve Alert</h3>
 
       {#if actionError}
@@ -708,8 +717,8 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showResolveDialog = false}>Cancel</button>
-        <button class="btn btn-success" on:click={handleResolve} disabled={actionLoading}>
+        <button class="btn btn-secondary" onclick={() => showResolveDialog = false}>Cancel</button>
+        <button class="btn btn-success" onclick={handleResolve} disabled={actionLoading}>
           {actionLoading ? 'Resolving...' : 'Mark Resolved'}
         </button>
       </div>
@@ -719,8 +728,8 @@
 
 <!-- Add Application Dialog -->
 {#if showAddClientDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showAddClientDialog = false}>
-    <div class="dialog dialog-wide" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showAddClientDialog = false}>
+    <div class="dialog dialog-wide" onclick={stopPropagation(bubble('click'))}>
       <h3>Allow Application</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Select a registered OAuth application to grant ingestion access.
@@ -735,7 +744,7 @@
           {#each availableOAuthClients() as app}
             <button
               class="search-result-item"
-              on:click={() => handleAddClient(app.id)}
+              onclick={() => handleAddClient(app.id)}
               disabled={actionLoading}
             >
               <div>
@@ -763,7 +772,7 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showAddClientDialog = false}>Close</button>
+        <button class="btn btn-secondary" onclick={() => showAddClientDialog = false}>Close</button>
       </div>
     </div>
   </div>
@@ -771,8 +780,8 @@
 
 <!-- Add Trade Channel Dialog -->
 {#if showAddChannelDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showAddChannelDialog = false}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showAddChannelDialog = false}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <h3>Add Trade Channel</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Add a trade channel that clients are allowed to submit messages from.
@@ -803,8 +812,8 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showAddChannelDialog = false}>Cancel</button>
-        <button class="btn btn-primary" on:click={handleAddChannel} disabled={actionLoading}>
+        <button class="btn btn-secondary" onclick={() => showAddChannelDialog = false}>Cancel</button>
+        <button class="btn btn-primary" onclick={handleAddChannel} disabled={actionLoading}>
           {actionLoading ? 'Adding...' : 'Add Channel'}
         </button>
       </div>

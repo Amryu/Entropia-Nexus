@@ -8,23 +8,36 @@
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
 
-  /** @type {object} Defense object {Block, Impact, Cut, Stab, etc.} */
-  export let defense = {};
+  
 
-  /** @type {string} Field path for updateField (default: 'Properties.Defense') */
-  export let fieldPath = 'Properties.Defense';
+  
 
-  /** @type {string} Section title */
-  export let title = 'Defense';
+  
 
-  /** @type {boolean} Compact display mode */
-  export let compact = false;
+  
 
-  /** @type {string[]|null} Custom defense types to display (null = all including Block) */
-  export let types = null;
+  
 
-  /** @type {boolean} Show Block % separately at the top */
-  export let showBlockSeparately = true;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} Defense object {Block, Impact, Cut, Stab, etc.} [defense]
+   * @property {string} [fieldPath]
+   * @property {string} [title]
+   * @property {boolean} [compact]
+   * @property {string[]|null} [types]
+   * @property {boolean} [showBlockSeparately]
+   */
+
+  /** @type {Props} */
+  let {
+    defense = {},
+    fieldPath = 'Properties.Defense',
+    title = 'Defense',
+    compact = false,
+    types = null,
+    showBlockSeparately = true
+  } = $props();
 
   // Defense types (excluding Block for normal display)
   const normalDefenseTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
@@ -45,25 +58,25 @@
   };
 
   // Use custom types if provided, otherwise use defaults
-  $: activeTypes = types || (showBlockSeparately ? normalDefenseTypes : allDefenseTypes);
+  let activeTypes = $derived(types || (showBlockSeparately ? normalDefenseTypes : allDefenseTypes));
 
   // Calculate total defense (excluding Block)
-  $: totalDefense = normalDefenseTypes.reduce((sum, type) => sum + (defense?.[type] ?? 0), 0);
+  let totalDefense = $derived(normalDefenseTypes.reduce((sum, type) => sum + (defense?.[type] ?? 0), 0));
 
   // Find maximum defense value for bar scaling (excluding Block)
-  $: maxDefense = Math.max(...normalDefenseTypes.map(type => defense?.[type] ?? 0), 0);
+  let maxDefense = $derived(Math.max(...normalDefenseTypes.map(type => defense?.[type] ?? 0), 0));
 
   // Block value
-  $: blockValue = defense?.Block ?? 0;
-  $: hasBlock = blockValue > 0 || $editMode;
+  let blockValue = $derived(defense?.Block ?? 0);
+  let hasBlock = $derived(blockValue > 0 || $editMode);
 
   // Check if has any defense values
-  $: hasDefense = totalDefense > 0 || blockValue > 0 || $editMode;
+  let hasDefense = $derived(totalDefense > 0 || blockValue > 0 || $editMode);
 
   // Filter to only show non-zero values in view mode (always show all in edit mode)
-  $: visibleTypes = $editMode
+  let visibleTypes = $derived($editMode
     ? activeTypes
-    : activeTypes.filter(type => (defense?.[type] ?? 0) > 0);
+    : activeTypes.filter(type => (defense?.[type] ?? 0) > 0));
 
   // Get bar percentage relative to max value (highest = 100%, Block uses its own 0-100 scale)
   function getDefensePercentage(type, value) {
@@ -126,7 +139,7 @@
               step="0.1"
               min="0"
               max="100"
-              on:change={(e) => updateDefenseValue('Block', e.target.value)}
+              onchange={(e) => updateDefenseValue('Block', e.target.value)}
             />
             <span class="unit">%</span>
           </div>
@@ -148,7 +161,7 @@
               step="0.1"
               min="0"
               max={type === 'Block' ? 100 : undefined}
-              on:change={(e) => updateDefenseValue(type, e.target.value)}
+              onchange={(e) => updateDefenseValue(type, e.target.value)}
             />
           </div>
         {/each}

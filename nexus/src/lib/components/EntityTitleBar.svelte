@@ -2,16 +2,33 @@
   //@ts-nocheck
   import { apiDelete, navigate } from "$lib/util";
 
-  export let mode;
-  export let user;
-  export let title;
-  export let description;
-  export let change;
-  export let editable = true;
-  export let ownershipBasedEditing = false;
-  export let canEdit = true;
-  export let entityType = null; // New prop to identify entity type
-  export let object = null; // Current object for permission checks
+  /**
+   * @typedef {Object} Props
+   * @property {any} mode
+   * @property {any} user
+   * @property {any} title
+   * @property {any} description
+   * @property {any} change
+   * @property {boolean} [editable]
+   * @property {boolean} [ownershipBasedEditing]
+   * @property {boolean} [canEdit]
+   * @property {any} [entityType] - New prop to identify entity type
+   * @property {any} [object] - Current object for permission checks
+   */
+
+  /** @type {Props} */
+  let {
+    mode,
+    user,
+    title,
+    description,
+    change,
+    editable = true,
+    ownershipBasedEditing = false,
+    canEdit = true,
+    entityType = null,
+    object = null
+  } = $props();
 
   function deleteChange() {
     if (confirm('Are you sure you want to delete this change?')) {
@@ -47,29 +64,29 @@
   <div class="title-buttons">
     {#if editable}
       {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
-        <button on:click={() => navigate(window.location.pathname + '?mode=edit')} 
+        <button onclick={() => navigate(window.location.pathname + '?mode=edit')} 
                 title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : ownershipBasedEditing && !canEdit ? "Only owner/managers can edit" : 'Edit'} 
                 disabled={user == null || !user.verified || (ownershipBasedEditing && !canEdit)}>✏️</button>
       {/if}
       
       {#if entityType === 'Shop' && mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
         {#if object && user && (object.OwnerId === user.id || user.grants?.includes('admin.panel'))}
-          <button on:click={() => navigate(window.location.pathname + '?mode=edit-managers')} 
+          <button onclick={() => navigate(window.location.pathname + '?mode=edit-managers')} 
                   title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : "Edit Managers"} 
                   disabled={user == null || !user.verified}>👥</button>
         {/if}
-        <button on:click={() => navigate(window.location.pathname + '?mode=edit-inventory')} 
+        <button onclick={() => navigate(window.location.pathname + '?mode=edit-inventory')} 
                 title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : ownershipBasedEditing && !canEdit ? "Only owner/managers can edit" : 'Edit Inventory'} 
                 disabled={user == null || !user.verified || (ownershipBasedEditing && !canEdit)}>📦</button>
       {/if}
       
       {#if mode === 'edit-inventory' || mode === 'edit-managers'}
-        <button on:click={() => navigate(window.location.pathname)} title="Return">↩</button>
+        <button onclick={() => navigate(window.location.pathname)} title="Return">↩</button>
       {:else if mode === 'preview' || mode === 'edit' || mode === 'history' || mode === 'create'}
-        <button on:click={() => navigate(window.location.pathname)} title="Cancel">❌</button>
+        <button onclick={() => navigate(window.location.pathname)} title="Cancel">❌</button>
       {/if}
       {#if (mode === 'edit' || mode === 'create') && change?.id && user != null && user.verified}
-        <button on:click={deleteChange} title="Delete this Change">🗑️</button>
+        <button onclick={deleteChange} title="Delete this Change">🗑️</button>
       {/if}
     {/if}
   </div>

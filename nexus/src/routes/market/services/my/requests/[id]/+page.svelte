@@ -8,15 +8,15 @@
 
   const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
 
-  export let data;
+  let { data } = $props();
 
-  $: request = data.request;
+  let request = $derived(data.request);
 
-  let actionLoading = false;
-  let actionError = null;
-  let reviewScore = null;
-  let reviewComment = '';
-  let showReviewForm = false;
+  let actionLoading = $state(false);
+  let actionError = $state(null);
+  let reviewScore = $state(null);
+  let reviewComment = $state('');
+  let showReviewForm = $state(false);
 
   // Question helpers
   function isQuestion(req) {
@@ -28,8 +28,8 @@
     return req.service_notes.replace('[QUESTION]', '').trim();
   }
 
-  $: isQuestionRequest = isQuestion(request);
-  $: questionText = getQuestionText(request);
+  let isQuestionRequest = $derived(isQuestion(request));
+  let questionText = $derived(getQuestionText(request));
 
   function formatDateTime(dateStr) {
     if (!dateStr) return '-';
@@ -227,7 +227,7 @@
               <button
                 class="btn secondary full-width"
                 disabled={actionLoading}
-                on:click={closeQuestion}
+                onclick={closeQuestion}
               >
                 {actionLoading ? 'Processing...' : 'Close Question'}
               </button>
@@ -376,18 +376,18 @@
                   ></textarea>
                 </div>
                 <div class="form-actions">
-                  <button class="btn secondary" on:click={() => showReviewForm = false}>Cancel</button>
+                  <button class="btn secondary" onclick={() => showReviewForm = false}>Cancel</button>
                   <button
                     class="btn primary"
                     disabled={!reviewScore || reviewScore < 1 || reviewScore > 10 || actionLoading}
-                    on:click={completeRequest}
+                    onclick={completeRequest}
                   >
                     Submit Review
                   </button>
                 </div>
               </div>
             {:else}
-              <button class="btn primary" on:click={() => showReviewForm = true}>
+              <button class="btn primary" onclick={() => showReviewForm = true}>
                 Write a Review
               </button>
             {/if}
@@ -414,7 +414,7 @@
               <button
                 class="btn danger full-width"
                 disabled={actionLoading}
-                on:click={cancelRequest}
+                onclick={cancelRequest}
               >
                 Cancel Request
               </button>
@@ -424,7 +424,7 @@
               <button
                 class="btn danger full-width"
                 disabled={actionLoading}
-                on:click={abortRequest}
+                onclick={abortRequest}
               >
                 Abort Service
               </button>

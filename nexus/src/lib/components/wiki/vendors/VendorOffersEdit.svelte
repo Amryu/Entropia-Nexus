@@ -10,11 +10,17 @@
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
-  /** @type {Array} Offers array from the vendor */
-  export let offers = [];
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldPath = 'Offers';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [offers]
+   * @property {string} [fieldPath]
+   */
+
+  /** @type {Props} */
+  let { offers = [], fieldPath = 'Offers' } = $props();
 
   // === Constructors ===
   function createOffer() {
@@ -111,7 +117,7 @@
                 min="0"
                 step="0.0001"
                 value={offer.Value ?? ''}
-                on:input={(e) => updateOfferField(index, 'Value', e.target.value ? parseFloat(e.target.value) : null)}
+                oninput={(e) => updateOfferField(index, 'Value', e.target.value ? parseFloat(e.target.value) : null)}
                 placeholder="0.00"
               />
             </label>
@@ -120,7 +126,7 @@
               <input
                 type="checkbox"
                 checked={offer.IsLimited || false}
-                on:change={(e) => updateOfferField(index, 'IsLimited', e.target.checked)}
+                onchange={(e) => updateOfferField(index, 'IsLimited', e.target.checked)}
               />
               <span class="field-label">Limited</span>
             </label>
@@ -128,7 +134,7 @@
 
           <button
             class="btn-icon danger"
-            on:click={() => removeOffer(index)}
+            onclick={() => removeOffer(index)}
             title="Remove offer"
             type="button"
           >×</button>
@@ -145,7 +151,7 @@
                     min="0"
                     step="1"
                     value={price.Amount ?? ''}
-                    on:input={(e) => updatePriceField(index, priceIndex, 'Amount', e.target.value ? parseInt(e.target.value) : null)}
+                    oninput={(e) => updatePriceField(index, priceIndex, 'Amount', e.target.value ? parseInt(e.target.value) : null)}
                     placeholder="Amt"
                     class="price-amount"
                   />
@@ -162,7 +168,7 @@
                   </div>
                   <button
                     class="btn-icon danger btn-remove-price"
-                    on:click={() => removePrice(index, priceIndex)}
+                    onclick={() => removePrice(index, priceIndex)}
                     title="Remove price"
                     type="button"
                   >×</button>
@@ -170,7 +176,7 @@
               {/each}
               <button
                 class="btn-add-price"
-                on:click={() => addPrice(index)}
+                onclick={() => addPrice(index)}
                 type="button"
               >+ Price</button>
             </div>
@@ -179,7 +185,7 @@
       </div>
     {/each}
 
-    <button class="btn-add" on:click={addOffer} type="button">
+    <button class="btn-add" onclick={addOffer} type="button">
       <span>+</span> Add Offer
     </button>
   </div>

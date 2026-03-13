@@ -6,6 +6,8 @@
   Supports full wiki editing.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -45,23 +47,23 @@
     changeMetadata
   } from '$lib/stores/wikiEditState';
 
-  export let data;
+  let { data } = $props();
 
-  $: vendor = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: pendingChange = data.pendingChange;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: isCreateMode = data.isCreateMode || false;
-  $: vendorEntityId = vendor?.Id ?? vendor?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, vendorEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let vendor = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let pendingChange = $derived(data.pendingChange);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let vendorEntityId = $derived(vendor?.Id ?? vendor?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, vendorEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Verified users can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // Planet options for dropdown
   const planetOptions = [
@@ -93,29 +95,33 @@
   };
 
   // Initialize edit state when user/vendor changes
-  $: if (user) {
-    const existingChange = data.existingChange || null;
-    const initialEntity = isCreateMode
-      ? (existingChange?.data || emptyVendor)
-      : vendor;
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(initialEntity, 'Vendor', isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const existingChange = data.existingChange || null;
+      const initialEntity = isCreateMode
+        ? (existingChange?.data || emptyVendor)
+        : vendor;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(initialEntity, 'Vendor', isCreateMode, editChange);
+    }
+  });
 
   // Set pending change in store when it changes
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active vendor: use currentEntity in edit mode, pendingChange data when viewing, otherwise original
-  $: activeVendor = $editMode
+  let activeVendor = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : vendor;
+      : vendor);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -123,7 +129,7 @@
   });
 
   // Build navigation items from vendors
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - filter by planet (includes sub-planets)
   const navFilters = [getPlanetNavFilter('Planet.Name')];
@@ -177,27 +183,27 @@
   const allAvailableColumns = Object.values(vendorColumnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Information', href: '/information' },
     { label: 'Vendors', href: '/information/vendors' },
     ...(activeVendor?.Name ? [{ label: activeVendor.Name }] : isCreateMode ? [{ label: 'New Vendor' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeVendor?.Properties?.Description ||
-    `${activeVendor?.Name || 'Vendor'} - Vendor on ${activeVendor?.Planet?.Name || 'Calypso'} in Entropia Universe.`;
+  let seoDescription = $derived(activeVendor?.Properties?.Description ||
+    `${activeVendor?.Name || 'Vendor'} - Vendor on ${activeVendor?.Planet?.Name || 'Calypso'} in Entropia Universe.`);
 
-  $: canonicalUrl = activeVendor?.Name
+  let canonicalUrl = $derived(activeVendor?.Name
     ? `https://entropianexus.com/information/vendors/${encodeURIComponentSafe(activeVendor.Name)}`
-    : 'https://entropianexus.com/information/vendors';
+    : 'https://entropianexus.com/information/vendors');
 
   // Image URL for SEO
-  $: entityImageUrl = vendor?.Id ? `/api/img/vendor/${vendor.Id}` : null;
+  let entityImageUrl = $derived(vendor?.Id ? `/api/img/vendor/${vendor.Id}` : null);
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     offers: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -259,22 +265,22 @@
   }
 
   // Reactive calculations
-  $: offerCount = getOfferCount(activeVendor);
-  $: limitedCount = getLimitedCount(activeVendor);
-  $: uniqueTypes = getUniqueTypes(activeVendor);
-  $: hasLocation = hasCoordinates(activeVendor);
+  let offerCount = $derived(getOfferCount(activeVendor));
+  let limitedCount = $derived(getLimitedCount(activeVendor));
+  let uniqueTypes = $derived(getUniqueTypes(activeVendor));
+  let hasLocation = $derived(hasCoordinates(activeVendor));
 
   // Build waypoint value object for WaypointInput (edit mode)
-  $: waypointValue = {
+  let waypointValue = $derived({
     planet: activeVendor?.Planet?.Name || 'Calypso',
     x: activeVendor?.Properties?.Coordinates?.Longitude ?? null,
     y: activeVendor?.Properties?.Coordinates?.Latitude ?? null,
     z: activeVendor?.Properties?.Coordinates?.Altitude ?? null,
     name: activeVendor?.Name || ''
-  };
+  });
 
   // Build waypoint string for WaypointCopyButton (view mode)
-  $: waypointString = activeVendor?.Properties?.Coordinates?.Longitude != null
+  let waypointString = $derived(activeVendor?.Properties?.Coordinates?.Longitude != null
     ? getWaypoint(
         activeVendor?.Planet?.Name || 'Calypso',
         activeVendor?.Properties?.Coordinates?.Longitude,
@@ -282,7 +288,7 @@
         activeVendor?.Properties?.Coordinates?.Altitude ?? 100,
         activeVendor?.Name || ''
       )
-    : '';
+    : '');
 
   // ========== EDIT HANDLERS ==========
   function handleWaypointChange(detail) {
@@ -345,11 +351,11 @@
         </div>
         <div class="banner-actions">
           {#if $viewingPendingChange}
-            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>
+            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>
               View Current
             </button>
           {:else}
-            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>
+            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>
               View Pending
             </button>
           {/if}

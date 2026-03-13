@@ -12,6 +12,8 @@
   - controls: General, Economy, Defense (9 types), Armors (7 slots with gender support), Set Effects, Tiering
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -56,41 +58,13 @@
     changeMetadata
   } from '$lib/stores/wikiEditState.js';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
 
-  $: armorSet = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: effects = data.effects || [];
-  $: armorSetEntityId = armorSet?.Id ?? armorSet?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, armorSetEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
-  // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
-  // Build navigation items
-  $: navItems = allItems;
 
   // Empty entity template for create mode
   const emptyEntity = {
@@ -120,29 +94,8 @@
     Tiers: []
   };
 
-  // Initialize edit state when entity or user changes
-  $: if (user) {
-    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : armorSet;
-    if (entity) {
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(entity, 'ArmorSet', isCreateMode, editChange);
-    }
-  }
 
-  // Set existing pending change when data loads
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → armorSet)
-  $: activeEntity = $editMode
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.changes)
-      ? applyChangesToEntity(armorSet, $existingPendingChange.changes)
-      : armorSet;
 
   // Helper to apply pending changes to entity for display
   function applyChangesToEntity(entity, changes) {
@@ -414,35 +367,19 @@
 
   const allAvailableColumns = Object.values(columnDefs);
 
-  // Breadcrumbs
-  $: breadcrumbs = [
-    { label: 'Items', href: '/items' },
-    { label: 'Armor Sets', href: '/items/armorsets' },
-    ...(activeEntity ? [{ label: activeEntity.Name || 'New Armor Set' }] : [])
-  ];
 
-  // SEO
-  $: seoDescription = activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Armor Set'} - armor set with ${getTotalDefense(activeEntity)?.toFixed(1) || '?'} total defense in Entropia Universe.`;
 
-  $: canonicalUrl = armorSet
-    ? `https://entropianexus.com/items/armorsets/${encodeURIComponentSafe(armorSet.Name)}`
-    : 'https://entropianexus.com/items/armorsets';
 
-  // Image URL for SEO (approved images only)
-  $: entityImageUrl = armorSet?.Id ? `/api/img/armorset/${armorSet.Id}` : null;
 
-  // Check if armor set is tierable
-  $: isTierable = activeEntity && !hasItemTag(activeEntity.Name, 'L');
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     pieces: true,
     tiering: true,
     marketPrices: true,
     acquisition: true,
     usage: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -500,15 +437,86 @@
       }));
   }
 
-  // Reactive calculations
-  $: totalDefense = getTotalDefense(activeEntity);
-  $: maxDecay = getMaxArmorDecay(activeEntity);
-  $: totalAbsorption = getTotalAbsorption(activeEntity);
-  $: setEffects = getSetEffects(activeEntity);
-  $: pieceCount = activeEntity?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0;
 
   // Damage types for display
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
+  let armorSet = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let effects = $derived(data.effects || []);
+  let armorSetEntityId = $derived(armorSet?.Id ?? armorSet?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, armorSetEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  // Can edit if user is verified or admin
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
+  // Build navigation items
+  let navItems = $derived(allItems);
+  // Initialize edit state when entity or user changes
+  run(() => {
+    if (user) {
+      const entity = isCreateMode ? (existingChange?.data || emptyEntity) : armorSet;
+      if (entity) {
+        const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+        initEditState(entity, 'ArmorSet', isCreateMode, editChange);
+      }
+    }
+  });
+  // Set existing pending change when data loads
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → armorSet)
+  let activeEntity = $derived($editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(armorSet, $existingPendingChange.changes)
+      : armorSet);
+  // Breadcrumbs
+  let breadcrumbs = $derived([
+    { label: 'Items', href: '/items' },
+    { label: 'Armor Sets', href: '/items/armorsets' },
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Armor Set' }] : [])
+  ]);
+  // SEO
+  let seoDescription = $derived(activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Armor Set'} - armor set with ${getTotalDefense(activeEntity)?.toFixed(1) || '?'} total defense in Entropia Universe.`);
+  let canonicalUrl = $derived(armorSet
+    ? `https://entropianexus.com/items/armorsets/${encodeURIComponentSafe(armorSet.Name)}`
+    : 'https://entropianexus.com/items/armorsets');
+  // Image URL for SEO (approved images only)
+  let entityImageUrl = $derived(armorSet?.Id ? `/api/img/armorset/${armorSet.Id}` : null);
+  // Check if armor set is tierable
+  let isTierable = $derived(activeEntity && !hasItemTag(activeEntity.Name, 'L'));
+  // Reactive calculations
+  let totalDefense = $derived(getTotalDefense(activeEntity));
+  let maxDecay = $derived(getMaxArmorDecay(activeEntity));
+  let totalAbsorption = $derived(getTotalAbsorption(activeEntity));
+  let setEffects = $derived(getSetEffects(activeEntity));
+  let pieceCount = $derived(activeEntity?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0);
 </script>
 
 <WikiSEO

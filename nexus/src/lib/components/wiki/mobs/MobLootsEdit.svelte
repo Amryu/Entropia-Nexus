@@ -9,17 +9,28 @@
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
-  /** @type {Array} Loots array from the mob */
-  export let loots = [];
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldPath = 'Loots';
+  
 
-  /** @type {Array} Available maturities from the current mob */
-  export let maturities = [];
+  
 
-  /** @type {Array} All items for validation */
-  export let allItems = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [loots]
+   * @property {string} [fieldPath]
+   * @property {Array} [maturities]
+   * @property {Array} [allItems]
+   */
+
+  /** @type {Props} */
+  let {
+    loots = [],
+    fieldPath = 'Loots',
+    maturities = [],
+    allItems = []
+  } = $props();
 
   // Frequency options (from legacy config)
   const FREQUENCY_OPTIONS = [
@@ -48,7 +59,7 @@
   };
 
   // Item name lookup set for validation
-  $: itemNamesSet = new Set((allItems || []).map(i => i.Name));
+  let itemNamesSet = $derived(new Set((allItems || []).map(i => i.Name)));
 
   // === Loot Constructor ===
   function createLoot() {
@@ -130,7 +141,7 @@
             <span class="field-label">Least Maturity</span>
             <select
               value={loot.Maturity?.Name || ''}
-              on:change={(e) => updateLootField(index, 'Maturity.Name', e.target.value)}
+              onchange={(e) => updateLootField(index, 'Maturity.Name', e.target.value)}
             >
               <option value="">-- Any --</option>
               {#each maturities as mat}
@@ -143,7 +154,7 @@
             <span class="field-label">Frequency</span>
             <select
               value={loot.Frequency || 'Common'}
-              on:change={(e) => updateLootField(index, 'Frequency', e.target.value)}
+              onchange={(e) => updateLootField(index, 'Frequency', e.target.value)}
               style={getFrequencyStyle(loot.Frequency)}
             >
               {#each FREQUENCY_OPTIONS as freq}
@@ -156,7 +167,7 @@
             <input
               type="checkbox"
               checked={loot.IsEvent || false}
-              on:change={(e) => updateLootField(index, 'IsEvent', e.target.checked)}
+              onchange={(e) => updateLootField(index, 'IsEvent', e.target.checked)}
             />
             <span class="field-label">Event</span>
           </label>
@@ -164,14 +175,14 @@
 
         <button
           class="btn-icon danger"
-          on:click={() => removeLoot(index)}
+          onclick={() => removeLoot(index)}
           title="Remove loot"
           type="button"
         >×</button>
       </div>
     {/each}
 
-    <button class="btn-add" on:click={addLoot} type="button">
+    <button class="btn-add" onclick={addLoot} type="button">
       <span>+</span> Add Loot
     </button>
   </div>

@@ -8,12 +8,12 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  export let professions = [];
+  let { professions = [] } = $props();
 
-  $: sortedProfessions = professions ? [...professions].sort((a, b) => {
+  let sortedProfessions = $derived(professions ? [...professions].sort((a, b) => {
     if (b.Weight !== a.Weight) return b.Weight - a.Weight;
     return a.Profession.Name.localeCompare(b.Profession.Name);
-  }) : [];
+  }) : []);
 
   // Category badge colors
   const categoryColors = {
@@ -29,13 +29,13 @@
   }
 
   // Transform data for FancyTable
-  $: tableData = sortedProfessions.map(profEntry => ({
+  let tableData = $derived(sortedProfessions.map(profEntry => ({
     name: profEntry.Profession.Name,
     nameLink: `/information/professions/${encodeURIComponentSafe(profEntry.Profession.Name)}`,
     category: profEntry.Profession.Properties?.Category || 'Unknown',
     categoryColor: getCategoryColor(profEntry.Profession.Properties?.Category),
     weight: profEntry.Weight
-  }));
+  })));
 
   const columns = [
     {

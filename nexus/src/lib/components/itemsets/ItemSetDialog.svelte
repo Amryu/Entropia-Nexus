@@ -4,6 +4,8 @@
   Supports item search, armor/clothing set quick-add, and per-item metadata editing.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -18,54 +20,68 @@
 
   const MAX_ITEMS = 100;
 
-  /** @type {boolean} Whether dialog is visible */
-  export let show = false;
+  
 
-  /** @type {object|null} Existing item set to edit (null for create) */
-  export let itemSet = null;
+  
 
-  /** @type {string|null} Optional loadout ID to link */
-  export let loadoutId = null;
+  
 
-  /** @type {Set|null} Restrict to these item types (null = all types allowed) */
-  export let allowedItemTypes = null;
+  
 
-  /** @type {boolean} Hide the name field (auto-generates name) */
-  export let hideName = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {object|null} [itemSet]
+   * @property {string|null} [loadoutId]
+   * @property {Set|null} [allowedItemTypes]
+   * @property {boolean} [hideName]
+   */
+
+  /** @type {Props} */
+  let {
+    show = $bindable(false),
+    itemSet = null,
+    loadoutId = null,
+    allowedItemTypes = null,
+    hideName = false
+  } = $props();
 
   // Internal state
-  let name = '';
-  let items = [];
-  let saving = false;
-  let expandedMeta = {};  // Track which items have expanded metadata
-  let excludeLimited = true;
+  let name = $state('');
+  let items = $state([]);
+  let saving = $state(false);
+  let expandedMeta = $state({});  // Track which items have expanded metadata
+  let excludeLimited = $state(true);
 
   // Derived: convert Set to array for SearchInput's allowedTypes prop
-  $: allowedTypesArray = allowedItemTypes ? Array.from(allowedItemTypes) : null;
-  $: limitedFilterFn = excludeLimited ? (item) => !isLimitedByName(item.Name) : null;
-  $: showSetButton = !allowedItemTypes || allowedItemTypes.has('Armor');
+  let allowedTypesArray = $derived(allowedItemTypes ? Array.from(allowedItemTypes) : null);
+  let limitedFilterFn = $derived(excludeLimited ? (item) => !isLimitedByName(item.Name) : null);
+  let showSetButton = $derived(!allowedItemTypes || allowedItemTypes.has('Armor'));
 
   // Initialize state when dialog opens or itemSet changes
-  $: if (show) {
-    if (itemSet) {
-      name = itemSet.name || '';
-      items = JSON.parse(JSON.stringify(itemSet.data?.items || []));
-    } else {
-      name = '';
-      items = [];
+  run(() => {
+    if (show) {
+      if (itemSet) {
+        name = itemSet.name || '';
+        items = JSON.parse(JSON.stringify(itemSet.data?.items || []));
+      } else {
+        name = '';
+        items = [];
+      }
+      saving = false;
+      expandedMeta = {};
+      showSetSearch = false;
+      armorSetOptions = null;
     }
-    saving = false;
-    expandedMeta = {};
-    showSetSearch = false;
-    armorSetOptions = null;
-  }
+  });
 
-  $: itemCount = items.reduce((count, item) => {
+  let itemCount = $derived(items.reduce((count, item) => {
     if (item.setType) return count + 1;
     return count + 1;
-  }, 0);
+  }, 0));
 
-  $: canSave = (hideName || name.trim().length > 0) && items.length > 0;
+  let canSave = $derived((hideName || name.trim().length > 0) && items.length > 0);
 
   function handleKeydown(event) {
     if (event.key === 'Escape') close();
@@ -120,8 +136,8 @@
   }
 
   // === Set Quick-Add ===
-  let showSetSearch = false;
-  let armorSetOptions = null;
+  let showSetSearch = $state(false);
+  let armorSetOptions = $state(null);
 
   async function loadArmorSets() {
     if (armorSetOptions !== null) return;
@@ -240,10 +256,10 @@
 
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if show}
-  <div class="modal-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="modal-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="modal" role="dialog" aria-modal="true" aria-label="Item Set Editor">
       <!-- Header -->
       <div class="modal-header">
@@ -258,7 +274,7 @@
             maxlength="120"
           />
         {/if}
-        <button class="modal-close" on:click={close}>&times;</button>
+        <button class="modal-close" onclick={close}>&times;</button>
       </div>
 
       <!-- Search Bar -->
@@ -279,7 +295,7 @@
           <button
             class="btn-filter-limited"
             class:active={excludeLimited}
-            on:click={() => excludeLimited = !excludeLimited}
+            onclick={() => excludeLimited = !excludeLimited}
             title={excludeLimited ? 'Showing unlimited only — click to include (L) items' : 'Showing all items — click to exclude (L) items'}
           >
             (L)
@@ -288,7 +304,7 @@
             <button
               class="btn-set-add"
               class:active={showSetSearch}
-              on:click={toggleSetSearch}
+              onclick={toggleSetSearch}
               title="Add armor/clothing set"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -333,7 +349,7 @@
               {:else}
                 <div class="item-row">
                   <div class="item-main">
-                    <button class="btn-remove" on:click={() => removeItem(index)} title="Remove item">
+                    <button class="btn-remove" onclick={() => removeItem(index)} title="Remove item">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
@@ -348,14 +364,14 @@
                         value={item.quantity}
                         min="1"
                         max="9999999"
-                        on:change={(e) => updateItem(index, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
+                        onchange={(e) => updateItem(index, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
                       />
                     </div>
                     {#if hasMetaFields(item)}
                       <button
                         class="btn-meta-toggle"
                         class:active={expandedMeta[index]}
-                        on:click={() => toggleMeta(index)}
+                        onclick={() => toggleMeta(index)}
                         title="Edit metadata"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -384,8 +400,8 @@
       <div class="modal-footer">
         <span class="item-count">Items: {itemCount}/{MAX_ITEMS}</span>
         <div class="footer-actions">
-          <button class="btn-cancel" on:click={close}>Cancel</button>
-          <button class="btn-save" on:click={save} disabled={!canSave || saving}>
+          <button class="btn-cancel" onclick={close}>Cancel</button>
+          <button class="btn-save" onclick={save} disabled={!canSave || saving}>
             {saving ? 'Saving...' : (itemSet ? 'Update' : 'Create')}
           </button>
         </div>

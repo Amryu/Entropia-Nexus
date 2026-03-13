@@ -3,18 +3,36 @@
 
   import { onMount, createEventDispatcher } from "svelte";
 
-  export let text = '';
 
   export const dispatch = createEventDispatcher();
 
-  export let element;
-  export let show = false;
-  export let tooltipPos = { x: 0, y: 0 };
+  /**
+   * @typedef {Object} Props
+   * @property {string} [text]
+   * @property {any} element
+   * @property {boolean} [show]
+   * @property {any} [tooltipPos]
+   */
+
+  /** @type {Props} */
+  let {
+    text = '',
+    element = $bindable(),
+    show = false,
+    tooltipPos = { x: 0, y: 0 }
+  } = $props();
 
   onMount(()=>{
     if (typeof document === 'undefined') return;
 		document.body.appendChild(element);
 	})
+
+  export {
+  	text,
+  	element,
+  	show,
+  	tooltipPos,
+  }
 </script>
 <style>
   .tooltip {
@@ -34,7 +52,6 @@
   }
 </style>
 
-<svelte:options accessors={true} />
 <div bind:this={element} class="tooltip" style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;" class:show={show}>
   {@html text}
 </div>

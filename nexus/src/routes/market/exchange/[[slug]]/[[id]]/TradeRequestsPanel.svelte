@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { tradeRequests } from '../../exchangeStore.js';
@@ -7,12 +9,18 @@
 
   const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
 
-  /** @type {object|null} Current user */
-  export let user = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object|null} [user]
+   */
 
-  let loading = false;
-  let error = null;
-  let isMobile = false;
+  /** @type {Props} */
+  let { user = null } = $props();
+
+  let loading = $state(false);
+  let error = $state(null);
+  let isMobile = $state(false);
 
   function updateMobileState() {
     isMobile = browser && window.innerWidth <= 900;
@@ -25,7 +33,6 @@
     if (browser) window.removeEventListener('resize', updateMobileState);
   });
 
-  $: if (user?.id) loadTradeRequests();
 
   async function loadTradeRequests() {
     if ($tradeRequests.length === 0) loading = true;
@@ -129,6 +136,9 @@
       if (id) handleCancel(id);
     }
   }
+  run(() => {
+    if (user?.id) loadTradeRequests();
+  });
 </script>
 
 {#if error}
@@ -158,7 +168,7 @@
               <a href={threadUrl} target="_blank" rel="noopener noreferrer" class="trade-card-btn discord">Discord</a>
             {/if}
             {#if (req.status === 'pending' || req.status === 'active') && user}
-              <button class="trade-card-btn cancel" on:click={() => handleCancel(req.id)}>Cancel</button>
+              <button class="trade-card-btn cancel" onclick={() => handleCancel(req.id)}>Cancel</button>
             {/if}
           </div>
         </div>
@@ -167,7 +177,7 @@
   </div>
 {:else}
   <!-- Desktop: table layout -->
-  <div class="trade-requests-panel" role="presentation" on:click|capture={handleClick}>
+  <div class="trade-requests-panel" role="presentation" onclickcapture={handleClick}>
     <FancyTable
       {columns}
       data={$tradeRequests}

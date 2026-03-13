@@ -5,9 +5,15 @@
    */
   import { createEventDispatcher } from 'svelte';
 
-  export let show = false;
-  export let title = 'View Content';
-  export let content = '';
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {string} [title]
+   * @property {string} [content]
+   */
+
+  /** @type {Props} */
+  let { show = false, title = 'View Content', content = '' } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -28,20 +34,20 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if show}
-  <div class="modal-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="modal-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="modal">
       <div class="modal-header">
         <h3>{title}</h3>
-        <button type="button" class="modal-close" on:click={close}>&times;</button>
+        <button type="button" class="modal-close" onclick={close}>&times;</button>
       </div>
       <div class="modal-body">
         <div class="text-content">{content}</div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="close-btn" on:click={close}>Close</button>
+        <button type="button" class="close-btn" onclick={close}>Close</button>
       </div>
     </div>
   </div>

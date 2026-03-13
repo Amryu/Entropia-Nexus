@@ -29,102 +29,116 @@
   />
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { scoreSearchResult } from '$lib/search.js';
   import { clickable } from '$lib/actions/clickable.js';
 
-  /** @type {string} Current value (displayed in input) */
-  export let value = '';
+  
 
-  /** @type {string} Placeholder text */
-  export let placeholder = 'Search...';
+  
 
-  /** @type {number} Maximum results to show */
-  export let limit = 10;
+  
 
-  /** @type {boolean} Whether the input is disabled */
-  export let disabled = false;
+  
 
   // --- Local mode props ---
-  /** @type {Array<{label: string, value: string}|string>} Local options array */
-  export let options = null;
+  
 
   // --- API mode props ---
-  /** @type {string|null} API endpoint for search (e.g., '/search/items') */
-  export let apiEndpoint = null;
+  
 
-  /** @type {boolean} Whether to use fuzzy search (API mode) */
-  export let fuzzy = true;
+  
 
-  /** @type {number} Minimum characters before searching (API mode) */
-  export let minChars = 2;
+  
 
-  /** @type {number} Debounce delay in ms (API mode) */
-  export let debounceMs = 250;
+  
 
-  /** @type {string|null} Filter to a specific item type (e.g., 'Blueprint'). Removes per-category limit. */
-  export let typeFilter = null;
+  
 
-  /** @type {Object|null} Additional query parameters to pass to the API */
-  export let apiParams = null;
+  
 
-  /** @type {boolean} Whether to clear the input after selecting an option */
-  export let clearOnSelect = false;
+  
 
   // --- Filtering props ---
-  /** @type {Function|null} Custom filter function: (item) => boolean */
-  export let filterFn = null;
+  
 
-  /** @type {Array|null} Only include items with these types (for item search) */
-  export let allowedTypes = null;
+  
 
-  /** @type {Array|null} Only include items with these names */
-  export let allowedNames = null;
+  
 
   // --- Display props ---
-  /** @type {Function|null} Custom display function: (item) => string */
-  export let displayFn = null;
+  
 
-  /** @type {Function|null} Custom value extraction: (item) => string */
-  export let valueFn = null;
+  
 
-  /** @type {string} Message when no results found */
-  export let emptyMessage = 'No matches';
+  
 
   // --- Validation props ---
-  /** @type {Array<string>|Set<string>|null} Known valid values for validation border (green/red) */
-  export let validValues = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [value]
+   * @property {string} [placeholder]
+   * @property {number} [limit]
+   * @property {boolean} [disabled]
+   * @property {Array<{label: string, value: string}|string>} [options]
+   * @property {string|null} [apiEndpoint]
+   * @property {boolean} [fuzzy]
+   * @property {number} [minChars]
+   * @property {number} [debounceMs]
+   * @property {string|null} [typeFilter]
+   * @property {Object|null} [apiParams]
+   * @property {boolean} [clearOnSelect]
+   * @property {Function|null} [filterFn]
+   * @property {Array|null} [allowedTypes]
+   * @property {Array|null} [allowedNames]
+   * @property {Function|null} [displayFn]
+   * @property {Function|null} [valueFn]
+   * @property {string} [emptyMessage]
+   * @property {Array<string>|Set<string>|null} [validValues]
+   */
+
+  /** @type {Props} */
+  let {
+    value = '',
+    placeholder = 'Search...',
+    limit = 10,
+    disabled = false,
+    options = null,
+    apiEndpoint = null,
+    fuzzy = true,
+    minChars = 2,
+    debounceMs = 250,
+    typeFilter = null,
+    apiParams = null,
+    clearOnSelect = false,
+    filterFn = null,
+    allowedTypes = null,
+    allowedNames = null,
+    displayFn = null,
+    valueFn = null,
+    emptyMessage = 'No matches',
+    validValues = null
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let localValue = value || '';
-  let results = [];
-  let isSearching = false;
-  let showResults = false;
-  let highlightedIndex = -1;
+  let localValue = $state(value || '');
+  let results = $state([]);
+  let isSearching = $state(false);
+  let showResults = $state(false);
+  let highlightedIndex = $state(-1);
   let searchTimeout;
-  let inputEl;
-  let dropdownStyle = '';
+  let inputEl = $state();
+  let dropdownStyle = $state('');
 
-  // Determine mode
-  $: isLocalMode = options !== null && apiEndpoint === null;
-  $: isApiMode = apiEndpoint !== null;
 
-  // Validation: build a Set for O(1) lookups
-  $: validSet = validValues
-    ? (validValues instanceof Set ? validValues : new Set(validValues))
-    : null;
-  $: isValid = validSet && localValue?.trim() ? validSet.has(localValue.trim()) : null;
 
-  // Sync external value changes
-  $: localValue = value ?? '';
 
-  // Update dropdown position when showing
-  $: if (browser && showResults) {
-    tick().then(updateDropdownPosition);
-  }
 
   // --- Option Normalization (local mode) ---
   function normalizeOptions(list) {
@@ -405,6 +419,24 @@
       }
     }
   }
+  // Determine mode
+  let isLocalMode = $derived(options !== null && apiEndpoint === null);
+  let isApiMode = $derived(apiEndpoint !== null);
+  // Validation: build a Set for O(1) lookups
+  let validSet = $derived(validValues
+    ? (validValues instanceof Set ? validValues : new Set(validValues))
+    : null);
+  // Sync external value changes
+  run(() => {
+    localValue = value ?? '';
+  });
+  let isValid = $derived(validSet && localValue?.trim() ? validSet.has(localValue.trim()) : null);
+  // Update dropdown position when showing
+  run(() => {
+    if (browser && showResults) {
+      tick().then(updateDropdownPosition);
+    }
+  });
 </script>
 
 <div class="search-input">
@@ -413,10 +445,10 @@
       bind:this={inputEl}
       type="text"
       value={localValue}
-      on:input={handleInput}
-      on:keydown={handleKeydown}
-      on:blur={handleBlur}
-      on:focus={handleFocus}
+      oninput={handleInput}
+      onkeydown={handleKeydown}
+      onblur={handleBlur}
+      onfocus={handleFocus}
       {placeholder}
       autocomplete="off"
       spellcheck="false"
@@ -446,8 +478,8 @@
             class="search-result"
             class:highlighted={resultIndex === highlightedIndex}
             use:clickable
-            on:click={() => selectResult(result)}
-            on:mouseenter={() => highlightedIndex = resultIndex}
+            onclick={() => selectResult(result)}
+            onmouseenter={() => highlightedIndex = resultIndex}
           >
             <span class="result-name">{getDisplayText(result)}</span>
             {#if result.sublabel}

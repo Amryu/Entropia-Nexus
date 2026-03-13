@@ -5,6 +5,8 @@
   Supports inventory integration to show already-owned items and adjust quantities.
 -->
 <script>
+  import { run, self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { PLANETS, MAX_BUY_ORDERS, DEFAULT_PARTIAL_RATIO } from '../../market/exchange/exchangeConstants.js';
@@ -13,80 +15,60 @@
   import InventoryImportDialog from '../../market/exchange/[[slug]]/[[id]]/InventoryImportDialog.svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  let turnstileToken = null;
-  let resetTurnstile = false;
+  let turnstileToken = $state(null);
+  let resetTurnstile = $state(false);
 
-  export let show = false;
-  /** @type {Array<{ itemId: number, name: string, quantity: number, markup: number, stackable?: boolean }>} */
-  export let items = [];
-  /** @type {number} Current number of active buy orders */
-  export let buyOrderCount = 0;
-  /** @type {boolean} Whether user is logged in */
-  export let isLoggedIn = false;
-  /** @type {Array} Exchange slim items for InventoryImportDialog name resolution */
-  export let allItems = [];
-  /** @type {Array|null} Pre-loaded inventory data from parent (avoids re-fetch) */
-  export let inventoryData = null;
+  
+  
+  
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {Array<{ itemId: number, name: string, quantity: number, markup: number, stackable?: boolean }>} [items]
+   * @property {number} [buyOrderCount]
+   * @property {boolean} [isLoggedIn]
+   * @property {Array} [allItems]
+   * @property {Array|null} [inventoryData]
+   */
+
+  /** @type {Props} */
+  let {
+    show = false,
+    items = [],
+    buyOrderCount = $bindable(0),
+    isLoggedIn = false,
+    allItems = [],
+    inventoryData = null
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let orderRows = [];
-  let globalPlanet = 'Calypso';
-  let submitting = false;
-  let progress = 0;
-  let totalOrders = 0;
-  let progressError = null;
+  let orderRows = $state([]);
+  let globalPlanet = $state('Calypso');
+  let submitting = $state(false);
+  let progress = $state(0);
+  let totalOrders = $state(0);
+  let progressError = $state(null);
 
   // User orders state (for edit detection)
   let userOrders = [];
-  let ordersLoaded = false;
-  let ordersLoading = false;
+  let ordersLoaded = $state(false);
+  let ordersLoading = $state(false);
 
   // Inventory state
-  let inventoryItems = [];
-  let inventoryLoaded = false;
-  let inventoryLoading = false;
-  let showInventoryImport = false;
-  let storageFilter = 'all'; // 'none' | 'all' | planet name | 'inventory'
+  let inventoryItems = $state([]);
+  let inventoryLoaded = $state(false);
+  let inventoryLoading = $state(false);
+  let showInventoryImport = $state(false);
+  let storageFilter = $state('all'); // 'none' | 'all' | planet name | 'inventory'
 
-  // Available planets from inventory data
-  $: availablePlanets = (() => {
-    const planets = new Set();
-    for (const item of inventoryItems) {
-      if (item.container && item.container !== 'CARRIED') {
-        planets.add(item.container);
-      }
-    }
-    return [...planets].sort();
-  })();
 
-  // Re-apply inventory when storage filter changes
-  $: if (inventoryLoaded && storageFilter) {
-    applyInventoryToRows();
-  }
 
-  // Pre-populate inventory from parent if provided
-  $: if (show && inventoryData && !inventoryLoaded && !inventoryLoading) {
-    inventoryItems = inventoryData;
-    inventoryLoaded = true;
-    applyInventoryToRows();
-  }
 
-  // Fetch user orders when dialog opens (for edit detection)
-  $: if (show && isLoggedIn && !ordersLoaded && !ordersLoading) {
-    loadUserOrders();
-  }
 
-  // Rebuild order rows when items change and dialog is shown
-  $: if (show && items.length > 0) {
-    buildOrderRows();
-  }
 
-  // Count of active (non-covered) rows for submit button
-  $: submittableRows = orderRows.filter(r => !r.covered && r.status !== 'done');
-  $: newOrderCount = orderRows.filter(r => !r.isEdit && !r.covered && r.status !== 'done').length;
-  $: editOrderCount = orderRows.filter(r => r.isEdit && !r.covered && r.status !== 'done').length;
-  $: activeRowCount = submittableRows.length;
 
   async function loadUserOrders() {
     ordersLoading = true;
@@ -388,14 +370,55 @@
     ordersLoaded = false;
     dispatch('close');
   }
+  // Pre-populate inventory from parent if provided
+  run(() => {
+    if (show && inventoryData && !inventoryLoaded && !inventoryLoading) {
+      inventoryItems = inventoryData;
+      inventoryLoaded = true;
+      applyInventoryToRows();
+    }
+  });
+  // Available planets from inventory data
+  let availablePlanets = $derived((() => {
+    const planets = new Set();
+    for (const item of inventoryItems) {
+      if (item.container && item.container !== 'CARRIED') {
+        planets.add(item.container);
+      }
+    }
+    return [...planets].sort();
+  })());
+  // Re-apply inventory when storage filter changes
+  run(() => {
+    if (inventoryLoaded && storageFilter) {
+      applyInventoryToRows();
+    }
+  });
+  // Fetch user orders when dialog opens (for edit detection)
+  run(() => {
+    if (show && isLoggedIn && !ordersLoaded && !ordersLoading) {
+      loadUserOrders();
+    }
+  });
+  // Rebuild order rows when items change and dialog is shown
+  run(() => {
+    if (show && items.length > 0) {
+      buildOrderRows();
+    }
+  });
+  // Count of active (non-covered) rows for submit button
+  let submittableRows = $derived(orderRows.filter(r => !r.covered && r.status !== 'done'));
+  let newOrderCount = $derived(orderRows.filter(r => !r.isEdit && !r.covered && r.status !== 'done').length);
+  let editOrderCount = $derived(orderRows.filter(r => r.isEdit && !r.covered && r.status !== 'done').length);
+  let activeRowCount = $derived(submittableRows.length);
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" on:click|self={close}>
+  <div class="modal-overlay" role="presentation" onclick={self(close)}>
     <div class="modal">
       <div class="modal-header">
         <h3>Mass Buy Orders</h3>
-        <button class="close-btn" on:click={close} disabled={submitting}>&times;</button>
+        <button class="close-btn" onclick={close} disabled={submitting}>&times;</button>
       </div>
 
       <div class="global-settings">
@@ -408,10 +431,10 @@
         {#if isLoggedIn}
           <span class="settings-spacer"></span>
           {#if !inventoryLoaded}
-            <button class="btn-sm" on:click={loadInventory} disabled={inventoryLoading || submitting}>
+            <button class="btn-sm" onclick={loadInventory} disabled={inventoryLoading || submitting}>
               {inventoryLoading ? 'Loading...' : 'Check Inventory'}
             </button>
-            <button class="btn-sm" on:click={() => showInventoryImport = true} disabled={submitting}>
+            <button class="btn-sm" onclick={() => showInventoryImport = true} disabled={submitting}>
               Import
             </button>
           {:else}
@@ -427,10 +450,10 @@
                 </optgroup>
               {/if}
             </select>
-            <button class="btn-sm" on:click={loadInventory} disabled={inventoryLoading || submitting} title="Refresh">
+            <button class="btn-sm" onclick={loadInventory} disabled={inventoryLoading || submitting} title="Refresh">
               {inventoryLoading ? '...' : '↻'}
             </button>
-            <button class="btn-sm" on:click={() => showInventoryImport = true} disabled={submitting}>
+            <button class="btn-sm" onclick={() => showInventoryImport = true} disabled={submitting}>
               Re-import
             </button>
           {/if}
@@ -466,7 +489,7 @@
                 {/if}
               </span>
               {#if !submitting && !row.covered}
-                <button class="row-remove" on:click={() => removeRow(i)} title="Remove">&times;</button>
+                <button class="row-remove" onclick={() => removeRow(i)} title="Remove">&times;</button>
               {/if}
             </div>
             {#if !row.covered}
@@ -481,7 +504,7 @@
                     disabled={submitting || row.status === 'done'}
                     class="field-input"
                     class:field-error={row.error && row.error.includes('Markup')}
-                    on:change={() => clampMarkup(row)}
+                    onchange={() => clampMarkup(row)}
                   />
                 </div>
                 <div class="field">
@@ -493,7 +516,7 @@
                     disabled={submitting || row.status === 'done'}
                     class="field-input field-sm"
                     class:field-error={row.error && row.error.includes('Quantity')}
-                    on:change={() => clampQty(row)}
+                    onchange={() => clampQty(row)}
                   />
                 </div>
                 <div class="field field-partial">
@@ -502,7 +525,7 @@
                       type="checkbox"
                       bind:checked={row.allowPartial}
                       disabled={submitting || row.status === 'done'}
-                      on:change={() => {
+                      onchange={() => {
                         if (row.allowPartial) {
                           row.minQuantity = Math.max(1, Math.floor((row.quantity || 1) * DEFAULT_PARTIAL_RATIO));
                         } else {
@@ -522,7 +545,7 @@
                       class="field-input field-xs"
                       class:field-error={row.error && row.error.includes('Min')}
                       placeholder="Min"
-                      on:change={() => clampMinQty(row)}
+                      onchange={() => clampMinQty(row)}
                     />
                   {/if}
                 </div>
@@ -561,15 +584,15 @@
       {/if}
 
       <div class="modal-footer">
-        <button class="btn-cancel" on:click={close} disabled={submitting}>
+        <button class="btn-cancel" onclick={close} disabled={submitting}>
           {progress > 0 && !progressError ? 'Done' : 'Cancel'}
         </button>
         <span class="footer-spacer"></span>
         {#if progressError}
-          <button class="btn-retry" on:click={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
+          <button class="btn-retry" onclick={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
         {/if}
         {#if !progressError && submittableRows.length > 0}
-          <button class="btn-submit" on:click={submit} disabled={submitting || submittableRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
+          <button class="btn-submit" onclick={submit} disabled={submitting || submittableRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
             {submitting ? 'Submitting...' : `Submit ${submittableRows.length} Order${submittableRows.length !== 1 ? 's' : ''}${editOrderCount > 0 ? ` (${editOrderCount} edit${editOrderCount !== 1 ? 's' : ''})` : ''}`}
           </button>
         {/if}

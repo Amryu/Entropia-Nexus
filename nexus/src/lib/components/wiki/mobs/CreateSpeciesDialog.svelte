@@ -9,20 +9,26 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {{ Name: string, Properties?: { CodexBaseCost?: number, CodexType?: string }, _newSpecies?: { CodexBaseCost?: number, CodexType?: string } } | null} */
-  export let species = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ Name: string, Properties?: { CodexBaseCost?: number, CodexType?: string }, _newSpecies?: { CodexBaseCost?: number, CodexType?: string } } | null} [species]
+   */
 
-  $: isEdit = !!species;
+  /** @type {Props} */
+  let { species = null } = $props();
+
+  let isEdit = $derived(!!species);
 
   function getSpeciesValues() {
     return species?._newSpecies || species?.Properties || {};
   }
 
-  let name = species?.Name || '';
-  let codexBaseCost = getSpeciesValues().CodexBaseCost ?? '';
-  let codexType = getSpeciesValues().CodexType || 'Mob';
+  let name = $state(species?.Name || '');
+  let codexBaseCost = $state(getSpeciesValues().CodexBaseCost ?? '');
+  let codexType = $state(getSpeciesValues().CodexType || 'Mob');
 
-  $: canSubmit = name.trim().length > 0;
+  let canSubmit = $derived(name.trim().length > 0);
 
   function handleSubmit() {
     if (!canSubmit) return;
@@ -56,8 +62,8 @@
   class="modal-overlay"
   role="button"
   tabindex="0"
-  on:click={handleOverlayClick}
-  on:keydown={handleKeydown}
+  onclick={handleOverlayClick}
+  onkeydown={handleKeydown}
 >
   <div class="modal" role="dialog" aria-modal="true">
     <h3>{isEdit ? 'Edit Species' : 'Create New Species'}</h3>
@@ -88,8 +94,8 @@
     </div>
 
     <div class="actions">
-      <button class="btn-cancel" on:click={handleCancel}>Cancel</button>
-      <button class="btn-create" on:click={handleSubmit} disabled={!canSubmit}>{isEdit ? 'Save' : 'Create'}</button>
+      <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
+      <button class="btn-create" onclick={handleSubmit} disabled={!canSubmit}>{isEdit ? 'Save' : 'Create'}</button>
     </div>
   </div>
 </div>

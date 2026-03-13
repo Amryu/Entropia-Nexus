@@ -4,10 +4,16 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
 
-  /** @type {import('./$types').PageData} */
-  export let data;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {import('./$types').PageData} data
+   */
 
-  $: announcement = data.announcement;
+  /** @type {Props} */
+  let { data } = $props();
+
+  let announcement = $derived(data.announcement);
 
   onMount(() => {
     const autoplayId = ($page.url.searchParams.get('autoplay') || '').replace(/[^a-zA-Z0-9_-]/g, '');

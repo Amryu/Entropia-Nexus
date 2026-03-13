@@ -7,31 +7,42 @@
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
 
-  /** @type {object} Damage object {Impact, Cut, Stab, etc.} */
-  export let damage = {};
+  
 
-  /** @type {string} Field path for updateField (default: 'Properties.Damage') */
-  export let fieldPath = 'Properties.Damage';
+  
 
-  /** @type {string} Section title */
-  export let title = 'Damage';
+  
 
-  /** @type {boolean} Compact display mode */
-  export let compact = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} Damage object {Impact, Cut, Stab, etc.} [damage]
+   * @property {string} [fieldPath]
+   * @property {string} [title]
+   * @property {boolean} [compact]
+   */
+
+  /** @type {Props} */
+  let {
+    damage = {},
+    fieldPath = 'Properties.Damage',
+    title = 'Damage',
+    compact = false
+  } = $props();
 
   // Damage types in order
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
 
   // Calculate total damage
-  $: totalDamage = damageTypes.reduce((sum, type) => sum + (damage?.[type] ?? 0), 0);
+  let totalDamage = $derived(damageTypes.reduce((sum, type) => sum + (damage?.[type] ?? 0), 0));
 
   // Check if has any damage values
-  $: hasDamage = totalDamage > 0 || $editMode;
+  let hasDamage = $derived(totalDamage > 0 || $editMode);
 
   // Filter to only show non-zero values in view mode
-  $: visibleTypes = $editMode
+  let visibleTypes = $derived($editMode
     ? damageTypes
-    : damageTypes.filter(type => (damage?.[type] ?? 0) > 0);
+    : damageTypes.filter(type => (damage?.[type] ?? 0) > 0));
 
   function updateDamageValue(type, value) {
     const newDamage = {
@@ -92,7 +103,7 @@
               value={damage?.[type] ?? 0}
               step="0.1"
               min="0"
-              on:change={(e) => updateDamageValue(type, e.target.value)}
+              onchange={(e) => updateDamageValue(type, e.target.value)}
             />
           {:else}
             <span class="damage-value">{(damage?.[type] ?? 0).toFixed(1)}</span>

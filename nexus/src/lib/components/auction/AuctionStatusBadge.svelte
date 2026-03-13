@@ -3,9 +3,15 @@
   Color-coded status badge for auction states.
 -->
 <script>
-  /** @type {'draft'|'active'|'ended'|'settled'|'cancelled'|'frozen'} */
-  export let status;
-  export let size = 'normal';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {'draft'|'active'|'ended'|'settled'|'cancelled'|'frozen'} status
+   * @property {string} [size]
+   */
+
+  /** @type {Props} */
+  let { status, size = 'normal' } = $props();
 
   const config = {
     draft: { label: 'Draft', semantic: 'muted' },
@@ -16,7 +22,7 @@
     frozen: { label: 'Frozen', semantic: 'error' }
   };
 
-  $: cfg = config[status] || { label: status, semantic: 'muted' };
+  let cfg = $derived(config[status] || { label: status, semantic: 'muted' });
 </script>
 
 <span class="status-badge {size} {cfg.semantic}">

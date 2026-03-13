@@ -3,8 +3,12 @@
   import '$lib/style.css';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
-  export let availability = []; // Array of { day_of_week, start_time, end_time, is_available }
-  export let readonly = false;
+  interface Props {
+    availability?: any; // Array of { day_of_week, start_time, end_time, is_available }
+    readonly?: boolean;
+  }
+
+  let { availability = [], readonly = false }: Props = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -16,7 +20,7 @@
   const dayOfWeekToDisplay = [6, 0, 1, 2, 3, 4, 5]; // 0-6 (Sun-Sat) mapped to display indices
 
   // Current time tracking (in MA Time / UTC+1)
-  let currentTime = new Date();
+  let currentTime = $state(new Date());
   let timeUpdateInterval;
 
   onMount(() => {
@@ -32,16 +36,6 @@
     }
   });
 
-  // Get current day and time in MA Time (UTC+1)
-  $: currentMATime = (() => {
-    // Convert to MA Time (UTC+1)
-    const maTime = new Date(currentTime.getTime() + (currentTime.getTimezoneOffset() + 60) * 60000);
-    return {
-      dayOfWeek: maTime.getDay(), // 0 = Sunday
-      hour: maTime.getHours(),
-      minute: maTime.getMinutes()
-    };
-  })();
 
   // Check if a given day and hour is the current time
   function isCurrentHour(dayOfWeek, hour) {
@@ -71,8 +65,6 @@
     }
   }
 
-  // Build a map for quick lookup: key = "day-HH:MM"
-  $: availabilityMap = buildAvailabilityMap(availability);
 
   function buildAvailabilityMap(slots) {
     const map = new Map();
@@ -289,17 +281,9 @@
     dispatch('update', getAvailabilityArray());
   }
 
-  // Group time slots by hour for display
-  $: hourGroups = timeSlots.reduce((groups, slot) => {
-    if (!groups[slot.hour]) {
-      groups[slot.hour] = [];
-    }
-    groups[slot.hour].push(slot);
-    return groups;
-  }, {});
 
   // Check if we should show condensed view (show only hours, expand on click)
-  let expandedHours = new Set();
+  let expandedHours = $state(new Set());
 
   function toggleHourExpand(hour) {
     if (expandedHours.has(hour)) {
@@ -384,19 +368,39 @@
     availabilityMap = new Map(availabilityMap);
     dispatch('update', getAvailabilityArray());
   }
+  // Get current day and time in MA Time (UTC+1)
+  let currentMATime = $derived((() => {
+    // Convert to MA Time (UTC+1)
+    const maTime = new Date(currentTime.getTime() + (currentTime.getTimezoneOffset() + 60) * 60000);
+    return {
+      dayOfWeek: maTime.getDay(), // 0 = Sunday
+      hour: maTime.getHours(),
+      minute: maTime.getMinutes()
+    };
+  })());
+  // Build a map for quick lookup: key = "day-HH:MM"
+  let availabilityMap = $derived(buildAvailabilityMap(availability));
+  // Group time slots by hour for display
+  let hourGroups = $derived(timeSlots.reduce((groups, slot) => {
+    if (!groups[slot.hour]) {
+      groups[slot.hour] = [];
+    }
+    groups[slot.hour].push(slot);
+    return groups;
+  }, {}));
 </script>
 
-<svelte:window on:mouseup={handleMouseUp} on:touchend={handleTouchEnd} on:touchmove={handleTouchMove} />
+<svelte:window onmouseup={handleMouseUp} ontouchend={handleTouchEnd} ontouchmove={handleTouchMove} />
 
 <div class="calendar-container">
   <div class="calendar-header">
     <span class="timezone-note">All times in MA Time (UTC+1/CET)</span>
     {#if !readonly}
       <div class="quick-actions">
-        <button type="button" class="quick-btn" on:click={selectAll}>Select All</button>
-        <button type="button" class="quick-btn" on:click={clearAll}>Clear All</button>
-        <button type="button" class="quick-btn" on:click={() => selectHourRange(9, 17)}>9-5</button>
-        <button type="button" class="quick-btn" on:click={() => selectHourRange(18, 24)}>Evening</button>
+        <button type="button" class="quick-btn" onclick={selectAll}>Select All</button>
+        <button type="button" class="quick-btn" onclick={clearAll}>Clear All</button>
+        <button type="button" class="quick-btn" onclick={() => selectHourRange(9, 17)}>9-5</button>
+        <button type="button" class="quick-btn" onclick={() => selectHourRange(18, 24)}>Evening</button>
       </div>
     {/if}
   </div>
@@ -412,8 +416,8 @@
           <span class="day-short">{day}</span>
           {#if !readonly}
             <div class="day-actions">
-              <button type="button" class="tiny-btn" on:click={() => selectDay(dayOfWeek)} title="Select all">+</button>
-              <button type="button" class="tiny-btn" on:click={() => clearDay(dayOfWeek)} title="Clear all">-</button>
+              <button type="button" class="tiny-btn" onclick={() => selectDay(dayOfWeek)} title="Select all">+</button>
+              <button type="button" class="tiny-btn" onclick={() => clearDay(dayOfWeek)} title="Clear all">-</button>
             </div>
           {/if}
         </div>
@@ -428,14 +432,14 @@
             class:clickable={!readonly}
             role={readonly ? undefined : 'button'}
             tabindex={readonly ? undefined : 0}
-            on:click={() => !readonly && toggleHourRow(parseInt(hour))}
-            on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && !readonly && (e.preventDefault(), toggleHourRow(parseInt(hour)))}
+            onclick={() => !readonly && toggleHourRow(parseInt(hour))}
+            onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && !readonly && (e.preventDefault(), toggleHourRow(parseInt(hour)))}
             title={readonly ? '' : 'Toggle all slots in this hour'}
           >{hour.toString().padStart(2, '0')}:00</span>
           <button
             type="button"
             class="expand-btn"
-            on:click={() => toggleHourExpand(parseInt(hour))}
+            onclick={() => toggleHourExpand(parseInt(hour))}
             title={expandedHours.has(parseInt(hour)) ? 'Collapse' : 'Expand 15-min slots'}
           >
             {#if !expandedHours.has(parseInt(hour))}
@@ -457,10 +461,10 @@
             class:readonly
             class:expanded={expandedHours.has(parseInt(hour))}
             class:current-time={isCurrent}
-            on:mousedown={(e) => handleHourMouseDown(dayOfWeek, parseInt(hour), e)}
-            on:mouseenter={() => handleHourMouseEnter(dayOfWeek, parseInt(hour))}
-            on:touchstart={(e) => handleHourTouchStart(dayOfWeek, parseInt(hour), e)}
-            on:keydown={(e) => e.key === 'Enter' && toggleHour(dayOfWeek, parseInt(hour))}
+            onmousedown={(e) => handleHourMouseDown(dayOfWeek, parseInt(hour), e)}
+            onmouseenter={() => handleHourMouseEnter(dayOfWeek, parseInt(hour))}
+            ontouchstart={(e) => handleHourTouchStart(dayOfWeek, parseInt(hour), e)}
+            onkeydown={(e) => e.key === 'Enter' && toggleHour(dayOfWeek, parseInt(hour))}
             role="gridcell"
             tabindex={readonly ? -1 : 0}
           >
@@ -476,8 +480,8 @@
               class:clickable={!readonly}
               role={readonly ? undefined : 'button'}
               tabindex={readonly ? undefined : 0}
-              on:click={() => !readonly && toggleTimeSlotRow(slot.label)}
-              on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && !readonly && (e.preventDefault(), toggleTimeSlotRow(slot.label))}
+              onclick={() => !readonly && toggleTimeSlotRow(slot.label)}
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && !readonly && (e.preventDefault(), toggleTimeSlotRow(slot.label))}
               title={readonly ? '' : 'Toggle this time slot for all days'}
             >
               {slot.label}
@@ -492,10 +496,10 @@
                 class:current-time={isCurrentSlotNow}
                 data-day={dayOfWeek}
                 data-time={slot.label}
-                on:mousedown={(e) => handleMouseDown(dayOfWeek, slot.label, e)}
-                on:mouseenter={() => handleMouseEnter(dayOfWeek, slot.label)}
-                on:touchstart={(e) => handleTouchStart(dayOfWeek, slot.label, e)}
-                on:keydown={(e) => e.key === 'Enter' && toggleSlot(dayOfWeek, slot.label)}
+                onmousedown={(e) => handleMouseDown(dayOfWeek, slot.label, e)}
+                onmouseenter={() => handleMouseEnter(dayOfWeek, slot.label)}
+                ontouchstart={(e) => handleTouchStart(dayOfWeek, slot.label, e)}
+                onkeydown={(e) => e.key === 'Enter' && toggleSlot(dayOfWeek, slot.label)}
                 role="gridcell"
                 tabindex={readonly ? -1 : 0}
               >

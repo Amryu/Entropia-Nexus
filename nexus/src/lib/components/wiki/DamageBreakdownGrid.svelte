@@ -9,14 +9,20 @@
   import { editMode } from '$lib/stores/wikiEditState.js';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
 
-  /** @type {object} Entity with Properties.Damage */
-  export let weapon = null;
+  
 
-  /** @type {boolean} Show zero values */
-  export let showZeros = false;
+  
 
-  /** @type {boolean} Compact single-line display */
-  export let compact = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} [weapon]
+   * @property {boolean} [showZeros]
+   * @property {boolean} [compact]
+   */
+
+  /** @type {Props} */
+  let { weapon = null, showZeros = false, compact = false } = $props();
 
   // Damage type definitions with CSS variable references for colors
   // Colors are defined globally in style.css as --damage-{type}
@@ -32,20 +38,20 @@
     { key: 'Electric', label: 'Electric', short: 'Elc', colorVar: '--damage-electric' },
   ];
 
-  $: damage = weapon?.Properties?.Damage || {};
+  let damage = $derived(weapon?.Properties?.Damage || {});
 
-  $: totalDamage = damageTypes.reduce((sum, type) => sum + (damage[type.key] || 0), 0);
+  let totalDamage = $derived(damageTypes.reduce((sum, type) => sum + (damage[type.key] || 0), 0));
 
   // Find the maximum damage value for bar scaling
-  $: maxDamage = Math.max(...damageTypes.map(type => damage[type.key] || 0), 0);
+  let maxDamage = $derived(Math.max(...damageTypes.map(type => damage[type.key] || 0), 0));
 
   // In edit mode, always show all types so they can be edited
-  $: visibleTypes = ($editMode || showZeros)
+  let visibleTypes = $derived(($editMode || showZeros)
     ? damageTypes
-    : damageTypes.filter(type => damage[type.key] > 0);
+    : damageTypes.filter(type => damage[type.key] > 0));
 
   // In edit mode, always show the grid even if no damage
-  $: hasAnyDamage = $editMode || visibleTypes.length > 0;
+  let hasAnyDamage = $derived($editMode || visibleTypes.length > 0);
 
   // Calculate bar percentage relative to max value (highest = 100%)
   function getDamagePercentage(value) {

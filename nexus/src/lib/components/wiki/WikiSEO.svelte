@@ -6,51 +6,63 @@
 <script>
   // @ts-nocheck
 
-  /** @type {string} Page title */
-  export let title = '';
+  
 
-  /** @type {string} Page description (max ~160 chars for search results) */
-  export let description = '';
+  
 
-  /** @type {string} Entity type for structured data (e.g., 'weapon', 'mob') */
-  export let entityType = '';
+  
 
-  /** @type {object|null} Entity data for structured data */
-  export let entity = null;
+  
 
-  /** @type {string|null} Image URL for social sharing */
-  export let imageUrl = null;
+  
 
-  /** @type {string} Canonical URL */
-  export let canonicalUrl = '';
+  
 
-  /** @type {Array} Breadcrumb items for schema.org [{name, url}] */
-  export let breadcrumbs = [];
+  
 
-  /** @type {string} Site name */
-  export let siteName = 'Entropia Nexus';
+  
 
-  /** @type {string} Twitter handle (without @) */
-  export let twitterHandle = '';
+  
 
-  /** @type {Array|null} Sidebar table columns for building social summary */
-  export let sidebarColumns = null;
+  
 
-  /** @type {object|null} Sidebar entity for building social summary */
-  export let sidebarEntity = null;
+  
 
-  /** @type {string} Optional override for Open Graph description */
-  export let ogDescription = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [title]
+   * @property {string} [description]
+   * @property {string} [entityType]
+   * @property {object|null} [entity]
+   * @property {string|null} [imageUrl]
+   * @property {string} [canonicalUrl]
+   * @property {Array} Breadcrumb items for schema.org [{name, url} [breadcrumbs]
+   * @property {string} [siteName]
+   * @property {string} [twitterHandle]
+   * @property {Array|null} [sidebarColumns]
+   * @property {object|null} [sidebarEntity]
+   * @property {string} [ogDescription]
+   */
 
-  // Computed values
-  $: pageTitle = title ? `${title} | ${siteName}` : siteName;
+  /** @type {Props} */
+  let {
+    title = '',
+    description = '',
+    entityType = '',
+    entity = null,
+    imageUrl = null,
+    canonicalUrl = '',
+    breadcrumbs = [],
+    siteName = 'Entropia Nexus',
+    twitterHandle = '',
+    sidebarColumns = null,
+    sidebarEntity = null,
+    ogDescription = ''
+  } = $props();
 
-  $: cleanDescription = stripHtml(description).replace(/\s+/g, ' ').trim();
-  $: truncatedDescription = cleanDescription
-    ? cleanDescription.substring(0, 160) + (cleanDescription.length > 160 ? '...' : '')
-    : '';
 
-  $: ogImage = imageUrl || '/default-og-image.png';
+
 
   const MAX_OG_DESCRIPTION = 200;
 
@@ -132,16 +144,7 @@
     return facts;
   }
 
-  $: sidebarFacts = buildSidebarFacts(sidebarColumns, sidebarEntity || entity);
-  $: sidebarFactsText = sidebarFacts.map(fact => `${fact.label}: ${fact.value}`).join(' · ');
-  $: jsonLdFacts = buildSidebarFacts(sidebarColumns, sidebarEntity || entity, 12);
 
-  $: computedOgDescription = clampText(
-    ogDescription ||
-      (sidebarFactsText
-        ? (description ? `${sidebarFactsText} — ${description}` : `${title} — ${sidebarFactsText}`)
-        : truncatedDescription)
-  );
 
   /** Format entity type into readable section name: "WeaponAmplifier" → "Weapon Amplifier" */
   function formatEntityType(type) {
@@ -149,8 +152,6 @@
     return type.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
   }
 
-  // Generate JSON-LD structured data
-  $: jsonLd = generateJsonLd(entity, entityType, breadcrumbs, canonicalUrl, jsonLdFacts);
 
   function generateJsonLd(entity, type, breadcrumbs, url, facts) {
     const schemas = [];
@@ -254,6 +255,24 @@
 
     return schemas;
   }
+  // Computed values
+  let pageTitle = $derived(title ? `${title} | ${siteName}` : siteName);
+  let cleanDescription = $derived(stripHtml(description).replace(/\s+/g, ' ').trim());
+  let truncatedDescription = $derived(cleanDescription
+    ? cleanDescription.substring(0, 160) + (cleanDescription.length > 160 ? '...' : '')
+    : '');
+  let ogImage = $derived(imageUrl || '/default-og-image.png');
+  let sidebarFacts = $derived(buildSidebarFacts(sidebarColumns, sidebarEntity || entity));
+  let sidebarFactsText = $derived(sidebarFacts.map(fact => `${fact.label}: ${fact.value}`).join(' · '));
+  let jsonLdFacts = $derived(buildSidebarFacts(sidebarColumns, sidebarEntity || entity, 12));
+  let computedOgDescription = $derived(clampText(
+    ogDescription ||
+      (sidebarFactsText
+        ? (description ? `${sidebarFactsText} — ${description}` : `${title} — ${sidebarFactsText}`)
+        : truncatedDescription)
+  ));
+  // Generate JSON-LD structured data
+  let jsonLd = $derived(generateJsonLd(entity, entityType, breadcrumbs, canonicalUrl, jsonLdFacts));
 </script>
 
 <svelte:head>

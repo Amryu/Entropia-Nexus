@@ -3,6 +3,8 @@
   Edit an existing rental offer. Includes status controls, blocked dates, and requests.
 -->
 <script>
+  import { run, preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { goto, invalidateAll } from '$app/navigation';
@@ -14,44 +16,46 @@
   import { formatPrice, formatDateDisplay } from '$lib/utils/rentalPricing.js';
   import { addToast } from '$lib/stores/toasts';
 
-  export let data;
+  let { data } = $props();
 
-  $: offer = data.offer;
-  $: planets = data.planets || [];
-  $: blockedDates = data.blockedDates || [];
-  $: requests = data.requests || [];
-  $: isNew = data.isNew;
+  let offer = $derived(data.offer);
+  let planets = $derived(data.planets || []);
+  let blockedDates = $derived(data.blockedDates || []);
+  let requests = $derived(data.requests || []);
+  let isNew = $derived(data.isNew);
 
-  let saving = false;
-  let error = '';
-  let statusChanging = false;
+  let saving = $state(false);
+  let error = $state('');
+  let statusChanging = $state(false);
 
   // Form state initialized from offer
-  let title = '';
-  let description = '';
-  let planetId = '';
-  let location = '';
-  let pricePerDay = 0;
-  let discounts = [];
-  let deposit = 0;
-  let initialized = false;
+  let title = $state('');
+  let description = $state('');
+  let planetId = $state('');
+  let location = $state('');
+  let pricePerDay = $state(0);
+  let discounts = $state([]);
+  let deposit = $state(0);
+  let initialized = $state(false);
 
-  $: if (offer && !initialized) {
-    title = offer.title || '';
-    description = offer.description || '';
-    planetId = offer.planet_id ? String(offer.planet_id) : '';
-    location = offer.location || '';
-    pricePerDay = Number(offer.price_per_day) || 0;
-    discounts = offer.discounts || [];
-    deposit = Number(offer.deposit) || 0;
-    initialized = true;
-  }
+  run(() => {
+    if (offer && !initialized) {
+      title = offer.title || '';
+      description = offer.description || '';
+      planetId = offer.planet_id ? String(offer.planet_id) : '';
+      location = offer.location || '';
+      pricePerDay = Number(offer.price_per_day) || 0;
+      discounts = offer.discounts || [];
+      deposit = Number(offer.deposit) || 0;
+      initialized = true;
+    }
+  });
 
-  $: canPublish = offer?.status === 'draft' || offer?.status === 'unlisted';
-  $: canUnpublish = offer?.status === 'available';
-  $: canDelete = offer?.status !== 'deleted';
-  $: activeRequests = requests.filter(r => ['open', 'accepted', 'in_progress'].includes(r.status));
-  $: canEditFields = offer?.status === 'draft';
+  let canPublish = $derived(offer?.status === 'draft' || offer?.status === 'unlisted');
+  let canUnpublish = $derived(offer?.status === 'available');
+  let canDelete = $derived(offer?.status !== 'deleted');
+  let activeRequests = $derived(requests.filter(r => ['open', 'accepted', 'in_progress'].includes(r.status)));
+  let canEditFields = $derived(offer?.status === 'draft');
 
   function handlePricingChange(e) {
     pricePerDay = e.detail.pricePerDay;
@@ -144,7 +148,7 @@
       <span>Edit</span>
     </div>
 
-    <button class="back-btn" on:click={() => goto('/market/rental/my')}>
+    <button class="back-btn" onclick={() => goto('/market/rental/my')}>
       &larr; Back to My Rentals
     </button>
 
@@ -172,28 +176,28 @@
       <!-- Status Controls -->
       <div class="status-controls">
         {#if canPublish}
-          <button class="btn-publish" on:click={() => handleStatusChange('available')} disabled={statusChanging}>
+          <button class="btn-publish" onclick={() => handleStatusChange('available')} disabled={statusChanging}>
             Publish
           </button>
         {/if}
         {#if canUnpublish}
-          <button class="btn-secondary" on:click={() => handleStatusChange('unlisted')} disabled={statusChanging}>
+          <button class="btn-secondary" onclick={() => handleStatusChange('unlisted')} disabled={statusChanging}>
             Unpublish
           </button>
         {/if}
         {#if offer.status === 'available' && activeRequests.length === 0}
-          <button class="btn-secondary" on:click={() => handleStatusChange('draft')} disabled={statusChanging}>
+          <button class="btn-secondary" onclick={() => handleStatusChange('draft')} disabled={statusChanging}>
             Back to Draft
           </button>
         {/if}
         {#if canDelete && activeRequests.length === 0}
-          <button class="btn-delete" on:click={() => { if (confirm('Are you sure you want to delete this offer? This cannot be undone.')) handleStatusChange('deleted'); }} disabled={statusChanging}>
+          <button class="btn-delete" onclick={() => { if (confirm('Are you sure you want to delete this offer? This cannot be undone.')) handleStatusChange('deleted'); }} disabled={statusChanging}>
             Delete Offer
           </button>
         {/if}
       </div>
 
-      <form on:submit|preventDefault={handleSave} class="edit-form">
+      <form onsubmit={preventDefault(handleSave)} class="edit-form">
         <!-- Item Set (read-only since linked) -->
         {#if offer.item_set}
           <div class="form-section">

@@ -9,36 +9,43 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {Array<{start: string, end: string, reason?: string}>} Blocked date ranges */
-  export let blockedDates = [];
+  
 
-  /** @type {Array<{start: string, end: string, requestId?: number}>} Booked date ranges */
-  export let bookedDates = [];
+  
 
-  /** @type {boolean} Whether the calendar allows range selection */
-  export let selectable = false;
+  
 
-  /** @type {string|null} Selected start date (YYYY-MM-DD) */
-  export let selectedStart = null;
+  
 
-  /** @type {string|null} Selected end date (YYYY-MM-DD) */
-  export let selectedEnd = null;
+  
 
-  /** @type {number} Number of months to show (1-12) */
-  export let months = 3;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array<{start: string, end: string, reason?: string}>} [blockedDates]
+   * @property {Array<{start: string, end: string, requestId?: number}>} [bookedDates]
+   * @property {boolean} [selectable]
+   * @property {string|null} [selectedStart]
+   * @property {string|null} [selectedEnd]
+   * @property {number} [months]
+   */
+
+  /** @type {Props} */
+  let {
+    blockedDates = [],
+    bookedDates = [],
+    selectable = false,
+    selectedStart = $bindable(null),
+    selectedEnd = $bindable(null),
+    months = 3
+  } = $props();
 
   const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-  let currentMonthOffset = 0;
+  let currentMonthOffset = $state(0);
   let clickedStart = null;
 
-  $: today = toDateStr(new Date());
-  $: blockedSet = buildDateSet(blockedDates);
-  $: bookedSet = buildDateSet(bookedDates);
-  $: bookedStartSet = buildStartSet(bookedDates);
-  $: bookedEndSet = buildEndSet(bookedDates);
-  $: visibleMonths = getVisibleMonths(currentMonthOffset, months);
 
   function toDateStr(date) {
     const y = date.getFullYear();
@@ -182,11 +189,17 @@
   function nextMonths() {
     if (currentMonthOffset < 12 - months) currentMonthOffset += 1;
   }
+  let today = $derived(toDateStr(new Date()));
+  let blockedSet = $derived(buildDateSet(blockedDates));
+  let bookedSet = $derived(buildDateSet(bookedDates));
+  let bookedStartSet = $derived(buildStartSet(bookedDates));
+  let bookedEndSet = $derived(buildEndSet(bookedDates));
+  let visibleMonths = $derived(getVisibleMonths(currentMonthOffset, months));
 </script>
 
 <div class="rental-calendar">
   <div class="calendar-nav">
-    <button class="nav-btn" on:click={prevMonths} disabled={currentMonthOffset <= 0} aria-label="Previous month">
+    <button class="nav-btn" onclick={prevMonths} disabled={currentMonthOffset <= 0} aria-label="Previous month">
       &larr;
     </button>
     <span class="nav-label">
@@ -195,7 +208,7 @@
         &ndash; {MONTH_NAMES[visibleMonths[visibleMonths.length - 1].month]} {visibleMonths[visibleMonths.length - 1].year}
       {/if}
     </span>
-    <button class="nav-btn" on:click={nextMonths} disabled={currentMonthOffset >= 12 - months} aria-label="Next month">
+    <button class="nav-btn" onclick={nextMonths} disabled={currentMonthOffset >= 12 - months} aria-label="Next month">
       &rarr;
     </button>
   </div>
@@ -225,7 +238,7 @@
                 class:half-day-both={halfDay && isBookedStart(dateStr) && isBookedEnd(dateStr)}
                 class:selectable
                 disabled={!selectable || status === 'past' || status === 'blocked' || status === 'booked'}
-                on:click={() => handleDayClick(dateStr)}
+                onclick={() => handleDayClick(dateStr)}
                 title={status === 'blocked' ? 'Blocked by owner' : status === 'booked' ? 'Already booked' : status === 'past' ? 'Past date' : ''}
               >
                 {parseInt(dateStr.split('-')[2])}

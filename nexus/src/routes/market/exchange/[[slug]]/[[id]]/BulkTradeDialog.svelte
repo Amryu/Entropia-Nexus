@@ -3,31 +3,42 @@
   import { createEventDispatcher } from 'svelte';
   import { isPercentMarkup, formatMarkupValue } from '../../orderUtils';
 
-  export let show = false;
 
-  /** @type {string} Item name */
-  export let itemName = '';
+  
 
-  /** @type {object|null} Item type info for markup detection */
-  export let item = null;
+  
 
-  /** @type {Array} All order book orders (buy + sell) */
-  export let orderBookOrders = [];
+  
 
-  /** @type {Array} Available planets */
-  export let planets = ['Calypso', 'Arkadia', 'Cyrene', 'Monria', 'Next Island', 'Rocktropia', 'Toulan'];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {string} [itemName]
+   * @property {object|null} [item]
+   * @property {Array} [orderBookOrders]
+   * @property {Array} [planets]
+   */
+
+  /** @type {Props} */
+  let {
+    show = false,
+    itemName = '',
+    item = null,
+    orderBookOrders = [],
+    planets = ['Calypso', 'Arkadia', 'Cyrene', 'Monria', 'Next Island', 'Rocktropia', 'Toulan']
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let activeTab = 'buy'; // 'buy' | 'sell'
-  let quantity = 1;
-  let minOrder = 0;
-  let maxTraders = 5;
-  let planet = 'All Planets';
+  let activeTab = $state('buy'); // 'buy' | 'sell'
+  let quantity = $state(1);
+  let minOrder = $state(0);
+  let maxTraders = $state(5);
+  let planet = $state('All Planets');
   let submitting = false;
   let error = null;
 
-  $: matched = computeMatches(orderBookOrders, activeTab, quantity, minOrder, maxTraders, planet);
 
   function computeMatches(orders, tab, qty, minOrderQty, maxTradersLimit, planetFilter) {
     if (!orders || !qty || qty <= 0) return { matched: [], totalFilled: 0, remaining: 0 };
@@ -85,6 +96,7 @@
       planet: planet === 'All Planets' ? null : planet
     });
   }
+  let matched = $derived(computeMatches(orderBookOrders, activeTab, quantity, minOrder, maxTraders, planet));
 </script>
 
 {#if show}
@@ -92,17 +104,17 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    on:click={(e) => { if (e.target.classList.contains('modal-overlay')) close(); }}
-    on:keydown={(e) => { if (e.key === 'Escape') close(); }}
+    onclick={(e) => { if (e.target.classList.contains('modal-overlay')) close(); }}
+    onkeydown={(e) => { if (e.key === 'Escape') close(); }}
   >
     <div class="modal">
       <div class="item-name">{itemName}</div>
 
       <div class="tab-bar">
-        <button class="tab" class:active={activeTab === 'buy'} on:click={() => activeTab = 'buy'}>
+        <button class="tab" class:active={activeTab === 'buy'} onclick={() => activeTab = 'buy'}>
           Bulk Buy
         </button>
-        <button class="tab" class:active={activeTab === 'sell'} on:click={() => activeTab = 'sell'}>
+        <button class="tab" class:active={activeTab === 'sell'} onclick={() => activeTab = 'sell'}>
           Bulk Sell
         </button>
       </div>
@@ -174,10 +186,10 @@
 
       <div class="actions">
         <span class="actions-spacer"></span>
-        <button on:click={close}>Cancel</button>
+        <button onclick={close}>Cancel</button>
         <button
           class="submit-btn {activeTab === 'buy' ? 'submit-buy' : 'submit-sell'}"
-          on:click={submit}
+          onclick={submit}
           disabled={submitting || matched.matched.length === 0}
           title="Send trade requests to all matched {activeTab === 'buy' ? 'sellers' : 'buyers'}"
         >

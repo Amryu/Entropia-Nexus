@@ -6,9 +6,15 @@
   // @ts-nocheck
   import DamageBreakdownGrid from '$lib/components/wiki/DamageBreakdownGrid.svelte';
 
-  export let weapon = null;
-  export let showZeros = false;
-  export let compact = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [weapon]
+   * @property {boolean} [showZeros]
+   * @property {boolean} [compact]
+   */
+
+  /** @type {Props} */
+  let { weapon = null, showZeros = false, compact = false } = $props();
 </script>
 
 <DamageBreakdownGrid {weapon} {showZeros} {compact} />

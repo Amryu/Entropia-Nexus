@@ -1,22 +1,32 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { navigate } from '$lib/util';
 
   import Table from './Table.svelte';
 
-  export let planet;
-  export let locations = [];
-  export let selected
-  export let hovered;
+  let {
+    planet,
+    locations = $bindable([]),
+    selected = $bindable(),
+    hovered = $bindable()
+  } = $props();
 
-  let selectedPlanet;
-  let planetSimpleName;
+  let selectedPlanet = $state();
+  let planetSimpleName = $state();
 
-  $: planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
-  $: selectedPlanet = planetSimpleName;
-  $: if (selectedPlanet !== planetSimpleName) {
-    navigate('/maps/' + selectedPlanet);
-  }
+  run(() => {
+    planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+  });
+  run(() => {
+    selectedPlanet = planetSimpleName;
+  });
+  run(() => {
+    if (selectedPlanet !== planetSimpleName) {
+      navigate('/maps/' + selectedPlanet);
+    }
+  });
 
   const planetList = {
     Calypso: [
@@ -54,26 +64,28 @@
 
   const DEFAULT_VISIBLE_LOCATION_TYPES = new Set(['Teleporter']);
   const DEFAULT_VISIBLE_AREA_TYPES = new Set(['LandArea']);
-  let searchQuery = '';
+  let searchQuery = $state('');
   
-  let filteredElements = [];
+  let filteredElements = $state([]);
 
-  $: if (locations) {
-    filteredElements = locations.filter((item) => {
-      const type = item?.Properties?.Type;
-      const areaType = item?.Properties?.AreaType;
-      if (!type) return false;
-      if (areaType === 'MobArea') return false;
-      if (type === 'Area' || areaType) {
-        return DEFAULT_VISIBLE_AREA_TYPES.has(areaType);
+  run(() => {
+    if (locations) {
+      filteredElements = locations.filter((item) => {
+        const type = item?.Properties?.Type;
+        const areaType = item?.Properties?.AreaType;
+        if (!type) return false;
+        if (areaType === 'MobArea') return false;
+        if (type === 'Area' || areaType) {
+          return DEFAULT_VISIBLE_AREA_TYPES.has(areaType);
+        }
+        return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
+      });
+      if (searchQuery.trim()) {
+        const query = searchQuery.trim().toLowerCase();
+        filteredElements = filteredElements.filter((item) => item?.Name?.toLowerCase().includes(query));
       }
-      return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
-    });
-    if (searchQuery.trim()) {
-      const query = searchQuery.trim().toLowerCase();
-      filteredElements = filteredElements.filter((item) => item?.Name?.toLowerCase().includes(query));
     }
-  }
+  });
 
   function getSymbolByLocation(location) {
     switch (location.Properties?.Type) {
@@ -134,11 +146,12 @@
         {#each item as planet}
           <option value={planet._type}>{planet.Name}</option>
         {/each}
+      </optgroup>
     {/each}
   </select>
   <br />
 
-  <input class="search-input width100" type="text" placeholder="Search..." bind:value={searchQuery} on:focus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
+  <input class="search-input width100" type="text" placeholder="Search..." bind:value={searchQuery} onfocus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
 
   <div style="display: flex; overflow-x: auto; overflow-y: hidden; flex-grow: 1;">
     {#if filteredElements.length === 0}
@@ -146,7 +159,7 @@
       <br />
       No items found...<br />
       <br />
-      <input type="button" value="Clear Search" on:click="{() => searchQuery = ''}" />
+      <input type="button" value="Clear Search" onclick={() => searchQuery = ''} />
     </div>
     {:else}
       <Table

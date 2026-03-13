@@ -3,6 +3,9 @@
   Editor for mission steps + objective payloads.
 -->
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { updateField } from '$lib/stores/wikiEditState.js';
   import { hasCondition } from '$lib/shopUtils.js';
@@ -11,20 +14,36 @@
   import WaypointInput from '$lib/components/wiki/WaypointInput.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
-  export let steps = [];
-  export let fieldPath = 'Steps';
-  export let mobMaturities = [];
-  export let npcOptions = [];
-  export let locationOptions = [];
-  export let itemsIndex = {};
-  /** Full item info map { id: { Name, Type } } for type checking */
-  export let itemsMap = {};
+  
 
-  /** Mob species list from /mobspecies API for AIKillCycle objectives */
-  export let mobSpeciesList = [];
+  
 
-  /** Mission's planet info for Explore objectives */
-  export let missionPlanet = null; // { Id: number, Name: string }
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [steps]
+   * @property {string} [fieldPath]
+   * @property {any} [mobMaturities]
+   * @property {any} [npcOptions]
+   * @property {any} [locationOptions]
+   * @property {any} [itemsIndex]
+   * @property {any} [itemsMap] - Full item info map { id: { Name, Type } } for type checking
+   * @property {any} [mobSpeciesList] - Mob species list from /mobspecies API for AIKillCycle objectives
+   * @property {any} [missionPlanet] - Mission's planet info for Explore objectives - { Id: number, Name: string }
+   */
+
+  /** @type {Props} */
+  let {
+    steps = [],
+    fieldPath = 'Steps',
+    mobMaturities = [],
+    npcOptions = [],
+    locationOptions = [],
+    itemsIndex = {},
+    itemsMap = {},
+    mobSpeciesList = [],
+    missionPlanet = null
+  } = $props();
 
   const objectiveTypeOptions = [
     { value: 'Dialog', label: 'Dialog' },
@@ -67,10 +86,10 @@
   let itemNameDrafts = {};
 
   // Single dialog state - null when closed, object when open
-  let openMaturityDialog = null; // { stepIndex, objIndex, mobIndex }
+  let openMaturityDialog = $state(null); // { stepIndex, objIndex, mobIndex }
 
   // Build unique mob options from maturities (using MobId as value)
-  $: mobOptions = (() => {
+  let mobOptions = $derived((() => {
     const mobMap = new Map();
     for (const maturity of mobMaturities) {
       const mobId = maturity?.MobId;
@@ -80,10 +99,10 @@
       }
     }
     return Array.from(mobMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-  })();
+  })());
 
   // Build mob ID to name lookup
-  $: mobIdToName = (() => {
+  let mobIdToName = $derived((() => {
     const map = new Map();
     for (const maturity of mobMaturities) {
       const mobId = maturity?.MobId;
@@ -93,7 +112,7 @@
       }
     }
     return map;
-  })();
+  })());
 
   // Get mob name from ID
   function getMobName(mobId) {
@@ -101,15 +120,15 @@
   }
 
   // Build mob species options for AIKillCycle (MobSpecies IDs, not Mobs IDs)
-  $: mobSpeciesOptions = (mobSpeciesList || [])
+  let mobSpeciesOptions = $derived((mobSpeciesList || [])
     .map(s => ({ value: s.Id, label: s.Name }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => a.label.localeCompare(b.label)));
 
   // Build mob species ID to name lookup
-  $: mobSpeciesIdToName = (mobSpeciesList || []).reduce((acc, s) => {
+  let mobSpeciesIdToName = $derived((mobSpeciesList || []).reduce((acc, s) => {
     acc[s.Id] = s.Name;
     return acc;
-  }, {});
+  }, {}));
 
   function getSpeciesName(speciesId) {
     return mobSpeciesIdToName[speciesId] || `Species #${speciesId}`;
@@ -585,10 +604,10 @@
               type="text"
               value={step.Title ?? ''}
               placeholder="Step title"
-              on:input={(e) => updateStepField(stepIndex, 'Title', e.target.value)}
+              oninput={(e) => updateStepField(stepIndex, 'Title', e.target.value)}
             />
           </div>
-          <button type="button" class="btn-icon danger" on:click={() => removeStep(stepIndex)} title="Remove step">×</button>
+          <button type="button" class="btn-icon danger" onclick={() => removeStep(stepIndex)} title="Remove step">×</button>
         </div>
 
         <div class="step-description-editor">
@@ -615,13 +634,13 @@
                   <select
                     class="objective-select"
                     value={objective.Type || 'Dialog'}
-                    on:change={(e) => setObjectiveType(stepIndex, objIndex, e.target.value)}
+                    onchange={(e) => setObjectiveType(stepIndex, objIndex, e.target.value)}
                   >
                     {#each objectiveTypeOptions as option}
                       <option value={option.value}>{option.label}</option>
                     {/each}
                   </select>
-                  <button type="button" class="btn-icon danger" on:click={() => removeObjective(stepIndex, objIndex)} title="Remove objective">×</button>
+                  <button type="button" class="btn-icon danger" onclick={() => removeObjective(stepIndex, objIndex)} title="Remove objective">×</button>
                 </div>
 
                 <div class="objective-editor">
@@ -681,7 +700,7 @@
                           type="button"
                           class="kill-points-toggle"
                           class:active={useKillPoints}
-                          on:click={() => toggleKillPointsMode(stepIndex, objIndex)}
+                          onclick={() => toggleKillPointsMode(stepIndex, objIndex)}
                           title={useKillPoints ? 'Switch to simple kill count' : 'Switch to kill points mode'}
                         >
                           {useKillPoints ? 'Kill Points' : 'Simple'}
@@ -704,19 +723,19 @@
                               type="button"
                               class="configure-btn"
                               disabled={!mob.mobId}
-                              on:click={() => openDialog(stepIndex, objIndex, mobIndex)}
+                              onclick={() => openDialog(stepIndex, objIndex, mobIndex)}
                             >
                               {getMaturityConfigSummary(mob)}
                             </button>
                             <button
                               type="button"
                               class="btn-icon danger"
-                              on:click={() => removeMobEntry(stepIndex, objIndex, mobIndex)}
+                              onclick={() => removeMobEntry(stepIndex, objIndex, mobIndex)}
                               title="Remove mob"
                             >×</button>
                           </div>
                         {/each}
-                        <button type="button" class="btn-add" on:click={() => addMobEntry(stepIndex, objIndex)}>
+                        <button type="button" class="btn-add" onclick={() => addMobEntry(stepIndex, objIndex)}>
                           <span>+</span> Add Mob
                         </button>
                       </div>
@@ -730,7 +749,7 @@
                               min="0"
                               placeholder="0"
                               value={payload.totalCountRequired ?? ''}
-                              on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                              oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
                             />
                           </div>
                         {:else if objective.Type === 'KillCycle'}
@@ -742,7 +761,7 @@
                               step="0.01"
                               placeholder="0"
                               value={payload.pedToCycle ?? ''}
-                              on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                              oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
                             />
                           </div>
                         {/if}
@@ -780,7 +799,7 @@
                                 step="1"
                                 placeholder="Quantity"
                                 value={item.quantity ?? ''}
-                                on:input={(e) => updateHandInItem(stepIndex, objIndex, itemIndex, 'quantity', toNumber(e.target.value))}
+                                oninput={(e) => updateHandInItem(stepIndex, objIndex, itemIndex, 'quantity', toNumber(e.target.value))}
                               />
                               {#if damageable}
                                 <input
@@ -790,7 +809,7 @@
                                   placeholder="Min TT required"
                                   title="Minimum TT required (optional - full TT required if not specified)"
                                   value={item.minPedValue ?? ''}
-                                  on:input={(e) => updateHandInItem(stepIndex, objIndex, itemIndex, 'minPedValue', toNumber(e.target.value))}
+                                  oninput={(e) => updateHandInItem(stepIndex, objIndex, itemIndex, 'minPedValue', toNumber(e.target.value))}
                                 />
                               {/if}
                               <input
@@ -799,12 +818,12 @@
                                 step="0.01"
                                 placeholder="PED"
                                 value={item.pedValue ?? ''}
-                                on:input={(e) => updateHandInItem(stepIndex, objIndex, itemIndex, 'pedValue', toNumber(e.target.value))}
+                                oninput={(e) => updateHandInItem(stepIndex, objIndex, itemIndex, 'pedValue', toNumber(e.target.value))}
                               />
-                              <button type="button" class="btn-icon danger" on:click={() => removeHandInItem(stepIndex, objIndex, itemIndex)} title="Remove item">×</button>
+                              <button type="button" class="btn-icon danger" onclick={() => removeHandInItem(stepIndex, objIndex, itemIndex)} title="Remove item">×</button>
                             </div>
                           {/each}
-                          <button type="button" class="btn-add" on:click={() => addHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
+                          <button type="button" class="btn-add" onclick={() => addHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
                         </div>
                       </div>
                     </div>
@@ -829,7 +848,7 @@
                           step="1"
                           placeholder="Amount"
                           value={payload.quantity ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { quantity: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { quantity: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>
@@ -854,7 +873,7 @@
                           step="0.01"
                           placeholder="PED"
                           value={payload.pedValue ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedValue: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedValue: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>
@@ -878,12 +897,12 @@
                             <button
                               type="button"
                               class="btn-icon danger"
-                              on:click={() => removeAISpeciesEntry(stepIndex, objIndex, idx)}
+                              onclick={() => removeAISpeciesEntry(stepIndex, objIndex, idx)}
                               title="Remove species"
                             >×</button>
                           </div>
                         {/each}
-                        <button type="button" class="btn-add" on:click={() => addAISpeciesEntry(stepIndex, objIndex)}>
+                        <button type="button" class="btn-add" onclick={() => addAISpeciesEntry(stepIndex, objIndex)}>
                           <span>+</span> Add Species
                         </button>
                       </div>
@@ -896,7 +915,7 @@
                             step="0.01"
                             placeholder="0"
                             value={payload.pedToCycle ?? ''}
-                            on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                            oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
                           />
                         </div>
                       </div>
@@ -923,7 +942,7 @@
                                 step="1"
                                 placeholder="Min"
                                 value={item.minQuantity ?? ''}
-                                on:input={(e) => updateAIHandInItem(stepIndex, objIndex, itemIndex, 'minQuantity', toNumber(e.target.value))}
+                                oninput={(e) => updateAIHandInItem(stepIndex, objIndex, itemIndex, 'minQuantity', toNumber(e.target.value))}
                               />
                               <input
                                 type="number"
@@ -931,12 +950,12 @@
                                 step="1"
                                 placeholder="Max"
                                 value={item.maxQuantity ?? ''}
-                                on:input={(e) => updateAIHandInItem(stepIndex, objIndex, itemIndex, 'maxQuantity', toNumber(e.target.value))}
+                                oninput={(e) => updateAIHandInItem(stepIndex, objIndex, itemIndex, 'maxQuantity', toNumber(e.target.value))}
                               />
-                              <button type="button" class="btn-icon danger" on:click={() => removeAIHandInItem(stepIndex, objIndex, itemIndex)} title="Remove item">×</button>
+                              <button type="button" class="btn-icon danger" onclick={() => removeAIHandInItem(stepIndex, objIndex, itemIndex)} title="Remove item">×</button>
                             </div>
                           {/each}
-                          <button type="button" class="btn-add" on:click={() => addAIHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
+                          <button type="button" class="btn-add" onclick={() => addAIHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
                         </div>
                       </div>
                     </div>
@@ -949,7 +968,7 @@
                           min="0"
                           placeholder="0"
                           value={payload.totalCountRequired ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>
@@ -963,7 +982,7 @@
                           step="0.01"
                           placeholder="0"
                           value={payload.pedToCycle ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>
@@ -976,7 +995,7 @@
                           min="0"
                           placeholder="0"
                           value={payload.totalCountRequired ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>
@@ -989,7 +1008,7 @@
                           min="0"
                           placeholder="0"
                           value={payload.totalCountRequired ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
                         />
                       </div>
                       <div class="objective-field">
@@ -1000,7 +1019,7 @@
                           step="0.01"
                           placeholder="Any"
                           value={payload.minClaimValue ?? ''}
-                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { minClaimValue: toNumber(e.target.value) })}
+                          oninput={(e) => updateObjectivePayload(stepIndex, objIndex, { minClaimValue: toNumber(e.target.value) })}
                         />
                       </div>
                     </div>
@@ -1009,12 +1028,12 @@
               </div>
             {/each}
           {/if}
-          <button type="button" class="btn-add" on:click={() => addObjective(stepIndex)}><span>+</span> Add Objective</button>
+          <button type="button" class="btn-add" onclick={() => addObjective(stepIndex)}><span>+</span> Add Objective</button>
         </div>
       </div>
     {/each}
   {/if}
-  <button type="button" class="btn-add" on:click={addStep}><span>+</span> Add Step</button>
+  <button type="button" class="btn-add" onclick={addStep}><span>+</span> Add Step</button>
 </div>
 
 <!-- Maturity Configuration Dialog (rendered once, outside the loop) -->
@@ -1022,11 +1041,11 @@
   {@const { stepIndex, objIndex, mobIndex } = openMaturityDialog}
   {@const dialogMobId = ensureArray(getObjectivePayload(stepIndex, objIndex).mobs)[mobIndex]?.mobId}
   {@const maturitiesForMob = getMaturitiesForMob(dialogMobId)}
-  <div class="dialog-overlay" role="presentation" on:click={closeDialog}>
-    <div class="maturity-dialog" role="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={closeDialog}>
+    <div class="maturity-dialog" role="dialog" onclick={stopPropagation(bubble('click'))}>
       <div class="dialog-header">
         <h3>Configure Maturities: {getMobName(dialogMobId)}</h3>
-        <button type="button" class="btn-icon" on:click={closeDialog}>×</button>
+        <button type="button" class="btn-icon" onclick={closeDialog}>×</button>
       </div>
       <div class="dialog-content">
         {#if !dialogMobId || maturitiesForMob.length === 0}
@@ -1052,7 +1071,7 @@
                   <input
                     type="checkbox"
                     checked={isEnabled}
-                    on:change={(e) => toggleMaturityEnabled(stepIndex, objIndex, mobIndex, maturity.Id, e.target.checked)}
+                    onchange={(e) => toggleMaturityEnabled(stepIndex, objIndex, mobIndex, maturity.Id, e.target.checked)}
                   />
                 </label>
                 <span class="maturity-col-name">
@@ -1072,7 +1091,7 @@
                       placeholder="0"
                       disabled={!isEnabled}
                       value={ensureArray(getObjectivePayload(stepIndex, objIndex).mobs)[mobIndex]?.countsPerTarget?.[maturity.Id] ?? ''}
-                      on:input={(e) => updateMaturityCount(stepIndex, objIndex, mobIndex, maturity.Id, toNumber(e.target.value))}
+                      oninput={(e) => updateMaturityCount(stepIndex, objIndex, mobIndex, maturity.Id, toNumber(e.target.value))}
                     />
                   </div>
                 {/if}
@@ -1082,7 +1101,7 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button type="button" class="btn-primary" on:click={closeDialog}>Done</button>
+        <button type="button" class="btn-primary" onclick={closeDialog}>Done</button>
       </div>
     </div>
   </div>

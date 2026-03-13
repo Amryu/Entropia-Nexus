@@ -4,8 +4,14 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  export let services = [];
-  export let loading = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [services]
+   * @property {boolean} [loading]
+   */
+
+  /** @type {Props} */
+  let { services = [], loading = false } = $props();
 
   function viewService(service) {
     goto(`/market/services/${service.id}`);
@@ -55,14 +61,14 @@
   }
 
   // Precompute values for sorting
-  $: tableData = services.map(service => ({
+  let tableData = $derived(services.map(service => ({
     ...service,
     _type: getTransportationType(service),
     _ship: getShipName(service),
     _location: getCurrentLocation(service),
     _priceDisplay: getPriceSpan(service),
     _priceSort: service.min_price ? parseFloat(service.min_price) : 999999
-  }));
+  })));
 
   const columns = [
     {

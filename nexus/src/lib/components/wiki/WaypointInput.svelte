@@ -26,6 +26,8 @@
     />
 -->
 <script>
+  import { run, preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher, onMount, tick } from 'svelte';
   import { browser } from '$app/environment';
@@ -33,52 +35,65 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {{ planet?: string|null, planetId?: number|null, x?: number|null, y?: number|null, z?: number|null, name?: string|null }} */
-  export let value = {};
+  
 
-  /** Lock the planet field (won't be overwritten on paste) */
-  export let planetLocked = false;
+  
 
-  /** Lock the name field (won't be overwritten on paste) */
-  export let nameLocked = false;
+  
 
-  /** Hide the planet field entirely */
-  export let hidePlanet = false;
+  
 
-  /** Hide the name field entirely */
-  export let hideName = false;
+  
 
-  /** Whether the input is disabled */
-  export let disabled = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ planet?: string|null, planetId?: number|null, x?: number|null, y?: number|null, z?: number|null, name?: string|null }} [value]
+   * @property {boolean} [planetLocked] - Lock the planet field (won't be overwritten on paste)
+   * @property {boolean} [nameLocked] - Lock the name field (won't be overwritten on paste)
+   * @property {boolean} [hidePlanet] - Hide the planet field entirely
+   * @property {boolean} [hideName] - Hide the name field entirely
+   * @property {boolean} [disabled] - Whether the input is disabled
+   */
+
+  /** @type {Props} */
+  let {
+    value = {},
+    planetLocked = false,
+    nameLocked = false,
+    hidePlanet = false,
+    hideName = false,
+    disabled = false
+  } = $props();
 
   // Internal state
-  let planets = [];
-  let planetSearchValue = '';
-  let showPlanetDropdown = false;
-  let filteredPlanets = [];
-  let highlightedPlanetIndex = -1;
-  let containerEl;
-  let planetInputEl;
-  let coordInputEl;
-  let isFocused = false;
+  let planets = $state([]);
+  let planetSearchValue = $state('');
+  let showPlanetDropdown = $state(false);
+  let filteredPlanets = $state([]);
+  let highlightedPlanetIndex = $state(-1);
+  let containerEl = $state();
+  let planetInputEl = $state();
+  let coordInputEl = $state();
+  let isFocused = $state(false);
 
   // Local values for controlled inputs
-  let localX = '';
-  let localY = '';
-  let localZ = '';
-  let localName = '';
+  let localX = $state('');
+  let localY = $state('');
+  let localZ = $state('');
+  let localName = $state('');
 
   // Sync local values with prop
-  $: {
+  run(() => {
     localX = value?.x != null ? String(value.x) : '';
     localY = value?.y != null ? String(value.y) : '';
     localZ = value?.z != null ? String(value.z) : '';
     localName = value?.name ?? '';
     planetSearchValue = value?.planet ?? '';
-  }
+  });
 
   // Filter planets based on search
-  $: {
+  run(() => {
     const search = planetSearchValue.toLowerCase().trim();
     if (search.length === 0) {
       filteredPlanets = planets;
@@ -88,7 +103,7 @@
       );
     }
     highlightedPlanetIndex = filteredPlanets.length > 0 ? 0 : -1;
-  }
+  });
 
   // Load planets on mount
   onMount(async () => {
@@ -315,9 +330,9 @@
   class:focused={isFocused}
   class:disabled
   bind:this={containerEl}
-  on:focusin={handleContainerFocus}
-  on:focusout={handleContainerBlur}
-  on:paste={handlePaste}
+  onfocusin={handleContainerFocus}
+  onfocusout={handleContainerBlur}
+  onpaste={handlePaste}
 >
   <!-- Paste indicator / preview -->
   <div class="waypoint-header">
@@ -346,10 +361,10 @@
             type="text"
             class="field-input"
             value={planetSearchValue}
-            on:input={(e) => handlePlanetInput(e.target.value)}
-            on:keydown={handlePlanetKeydown}
-            on:focus={handlePlanetFocus}
-            on:blur={handlePlanetBlur}
+            oninput={(e) => handlePlanetInput(e.target.value)}
+            onkeydown={handlePlanetKeydown}
+            onfocus={handlePlanetFocus}
+            onblur={handlePlanetBlur}
             placeholder="Search planet..."
             disabled={disabled || planetLocked}
             autocomplete="off"
@@ -360,8 +375,8 @@
                 <div
                   class="planet-option"
                   class:highlighted={idx === highlightedPlanetIndex}
-                  on:mousedown|preventDefault={() => selectPlanet(planet)}
-                  on:mouseenter={() => highlightedPlanetIndex = idx}
+                  onmousedown={preventDefault(() => selectPlanet(planet))}
+                  onmouseenter={() => highlightedPlanetIndex = idx}
                   use:clickable
                   role="button"
                   tabindex="0"
@@ -385,8 +400,8 @@
           inputmode="decimal"
           class="field-input coord-input"
           value={localX}
-          on:input={(e) => handleCoordInput('x', e.target.value)}
-          on:blur={() => handleCoordBlur('x')}
+          oninput={(e) => handleCoordInput('x', e.target.value)}
+          onblur={() => handleCoordBlur('x')}
           placeholder="X"
           {disabled}
         />
@@ -398,8 +413,8 @@
           inputmode="decimal"
           class="field-input coord-input"
           value={localY}
-          on:input={(e) => handleCoordInput('y', e.target.value)}
-          on:blur={() => handleCoordBlur('y')}
+          oninput={(e) => handleCoordInput('y', e.target.value)}
+          onblur={() => handleCoordBlur('y')}
           placeholder="Y"
           {disabled}
         />
@@ -411,8 +426,8 @@
           inputmode="decimal"
           class="field-input coord-input"
           value={localZ}
-          on:input={(e) => handleCoordInput('z', e.target.value)}
-          on:blur={() => handleCoordBlur('z')}
+          oninput={(e) => handleCoordInput('z', e.target.value)}
+          onblur={() => handleCoordBlur('z')}
           placeholder="Z"
           {disabled}
         />
@@ -432,7 +447,7 @@
           type="text"
           class="field-input"
           value={localName}
-          on:input={(e) => handleNameInput(e.target.value)}
+          oninput={(e) => handleNameInput(e.target.value)}
           placeholder="Location name"
           disabled={disabled || nameLocked}
         />

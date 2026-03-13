@@ -9,17 +9,23 @@
   import SearchInput from './SearchInput.svelte';
   import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
 
-  /** @type {Array} RefiningRecipes array */
-  export let recipes = [];
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldName = 'RefiningRecipes';
+  
 
-  /** @type {string} The material name (for display) */
-  export let materialName = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [recipes]
+   * @property {string} [fieldName]
+   * @property {string} [materialName]
+   */
+
+  /** @type {Props} */
+  let { recipes = [], fieldName = 'RefiningRecipes', materialName = '' } = $props();
 
   // Show section if has recipes or in edit mode
-  $: shouldShow = $editMode || (recipes?.length > 0);
+  let shouldShow = $derived($editMode || (recipes?.length > 0));
 
   // === Recipe CRUD Operations ===
   function addRecipe() {
@@ -105,11 +111,11 @@
                   value={recipe.Amount ?? 1}
                   step="1"
                   min="1"
-                  on:change={(e) => updateRecipeAmount(recipeIdx, parseInt(e.target.value) || 1)}
+                  onchange={(e) => updateRecipeAmount(recipeIdx, parseInt(e.target.value) || 1)}
                 />
                 <span class="output-name">x {materialName || 'Material'}</span>
               </div>
-              <button class="btn-remove-recipe" on:click={() => removeRecipe(recipeIdx)} title="Remove recipe">
+              <button class="btn-remove-recipe" onclick={() => removeRecipe(recipeIdx)} title="Remove recipe">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -136,9 +142,9 @@
                     value={ingredient.Amount ?? 1}
                     step="1"
                     min="1"
-                    on:change={(e) => updateIngredient(recipeIdx, ingIdx, 'Amount', parseInt(e.target.value) || 1)}
+                    onchange={(e) => updateIngredient(recipeIdx, ingIdx, 'Amount', parseInt(e.target.value) || 1)}
                   />
-                  <button class="btn-remove-small" on:click={() => removeIngredient(recipeIdx, ingIdx)} title="Remove ingredient">
+                  <button class="btn-remove-small" onclick={() => removeIngredient(recipeIdx, ingIdx)} title="Remove ingredient">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
@@ -146,7 +152,7 @@
                   </button>
                 </div>
               {/each}
-              <button class="btn-add-ingredient" on:click={() => addIngredient(recipeIdx)}>
+              <button class="btn-add-ingredient" onclick={() => addIngredient(recipeIdx)}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
@@ -156,7 +162,7 @@
             </div>
           </div>
         {/each}
-        <button class="btn-add-recipe" on:click={addRecipe}>
+        <button class="btn-add-recipe" onclick={addRecipe}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />

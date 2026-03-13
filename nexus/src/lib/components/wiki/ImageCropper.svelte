@@ -10,20 +10,31 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string} Image source URL or data URL */
-  export let image = '';
+  
 
-  /** @type {number} Crop aspect ratio (1 = square) */
-  export let aspect = 1;
+  
 
-  /** @type {number} Minimum zoom level */
-  export let minZoom = 1;
+  
 
-  /** @type {number} Maximum zoom level */
-  export let maxZoom = 3;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [image]
+   * @property {number} [aspect]
+   * @property {number} [minZoom]
+   * @property {number} [maxZoom]
+   */
 
-  let crop = { x: 0, y: 0 };
-  let zoom = 1;
+  /** @type {Props} */
+  let {
+    image = '',
+    aspect = 1,
+    minZoom = 1,
+    maxZoom = 3
+  } = $props();
+
+  let crop = $state({ x: 0, y: 0 });
+  let zoom = $state(1);
   let croppedAreaPixels = null;
 
   function handleCropComplete(event) {
@@ -138,10 +149,10 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="btn-secondary" on:click={handleCancel}>
+      <button type="button" class="btn-secondary" onclick={handleCancel}>
         Cancel
       </button>
-      <button type="button" class="btn-primary" on:click={handleConfirm}>
+      <button type="button" class="btn-primary" onclick={handleConfirm}>
         Crop Image
       </button>
     </div>

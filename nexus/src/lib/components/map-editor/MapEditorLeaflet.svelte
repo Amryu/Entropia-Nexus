@@ -1,46 +1,66 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, getShapeEdges, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
 
-  export let planet = null;
-  export let locations = [];
-  export let filteredLocationIds = null; // Set of IDs to show, or null for all
-  export let selectedId = null;
-  export let pendingChanges = new Map();
-  export let editMode = false;
-  export let previewShape = null;
-  export let dbPendingChanges = [];
-  export let currentUserId = null;
-  export let isAdmin = false;
-  /** Map of locationId → change for locations locked by other users' pending changes */
-  export let lockedLocationMap = new Map();
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [planet]
+   * @property {any} [locations]
+   * @property {any} [filteredLocationIds] - Set of IDs to show, or null for all
+   * @property {any} [selectedId]
+   * @property {any} [pendingChanges]
+   * @property {boolean} [editMode]
+   * @property {any} [previewShape]
+   * @property {any} [dbPendingChanges]
+   * @property {any} [currentUserId]
+   * @property {boolean} [isAdmin]
+   * @property {any} [lockedLocationMap] - Map of locationId → change for locations locked by other users' pending changes
+   */
+
+  /** @type {Props} */
+  let {
+    planet = null,
+    locations = [],
+    filteredLocationIds = null,
+    selectedId = null,
+    pendingChanges = new Map(),
+    editMode = false,
+    previewShape = null,
+    dbPendingChanges = [],
+    currentUserId = null,
+    isAdmin = false,
+    lockedLocationMap = new Map()
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let mapContainer;
-  let map;
+  let mapContainer = $state();
+  let map = $state();
   let imageOverlay;
   let layerGroup;
   let dbChangesLayerGroup;
   let drawControl;
-  let transforms = null;
+  let transforms = $state(null);
   let imgWidth = 0;
   let imgHeight = 0;
   let layerById = new Map();
-  let L;
+  let L = $state();
 
   // Snap state
-  let snapEnabled = true;
-  let snapToGrid = true;
-  let snapGap = 20;
+  let snapEnabled = $state(true);
+  let snapToGrid = $state(true);
+  let snapGap = $state(20);
   let snapGuideLayerGroup;
   let gridOverlayGroup;
-  let _cachedGridLines = null;
-  let _activeVertexSnapData = null; // { vertices, gridLines, gap, threshold } for vertex editing
-  let _editingLoc = null; // Location object being edited (for reactive snap refresh)
+  let _cachedGridLines = $state(null);
+  let _activeVertexSnapData = $state(null); // { vertices, gridLines, gap, threshold } for vertex editing
+  let _editingLoc = $state(null); // Location object being edited (for reactive snap refresh)
 
   // Preview and editing state
   let previewLayer = null;
@@ -49,15 +69,15 @@
   let editableOverlay = null;
   let queuedPanTarget = null;
   let _clickedLayer = false;
-  let _editingActive = false;
-  let _rebuildDeferred = false; // true when rebuildLayers was skipped due to _editingActive
+  let _editingActive = $state(false);
+  let _rebuildDeferred = $state(false); // true when rebuildLayers was skipped due to _editingActive
   let _editDebounceTimer = null;
 
   // Context menu state
-  let contextMenuElement;
-  let contextMenuVisible = false;
-  let contextMenuPos = { x: 0, y: 0 };
-  let contextMenuPayload = null;
+  let contextMenuElement = $state();
+  let contextMenuVisible = $state(false);
+  let contextMenuPos = $state({ x: 0, y: 0 });
+  let contextMenuPayload = $state(null);
   const contextMenuItems = [
     {
       label: 'Clone Shape',
@@ -77,34 +97,7 @@
     }
   ];
 
-  $: if (map && locations && pendingChanges !== undefined) {
-    if (!_editingActive) {
-      rebuildLayers();
-    } else {
-      _rebuildDeferred = true;
-    }
-  }
-  $: if (map && dbPendingChanges && transforms) rebuildDbChangesOverlay();
-  $: if (map && filteredLocationIds !== undefined) updateVisibility();
-  $: if (map && selectedId !== undefined) updateSelection();
-  $: if (map && editMode !== undefined) toggleDrawControl();
-  $: if (map && L && transforms) updatePreview(previewShape);
 
-  // Refresh vertex snap data reactively when snap settings change during editing
-  $: if (_editingActive && _editingLoc) {
-    if (snapEnabled || snapToGrid) {
-      _activeVertexSnapData = {
-        vertices: snapEnabled ? getVertexSnapCandidates(_editingLoc) : [],
-        edges: snapEnabled ? getEdgeSnapCandidates(_editingLoc) : [],
-        gridLines: snapToGrid ? _cachedGridLines : null,
-        gap: snapGap,
-        threshold: getVertexSnapThreshold(),
-      };
-    } else {
-      _activeVertexSnapData = null;
-      clearSnapGuides();
-    }
-  }
 
   onMount(async () => {
     L = await import('leaflet');
@@ -1476,6 +1469,47 @@
       }
     }
   }
+  run(() => {
+    if (map && locations && pendingChanges !== undefined) {
+      if (!_editingActive) {
+        rebuildLayers();
+      } else {
+        _rebuildDeferred = true;
+      }
+    }
+  });
+  run(() => {
+    if (map && dbPendingChanges && transforms) rebuildDbChangesOverlay();
+  });
+  run(() => {
+    if (map && filteredLocationIds !== undefined) updateVisibility();
+  });
+  run(() => {
+    if (map && selectedId !== undefined) updateSelection();
+  });
+  run(() => {
+    if (map && editMode !== undefined) toggleDrawControl();
+  });
+  run(() => {
+    if (map && L && transforms) updatePreview(previewShape);
+  });
+  // Refresh vertex snap data reactively when snap settings change during editing
+  run(() => {
+    if (_editingActive && _editingLoc) {
+      if (snapEnabled || snapToGrid) {
+        _activeVertexSnapData = {
+          vertices: snapEnabled ? getVertexSnapCandidates(_editingLoc) : [],
+          edges: snapEnabled ? getEdgeSnapCandidates(_editingLoc) : [],
+          gridLines: snapToGrid ? _cachedGridLines : null,
+          gap: snapGap,
+          threshold: getVertexSnapThreshold(),
+        };
+      } else {
+        _activeVertexSnapData = null;
+        clearSnapGuides();
+      }
+    }
+  });
 </script>
 
 <style>
@@ -1615,12 +1649,12 @@
       <button
         class="snap-btn"
         class:active={snapEnabled}
-        on:click={() => snapEnabled = !snapEnabled}
+        onclick={() => snapEnabled = !snapEnabled}
       >Snap</button>
       <button
         class="snap-btn"
         class:active={snapToGrid}
-        on:click={() => { snapToGrid = !snapToGrid; rebuildGridOverlay(); }}
+        onclick={() => { snapToGrid = !snapToGrid; rebuildGridOverlay(); }}
       >Snap Grid</button>
       {#if snapEnabled}
         <label class="snap-gap-label">

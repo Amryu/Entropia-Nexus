@@ -10,16 +10,16 @@
   import AuctionCard from '$lib/components/auction/AuctionCard.svelte';
   import LoginToCreateButton from '$lib/components/LoginToCreateButton.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: auctions = data.auctions || [];
-  $: total = data.total || 0;
-  $: filters = data.filters || {};
-  $: user = data.session?.user;
-  $: isVerified = !!user?.verified;
-  $: totalPages = Math.ceil(total / data.limit);
+  let auctions = $derived(data.auctions || []);
+  let total = $derived(data.total || 0);
+  let filters = $derived(data.filters || {});
+  let user = $derived(data.session?.user);
+  let isVerified = $derived(!!user?.verified);
+  let totalPages = $derived(Math.ceil(total / data.limit));
 
-  let searchInput = data?.filters?.search || '';
+  let searchInput = $state(data?.filters?.search || '');
   let searchTimeout;
 
   function updateFilter(key, value) {
@@ -86,20 +86,20 @@
         <input
           type="text"
           bind:value={searchInput}
-          on:input={handleSearch}
+          oninput={handleSearch}
           placeholder="Search auctions..."
           class="search-input"
         />
       </div>
       <div class="filter-group">
-        <select value={filters.status} on:change={handleStatusFilter}>
+        <select value={filters.status} onchange={handleStatusFilter}>
           <option value="active">Active</option>
           <option value="ended">Ended</option>
           <option value="settled">Settled</option>
         </select>
       </div>
       <div class="filter-group">
-        <select value={filters.sort} on:change={handleSort}>
+        <select value={filters.sort} onchange={handleSort}>
           <option value="ends_at">Ending Soon</option>
           <option value="created_at">Newest</option>
           <option value="current_bid">Highest Bid</option>
@@ -113,7 +113,7 @@
       <div class="empty-state">
         <p>No auctions found</p>
         {#if filters.search}
-          <button class="btn-secondary" on:click={() => { searchInput = ''; updateFilter('search', ''); }}>
+          <button class="btn-secondary" onclick={() => { searchInput = ''; updateFilter('search', ''); }}>
             Clear search
           </button>
         {/if}
@@ -130,7 +130,7 @@
           <button
             class="page-btn"
             disabled={filters.page <= 1}
-            on:click={() => goToPage(filters.page - 1)}
+            onclick={() => goToPage(filters.page - 1)}
           >
             Previous
           </button>
@@ -138,7 +138,7 @@
           <button
             class="page-btn"
             disabled={filters.page >= totalPages}
-            on:click={() => goToPage(filters.page + 1)}
+            onclick={() => goToPage(filters.page + 1)}
           >
             Next
           </button>

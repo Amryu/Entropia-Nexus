@@ -11,8 +11,14 @@
   import { encodeURIComponentSafe } from '$lib/util';
   import { getMobAreaDifficulty } from '$lib/mapUtil.js';
 
-  export let mobName = '';
-  export let mobSpawns = [];
+  /**
+   * @typedef {Object} Props
+   * @property {string} [mobName]
+   * @property {any} [mobSpawns]
+   */
+
+  /** @type {Props} */
+  let { mobName = '', mobSpawns = [] } = $props();
 
   function getLowestMaturityLevel(spawnMaturities, mob) {
     const levels = (spawnMaturities || [])
@@ -48,9 +54,9 @@
   }
 
   // Sort spawns by lowest maturity level of the current mob
-  $: sortedSpawns = [...(mobSpawns || [])].sort((a, b) => {
+  let sortedSpawns = $derived([...(mobSpawns || [])].sort((a, b) => {
     return getLowestMaturityLevel(a.Maturities, mobName) - getLowestMaturityLevel(b.Maturities, mobName);
-  });
+  }));
 
   const densityLabels = { 1: 'Very Low', 2: 'Low', 3: 'Medium', 4: 'High', 5: 'Very High' };
   const densityColors = {
@@ -81,7 +87,7 @@
   }
 
   // Transform data for FancyTable
-  $: tableData = sortedSpawns.map(spawn => {
+  let tableData = $derived(sortedSpawns.map(spawn => {
     const location = spawn?.Location || spawn;
     const coords = location?.Properties?.Coordinates || location?.Properties?.Data || {};
     const x = coords.Longitude || coords.x || 0;
@@ -108,7 +114,7 @@
       difficultyLabel: difficulty ? difficulty.label : 'N/A',
       mapLink: `/maps/${toPlanetSlug(location?.Planet)}/${locationId}`
     };
-  });
+  }));
 
   const columns = [
     {

@@ -1,4 +1,4 @@
-<script context="module">
+<script module>
   // Waypoint helper to be used by pages when constructing Properties data rows
   // Returns an object understood by this component to render a clickable waypoint value
   export function waypoint(label, planet, coordinates, name) {
@@ -27,9 +27,7 @@
 
   import Table from "$lib/components/Table.svelte";
 
-  export let imageUrl;
-  export let title;
-  export let data = {};
+  let { imageUrl, title, data = {} } = $props();
 </script>
 
 <style>

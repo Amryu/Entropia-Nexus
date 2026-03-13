@@ -6,25 +6,31 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {Array} All slim items for type lookup */
-  export let allItems = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [allItems]
+   */
 
-  $: itemLookup = (() => {
+  /** @type {Props} */
+  let { allItems = [] } = $props();
+
+  let itemLookup = $derived((() => {
     const map = new Map();
     for (const it of allItems || []) {
       if (it?.i != null) map.set(it.i, it);
     }
     return map;
-  })();
+  })());
 
-  let checkingOut = false;
-  let checkoutError = null;
-  let checkoutResult = null;
+  let checkingOut = $state(false);
+  let checkoutError = $state(null);
+  let checkoutResult = $state(null);
 
   // Group trade list items by seller
-  $: filteredItems = $tradeList;
+  let filteredItems = $derived($tradeList);
 
-  $: groupedBySeller = (() => {
+  let groupedBySeller = $derived((() => {
     const groups = {};
     for (const item of filteredItems) {
       const key = `${item.sellerId || 'unknown'}`;
@@ -41,10 +47,10 @@
       groups[key].total += (item.unitPrice || 0) * (item.quantity || 1);
     }
     return Object.values(groups);
-  })();
+  })());
 
-  $: totalPED = filteredItems.reduce((sum, item) => sum + (item.unitPrice || 0) * (item.quantity || 1), 0);
-  $: totalItems = filteredItems.length;
+  let totalPED = $derived(filteredItems.reduce((sum, item) => sum + (item.unitPrice || 0) * (item.quantity || 1), 0));
+  let totalItems = $derived(filteredItems.length);
 
   function handleClose() {
     dispatch('close');
@@ -115,10 +121,10 @@
 
 <div class="cart-summary">
   <div class="cart-header">
-    <button class="back-btn" on:click={handleClose}>Back</button>
+    <button class="back-btn" onclick={handleClose}>Back</button>
     <h2>Trade List</h2>
     <div class="header-actions">
-      <button class="btn-clear" on:click={handleClear} disabled={$tradeList.length === 0}>Clear</button>
+      <button class="btn-clear" onclick={handleClear} disabled={$tradeList.length === 0}>Clear</button>
     </div>
   </div>
 
@@ -154,7 +160,7 @@
               <div class="item-total">
                 {formatPedValue((item.unitPrice || 0) * (item.quantity || 1))}
               </div>
-              <button class="remove-btn" on:click={() => handleRemove(item.orderId)} title="Remove">&times;</button>
+              <button class="remove-btn" onclick={() => handleRemove(item.orderId)} title="Remove">&times;</button>
             </div>
           {/each}
         </div>
@@ -174,7 +180,7 @@
       </div>
       <button
         class="checkout-btn"
-        on:click={handleCheckout}
+        onclick={handleCheckout}
         disabled={checkingOut || filteredItems.length === 0}
       >
         {checkingOut ? 'Sending...' : `Checkout (${groupedBySeller.length} trade request${groupedBySeller.length !== 1 ? 's' : ''})`}

@@ -1,11 +1,18 @@
 <script>
+  import CategoryNode from './CategoryNode.svelte';
   // @ts-nocheck
   import { onMount } from 'svelte';
-  export let category;
-  export let onSelectCategory;
-  export let level = 0;
+  /**
+   * @typedef {Object} Props
+   * @property {any} category
+   * @property {any} onSelectCategory
+   * @property {number} [level]
+   */
+
+  /** @type {Props} */
+  let { category, onSelectCategory, level = 0 } = $props();
   
-  let expanded = false;
+  let expanded = $state(false);
   
   function toggleExpanded() {
     expanded = !expanded;
@@ -33,16 +40,16 @@
     return count;
   }
   
-  $: hasItems = category.items && category.items.length > 0;
-  $: hasChildren = category.children && category.children.length > 0;
-  $: itemCount = getItemCount(category);
+  let hasItems = $derived(category.items && category.items.length > 0);
+  let hasChildren = $derived(category.children && category.children.length > 0);
+  let itemCount = $derived(getItemCount(category));
 </script>
 
 <div class="category-node" style="margin-left: {level * 16}px">
   <div 
     class="category-header {hasItems ? 'clickable' : ''} {hasChildren ? 'expandable' : ''}"
-    on:click={handleSelect}
-    on:keydown={(e) => e.key === 'Enter' && handleSelect()}
+    onclick={handleSelect}
+    onkeydown={(e) => e.key === 'Enter' && handleSelect()}
     role="button"
     tabindex="0"
   >
@@ -58,7 +65,7 @@
   {#if hasChildren && expanded}
     <div class="category-children">
       {#each category.children as child}
-        <svelte:self category={child} {onSelectCategory} level={level + 1} />
+        <CategoryNode category={child} {onSelectCategory} level={level + 1} />
       {/each}
     </div>
   {/if}

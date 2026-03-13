@@ -2,13 +2,13 @@
   // @ts-nocheck
   import { addToast } from '$lib/stores/toasts.js';
 
-  export let data;
-  let reports = data.reports || [];
-  let filter = 'pending'; // 'pending' | 'resolved' | 'all'
+  let { data } = $props();
+  let reports = $state(data.reports || []);
+  let filter = $state('pending'); // 'pending' | 'resolved' | 'all'
 
-  $: filtered = filter === 'all' ? reports
+  let filtered = $derived(filter === 'all' ? reports
     : filter === 'pending' ? reports.filter(r => !r.resolved_at)
-    : reports.filter(r => r.resolved_at);
+    : reports.filter(r => r.resolved_at));
 
   async function deleteMedia(report) {
     if (!confirm(`Delete media on global #${report.global_id}? This cannot be undone.`)) return;
@@ -53,11 +53,11 @@
   <div class="page-header">
     <h1>Globals Media Reports</h1>
     <div class="filter-btns">
-      <button class:active={filter === 'pending'} on:click={() => filter = 'pending'}>
+      <button class:active={filter === 'pending'} onclick={() => filter = 'pending'}>
         Pending ({reports.filter(r => !r.resolved_at).length})
       </button>
-      <button class:active={filter === 'resolved'} on:click={() => filter = 'resolved'}>Resolved</button>
-      <button class:active={filter === 'all'} on:click={() => filter = 'all'}>All</button>
+      <button class:active={filter === 'resolved'} onclick={() => filter = 'resolved'}>Resolved</button>
+      <button class:active={filter === 'all'} onclick={() => filter = 'all'}>All</button>
     </div>
   </div>
 
@@ -101,8 +101,8 @@
               <td class="text-muted">{formatDate(report.created_at)}</td>
               <td class="actions-cell">
                 {#if !report.resolved_at}
-                  <button class="btn-delete" on:click={() => deleteMedia(report)}>Delete Media</button>
-                  <button class="btn-dismiss" on:click={() => resolveReport(report)}>Dismiss</button>
+                  <button class="btn-delete" onclick={() => deleteMedia(report)}>Delete Media</button>
+                  <button class="btn-dismiss" onclick={() => resolveReport(report)}>Dismiss</button>
                 {:else}
                   <span class="text-muted">Resolved{report.resolved_by_name ? ` by ${report.resolved_by_name}` : ''}</span>
                 {/if}

@@ -1,26 +1,40 @@
 <script>
+  import { stopPropagation } from 'svelte/legacy';
+
   // @ts-nocheck
   /**
    * GzButton — Inline "GZ" (congrats) toggle button for globals.
    * Shows count and allows logged-in users to toggle their GZ.
    */
 
-  /** @type {number} */
-  export let globalId;
+  
 
-  /** @type {number} Initial GZ count */
-  export let count = 0;
+  
 
-  /** @type {boolean} Whether the current user has GZ'd */
-  export let userGz = false;
+  
 
-  /** @type {object|null} User session */
-  export let user = null;
+  
 
-  /** @type {boolean} Compact mode (smaller, for table rows) */
-  export let compact = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} globalId
+   * @property {number} [count]
+   * @property {boolean} [userGz]
+   * @property {object|null} [user]
+   * @property {boolean} [compact]
+   */
 
-  let toggling = false;
+  /** @type {Props} */
+  let {
+    globalId,
+    count = $bindable(0),
+    userGz = $bindable(false),
+    user = null,
+    compact = false
+  } = $props();
+
+  let toggling = $state(false);
 
   async function toggle() {
     if (!user || toggling) return;
@@ -57,7 +71,7 @@
   class:gz-compact={compact}
   class:gz-disabled={!user}
   title={user ? (userGz ? 'Remove GZ' : 'GZ! (Congrats)') : 'Log in to GZ'}
-  on:click|stopPropagation={toggle}
+  onclick={stopPropagation(toggle)}
   disabled={!user || toggling}
 >
   <span class="gz-label">GZ</span>

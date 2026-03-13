@@ -12,16 +12,22 @@
 
   const MAX_DISCOUNTS = 5;
 
-  /** @type {number} */
-  export let pricePerDay = 0;
+  
 
-  /** @type {Array<{minDays: number, percent: number}>} */
-  export let discounts = [];
+  
 
-  /** @type {number} */
-  export let deposit = 0;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} [pricePerDay]
+   * @property {Array<{minDays: number, percent: number}>} [discounts]
+   * @property {number} [deposit]
+   */
 
-  $: preview = pricePerDay > 0 ? generatePricingPreview(pricePerDay, discounts) : [];
+  /** @type {Props} */
+  let { pricePerDay = $bindable(0), discounts = $bindable([]), deposit = $bindable(0) } = $props();
+
+  let preview = $derived(pricePerDay > 0 ? generatePricingPreview(pricePerDay, discounts) : []);
 
   function handlePriceChange(e) {
     pricePerDay = parseFloat(e.target.value) || 0;
@@ -71,7 +77,7 @@
       min="0.01"
       max="100000"
       step="0.01"
-      on:input={handlePriceChange}
+      oninput={handlePriceChange}
       placeholder="e.g. 5.00"
     />
   </div>
@@ -85,7 +91,7 @@
       min="0"
       max="1000000"
       step="0.01"
-      on:input={handleDepositChange}
+      oninput={handleDepositChange}
       placeholder="0.00 (no deposit)"
     />
     <small>Set to 0 for no deposit</small>
@@ -95,7 +101,7 @@
     <div class="discounts-header">
       <label>Duration Discounts</label>
       {#if discounts.length < MAX_DISCOUNTS}
-        <button type="button" class="add-btn" on:click={addDiscount}>+ Add Discount</button>
+        <button type="button" class="add-btn" onclick={addDiscount}>+ Add Discount</button>
       {/if}
     </div>
 
@@ -114,7 +120,7 @@
                 min="2"
                 max="365"
                 step="1"
-                on:input={(e) => handleDiscountMinDaysChange(i, e)}
+                oninput={(e) => handleDiscountMinDaysChange(i, e)}
               />
             </div>
             <div class="discount-field">
@@ -126,10 +132,10 @@
                 min="1"
                 max="99"
                 step="0.5"
-                on:input={(e) => handleDiscountPercentChange(i, e)}
+                oninput={(e) => handleDiscountPercentChange(i, e)}
               />
             </div>
-            <button type="button" class="remove-btn" on:click={() => removeDiscount(i)} title="Remove discount">
+            <button type="button" class="remove-btn" onclick={() => removeDiscount(i)} title="Remove discount">
               &times;
             </button>
           </div>

@@ -8,19 +8,16 @@
   import { getColumnsForType } from '$lib/search-columns';
   import { itemTypeBadge } from '../market/exchange/orderUtils';
 
-  export let data;
+  let { data } = $props();
 
-  let searchInput = data.query || '';
+  let searchInput = $state(data.query || '');
   let debounceTimer;
-  let collapsedGroups = {};
+  let collapsedGroups = $state({});
   let sortState = {}; // { [type]: { key, dir } }
-  let isLoading = false;
-  let results = data.results || [];
-  let currentQuery = data.query || '';
+  let isLoading = $state(false);
+  let results = $state(data.results || []);
+  let currentQuery = $state(data.query || '');
 
-  // Group results by Type, preserving score order
-  $: groups = groupResults(results);
-  $: totalResults = results.length;
 
   // Sync from SSR data on initial load
   onMount(() => {
@@ -173,6 +170,9 @@
     const storage = browser ? localStorage : null;
     return getColumnsForType(type, storage);
   }
+  // Group results by Type, preserving score order
+  let groups = $derived(groupResults(results));
+  let totalResults = $derived(results.length);
 </script>
 
 <svelte:head>
@@ -188,8 +188,8 @@
         class="search-input"
         placeholder="Search items, mobs, skills, users..."
         bind:value={searchInput}
-        on:input={handleInput}
-        on:keydown={handleKeydown}
+        oninput={handleInput}
+        onkeydown={handleKeydown}
         autofocus
       />
       {#if isLoading}
@@ -217,7 +217,7 @@
         {@const isCollapsed = collapsedGroups[group.type]}
         {@const sorted = getSortedResults(group.results, group.type, columns)}
         <div class="search-group">
-          <button class="group-header" on:click={() => toggleGroup(group.type)}>
+          <button class="group-header" onclick={() => toggleGroup(group.type)}>
             <span class="group-toggle">{isCollapsed ? '▸' : '▾'}</span>
             <span class="group-name">{group.typeName}</span>
             <span class="group-count">{group.results.length}</span>
@@ -229,11 +229,11 @@
                 <table class="search-table">
                   <thead>
                     <tr>
-                      <th class="col-name sortable" on:click={() => toggleSort(group.type, '_name')}>
+                      <th class="col-name sortable" onclick={() => toggleSort(group.type, '_name')}>
                         Name{getSortIndicator(group.type, '_name')}
                       </th>
                       {#each columns as col}
-                        <th class="sortable" style="width: {col.width}" on:click={() => toggleSort(group.type, col.key)}>
+                        <th class="sortable" style="width: {col.width}" onclick={() => toggleSort(group.type, col.key)}>
                           {col.header}{getSortIndicator(group.type, col.key)}
                         </th>
                       {/each}
@@ -245,7 +245,7 @@
                       <tr
                         class:alt={i % 2 === 1}
                         class:clickable={!!link}
-                        on:click={(e) => handleRowClick(e, result)}
+                        onclick={(e) => handleRowClick(e, result)}
                       >
                         <td class="col-name">
                           {#if link}

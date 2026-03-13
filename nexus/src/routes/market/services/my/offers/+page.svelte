@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { stopPropagation } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import DashboardNav from "$lib/components/services/DashboardNav.svelte";
@@ -8,18 +10,18 @@
   import { page, navigating } from '$app/stores';
   import { apiPut } from '$lib/util';
 
-  export let data;
+  let { data } = $props();
 
   // Loading state during data refresh
-  let refreshing = false;
-  $: isLoading = $navigating !== null || refreshing;
+  let refreshing = $state(false);
+  let isLoading = $derived($navigating !== null || refreshing);
 
-  $: services = data.services || [];
-  $: incomingRequests = data.incomingRequests || [];
-  $: statusFilter = data.statusFilter;
+  let services = $derived(data.services || []);
+  let incomingRequests = $derived(data.incomingRequests || []);
+  let statusFilter = $derived(data.statusFilter);
 
-  let togglingService = null;
-  let toggleError = null;
+  let togglingService = $state(null);
+  let toggleError = $state(null);
 
   const statusOptions = [
     { value: '', label: 'All Statuses' },
@@ -125,13 +127,13 @@
   }
 
   // Group requests by service
-  $: requestsByService = services.map(service => ({
+  let requestsByService = $derived(services.map(service => ({
     ...service,
     requests: incomingRequests.filter(r => r.service_id === service.id)
-  }));
+  })));
 
-  $: activeServices = requestsByService.filter(s => s.is_active);
-  $: inactiveServices = requestsByService.filter(s => !s.is_active);
+  let activeServices = $derived(requestsByService.filter(s => s.is_active));
+  let inactiveServices = $derived(requestsByService.filter(s => !s.is_active));
 </script>
 
 <svelte:head>
@@ -156,14 +158,14 @@
   {#if toggleError}
     <div class="error-banner">
       {toggleError}
-      <button class="dismiss-btn" on:click={() => toggleError = null}>&times;</button>
+      <button class="dismiss-btn" onclick={() => toggleError = null}>&times;</button>
     </div>
   {/if}
 
   <div class="controls">
     <div class="filter-group">
       <label for="status-filter">Filter by request status:</label>
-      <select id="status-filter" value={statusFilter || ''} on:change={handleStatusChange}>
+      <select id="status-filter" value={statusFilter || ''} onchange={handleStatusChange}>
         {#each statusOptions as option}
           <option value={option.value}>{option.label}</option>
         {/each}
@@ -180,7 +182,7 @@
   {:else}
     {#each activeServices as service}
       <div class="service-card">
-        <div class="service-header" on:click={() => viewServiceDetail(service.id)} on:keypress={(e) => e.key === 'Enter' && viewServiceDetail(service.id)} role="button" tabindex="0">
+        <div class="service-header" onclick={() => viewServiceDetail(service.id)} onkeypress={(e) => e.key === 'Enter' && viewServiceDetail(service.id)} role="button" tabindex="0">
           <div class="service-info">
             <h3>{service.title}</h3>
             <span class="service-type">{getServiceTypeLabel(service.type)}</span>
@@ -189,11 +191,11 @@
             </span>
           </div>
           <div class="service-actions">
-            <button class="small-btn" on:click|stopPropagation={() => editService(service.id)}>Edit</button>
-            <button class="small-btn" on:click|stopPropagation={() => goto(`/market/services/${service.id}/availability`)}>Availability</button>
+            <button class="small-btn" onclick={stopPropagation(() => editService(service.id))}>Edit</button>
+            <button class="small-btn" onclick={stopPropagation(() => goto(`/market/services/${service.id}/availability`))}>Availability</button>
             <button
               class="small-btn toggle-btn"
-              on:click|stopPropagation={() => toggleServiceActive(service)}
+              onclick={stopPropagation(() => toggleServiceActive(service))}
               disabled={togglingService === service.id}
             >
               {togglingService === service.id ? '...' : 'Deactivate'}
@@ -206,7 +208,7 @@
             <h4>Incoming Requests ({service.requests.length})</h4>
             <div class="request-list">
               {#each service.requests.slice(0, 5) as request}
-                <div class="request-row" class:question-row={isQuestion(request)} on:click={() => viewServiceDetail(service.id)} on:keypress={(e) => e.key === 'Enter' && viewServiceDetail(service.id)} role="button" tabindex="0">
+                <div class="request-row" class:question-row={isQuestion(request)} onclick={() => viewServiceDetail(service.id)} onkeypress={(e) => e.key === 'Enter' && viewServiceDetail(service.id)} role="button" tabindex="0">
                   <span class="requester">{request.requester_name}</span>
                   <span class="request-date">{formatDateTime(request.created_at)}</span>
                   {#if isQuestion(request)}
@@ -233,17 +235,17 @@
       <h2 class="section-title">Inactive Services ({inactiveServices.length})</h2>
       {#each inactiveServices as service}
         <div class="service-card inactive">
-          <div class="service-header" on:click={() => viewServiceDetail(service.id)} on:keypress={(e) => e.key === 'Enter' && viewServiceDetail(service.id)} role="button" tabindex="0">
+          <div class="service-header" onclick={() => viewServiceDetail(service.id)} onkeypress={(e) => e.key === 'Enter' && viewServiceDetail(service.id)} role="button" tabindex="0">
             <div class="service-info">
               <h3>{service.title}</h3>
               <span class="service-type">{getServiceTypeLabel(service.type)}</span>
               <span class="inactive-badge">Inactive</span>
             </div>
             <div class="service-actions">
-              <button class="small-btn" on:click|stopPropagation={() => editService(service.id)}>Edit</button>
+              <button class="small-btn" onclick={stopPropagation(() => editService(service.id))}>Edit</button>
               <button
                 class="small-btn toggle-btn activate"
-                on:click|stopPropagation={() => toggleServiceActive(service)}
+                onclick={stopPropagation(() => toggleServiceActive(service))}
                 disabled={togglingService === service.id}
               >
                 {togglingService === service.id ? '...' : 'Activate'}

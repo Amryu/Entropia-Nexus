@@ -1,25 +1,40 @@
 <script>
-  // @ts-nocheck
-  export let serviceId;
-  export let pilots = [];
-  export let isOwner = false;
+  
 
-  // Manager/owner role props
-  export let managerId = null;
-  export let managerName = '';
-  export let ownerUserId = null;
-  export let ownerDisplayName = '';
-  export let currentUserId = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} serviceId
+   * @property {any} [pilots]
+   * @property {boolean} [isOwner]
+   * @property {any} [managerId] - Manager/owner role props
+   * @property {string} [managerName]
+   * @property {any} [ownerUserId]
+   * @property {string} [ownerDisplayName]
+   * @property {any} [currentUserId]
+   */
 
-  let adding = false;
-  let removing = false;
-  let transferring = false;
-  let identifier = '';
-  let error = '';
-  let success = '';
+  /** @type {Props} */
+  let {
+    serviceId,
+    pilots = $bindable([]),
+    isOwner = false,
+    managerId = null,
+    managerName = '',
+    ownerUserId = null,
+    ownerDisplayName = '',
+    currentUserId = null
+  } = $props();
 
-  $: isManagerOrOwner = currentUserId && (currentUserId === managerId || currentUserId === ownerUserId);
-  $: ownerIsDifferent = ownerDisplayName || (ownerUserId && ownerUserId !== managerId);
+  let adding = $state(false);
+  let removing = $state(false);
+  let transferring = $state(false);
+  let identifier = $state('');
+  let error = $state('');
+  let success = $state('');
+
+  let isManagerOrOwner = $derived(currentUserId && (currentUserId === managerId || currentUserId === ownerUserId));
+  let ownerIsDifferent = $derived(ownerDisplayName || (ownerUserId && ownerUserId !== managerId));
 
   async function addPilot() {
     if (!identifier.trim()) {
@@ -165,7 +180,7 @@
           {#if isOwner && ownerUserId && ownerUserId !== currentUserId && currentUserId === managerId}
             <button
               class="make-manager-btn"
-              on:click={() => makeManager(ownerUserId, ownerDisplayName || 'the owner')}
+              onclick={() => makeManager(ownerUserId, ownerDisplayName || 'the owner')}
               disabled={transferring}
             >
               Make Manager
@@ -190,7 +205,7 @@
           />
           <button
             class="add-btn"
-            on:click={addPilot}
+            onclick={addPilot}
             disabled={adding || !identifier.trim()}
           >
             {adding ? 'Adding...' : 'Add Pilot'}
@@ -216,7 +231,7 @@
             {#if isOwner && currentUserId === managerId && pilot.user_id !== currentUserId}
               <button
                 class="make-manager-btn"
-                on:click={() => makeManager(pilot.user_id, pilot.eu_name || pilot.username)}
+                onclick={() => makeManager(pilot.user_id, pilot.eu_name || pilot.username)}
                 disabled={transferring}
               >
                 Make Manager
@@ -225,7 +240,7 @@
             {#if isOwner}
               <button
                 class="remove-btn"
-                on:click={() => removePilot(pilot.user_id)}
+                onclick={() => removePilot(pilot.user_id)}
                 disabled={removing}
               >
                 Remove

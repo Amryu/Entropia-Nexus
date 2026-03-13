@@ -3,12 +3,18 @@
   Shared pending-change banner for wiki pages.
 -->
 <script>
-  // @ts-nocheck
-  export let pendingChange = null;
-  export let viewing = false;
-  export let onToggle = () => {};
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [pendingChange]
+   * @property {boolean} [viewing]
+   * @property {any} [onToggle]
+   */
 
-  $: showBanner = !!pendingChange;
+  /** @type {Props} */
+  let { pendingChange = null, viewing = false, onToggle = () => {} } = $props();
+
+  let showBanner = $derived(!!pendingChange);
 </script>
 
 {#if showBanner}
@@ -23,7 +29,7 @@
         {/if}
       </span>
     </div>
-    <button class="banner-toggle" on:click={onToggle}>
+    <button class="banner-toggle" onclick={onToggle}>
       {viewing ? 'View Original' : 'View Changes'}
     </button>
   </div>

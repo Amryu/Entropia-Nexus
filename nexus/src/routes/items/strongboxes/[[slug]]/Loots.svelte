@@ -6,7 +6,7 @@
 
   import Table from '$lib/components/Table.svelte';
 
-  export let loots;
+  let { loots } = $props();
 
   const rarityOrder = {
     'Common': 0,

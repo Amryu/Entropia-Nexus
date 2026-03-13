@@ -7,6 +7,8 @@
   Legacy editConfig preserved in furnishings-legacy/+page.svelte
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -44,55 +46,16 @@
     changeMetadata
   } from '$lib/stores/wikiEditState.js';
 
-  export let data;
+  let { data } = $props();
 
-  $: furnishing = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
 
-  $: userPendingUpdates = data.userPendingUpdates || [];
 
   // Local filter state - decoupled from URL
-  let selectedFilter = null;
-  let filterInitialized = false;
+  let selectedFilter = $state(null);
+  let filterInitialized = $state(false);
 
-  $: if (!filterInitialized) {
-    selectedFilter = additional.type || null;
-    filterInitialized = true;
-  }
 
-  $: if (filterInitialized && !furnishing && !isCreateMode) {
-    if ((additional.type || null) !== selectedFilter) {
-      selectedFilter = additional.type || null;
-    }
-  }
-  $: furnishingEntityId = furnishing?.Id ?? furnishing?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, furnishingEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
-  // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
-  // For multi-type pages, data.items is an object keyed by type
-  $: allItems = (() => {
-    if (!data.items) return [];
-    if (selectedFilter && data.items[selectedFilter]) {
-      return data.items[selectedFilter];
-    }
-    // No filter selected - combine all items from all types
-    const combined = [];
-    for (const [type, items] of Object.entries(data.items)) {
-      for (const item of items) {
-        combined.push({ ...item, _type: type });
-      }
-    }
-    return combined;
-  })();
 
   // Type navigation buttons
   const typeButtons = [
@@ -163,30 +126,8 @@
     return base;
   }
 
-  // Initialize edit state when entity or user changes
-  $: if (user && additional.type) {
-    const entityType = getEntityType(additional.type);
-    const entity = isCreateMode ? (existingChange?.data || getEmptyEntity(additional.type)) : furnishing;
-    if (entity && entityType) {
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(entity, entityType, isCreateMode, editChange);
-    }
-  }
 
-  // Set existing pending change when data loads
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → furnishing)
-  $: activeEntity = $editMode
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.changes)
-      ? applyChangesToEntity(furnishing, $existingPendingChange.changes)
-      : furnishing;
 
   // Helper to apply pending changes to entity for display
   function applyChangesToEntity(entity, changes) {
@@ -213,17 +154,7 @@
     resetEditState();
   });
 
-  // Build navigation items
-  $: navItems = allItems;
 
-  // Navigation filters - uses selectedFilter for active state (local, not URL-based)
-  $: navFilters = typeButtons.map(btn => ({
-    label: btn.label,
-    title: btn.title,
-    type: btn.type,
-    active: selectedFilter === btn.type,
-    href: selectedFilter === btn.type ? '/items/furnishings' : `/items/furnishings/${btn.type}`
-  }));
 
   // Full column definitions for furnishings
   const columnDefs = {
@@ -268,10 +199,7 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(selectedFilter);
-  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
   const allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `furnishings-${selectedFilter || 'all'}`;
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -282,53 +210,18 @@
     return `${basePath}/${encodeURIComponentSafe(item.Name)}`;
   }
 
-  // Base path for navigation - uses selectedFilter so it persists
-  $: effectiveBasePath = selectedFilter
-    ? `/items/furnishings/${selectedFilter}`
-    : '/items/furnishings';
 
-  // Create categories for the "New" dropdown
-  $: createCategories = typeButtons.map(btn => ({
-    label: getTypeName(btn.type),
-    href: `/items/furnishings/${btn.type}`
-  }));
 
-  // Filter pending creates by selected filter type
-  $: filteredPendingCreates = selectedFilter
-    ? (userPendingCreates || []).filter(change => {
-        const entityType = getEntityType(selectedFilter);
-        return change.entity === entityType;
-      })
-    : userPendingCreates || [];
 
-  // Breadcrumbs
-  $: breadcrumbs = [
-    { label: 'Items', href: '/items' },
-    { label: 'Furnishings', href: '/items/furnishings' },
-    ...(additional.type ? [{ label: getTypeName(additional.type) + (additional.type !== 'furniture' ? 's' : ''), href: `/items/furnishings/${additional.type}` }] : []),
-    ...(activeEntity ? [{ label: activeEntity.Name || 'New ' + getTypeName(additional.type) }] : [])
-  ];
 
-  // SEO
-  $: seoDescription = activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Furnishing'} - ${getTypeName(additional.type)} in Entropia Universe.`;
 
-  $: canonicalUrl = furnishing
-    ? `https://entropianexus.com/items/furnishings/${additional.type}/${encodeURIComponentSafe(furnishing.Name)}`
-    : additional.type
-    ? `https://entropianexus.com/items/furnishings/${additional.type}`
-    : 'https://entropianexus.com/items/furnishings';
 
-  // Image URL for SEO
-  $: entityImageUrl = furnishing?.Id && additional.type
-    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${furnishing.Id}`
-    : null;
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -344,6 +237,123 @@
       localStorage.setItem('wiki-furnishing-panels', JSON.stringify(panelStates));
     } catch (e) {}
   }
+  let furnishing = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  run(() => {
+    if (!filterInitialized) {
+      selectedFilter = additional.type || null;
+      filterInitialized = true;
+    }
+  });
+  run(() => {
+    if (filterInitialized && !furnishing && !isCreateMode) {
+      if ((additional.type || null) !== selectedFilter) {
+        selectedFilter = additional.type || null;
+      }
+    }
+  });
+  let furnishingEntityId = $derived(furnishing?.Id ?? furnishing?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, furnishingEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  // Can edit if user is verified or admin
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
+  // For multi-type pages, data.items is an object keyed by type
+  let allItems = $derived((() => {
+    if (!data.items) return [];
+    if (selectedFilter && data.items[selectedFilter]) {
+      return data.items[selectedFilter];
+    }
+    // No filter selected - combine all items from all types
+    const combined = [];
+    for (const [type, items] of Object.entries(data.items)) {
+      for (const item of items) {
+        combined.push({ ...item, _type: type });
+      }
+    }
+    return combined;
+  })());
+  // Initialize edit state when entity or user changes
+  run(() => {
+    if (user && additional.type) {
+      const entityType = getEntityType(additional.type);
+      const entity = isCreateMode ? (existingChange?.data || getEmptyEntity(additional.type)) : furnishing;
+      if (entity && entityType) {
+        const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+        initEditState(entity, entityType, isCreateMode, editChange);
+      }
+    }
+  });
+  // Set existing pending change when data loads
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → furnishing)
+  let activeEntity = $derived($editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(furnishing, $existingPendingChange.changes)
+      : furnishing);
+  // Build navigation items
+  let navItems = $derived(allItems);
+  // Navigation filters - uses selectedFilter for active state (local, not URL-based)
+  let navFilters = $derived(typeButtons.map(btn => ({
+    label: btn.label,
+    title: btn.title,
+    type: btn.type,
+    active: selectedFilter === btn.type,
+    href: selectedFilter === btn.type ? '/items/furnishings' : `/items/furnishings/${btn.type}`
+  })));
+  let navTableColumns = $derived(getNavTableColumns(selectedFilter));
+  let navFullWidthColumns = $derived(getNavFullWidthColumns(selectedFilter));
+  let navPageTypeId = $derived(`furnishings-${selectedFilter || 'all'}`);
+  // Base path for navigation - uses selectedFilter so it persists
+  let effectiveBasePath = $derived(selectedFilter
+    ? `/items/furnishings/${selectedFilter}`
+    : '/items/furnishings');
+  // Create categories for the "New" dropdown
+  let createCategories = $derived(typeButtons.map(btn => ({
+    label: getTypeName(btn.type),
+    href: `/items/furnishings/${btn.type}`
+  })));
+  // Filter pending creates by selected filter type
+  let filteredPendingCreates = $derived(selectedFilter
+    ? (userPendingCreates || []).filter(change => {
+        const entityType = getEntityType(selectedFilter);
+        return change.entity === entityType;
+      })
+    : userPendingCreates || []);
+  // Breadcrumbs
+  let breadcrumbs = $derived([
+    { label: 'Items', href: '/items' },
+    { label: 'Furnishings', href: '/items/furnishings' },
+    ...(additional.type ? [{ label: getTypeName(additional.type) + (additional.type !== 'furniture' ? 's' : ''), href: `/items/furnishings/${additional.type}` }] : []),
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New ' + getTypeName(additional.type) }] : [])
+  ]);
+  // SEO
+  let seoDescription = $derived(activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Furnishing'} - ${getTypeName(additional.type)} in Entropia Universe.`);
+  let canonicalUrl = $derived(furnishing
+    ? `https://entropianexus.com/items/furnishings/${additional.type}/${encodeURIComponentSafe(furnishing.Name)}`
+    : additional.type
+    ? `https://entropianexus.com/items/furnishings/${additional.type}`
+    : 'https://entropianexus.com/items/furnishings');
+  // Image URL for SEO
+  let entityImageUrl = $derived(furnishing?.Id && additional.type
+    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${furnishing.Id}`
+    : null);
 </script>
 
 <WikiSEO

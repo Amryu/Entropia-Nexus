@@ -2,9 +2,9 @@
   // @ts-nocheck
   import { invalidateAll } from '$app/navigation';
 
-  export let data;
+  let { data } = $props();
 
-  let revoking = null;
+  let revoking = $state(null);
 
   async function revokeAuthorization(clientId, appName) {
     if (!confirm(`Revoke access for "${appName}"? The app will no longer be able to access your account.`)) return;
@@ -57,7 +57,7 @@
           <div class="auth-actions">
             <button
               class="btn-revoke"
-              on:click={() => revokeAuthorization(auth.client_id, auth.name)}
+              onclick={() => revokeAuthorization(auth.client_id, auth.name)}
               disabled={revoking === auth.client_id}
             >
               {revoking === auth.client_id ? 'Revoking...' : 'Revoke Access'}

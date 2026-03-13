@@ -6,23 +6,23 @@
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: enumeration = data.object;
-  $: allItems = data.allItems || [];
-  $: user = data.session?.user;
-  $: activeEnumeration = enumeration;
-  $: navItems = allItems;
+  let enumeration = $derived(data.object);
+  let allItems = $derived(data.allItems || []);
+  let user = $derived(data.session?.user);
+  let activeEnumeration = $derived(enumeration);
+  let navItems = $derived(allItems);
 
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Information', href: '/information' },
     { label: 'Enumerations', href: '/information/enumerations' },
     ...(activeEnumeration?.Name ? [{ label: activeEnumeration.Name }] : [])
-  ];
+  ]);
 
-  $: canonicalUrl = activeEnumeration?.Name
+  let canonicalUrl = $derived(activeEnumeration?.Name
     ? `https://entropianexus.com/information/enumerations/${encodeURIComponentSafe(activeEnumeration.Name)}`
-    : 'https://entropianexus.com/information/enumerations';
+    : 'https://entropianexus.com/information/enumerations');
 
   const navFilters = [
     {
@@ -99,7 +99,7 @@
     return `<a href="${escapeHtml(href)}" class="enum-link">${escapedText}</a>`;
   }
 
-  $: tableColumns = (activeEnumeration?.Table?.Columns || []).map((col) => ({
+  let tableColumns = $derived((activeEnumeration?.Table?.Columns || []).map((col) => ({
     key: col.key,
     header: col.label,
     sortable: true,
@@ -107,9 +107,9 @@
     widthBasis: 'both',
     main: col.key === 'Description' || col.key === 'Name',
     formatter: (value, row) => formatCellValue(value, row, col.key)
-  }));
+  })));
 
-  $: tableRows = activeEnumeration?.Table?.Rows || [];
+  let tableRows = $derived(activeEnumeration?.Table?.Rows || []);
 </script>
 
 <svelte:head>

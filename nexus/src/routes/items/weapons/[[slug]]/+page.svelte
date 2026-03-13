@@ -5,6 +5,8 @@
   Article: Description → Tiers → Acquisition
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -50,33 +52,35 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' },
-      { key: 'vehicleAttachmentTypes', url: '/api/vehicleattachmenttypes' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' },
+        { key: 'vehicleAttachmentTypes', url: '/api/vehicleattachmenttypes' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: weapon = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: effects = data.effects || [];
-  $: vehicleAttachmentTypes = data.vehicleAttachmentTypes || [];
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: canCreateNew = data.canCreateNew !== false;
-  $: pendingCreatesCount = data.pendingCreatesCount || 0;
-  $: existingChange = data.existingChange;
+  let weapon = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let effects = $derived(data.effects || []);
+  let vehicleAttachmentTypes = $derived(data.vehicleAttachmentTypes || []);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let canCreateNew = $derived(data.canCreateNew !== false);
+  let pendingCreatesCount = $derived(data.pendingCreatesCount || 0);
+  let existingChange = $derived(data.existingChange);
 
   // Empty weapon template for create mode
   const emptyWeapon = {
@@ -126,67 +130,73 @@
     Tiers: [],
   };
 
-  $: currentChangeId = $page.url.searchParams.get('changeId');
-  $: weaponEntityId = weapon?.Id ?? weapon?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, weaponEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
-  $: createSeed = existingChange?.data || resolvedPendingChange?.data || emptyWeapon;
+  let currentChangeId = $derived($page.url.searchParams.get('changeId'));
+  let weaponEntityId = $derived(weapon?.Id ?? weapon?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, weaponEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  let createSeed = $derived(existingChange?.data || resolvedPendingChange?.data || emptyWeapon);
 
   // ========== EDIT STATE MANAGEMENT ==========
   // Initialize edit state when weapon changes or in create mode
-  let lastInitKey = null;
-  $: if (user) {
-    const createSeedSource = existingChange?.data ? 'existing' : (resolvedPendingChange?.data ? 'pending' : 'empty');
-    const initKey = data.isCreateMode
-      ? `create:${currentChangeId || 'new'}:${createSeedSource}`
-      : (weapon?.Id ?? weapon?.ItemId)
-        ? `view:${weapon?.Id ?? weapon?.ItemId}:${resolvedPendingChange?.id || 'none'}`
-        : null;
+  let lastInitKey = $state(null);
+  run(() => {
+    if (user) {
+      const createSeedSource = existingChange?.data ? 'existing' : (resolvedPendingChange?.data ? 'pending' : 'empty');
+      const initKey = data.isCreateMode
+        ? `create:${currentChangeId || 'new'}:${createSeedSource}`
+        : (weapon?.Id ?? weapon?.ItemId)
+          ? `view:${weapon?.Id ?? weapon?.ItemId}:${resolvedPendingChange?.id || 'none'}`
+          : null;
 
-    if (initKey && initKey !== lastInitKey) {
-      if (data.isCreateMode) {
-        // If editing an existing pending create, use that data; otherwise use empty template
-        initEditState(createSeed, 'Weapon', true, existingChange || resolvedPendingChange || null);
-      } else if (weapon) {
-        initEditState(weapon, 'Weapon', false, canUsePendingChange ? resolvedPendingChange : null);
+      if (initKey && initKey !== lastInitKey) {
+        if (data.isCreateMode) {
+          // If editing an existing pending create, use that data; otherwise use empty template
+          initEditState(createSeed, 'Weapon', true, existingChange || resolvedPendingChange || null);
+        } else if (weapon) {
+          initEditState(weapon, 'Weapon', false, canUsePendingChange ? resolvedPendingChange : null);
+        }
+        lastInitKey = initKey;
       }
-      lastInitKey = initKey;
     }
-  }
+  });
 
   // Initialize pending change state
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Determine which entity to display:
   // 1. In edit mode: show currentEntity (original + pending edits)
   // 2. Viewing pending change: show pending change data
   // 3. Otherwise: show original weapon
-  $: activeWeapon = $editMode
+  let activeWeapon = $derived($editMode
     ? ($currentEntity || createSeed)
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : (weapon || (data.isCreateMode ? createSeed : null));
+      : (weapon || (data.isCreateMode ? createSeed : null)));
 
   // Track previous entity for navigation detection
-  let previousEntityId = null;
+  let previousEntityId = $state(null);
 
   // Exit edit mode when navigating to a different entity (unless it's a draft/pending change)
-  $: if (weapon?.Id !== previousEntityId && previousEntityId !== null) {
-    // Only exit edit mode if not viewing a draft/pending change
-    const hasUnsavedDraft = $editMode && !$existingPendingChange;
-    if ($editMode && !hasUnsavedDraft) {
-      resetEditState();
+  run(() => {
+    if (weapon?.Id !== previousEntityId && previousEntityId !== null) {
+      // Only exit edit mode if not viewing a draft/pending change
+      const hasUnsavedDraft = $editMode && !$existingPendingChange;
+      if ($editMode && !hasUnsavedDraft) {
+        resetEditState();
+      }
+      previousEntityId = weapon?.Id;
+    } else if (previousEntityId === null && weapon?.Id) {
+      previousEntityId = weapon.Id;
     }
-    previousEntityId = weapon?.Id;
-  } else if (previousEntityId === null && weapon?.Id) {
-    previousEntityId = weapon.Id;
-  }
+  });
 
   // Cleanup on component destroy
   onDestroy(() => {
@@ -194,7 +204,7 @@
   });
 
   // Build navigation items from grouped weapons
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters
   const navFilters = [
@@ -484,34 +494,34 @@
   const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Weapons', href: '/items/weapons' },
     ...(data.isCreateMode ? [{ label: 'New Weapon' }] : (weapon ? [{ label: weapon.Name }] : []))
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = weapon?.Properties?.Description ||
-    `${weapon?.Name || 'Weapon'} - ${weapon?.Properties?.Class || ''} ${weapon?.Properties?.Type || ''} weapon in Entropia Universe.`;
+  let seoDescription = $derived(weapon?.Properties?.Description ||
+    `${weapon?.Name || 'Weapon'} - ${weapon?.Properties?.Class || ''} ${weapon?.Properties?.Type || ''} weapon in Entropia Universe.`);
 
-  $: canonicalUrl = weapon
+  let canonicalUrl = $derived(weapon
     ? `https://entropianexus.com/items/weapons/${encodeURIComponentSafe(weapon.Name)}`
-    : 'https://entropianexus.com/items/weapons';
+    : 'https://entropianexus.com/items/weapons');
 
   // ========== EDITING PERMISSIONS ==========
   // Verified users and users with wiki.edit grant can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // Check if weapon is tierable
-  $: isTierable = activeWeapon && !hasItemTag(activeWeapon.Name, 'L');
-  $: hasEffects = (activeWeapon?.EffectsOnEquip?.length > 0) || (activeWeapon?.EffectsOnUse?.length > 0);
+  let isTierable = $derived(activeWeapon && !hasItemTag(activeWeapon.Name, 'L'));
+  let hasEffects = $derived((activeWeapon?.EffectsOnEquip?.length > 0) || (activeWeapon?.EffectsOnUse?.length > 0));
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     tiers: true,
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -533,11 +543,11 @@
   }
 
   // Image URL for SEO (approved images only)
-  $: entityImageUrl = weapon?.Id ? `/api/img/weapon/${weapon.Id}` : null;
+  let entityImageUrl = $derived(weapon?.Id ? `/api/img/weapon/${weapon.Id}` : null);
 
   // ========== RELOAD/USES TOGGLE ==========
-  let showReload = true;
-  $: showReloadEffective = $editMode ? false : showReload;
+  let showReload = $state(true);
+  let showReloadEffective = $derived($editMode ? false : showReload);
 
   onMount(() => {
     try {
@@ -641,21 +651,21 @@
   }
 
   // Reactive calculations - use activeWeapon to update in real-time during editing
-  $: dps = getDps(activeWeapon);
-  $: dpp = getDpp(activeWeapon);
-  $: efficiency = getEfficiency(activeWeapon);
-  $: costPerUse = getCostPerUse(activeWeapon);
-  $: reload = getReload(activeWeapon);
-  $: totalUses = getTotalUses(activeWeapon);
-  $: totalDamage = getTotalDamage(activeWeapon);
-  $: effectiveDamage = getEffectiveDamage(activeWeapon);
-  $: skillInfo = getSkillInfo(activeWeapon);
-  $: professionNames = getProfessionNames(activeWeapon);
-  $: skillIntervals = getSkillIntervals(activeWeapon);
+  let dps = $derived(getDps(activeWeapon));
+  let dpp = $derived(getDpp(activeWeapon));
+  let efficiency = $derived(getEfficiency(activeWeapon));
+  let costPerUse = $derived(getCostPerUse(activeWeapon));
+  let reload = $derived(getReload(activeWeapon));
+  let totalUses = $derived(getTotalUses(activeWeapon));
+  let totalDamage = $derived(getTotalDamage(activeWeapon));
+  let effectiveDamage = $derived(getEffectiveDamage(activeWeapon));
+  let skillInfo = $derived(getSkillInfo(activeWeapon));
+  let professionNames = $derived(getProfessionNames(activeWeapon));
+  let skillIntervals = $derived(getSkillIntervals(activeWeapon));
 
   // ========== CONDITIONAL FIELD OPTIONS ==========
   // Category options based on Class
-  $: categoryOptions = (() => {
+  let categoryOptions = $derived((() => {
     const cls = activeWeapon?.Properties?.Class;
     if (cls === 'Ranged') return ['Rifle', 'Carbine', 'Pistol', 'Cannon', 'Flamethrower', 'Support', 'Mounted'];
     if (cls === 'Melee') return ['Axe', 'Sword', 'Knife', 'Whip', 'Club', 'Power Fist'];
@@ -663,10 +673,10 @@
     if (cls === 'Attached') return ['Hanging', 'Turret'];
     if (cls === 'Stationary') return ['Turret'];
     return [];
-  })();
+  })());
 
   // Type options based on Class
-  $: typeOptions = (() => {
+  let typeOptions = $derived((() => {
     const cls = activeWeapon?.Properties?.Class;
     if (cls === 'Ranged' || cls === 'Attached' || cls === 'Stationary') {
       return ['Laser', 'BLP', 'Explosive', 'Gauss', 'Plasma', 'Mining Laser (Low)', 'Mining Laser (Medium)', 'Mining Laser (High)'];
@@ -674,10 +684,10 @@
     if (cls === 'Melee') return ['Blades', 'Clubs', 'Fists', 'Whips'];
     if (cls === 'Mindforce') return ['Pyrokinetic', 'Cryogenic', 'Electrokinesis'];
     return [];
-  })();
+  })());
 
   // Ammo Type options based on Class
-  $: ammoOptions = (() => {
+  let ammoOptions = $derived((() => {
     const cls = activeWeapon?.Properties?.Class;
     if (cls === 'Ranged' || cls === 'Attached' || cls === 'Stationary') {
       return ['Weapon Cells', 'BLP Pack', 'Explosive Projectiles'];
@@ -685,10 +695,10 @@
     if (cls === 'Melee') return [null, 'Weapon Cells'];
     if (cls === 'Mindforce') return ['Synthetic Mind Essence', 'Mind Essence', 'Light Mind Essence'];
     return [];
-  })();
+  })());
 
   // Hit Profession options based on Type
-  $: hitProfessionOptions = (() => {
+  let hitProfessionOptions = $derived((() => {
     const type = activeWeapon?.Properties?.Type;
     if (type === 'Laser') return ['Laser Pistoleer (Hit)', 'Laser Sniper (Hit)', 'Mounted Laser (Hit)'];
     if (type === 'BLP') return ['BLP Pistoleer (Hit)', 'BLP Sniper (Hit)', 'Mounted BLP (Hit)'];
@@ -704,10 +714,10 @@
     if (type === 'Fists') return ['Brawler (Hit)'];
     if (type === 'Whips') return ['Whipper (Hit)'];
     return [];
-  })();
+  })());
 
   // Dmg Profession options based on Type
-  $: dmgProfessionOptions = (() => {
+  let dmgProfessionOptions = $derived((() => {
     const type = activeWeapon?.Properties?.Type;
     if (type === 'Laser') return ['Ranged Laser (Dmg)'];
     if (type === 'BLP') return ['Ranged BLP (Dmg)'];
@@ -723,57 +733,61 @@
     if (type === 'Fists') return ['Brawler (Dmg)'];
     if (type === 'Whips') return ['Whipper (Dmg)'];
     return [];
-  })();
+  })());
 
   // ========== SMART INFERENCE ==========
   // Auto-select values when there's only one valid option.
   // This speeds up editing by inferring obvious choices.
 
   // Track previous values to detect changes
-  let prevClass = null;
-  let prevType = null;
+  let prevClass = $state(null);
+  let prevType = $state(null);
 
   // When Class changes, auto-select Category if only one option exists
-  $: if ($editMode && activeWeapon?.Properties?.Class && activeWeapon.Properties.Class !== prevClass) {
-    prevClass = activeWeapon.Properties.Class;
-    // If only one category option for this class, auto-select it
-    if (categoryOptions.length === 1 && activeWeapon.Properties.Category !== categoryOptions[0]) {
-      updateField('Properties.Category', categoryOptions[0]);
+  run(() => {
+    if ($editMode && activeWeapon?.Properties?.Class && activeWeapon.Properties.Class !== prevClass) {
+      prevClass = activeWeapon.Properties.Class;
+      // If only one category option for this class, auto-select it
+      if (categoryOptions.length === 1 && activeWeapon.Properties.Category !== categoryOptions[0]) {
+        updateField('Properties.Category', categoryOptions[0]);
+      }
+      // If current category is not valid for new class, clear it
+      if (categoryOptions.length > 0 && activeWeapon.Properties.Category && !categoryOptions.includes(activeWeapon.Properties.Category)) {
+        updateField('Properties.Category', categoryOptions.length === 1 ? categoryOptions[0] : null);
+      }
+      // If only one type option for this class, auto-select it
+      if (typeOptions.length === 1 && activeWeapon.Properties.Type !== typeOptions[0]) {
+        updateField('Properties.Type', typeOptions[0]);
+      }
+      // If current type is not valid for new class, clear it
+      if (typeOptions.length > 0 && activeWeapon.Properties.Type && !typeOptions.includes(activeWeapon.Properties.Type)) {
+        updateField('Properties.Type', typeOptions.length === 1 ? typeOptions[0] : null);
+      }
     }
-    // If current category is not valid for new class, clear it
-    if (categoryOptions.length > 0 && activeWeapon.Properties.Category && !categoryOptions.includes(activeWeapon.Properties.Category)) {
-      updateField('Properties.Category', categoryOptions.length === 1 ? categoryOptions[0] : null);
-    }
-    // If only one type option for this class, auto-select it
-    if (typeOptions.length === 1 && activeWeapon.Properties.Type !== typeOptions[0]) {
-      updateField('Properties.Type', typeOptions[0]);
-    }
-    // If current type is not valid for new class, clear it
-    if (typeOptions.length > 0 && activeWeapon.Properties.Type && !typeOptions.includes(activeWeapon.Properties.Type)) {
-      updateField('Properties.Type', typeOptions.length === 1 ? typeOptions[0] : null);
-    }
-  }
+  });
 
   // When Type changes, auto-select professions if only one option exists
-  $: if ($editMode && activeWeapon?.Properties?.Type && activeWeapon.Properties.Type !== prevType) {
-    prevType = activeWeapon.Properties.Type;
-    // Auto-select Hit Profession if only one option
-    if (hitProfessionOptions.length === 1 && professionNames.hit !== hitProfessionOptions[0]) {
-      updateField('ProfessionHit.Name', hitProfessionOptions[0]);
+  run(() => {
+    if ($editMode && activeWeapon?.Properties?.Type && activeWeapon.Properties.Type !== prevType) {
+      prevType = activeWeapon.Properties.Type;
+      // Auto-select Hit Profession if only one option
+      if (hitProfessionOptions.length === 1 && professionNames.hit !== hitProfessionOptions[0]) {
+        updateField('ProfessionHit.Name', hitProfessionOptions[0]);
+      }
+      // If current hit profession is not valid for new type, clear or auto-select
+      if (hitProfessionOptions.length > 0 && professionNames.hit && !hitProfessionOptions.includes(professionNames.hit)) {
+        updateField('ProfessionHit.Name', hitProfessionOptions.length === 1 ? hitProfessionOptions[0] : null);
+      }
+      // Auto-select Dmg Profession if only one option
+      if (dmgProfessionOptions.length === 1 && professionNames.dmg !== dmgProfessionOptions[0]) {
+        updateField('ProfessionDmg.Name', dmgProfessionOptions[0]);
+      }
+      // If current dmg profession is not valid for new type, clear or auto-select
+      if (dmgProfessionOptions.length > 0 && professionNames.dmg && !dmgProfessionOptions.includes(professionNames.dmg)) {
+        updateField('ProfessionDmg.Name', dmgProfessionOptions.length === 1 ? dmgProfessionOptions[0] : null);
+      }
     }
-    // If current hit profession is not valid for new type, clear or auto-select
-    if (hitProfessionOptions.length > 0 && professionNames.hit && !hitProfessionOptions.includes(professionNames.hit)) {
-      updateField('ProfessionHit.Name', hitProfessionOptions.length === 1 ? hitProfessionOptions[0] : null);
-    }
-    // Auto-select Dmg Profession if only one option
-    if (dmgProfessionOptions.length === 1 && professionNames.dmg !== dmgProfessionOptions[0]) {
-      updateField('ProfessionDmg.Name', dmgProfessionOptions[0]);
-    }
-    // If current dmg profession is not valid for new type, clear or auto-select
-    if (dmgProfessionOptions.length > 0 && professionNames.dmg && !dmgProfessionOptions.includes(professionNames.dmg)) {
-      updateField('ProfessionDmg.Name', dmgProfessionOptions.length === 1 ? dmgProfessionOptions[0] : null);
-    }
-  }
+  });
 </script>
 
 <WikiSEO
@@ -903,7 +917,7 @@
             </div>
           {:else}
             <!-- In view mode, toggle between Reload and Uses/min -->
-            <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
+            <div class="stat-row toggleable" onclick={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
               {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
                 <span class="stat-value">{reload ? `${reload.toFixed(2)}s` : 'N/A'}</span>

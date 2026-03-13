@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { run, self, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount, onDestroy } from "svelte";
 
@@ -36,37 +39,37 @@
 
   const VIEW_SLUGS = new Set(['listings', 'orders', 'inventory', 'trades']);
 
-  let searchTerm = "";
-  let selectedCategory = "All";
-  let selectedCategoryRawPath = null; // raw key path array for URL construction
-  let selectedPlanet = "All Planets";
-  let selectedLimited = "all";
-  let selectedSex = "both";
-  let selectedOrderSide = "all"; // 'all' | 'buy' | 'sell'
-  let filteredItems = [];
-  let selectedItems = [];
-  let savedOverviewFilters = null; // snapshot of filters before entering detail view
+  let searchTerm = $state("");
+  let selectedCategory = $state("All");
+  let selectedCategoryRawPath = $state(null); // raw key path array for URL construction
+  let selectedPlanet = $state("All Planets");
+  let selectedLimited = $state("all");
+  let selectedSex = $state("both");
+  let selectedOrderSide = $state("all"); // 'all' | 'buy' | 'sell'
+  let filteredItems = $state([]);
+  let selectedItems = $state([]);
+  let savedOverviewFilters = $state(null); // snapshot of filters before entering detail view
   let loading = false;
-  let showOrderDialog = false;
-  let showBulkTradeDialog = false;
-  let orderDialogType = null; // 'buy' | 'sell'
-  let orderDialogRef;
-  let orderDialogExistingCount = 0; // existing orders for the current item+side
+  let showOrderDialog = $state(false);
+  let showBulkTradeDialog = $state(false);
+  let orderDialogType = $state(null); // 'buy' | 'sell'
+  let orderDialogRef = $state();
+  let orderDialogExistingCount = $state(0); // existing orders for the current item+side
   // Title bar filters for tierable items
-  let mobileSidebarOpen = false;
-  let sidebarTab = 'categories'; // 'categories' | 'favourites'
-  let selectedFavFolderId = null; // folder id, 'all', 'root', or null
-  let favouriteFolderFilter = null; // Set<number> | null — when set, filters main listing
+  let mobileSidebarOpen = $state(false);
+  let sidebarTab = $state('categories'); // 'categories' | 'favourites'
+  let selectedFavFolderId = $state(null); // folder id, 'all', 'root', or null
+  let favouriteFolderFilter = $state(null); // Set<number> | null — when set, filters main listing
   // Range slider filter state
-  let tierMin = 0;
-  let tierMax = 10;
-  let tirMin = 0;
-  let tirMax = 200;
-  let qrMin = 0;
-  let qrMax = 100;
-  let minConditionPct = 0;
-  let showFilterDialog = false;
-  let smallViewport = typeof window !== 'undefined' && window.innerWidth <= 600;
+  let tierMin = $state(0);
+  let tierMax = $state(10);
+  let tirMin = $state(0);
+  let tirMax = $state(200);
+  let qrMin = $state(0);
+  let qrMax = $state(100);
+  let minConditionPct = $state(0);
+  let showFilterDialog = $state(false);
+  let smallViewport = $state(typeof window !== 'undefined' && window.innerWidth <= 600);
 
   function handleViewportResize() {
     smallViewport = typeof window !== 'undefined' && window.innerWidth <= 600;
@@ -83,38 +86,38 @@
   ]);
 
   // Pending edit order (set when user clicks Edit in MyOrdersView)
-  let pendingEditOrder = null;
+  let pendingEditOrder = $state(null);
 
   // Inline edit: item details loaded separately from detail view
-  let inlineEditItem = null;
+  let inlineEditItem = $state(null);
 
   // Quick trade dialog state
-  let showQuickTrade = false;
-  let quickTradeOrder = null;
-  let quickTradeSide = 'buy'; // 'buy' | 'sell'
-  let quickTradeItem = null; // Override item context for type detection
-  let quickTradeRef;
+  let showQuickTrade = $state(false);
+  let quickTradeOrder = $state(null);
+  let quickTradeSide = $state('buy'); // 'buy' | 'sell'
+  let quickTradeItem = $state(null); // Override item context for type detection
+  let quickTradeRef = $state();
 
   // User orders panel state
-  let showUserOrders = false;
-  let userOrdersTarget = null; // { id, name }
+  let showUserOrders = $state(false);
+  let userOrdersTarget = $state(null); // { id, name }
   let userOrdersReturnUrl = null; // URL to return to when closing the panel
 
   // Side filter for floating panel (All/Buy/Sell)
-  let panelSideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
+  let panelSideFilter = $state('all'); // 'all' | 'BUY' | 'SELL'
 
   // Inventory & Orders panel
-  let showImportDialog = false;
-  let showAdjustDialog = false;
-  let showMassSellDialog = false;
-  let massSellItems = [];
-  let massSellMode = false;
-  let inventoryPanelRef;
-  let myOrdersRef;
-  let tradesPanelRef;
-  let bumpingAll = false;
+  let showImportDialog = $state(false);
+  let showAdjustDialog = $state(false);
+  let showMassSellDialog = $state(false);
+  let massSellItems = $state([]);
+  let massSellMode = $state(false);
+  let inventoryPanelRef = $state();
+  let myOrdersRef = $state();
+  let tradesPanelRef = $state();
+  let bumpingAll = $state(false);
   let bumpCooldownEnd = 0;
-  let bumpCooldownRemaining = 0;
+  let bumpCooldownRemaining = $state(0);
   let bumpCooldownTimer = null;
 
   function startBumpCooldown(seconds) {
@@ -147,9 +150,9 @@
   });
 
   // Turnstile confirmation modal (for actions outside OrderDialog: bump-all, close)
-  let pendingTurnstileAction = null; // { type: 'bump'|'close', order?, callback }
-  let turnstileModalToken = null;
-  let resetTurnstileModal = false;
+  let pendingTurnstileAction = $state(null); // { type: 'bump'|'close', order?, callback }
+  let turnstileModalToken = $state(null);
+  let resetTurnstileModal = $state(false);
 
   function requestTurnstile(type, callback, order = null) {
     turnstileModalToken = null;
@@ -171,10 +174,6 @@
     await callback(token);
   }
 
-  // Reactive discrepancy count: compare sell orders against inventory
-  $: discrepancyCount = computeDiscrepancyCount($myOrders, $inventory);
-  // Current active sell order count for MassSellDialog pre-flight display
-  $: currentSellCount = ($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length;
 
   function computeDiscrepancyCount(orders, inv) {
     const sellOrders = (orders || []).filter(o => o.type === 'SELL' && o.state_display !== 'closed' && o.state_display !== 'terminated');
@@ -548,7 +547,7 @@
   }
 
   // Exchange price data for detail view
-  let exchangePrices = null;
+  let exchangePrices = $state(null);
 
   // Price history state
   const PRICE_PERIODS = [
@@ -561,18 +560,18 @@
     { value: '5y', label: '5y' },
     { value: 'all', label: 'All' },
   ];
-  let selectedPeriod = '7d';
-  let showPriceHistory = false;
-  let priceHistoryData = [];
-  let priceHistoryLoading = false;
-  let periodStats = null;
+  let selectedPeriod = $state('7d');
+  let showPriceHistory = $state(false);
+  let priceHistoryData = $state([]);
+  let priceHistoryLoading = $state(false);
+  let periodStats = $state(null);
 
   // Detail view state
-  let tableMode = "both"; // 'both' | 'buy' | 'sell'
-  let lastUpdateFilter = "all"; // 'fresh' | 'recent' | 'all'
-  let buyOrders = [];
-  let sellOrders = [];
-  let selectedItemDetails = null;
+  let tableMode = $state("both"); // 'both' | 'buy' | 'sell'
+  let lastUpdateFilter = $state("all"); // 'fresh' | 'recent' | 'all'
+  let buyOrders = $state([]);
+  let sellOrders = $state([]);
+  let selectedItemDetails = $state(null);
 
   // Persisted filter settings
   const LS_KEY = "exchangeFilters.v1";
@@ -609,8 +608,8 @@
   }
 
   // State for category tree and route-driven selection
-  let categorizedItems = {};
-  let initialLoading = false;
+  let categorizedItems = $state({});
+  let initialLoading = $state(false);
 
   // Format a raw category key to display name (same logic as CategoryTree)
   function formatCategoryName(key) {
@@ -649,334 +648,29 @@
     return flattenItems(node);
   }
 
-  // Current route params — [[slug]] is view type, [[id]] is content
-  $: viewSlug = VIEW_SLUGS.has($page?.params?.slug) ? $page.params.slug : 'listings';
-  $: routeId = $page?.params?.id ?? ($page?.params?.slug && !VIEW_SLUGS.has($page.params.slug) ? $page.params.slug : '');
 
-  // Build a root "All" node with every item flattened
-  $: allItems = flattenItems(categorizedItems);
-  $: categoriesWithAll = { all: allItems, ...categorizedItems };
 
-  // For listings: resolve routeId as category (dot-separated raw key path or legacy leaf name)
-  $: resolvedCategory = (() => {
-    if (viewSlug !== 'listings' || !routeId) return null;
-    try {
-      const decoded = decodeURIComponentSafe(routeId);
-      if (decoded === 'All' || decoded === 'all') return null;
 
-      // Dot-separated path: walk the tree by raw keys (e.g. "enhancers.armor")
-      if (decoded.includes('.')) {
-        const keys = decoded.split('.');
-        let node = categorizedItems;
-        for (const key of keys) {
-          if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
-          if (!(key in node)) return null;
-          node = node[key];
-        }
-        return { path: keys, value: node };
-      }
-
-      // Direct raw key lookup at root level (exact match, case-sensitive)
-      if (decoded in categorizedItems) {
-        return { path: [decoded], value: categorizedItems[decoded] };
-      }
-
-      // Legacy: display name lookup (leaf name)
-      return findCategoryByName(categorizedItems, decoded);
-    } catch { return null; }
-  })();
-
-  // Detail view = listings + routeId present + NOT a category match
-  $: isDetailView = viewSlug === 'listings' && !!routeId && !resolvedCategory;
 
   // Save overview filters when entering detail view
-  let wasDetailView = false;
-  $: {
-    if (isDetailView && !wasDetailView) {
-      savedOverviewFilters = {
-        category: selectedCategory,
-        categoryRawPath: selectedCategoryRawPath,
-        items: selectedItems,
-        searchTerm,
-        planet: selectedPlanet,
-        limited: selectedLimited,
-        sex: selectedSex,
-        sidebarTab,
-        favFolderId: selectedFavFolderId,
-        favFolderFilter: favouriteFolderFilter,
-        tierMin, tierMax,
-        tirMin, tirMax,
-        qrMin, qrMax,
-      };
-    }
-    wasDetailView = isDetailView;
-  }
+  let wasDetailView = $state(false);
 
-  // Resolve the selected item for detail view
-  $: selectedItem = (() => {
-    if (!isDetailView) return null;
-    const key = routeId;
-    const all = allItems || [];
-    if (!Array.isArray(all) || all.length === 0) return null;
-    if (/^\d+$/.test(String(key))) {
-      const idNum = Number(key);
-      return all.find((it) => it?.i === idNum) || null;
-    }
-    try {
-      const name = decodeURIComponentSafe(key);
-      const found = all.find((it) => it?.n === name) || null;
-      if (found) return found;
-      const name2 = decodeURIComponent(key);
-      return all.find((it) => it?.n === name2) || null;
-    } catch {
-      return all.find((it) => it?.n === key) || null;
-    }
-  })();
 
-  // Gender from slim cache: undefined = non-gendered, null = untradeable clothing, 'Both'/'Male'/'Female'/'Neutral'
-  $: selectedItemGender = selectedItem?.g;
-  $: isGenderedDetail = GENDERED_TYPES.has(selectedItem?.t) && selectedItemGender !== 'Neutral' && selectedItemGender !== null;
 
   // Gender filter for price history (gendered items only)
-  let priceGender = 'Both';
+  let priceGender = $state('Both');
 
-  // Sync category selection from route
-  $: {
-    if (viewSlug === 'listings') {
-      if (!routeId || !resolvedCategory) {
-        if (!routeId) {
-          if (savedOverviewFilters) {
-            // Restore saved filters from before detail view
-            selectedCategory = savedOverviewFilters.category;
-            selectedCategoryRawPath = savedOverviewFilters.categoryRawPath;
-            selectedItems = savedOverviewFilters.items;
-            searchTerm = savedOverviewFilters.searchTerm;
-            selectedPlanet = savedOverviewFilters.planet;
-            selectedLimited = savedOverviewFilters.limited;
-            selectedSex = savedOverviewFilters.sex;
-            sidebarTab = savedOverviewFilters.sidebarTab;
-            selectedFavFolderId = savedOverviewFilters.favFolderId;
-            favouriteFolderFilter = savedOverviewFilters.favFolderFilter;
-            tierMin = savedOverviewFilters.tierMin;
-            tierMax = savedOverviewFilters.tierMax;
-            tirMin = savedOverviewFilters.tirMin;
-            tirMax = savedOverviewFilters.tirMax;
-            qrMin = savedOverviewFilters.qrMin;
-            qrMax = savedOverviewFilters.qrMax;
-            savedOverviewFilters = null;
-          } else {
-            selectedCategory = 'All';
-            selectedCategoryRawPath = null;
-            selectedItems = allItems;
-          }
-        }
-      } else {
-        // Matched a category by path (legacy URL)
-        const displayPath = resolvedCategory.path.map(formatCategoryName).join(' > ');
-        selectedCategory = displayPath;
-        selectedCategoryRawPath = resolvedCategory.path;
-        selectedItems = gatherItemsAtPath(categorizedItems, resolvedCategory.path);
-      }
-    }
-  }
 
   // View change handling — open/close panels based on slug
-  let currentViewSlug = null;
-  $: if (viewSlug !== currentViewSlug) {
-    currentViewSlug = viewSlug;
-    if (viewSlug === 'listings') {
-      showMyOrders.set(false);
-      showInventory.set(false);
-      showTrades.set(false);
-      if (showUserOrders) clearTradeList();
-      showUserOrders = false;
-    } else if (viewSlug === 'orders') {
-      const id = routeId;
-      const decodedName = id ? decodeURIComponentSafe(id) : null;
-      const currentUserName = $page?.data?.session?.user?.eu_name;
-      if (decodedName && decodedName !== currentUserName) {
-        openUserOrdersByName(decodedName);
-      } else {
-        switchFloatingTab('orders');
-      }
-    } else if (viewSlug === 'inventory') {
-      switchFloatingTab('inventory');
-    } else if (viewSlug === 'trades') {
-      switchFloatingTab('trades');
-    }
-  }
+  let currentViewSlug = $state(null);
 
   // Prefetch full item details for link building and MU rules (only when ID changes)
-  let lastDetailsItemId = null;
-  let detailsAbort = null;
-  $: {
-    const id = selectedItem?.i ?? null;
-    if (!id) {
-      // Clear when no item is selected
-      if (detailsAbort?.abort) detailsAbort.abort();
-      detailsAbort = null;
-      lastDetailsItemId = null;
-      if (selectedItemDetails !== null) {
-        selectedItemDetails = null;
-        console.log('[ExchangeBrowser] selectedItemDetails cleared (no selected item)');
-      }
-    } else if (id !== lastDetailsItemId) {
-      try {
-        // Cancel any in-flight request
-        if (detailsAbort?.abort) detailsAbort.abort();
-      } catch {}
-      // Fire new request for this ID only
-      lastDetailsItemId = id; // optimistic set to avoid duplicate dispatches
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      detailsAbort = controller;
-      (async () => {
-        try {
-          const it = await fetchItemDetails(id, selectedItem?.t);
-          // Ignore if another fetch superseded this
-          if (controller && controller.signal.aborted) return;
-          // Propagate material sub-type from slim item — the /items/ API returns
-          // Properties.Type as the top-level type ("Material"), losing the sub-type
-          if (it && selectedItem?.st) it.st = selectedItem.st;
-          selectedItemDetails = it || null;
-          console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
-        } catch (e) {
-          if (controller && controller.signal?.aborted) return;
-          selectedItemDetails = null;
-          console.log('[ExchangeBrowser] selectedItemDetails error:', e);
-        } finally {
-          if (detailsAbort === controller) detailsAbort = null;
-        }
-      })();
-    }
-  }
+  let lastDetailsItemId = $state(null);
+  let detailsAbort = $state(null);
 
-  // If a pending edit order exists and item details have loaded, open the edit dialog
-  $: if (pendingEditOrder && selectedItemDetails) {
-    const order = pendingEditOrder;
-    pendingEditOrder = null;
-    const type = order.type === 'BUY' ? 'buy' : 'sell';
-    orderDialogType = type;
-    setTimeout(() => {
-      // Build an order object for editing
-      const editOrder = {
-        Type: order.type === 'BUY' ? 'Buy' : 'Sell',
-        Item: {
-          Name: selectedItemDetails?.Name || order.details?.item_name || '',
-          Type: selectedItemDetails?.Properties?.Type || selectedItemDetails?.Type || null,
-          MaxTT: getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null,
-        },
-        Planet: order.planet || 'Calypso',
-        Quantity: order.quantity || 1,
-        MinQuantity: order.min_quantity ?? null,
-        CurrentTT: order.details?.CurrentTT ?? null,
-        Markup: Number(order.markup) || 0,
-        Metadata: { ...(order.details || {}) },
-        _orderId: order.id,  // track original order ID for PUT
-      };
-      // Clean up non-metadata fields from Metadata
-      delete editOrder.Metadata.item_name;
-      delete editOrder.Metadata.CurrentTT;
-      orderDialogRef?.initOrder(editOrder, type, 'edit');
-      showOrderDialog = true;
-    }, 0);
-  }
 
-  // Filter items based on search, L/UL, and Sex
-  $: {
-    const needle = searchTerm.toLowerCase();
-    const base = Array.isArray(selectedItems) ? selectedItems : allItems;
 
-    const appliesLUL = new Set([
-      "Weapon",
-      "Armor",
-      "WeaponAmplifier",
-      "WeaponVisionAttachment",
-      "Absorber",
-      "ArmorPlating",
-      "FinderAmplifier",
-      "MedicalTool",
-      "Scanner",
-      "Finder",
-      "Excavator",
-      "Refiner",
-      "TeleportationChip",
-      "MiscTool",
-      "Clothing",
-      "Blueprint",
-      "Vehicle",
-    ]);
 
-    filteredItems = base.filter((item) => {
-      if (item.ut) return false; // Hide untradeable items from exchange listings
-      const name = item?.n ?? "";
-
-      // Favourites folder filter
-      if (favouriteFolderFilter && !favouriteFolderFilter.has(item?.i)) return false;
-
-      // Search filter with scoring
-      if (needle) {
-        const score = scoreSearchResult(name, searchTerm);
-        if (score <= 0) return false;
-        item._searchScore = score;
-      } else {
-        item._searchScore = 0;
-      }
-
-      if (selectedLimited !== "all") {
-        const isL = hasItemTag(name, "L");
-        if (selectedLimited === "L" && !isL) return false;
-        if (selectedLimited === "UL" && isL) return false;
-      }
-
-      // Gender filter: only applies to Armor/Clothing
-      const genderRelevant = item.t === 'Armor' || item.t === 'Clothing';
-      if (genderRelevant && selectedSex === "male" && hasItemTag(name, "F")) return false;
-      if (genderRelevant && selectedSex === "female" && hasItemTag(name, "M")) return false;
-
-      // Planet filter: only show items with orders on the selected planet
-      if (selectedPlanet !== "All Planets") {
-        if (!item.pl || !item.pl.includes(selectedPlanet)) return false;
-      }
-
-      // Order side filter: only show items with orders of the selected type
-      if (selectedOrderSide === 'buy' && (!item.b || item.b === 0)) return false;
-      if (selectedOrderSide === 'sell' && (!item.s || item.s === 0)) return false;
-
-      return true;
-    });
-  }
-
-  // Map filtered items to FancyTable data
-  $: listTableData = (() => {
-    const rows = (filteredItems || []).map((item) => ({
-      _item: item,
-      name: item.n,
-      median: item.m ?? null,
-      percentile10: item.p ?? null,
-      wap: item.w ?? null,
-      orders: (item.s || 0) + (item.b || 0),
-      volume: (item.sv || 0) + (item.bv || 0),
-      lastUpdate: item.u ?? null,
-      _orderPriority: (item.b > 0 || item.s > 0) ? 1 : 0,
-    }));
-    // When searching, sort by match score first; otherwise by order priority + recency
-    const isSearching = !!searchTerm;
-    rows.sort((a, b) => {
-      if (isSearching) {
-        const sa = a._item._searchScore || 0;
-        const sb = b._item._searchScore || 0;
-        if (sa !== sb) return sb - sa;
-      }
-      if (a._orderPriority !== b._orderPriority) return b._orderPriority - a._orderPriority;
-      if (a._orderPriority > 0 && a.lastUpdate && b.lastUpdate) {
-        return new Date(b.lastUpdate).getTime() - new Date(a.lastUpdate).getTime();
-      }
-      return 0;
-    });
-    return rows;
-  })();
-
-  $: listDefaultSort = { column: smallViewport ? 'orders' : 'lastUpdate', order: 'DESC' };
 
   // Columns for the main list view FancyTable
   const listColumns = [
@@ -1109,10 +803,8 @@
     return formatPedValue(value);
   }
 
-  let detailMarkupItem = null;
-  let detailIsAbsoluteMarkup = true;
-  $: detailMarkupItem = selectedItemDetails || selectedItem;
-  $: detailIsAbsoluteMarkup = isAbsoluteMarkup(detailMarkupItem);
+  let detailMarkupItem = $state(null);
+  let detailIsAbsoluteMarkup = $state(true);
 
   function formatMarkupDisplay(value, absoluteMarkup) {
     return formatMarkupValue(value, absoluteMarkup);
@@ -1133,21 +825,9 @@
     return false;
   }
 
-  $: appliesLULForCurrent =
-    selectedCategory &&
-    selectedCategory !== "All" &&
-    pathAppliesLUL(selectedCategory);
 
-  let orderPlanet = "Calypso"; // persisted planet pref for order dialog
+  let orderPlanet = $state("Calypso"); // persisted planet pref for order dialog
 
-  // Derive available planets from items that have orders
-  $: availablePlanets = (() => {
-    const planets = new Set();
-    for (const item of allItems || []) {
-      if (item.pl) for (const p of item.pl) planets.add(p);
-    }
-    return PLANETS.filter(p => planets.has(p));
-  })();
 
   // Helpers
   function classifyFreshness(date) {
@@ -1236,38 +916,11 @@
       favourites.load(userId);
     } catch {}
   });
-  $: if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(
-        LS_KEY,
-        JSON.stringify({ planet: selectedPlanet, tableMode, lastUpdateFilter })
-      );
-      localStorage.setItem(
-        LS_ORDER_KEY,
-        JSON.stringify({ planet: orderPlanet })
-      );
-    } catch {}
-  }
 
-  // Load orders for detail view — only when we have a numeric item ID
-  $: if (isDetailView && selectedItem?.i) {
-    loadOrders(selectedItem.i, selectedPlanet);
-  }
 
-  // Reload price data when gender filter changes for gendered items
-  $: if (isDetailView && selectedItem?.i && isGenderedDetail) {
-    if (priceGender === 'Both') {
-      exchangePrices = null;
-      periodStats = null;
-      priceHistoryData = [];
-      lastGenderPriceKey = '';
-    } else {
-      reloadPricesForGender(selectedItem.i, priceGender);
-    }
-  }
 
-  let ordersLoading = false;
-  let ordersLoadedKey = "";
+  let ordersLoading = $state(false);
+  let ordersLoadedKey = $state("");
   async function loadOrders(numericId, planet) {
     if (!numericId || typeof numericId !== 'number') return;
     const key = `${numericId}::${planet}`;
@@ -1332,9 +985,6 @@
     } catch { /* non-fatal */ }
   }
 
-  $: if (isDetailView && selectedItem?.i && selectedPeriod) {
-    loadPeriodStats(selectedItem.i, selectedPeriod);
-  }
 
   // Load/reload price history when toggled on or period changes
   async function loadPriceHistory() {
@@ -1357,7 +1007,7 @@
     }
   }
 
-  let lastGenderPriceKey = '';
+  let lastGenderPriceKey = $state('');
   async function reloadPricesForGender(itemId, gender) {
     const key = `${itemId}::${gender}`;
     if (key === lastGenderPriceKey) return;
@@ -1383,23 +1033,12 @@
     }
   }
 
-  // Reload chart data when period changes while chart is visible
-  $: if (showPriceHistory && selectedItem?.i && selectedPeriod) {
-    loadPriceHistory();
-  }
 
-  $: currentUser = $page?.data?.session?.user ?? null;
-  $: needsAuth = !currentUser;
-  $: needsVerification = !!(currentUser && !currentUser.verified);
-  $: canPostOrders = !!(currentUser && currentUser.verified);
-  $: floatingPanelOpen = showUserOrders || (canPostOrders && ($showMyOrders || $showInventory || $showTrades));
-  $: if (!canPostOrders && $showTradeList) showTradeList.set(false);
 
   // Auth dialog state
-  let showAuthDialog = false;
+  let showAuthDialog = $state(false);
   function openAuthDialog() { showAuthDialog = true; }
   function closeAuthDialog() { showAuthDialog = false; }
-  $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
 
   function mapOrderRow(o, addCartCol = false) {
     const mine = currentUser && getSellerId(o) === currentUser.id;
@@ -1570,26 +1209,11 @@
       });
   }
 
-  let minTTFilter = 0;
+  let minTTFilter = $state(0);
 
-  // Explicit dependency list so Svelte re-runs when any filter variable changes
-  $: orderFilterDeps = [selectedPlanet, tierMin, tierMax, tirMin, tirMax, tirRangeMax,
-    lastUpdateFilter, minTTFilter, minConditionPct, qrMin, qrMax,
-    detailItemStackable, detailHasCondition, isTierableDetail, isLimitedDetail, isBlueprintDetail,
-    isGenderedDetail, priceGender];
 
-  $: filteredSellOrders = (orderFilterDeps, applyOrderFilters(sellOrders))
-    .sort((a, b) => (a.Price ?? Infinity) - (b.Price ?? Infinity));
 
-  $: filteredBuyOrders = (orderFilterDeps, applyOrderFilters(buyOrders))
-    .sort((a, b) => (b.Price ?? -Infinity) - (a.Price ?? -Infinity));
 
-  $: myBuyOrder = currentUser && (buyOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
-  $: mySellOrder = currentUser && (sellOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
-  // Only show "Edit" for fungible/stackable items (single order per side)
-  $: detailItemStackable = selectedItemDetails ? isItemStackable(selectedItemDetails) : false;
-  $: hasMyBuyOrder = detailItemStackable && !!myBuyOrder;
-  $: hasMySellOrder = detailItemStackable && !!mySellOrder;
 
   function openOrderDialog(type) {
     const item = selectedItemDetails;
@@ -1635,23 +1259,7 @@
       showOrderDialog = true;
     }, 0);
   }
-  // Compute whether the current dialog item is non-fungible (allows multiple orders)
-  $: orderDialogItemType = (() => {
-    const item = inlineEditItem || selectedItemDetails || selectedItem;
-    return item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
-  })();
-  $: orderDialogIsNonFungible = orderDialogItemType ? !isItemStackable({ Type: orderDialogItemType, Name: (inlineEditItem || selectedItemDetails || selectedItem)?.Name || (inlineEditItem || selectedItemDetails || selectedItem)?.n || '' }) : false;
 
-  // Resolve gender for OrderDialog: use slim cache for inline edits, selectedItemGender for detail view
-  $: orderDialogGender = (() => {
-    if (inlineEditItem) {
-      // Inline edit: look up gender from slim cache
-      const itemId = inlineEditItem?.ItemId ?? inlineEditItem?.Id ?? inlineEditItem?.i;
-      const slimItem = itemId ? (allItems || []).find(si => si?.i === itemId) : null;
-      return slimItem?.g;
-    }
-    return selectedItemGender;
-  })();
 
   function closeOrderDialog() {
     showOrderDialog = false;
@@ -1660,7 +1268,7 @@
     orderDialogExistingCount = 0;
   }
 
-  let submittingOrder = false; // Prevent double-click
+  let submittingOrder = $state(false); // Prevent double-click
 
   async function submitOrderPayload(order, closeAfter = true, turnstileToken = null) {
     if (submittingOrder) return false;
@@ -1795,8 +1403,603 @@
     }
   }
 
+
+  function makeUserColumn(header) {
+    return { key: 'seller_name', header, main: true, mobileWidth: '1fr', sortable: true, searchable: false,
+      formatter: (v, row) => {
+        const name = row?.SellerName ?? row?.seller ?? v ?? 'Unknown';
+        const userId = row?.user_id ?? '';
+        const safeName = name.replace(/"/g, '&quot;');
+        const href = `/market/exchange/orders/${encodeURIComponent(name)}`;
+        return `<a class="seller-link" href="${href}" data-seller-id="${userId}" data-seller-name="${safeName}">${name}</a>`;
+      }};
+  }
+
+
+
+  /** Handle clicks on Buy/Sell trade buttons and seller links in detail view */
+  function handleDetailClick(e) {
+    // Seller name click → open user orders panel
+    const sellerEl = e.target.closest('[data-seller-id]');
+    if (sellerEl) {
+      e.stopPropagation();
+      e.preventDefault();
+      const userId = sellerEl.dataset.sellerId;
+      const name = sellerEl.dataset.sellerName || 'Unknown';
+      if (userId) openUserOrdersPanel(userId, name);
+      return;
+    }
+
+    const buyBtn = e.target.closest('[data-trade-buy]');
+    const sellBtn = e.target.closest('[data-trade-sell]');
+    if (!buyBtn && !sellBtn) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (buyBtn) {
+      const orderId = parseInt(buyBtn.dataset.tradeBuy, 10);
+      const order = (sellOrders || []).find(o => (o?.id ?? o?.Id) === orderId);
+      if (order) {
+        if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
+          editOrderInline(order);
+        } else {
+          openQuickTrade(order, 'buy');
+        }
+      }
+    } else if (sellBtn) {
+      const orderId = parseInt(sellBtn.dataset.tradeSell, 10);
+      const order = (buyOrders || []).find(o => (o?.id ?? o?.Id) === orderId);
+      if (order) {
+        if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
+          editOrderInline(order);
+        } else {
+          openQuickTrade(order, 'sell');
+        }
+      }
+    }
+  }
+
+  function openQuickTrade(order, side, itemOverride = null) {
+    quickTradeOrder = order;
+    quickTradeSide = side;
+    quickTradeItem = itemOverride;
+    showQuickTrade = true;
+  }
+
+  function closeQuickTrade() {
+    showQuickTrade = false;
+    quickTradeOrder = null;
+    quickTradeItem = null;
+  }
+
+  async function handleQuickTradeConfirm(e) {
+    const { order, quantity, side } = e.detail;
+    const item = selectedItemDetails || selectedItem;
+    const itemName = order.details?.item_name || item?.Name || item?.n || 'Unknown';
+
+    try {
+      const res = await fetch('/api/market/trade-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_id: order.user_id,
+          planet: order.planet || null,
+          items: [{
+            offer_id: order.id,
+            item_id: order.item_id ?? item?.i ?? item?.Id,
+            item_name: itemName,
+            quantity: quantity || order.quantity || 1,
+            markup: order.markup || 0,
+            side: order.type || (side === 'buy' ? 'SELL' : 'BUY')
+          }]
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to create trade request');
+      }
+      closeQuickTrade();
+      addToast('Trade request created — a Discord thread will be opened shortly.', { type: 'success', duration: 8000 });
+      goto('/market/exchange/trades');
+    } catch (err) {
+      console.error('Trade request error:', err);
+      quickTradeRef?.setError(err.message || 'Failed to create trade request');
+    }
+  }
+
+  async function handleBulkSubmit(e) {
+    const { matches, planet } = e.detail;
+    const item = selectedItemDetails || selectedItem;
+    const itemName = item?.Name || item?.n || 'Unknown';
+    const itemId = item?.ItemId ?? item?.Id ?? item?.i;
+
+    let created = 0;
+    for (const match of matches) {
+      try {
+        const res = await fetch('/api/market/trade-requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_id: match.user_id,
+            planet: planet || match.planet || null,
+            items: [{
+              offer_id: match.id,
+              item_id: match.item_id ?? itemId,
+              item_name: match.details?.item_name || itemName,
+              quantity: match.fillQuantity || match.quantity || 1,
+              markup: match.markup || 0,
+              side: match.type || 'SELL'
+            }]
+          })
+        });
+        if (res.ok) created++;
+      } catch (err) {
+        console.error('Bulk trade request error:', err);
+      }
+    }
+    if (created > 0) {
+      showBulkTradeDialog = false;
+      addToast(`Created ${created} trade request${created !== 1 ? 's' : ''} — a Discord thread will be opened shortly.`, { type: 'success', duration: 8000 });
+      goto('/market/exchange/trades');
+    }
+  }
+
+
+  // Reset detail filters when item changes
+  let lastFilterItemId = $state(null);
+  // Sync tirMax when tirRangeMax changes (e.g. item details load and L/UL is determined)
+  let lastTirRangeMax = $state(200);
+
+
+  function handleToggleFavourite() {
+    if (currentItemId != null) toggleFavourite(currentItemId);
+  }
+
+  function handleFavouriteItemSelect(itemId) {
+    closeFloatingPanelIfOpen();
+    if (itemId != null) {
+      goto(`/market/exchange/listings/${itemId}`);
+    }
+  }
+  // Reactive discrepancy count: compare sell orders against inventory
+  let discrepancyCount = $derived(computeDiscrepancyCount($myOrders, $inventory));
+  // Current active sell order count for MassSellDialog pre-flight display
+  let currentSellCount = $derived(($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length);
+  // Current route params — [[slug]] is view type, [[id]] is content
+  let viewSlug = $derived(VIEW_SLUGS.has($page?.params?.slug) ? $page.params.slug : 'listings');
+  let routeId = $derived($page?.params?.id ?? ($page?.params?.slug && !VIEW_SLUGS.has($page.params.slug) ? $page.params.slug : ''));
+  // Build a root "All" node with every item flattened
+  let allItems = $derived(flattenItems(categorizedItems));
+  let categoriesWithAll = $derived({ all: allItems, ...categorizedItems });
+  // For listings: resolve routeId as category (dot-separated raw key path or legacy leaf name)
+  let resolvedCategory = $derived((() => {
+    if (viewSlug !== 'listings' || !routeId) return null;
+    try {
+      const decoded = decodeURIComponentSafe(routeId);
+      if (decoded === 'All' || decoded === 'all') return null;
+
+      // Dot-separated path: walk the tree by raw keys (e.g. "enhancers.armor")
+      if (decoded.includes('.')) {
+        const keys = decoded.split('.');
+        let node = categorizedItems;
+        for (const key of keys) {
+          if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+          if (!(key in node)) return null;
+          node = node[key];
+        }
+        return { path: keys, value: node };
+      }
+
+      // Direct raw key lookup at root level (exact match, case-sensitive)
+      if (decoded in categorizedItems) {
+        return { path: [decoded], value: categorizedItems[decoded] };
+      }
+
+      // Legacy: display name lookup (leaf name)
+      return findCategoryByName(categorizedItems, decoded);
+    } catch { return null; }
+  })());
+  // Detail view = listings + routeId present + NOT a category match
+  let isDetailView = $derived(viewSlug === 'listings' && !!routeId && !resolvedCategory);
+  // Sync category selection from route
+  run(() => {
+    if (viewSlug === 'listings') {
+      if (!routeId || !resolvedCategory) {
+        if (!routeId) {
+          if (savedOverviewFilters) {
+            // Restore saved filters from before detail view
+            selectedCategory = savedOverviewFilters.category;
+            selectedCategoryRawPath = savedOverviewFilters.categoryRawPath;
+            selectedItems = savedOverviewFilters.items;
+            searchTerm = savedOverviewFilters.searchTerm;
+            selectedPlanet = savedOverviewFilters.planet;
+            selectedLimited = savedOverviewFilters.limited;
+            selectedSex = savedOverviewFilters.sex;
+            sidebarTab = savedOverviewFilters.sidebarTab;
+            selectedFavFolderId = savedOverviewFilters.favFolderId;
+            favouriteFolderFilter = savedOverviewFilters.favFolderFilter;
+            tierMin = savedOverviewFilters.tierMin;
+            tierMax = savedOverviewFilters.tierMax;
+            tirMin = savedOverviewFilters.tirMin;
+            tirMax = savedOverviewFilters.tirMax;
+            qrMin = savedOverviewFilters.qrMin;
+            qrMax = savedOverviewFilters.qrMax;
+            savedOverviewFilters = null;
+          } else {
+            selectedCategory = 'All';
+            selectedCategoryRawPath = null;
+            selectedItems = allItems;
+          }
+        }
+      } else {
+        // Matched a category by path (legacy URL)
+        const displayPath = resolvedCategory.path.map(formatCategoryName).join(' > ');
+        selectedCategory = displayPath;
+        selectedCategoryRawPath = resolvedCategory.path;
+        selectedItems = gatherItemsAtPath(categorizedItems, resolvedCategory.path);
+      }
+    }
+  });
+  // Resolve the selected item for detail view
+  let selectedItem = $derived((() => {
+    if (!isDetailView) return null;
+    const key = routeId;
+    const all = allItems || [];
+    if (!Array.isArray(all) || all.length === 0) return null;
+    if (/^\d+$/.test(String(key))) {
+      const idNum = Number(key);
+      return all.find((it) => it?.i === idNum) || null;
+    }
+    try {
+      const name = decodeURIComponentSafe(key);
+      const found = all.find((it) => it?.n === name) || null;
+      if (found) return found;
+      const name2 = decodeURIComponent(key);
+      return all.find((it) => it?.n === name2) || null;
+    } catch {
+      return all.find((it) => it?.n === key) || null;
+    }
+  })());
+  run(() => {
+    const id = selectedItem?.i ?? null;
+    if (!id) {
+      // Clear when no item is selected
+      if (detailsAbort?.abort) detailsAbort.abort();
+      detailsAbort = null;
+      lastDetailsItemId = null;
+      if (selectedItemDetails !== null) {
+        selectedItemDetails = null;
+        console.log('[ExchangeBrowser] selectedItemDetails cleared (no selected item)');
+      }
+    } else if (id !== lastDetailsItemId) {
+      try {
+        // Cancel any in-flight request
+        if (detailsAbort?.abort) detailsAbort.abort();
+      } catch {}
+      // Fire new request for this ID only
+      lastDetailsItemId = id; // optimistic set to avoid duplicate dispatches
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      detailsAbort = controller;
+      (async () => {
+        try {
+          const it = await fetchItemDetails(id, selectedItem?.t);
+          // Ignore if another fetch superseded this
+          if (controller && controller.signal.aborted) return;
+          // Propagate material sub-type from slim item — the /items/ API returns
+          // Properties.Type as the top-level type ("Material"), losing the sub-type
+          if (it && selectedItem?.st) it.st = selectedItem.st;
+          selectedItemDetails = it || null;
+          console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
+        } catch (e) {
+          if (controller && controller.signal?.aborted) return;
+          selectedItemDetails = null;
+          console.log('[ExchangeBrowser] selectedItemDetails error:', e);
+        } finally {
+          if (detailsAbort === controller) detailsAbort = null;
+        }
+      })();
+    }
+  });
+  let isLimitedDetail = $derived(selectedItemDetails && isLimited(selectedItemDetails));
+  let tirRangeMax = $derived(isLimitedDetail ? 4000 : 200);
+  run(() => {
+    if (selectedItem?.i !== lastFilterItemId) {
+      lastFilterItemId = selectedItem?.i ?? null;
+      tierMin = 0; tierMax = 10;
+      tirMin = 0; tirMax = tirRangeMax;
+      qrMin = 0; qrMax = 100;
+      minConditionPct = 0;
+      minTTFilter = 0;
+      showFilterDialog = false;
+    }
+  });
+  run(() => {
+    if (tirRangeMax !== lastTirRangeMax) {
+      if (tirMax === lastTirRangeMax) tirMax = tirRangeMax;
+      lastTirRangeMax = tirRangeMax;
+    }
+  });
+  run(() => {
+    if (isDetailView && !wasDetailView) {
+      savedOverviewFilters = {
+        category: selectedCategory,
+        categoryRawPath: selectedCategoryRawPath,
+        items: selectedItems,
+        searchTerm,
+        planet: selectedPlanet,
+        limited: selectedLimited,
+        sex: selectedSex,
+        sidebarTab,
+        favFolderId: selectedFavFolderId,
+        favFolderFilter: favouriteFolderFilter,
+        tierMin, tierMax,
+        tirMin, tirMax,
+        qrMin, qrMax,
+      };
+    }
+    wasDetailView = isDetailView;
+  });
+  // Gender from slim cache: undefined = non-gendered, null = untradeable clothing, 'Both'/'Male'/'Female'/'Neutral'
+  let selectedItemGender = $derived(selectedItem?.g);
+  let isGenderedDetail = $derived(GENDERED_TYPES.has(selectedItem?.t) && selectedItemGender !== 'Neutral' && selectedItemGender !== null);
+  run(() => {
+    if (viewSlug !== currentViewSlug) {
+      currentViewSlug = viewSlug;
+      if (viewSlug === 'listings') {
+        showMyOrders.set(false);
+        showInventory.set(false);
+        showTrades.set(false);
+        if (showUserOrders) clearTradeList();
+        showUserOrders = false;
+      } else if (viewSlug === 'orders') {
+        const id = routeId;
+        const decodedName = id ? decodeURIComponentSafe(id) : null;
+        const currentUserName = $page?.data?.session?.user?.eu_name;
+        if (decodedName && decodedName !== currentUserName) {
+          openUserOrdersByName(decodedName);
+        } else {
+          switchFloatingTab('orders');
+        }
+      } else if (viewSlug === 'inventory') {
+        switchFloatingTab('inventory');
+      } else if (viewSlug === 'trades') {
+        switchFloatingTab('trades');
+      }
+    }
+  });
+  // If a pending edit order exists and item details have loaded, open the edit dialog
+  run(() => {
+    if (pendingEditOrder && selectedItemDetails) {
+      const order = pendingEditOrder;
+      pendingEditOrder = null;
+      const type = order.type === 'BUY' ? 'buy' : 'sell';
+      orderDialogType = type;
+      setTimeout(() => {
+        // Build an order object for editing
+        const editOrder = {
+          Type: order.type === 'BUY' ? 'Buy' : 'Sell',
+          Item: {
+            Name: selectedItemDetails?.Name || order.details?.item_name || '',
+            Type: selectedItemDetails?.Properties?.Type || selectedItemDetails?.Type || null,
+            MaxTT: getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null,
+          },
+          Planet: order.planet || 'Calypso',
+          Quantity: order.quantity || 1,
+          MinQuantity: order.min_quantity ?? null,
+          CurrentTT: order.details?.CurrentTT ?? null,
+          Markup: Number(order.markup) || 0,
+          Metadata: { ...(order.details || {}) },
+          _orderId: order.id,  // track original order ID for PUT
+        };
+        // Clean up non-metadata fields from Metadata
+        delete editOrder.Metadata.item_name;
+        delete editOrder.Metadata.CurrentTT;
+        orderDialogRef?.initOrder(editOrder, type, 'edit');
+        showOrderDialog = true;
+      }, 0);
+    }
+  });
+  // Filter items based on search, L/UL, and Sex
+  run(() => {
+    const needle = searchTerm.toLowerCase();
+    const base = Array.isArray(selectedItems) ? selectedItems : allItems;
+
+    const appliesLUL = new Set([
+      "Weapon",
+      "Armor",
+      "WeaponAmplifier",
+      "WeaponVisionAttachment",
+      "Absorber",
+      "ArmorPlating",
+      "FinderAmplifier",
+      "MedicalTool",
+      "Scanner",
+      "Finder",
+      "Excavator",
+      "Refiner",
+      "TeleportationChip",
+      "MiscTool",
+      "Clothing",
+      "Blueprint",
+      "Vehicle",
+    ]);
+
+    filteredItems = base.filter((item) => {
+      if (item.ut) return false; // Hide untradeable items from exchange listings
+      const name = item?.n ?? "";
+
+      // Favourites folder filter
+      if (favouriteFolderFilter && !favouriteFolderFilter.has(item?.i)) return false;
+
+      // Search filter with scoring
+      if (needle) {
+        const score = scoreSearchResult(name, searchTerm);
+        if (score <= 0) return false;
+        item._searchScore = score;
+      } else {
+        item._searchScore = 0;
+      }
+
+      if (selectedLimited !== "all") {
+        const isL = hasItemTag(name, "L");
+        if (selectedLimited === "L" && !isL) return false;
+        if (selectedLimited === "UL" && isL) return false;
+      }
+
+      // Gender filter: only applies to Armor/Clothing
+      const genderRelevant = item.t === 'Armor' || item.t === 'Clothing';
+      if (genderRelevant && selectedSex === "male" && hasItemTag(name, "F")) return false;
+      if (genderRelevant && selectedSex === "female" && hasItemTag(name, "M")) return false;
+
+      // Planet filter: only show items with orders on the selected planet
+      if (selectedPlanet !== "All Planets") {
+        if (!item.pl || !item.pl.includes(selectedPlanet)) return false;
+      }
+
+      // Order side filter: only show items with orders of the selected type
+      if (selectedOrderSide === 'buy' && (!item.b || item.b === 0)) return false;
+      if (selectedOrderSide === 'sell' && (!item.s || item.s === 0)) return false;
+
+      return true;
+    });
+  });
+  // Map filtered items to FancyTable data
+  let listTableData = $derived((() => {
+    const rows = (filteredItems || []).map((item) => ({
+      _item: item,
+      name: item.n,
+      median: item.m ?? null,
+      percentile10: item.p ?? null,
+      wap: item.w ?? null,
+      orders: (item.s || 0) + (item.b || 0),
+      volume: (item.sv || 0) + (item.bv || 0),
+      lastUpdate: item.u ?? null,
+      _orderPriority: (item.b > 0 || item.s > 0) ? 1 : 0,
+    }));
+    // When searching, sort by match score first; otherwise by order priority + recency
+    const isSearching = !!searchTerm;
+    rows.sort((a, b) => {
+      if (isSearching) {
+        const sa = a._item._searchScore || 0;
+        const sb = b._item._searchScore || 0;
+        if (sa !== sb) return sb - sa;
+      }
+      if (a._orderPriority !== b._orderPriority) return b._orderPriority - a._orderPriority;
+      if (a._orderPriority > 0 && a.lastUpdate && b.lastUpdate) {
+        return new Date(b.lastUpdate).getTime() - new Date(a.lastUpdate).getTime();
+      }
+      return 0;
+    });
+    return rows;
+  })());
+  let listDefaultSort = $derived({ column: smallViewport ? 'orders' : 'lastUpdate', order: 'DESC' });
+  run(() => {
+    detailMarkupItem = selectedItemDetails || selectedItem;
+  });
+  run(() => {
+    detailIsAbsoluteMarkup = isAbsoluteMarkup(detailMarkupItem);
+  });
+  let appliesLULForCurrent =
+    $derived(selectedCategory &&
+    selectedCategory !== "All" &&
+    pathAppliesLUL(selectedCategory));
+  // Derive available planets from items that have orders
+  let availablePlanets = $derived((() => {
+    const planets = new Set();
+    for (const item of allItems || []) {
+      if (item.pl) for (const p of item.pl) planets.add(p);
+    }
+    return PLANETS.filter(p => planets.has(p));
+  })());
+  run(() => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          LS_KEY,
+          JSON.stringify({ planet: selectedPlanet, tableMode, lastUpdateFilter })
+        );
+        localStorage.setItem(
+          LS_ORDER_KEY,
+          JSON.stringify({ planet: orderPlanet })
+        );
+      } catch {}
+    }
+  });
+  // Load orders for detail view — only when we have a numeric item ID
+  run(() => {
+    if (isDetailView && selectedItem?.i) {
+      loadOrders(selectedItem.i, selectedPlanet);
+    }
+  });
+  // Reload price data when gender filter changes for gendered items
+  run(() => {
+    if (isDetailView && selectedItem?.i && isGenderedDetail) {
+      if (priceGender === 'Both') {
+        exchangePrices = null;
+        periodStats = null;
+        priceHistoryData = [];
+        lastGenderPriceKey = '';
+      } else {
+        reloadPricesForGender(selectedItem.i, priceGender);
+      }
+    }
+  });
+  run(() => {
+    if (isDetailView && selectedItem?.i && selectedPeriod) {
+      loadPeriodStats(selectedItem.i, selectedPeriod);
+    }
+  });
+  // Reload chart data when period changes while chart is visible
+  run(() => {
+    if (showPriceHistory && selectedItem?.i && selectedPeriod) {
+      loadPriceHistory();
+    }
+  });
+  let currentUser = $derived($page?.data?.session?.user ?? null);
+  let needsAuth = $derived(!currentUser);
+  let needsVerification = $derived(!!(currentUser && !currentUser.verified));
+  let canPostOrders = $derived(!!(currentUser && currentUser.verified));
+  let floatingPanelOpen = $derived(showUserOrders || (canPostOrders && ($showMyOrders || $showInventory || $showTrades)));
+  run(() => {
+    if (!canPostOrders && $showTradeList) showTradeList.set(false);
+  });
+  let loginUrl = $derived(`/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
+  // Only show "Edit" for fungible/stackable items (single order per side)
+  let detailItemStackable = $derived(selectedItemDetails ? isItemStackable(selectedItemDetails) : false);
+  let detailHasCondition = $derived(selectedItemDetails && itemHasCondition(selectedItemDetails) && !detailItemStackable && isLimitedDetail);
+  let isTierableDetail = $derived(selectedItemDetails && isItemTierable(selectedItemDetails));
+  let isBlueprintDetail = $derived(selectedItemDetails && isBlueprint(selectedItemDetails));
+  // Explicit dependency list so Svelte re-runs when any filter variable changes
+  let orderFilterDeps = $derived([selectedPlanet, tierMin, tierMax, tirMin, tirMax, tirRangeMax,
+    lastUpdateFilter, minTTFilter, minConditionPct, qrMin, qrMax,
+    detailItemStackable, detailHasCondition, isTierableDetail, isLimitedDetail, isBlueprintDetail,
+    isGenderedDetail, priceGender]);
+  let filteredSellOrders = $derived((orderFilterDeps, applyOrderFilters(sellOrders))
+    .sort((a, b) => (a.Price ?? Infinity) - (b.Price ?? Infinity)));
+  let filteredBuyOrders = $derived((orderFilterDeps, applyOrderFilters(buyOrders))
+    .sort((a, b) => (b.Price ?? -Infinity) - (a.Price ?? -Infinity)));
+  let myBuyOrder = $derived(currentUser && (buyOrders || []).find(o => getSellerId(o) === currentUser.id) || null);
+  let mySellOrder = $derived(currentUser && (sellOrders || []).find(o => getSellerId(o) === currentUser.id) || null);
+  let hasMyBuyOrder = $derived(detailItemStackable && !!myBuyOrder);
+  let hasMySellOrder = $derived(detailItemStackable && !!mySellOrder);
+  // Compute whether the current dialog item is non-fungible (allows multiple orders)
+  let orderDialogItemType = $derived((() => {
+    const item = inlineEditItem || selectedItemDetails || selectedItem;
+    return item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
+  })());
+  let orderDialogIsNonFungible = $derived(orderDialogItemType ? !isItemStackable({ Type: orderDialogItemType, Name: (inlineEditItem || selectedItemDetails || selectedItem)?.Name || (inlineEditItem || selectedItemDetails || selectedItem)?.n || '' }) : false);
+  // Resolve gender for OrderDialog: use slim cache for inline edits, selectedItemGender for detail view
+  let orderDialogGender = $derived((() => {
+    if (inlineEditItem) {
+      // Inline edit: look up gender from slim cache
+      const itemId = inlineEditItem?.ItemId ?? inlineEditItem?.Id ?? inlineEditItem?.i;
+      const slimItem = itemId ? (allItems || []).find(si => si?.i === itemId) : null;
+      return slimItem?.g;
+    }
+    return selectedItemGender;
+  })());
   // FancyTable columns for detail view buy/sell tables
-  $: detailColumns = (() => {
+  let detailColumns = $derived((() => {
     const type = selectedItemDetails?.Properties?.Type || selectedItem?.t || null;
     const showTier = tierableTypes.has(type);
     const isAbsMu = detailIsAbsoluteMarkup;
@@ -1938,21 +2141,9 @@
       formatter: (v, row) => formatLastUpdateDHm(getUpdatedAt(row) || v) });
 
     return cols;
-  })();
-
-  function makeUserColumn(header) {
-    return { key: 'seller_name', header, main: true, mobileWidth: '1fr', sortable: true, searchable: false,
-      formatter: (v, row) => {
-        const name = row?.SellerName ?? row?.seller ?? v ?? 'Unknown';
-        const userId = row?.user_id ?? '';
-        const safeName = name.replace(/"/g, '&quot;');
-        const href = `/market/exchange/orders/${encodeURIComponent(name)}`;
-        return `<a class="seller-link" href="${href}" data-seller-id="${userId}" data-seller-name="${safeName}">${name}</a>`;
-      }};
-  }
-
+  })());
   // Sell orders: user column = "Seller", action = "Buy" (or "Edit" for own orders)
-  $: sellDetailColumns = (() => {
+  let sellDetailColumns = $derived((() => {
     const cols = detailColumns.map(c => ({...c}));
     // For stackable items, add Min Qty column after Qty
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
@@ -1978,10 +2169,9 @@
       } : () => ''
     });
     return cols;
-  })();
-
+  })());
   // Buy orders: user column = "Buyer", action = "Sell" (or "Edit" for own orders)
-  $: buyDetailColumns = (() => {
+  let buyDetailColumns = $derived((() => {
     const cols = detailColumns.map(c => ({...c}));
     // Buy orders specify minimum requirements for properties
     for (const col of cols) {
@@ -2013,179 +2203,16 @@
       } : () => ''
     });
     return cols;
-  })();
-
-  /** Handle clicks on Buy/Sell trade buttons and seller links in detail view */
-  function handleDetailClick(e) {
-    // Seller name click → open user orders panel
-    const sellerEl = e.target.closest('[data-seller-id]');
-    if (sellerEl) {
-      e.stopPropagation();
-      e.preventDefault();
-      const userId = sellerEl.dataset.sellerId;
-      const name = sellerEl.dataset.sellerName || 'Unknown';
-      if (userId) openUserOrdersPanel(userId, name);
-      return;
-    }
-
-    const buyBtn = e.target.closest('[data-trade-buy]');
-    const sellBtn = e.target.closest('[data-trade-sell]');
-    if (!buyBtn && !sellBtn) return;
-    e.stopPropagation();
-    e.preventDefault();
-
-    if (buyBtn) {
-      const orderId = parseInt(buyBtn.dataset.tradeBuy, 10);
-      const order = (sellOrders || []).find(o => (o?.id ?? o?.Id) === orderId);
-      if (order) {
-        if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
-          editOrderInline(order);
-        } else {
-          openQuickTrade(order, 'buy');
-        }
-      }
-    } else if (sellBtn) {
-      const orderId = parseInt(sellBtn.dataset.tradeSell, 10);
-      const order = (buyOrders || []).find(o => (o?.id ?? o?.Id) === orderId);
-      if (order) {
-        if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
-          editOrderInline(order);
-        } else {
-          openQuickTrade(order, 'sell');
-        }
-      }
-    }
-  }
-
-  function openQuickTrade(order, side, itemOverride = null) {
-    quickTradeOrder = order;
-    quickTradeSide = side;
-    quickTradeItem = itemOverride;
-    showQuickTrade = true;
-  }
-
-  function closeQuickTrade() {
-    showQuickTrade = false;
-    quickTradeOrder = null;
-    quickTradeItem = null;
-  }
-
-  async function handleQuickTradeConfirm(e) {
-    const { order, quantity, side } = e.detail;
-    const item = selectedItemDetails || selectedItem;
-    const itemName = order.details?.item_name || item?.Name || item?.n || 'Unknown';
-
-    try {
-      const res = await fetch('/api/market/trade-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_id: order.user_id,
-          planet: order.planet || null,
-          items: [{
-            offer_id: order.id,
-            item_id: order.item_id ?? item?.i ?? item?.Id,
-            item_name: itemName,
-            quantity: quantity || order.quantity || 1,
-            markup: order.markup || 0,
-            side: order.type || (side === 'buy' ? 'SELL' : 'BUY')
-          }]
-        })
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to create trade request');
-      }
-      closeQuickTrade();
-      addToast('Trade request created — a Discord thread will be opened shortly.', { type: 'success', duration: 8000 });
-      goto('/market/exchange/trades');
-    } catch (err) {
-      console.error('Trade request error:', err);
-      quickTradeRef?.setError(err.message || 'Failed to create trade request');
-    }
-  }
-
-  async function handleBulkSubmit(e) {
-    const { matches, planet } = e.detail;
-    const item = selectedItemDetails || selectedItem;
-    const itemName = item?.Name || item?.n || 'Unknown';
-    const itemId = item?.ItemId ?? item?.Id ?? item?.i;
-
-    let created = 0;
-    for (const match of matches) {
-      try {
-        const res = await fetch('/api/market/trade-requests', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            target_id: match.user_id,
-            planet: planet || match.planet || null,
-            items: [{
-              offer_id: match.id,
-              item_id: match.item_id ?? itemId,
-              item_name: match.details?.item_name || itemName,
-              quantity: match.fillQuantity || match.quantity || 1,
-              markup: match.markup || 0,
-              side: match.type || 'SELL'
-            }]
-          })
-        });
-        if (res.ok) created++;
-      } catch (err) {
-        console.error('Bulk trade request error:', err);
-      }
-    }
-    if (created > 0) {
-      showBulkTradeDialog = false;
-      addToast(`Created ${created} trade request${created !== 1 ? 's' : ''} — a Discord thread will be opened shortly.`, { type: 'success', duration: 8000 });
-      goto('/market/exchange/trades');
-    }
-  }
-
-  $: isBlueprintDetail = selectedItemDetails && isBlueprint(selectedItemDetails);
-  $: isTierableDetail = selectedItemDetails && isItemTierable(selectedItemDetails);
-  $: isLimitedDetail = selectedItemDetails && isLimited(selectedItemDetails);
-  $: detailHasCondition = selectedItemDetails && itemHasCondition(selectedItemDetails) && !detailItemStackable && isLimitedDetail;
-  $: tirRangeMax = isLimitedDetail ? 4000 : 200;
-  $: hasDetailFilters = isTierableDetail || (isBlueprintDetail && !isLimitedDetail) || detailItemStackable || detailHasCondition;
-  $: hasActiveDetailFilters = (isTierableDetail && !isLimitedDetail && (tierMin > 0 || tierMax < 10))
+  })());
+  let hasDetailFilters = $derived(isTierableDetail || (isBlueprintDetail && !isLimitedDetail) || detailItemStackable || detailHasCondition);
+  let hasActiveDetailFilters = $derived((isTierableDetail && !isLimitedDetail && (tierMin > 0 || tierMax < 10))
     || (isTierableDetail && (tirMin > 0 || tirMax < tirRangeMax))
     || (isBlueprintDetail && !isLimitedDetail && (qrMin > 0 || qrMax < 100))
     || (detailItemStackable && minTTFilter > 0)
-    || (detailHasCondition && minConditionPct > 0);
-
-  // Reset detail filters when item changes
-  let lastFilterItemId = null;
-  $: if (selectedItem?.i !== lastFilterItemId) {
-    lastFilterItemId = selectedItem?.i ?? null;
-    tierMin = 0; tierMax = 10;
-    tirMin = 0; tirMax = tirRangeMax;
-    qrMin = 0; qrMax = 100;
-    minConditionPct = 0;
-    minTTFilter = 0;
-    showFilterDialog = false;
-  }
-  // Sync tirMax when tirRangeMax changes (e.g. item details load and L/UL is determined)
-  let lastTirRangeMax = 200;
-  $: if (tirRangeMax !== lastTirRangeMax) {
-    if (tirMax === lastTirRangeMax) tirMax = tirRangeMax;
-    lastTirRangeMax = tirRangeMax;
-  }
-
+    || (detailHasCondition && minConditionPct > 0));
   // Favourites
-  $: currentItemId = selectedItem?.i ?? null;
-  $: isCurrentFavourited = currentItemId != null && $favourites && isFavourite(currentItemId);
-
-  function handleToggleFavourite() {
-    if (currentItemId != null) toggleFavourite(currentItemId);
-  }
-
-  function handleFavouriteItemSelect(itemId) {
-    closeFloatingPanelIfOpen();
-    if (itemId != null) {
-      goto(`/market/exchange/listings/${itemId}`);
-    }
-  }
+  let currentItemId = $derived(selectedItem?.i ?? null);
+  let isCurrentFavourited = $derived(currentItemId != null && $favourites && isFavourite(currentItemId));
 </script>
 
 <svelte:head>
@@ -2194,12 +2221,12 @@
 
 <div class="exchange-browser">
   <div class="content">
-    <div class="sidebar-overlay" role="presentation" class:visible={mobileSidebarOpen} on:click={() => mobileSidebarOpen = false}></div>
+    <div class="sidebar-overlay" role="presentation" class:visible={mobileSidebarOpen} onclick={() => mobileSidebarOpen = false}></div>
     <div class="sidebar" class:mobile-open={mobileSidebarOpen}>
       <h1 class="sidebar-title">Exchange <span class="beta-badge">BETA</span></h1>
       <div class="sidebar-tabs">
-        <button class="sidebar-tab" class:active={sidebarTab === 'categories'} on:click={() => { sidebarTab = 'categories'; favouriteFolderFilter = null; selectedFavFolderId = null; }}>Categories</button>
-        <button class="sidebar-tab" class:active={sidebarTab === 'favourites'} on:click={() => sidebarTab = 'favourites'}>Favourites</button>
+        <button class="sidebar-tab" class:active={sidebarTab === 'categories'} onclick={() => { sidebarTab = 'categories'; favouriteFolderFilter = null; selectedFavFolderId = null; }}>Categories</button>
+        <button class="sidebar-tab" class:active={sidebarTab === 'favourites'} onclick={() => sidebarTab = 'favourites'}>Favourites</button>
       </div>
       {#if sidebarTab === 'categories'}
         <div class="category-scroll">
@@ -2212,7 +2239,7 @@
       {:else}
         <div class="favourites-header">
           <h3>Favourites</h3>
-          <button class="new-folder-header-btn" on:click={() => createFolder('New Folder')}>+ Folder</button>
+          <button class="new-folder-header-btn" onclick={() => createFolder('New Folder')}>+ Folder</button>
         </div>
         <div class="category-scroll">
           <FavouritesTree
@@ -2234,7 +2261,7 @@
       {:else if !isDetailView}
         <div class="filters">
           <div class="filter-search-row">
-            <button class="mobile-category-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
+            <button class="mobile-category-toggle" onclick={() => mobileSidebarOpen = !mobileSidebarOpen}>
               Categories
             </button>
             <input
@@ -2267,24 +2294,24 @@
           </div>
           <div class="filter-actions">
             <div class="order-side-toggle">
-              <button class="order-side-btn" class:active={selectedOrderSide === 'all'} on:click={() => selectedOrderSide = 'all'}>All</button>
-              <button class="order-side-btn" class:active={selectedOrderSide === 'sell'} on:click={() => selectedOrderSide = 'sell'}>Sell</button>
-              <button class="order-side-btn" class:active={selectedOrderSide === 'buy'} on:click={() => selectedOrderSide = 'buy'}>Buy</button>
+              <button class="order-side-btn" class:active={selectedOrderSide === 'all'} onclick={() => selectedOrderSide = 'all'}>All</button>
+              <button class="order-side-btn" class:active={selectedOrderSide === 'sell'} onclick={() => selectedOrderSide = 'sell'}>Sell</button>
+              <button class="order-side-btn" class:active={selectedOrderSide === 'buy'} onclick={() => selectedOrderSide = 'buy'}>Buy</button>
             </div>
             <div class="actions-right">
             {#if canPostOrders}
-              <button class="action-btn accent-btn" title="My Orders" on:click={() => {
+              <button class="action-btn accent-btn" title="My Orders" onclick={() => {
                 const userName = currentUser?.eu_name;
                 goto(userName ? `/market/exchange/orders/${encodeURIComponentSafe(userName)}` : '/market/exchange/orders');
               }}>My Orders</button>
-              <button class="action-btn accent-btn" title="Inventory" on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
+              <button class="action-btn accent-btn" title="Inventory" onclick={() => goto('/market/exchange/inventory')}>Inventory</button>
               {#if $tradeList.length > 0}
-                <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { closeFloatingPanel(); showTradeList.set(true); }}>
+                <button class="action-btn trade-list-btn" title="Trade List" onclick={() => { closeFloatingPanel(); showTradeList.set(true); }}>
                   Trade List ({$tradeList.length})
                 </button>
               {/if}
             {:else}
-              <button class="auth-hint-btn" on:click={openAuthDialog}>
+              <button class="auth-hint-btn" onclick={openAuthDialog}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -2345,13 +2372,13 @@
         {/if}
       {:else}
         <div class="filters filters-detail">
-          <button class="mobile-category-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
+          <button class="mobile-category-toggle" onclick={() => mobileSidebarOpen = !mobileSidebarOpen}>
             Categories
           </button>
           <select
             class="filter-select"
             bind:value={selectedPlanet}
-            on:change={() => { ordersLoadedKey = ''; if (selectedItem?.i) loadOrders(selectedItem.i, selectedPlanet); }}
+            onchange={() => { ordersLoadedKey = ''; if (selectedItem?.i) loadOrders(selectedItem.i, selectedPlanet); }}
           >
             <option>All Planets</option>
             {#each PLANETS as p}
@@ -2376,7 +2403,7 @@
             {:else if canPostOrders}
               <button
                 class="action-btn buy-btn"
-                on:click={() => openOrderDialog("buy")}
+                onclick={() => openOrderDialog("buy")}
                 disabled={!selectedItemDetails}
                 title={hasMyBuyOrder
                   ? "Edit your existing buy order"
@@ -2384,7 +2411,7 @@
               >
               <button
                 class="action-btn sell-btn"
-                on:click={() => openOrderDialog("sell")}
+                onclick={() => openOrderDialog("sell")}
                 disabled={!selectedItemDetails}
                 title={hasMySellOrder
                   ? "Edit your existing sell order"
@@ -2393,18 +2420,18 @@
               {#if currentUser?.grants?.includes('market.bulk') && selectedItemDetails}
                 <button
                   class="action-btn bulk-trade-btn"
-                  on:click={() => showBulkTradeDialog = true}
+                  onclick={() => showBulkTradeDialog = true}
                   title="Open bulk trade matching"
                 >Bulk Trade</button>
               {/if}
               {#if $tradeList.length > 0}
                 <span class="actions-divider"></span>
-                <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { showMyOrders.set(false); showInventory.set(false); showTradeList.set(true); }}>
+                <button class="action-btn trade-list-btn" title="Trade List" onclick={() => { showMyOrders.set(false); showInventory.set(false); showTradeList.set(true); }}>
                   Trade List ({$tradeList.length})
                 </button>
               {/if}
             {:else}
-              <button class="auth-hint-btn" on:click={openAuthDialog}>
+              <button class="auth-hint-btn" onclick={openAuthDialog}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -2417,7 +2444,7 @@
         <div class="detail-title">
           <button
             class="action-btn back-btn"
-            on:click={handleBackToOverview}
+            onclick={handleBackToOverview}
             title="Back to list"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2428,7 +2455,7 @@
           <button
             class="favourite-star"
             class:active={isCurrentFavourited}
-            on:click={handleToggleFavourite}
+            onclick={handleToggleFavourite}
             title={isCurrentFavourited ? 'Remove from favourites' : 'Add to favourites'}
           >{isCurrentFavourited ? '\u2605' : '\u2606'}</button>
           <a
@@ -2448,7 +2475,7 @@
               <button
                 class="detail-filter-btn"
                 class:has-active={hasActiveDetailFilters}
-                on:click={() => showFilterDialog = !showFilterDialog}
+                onclick={() => showFilterDialog = !showFilterDialog}
                 title="Filters"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2469,24 +2496,24 @@
               <button
                 class="action-btn chart-toggle-btn"
                 class:active={showPriceHistory}
-                on:click={togglePriceHistory}
+                onclick={togglePriceHistory}
                 title={showPriceHistory ? "Show order book" : "Show price history"}
               >{showPriceHistory ? "Orders" : "Chart"}</button>
             </div>
           </div>
-          <div class="detail-filters" role="presentation" class:open={showFilterDialog} on:click|self={() => showFilterDialog = false}>
+          <div class="detail-filters" role="presentation" class:open={showFilterDialog} onclick={self(() => showFilterDialog = false)}>
             <div class="detail-filters-content">
               <div class="detail-filters-header">
                 <span>Filters</span>
-                <button class="detail-filters-close" on:click={() => showFilterDialog = false}>&times;</button>
+                <button class="detail-filters-close" onclick={() => showFilterDialog = false}>&times;</button>
               </div>
               {#if isGenderedDetail}
                 <div class="dialog-gender-toggle">
                   <span class="dialog-filter-label">Gender</span>
                   <div class="gender-toggle">
-                    <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
-                    <button class="gender-btn" class:active={priceGender === 'Both'} on:click={() => priceGender = 'Both'}>M+F</button>
-                    <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
+                    <button class="gender-btn" class:active={priceGender === 'Male'} onclick={() => priceGender = 'Male'}>M</button>
+                    <button class="gender-btn" class:active={priceGender === 'Both'} onclick={() => priceGender = 'Both'}>M+F</button>
+                    <button class="gender-btn" class:active={priceGender === 'Female'} onclick={() => priceGender = 'Female'}>F</button>
                   </div>
                 </div>
               {/if}
@@ -2532,9 +2559,9 @@
           <div class="detail-title-right">
             {#if isGenderedDetail}
               <div class="gender-toggle desktop-only-gender">
-                <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
-                <button class="gender-btn" class:active={priceGender === 'Both'} on:click={() => priceGender = 'Both'}>M+F</button>
-                <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
+                <button class="gender-btn" class:active={priceGender === 'Male'} onclick={() => priceGender = 'Male'}>M</button>
+                <button class="gender-btn" class:active={priceGender === 'Both'} onclick={() => priceGender = 'Both'}>M+F</button>
+                <button class="gender-btn" class:active={priceGender === 'Female'} onclick={() => priceGender = 'Female'}>F</button>
               </div>
             {/if}
             <div class="metric">
@@ -2581,7 +2608,7 @@
               <button
                 class="action-btn chart-toggle-btn"
                 class:active={showPriceHistory}
-                on:click={togglePriceHistory}
+                onclick={togglePriceHistory}
                 title={showPriceHistory ? "Show order book" : "Show price history"}
               >{showPriceHistory ? "Orders" : "Chart"}</button>
             </div>
@@ -2599,7 +2626,7 @@
             />
           </div>
         {:else}
-          <div class="detail-wrapper" class:single-table={tableMode !== 'both'} role="presentation" on:click|capture={handleDetailClick}>
+          <div class="detail-wrapper" class:single-table={tableMode !== 'both'} role="presentation" onclickcapture={handleDetailClick}>
             {#if tableMode !== "buy"}
               <div class="detail-table sell">
                 <span class="table-label sell">Sell{ordersLoading ? "..." : ""}</span>
@@ -2680,19 +2707,19 @@
       <div class="floating-panel">
         {#if showUserOrders}
           <div class="panel-title-bar">
-            <button class="back-btn" on:click={closeUserOrdersPanel}>Back</button>
+            <button class="back-btn" onclick={closeUserOrdersPanel}>Back</button>
             <span class="panel-title-text">{userOrdersTarget?.name || 'User'}</span>
             <div class="panel-header-actions">
               <div class="order-side-toggle">
-                <button class="order-side-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
-                <button class="order-side-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
-                <button class="order-side-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
+                <button class="order-side-btn" class:active={panelSideFilter === 'all'} onclick={() => panelSideFilter = 'all'}>All</button>
+                <button class="order-side-btn" class:active={panelSideFilter === 'SELL'} onclick={() => panelSideFilter = 'SELL'}>Sell</button>
+                <button class="order-side-btn" class:active={panelSideFilter === 'BUY'} onclick={() => panelSideFilter = 'BUY'}>Buy</button>
               </div>
               {#if canPostOrders}
                 <button
                   class="panel-action-btn"
                   class:accent={$tradeList.length > 0}
-                  on:click={() => {
+                  onclick={() => {
                     if ($tradeList.length > 0) {
                       showTradeList.set(!$showTradeList);
                     } else {
@@ -2712,7 +2739,7 @@
               <div class="trade-list-empty-state">
                 <p>Your trade list is empty.</p>
                 <p class="trade-list-hint">Click <strong>Buy</strong> or <strong>Sell</strong> on any order to add items. This lets you buy multiple items from this user in a single trade request.</p>
-                <button class="trade-list-back-btn" on:click={() => showTradeList.set(false)}>Back to Orders</button>
+                <button class="trade-list-back-btn" onclick={() => showTradeList.set(false)}>Back to Orders</button>
               </div>
             {/if}
           {:else}
@@ -2733,23 +2760,23 @@
           {/if}
         {:else}
           <div class="panel-title-bar">
-            <button class="back-btn" on:click={closeFloatingPanel}>Back</button>
+            <button class="back-btn" onclick={closeFloatingPanel}>Back</button>
             <div class="panel-tabs">
-              <button class="panel-tab" class:active={$showMyOrders} on:click={() => {
+              <button class="panel-tab" class:active={$showMyOrders} onclick={() => {
                 const userName = currentUser?.eu_name;
                 goto(userName ? `/market/exchange/orders/${encodeURIComponentSafe(userName)}` : '/market/exchange/orders');
               }}>My Orders</button>
-              <button class="panel-tab" class:active={$showInventory} on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
-              <button class="panel-tab" class:active={$showTrades} on:click={() => goto('/market/exchange/trades')}>Trades</button>
+              <button class="panel-tab" class:active={$showInventory} onclick={() => goto('/market/exchange/inventory')}>Inventory</button>
+              <button class="panel-tab" class:active={$showTrades} onclick={() => goto('/market/exchange/trades')}>Trades</button>
             </div>
             <div class="panel-header-actions">
               {#if $showMyOrders}
                 <div class="order-side-toggle">
-                  <button class="order-side-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
-                  <button class="order-side-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
-                  <button class="order-side-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
+                  <button class="order-side-btn" class:active={panelSideFilter === 'all'} onclick={() => panelSideFilter = 'all'}>All</button>
+                  <button class="order-side-btn" class:active={panelSideFilter === 'SELL'} onclick={() => panelSideFilter = 'SELL'}>Sell</button>
+                  <button class="order-side-btn" class:active={panelSideFilter === 'BUY'} onclick={() => panelSideFilter = 'BUY'}>Buy</button>
                 </div>
-                <button class="panel-action-btn accent" disabled={bumpingAll || bumpCooldownRemaining > 0} on:click={() => {
+                <button class="panel-action-btn accent" disabled={bumpingAll || bumpCooldownRemaining > 0} onclick={() => {
                   async function doBump(token) {
                     bumpingAll = true;
                     const cooldown = await myOrdersRef?.bumpAll(token);
@@ -2764,13 +2791,13 @@
                 }}>{bumpingAll ? 'Bumping...' : bumpCooldownRemaining > 0 ? `Bump All (${formatCooldown(bumpCooldownRemaining)})` : 'Bump All'}</button>
               {/if}
               {#if $showInventory}
-                <button class="panel-action-btn" class:mass-sell={!massSellMode} class:mass-sell-cancel={massSellMode} on:click={toggleMassSellMode}>{massSellMode ? 'Cancel' : 'Mass Sell'}</button>
-                <button class="panel-action-btn accent" on:click={() => { showImportDialog = true; }}>Import</button>
+                <button class="panel-action-btn" class:mass-sell={!massSellMode} class:mass-sell-cancel={massSellMode} onclick={toggleMassSellMode}>{massSellMode ? 'Cancel' : 'Mass Sell'}</button>
+                <button class="panel-action-btn accent" onclick={() => { showImportDialog = true; }}>Import</button>
                 {#if discrepancyCount > 0}
-                  <button class="panel-action-btn warn" on:click={() => { showAdjustDialog = true; }}>Adjust ({discrepancyCount})</button>
+                  <button class="panel-action-btn warn" onclick={() => { showAdjustDialog = true; }}>Adjust ({discrepancyCount})</button>
                 {/if}
               {/if}
-              <button class="panel-action-btn" on:click={refreshFloatingPanel}>Refresh</button>
+              <button class="panel-action-btn" onclick={refreshFloatingPanel}>Refresh</button>
             </div>
           </div>
 
@@ -2865,8 +2892,8 @@
 />
 
 {#if pendingTurnstileAction}
-  <div class="turnstile-modal-overlay" role="presentation" on:click={cancelTurnstileModal}>
-    <div class="turnstile-modal" on:click|stopPropagation>
+  <div class="turnstile-modal-overlay" role="presentation" onclick={cancelTurnstileModal}>
+    <div class="turnstile-modal" onclick={stopPropagation(bubble('click'))}>
       <h3 class="turnstile-modal-title">
         {pendingTurnstileAction.type === 'bump' ? 'Bump All Orders' : 'Close Order'}
       </h3>
@@ -2877,8 +2904,8 @@
         bind:reset={resetTurnstileModal}
       />
       <div class="turnstile-modal-actions">
-        <button class="btn-cancel" on:click={cancelTurnstileModal}>Cancel</button>
-        <button class="btn-confirm" disabled={!turnstileModalToken} on:click={executeTurnstileAction}>
+        <button class="btn-cancel" onclick={cancelTurnstileModal}>Cancel</button>
+        <button class="btn-confirm" disabled={!turnstileModalToken} onclick={executeTurnstileAction}>
           {pendingTurnstileAction.type === 'bump' ? 'Bump All' : 'Close Order'}
         </button>
       </div>
@@ -2887,9 +2914,9 @@
 {/if}
 
 {#if showAuthDialog}
-  <div class="auth-dialog-overlay" on:click={closeAuthDialog} on:keydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
-    <div class="auth-dialog-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
-      <button class="auth-dialog-close" on:click={closeAuthDialog} aria-label="Close">
+  <div class="auth-dialog-overlay" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
+    <div class="auth-dialog-content" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+      <button class="auth-dialog-close" onclick={closeAuthDialog} aria-label="Close">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
@@ -2967,7 +2994,7 @@
 
           <div class="auth-dialog-actions">
             <a href="https://discord.gg/hBGKyJ6EDr" target="_blank" rel="noopener" class="auth-dialog-btn primary">Join Discord Server</a>
-            <button class="auth-dialog-btn secondary" on:click={closeAuthDialog}>Close</button>
+            <button class="auth-dialog-btn secondary" onclick={closeAuthDialog}>Close</button>
           </div>
         </div>
       {/if}

@@ -3,26 +3,28 @@
   Displays all roles, their grants, and provides CRUD for roles.
 -->
 <script>
+  import { self } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount } from 'svelte';
 
-  let roles = [];
-  let allGrants = [];
-  let loading = true;
-  let error = null;
+  let roles = $state([]);
+  let allGrants = $state([]);
+  let loading = $state(true);
+  let error = $state(null);
 
   // Dialog state
-  let showDialog = false;
-  let dialogMode = 'create'; // 'create' | 'edit'
-  let editingRole = null;
-  let formName = '';
-  let formDescription = '';
-  let formParentId = null;
-  let formGrants = {}; // { grantKey: boolean }
-  let saving = false;
+  let showDialog = $state(false);
+  let dialogMode = $state('create'); // 'create' | 'edit'
+  let editingRole = $state(null);
+  let formName = $state('');
+  let formDescription = $state('');
+  let formParentId = $state(null);
+  let formGrants = $state({}); // { grantKey: boolean }
+  let saving = $state(false);
 
   // Expanded row state
-  let expandedRoleId = null;
+  let expandedRoleId = $state(null);
 
   onMount(async () => {
     await loadData();
@@ -142,7 +144,7 @@
 <div class="roles-page">
   <div class="page-header">
     <h1>Roles & Grants</h1>
-    <button class="btn-primary" on:click={openCreateDialog}>Create Role</button>
+    <button class="btn-primary" onclick={openCreateDialog}>Create Role</button>
   </div>
 
   {#if error}
@@ -165,7 +167,7 @@
       {#each roles as role}
         <div class="table-row" class:expanded={expandedRoleId === role.id}>
           <span class="col-name">
-            <button class="expand-btn" on:click={() => toggleExpand(role.id)}>
+            <button class="expand-btn" onclick={() => toggleExpand(role.id)}>
               <svg class="chevron" class:open={expandedRoleId === role.id} width="12" height="12" viewBox="0 0 12 12">
                 <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" />
               </svg>
@@ -177,9 +179,9 @@
           <span class="col-grants">{role.grant_count}</span>
           <span class="col-users">{role.user_count}</span>
           <span class="col-actions">
-            <button class="btn-small" on:click={() => openEditDialog(role)}>Edit</button>
+            <button class="btn-small" onclick={() => openEditDialog(role)}>Edit</button>
             {#if role.name !== 'admin'}
-              <button class="btn-small btn-danger" on:click={() => handleDelete(role)}>Delete</button>
+              <button class="btn-small btn-danger" onclick={() => handleDelete(role)}>Delete</button>
             {/if}
           </span>
         </div>
@@ -229,7 +231,7 @@
 
 <!-- Create/Edit Dialog -->
 {#if showDialog}
-  <div class="dialog-overlay" role="presentation" on:click|self={() => showDialog = false}>
+  <div class="dialog-overlay" role="presentation" onclick={self(() => showDialog = false)}>
     <div class="dialog">
       <h2>{dialogMode === 'create' ? 'Create Role' : `Edit: ${editingRole.name}`}</h2>
 
@@ -269,8 +271,8 @@
       </div>
 
       <div class="dialog-actions">
-        <button class="btn-secondary" on:click={() => showDialog = false} disabled={saving}>Cancel</button>
-        <button class="btn-primary" on:click={handleSave} disabled={saving || !formName.trim()}>
+        <button class="btn-secondary" onclick={() => showDialog = false} disabled={saving}>Cancel</button>
+        <button class="btn-primary" onclick={handleSave} disabled={saving || !formName.trim()}>
           {saving ? 'Saving...' : (dialogMode === 'create' ? 'Create' : 'Save')}
         </button>
       </div>

@@ -1,24 +1,24 @@
 <script lang="ts">
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { apiCall, getTypeLink } from '$lib/util';
   
-  export let serviceType; // 'healing' or 'dps'
-  export let equipment = []; // Array of equipment items
-  export let clothings = []; // Clothing items for slot display
   
-  let showAddModal = false;
-  let editingIndex = null;
+  let showAddModal = $state(false);
+  let editingIndex = $state(null);
   
   // Form fields
-  let itemName = '';
-  let itemType = '';
-  let tier = null;
-  let isPrimary = false; // Default to false, auto-check when appropriate
-  let extraPrice = null;
-  let notes = '';
+  let itemName = $state('');
+  let itemType = $state('');
+  let tier = $state(null);
+  let isPrimary = $state(false); // Default to false, auto-check when appropriate
+  let extraPrice = $state(null);
+  let notes = $state('');
   
   // Attachments (for weapons and armor)
-  let attachments = {
+  let attachments = $state({
     // For ranged weapons
     amplifier_id: null,
     amplifier_name: null,
@@ -40,11 +40,11 @@
     // For armor (plating)
     plate_id: null,
     plate_name: null
-  };
+  });
   
   // Available items from API
-  let availableItems = {};
-  let loadingItems = false;
+  let availableItems = $state({});
+  let loadingItems = $state(false);
   
   const healingItemTypes = [
     { value: 'medicaltools', label: 'Medical Tool' },
@@ -64,50 +64,9 @@
   ];
   
   import { hasItemTag } from '$lib/util';
+  let { serviceType, equipment = $bindable([]), clothings = [] } = $props();
   
-  $: itemTypes = serviceType === 'healing' ? healingItemTypes : dpsItemTypes;
-  $: canHaveTier = itemType && ['medicaltools', 'weapons', 'armorsets'].includes(itemType);
-  $: canHaveWeaponAttachments = itemType === 'weapons';
-  $: currentItemIsTierable = itemType && itemName && !hasItemTag(itemName, 'L');
-  $: canHavePlating = itemType === 'armorsets';
 
-  // Get the selected weapon's class for attachment type filtering
-  $: selectedWeaponData = itemType === 'weapons' && itemName && availableItems['weapons']
-    ? availableItems['weapons'].find(w => w.Name === itemName.trim())
-    : null;
-  $: weaponClass = selectedWeaponData?.Properties?.Class || null;
-  $: isRangedWeapon = weaponClass === 'Ranged';
-  $: isMeleeWeapon = weaponClass === 'Melee';
-  $: isMindforceWeapon = weaponClass === 'Mindforce';
-  $: requiresSlot = itemType === 'clothings';
-  $: currentItemOptions = itemType && availableItems[itemType] ? 
-    availableItems[itemType]
-      .filter(item => {
-        // For healing services, only show items with reload speed effects
-        if (serviceType === 'healing') {
-          if (itemType === 'armorsets') {
-            // Check EffectsOnSetEquip (armor sets use this property name)
-            const hasReloadSpeed = 
-              item.EffectsOnSetEquip?.some(e => e.Name === 'Reload Speed Increased');
-            return hasReloadSpeed;
-          } else if (itemType === 'clothings') {
-            // Only show clothings with reload speed effects
-            return item.EffectsOnEquip?.some(e => e.Name === 'Reload Speed Increased');
-          } else if (itemType === 'consumables') {
-            // Only show consumables with reload speed effects
-            return item.EffectsOnConsume?.some(e => e.Name === 'Reload Speed Increased');
-          }
-        } else {
-          // For DPS services, show clothings only if they have effects
-          if (itemType === 'clothings') {
-            return item.EffectsOnEquip && item.EffectsOnEquip.length > 0;
-          }
-        }
-        return true;
-      })
-      .map(item => item.Name)
-      .sort() 
-    : [];
   
   async function loadItemsForType(type) {
     if (availableItems[type]) return; // Already loaded
@@ -136,26 +95,7 @@
     return null;
   }
   
-  // Load items when item type changes
-  $: if (itemType && showAddModal) {
-    loadItemsForType(itemType);
-    // Auto-check primary if no primary exists for this type/slot
-    autoCheckPrimary();
-    // Also load attachment types if needed
-    if (itemType === 'weapons') {
-      loadItemsForType('weaponamplifiers');  // Contains both regular amps and matrices
-      loadItemsForType('weaponvisionattachments');  // Scopes and sights
-      loadItemsForType('absorbers');
-      loadItemsForType('mindforceimplants');  // For mindforce weapons
-    } else if (itemType === 'armorsets') {
-      loadItemsForType('armorplatings');
-    }
-  }
   
-  // Auto-check primary when item type changes
-  $: if (itemType) {
-    autoCheckPrimary();
-  }
   
   function checkHasPrimary(type, itemSlot = null) {
     // Check if a primary item of this type/slot already exists
@@ -231,35 +171,10 @@
     }
   }
   
-  // Helper to get attachment item options
-  // Filter amplifiers by weapon class and type (excluding Matrix which is a special type)
-  $: rangedAmplifierOptions = availableItems['weaponamplifiers']?.filter(x => {
-    const type = x.Properties?.Type;
-    return (type === 'BLP' || type === 'Energy') && type !== 'Matrix';
-  }).map(x => x.Name).sort() || [];
 
-  $: meleeAmplifierOptions = availableItems['weaponamplifiers']?.filter(x => {
-    const type = x.Properties?.Type;
-    return type === 'Melee' && type !== 'Matrix';
-  }).map(x => x.Name).sort() || [];
 
-  $: mindforceAmplifierOptions = availableItems['weaponamplifiers']?.filter(x => {
-    const type = x.Properties?.Type;
-    return type === 'Mindforce' && type !== 'Matrix';
-  }).map(x => x.Name).sort() || [];
 
-  // Get the appropriate amplifier options based on weapon class
-  $: amplifierOptions = isRangedWeapon ? rangedAmplifierOptions
-    : isMeleeWeapon ? meleeAmplifierOptions
-    : isMindforceWeapon ? mindforceAmplifierOptions
-    : [];
 
-  $: matrixOptions = availableItems['weaponamplifiers']?.filter(x => x.Properties?.Type === 'Matrix').map(x => x.Name).sort() || [];
-  $: implantOptions = availableItems['mindforceimplants']?.map(x => x.Name).sort() || [];
-  $: scopeOptions = availableItems['weaponvisionattachments']?.filter(x => x.Properties?.Type === 'Scope').map(x => x.Name).sort() || [];
-  $: sightOptions = availableItems['weaponvisionattachments']?.filter(x => x.Properties?.Type === 'Sight').map(x => x.Name).sort() || [];
-  $: absorberOptions = availableItems['absorbers']?.map(x => x.Name).sort() || [];
-  $: platingOptions = availableItems['armorplatings']?.map(x => x.Name).sort() || [];
   
   // Helper to look up attachment IDs when names are selected
   function updateAmplifierId() {
@@ -632,12 +547,102 @@
 
     return count;
   }
+  let itemTypes = $derived(serviceType === 'healing' ? healingItemTypes : dpsItemTypes);
+  let canHaveTier = $derived(itemType && ['medicaltools', 'weapons', 'armorsets'].includes(itemType));
+  let canHaveWeaponAttachments = $derived(itemType === 'weapons');
+  let currentItemIsTierable = $derived(itemType && itemName && !hasItemTag(itemName, 'L'));
+  let canHavePlating = $derived(itemType === 'armorsets');
+  // Get the selected weapon's class for attachment type filtering
+  let selectedWeaponData = $derived(itemType === 'weapons' && itemName && availableItems['weapons']
+    ? availableItems['weapons'].find(w => w.Name === itemName.trim())
+    : null);
+  let weaponClass = $derived(selectedWeaponData?.Properties?.Class || null);
+  let isRangedWeapon = $derived(weaponClass === 'Ranged');
+  let isMeleeWeapon = $derived(weaponClass === 'Melee');
+  let isMindforceWeapon = $derived(weaponClass === 'Mindforce');
+  let requiresSlot = $derived(itemType === 'clothings');
+  let currentItemOptions = $derived(itemType && availableItems[itemType] ? 
+    availableItems[itemType]
+      .filter(item => {
+        // For healing services, only show items with reload speed effects
+        if (serviceType === 'healing') {
+          if (itemType === 'armorsets') {
+            // Check EffectsOnSetEquip (armor sets use this property name)
+            const hasReloadSpeed = 
+              item.EffectsOnSetEquip?.some(e => e.Name === 'Reload Speed Increased');
+            return hasReloadSpeed;
+          } else if (itemType === 'clothings') {
+            // Only show clothings with reload speed effects
+            return item.EffectsOnEquip?.some(e => e.Name === 'Reload Speed Increased');
+          } else if (itemType === 'consumables') {
+            // Only show consumables with reload speed effects
+            return item.EffectsOnConsume?.some(e => e.Name === 'Reload Speed Increased');
+          }
+        } else {
+          // For DPS services, show clothings only if they have effects
+          if (itemType === 'clothings') {
+            return item.EffectsOnEquip && item.EffectsOnEquip.length > 0;
+          }
+        }
+        return true;
+      })
+      .map(item => item.Name)
+      .sort() 
+    : []);
+  // Load items when item type changes
+  run(() => {
+    if (itemType && showAddModal) {
+      loadItemsForType(itemType);
+      // Auto-check primary if no primary exists for this type/slot
+      autoCheckPrimary();
+      // Also load attachment types if needed
+      if (itemType === 'weapons') {
+        loadItemsForType('weaponamplifiers');  // Contains both regular amps and matrices
+        loadItemsForType('weaponvisionattachments');  // Scopes and sights
+        loadItemsForType('absorbers');
+        loadItemsForType('mindforceimplants');  // For mindforce weapons
+      } else if (itemType === 'armorsets') {
+        loadItemsForType('armorplatings');
+      }
+    }
+  });
+  // Auto-check primary when item type changes
+  run(() => {
+    if (itemType) {
+      autoCheckPrimary();
+    }
+  });
+  // Helper to get attachment item options
+  // Filter amplifiers by weapon class and type (excluding Matrix which is a special type)
+  let rangedAmplifierOptions = $derived(availableItems['weaponamplifiers']?.filter(x => {
+    const type = x.Properties?.Type;
+    return (type === 'BLP' || type === 'Energy') && type !== 'Matrix';
+  }).map(x => x.Name).sort() || []);
+  let meleeAmplifierOptions = $derived(availableItems['weaponamplifiers']?.filter(x => {
+    const type = x.Properties?.Type;
+    return type === 'Melee' && type !== 'Matrix';
+  }).map(x => x.Name).sort() || []);
+  let mindforceAmplifierOptions = $derived(availableItems['weaponamplifiers']?.filter(x => {
+    const type = x.Properties?.Type;
+    return type === 'Mindforce' && type !== 'Matrix';
+  }).map(x => x.Name).sort() || []);
+  // Get the appropriate amplifier options based on weapon class
+  let amplifierOptions = $derived(isRangedWeapon ? rangedAmplifierOptions
+    : isMeleeWeapon ? meleeAmplifierOptions
+    : isMindforceWeapon ? mindforceAmplifierOptions
+    : []);
+  let matrixOptions = $derived(availableItems['weaponamplifiers']?.filter(x => x.Properties?.Type === 'Matrix').map(x => x.Name).sort() || []);
+  let implantOptions = $derived(availableItems['mindforceimplants']?.map(x => x.Name).sort() || []);
+  let scopeOptions = $derived(availableItems['weaponvisionattachments']?.filter(x => x.Properties?.Type === 'Scope').map(x => x.Name).sort() || []);
+  let sightOptions = $derived(availableItems['weaponvisionattachments']?.filter(x => x.Properties?.Type === 'Sight').map(x => x.Name).sort() || []);
+  let absorberOptions = $derived(availableItems['absorbers']?.map(x => x.Name).sort() || []);
+  let platingOptions = $derived(availableItems['armorplatings']?.map(x => x.Name).sort() || []);
 </script>
 
 <div class="equipment-editor">
   <div class="equipment-header">
     <h3>Equipment <span class="formula-text">({equipment.length}/50)</span></h3>
-    <button type="button" class="add-btn" on:click={openAddModal}>+ Add Equipment</button>
+    <button type="button" class="add-btn" onclick={openAddModal}>+ Add Equipment</button>
   </div>
   
   {#if equipment.length === 0}
@@ -712,8 +717,8 @@
             </div>
           </div>
           <div class="item-actions">
-            <button type="button" class="edit-btn" on:click={() => openEditModal(equipment.indexOf(item))}>Edit</button>
-            <button type="button" class="remove-btn" on:click={() => removeItem(equipment.indexOf(item))}>Remove</button>
+            <button type="button" class="edit-btn" onclick={() => openEditModal(equipment.indexOf(item))}>Edit</button>
+            <button type="button" class="remove-btn" onclick={() => removeItem(equipment.indexOf(item))}>Remove</button>
           </div>
         </div>
       {/each}
@@ -722,11 +727,11 @@
 </div>
 
 {#if showAddModal}
-  <div class="modal-backdrop" on:click={closeModal}>
-    <div class="modal" on:click|stopPropagation>
+  <div class="modal-backdrop" onclick={closeModal}>
+    <div class="modal" onclick={stopPropagation(bubble('click'))}>
       <div class="modal-header">
         <h3>{editingIndex !== null ? 'Edit' : 'Add'} Equipment</h3>
-        <button type="button" class="modal-close" on:click={closeModal}>&times;</button>
+        <button type="button" class="modal-close" onclick={closeModal}>&times;</button>
       </div>
       
       <div class="modal-body">
@@ -744,7 +749,7 @@
           <label for="itemName">Item Name *</label>
           {#if itemType && currentItemOptions.length > 0}
             <div class="select-editable">
-              <select on:change={e => itemName = e.target.value}>
+              <select onchange={e => itemName = e.target.value}>
                 <option value="" selected></option>
                 {#each currentItemOptions as option}
                   <option value={option}>{option}</option>
@@ -779,13 +784,13 @@
                   <label for="amplifier">Amplifier</label>
                   {#if amplifierOptions.length > 0}
                     <div class="select-editable">
-                      <select on:change={e => { attachments.amplifier_name = e.target.value; updateAmplifierId(); }}>
+                      <select onchange={e => { attachments.amplifier_name = e.target.value; updateAmplifierId(); }}>
                         <option value="" selected></option>
                         {#each amplifierOptions as option}
                           <option value={option}>{option}</option>
                         {/each}
                       </select>
-                      <input type="text" id="amplifier" bind:value={attachments.amplifier_name} on:blur={updateAmplifierId} placeholder="e.g., Herman ARK-0 (L)" />
+                      <input type="text" id="amplifier" bind:value={attachments.amplifier_name} onblur={updateAmplifierId} placeholder="e.g., Herman ARK-0 (L)" />
                     </div>
                   {:else}
                     <input type="text" id="amplifier" bind:value={attachments.amplifier_name} placeholder="e.g., Herman ARK-0 (L)" />
@@ -797,13 +802,13 @@
                   <label for="absorber">Absorber</label>
                   {#if absorberOptions.length > 0}
                     <div class="select-editable">
-                      <select on:change={e => { attachments.absorber_name = e.target.value; updateAbsorberId(); }}>
+                      <select onchange={e => { attachments.absorber_name = e.target.value; updateAbsorberId(); }}>
                         <option value="" selected></option>
                         {#each absorberOptions as option}
                           <option value={option}>{option}</option>
                         {/each}
                       </select>
-                      <input type="text" id="absorber" bind:value={attachments.absorber_name} on:blur={updateAbsorberId} placeholder="e.g., 5B Genesis Star" />
+                      <input type="text" id="absorber" bind:value={attachments.absorber_name} onblur={updateAbsorberId} placeholder="e.g., 5B Genesis Star" />
                     </div>
                   {:else}
                     <input type="text" id="absorber" bind:value={attachments.absorber_name} placeholder="e.g., 5B Genesis Star" />
@@ -820,13 +825,13 @@
                     <label for="scope">Scope</label>
                     {#if scopeOptions.length > 0}
                       <div class="select-editable">
-                        <select on:change={e => { attachments.scope_name = e.target.value; updateScopeId(); }}>
+                        <select onchange={e => { attachments.scope_name = e.target.value; updateScopeId(); }}>
                           <option value="" selected></option>
                           {#each scopeOptions as option}
                             <option value={option}>{option}</option>
                           {/each}
                         </select>
-                        <input type="text" id="scope" bind:value={attachments.scope_name} on:blur={updateScopeId} placeholder="e.g., Herman LAD mk.2" />
+                        <input type="text" id="scope" bind:value={attachments.scope_name} onblur={updateScopeId} placeholder="e.g., Herman LAD mk.2" />
                       </div>
                     {:else}
                       <input type="text" id="scope" bind:value={attachments.scope_name} placeholder="e.g., Herman LAD mk.2" />
@@ -838,13 +843,13 @@
                     {#if attachments.scope_name}
                       {#if sightOptions.length > 0}
                         <div class="select-editable">
-                          <select on:change={e => { attachments.scope_sight_name = e.target.value; updateScopeSightId(); }}>
+                          <select onchange={e => { attachments.scope_sight_name = e.target.value; updateScopeSightId(); }}>
                             <option value="" selected></option>
                             {#each sightOptions as option}
                               <option value={option}>{option}</option>
                             {/each}
                           </select>
-                          <input type="text" id="scope-sight" bind:value={attachments.scope_sight_name} on:blur={updateScopeSightId} placeholder="Sight for scope" />
+                          <input type="text" id="scope-sight" bind:value={attachments.scope_sight_name} onblur={updateScopeSightId} placeholder="Sight for scope" />
                         </div>
                       {:else}
                         <input type="text" id="scope-sight" bind:value={attachments.scope_sight_name} placeholder="Sight for scope" />
@@ -860,13 +865,13 @@
                   <label for="sight">Sight</label>
                   {#if sightOptions.length > 0}
                     <div class="select-editable">
-                      <select on:change={e => { attachments.sight_name = e.target.value; updateSightId(); }}>
+                      <select onchange={e => { attachments.sight_name = e.target.value; updateSightId(); }}>
                         <option value="" selected></option>
                         {#each sightOptions as option}
                           <option value={option}>{option}</option>
                         {/each}
                       </select>
-                      <input type="text" id="sight" bind:value={attachments.sight_name} on:blur={updateSightId} placeholder="e.g., Omegaton A103" />
+                      <input type="text" id="sight" bind:value={attachments.sight_name} onblur={updateSightId} placeholder="e.g., Omegaton A103" />
                     </div>
                   {:else}
                     <input type="text" id="sight" bind:value={attachments.sight_name} placeholder="e.g., Omegaton A103" />
@@ -881,13 +886,13 @@
                   <label for="matrix">Matrix</label>
                   {#if matrixOptions.length > 0}
                     <div class="select-editable">
-                      <select on:change={e => { attachments.matrix_name = e.target.value; updateMatrixId(); }}>
+                      <select onchange={e => { attachments.matrix_name = e.target.value; updateMatrixId(); }}>
                         <option value="" selected></option>
                         {#each matrixOptions as option}
                           <option value={option}>{option}</option>
                         {/each}
                       </select>
-                      <input type="text" id="matrix" bind:value={attachments.matrix_name} on:blur={updateMatrixId} placeholder="e.g., Genesis Star Matrix" />
+                      <input type="text" id="matrix" bind:value={attachments.matrix_name} onblur={updateMatrixId} placeholder="e.g., Genesis Star Matrix" />
                     </div>
                   {:else}
                     <input type="text" id="matrix" bind:value={attachments.matrix_name} placeholder="e.g., Genesis Star Matrix" />
@@ -901,13 +906,13 @@
                   <label for="implant">Implant</label>
                   {#if implantOptions.length > 0}
                     <div class="select-editable">
-                      <select on:change={e => { attachments.implant_name = e.target.value; updateImplantId(); }}>
+                      <select onchange={e => { attachments.implant_name = e.target.value; updateImplantId(); }}>
                         <option value="" selected></option>
                         {#each implantOptions as option}
                           <option value={option}>{option}</option>
                         {/each}
                       </select>
-                      <input type="text" id="implant" bind:value={attachments.implant_name} on:blur={updateImplantId} placeholder="e.g., Genesis Star Implant" />
+                      <input type="text" id="implant" bind:value={attachments.implant_name} onblur={updateImplantId} placeholder="e.g., Genesis Star Implant" />
                     </div>
                   {:else}
                     <input type="text" id="implant" bind:value={attachments.implant_name} placeholder="e.g., Genesis Star Implant" />
@@ -941,13 +946,13 @@
               <label for="plating">Plating</label>
               {#if platingOptions.length > 0}
                 <div class="select-editable">
-                  <select on:change={e => { attachments.plate_name = e.target.value; updatePlateId(); }}>
+                  <select onchange={e => { attachments.plate_name = e.target.value; updatePlateId(); }}>
                     <option value="" selected></option>
                     {#each platingOptions as option}
                       <option value={option}>{option}</option>
                     {/each}
                   </select>
-                  <input type="text" id="plating" bind:value={attachments.plate_name} on:blur={updatePlateId} placeholder="e.g., 5A Plate" />
+                  <input type="text" id="plating" bind:value={attachments.plate_name} onblur={updatePlateId} placeholder="e.g., 5A Plate" />
                 </div>
               {:else}
                 <input type="text" id="plating" bind:value={attachments.plate_name} placeholder="e.g., 5A Plate" />
@@ -972,7 +977,7 @@
                     <input 
                       type="checkbox" 
                       checked={isEnabled}
-                      on:change={(e) => {
+                      onchange={(e) => {
                         if (e.target.checked) {
                           attachments.enabledAbilities = [...attachments.enabledAbilities, uniqueKey];
                         } else {
@@ -1020,8 +1025,8 @@
       </div>
       
       <div class="modal-footer">
-        <button type="button" class="cancel-btn" on:click={closeModal}>Cancel</button>
-        <button type="button" class="save-btn" on:click={saveItem} disabled={!itemName.trim() || !itemType}>
+        <button type="button" class="cancel-btn" onclick={closeModal}>Cancel</button>
+        <button type="button" class="save-btn" onclick={saveItem} disabled={!itemName.trim() || !itemType}>
           {editingIndex !== null ? 'Update' : 'Add'} Equipment
         </button>
       </div>

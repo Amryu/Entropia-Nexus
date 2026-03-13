@@ -10,8 +10,14 @@
   import FancyTable from '../FancyTable.svelte';
   import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
 
-  export let acquisition;
-  export let isMultiItem = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} acquisition
+   * @property {boolean} [isMultiItem]
+   */
+
+  /** @type {Props} */
+  let { acquisition, isMultiItem = false } = $props();
 
   const frequencyOrder = {
     'Always': 0,
@@ -36,7 +42,7 @@
   }
 
   // Build vendor data
-  $: vendorData = (() => {
+  let vendorData = $derived((() => {
     if (!acquisition?.VendorOffers?.length) return [];
     return acquisition.VendorOffers.map(vendorOffer => ({
       name: vendorOffer.Vendor.Name,
@@ -48,18 +54,18 @@
       planet: vendorOffer.Vendor.Planet.Name,
       limited: vendorOffer.IsLimited ? 'Yes' : 'No'
     }));
-  })();
+  })());
 
-  $: vendorColumns = [
+  let vendorColumns = $derived([
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'price', header: 'Price' },
     { key: 'specialPrice', header: 'Special Price' },
     { key: 'planet', header: 'Planet' },
     { key: 'limited', header: 'Limited' }
-  ];
+  ]);
 
   // Build loot data
-  $: lootData = (() => {
+  let lootData = $derived((() => {
     if (!acquisition?.Loots?.length) return [];
     return acquisition.Loots.map(loot => ({
       mob: loot.Mob.Name,
@@ -71,18 +77,18 @@
       frequency: loot.Frequency,
       frequencySort: frequencyOrder[loot.Frequency] ?? 8
     }));
-  })();
+  })());
 
-  $: lootColumns = [
+  let lootColumns = $derived([
     { key: 'mob', header: 'Mob', main: true, formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
     ...(isMultiItem ? [{ key: 'item', header: 'Item', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v }] : []),
     { key: 'planet', header: 'Planet' },
     { key: 'maturity', header: 'Lowest Maturity' },
     { key: 'frequency', header: 'Frequency' }
-  ];
+  ]);
 
   // Build combined market data (exchange orders + shop listings)
-  $: marketData = (() => {
+  let marketData = $derived((() => {
     const rows = [];
 
     // Exchange orders — deduplicate by seller (+ item for multi-item), keep cheapest markup
@@ -152,11 +158,11 @@
     }
 
     return rows;
-  })();
+  })());
 
-  $: hasMarketData = marketData.length > 0;
+  let hasMarketData = $derived(marketData.length > 0);
 
-  $: marketColumns = [
+  let marketColumns = $derived([
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => {
       const label = row.stale ? `<span class="stale-text">${v}</span>` : v;
       const setBadge = row.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
@@ -167,7 +173,7 @@
     { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
     { key: 'quantity', header: 'Qty' },
     { key: 'planet', header: 'Planet' }
-  ];
+  ]);
 
   function handleMarketRowClick(e) {
     const { row } = e.detail;
@@ -175,7 +181,7 @@
   }
 
   // Build mission reward data
-  $: missionRewardData = (() => {
+  let missionRewardData = $derived((() => {
     if (!acquisition?.MissionRewards?.length) return [];
     return acquisition.MissionRewards.map(mr => {
       let qty = '';
@@ -192,9 +198,9 @@
         isChoice: mr.IsChoice
       };
     });
-  })();
+  })());
 
-  $: missionRewardColumns = [
+  let missionRewardColumns = $derived([
     { key: 'mission', header: 'Mission', main: true, formatter: (v, row) => {
       let label = row.missionLink ? `<a href="${row.missionLink}">${v}</a>` : v;
       if (row.isChoice) label += ' <span class="badge badge-subtle badge-accent">Choice</span>';
@@ -204,10 +210,10 @@
     { key: 'planet', header: 'Planet' },
     { key: 'quantity', header: 'Qty' },
     { key: 'rarity', header: 'Rarity' }
-  ];
+  ]);
 
   // Build blueprint data
-  $: blueprintData = (() => {
+  let blueprintData = $derived((() => {
     if (!acquisition?.Blueprints?.length) return [];
     return acquisition.Blueprints.map(bp => ({
       name: bp.Name,
@@ -216,16 +222,16 @@
       profession: bp.Profession.Name,
       professionLink: getTypeLink(bp.Profession.Name, 'Profession')
     }));
-  })();
+  })());
 
-  $: blueprintColumns = [
+  let blueprintColumns = $derived([
     { key: 'name', header: 'Blueprint', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'level', header: 'Level' },
     { key: 'profession', header: 'Profession', formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
-  ];
+  ]);
 
   // Build blueprint drop data
-  $: blueprintDropData = (() => {
+  let blueprintDropData = $derived((() => {
     if (!acquisition?.BlueprintDrops?.length) return [];
     return acquisition.BlueprintDrops.map(bp => ({
       name: bp.Name,
@@ -233,13 +239,13 @@
       level: bp?.Properties?.Level ?? 'N/A',
       rarity: bp?.Properties?.DropRarity ?? '-'
     }));
-  })();
+  })());
 
-  $: blueprintDropColumns = [
+  let blueprintDropColumns = $derived([
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'level', header: 'Level' },
     { key: 'rarity', header: 'Rarity' }
-  ];
+  ]);
 
   // Copy waypoint handler
   function copyWaypoint(waypoint) {

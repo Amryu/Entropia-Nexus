@@ -1,4 +1,6 @@
 <script>
+  import { run, self } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
@@ -8,68 +10,83 @@
   import JsonTreeNode from '$lib/components/JsonTreeNode.svelte';
 
   /** @type {typeof import('$lib/components/wiki/RichTextEditor.svelte').default|null} */
-  let RichTextEditor = null;
+  let RichTextEditor = $state(null);
   onMount(async () => {
     const mod = await import('$lib/components/wiki/RichTextEditor.svelte');
     RichTextEditor = mod.default;
   });
 
-  export let location = null;  // The selected location object (or null)
-  export let isNew = false;    // Whether this is a newly drawn shape
-  export let readOnly = false; // If true, all fields are disabled (inspect only)
-  export let drawnShapeData = null;  // { shape, data, center } from drawing
-  /** @type {'admin' | 'public'} */
-  export let mode = 'admin';
-  export let isAdmin = false;
-  /** If this location is locked by another user's pending change, this is the change object */
-  export let lockedBy = null;
-  /** All locations on current planet (for parent picker) */
-  export let allLocations = [];
-  /** Whether this pending add has a corresponding DB change (submitted, not local-only) */
-  export let isDbChange = false;
+  
+  
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [location] - The selected location object (or null)
+   * @property {boolean} [isNew] - Whether this is a newly drawn shape
+   * @property {boolean} [readOnly] - If true, all fields are disabled (inspect only)
+   * @property {any} [drawnShapeData] - { shape, data, center } from drawing
+   * @property {'admin' | 'public'} [mode]
+   * @property {boolean} [isAdmin]
+   * @property {any} [lockedBy] - If this location is locked by another user's pending change, this is the change object
+   * @property {any} [allLocations] - All locations on current planet (for parent picker)
+   * @property {boolean} [isDbChange] - Whether this pending add has a corresponding DB change (submitted, not local-only)
+   */
 
-  $: isLocked = !!lockedBy && !isAdmin;
+  /** @type {Props} */
+  let {
+    location = null,
+    isNew = false,
+    readOnly = false,
+    drawnShapeData = null,
+    mode = 'admin',
+    isAdmin = false,
+    lockedBy = null,
+    allLocations = [],
+    isDbChange = false
+  } = $props();
+
 
   const dispatch = createEventDispatcher();
 
   // Edit form state
-  let name = '';
-  let locationType = 'Area';
-  let longitude = 0;
-  let latitude = 0;
-  let altitude = 100;
-  let areaType = 'MobArea';
-  let shape = 'Polygon';
-  let shapeDataJson = '';
+  let name = $state('');
+  let locationType = $state('Area');
+  let longitude = $state(0);
+  let latitude = $state(0);
+  let altitude = $state(100);
+  let areaType = $state('MobArea');
+  let shape = $state('Polygon');
+  let shapeDataJson = $state('');
 
   // Structured shape fields (Circle / Rectangle)
-  let circleX = 0;
-  let circleY = 0;
-  let circleRadius = 100;
-  let rectX = 0;
-  let rectY = 0;
-  let rectWidth = 100;
-  let rectHeight = 100;
+  let circleX = $state(0);
+  let circleY = $state(0);
+  let circleRadius = $state(100);
+  let rectX = $state(0);
+  let rectY = $state(0);
+  let rectWidth = $state(100);
+  let rectHeight = $state(100);
 
   // Description (rich text)
-  let description = '';
+  let description = $state('');
 
   // Parent location state
-  let parentLocationName = '';
+  let parentLocationName = $state('');
 
   // LandArea state
-  let landAreaOwner = '';
-  let taxRateHunting = null;
-  let taxRateMining = null;
-  let taxRateShops = null;
+  let landAreaOwner = $state('');
+  let taxRateHunting = $state(null);
+  let taxRateMining = $state(null);
+  let taxRateShops = $state(null);
 
   // Shape data cache — preserves shape data when swapping types
-  let _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
+  let _shapeCache = $state({ Circle: null, Rectangle: null, Polygon: null });
 
   // Related entities
-  let relatedExpanded = false;
-  let relatedMissions = null;
-  let relatedLoading = false;
+  let relatedExpanded = $state(false);
+  let relatedMissions = $state(null);
+  let relatedLoading = $state(false);
 
   /**
    * Parse a pasted waypoint string.
@@ -114,136 +131,19 @@
   }
 
   // Track which location is loaded to avoid resetting form when same location re-renders
-  let loadedLocationId = null;
-  let loadedDrawnShapeRef = null;
-  let _lastShapeDataRef = null;
-  let _lastCoordsRef = null;
-  let _populatingForm = false; // suppress auto-save during programmatic form population
+  let loadedLocationId = $state(null);
+  let loadedDrawnShapeRef = $state(null);
+  let _lastShapeDataRef = $state(null);
+  let _lastCoordsRef = $state(null);
+  let _populatingForm = $state(false); // suppress auto-save during programmatic form population
 
-  // Parent location options for SearchInput (areas only)
-  $: parentOptions = allLocations
-    .filter(l => isArea(l) && l.Id !== location?.Id)
-    .map(l => ({ label: l.Name, value: String(l.Id), sublabel: getEffectiveType(l) }));
 
-  // Populate form from location or drawn data — only when the actual location changes
-  $: if (location && !isNew && location.Id !== loadedLocationId) {
-    _populatingForm = true;
-    clearTimeout(autoSaveTimer);
-    loadedLocationId = location.Id;
-    loadedDrawnShapeRef = null;
-    name = location.Name || '';
-    locationType = location.Properties?.Type === 'Area' || isArea(location) ? 'Area' : (location.Properties?.Type || 'Area');
-    longitude = location.Properties?.Coordinates?.Longitude ?? 0;
-    latitude = location.Properties?.Coordinates?.Latitude ?? 0;
-    altitude = location.Properties?.Coordinates?.Altitude ?? 0;
-    areaType = location.Properties?.AreaType || (location.Properties?.Type !== 'Area' ? location.Properties?.Type : null) || 'MobArea';
-    shape = location.Properties?.Shape || 'Polygon';
-    const existingData = location.Properties?.Data;
-    if (shape === 'Circle' && existingData) {
-      circleX = existingData.x ?? 0;
-      circleY = existingData.y ?? 0;
-      circleRadius = existingData.radius ?? 100;
-      shapeDataJson = '';
-    } else if (shape === 'Rectangle' && existingData) {
-      rectX = existingData.x ?? 0;
-      rectY = existingData.y ?? 0;
-      rectWidth = existingData.width ?? 100;
-      rectHeight = existingData.height ?? 100;
-      shapeDataJson = '';
-    } else {
-      shapeDataJson = existingData ? JSON.stringify(existingData, null, 2) : '';
-    }
-    parentLocationName = location.ParentLocation?.Name || '';
-    description = location.Properties?.Description || '';
-    landAreaOwner = location.Properties?.LandAreaOwnerName || '';
-    taxRateHunting = location.Properties?.TaxRateHunting ?? null;
-    taxRateMining = location.Properties?.TaxRateMining ?? null;
-    taxRateShops = location.Properties?.TaxRateShops ?? null;
-    _lastShapeDataRef = location.Properties?.Data;
-    _lastCoordsRef = location.Properties?.Coordinates;
-    _prevShape = shape;
-    _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
-    // Reset related data when location changes
-    relatedMissions = null;
-    relatedExpanded = false;
-    // Allow DOM to settle before re-enabling auto-save (prevents spurious change events)
-    setTimeout(() => { _populatingForm = false; }, 0);
-  }
 
-  // Update shape fields when shape data changes externally (e.g., map drag/resize)
-  $: if (location && location.Id === loadedLocationId && !isNew) {
-    const newData = location.Properties?.Data;
-    const newCoords = location.Properties?.Coordinates;
-    if (newData !== _lastShapeDataRef) {
-      _lastShapeDataRef = newData;
-      if (newData) {
-        const currentShape = location.Properties?.Shape || shape;
-        if (currentShape === 'Circle') {
-          circleX = newData.x ?? 0;
-          circleY = newData.y ?? 0;
-          circleRadius = newData.radius ?? 100;
-        } else if (currentShape === 'Rectangle') {
-          rectX = newData.x ?? 0;
-          rectY = newData.y ?? 0;
-          rectWidth = newData.width ?? 100;
-          rectHeight = newData.height ?? 100;
-        } else {
-          shapeDataJson = JSON.stringify(newData, null, 2);
-        }
-      }
-    }
-    if (newCoords !== _lastCoordsRef) {
-      _lastCoordsRef = newCoords;
-      if (newCoords) {
-        longitude = newCoords.Longitude ?? longitude;
-        latitude = newCoords.Latitude ?? latitude;
-      }
-    }
-  }
 
-  // Clear tracking when deselected
-  $: if (!location && !isNew) {
-    loadedLocationId = null;
-    loadedDrawnShapeRef = null;
-    _lastShapeDataRef = null;
-    _lastCoordsRef = null;
-  }
 
-  $: if (isNew && drawnShapeData && drawnShapeData !== loadedDrawnShapeRef) {
-    _populatingForm = true;
-    clearTimeout(autoSaveTimer);
-    loadedDrawnShapeRef = drawnShapeData;
-    loadedLocationId = null;
-    name = '';
-    description = '';
-    locationType = drawnShapeData.isMarker ? 'Teleporter' : 'Area';
-    longitude = drawnShapeData.center?.x ?? 0;
-    latitude = drawnShapeData.center?.y ?? 0;
-    altitude = 100;
-    areaType = 'MobArea';
-    shape = drawnShapeData.shape || 'Polygon';
-    const drawnData = drawnShapeData.data;
-    if (shape === 'Circle' && drawnData) {
-      circleX = drawnData.x ?? 0;
-      circleY = drawnData.y ?? 0;
-      circleRadius = drawnData.radius ?? 100;
-      shapeDataJson = '';
-    } else if (shape === 'Rectangle' && drawnData) {
-      rectX = drawnData.x ?? 0;
-      rectY = drawnData.y ?? 0;
-      rectWidth = drawnData.width ?? 100;
-      rectHeight = drawnData.height ?? 100;
-      shapeDataJson = '';
-    } else {
-      shapeDataJson = drawnData ? JSON.stringify(drawnData, null, 2) : '';
-    }
-    _prevShape = shape;
-    _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
-    setTimeout(() => { _populatingForm = false; }, 0);
-  }
 
   // Track previous shape for swap caching
-  let _prevShape = null;
+  let _prevShape = $state(null);
 
   function handleShapeSwap(oldShape, newShape) {
     // Save current shape data to cache
@@ -317,51 +217,10 @@
   }
 
   // Dispatch preview events when form fields change (debounced)
-  let previewTimeout;
-  $: {
-    // Track all shape-related fields for reactivity
-    const _shape = shape;
-    const _shapeDataJson = shapeDataJson;
-    const _cX = circleX; const _cY = circleY; const _cR = circleRadius;
-    const _rX = rectX; const _rY = rectY; const _rW = rectWidth; const _rH = rectHeight;
-    const _lon = longitude;
-    const _lat = latitude;
-    const _locType = locationType;
-    const _active = location || isNew;
-
-    clearTimeout(previewTimeout);
-    previewTimeout = setTimeout(() => {
-      if (!_active) {
-        dispatch('preview', null);
-        return;
-      }
-
-      if (_locType === 'Area' && _shape) {
-        let shapeData = null;
-        if (_shape === 'Circle') {
-          shapeData = { x: Number(_cX), y: Number(_cY), radius: Number(_cR) };
-        } else if (_shape === 'Rectangle') {
-          shapeData = { x: Number(_rX), y: Number(_rY), width: Number(_rW), height: Number(_rH) };
-        } else if (_shape === 'Polygon') {
-          try {
-            if (_shapeDataJson.trim()) shapeData = JSON.parse(_shapeDataJson);
-          } catch { return; } // invalid JSON — skip preview update
-        }
-        if (shapeData) {
-          dispatch('preview', { shape: _shape, data: shapeData, center: null });
-        } else {
-          dispatch('preview', null);
-        }
-      } else if (_locType !== 'Area') {
-        dispatch('preview', { shape: null, data: null, center: { x: Number(_lon), y: Number(_lat) } });
-      } else {
-        dispatch('preview', null);
-      }
-    }, 150);
-  }
+  let previewTimeout = $state();
 
   // Auto-save: dispatch edit when form fields change via user interaction
-  let autoSaveTimer;
+  let autoSaveTimer = $state();
 
   function scheduleAutoSave() {
     if (readOnly || isLocked || _populatingForm) return;
@@ -433,10 +292,6 @@
     scheduleAutoSave();
   }
 
-  $: isAreaType = locationType === 'Area';
-  $: isMobArea = isAreaType && areaType === 'MobArea';
-  $: isLandArea = isAreaType && areaType === 'LandArea';
-  $: isWaveEvent = isAreaType && areaType === 'WaveEventArea';
 
   async function fetchRelatedEntities() {
     if (!location?.Id || location._isPendingAdd || relatedLoading) return;
@@ -459,35 +314,9 @@
   }
 
   // Raw JSON dialog
-  let showRawJson = false;
-  let jsonCollapsedPaths = new Set();
+  let showRawJson = $state(false);
+  let jsonCollapsedPaths = $state(new Set());
 
-  // Always reflects current form state — used by the JSON dialog
-  $: currentJson = (location || isNew) ? (() => {
-    const effectiveAreaType = locationType === 'Area' ? areaType : null;
-    return {
-      ...(location?.Id != null ? { Id: location.Id } : {}),
-      Name: name,
-      Properties: {
-        Type: locationType,
-        ...(effectiveAreaType ? { AreaType: effectiveAreaType } : {}),
-        Description: description || null,
-        Coordinates: {
-          Longitude: Number(longitude),
-          Latitude: Number(latitude),
-          Altitude: Number(altitude) || null
-        },
-        ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
-        ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
-        ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {})
-      },
-      ...(location?.Planet ? { Planet: location.Planet } : {}),
-      ParentLocation: parentLocationName ? { Name: parentLocationName } : null,
-      Facilities: location?.Facilities ?? [],
-      ...(location?.Waves ? { Waves: location.Waves } : {}),
-      ...(location?.Maturities ? { Maturities: location.Maturities } : {})
-    };
-  })() : null;
 
   function collectArrayPaths(obj, path = '') {
     if (obj === null || typeof obj !== 'object') return [];
@@ -530,6 +359,203 @@
     }
     jsonCollapsedPaths = new Set(jsonCollapsedPaths);
   }
+  let isLocked = $derived(!!lockedBy && !isAdmin);
+  // Parent location options for SearchInput (areas only)
+  let parentOptions = $derived(allLocations
+    .filter(l => isArea(l) && l.Id !== location?.Id)
+    .map(l => ({ label: l.Name, value: String(l.Id), sublabel: getEffectiveType(l) })));
+  // Populate form from location or drawn data — only when the actual location changes
+  run(() => {
+    if (location && !isNew && location.Id !== loadedLocationId) {
+      _populatingForm = true;
+      clearTimeout(autoSaveTimer);
+      loadedLocationId = location.Id;
+      loadedDrawnShapeRef = null;
+      name = location.Name || '';
+      locationType = location.Properties?.Type === 'Area' || isArea(location) ? 'Area' : (location.Properties?.Type || 'Area');
+      longitude = location.Properties?.Coordinates?.Longitude ?? 0;
+      latitude = location.Properties?.Coordinates?.Latitude ?? 0;
+      altitude = location.Properties?.Coordinates?.Altitude ?? 0;
+      areaType = location.Properties?.AreaType || (location.Properties?.Type !== 'Area' ? location.Properties?.Type : null) || 'MobArea';
+      shape = location.Properties?.Shape || 'Polygon';
+      const existingData = location.Properties?.Data;
+      if (shape === 'Circle' && existingData) {
+        circleX = existingData.x ?? 0;
+        circleY = existingData.y ?? 0;
+        circleRadius = existingData.radius ?? 100;
+        shapeDataJson = '';
+      } else if (shape === 'Rectangle' && existingData) {
+        rectX = existingData.x ?? 0;
+        rectY = existingData.y ?? 0;
+        rectWidth = existingData.width ?? 100;
+        rectHeight = existingData.height ?? 100;
+        shapeDataJson = '';
+      } else {
+        shapeDataJson = existingData ? JSON.stringify(existingData, null, 2) : '';
+      }
+      parentLocationName = location.ParentLocation?.Name || '';
+      description = location.Properties?.Description || '';
+      landAreaOwner = location.Properties?.LandAreaOwnerName || '';
+      taxRateHunting = location.Properties?.TaxRateHunting ?? null;
+      taxRateMining = location.Properties?.TaxRateMining ?? null;
+      taxRateShops = location.Properties?.TaxRateShops ?? null;
+      _lastShapeDataRef = location.Properties?.Data;
+      _lastCoordsRef = location.Properties?.Coordinates;
+      _prevShape = shape;
+      _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
+      // Reset related data when location changes
+      relatedMissions = null;
+      relatedExpanded = false;
+      // Allow DOM to settle before re-enabling auto-save (prevents spurious change events)
+      setTimeout(() => { _populatingForm = false; }, 0);
+    }
+  });
+  // Clear tracking when deselected
+  run(() => {
+    if (!location && !isNew) {
+      loadedLocationId = null;
+      loadedDrawnShapeRef = null;
+      _lastShapeDataRef = null;
+      _lastCoordsRef = null;
+    }
+  });
+  run(() => {
+    if (isNew && drawnShapeData && drawnShapeData !== loadedDrawnShapeRef) {
+      _populatingForm = true;
+      clearTimeout(autoSaveTimer);
+      loadedDrawnShapeRef = drawnShapeData;
+      loadedLocationId = null;
+      name = '';
+      description = '';
+      locationType = drawnShapeData.isMarker ? 'Teleporter' : 'Area';
+      longitude = drawnShapeData.center?.x ?? 0;
+      latitude = drawnShapeData.center?.y ?? 0;
+      altitude = 100;
+      areaType = 'MobArea';
+      shape = drawnShapeData.shape || 'Polygon';
+      const drawnData = drawnShapeData.data;
+      if (shape === 'Circle' && drawnData) {
+        circleX = drawnData.x ?? 0;
+        circleY = drawnData.y ?? 0;
+        circleRadius = drawnData.radius ?? 100;
+        shapeDataJson = '';
+      } else if (shape === 'Rectangle' && drawnData) {
+        rectX = drawnData.x ?? 0;
+        rectY = drawnData.y ?? 0;
+        rectWidth = drawnData.width ?? 100;
+        rectHeight = drawnData.height ?? 100;
+        shapeDataJson = '';
+      } else {
+        shapeDataJson = drawnData ? JSON.stringify(drawnData, null, 2) : '';
+      }
+      _prevShape = shape;
+      _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
+      setTimeout(() => { _populatingForm = false; }, 0);
+    }
+  });
+  // Update shape fields when shape data changes externally (e.g., map drag/resize)
+  run(() => {
+    if (location && location.Id === loadedLocationId && !isNew) {
+      const newData = location.Properties?.Data;
+      const newCoords = location.Properties?.Coordinates;
+      if (newData !== _lastShapeDataRef) {
+        _lastShapeDataRef = newData;
+        if (newData) {
+          const currentShape = location.Properties?.Shape || shape;
+          if (currentShape === 'Circle') {
+            circleX = newData.x ?? 0;
+            circleY = newData.y ?? 0;
+            circleRadius = newData.radius ?? 100;
+          } else if (currentShape === 'Rectangle') {
+            rectX = newData.x ?? 0;
+            rectY = newData.y ?? 0;
+            rectWidth = newData.width ?? 100;
+            rectHeight = newData.height ?? 100;
+          } else {
+            shapeDataJson = JSON.stringify(newData, null, 2);
+          }
+        }
+      }
+      if (newCoords !== _lastCoordsRef) {
+        _lastCoordsRef = newCoords;
+        if (newCoords) {
+          longitude = newCoords.Longitude ?? longitude;
+          latitude = newCoords.Latitude ?? latitude;
+        }
+      }
+    }
+  });
+  run(() => {
+    // Track all shape-related fields for reactivity
+    const _shape = shape;
+    const _shapeDataJson = shapeDataJson;
+    const _cX = circleX; const _cY = circleY; const _cR = circleRadius;
+    const _rX = rectX; const _rY = rectY; const _rW = rectWidth; const _rH = rectHeight;
+    const _lon = longitude;
+    const _lat = latitude;
+    const _locType = locationType;
+    const _active = location || isNew;
+
+    clearTimeout(previewTimeout);
+    previewTimeout = setTimeout(() => {
+      if (!_active) {
+        dispatch('preview', null);
+        return;
+      }
+
+      if (_locType === 'Area' && _shape) {
+        let shapeData = null;
+        if (_shape === 'Circle') {
+          shapeData = { x: Number(_cX), y: Number(_cY), radius: Number(_cR) };
+        } else if (_shape === 'Rectangle') {
+          shapeData = { x: Number(_rX), y: Number(_rY), width: Number(_rW), height: Number(_rH) };
+        } else if (_shape === 'Polygon') {
+          try {
+            if (_shapeDataJson.trim()) shapeData = JSON.parse(_shapeDataJson);
+          } catch { return; } // invalid JSON — skip preview update
+        }
+        if (shapeData) {
+          dispatch('preview', { shape: _shape, data: shapeData, center: null });
+        } else {
+          dispatch('preview', null);
+        }
+      } else if (_locType !== 'Area') {
+        dispatch('preview', { shape: null, data: null, center: { x: Number(_lon), y: Number(_lat) } });
+      } else {
+        dispatch('preview', null);
+      }
+    }, 150);
+  });
+  let isAreaType = $derived(locationType === 'Area');
+  let isMobArea = $derived(isAreaType && areaType === 'MobArea');
+  let isLandArea = $derived(isAreaType && areaType === 'LandArea');
+  let isWaveEvent = $derived(isAreaType && areaType === 'WaveEventArea');
+  // Always reflects current form state — used by the JSON dialog
+  let currentJson = $derived((location || isNew) ? (() => {
+    const effectiveAreaType = locationType === 'Area' ? areaType : null;
+    return {
+      ...(location?.Id != null ? { Id: location.Id } : {}),
+      Name: name,
+      Properties: {
+        Type: locationType,
+        ...(effectiveAreaType ? { AreaType: effectiveAreaType } : {}),
+        Description: description || null,
+        Coordinates: {
+          Longitude: Number(longitude),
+          Latitude: Number(latitude),
+          Altitude: Number(altitude) || null
+        },
+        ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
+        ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
+        ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {})
+      },
+      ...(location?.Planet ? { Planet: location.Planet } : {}),
+      ParentLocation: parentLocationName ? { Name: parentLocationName } : null,
+      Facilities: location?.Facilities ?? [],
+      ...(location?.Waves ? { Waves: location.Waves } : {}),
+      ...(location?.Maturities ? { Maturities: location.Maturities } : {})
+    };
+  })() : null);
 </script>
 
 <style>
@@ -823,11 +849,11 @@
     Select a location on the map or in the list, or draw a new shape to edit.
   </div>
 {:else}
-  <div class="editor-container" on:input={scheduleAutoSave} on:change={scheduleAutoSave}>
+  <div class="editor-container" oninput={scheduleAutoSave} onchange={scheduleAutoSave}>
     <div class="title-row">
       <h3 class="editor-title">{isNew ? 'New Location' : readOnly ? (location?.Name || '') : `Edit: ${location?.Name || ''}`}</h3>
       {#if location}
-        <button class="btn-json" on:click={openRawJson} title="View raw JSON">&#123;&#125;</button>
+        <button class="btn-json" onclick={openRawJson} title="View raw JSON">&#123;&#125;</button>
       {/if}
     </div>
 
@@ -844,16 +870,16 @@
     {#if !readOnly}
       <div class="actions">
         {#if !isNew && location?._isPendingAdd}
-          <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
+          <button class="btn btn-danger" onclick={handleRemovePendingAdd}>
             {isDbChange ? 'Delete submitted change' : 'Remove'}
           </button>
         {:else if !isNew}
-          <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
+          <button class="btn btn-danger" onclick={handleDelete} disabled={isLocked}
             title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
           >
             {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
           </button>
-          <button class="btn" on:click={handleRevert}>Revert Changes</button>
+          <button class="btn" onclick={handleRevert}>Revert Changes</button>
         {/if}
       </div>
     {/if}
@@ -880,9 +906,9 @@
     <div class="field-group">
       <span class="field-label">Coordinates <span class="field-hint">paste waypoint</span></span>
       <div class="coord-row">
-        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" disabled={readOnly} on:paste={handleCoordPaste} />
-        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" disabled={readOnly} on:paste={handleCoordPaste} />
-        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" disabled={readOnly} on:paste={handleCoordPaste} />
+        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" disabled={readOnly} onpaste={handleCoordPaste} />
+        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" disabled={readOnly} onpaste={handleCoordPaste} />
+        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" disabled={readOnly} onpaste={handleCoordPaste} />
       </div>
     </div>
 
@@ -901,7 +927,7 @@
       <div class="field-group">
         <span class="field-label">Shape</span>
         <select class="field-input" bind:value={shape} disabled={readOnly}
-          on:change={(e) => {
+          onchange={(e) => {
             if (_prevShape && _prevShape !== shape) handleShapeSwap(_prevShape, shape);
             _prevShape = shape;
           }}>
@@ -947,7 +973,7 @@
 
       {#if isMobArea}
         {#if !readOnly}
-          <button class="btn btn-mob" on:click={handleEditMobArea}>
+          <button class="btn btn-mob" onclick={handleEditMobArea}>
             Edit Mob Spawns
           </button>
         {/if}
@@ -955,7 +981,7 @@
 
       {#if isWaveEvent}
         {#if !readOnly}
-          <button class="btn btn-mob" on:click={handleEditWaveArea}>
+          <button class="btn btn-mob" onclick={handleEditWaveArea}>
             Edit Wave Spawns
           </button>
         {/if}
@@ -1005,8 +1031,7 @@
       <span class="field-label">Description</span>
       {#if RichTextEditor && !readOnly && !isLocked}
         <div class="description-editor">
-          <svelte:component
-            this={RichTextEditor}
+          <RichTextEditor
             content={description}
             placeholder="Describe this location..."
             showHeadings={false}
@@ -1027,7 +1052,7 @@
     <!-- Related Entities (read-only, collapsible) -->
     {#if !isNew && location?.Id}
       <div class="section-divider"></div>
-      <button class="related-toggle" on:click={toggleRelated}>
+      <button class="related-toggle" onclick={toggleRelated}>
         <span class="related-toggle-label">Related Entities</span>
         <span class="related-toggle-arrow" class:expanded={relatedExpanded}>{relatedExpanded ? '\u25B2' : '\u25BC'}</span>
       </button>
@@ -1055,15 +1080,15 @@
   </div>
 {/if}
 
-<svelte:window on:keydown={e => { if (e.key === 'Escape' && showRawJson) closeRawJson(); }} />
+<svelte:window onkeydown={e => { if (e.key === 'Escape' && showRawJson) closeRawJson(); }} />
 
 {#if showRawJson}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="json-dialog-overlay" on:click|self={closeRawJson}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="json-dialog-overlay" onclick={self(closeRawJson)}>
     <div class="json-dialog">
       <div class="json-dialog-header">
         <h3>{location?.Name || 'Raw JSON'}</h3>
-        <button class="json-dialog-close" on:click={closeRawJson}>×</button>
+        <button class="json-dialog-close" onclick={closeRawJson}>×</button>
       </div>
       <div class="json-dialog-body">
         <JsonTreeNode

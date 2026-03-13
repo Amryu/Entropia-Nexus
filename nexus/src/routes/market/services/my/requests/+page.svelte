@@ -8,16 +8,16 @@
   import { navigating } from '$app/stores';
   import { apiPut } from '$lib/util';
 
-  export let data;
+  let { data } = $props();
 
   // Loading state
-  $: isLoading = $navigating !== null;
+  let isLoading = $derived($navigating !== null);
 
-  $: requests = data.requests || [];
-  $: statusFilter = data.statusFilter;
+  let requests = $derived(data.requests || []);
+  let statusFilter = $derived(data.statusFilter);
 
-  let actionLoading = null;
-  let actionError = null;
+  let actionLoading = $state(null);
+  let actionError = $state(null);
 
   const statusOptions = [
     { value: '', label: 'All Statuses' },
@@ -86,10 +86,10 @@
   }
 
   // Group requests by status category - separate questions from requests
-  $: questionRequests = requests.filter(r => ['pending', 'negotiating'].includes(r.status) && isQuestion(r));
-  $: pendingRequests = requests.filter(r => ['pending', 'negotiating'].includes(r.status) && !isQuestion(r));
-  $: activeRequests = requests.filter(r => ['accepted', 'in_progress'].includes(r.status));
-  $: historyRequests = requests.filter(r => ['completed', 'cancelled', 'declined', 'aborted'].includes(r.status));
+  let questionRequests = $derived(requests.filter(r => ['pending', 'negotiating'].includes(r.status) && isQuestion(r)));
+  let pendingRequests = $derived(requests.filter(r => ['pending', 'negotiating'].includes(r.status) && !isQuestion(r)));
+  let activeRequests = $derived(requests.filter(r => ['accepted', 'in_progress'].includes(r.status)));
+  let historyRequests = $derived(requests.filter(r => ['completed', 'cancelled', 'declined', 'aborted'].includes(r.status)));
 </script>
 
 <svelte:head>
@@ -113,7 +113,7 @@
   <div class="controls">
     <div class="filter-group">
       <label for="status-filter">Filter by status:</label>
-      <select id="status-filter" value={statusFilter || ''} on:change={handleStatusChange}>
+      <select id="status-filter" value={statusFilter || ''} onchange={handleStatusChange}>
         {#each statusOptions as option}
           <option value={option.value}>{option.label}</option>
         {/each}
@@ -136,7 +136,7 @@
         <h2>Your Questions ({questionRequests.length})</h2>
         <div class="request-list">
           {#each questionRequests as request}
-            <div class="request-card question-card" on:click={() => viewRequest(request.id)} on:keypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
+            <div class="request-card question-card" onclick={() => viewRequest(request.id)} onkeypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
               <div class="request-main">
                 <div class="request-info">
                   <span class="service-title">{request.service_title}</span>
@@ -152,7 +152,7 @@
                 <button
                   class="close-btn"
                   disabled={actionLoading === request.id}
-                  on:click={(e) => closeQuestion(e, request.id)}
+                  onclick={(e) => closeQuestion(e, request.id)}
                 >
                   {actionLoading === request.id ? '...' : 'Close'}
                 </button>
@@ -168,7 +168,7 @@
         <h2>Pending / In Conversation ({pendingRequests.length})</h2>
         <div class="request-list">
           {#each pendingRequests as request}
-            <div class="request-card" on:click={() => viewRequest(request.id)} on:keypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
+            <div class="request-card" onclick={() => viewRequest(request.id)} onkeypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
               <div class="request-main">
                 <div class="request-info">
                   <span class="service-title">{request.service_title}</span>
@@ -196,7 +196,7 @@
         <h2>Active ({activeRequests.length})</h2>
         <div class="request-list">
           {#each activeRequests as request}
-            <div class="request-card" on:click={() => viewRequest(request.id)} on:keypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
+            <div class="request-card" onclick={() => viewRequest(request.id)} onkeypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
               <div class="request-main">
                 <div class="request-info">
                   <span class="service-title">{request.service_title}</span>
@@ -226,7 +226,7 @@
         <h2>History ({historyRequests.length})</h2>
         <div class="request-list">
           {#each historyRequests as request}
-            <div class="request-card history" on:click={() => viewRequest(request.id)} on:keypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
+            <div class="request-card history" onclick={() => viewRequest(request.id)} onkeypress={(e) => e.key === 'Enter' && viewRequest(request.id)} role="button" tabindex="0">
               <div class="request-main">
                 <div class="request-info">
                   <span class="service-title">{request.service_title}</span>

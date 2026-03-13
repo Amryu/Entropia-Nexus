@@ -1,35 +1,38 @@
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  let user = null;
-  let metrics = null;
-  let actions = null;
-  let isLoading = true;
-  let error = null;
+  let user = $state(null);
+  let metrics = $state(null);
+  let actions = $state(null);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   // Dialog states
-  let showLockDialog = false;
-  let showBanDialog = false;
-  let lockReason = '';
-  let banReason = '';
-  let banDuration = '';
-  let isSubmitting = false;
-  let actionError = '';
+  let showLockDialog = $state(false);
+  let showBanDialog = $state(false);
+  let lockReason = $state('');
+  let banReason = $state('');
+  let banDuration = $state('');
+  let isSubmitting = $state(false);
+  let actionError = $state('');
 
   // Roles & grants state
-  let userRoles = [];
+  let userRoles = $state([]);
   let userGrants = [];
-  let allRoles = [];
-  let allGrants = [];
-  let rolesLoading = false;
-  let rolesError = '';
-  let selectedRoleToAdd = '';
+  let allRoles = $state([]);
+  let allGrants = $state([]);
+  let rolesLoading = $state(false);
+  let rolesError = $state('');
+  let selectedRoleToAdd = $state('');
 
-  $: userId = $page.params.id;
-  $: availableRoles = allRoles.filter(r => !userRoles.some(ur => ur.id === r.id));
+  let userId = $derived($page.params.id);
+  let availableRoles = $derived(allRoles.filter(r => !userRoles.some(ur => ur.id === r.id)));
 
   onMount(() => {
     loadUser();
@@ -873,21 +876,21 @@
           View Public Profile
         </a>
         {#if user.banned}
-          <button class="btn btn-success" on:click={() => performAction('unban')}>
+          <button class="btn btn-success" onclick={() => performAction('unban')}>
             Unban User
           </button>
         {:else}
-          <button class="btn btn-danger" on:click={() => { showBanDialog = true; actionError = ''; }}>
+          <button class="btn btn-danger" onclick={() => { showBanDialog = true; actionError = ''; }}>
             Ban User
           </button>
         {/if}
 
         {#if user.locked}
-          <button class="btn btn-success" on:click={() => performAction('unlock')}>
+          <button class="btn btn-success" onclick={() => performAction('unlock')}>
             Unlock User
           </button>
         {:else if !user.banned}
-          <button class="btn btn-warning" on:click={() => { showLockDialog = true; actionError = ''; }}>
+          <button class="btn btn-warning" onclick={() => { showLockDialog = true; actionError = ''; }}>
             Lock User
           </button>
         {/if}
@@ -1017,7 +1020,7 @@
                   {#each userRoles as ur}
                     <span class="role-tag">
                       {getRoleName(ur.id)}
-                      <button class="role-remove" on:click={() => removeRole(ur.id)} title="Remove role">&times;</button>
+                      <button class="role-remove" onclick={() => removeRole(ur.id)} title="Remove role">&times;</button>
                     </span>
                   {/each}
                 </div>
@@ -1032,7 +1035,7 @@
                       <option value={role.id}>{role.name}</option>
                     {/each}
                   </select>
-                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" on:click={addRole} disabled={!selectedRoleToAdd}>Add</button>
+                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick={addRole} disabled={!selectedRoleToAdd}>Add</button>
                 </div>
               {/if}
             {/if}
@@ -1054,7 +1057,7 @@
                     class="grant-row"
                     class:grant-granted={state === 'granted'}
                     class:grant-denied={state === 'denied'}
-                    on:click={() => toggleGrantOverride(grant.key, state)}
+                    onclick={() => toggleGrantOverride(grant.key, state)}
                     title={grant.description || grant.key}
                   >
                     <span class="grant-key">{grant.key}</span>
@@ -1095,8 +1098,8 @@
 
 <!-- Lock Dialog -->
 {#if showLockDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showLockDialog = false}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showLockDialog = false}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <h3>Lock User</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Locking a user prevents them from using verified-only features. They can still log in and view content.
@@ -1116,10 +1119,10 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showLockDialog = false} disabled={isSubmitting}>
+        <button class="btn btn-secondary" onclick={() => showLockDialog = false} disabled={isSubmitting}>
           Cancel
         </button>
-        <button class="btn btn-warning" on:click={handleLock} disabled={isSubmitting}>
+        <button class="btn btn-warning" onclick={handleLock} disabled={isSubmitting}>
           {isSubmitting ? 'Locking...' : 'Lock User'}
         </button>
       </div>
@@ -1129,8 +1132,8 @@
 
 <!-- Ban Dialog -->
 {#if showBanDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showBanDialog = false}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showBanDialog = false}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <h3>Ban User</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
         Banning a user will immediately log them out, prevent future logins, and trigger a Discord server ban.
@@ -1161,10 +1164,10 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn btn-secondary" on:click={() => showBanDialog = false} disabled={isSubmitting}>
+        <button class="btn btn-secondary" onclick={() => showBanDialog = false} disabled={isSubmitting}>
           Cancel
         </button>
-        <button class="btn btn-danger" on:click={handleBan} disabled={isSubmitting}>
+        <button class="btn btn-danger" onclick={handleBan} disabled={isSubmitting}>
           {isSubmitting ? 'Banning...' : 'Ban User'}
         </button>
       </div>

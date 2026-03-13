@@ -1,8 +1,13 @@
 <script lang="ts">
-  /**
+  
+  interface Props {
+    /**
    * Skeleton card for service/request cards
    */
-  export let count: number = 3;
+    count?: number;
+  }
+
+  let { count = 3 }: Props = $props();
 </script>
 
 <div class="skeleton-cards">

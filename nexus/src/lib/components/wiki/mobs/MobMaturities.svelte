@@ -4,18 +4,26 @@
   Uses FancyTable for consistent styling.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { tick } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
 
-  export let maturities = [];
-  export let type = null;
-  export let selectedMaturityId = null;
-  let tableContainer;
-  let lastSelectedKey = null;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [maturities]
+   * @property {any} [type]
+   * @property {any} [selectedMaturityId]
+   */
+
+  /** @type {Props} */
+  let { maturities = [], type = null, selectedMaturityId = null } = $props();
+  let tableContainer = $state();
+  let lastSelectedKey = $state(null);
 
   // Sort maturities: non-bosses first, by Level then Health (nulls at end)
-  $: sortedMaturities = maturities ? [...maturities].sort((a, b) => {
+  let sortedMaturities = $derived(maturities ? [...maturities].sort((a, b) => {
     const aIsBoss = a.Properties?.Boss === true;
     const bIsBoss = b.Properties?.Boss === true;
 
@@ -50,7 +58,7 @@
     if (aHp != null) return -1;
     if (bHp != null) return 1;
     return 0;
-  }) : [];
+  }) : []);
 
   function getTotalDamage(attack) {
     return attack?.TotalDamage ?? null;
@@ -72,10 +80,10 @@
       .join(', ');
   }
 
-  $: isAsteroid = type === 'Asteroid';
+  let isAsteroid = $derived(type === 'Asteroid');
 
   // Transform data for FancyTable
-  $: tableData = sortedMaturities.map(maturity => {
+  let tableData = $derived(sortedMaturities.map(maturity => {
     const hpPerLevel = maturity.Properties?.Health != null && maturity.Properties?.Level != null && maturity.Properties.Level > 0
       ? (maturity.Properties.Health / maturity.Properties.Level).toFixed(2)
       : null;
@@ -102,7 +110,7 @@
       tameable: maturity.Properties?.Taming?.IsTameable || maturity.Properties?.TamingLevel > 0,
       tamingLevel: maturity.Properties?.Taming?.TamingLevel || maturity.Properties?.TamingLevel
     };
-  });
+  }));
 
   // Row class function for boss highlighting
   function getRowClass(row) {
@@ -128,11 +136,13 @@
     tableBody.scrollTop = targetScrollTop;
   }
 
-  $: selectedKey = selectedMaturityId != null ? `${selectedMaturityId}-${tableData.length}` : null;
-  $: if (selectedKey && selectedKey !== lastSelectedKey) {
-    lastSelectedKey = selectedKey;
-    tick().then(scrollToSelectedRow);
-  }
+  let selectedKey = $derived(selectedMaturityId != null ? `${selectedMaturityId}-${tableData.length}` : null);
+  run(() => {
+    if (selectedKey && selectedKey !== lastSelectedKey) {
+      lastSelectedKey = selectedKey;
+      tick().then(scrollToSelectedRow);
+    }
+  });
 
   // Base columns for asteroids
   const baseColumns = [
@@ -207,7 +217,7 @@
     }
   ];
 
-  $: columns = isAsteroid ? baseColumns : [...baseColumns, ...mobColumns];
+  let columns = $derived(isAsteroid ? baseColumns : [...baseColumns, ...mobColumns]);
 </script>
 
 <div class="maturities-table-container" bind:this={tableContainer}>

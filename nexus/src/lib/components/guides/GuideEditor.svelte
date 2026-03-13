@@ -7,24 +7,35 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
 
-  /** @type {{ id: number, content_html: string, sort_order: number }[]} */
-  export let paragraphs = [];
+  
 
-  /** @type {string} Base API path for this lesson's paragraphs */
-  export let apiBasePath = '';
+  
 
-  /** @type {boolean} Whether the user can create new paragraphs */
-  export let canCreate = false;
+  
 
-  /** @type {boolean} Whether the user can delete paragraphs */
-  export let canDelete = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ id: number, content_html: string, sort_order: number }[]} [paragraphs]
+   * @property {string} [apiBasePath]
+   * @property {boolean} [canCreate]
+   * @property {boolean} [canDelete]
+   */
 
-  let RichTextEditor = null;
-  let editingId = null;
-  let editContent = '';
-  let saving = false;
-  let error = '';
-  let successMessage = '';
+  /** @type {Props} */
+  let {
+    paragraphs = $bindable([]),
+    apiBasePath = '',
+    canCreate = false,
+    canDelete = false
+  } = $props();
+
+  let RichTextEditor = $state(null);
+  let editingId = $state(null);
+  let editContent = $state('');
+  let saving = $state(false);
+  let error = $state('');
+  let successMessage = $state('');
 
   onMount(async () => {
     const mod = await import('$lib/components/wiki/RichTextEditor.svelte');
@@ -173,18 +184,18 @@
         <span class="paragraph-label">Paragraph {i + 1}</span>
         <div class="paragraph-actions">
           {#if editingId !== paragraph.id}
-            <button class="action-btn" on:click={() => startEdit(paragraph)} title="Edit paragraph">
+            <button class="action-btn" onclick={() => startEdit(paragraph)} title="Edit paragraph">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           {/if}
-          <button class="action-btn" on:click={() => moveParagraph(i, -1)} disabled={i === 0} title="Move up">
+          <button class="action-btn" onclick={() => moveParagraph(i, -1)} disabled={i === 0} title="Move up">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg>
           </button>
-          <button class="action-btn" on:click={() => moveParagraph(i, 1)} disabled={i === paragraphs.length - 1} title="Move down">
+          <button class="action-btn" onclick={() => moveParagraph(i, 1)} disabled={i === paragraphs.length - 1} title="Move down">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {#if canDelete}
-            <button class="action-btn danger" on:click={() => deleteParagraph(paragraph.id)} title="Delete paragraph">
+            <button class="action-btn danger" onclick={() => deleteParagraph(paragraph.id)} title="Delete paragraph">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           {/if}
@@ -193,10 +204,10 @@
 
       {#if editingId === paragraph.id && RichTextEditor}
         <div class="editor-wrapper">
-          <svelte:component this={RichTextEditor} content={editContent} on:change={handleEditorChange} placeholder="Write paragraph content..." showWaypoints={true} />
+          <RichTextEditor content={editContent} on:change={handleEditorChange} placeholder="Write paragraph content..." showWaypoints={true} />
           <div class="editor-actions">
-            <button class="btn-cancel" on:click={cancelEdit} disabled={saving}>Cancel</button>
-            <button class="btn-save" on:click={() => saveParagraph(paragraph.id)} disabled={saving}>
+            <button class="btn-cancel" onclick={cancelEdit} disabled={saving}>Cancel</button>
+            <button class="btn-save" onclick={() => saveParagraph(paragraph.id)} disabled={saving}>
               {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
@@ -214,7 +225,7 @@
   {/each}
 
   {#if canCreate}
-    <button class="add-paragraph-btn" on:click={addParagraph} disabled={saving}>
+    <button class="add-paragraph-btn" onclick={addParagraph} disabled={saving}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Add Paragraph
     </button>

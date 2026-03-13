@@ -1,16 +1,16 @@
 <script>
-  export let data = []; // [{ imported_at, total_value, estimated_value, unknown_value, item_count }]
+  let { data = [] } = $props();
 
   const PADDING = { top: 20, right: 16, bottom: 30, left: 60 };
   const WIDTH = 600;
   const HEIGHT = 180;
 
-  let hoveredIndex = null;
-  let tooltipX = 0;
+  let hoveredIndex = $state(null);
+  let tooltipX = $state(0);
   let tooltipY = 0;
 
-  $: chartWidth = WIDTH - PADDING.left - PADDING.right;
-  $: chartHeight = HEIGHT - PADDING.top - PADDING.bottom;
+  let chartWidth = $derived(WIDTH - PADDING.left - PADDING.right);
+  let chartHeight = $derived(HEIGHT - PADDING.top - PADDING.bottom);
 
   // Compute display total: estimated_value + unknown_value for modern imports, total_value for legacy
   function getDisplayTotal(d) {
@@ -20,12 +20,12 @@
     return (est != null ? est : tt) + unknown;
   }
 
-  $: values = data.map(d => getDisplayTotal(d));
-  $: minVal = values.length > 0 ? Math.min(...values) : 0;
-  $: maxVal = values.length > 0 ? Math.max(...values) : 100;
-  $: valRange = maxVal - minVal || 1;
+  let values = $derived(data.map(d => getDisplayTotal(d)));
+  let minVal = $derived(values.length > 0 ? Math.min(...values) : 0);
+  let maxVal = $derived(values.length > 0 ? Math.max(...values) : 100);
+  let valRange = $derived(maxVal - minVal || 1);
 
-  $: points = data.map((d, i) => {
+  let points = $derived(data.map((d, i) => {
     const total = getDisplayTotal(d);
     const unknownVal = d.unknown_value != null ? Number(d.unknown_value) : 0;
     return {
@@ -36,24 +36,24 @@
       unknownValue: unknownVal,
       items: d.item_count,
     };
-  });
+  }));
 
-  $: linePath = points.length > 1
+  let linePath = $derived(points.length > 1
     ? 'M ' + points.map(p => `${p.x},${p.y}`).join(' L ')
-    : '';
+    : '');
 
-  $: areaPath = points.length > 1
+  let areaPath = $derived(points.length > 1
     ? `M ${points[0].x},${PADDING.top + chartHeight} L ${linePath.slice(2)} L ${points[points.length - 1].x},${PADDING.top + chartHeight} Z`
-    : '';
+    : '');
 
   // Y-axis ticks (5 ticks)
-  $: yTicks = Array.from({ length: 5 }, (_, i) => {
+  let yTicks = $derived(Array.from({ length: 5 }, (_, i) => {
     const val = minVal + (valRange * i) / 4;
     return {
       y: PADDING.top + chartHeight - (i / 4) * chartHeight,
       label: val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val.toFixed(0),
     };
-  });
+  }));
 
   function handleMouseMove(e) {
     const svg = e.currentTarget;
@@ -79,13 +79,13 @@
 
 {#if data.length >= 2}
   <div class="chart-wrapper">
-    <!-- svelte-ignore a11y-no-static-element-interactions -- chart hover tooltip is presentational -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -- chart hover tooltip is presentational -->
     <svg
       viewBox="0 0 {WIDTH} {HEIGHT}"
       preserveAspectRatio="xMidYMid meet"
       class="value-chart"
-      on:mousemove={handleMouseMove}
-      on:mouseleave={handleMouseLeave}
+      onmousemove={handleMouseMove}
+      onmouseleave={handleMouseLeave}
     >
       <!-- Grid lines -->
       {#each yTicks as tick}

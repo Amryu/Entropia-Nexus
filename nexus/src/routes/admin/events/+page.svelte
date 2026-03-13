@@ -3,12 +3,12 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
-  let events = [];
-  let total = 0;
-  let currentPage = 1;
-  let stateFilter = '';
-  let isLoading = true;
-  let error = null;
+  let events = $state([]);
+  let total = $state(0);
+  let currentPage = $state(1);
+  let stateFilter = $state('');
+  let isLoading = $state(true);
+  let error = $state(null);
 
   onMount(() => {
     loadEvents();
@@ -54,7 +54,7 @@
   <div class="page-header">
     <h1>Events</h1>
     <div class="header-actions">
-      <select class="state-filter" bind:value={stateFilter} on:change={handleFilterChange}>
+      <select class="state-filter" bind:value={stateFilter} onchange={handleFilterChange}>
         <option value="">All States</option>
         <option value="pending">Pending</option>
         <option value="approved">Approved</option>
@@ -85,7 +85,7 @@
         </thead>
         <tbody>
           {#each events as event}
-            <tr class="clickable-row" on:click={() => goto(`/admin/events/${event.id}`)}>
+            <tr class="clickable-row" onclick={() => goto(`/admin/events/${event.id}`)}>
               <td class="title-cell">{event.title}</td>
               <td>
                 <span class="badge" class:badge-info={event.type === 'official'} class:badge-muted={event.type !== 'official'}>
@@ -111,9 +111,9 @@
 
     {#if total > 20}
       <div class="pagination">
-        <button disabled={currentPage <= 1} on:click={() => { currentPage--; loadEvents(); }}>Previous</button>
+        <button disabled={currentPage <= 1} onclick={() => { currentPage--; loadEvents(); }}>Previous</button>
         <span>Page {currentPage} of {Math.ceil(total / 20)}</span>
-        <button disabled={currentPage >= Math.ceil(total / 20)} on:click={() => { currentPage++; loadEvents(); }}>Next</button>
+        <button disabled={currentPage >= Math.ceil(total / 20)} onclick={() => { currentPage++; loadEvents(); }}>Next</button>
       </div>
     {/if}
   {/if}

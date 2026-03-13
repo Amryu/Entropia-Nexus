@@ -5,17 +5,17 @@
   import { apiPut } from '$lib/util';
   import AvailabilityCalendar from '$lib/components/services/AvailabilityCalendar.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: service = data.service;
-  $: availability = Array.isArray(data.availability) ? data.availability : [];
+  let service = $derived(data.service);
+  let availability = $derived(Array.isArray(data.availability) ? data.availability : []);
 
-  let saving = false;
-  let saveStatus = ''; // '', 'success', 'error'
-  let hasChanges = false;
+  let saving = $state(false);
+  let saveStatus = $state(''); // '', 'success', 'error'
+  let hasChanges = $state(false);
 
   // Track the current state - use data.availability directly for initialization
-  let currentSlots = Array.isArray(data.availability) ? [...data.availability] : [];
+  let currentSlots = $state(Array.isArray(data.availability) ? [...data.availability] : []);
 
   function handleUpdate(event) {
     currentSlots = event.detail;
@@ -131,7 +131,7 @@
       {/if}
     </div>
     <div class="right-actions">
-      <button type="button" class="cancel-btn" on:click={discardChanges} disabled={!hasChanges || saving}>
+      <button type="button" class="cancel-btn" onclick={discardChanges} disabled={!hasChanges || saving}>
         Discard Changes
       </button>
       <button 
@@ -139,7 +139,7 @@
         class="save-btn" 
         class:success={saveStatus === 'success'}
         class:error={saveStatus === 'error'}
-        on:click={saveAvailability} 
+        onclick={saveAvailability} 
         disabled={!hasChanges || saving}
       >
         {#if saving}

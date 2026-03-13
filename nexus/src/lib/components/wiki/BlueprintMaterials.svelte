@@ -13,24 +13,30 @@
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import '$lib/style.css';
 
-  /** @type {object} Blueprint entity */
-  export let blueprint;
+  
 
-  /** @type {Array} Available materials for dropdown [{Id, Name, Properties}] */
-  export let availableMaterials = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} blueprint
+   * @property {Array} Available materials for dropdown [{Id, Name, Properties} [availableMaterials]
+   */
+
+  /** @type {Props} */
+  let { blueprint, availableMaterials = [] } = $props();
 
   const PREF_KEY = 'wiki.blueprintMarkups';
   const SAVE_DEBOUNCE_MS = 500;
 
   // Markup source toggle: 'custom' | 'inventory' | 'ingame' | 'exchange'
-  let markupSource = 'custom';
-  let nameToWapMap = new Map();
-  let nameToIdMap = new Map();
-  let inventoryMarkupMap = new Map();
-  let ingameMarkupMap = new Map();
+  let markupSource = $state('custom');
+  let nameToWapMap = $state(new Map());
+  let nameToIdMap = $state(new Map());
+  let inventoryMarkupMap = $state(new Map());
+  let ingameMarkupMap = $state(new Map());
 
   // Custom markups keyed by material name (persisted)
-  let customMarkups = {};
+  let customMarkups = $state({});
   let saveTimer = null;
   let prefCache = null;
 
@@ -132,21 +138,21 @@
   });
 
   // Calculate totals
-  $: totalTT = (blueprint?.Materials ?? []).reduce((acc, mat) => {
+  let totalTT = $derived((blueprint?.Materials ?? []).reduce((acc, mat) => {
     const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
     return acc + (matTT * (mat.Amount || 0));
-  }, 0);
+  }, 0));
 
-  $: totalWithMarkup = (() => {
+  let totalWithMarkup = $derived((() => {
     void (markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap, customMarkups);
     return (blueprint?.Materials ?? []).reduce((acc, mat) => {
       const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
       const matName = mat.Item?.Name || '';
       return acc + (matTT * (mat.Amount || 0) * getResolvedMarkup(matName) / 100);
     }, 0);
-  })();
+  })());
 
-  $: weightedAvgMU = (() => {
+  let weightedAvgMU = $derived((() => {
     void (markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap, customMarkups);
     const sumTTxMU = (blueprint?.Materials ?? []).reduce((acc, mat) => {
       const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
@@ -155,7 +161,7 @@
       return acc + (tt * getResolvedMarkup(matName));
     }, 0);
     return totalTT > 0 ? sumTTxMU / totalTT : 100;
-  })();
+  })());
 
   function getLineTT(mat) {
     const matTT = mat.Item?.Properties?.Economy?.MaxTT || 0;
@@ -209,8 +215,8 @@
     updateField('Materials', newMaterials);
   }
 
-  $: materialNames = availableMaterials.map(m => m.Name);
-  $: hasMaterials = (blueprint?.Materials?.length > 0) || $editMode;
+  let materialNames = $derived(availableMaterials.map(m => m.Name));
+  let hasMaterials = $derived((blueprint?.Materials?.length > 0) || $editMode);
 </script>
 
 {#if hasMaterials}
@@ -221,16 +227,16 @@
         <span class="markup-source-label">MU Source:</span>
         <div class="markup-source-buttons">
           <button class="source-btn" class:active={markupSource === 'custom'}
-            on:click={() => { markupSource = 'custom'; debounceSaveMarkups(); }}>Custom</button>
+            onclick={() => { markupSource = 'custom'; debounceSaveMarkups(); }}>Custom</button>
           <button class="source-btn" class:active={markupSource === 'inventory'}
             disabled={inventoryMarkupMap.size === 0}
-            on:click={() => { markupSource = 'inventory'; debounceSaveMarkups(); }}>Inventory</button>
+            onclick={() => { markupSource = 'inventory'; debounceSaveMarkups(); }}>Inventory</button>
           <button class="source-btn" class:active={markupSource === 'ingame'}
             disabled={ingameMarkupMap.size === 0}
-            on:click={() => { markupSource = 'ingame'; debounceSaveMarkups(); }}>In-Game</button>
+            onclick={() => { markupSource = 'ingame'; debounceSaveMarkups(); }}>In-Game</button>
           <button class="source-btn" class:active={markupSource === 'exchange'}
             disabled={nameToWapMap.size === 0}
-            on:click={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}>Exchange</button>
+            onclick={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}>Exchange</button>
         </div>
       </div>
     {/if}
@@ -264,10 +270,10 @@
               <div class="table-cell col-amount">
                 <input type="number" class="amount-input" value={material.Amount}
                   min="0" step="1"
-                  on:change={(e) => updateMaterial(index, 'Amount', e.target.value)} />
+                  onchange={(e) => updateMaterial(index, 'Amount', e.target.value)} />
               </div>
               <div class="table-cell col-actions">
-                <button class="btn-remove" on:click={() => removeMaterial(index)} title="Remove material">
+                <button class="btn-remove" onclick={() => removeMaterial(index)} title="Remove material">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
@@ -276,7 +282,7 @@
             </div>
           {/each}
           <div class="add-row">
-            <button class="btn-add" on:click={addMaterial}>
+            <button class="btn-add" onclick={addMaterial}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -313,8 +319,8 @@
                 {#if markupSource === 'custom'}
                   <input type="text" class="markup-input" inputmode="decimal"
                     value={getMarkupInputValue(matName)}
-                    on:input={(e) => handleMarkupChange(matName, e.target.value)}
-                    on:blur={(e) => { e.target.value = getMarkupInputValue(matName); }} />
+                    oninput={(e) => handleMarkupChange(matName, e.target.value)}
+                    onblur={(e) => { e.target.value = getMarkupInputValue(matName); }} />
                 {:else}
                   {@const resolved = getResolvedMarkup(matName)}
                   <span class="markup-value-readonly" class:is-fallback={isFallback}>

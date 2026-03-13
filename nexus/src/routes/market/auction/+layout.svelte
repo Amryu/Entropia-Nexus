@@ -1,6 +1,11 @@
 <script lang="ts">
   import { navigating } from '$app/stores';
   import { fade } from 'svelte/transition';
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+
+  let { children }: Props = $props();
 </script>
 
 {#if $navigating}
@@ -9,7 +14,7 @@
   </div>
 {/if}
 
-<slot />
+{@render children?.()}
 
 <style>
   .loading-bar {

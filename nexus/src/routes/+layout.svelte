@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import '$lib/style.css';
 
@@ -10,7 +12,7 @@
   import { page, navigating } from '$app/stores';
   import { decodeURIComponentSafe } from '$lib/util.js';
 
-  export let data;
+  let { data, children } = $props();
   // SvelteKit passes params to all layouts/pages - we use $page.params instead
   // Declared as const to accept prop without Svelte "unused" warning
   export const params = {};
@@ -18,12 +20,14 @@
   $page;
 
   // Set initial viewport width from server-side detection
-  $: if (data.initialViewportWidth) {
-    initialViewportWidth.set(data.initialViewportWidth);
-  }
+  run(() => {
+    if (data.initialViewportWidth) {
+      initialViewportWidth.set(data.initialViewportWidth);
+    }
+  });
 
   // Whenever the page store updates, decode the parameters
-  $: {
+  run(() => {
     pageParams.set(
       Object.fromEntries(
         Object.entries($page.params).map(([key, value]) => [
@@ -32,7 +36,7 @@
         ])
       )
     );
-  }
+  });
   
   // Viewport cookie storage - debounced to avoid excessive cookie writes
   let viewportDebounceTimer = null;
@@ -136,7 +140,7 @@
     <div class="nav-progress-bar"></div>
   {/if}
   <div class="app-content">
-    <slot></slot>
+    {@render children?.()}
   </div>
 </div>
 

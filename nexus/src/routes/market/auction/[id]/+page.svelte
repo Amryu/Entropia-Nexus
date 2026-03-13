@@ -3,6 +3,8 @@
   Shows auction info, pricing, bid section, bid history, item set, and admin controls.
 -->
 <script>
+  import { self } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { invalidateAll } from '$app/navigation';
@@ -19,33 +21,33 @@
 
   const MAX_GRID_ITEMS = 10;
 
-  export let data;
+  let { data } = $props();
 
-  let customImageVisible = true;
+  let customImageVisible = $state(true);
 
-  $: auction = data.auction;
-  $: bids = auction?.bids || [];
-  $: user = data.session?.user;
-  $: isAdmin = user?.grants?.includes('admin.panel') || user?.administrator;
-  $: isSeller = user && String(user.id) === String(auction?.seller_id);
-  $: disclaimerStatus = data.disclaimerStatus || {};
-  $: auditLog = data.auditLog || [];
-  $: turnstileSiteKey = data.turnstileSiteKey || '';
+  let auction = $derived(data.auction);
+  let bids = $derived(auction?.bids || []);
+  let user = $derived(data.session?.user);
+  let isAdmin = $derived(user?.grants?.includes('admin.panel') || user?.administrator);
+  let isSeller = $derived(user && String(user.id) === String(auction?.seller_id));
+  let disclaimerStatus = $derived(data.disclaimerStatus || {});
+  let auditLog = $derived(data.auditLog || []);
+  let turnstileSiteKey = $derived(data.turnstileSiteKey || '');
 
-  $: items = auction?.item_set_data?.items || [];
-  $: isActive = auction?.status === 'active';
-  $: isFrozen = auction?.status === 'frozen';
-  $: isEnded = auction?.status === 'ended';
+  let items = $derived(auction?.item_set_data?.items || []);
+  let isActive = $derived(auction?.status === 'active');
+  let isFrozen = $derived(auction?.status === 'frozen');
+  let isEnded = $derived(auction?.status === 'ended');
 
-  let showDisclaimer = false;
-  let disclaimerRole = 'bidder';
-  let adminReason = '';
-  let adminSubmitting = false;
-  let showAuditLog = false;
+  let showDisclaimer = $state(false);
+  let disclaimerRole = $state('bidder');
+  let adminReason = $state('');
+  let adminSubmitting = $state(false);
+  let showAuditLog = $state(false);
 
   // Confirmation state (replaces native confirm())
-  let confirmAction = null;
-  let confirmMessage = '';
+  let confirmAction = $state(null);
+  let confirmMessage = $state('');
 
   function requestConfirm(message, action) {
     confirmMessage = message;
@@ -95,7 +97,7 @@
   }
 
   // Cancel auction (owner, active with no bids)
-  $: canCancel = isSeller && auction?.status === 'active' && (auction?.bid_count || 0) === 0;
+  let canCancel = $derived(isSeller && auction?.status === 'active' && (auction?.bid_count || 0) === 0);
 
   function handleCancel() {
     requestConfirm('Cancel this auction? This cannot be undone.', async () => {
@@ -278,7 +280,7 @@
               <a href="/market/auction/{auction.id}/edit" class="btn-secondary">Edit</a>
             {/if}
             {#if canCancel}
-              <button class="btn-danger" on:click={handleCancel}>Cancel Auction</button>
+              <button class="btn-danger" onclick={handleCancel}>Cancel Auction</button>
             {/if}
           </div>
         {/if}
@@ -303,7 +305,7 @@
           <!-- Seller actions -->
           {#if isSeller && isEnded}
             <div class="seller-actions">
-              <button class="btn-primary" on:click={handleSettle}>Settle Auction</button>
+              <button class="btn-primary" onclick={handleSettle}>Settle Auction</button>
               <span class="settle-hint">Confirm the trade is complete</span>
             </div>
           {/if}
@@ -331,7 +333,7 @@
                     alt="Customized item preview"
                     class="custom-image"
                     loading="lazy"
-                    on:error={() => customImageVisible = false}
+                    onerror={() => customImageVisible = false}
                   />
                 {:else}
                   <div class="custom-image-placeholder">
@@ -404,7 +406,7 @@
             {#if isActive || isFrozen}
               <button
                 class="btn-warning"
-                on:click={handleFreeze}
+                onclick={handleFreeze}
                 disabled={adminSubmitting}
               >
                 {isFrozen ? 'Unfreeze' : 'Freeze'}
@@ -413,7 +415,7 @@
             {#if auction.status !== 'settled' && auction.status !== 'cancelled'}
               <button
                 class="btn-danger"
-                on:click={handleAdminCancel}
+                onclick={handleAdminCancel}
                 disabled={adminSubmitting}
               >
                 Force Cancel
@@ -422,7 +424,7 @@
             {#if auction.bid_count > 0}
               <button
                 class="btn-danger"
-                on:click={handleRollbackAll}
+                onclick={handleRollbackAll}
                 disabled={adminSubmitting}
               >
                 Rollback All Bids
@@ -432,7 +434,7 @@
 
           <!-- Audit Log -->
           <div class="audit-section">
-            <button class="btn-secondary audit-toggle" on:click={() => showAuditLog = !showAuditLog}>
+            <button class="btn-secondary audit-toggle" onclick={() => showAuditLog = !showAuditLog}>
               {showAuditLog ? 'Hide' : 'Show'} Audit Log ({auditLog.length} entries)
             </button>
             {#if showAuditLog}
@@ -461,12 +463,12 @@
 
       <!-- Confirmation dialog (replaces native confirm()) -->
       {#if confirmAction}
-        <div class="modal-overlay" role="presentation" on:click|self={handleConfirmNo}>
+        <div class="modal-overlay" role="presentation" onclick={self(handleConfirmNo)}>
           <div class="confirm-dialog" role="dialog" aria-modal="true">
             <p class="confirm-message">{confirmMessage}</p>
             <div class="confirm-actions">
-              <button class="btn-secondary" on:click={handleConfirmNo}>Cancel</button>
-              <button class="btn-danger" on:click={handleConfirmYes}>Confirm</button>
+              <button class="btn-secondary" onclick={handleConfirmNo}>Cancel</button>
+              <button class="btn-danger" onclick={handleConfirmYes}>Confirm</button>
             </div>
           </div>
         </div>

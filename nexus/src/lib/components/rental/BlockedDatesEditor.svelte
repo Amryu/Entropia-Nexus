@@ -10,20 +10,26 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {number} Rental offer ID */
-  export let offerId;
+  
 
-  /** @type {Array<{id: number, start_date: string, end_date: string, reason: string|null}>} */
-  export let blockedDates = [];
+  
 
-  /** @type {boolean} */
-  export let loading = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} offerId
+   * @property {Array<{id: number, start_date: string, end_date: string, reason: string|null}>} [blockedDates]
+   * @property {boolean} [loading]
+   */
 
-  let newStart = '';
-  let newEnd = '';
-  let newReason = '';
-  let adding = false;
-  let error = '';
+  /** @type {Props} */
+  let { offerId, blockedDates = $bindable([]), loading = false } = $props();
+
+  let newStart = $state('');
+  let newEnd = $state('');
+  let newReason = $state('');
+  let adding = $state(false);
+  let error = $state('');
 
   function toDateStr(date) {
     const y = date.getFullYear();
@@ -32,7 +38,7 @@
     return `${y}-${m}-${d}`;
   }
 
-  $: minDate = toDateStr(new Date());
+  let minDate = $derived(toDateStr(new Date()));
 
   async function handleAdd() {
     if (!newStart || !newEnd) {
@@ -122,7 +128,7 @@
         maxlength="200"
       />
     </div>
-    <button type="button" class="add-btn" on:click={handleAdd} disabled={adding || !newStart || !newEnd}>
+    <button type="button" class="add-btn" onclick={handleAdd} disabled={adding || !newStart || !newEnd}>
       {adding ? 'Adding...' : 'Block Dates'}
     </button>
   </div>
@@ -147,7 +153,7 @@
               <span class="range-reason">{range.reason}</span>
             {/if}
           </div>
-          <button type="button" class="remove-btn" on:click={() => handleRemove(range.id)} title="Remove blocked dates">
+          <button type="button" class="remove-btn" onclick={() => handleRemove(range.id)} title="Remove blocked dates">
             &times;
           </button>
         </div>

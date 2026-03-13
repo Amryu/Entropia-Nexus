@@ -1,33 +1,38 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
   import { generateMobAreaName } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import { clickable } from '$lib/actions/clickable.js';
 
-  export let mobs = [];          // All mobs from /mobs (cached by parent)
-  export let location = null;    // Existing MobArea location (if editing)
-  export let isNew = false;
-  export let pendingMobData = null; // { density, maturities: [{ maturityId, isRare }] } from pending changes
+  /**
+   * @typedef {Object} Props
+   * @property {any} [mobs] - All mobs from /mobs (cached by parent)
+   * @property {any} [location] - Existing MobArea location (if editing)
+   * @property {boolean} [isNew]
+   * @property {any} [pendingMobData] - { density, maturities: [{ maturityId, isRare }] } from pending changes
+   */
+
+  /** @type {Props} */
+  let {
+    mobs = [],
+    location = null,
+    isNew = false,
+    pendingMobData = null
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let mobSearch = '';
-  let mobSearchResults = [];
-  let selectedMobs = [];  // [{ mobId, mobName, maturities: [{ id, name, health, level, boss, selected, isRare }] }]
-  let density = 4;
-  let autoName = '';
-  let nameOverride = '';
-  let maturityDialog = null; // { mobId } when dialog is open
+  let mobSearch = $state('');
+  let mobSearchResults = $state([]);
+  let selectedMobs = $state([]);  // [{ mobId, mobName, maturities: [{ id, name, health, level, boss, selected, isRare }] }]
+  let density = $state(4);
+  let autoName = $state('');
+  let maturityDialog = $state(null); // { mobId } when dialog is open
 
-  // If editing an existing mob area, populate from pending changes or spawn data
-  $: if (location && !isNew && mobs.length) {
-    if (pendingMobData) {
-      initFromPending();
-    } else {
-      initFromExisting();
-    }
-  }
 
   function initFromExisting() {
     // Maturities come from the /locations API at the top level, not inside Properties.
@@ -83,7 +88,6 @@
       sortMaturities(mob.maturities);
     }
     density = location.Properties?.Density ?? 4;
-    nameOverride = location.Name || '';
   }
 
   function initFromPending() {
@@ -141,7 +145,6 @@
       sortMaturities(mob.maturities);
     }
     density = pendingMobData.density ?? location.Properties?.Density ?? 4;
-    nameOverride = location.Name || '';
   }
 
   function sortMaturities(mats) {
@@ -161,32 +164,9 @@
     });
   }
 
-  // Search mobs
-  $: {
-    if (mobSearch.trim().length >= 2) {
-      const q = mobSearch.trim().toLowerCase();
-      mobSearchResults = mobs
-        .filter(m => m.Name?.toLowerCase().includes(q))
-        .filter(m => !selectedMobs.some(s => s.mobId === m.Id))
-        .slice(0, 20);
-    } else {
-      mobSearchResults = [];
-    }
-  }
 
-  // Auto-generate name (DB format stays same)
-  $: {
-    const entries = selectedMobs.map(m => ({
-      mobName: m.mobName,
-      maturities: m.maturities.filter(mat => mat.selected).map(mat => ({ name: mat.name, health: mat.health }))
-    })).filter(e => e.maturities.length > 0);
-    autoName = generateMobAreaName(entries);
-  }
 
-  // Display name (simplified format)
-  $: displayName = autoName ? formatMobSpawnDisplayName(autoName) : '';
 
-  $: effectiveName = nameOverride || autoName;
 
   function addMob(mob) {
     mobSearch = '';
@@ -296,7 +276,40 @@
     dispatch('cancel');
   }
 
-  $: dialogMob = maturityDialog ? selectedMobs.find(m => m.mobId === maturityDialog.mobId) : null;
+  // If editing an existing mob area, populate from pending changes or spawn data
+  run(() => {
+    if (location && !isNew && mobs.length) {
+      if (pendingMobData) {
+        initFromPending();
+      } else {
+        initFromExisting();
+      }
+    }
+  });
+  // Search mobs
+  run(() => {
+    if (mobSearch.trim().length >= 2) {
+      const q = mobSearch.trim().toLowerCase();
+      mobSearchResults = mobs
+        .filter(m => m.Name?.toLowerCase().includes(q))
+        .filter(m => !selectedMobs.some(s => s.mobId === m.Id))
+        .slice(0, 20);
+    } else {
+      mobSearchResults = [];
+    }
+  });
+  // Auto-generate name (DB format stays same)
+  run(() => {
+    const entries = selectedMobs.map(m => ({
+      mobName: m.mobName,
+      maturities: m.maturities.filter(mat => mat.selected).map(mat => ({ name: mat.name, health: mat.health }))
+    })).filter(e => e.maturities.length > 0);
+    autoName = generateMobAreaName(entries);
+  });
+  // Display name (simplified format)
+  let displayName = $derived(autoName ? formatMobSpawnDisplayName(autoName) : '');
+  let effectiveName = $derived(autoName);
+  let dialogMob = $derived(maturityDialog ? selectedMobs.find(m => m.mobId === maturityDialog.mobId) : null);
 </script>
 
 <style>
@@ -679,17 +692,16 @@
     <div class="name-display">{displayName || '(select mobs and maturities)'}</div>
     <span class="field-label" style="margin-top: 4px;">DB Name</span>
     <div class="auto-name">{autoName || '—'}</div>
-    <input class="field-input" type="text" bind:value={nameOverride} placeholder="Override name (optional)" />
   </div>
 
   <div class="field-group">
     <span class="field-label">Density</span>
     <div class="density-row">
-      <button class="density-btn" class:active={density === 1} on:click={() => density = 1}>Very Low</button>
-      <button class="density-btn" class:active={density === 2} on:click={() => density = 2}>Low</button>
-      <button class="density-btn" class:active={density === 3} on:click={() => density = 3}>Medium</button>
-      <button class="density-btn" class:active={density === 4} on:click={() => density = 4}>High</button>
-      <button class="density-btn" class:active={density === 5} on:click={() => density = 5}>Very High</button>
+      <button class="density-btn" class:active={density === 1} onclick={() => density = 1}>Very Low</button>
+      <button class="density-btn" class:active={density === 2} onclick={() => density = 2}>Low</button>
+      <button class="density-btn" class:active={density === 3} onclick={() => density = 3}>Medium</button>
+      <button class="density-btn" class:active={density === 4} onclick={() => density = 4}>High</button>
+      <button class="density-btn" class:active={density === 5} onclick={() => density = 5}>Very High</button>
     </div>
   </div>
 
@@ -700,7 +712,7 @@
       {#if mobSearchResults.length > 0}
         <div class="mob-results">
           {#each mobSearchResults as mob}
-            <div class="mob-result" on:click={() => addMob(mob)} use:clickable role="button" tabindex="0">
+            <div class="mob-result" onclick={() => addMob(mob)} use:clickable role="button" tabindex="0">
               {mob.Name}
             </div>
           {/each}
@@ -714,14 +726,14 @@
       <div class="mob-entry-header">
         <span>{mob.mobName}</span>
         <div class="mob-entry-actions">
-          <button class="remove-btn" on:click={() => removeMob(mob.mobId)}>Remove</button>
+          <button class="remove-btn" onclick={() => removeMob(mob.mobId)}>Remove</button>
         </div>
       </div>
       <div class="mob-entry-body">
         <button
           class="configure-btn"
           disabled={mob.maturities.length === 0}
-          on:click={() => openMaturityDialog(mob.mobId)}
+          onclick={() => openMaturityDialog(mob.mobId)}
         >
           Configure Maturities ({getSelectedCount(mob)}/{mob.maturities.length})
         </button>
@@ -730,23 +742,23 @@
   {/each}
 
   <div class="actions">
-    <button class="btn btn-primary" on:click={handleSave}>Save Mob Data</button>
-    <button class="btn" on:click={handleCancel}>Cancel</button>
+    <button class="btn btn-primary" onclick={handleSave}>Save Mob Data</button>
+    <button class="btn" onclick={handleCancel}>Cancel</button>
   </div>
 </div>
 
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog && dialogMob}
-  <div class="dialog-overlay" role="presentation" on:click={closeMaturityDialog}>
-    <div class="maturity-dialog" role="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={closeMaturityDialog}>
+    <div class="maturity-dialog" role="dialog" onclick={stopPropagation(bubble('click'))}>
       <div class="dialog-header">
         <h3>{dialogMob.mobName}</h3>
-        <button class="dialog-close" on:click={closeMaturityDialog}>×</button>
+        <button class="dialog-close" onclick={closeMaturityDialog}>×</button>
       </div>
 
       <div class="dialog-actions">
-        <button on:click={() => selectAllMaturities(dialogMob.mobId)}>All</button>
-        <button on:click={() => deselectAllMaturities(dialogMob.mobId)}>None</button>
+        <button onclick={() => selectAllMaturities(dialogMob.mobId)}>All</button>
+        <button onclick={() => deselectAllMaturities(dialogMob.mobId)}>None</button>
       </div>
 
       <div class="dialog-content">
@@ -765,7 +777,7 @@
                 <input
                   type="checkbox"
                   checked={mat.selected}
-                  on:change={() => toggleMaturity(dialogMob.mobId, mat.id)}
+                  onchange={() => toggleMaturity(dialogMob.mobId, mat.id)}
                 />
               </label>
               <span class="mat-name">
@@ -782,7 +794,7 @@
                   <button
                     class="rare-btn"
                     class:active={mat.isRare}
-                    on:click={() => toggleRare(dialogMob.mobId, mat.id)}
+                    onclick={() => toggleRare(dialogMob.mobId, mat.id)}
                     title="Toggle rare spawn"
                   >R</button>
                 {/if}
@@ -793,7 +805,7 @@
       </div>
 
       <div class="dialog-footer">
-        <button on:click={closeMaturityDialog}>Done</button>
+        <button onclick={closeMaturityDialog}>Done</button>
       </div>
     </div>
   </div>

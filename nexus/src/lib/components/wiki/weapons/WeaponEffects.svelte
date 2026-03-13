@@ -8,32 +8,43 @@
   import { getTimeString } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
 
-  /** @type {object} Weapon entity */
-  export let weapon = null;
+  
 
-  /** @type {boolean} Show both equip and use effects together */
-  export let combined = false;
+  
 
-  /** @type {string} Which effects to show: 'all', 'equip', 'use' */
-  export let show = 'all';
+  
 
-  /** @type {Array} Available effects for dropdown */
-  export let effects = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} [weapon]
+   * @property {boolean} [combined]
+   * @property {string} [show]
+   * @property {Array} [effects]
+   */
 
-  $: effectsOnEquip = weapon?.EffectsOnEquip || [];
-  $: effectsOnUse = weapon?.EffectsOnUse || [];
+  /** @type {Props} */
+  let {
+    weapon = null,
+    combined = false,
+    show = 'all',
+    effects = []
+  } = $props();
 
-  $: showEquip = show === 'all' || show === 'equip';
-  $: showUse = show === 'all' || show === 'use';
+  let effectsOnEquip = $derived(weapon?.EffectsOnEquip || []);
+  let effectsOnUse = $derived(weapon?.EffectsOnUse || []);
 
-  $: hasEffects = $editMode || (showEquip && effectsOnEquip.length > 0) || (showUse && effectsOnUse.length > 0);
+  let showEquip = $derived(show === 'all' || show === 'equip');
+  let showUse = $derived(show === 'all' || show === 'use');
+
+  let hasEffects = $derived($editMode || (showEquip && effectsOnEquip.length > 0) || (showUse && effectsOnUse.length > 0));
 
   // Sort effects alphabetically
-  $: sortedEquipEffects = [...effectsOnEquip].sort((a, b) => a.Name?.localeCompare(b.Name) || 0);
-  $: sortedUseEffects = [...effectsOnUse].sort((a, b) => a.Name?.localeCompare(b.Name) || 0);
+  let sortedEquipEffects = $derived([...effectsOnEquip].sort((a, b) => a.Name?.localeCompare(b.Name) || 0));
+  let sortedUseEffects = $derived([...effectsOnUse].sort((a, b) => a.Name?.localeCompare(b.Name) || 0));
 
   // Available effect names for dropdowns
-  $: effectOptions = effects.map(e => ({ value: e.Name, label: e.Name }));
+  let effectOptions = $derived(effects.map(e => ({ value: e.Name, label: e.Name })));
 
   function formatEffectValue(effect) {
     const strength = effect.Values?.Strength ?? '?';
@@ -168,13 +179,13 @@
                   <select
                     class="effect-select"
                     value={effect.Name}
-                    on:change={(e) => updateEquipEffect(i, 'Name', e.target.value)}
+                    onchange={(e) => updateEquipEffect(i, 'Name', e.target.value)}
                   >
                     {#each effectOptions as opt}
                       <option value={opt.value}>{opt.label}</option>
                     {/each}
                   </select>
-                  <button class="btn-remove" on:click={() => removeEquipEffect(i)} title="Remove effect">
+                  <button class="btn-remove" onclick={() => removeEquipEffect(i)} title="Remove effect">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
@@ -188,13 +199,13 @@
                     value={effect.Values?.Strength ?? 0}
                     step="0.1"
                     min="0"
-                    on:change={(e) => updateEquipEffect(i, 'Strength', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updateEquipEffect(i, 'Strength', parseFloat(e.target.value) || 0)}
                   />
                   <span class="effect-unit">{getEffectUnit(effect.Name)}</span>
                 </div>
               </div>
             {/each}
-            <button class="btn-add" on:click={addEquipEffect}>
+            <button class="btn-add" onclick={addEquipEffect}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
@@ -238,13 +249,13 @@
                   <select
                     class="effect-select"
                     value={effect.Name}
-                    on:change={(e) => updateUseEffect(i, 'Name', e.target.value)}
+                    onchange={(e) => updateUseEffect(i, 'Name', e.target.value)}
                   >
                     {#each effectOptions as opt}
                       <option value={opt.value}>{opt.label}</option>
                     {/each}
                   </select>
-                  <button class="btn-remove" on:click={() => removeUseEffect(i)} title="Remove effect">
+                  <button class="btn-remove" onclick={() => removeUseEffect(i)} title="Remove effect">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
@@ -258,7 +269,7 @@
                     value={effect.Values?.Strength ?? 0}
                     step="0.1"
                     min="0"
-                    on:change={(e) => updateUseEffect(i, 'Strength', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updateUseEffect(i, 'Strength', parseFloat(e.target.value) || 0)}
                   />
                   <span class="effect-unit">{getEffectUnit(effect.Name)}</span>
                   <span class="field-separator">for</span>
@@ -268,13 +279,13 @@
                     value={effect.Values?.DurationSeconds ?? 0}
                     step="0.1"
                     min="0"
-                    on:change={(e) => updateUseEffect(i, 'Duration', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updateUseEffect(i, 'Duration', parseFloat(e.target.value) || 0)}
                   />
                   <span class="effect-unit">s</span>
                 </div>
               </div>
             {/each}
-            <button class="btn-add" on:click={addUseEffect}>
+            <button class="btn-add" onclick={addUseEffect}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />

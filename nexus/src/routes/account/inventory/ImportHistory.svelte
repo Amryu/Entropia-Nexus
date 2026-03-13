@@ -1,4 +1,6 @@
 <script>
+  import { self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
@@ -8,14 +10,14 @@
 
   const dispatch = createEventDispatcher();
 
-  let imports = [];
-  let valueHistory = [];
-  let loading = true;
-  let loadingMore = false;
-  let hasMore = true;
-  let expandedId = null;
-  let expandedDeltas = [];
-  let loadingDeltas = false;
+  let imports = $state([]);
+  let valueHistory = $state([]);
+  let loading = $state(true);
+  let loadingMore = $state(false);
+  let hasMore = $state(true);
+  let expandedId = $state(null);
+  let expandedDeltas = $state([]);
+  let loadingDeltas = $state(false);
 
   const PAGE_SIZE = 20;
 
@@ -115,11 +117,11 @@
   loadData();
 </script>
 
-<div class="modal-overlay" role="presentation" on:click|self={handleClose} on:keydown={(e) => e.key === 'Escape' && handleClose()}>
+<div class="modal-overlay" role="presentation" onclick={self(handleClose)} onkeydown={(e) => e.key === 'Escape' && handleClose()}>
   <div class="history-modal" role="dialog" aria-modal="true" aria-label="Import History">
     <div class="history-header">
       <h2>Import History</h2>
-      <button class="close-btn" on:click={handleClose}>&times;</button>
+      <button class="close-btn" onclick={handleClose}>&times;</button>
     </div>
 
     {#if loading}
@@ -132,7 +134,7 @@
       <div class="import-list">
         {#each imports as imp (imp.id)}
           <div class="import-row" class:expanded={expandedId === imp.id}>
-            <div class="import-summary" use:clickable on:click={() => toggleExpand(imp)}>
+            <div class="import-summary" use:clickable onclick={() => toggleExpand(imp)}>
               <div class="import-date">{formatDate(imp.imported_at)}</div>
               <div class="import-stats">
                 <span>{imp.item_count} items</span>
@@ -186,7 +188,7 @@
 
         {#if hasMore}
           <div class="load-more">
-            <button class="btn btn-ghost btn-sm" on:click={loadMore} disabled={loadingMore}>
+            <button class="btn btn-ghost btn-sm" onclick={loadMore} disabled={loadingMore}>
               {loadingMore ? 'Loading...' : 'Load more'}
             </button>
           </div>

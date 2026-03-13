@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
 
   import '$lib/style.css';
@@ -10,41 +12,56 @@
   import ContextMenu from './ContextMenu.svelte';
   import { contextmenu } from './ContextMenu';
 
-  export let items = [];
-  export let filterButtonInfo = [];
-  export let currentSelection = '';
-  export let title = '';
-  export let basePath = '';
-  export let tableViewInfo = {};
-  export let user;
-  export let editable = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [items]
+   * @property {any} [filterButtonInfo]
+   * @property {string} [currentSelection]
+   * @property {string} [title]
+   * @property {string} [basePath]
+   * @property {any} [tableViewInfo]
+   * @property {any} user
+   * @property {boolean} [editable]
+   */
 
-  let contextMenuElement;
+  /** @type {Props} */
+  let {
+    items = [],
+    filterButtonInfo = [],
+    currentSelection = $bindable(''),
+    title = '',
+    basePath = '',
+    tableViewInfo = {},
+    user,
+    editable = false
+  } = $props();
 
-  let currentCategorySelected = null;
+  let contextMenuElement = $state();
 
-  let search = '';
-  let isMultiType;
-  let elements;
+  let currentCategorySelected = $state(null);
 
-  let expanded = false;
+  let search = $state('');
+  let isMultiType = $state();
+  let elements = $state();
 
-  let start;
-  let end;
-  let count;
+  let expanded = $state(false);
 
-  $: {
+  let start = $state();
+  let end = $state();
+  let count = $state();
+
+  run(() => {
     isMultiType = typeof items === 'object' && !Array.isArray(items)
     elements = isMultiType ? Object.keys(items).map(x => items[x].map(y => { y._type = x; return y })).flat() : items;
     elements = elements.sort((a, b) => {
       // Natural sort that handles numbers properly
       return a.Name.localeCompare(b.Name, undefined, { numeric: true, sensitivity: 'base' });
     });
-  }
+  });
   
-  let filteredElements;
+  let filteredElements = $state();
 
-  $: {
+  run(() => {
     filteredElements = elements.filter((item) => {
       return !(isMultiType && currentCategorySelected && item._type !== currentCategorySelected);
     });
@@ -53,7 +70,7 @@
     filteredElements = !search.trim() ? filteredElements : filteredElements.filter((item) => {
       return item.Name.toLowerCase().includes(searchTerm);
     });
-  }
+  });
 
   const dispatch = createEventDispatcher();
 
@@ -187,12 +204,12 @@
 <div class="list-wrapper {expanded ? 'expanded' : ''}">
   {#if user && user.verified && editable}
     {#if !isMultiType || filterButtonInfo.every(x => x.IsRoute === false)}
-      <button class="create-button" on:click={_ => createItem()} title="Create new item">+</button>
+      <button class="create-button" onclick={_ => createItem()} title="Create new item">+</button>
     {:else}
-      <button use:contextmenu={{ contextMenu: contextMenuElement, payload: null }} class="create-button" on:click={handleClick} title="Create new item">+</button>
+      <button use:contextmenu={{ contextMenu: contextMenuElement, payload: null }} class="create-button" onclick={handleClick} title="Create new item">+</button>
     {/if}
   {/if}
-  <button class="expand-button" on:click={expand} title={expanded ? 'Close' : 'Expand'}>{expanded ? '<<' : '>>'}</button>
+  <button class="expand-button" onclick={expand} title={expanded ? 'Close' : 'Expand'}>{expanded ? '<<' : '>>'}</button>
 
   <h2>{title}</h2>
   <br />
@@ -200,9 +217,9 @@
   <div class="info-container">
     {#if isMultiType}
       <div class="button-container">
-        <button class="square-button {currentCategorySelected === null ? 'selected' : ''}" on:click={() => currentCategorySelected = null} title='All'>All</button>
+        <button class="square-button {currentCategorySelected === null ? 'selected' : ''}" onclick={() => currentCategorySelected = null} title='All'>All</button>
         {#each filterButtonInfo as buttonInfo}
-          <button class="square-button {currentCategorySelected === buttonInfo.Type ? 'selected' : ''}" on:click={() => currentCategorySelected = buttonInfo.Type} title='{buttonInfo.Title}'>{buttonInfo.Label}</button>
+          <button class="square-button {currentCategorySelected === buttonInfo.Type ? 'selected' : ''}" onclick={() => currentCategorySelected = buttonInfo.Type} title='{buttonInfo.Title}'>{buttonInfo.Label}</button>
         {/each}
       </div>
     {/if} 
@@ -213,7 +230,7 @@
     {/if}
   </div>
   {#if !expanded}
-  <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} on:focus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
+  <input class="search-input width100" type="text" placeholder="Search..." bind:value={search} onfocus={(evt) => { if (evt.target.selectionStart === evt.target.selectionEnd) evt.target.select(); }} style="font-size: 20px;">
   {/if}
 
   {#if expanded}
@@ -257,7 +274,7 @@
         <br />
         No items found...<br />
         <br />
-        <input type="button" value="Clear Search" on:click="{() => search = ''}" />
+        <input type="button" value="Clear Search" onclick={() => search = ''} />
       </div>
       {:else}
         <Table

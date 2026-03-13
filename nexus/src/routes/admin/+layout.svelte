@@ -1,8 +1,15 @@
 <script>
   // @ts-nocheck
   import { page } from '$app/stores';
+  /**
+   * @typedef {Object} Props
+   * @property {import('svelte').Snippet} [children]
+   */
 
-  let sidebarOpen = false;
+  /** @type {Props} */
+  let { children } = $props();
+
+  let sidebarOpen = $state(false);
 
   const navItems = [
     { path: '/admin', label: 'Dashboard', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>' },
@@ -22,15 +29,15 @@
   ];
 
   // Use reactive statement to compute active states based on current path
-  $: currentPath = $page.url.pathname;
-  $: activeStates = navItems.reduce((acc, item) => {
+  let currentPath = $derived($page.url.pathname);
+  let activeStates = $derived(navItems.reduce((acc, item) => {
     if (item.path === '/admin') {
       acc[item.path] = currentPath === '/admin';
     } else {
       acc[item.path] = currentPath.startsWith(item.path);
     }
     return acc;
-  }, {});
+  }, {}));
 
   function toggleSidebar() {
     sidebarOpen = !sidebarOpen;
@@ -180,7 +187,7 @@
 
 <div class="admin-layout">
   <!-- Mobile overlay -->
-  <div class="sidebar-overlay" role="presentation" class:open={sidebarOpen} on:click={closeSidebar}></div>
+  <div class="sidebar-overlay" role="presentation" class:open={sidebarOpen} onclick={closeSidebar}></div>
 
   <nav class="admin-sidebar" class:open={sidebarOpen}>
     <div class="sidebar-header">
@@ -191,7 +198,7 @@
     </div>
 
     {#each navItems as item}
-      <a href={item.path} class="nav-item" class:active={activeStates[item.path]} on:click={closeSidebar}>
+      <a href={item.path} class="nav-item" class:active={activeStates[item.path]} onclick={closeSidebar}>
         <span class="nav-icon">{@html item.icon}</span>
         {item.label}
       </a>
@@ -199,11 +206,11 @@
   </nav>
 
   <main class="admin-content">
-    <slot />
+    {@render children?.()}
   </main>
 
   <!-- Mobile toggle button -->
-  <button class="sidebar-toggle" on:click={toggleSidebar} aria-label="Toggle sidebar">
+  <button class="sidebar-toggle" onclick={toggleSidebar} aria-label="Toggle sidebar">
     {#if sidebarOpen}
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     {:else}

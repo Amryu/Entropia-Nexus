@@ -1,27 +1,31 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { apiCall, apiPut } from "$lib/util";
   import EditFormControlGroup from "./EditFormControlGroup.svelte";
 
-  export let object;
-  export let user;
-  export let canEdit = false;
  
-  let disabled = false;
-  let saving = false;
-  let saveMessage = '';
+  let disabled = $state(false);
+  let saving = $state(false);
+  let saveMessage = $state('');
  
-  $: disabled = !canEdit || !user?.verified;
 
-  // Only owners can manage managers, not regular managers
-  $: isOwner = object && user && (object.OwnerId === user.id);
-  $: canManageManagers = isOwner || (user && user.grants?.includes('admin.panel'));
 
 
   import { onMount } from 'svelte';
-  let isLoading = true;
+  /**
+   * @typedef {Object} Props
+   * @property {any} object
+   * @property {any} user
+   * @property {boolean} [canEdit]
+   */
+
+  /** @type {Props} */
+  let { object, user, canEdit = false } = $props();
+  let isLoading = $state(true);
   let dependencies = {};
-  let managers = [];
+  let managers = $state([]);
 
   // Manager configuration
   const managerConfig = {
@@ -103,6 +107,12 @@
   function cancel() {
     window.location.reload();
   }
+  run(() => {
+    disabled = !canEdit || !user?.verified;
+  });
+  // Only owners can manage managers, not regular managers
+  let isOwner = $derived(object && user && (object.OwnerId === user.id));
+  let canManageManagers = $derived(isOwner || (user && user.grants?.includes('admin.panel')));
 </script>
 
 <style>
@@ -193,7 +203,7 @@
         <button 
           class="save-button" 
           type="button" 
-          on:click={save} 
+          onclick={save} 
           disabled={disabled || saving || !canManageManagers}>
           {saving ? 'Saving...' : 'Save Managers'}
         </button>

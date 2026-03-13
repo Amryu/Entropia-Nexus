@@ -3,6 +3,9 @@
   Tabbed view of a player's globals: Overview, Hunting, Mining, Crafting, ATHs.
 -->
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
@@ -21,13 +24,12 @@
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
   import GzButton from '$lib/components/globals/GzButton.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: user = data?.session?.user || null;
 
   // Media dialog state
-  let showMediaDialog = false;
-  let mediaDialogGlobal = null;
+  let showMediaDialog = $state(false);
+  let mediaDialogGlobal = $state(null);
 
   function openMediaDialog(g) {
     mediaDialogGlobal = g;
@@ -68,21 +70,9 @@
     mediaDialogGlobal = null;
   }
 
-  let playerData = data.playerData;
+  let playerData = $state(data.playerData);
   let playerName = data.playerName;
-  $: summary = playerData?.summary;
-  $: hunting = playerData?.hunting || [];
-  $: mining = playerData?.mining?.resources || [];
-  $: crafting = playerData?.crafting?.items || [];
-  $: activity = playerData?.activity || [];
-  $: recent = playerData?.recent || [];
-  let recentSort = { col: 'timestamp', asc: false };
-  $: sortedRecent = recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort);
-  $: achievements = playerData?.achievements || [];
-  $: rareItems = playerData?.rare_items || [];
-  $: topLoots = playerData?.top_loots || { hunting: [], mining: [], crafting: [] };
-  $: athRankings = playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] };
-  $: isTeam = summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count;
+  let recentSort = $state({ col: 'timestamp', asc: false });
 
   // Tabs - base tabs always shown, extra tabs conditional on data
   const BASE_TABS = [
@@ -97,17 +87,12 @@
     { value: 'tier', label: 'Tier Records', key: 'tier_count' },
     { value: 'pvp', label: 'PvP', key: 'pvp_count' },
   ];
-  $: tabs = [
-    ...BASE_TABS,
-    ...EXTRA_TABS.filter(t => summary && summary[t.key] > 0),
-    { value: 'aths', label: 'ATHs' },
-  ];
-  let activeTab = 'overview';
+  let activeTab = $state('overview');
 
-  let period = 'all';
-  let dateFrom = null;
-  let dateTo = null;
-  let loading = false;
+  let period = $state('all');
+  let dateFrom = $state(null);
+  let dateTo = $state(null);
+  let loading = $state(false);
 
   function onDateRangeChange(e) {
     period = e.detail.period;
@@ -138,7 +123,7 @@
   }
 
   // Expanded mobs (for maturity detail rows)
-  let expandedMobs = new Set();
+  let expandedMobs = $state(new Set());
 
   function toggleMob(key) {
     if (expandedMobs.has(key)) {
@@ -150,47 +135,29 @@
   }
 
   // Sorting
-  let huntSort = { col: 'total_value', asc: false };
-  let miningSort = { col: 'total_value', asc: false };
-  let craftSort = { col: 'total_value', asc: false };
+  let huntSort = $state({ col: 'total_value', asc: false });
+  let miningSort = $state({ col: 'total_value', asc: false });
+  let craftSort = $state({ col: 'total_value', asc: false });
 
-  $: sortedHunting = sortedData(hunting, huntSort);
-  $: sortedMining = sortedData(mining, miningSort);
-  $: sortedCrafting = sortedData(crafting, craftSort);
 
   // Pagination constants
   const PAGE_SIZE = 25;
 
 
   // Hunting tab pagination
-  let huntTargetPage = 0;
-  let huntLootPage = 0;
-  let huntLootSort = { col: 'value', asc: false };
-  $: huntTargetPages = Math.ceil(sortedHunting.length / PAGE_SIZE);
-  $: sortedHuntingLoots = sortedData(topLoots.hunting || [], huntLootSort);
-  $: huntLootPages = Math.ceil(sortedHuntingLoots.length / PAGE_SIZE);
-  $: pagedHunting = sortedHunting.slice(huntTargetPage * PAGE_SIZE, (huntTargetPage + 1) * PAGE_SIZE);
-  $: pagedHuntingLoots = sortedHuntingLoots.slice(huntLootPage * PAGE_SIZE, (huntLootPage + 1) * PAGE_SIZE);
+  let huntTargetPage = $state(0);
+  let huntLootPage = $state(0);
+  let huntLootSort = $state({ col: 'value', asc: false });
 
   // Mining tab pagination
-  let miningTargetPage = 0;
-  let miningLootPage = 0;
-  let miningLootSort = { col: 'value', asc: false };
-  $: miningTargetPages = Math.ceil(sortedMining.length / PAGE_SIZE);
-  $: sortedMiningLoots = sortedData(topLoots.mining || [], miningLootSort);
-  $: miningLootPages = Math.ceil(sortedMiningLoots.length / PAGE_SIZE);
-  $: pagedMining = sortedMining.slice(miningTargetPage * PAGE_SIZE, (miningTargetPage + 1) * PAGE_SIZE);
-  $: pagedMiningLoots = sortedMiningLoots.slice(miningLootPage * PAGE_SIZE, (miningLootPage + 1) * PAGE_SIZE);
+  let miningTargetPage = $state(0);
+  let miningLootPage = $state(0);
+  let miningLootSort = $state({ col: 'value', asc: false });
 
   // Crafting tab pagination
-  let craftTargetPage = 0;
-  let craftLootPage = 0;
-  let craftLootSort = { col: 'value', asc: false };
-  $: craftTargetPages = Math.ceil(sortedCrafting.length / PAGE_SIZE);
-  $: sortedCraftingLoots = sortedData(topLoots.crafting || [], craftLootSort);
-  $: craftLootPages = Math.ceil(sortedCraftingLoots.length / PAGE_SIZE);
-  $: pagedCrafting = sortedCrafting.slice(craftTargetPage * PAGE_SIZE, (craftTargetPage + 1) * PAGE_SIZE);
-  $: pagedCraftingLoots = sortedCraftingLoots.slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE);
+  let craftTargetPage = $state(0);
+  let craftLootPage = $state(0);
+  let craftLootSort = $state({ col: 'value', asc: false });
 
   // ATH rankings tab — auto-select category with most ranked entries
   const ATH_CATEGORIES = [
@@ -199,39 +166,19 @@
     { value: 'crafting', label: 'Crafting' },
     { value: 'pvp', label: 'PvP' },
   ];
-  $: athCategory = (() => {
-    const counts = { hunting: 0, mining: 0, crafting: 0, pvp: 0 };
-    for (const cat of ['hunting', 'mining', 'crafting']) {
-      counts[cat] = (athRankings[cat] || []).length;
-    }
-    counts.pvp = (athRankings.pvp || []).length;
-    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-    return best[1] > 0 ? best[0] : 'hunting';
-  })();
-  let athCategoryOverride = null;
-  $: activeAthCategory = athCategoryOverride ?? athCategory;
-  $: athEntries = athRankings[activeAthCategory] || [];
+  let athCategoryOverride = $state(null);
 
-  // ATH split into by_total and by_best (for hunting/mining/crafting)
-  $: athByTotal = activeAthCategory !== 'pvp'
-    ? athEntries.filter(e => e.total_rank <= 10).sort((a, b) => a.total_rank - b.total_rank)
-    : [];
-  $: athByBest = activeAthCategory !== 'pvp'
-    ? athEntries.filter(e => e.best_rank <= 10).sort((a, b) => a.best_rank - b.best_rank)
-    : [];
 
   // Rare finds sorting
-  let rareFindSort = { col: 'timestamp', asc: false };
-  $: sortedRareItems = sortedData(rareItems, rareFindSort);
+  let rareFindSort = $state({ col: 'timestamp', asc: false });
 
   // PvP sorting
-  let pvpSort = { col: 'value', asc: false };
-  $: sortedPvpEvents = sortedData(pvpEvents, pvpSort);
+  let pvpSort = $state({ col: 'value', asc: false });
 
   // (ATH tab uses no pagination — entries limited to top 10 per target)
 
   // Activity chart
-  let activityCanvas;
+  let activityCanvas = $state();
   let activityChart = null;
 
   function buildActivityChart() {
@@ -287,9 +234,6 @@
     if (activityChart) activityChart.destroy();
   });
 
-  $: if (activityCanvas && activity.length && activeTab === 'overview') {
-    tick().then(buildActivityChart);
-  }
 
   function handleSearchSelect(e) {
     const { name, type } = e.detail;
@@ -305,19 +249,80 @@
     if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
   }
 
-  // Tab-specific data
-  $: discoveries = achievements.filter(a => a.type === 'discovery');
-  $: tierRecords = achievements.filter(a => a.type === 'tier');
-  $: pvpEvents = playerData?.pvp_events || [];
 
-  // Overview helpers
-  $: overviewRareItems = rareItems.slice(0, 5);
-  $: overviewDiscoveries = discoveries.slice(0, 5);
-  $: overviewTopHunting = topLoots.hunting.slice(0, OVERVIEW_TOP_LIMIT);
-  $: overviewTopMining = topLoots.mining.slice(0, OVERVIEW_TOP_LIMIT);
-  $: overviewTopCrafting = topLoots.crafting.slice(0, OVERVIEW_TOP_LIMIT);
 
   const OVERVIEW_TOP_LIMIT = 10;
+  let user = $derived(data?.session?.user || null);
+  let summary = $derived(playerData?.summary);
+  let hunting = $derived(playerData?.hunting || []);
+  let mining = $derived(playerData?.mining?.resources || []);
+  let crafting = $derived(playerData?.crafting?.items || []);
+  let activity = $derived(playerData?.activity || []);
+  let recent = $derived(playerData?.recent || []);
+  let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
+  let achievements = $derived(playerData?.achievements || []);
+  let rareItems = $derived(playerData?.rare_items || []);
+  let topLoots = $derived(playerData?.top_loots || { hunting: [], mining: [], crafting: [] });
+  let athRankings = $derived(playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] });
+  let isTeam = $derived(summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count);
+  let tabs = $derived([
+    ...BASE_TABS,
+    ...EXTRA_TABS.filter(t => summary && summary[t.key] > 0),
+    { value: 'aths', label: 'ATHs' },
+  ]);
+  let sortedHunting = $derived(sortedData(hunting, huntSort));
+  let sortedMining = $derived(sortedData(mining, miningSort));
+  let sortedCrafting = $derived(sortedData(crafting, craftSort));
+  let huntTargetPages = $derived(Math.ceil(sortedHunting.length / PAGE_SIZE));
+  let sortedHuntingLoots = $derived(sortedData(topLoots.hunting || [], huntLootSort));
+  let huntLootPages = $derived(Math.ceil(sortedHuntingLoots.length / PAGE_SIZE));
+  let pagedHunting = $derived(sortedHunting.slice(huntTargetPage * PAGE_SIZE, (huntTargetPage + 1) * PAGE_SIZE));
+  let pagedHuntingLoots = $derived(sortedHuntingLoots.slice(huntLootPage * PAGE_SIZE, (huntLootPage + 1) * PAGE_SIZE));
+  let miningTargetPages = $derived(Math.ceil(sortedMining.length / PAGE_SIZE));
+  let sortedMiningLoots = $derived(sortedData(topLoots.mining || [], miningLootSort));
+  let miningLootPages = $derived(Math.ceil(sortedMiningLoots.length / PAGE_SIZE));
+  let pagedMining = $derived(sortedMining.slice(miningTargetPage * PAGE_SIZE, (miningTargetPage + 1) * PAGE_SIZE));
+  let pagedMiningLoots = $derived(sortedMiningLoots.slice(miningLootPage * PAGE_SIZE, (miningLootPage + 1) * PAGE_SIZE));
+  let craftTargetPages = $derived(Math.ceil(sortedCrafting.length / PAGE_SIZE));
+  let sortedCraftingLoots = $derived(sortedData(topLoots.crafting || [], craftLootSort));
+  let craftLootPages = $derived(Math.ceil(sortedCraftingLoots.length / PAGE_SIZE));
+  let pagedCrafting = $derived(sortedCrafting.slice(craftTargetPage * PAGE_SIZE, (craftTargetPage + 1) * PAGE_SIZE));
+  let pagedCraftingLoots = $derived(sortedCraftingLoots.slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE));
+  let athCategory = $derived((() => {
+    const counts = { hunting: 0, mining: 0, crafting: 0, pvp: 0 };
+    for (const cat of ['hunting', 'mining', 'crafting']) {
+      counts[cat] = (athRankings[cat] || []).length;
+    }
+    counts.pvp = (athRankings.pvp || []).length;
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return best[1] > 0 ? best[0] : 'hunting';
+  })());
+  let activeAthCategory = $derived(athCategoryOverride ?? athCategory);
+  let athEntries = $derived(athRankings[activeAthCategory] || []);
+  // ATH split into by_total and by_best (for hunting/mining/crafting)
+  let athByTotal = $derived(activeAthCategory !== 'pvp'
+    ? athEntries.filter(e => e.total_rank <= 10).sort((a, b) => a.total_rank - b.total_rank)
+    : []);
+  let athByBest = $derived(activeAthCategory !== 'pvp'
+    ? athEntries.filter(e => e.best_rank <= 10).sort((a, b) => a.best_rank - b.best_rank)
+    : []);
+  let sortedRareItems = $derived(sortedData(rareItems, rareFindSort));
+  let pvpEvents = $derived(playerData?.pvp_events || []);
+  let sortedPvpEvents = $derived(sortedData(pvpEvents, pvpSort));
+  run(() => {
+    if (activityCanvas && activity.length && activeTab === 'overview') {
+      tick().then(buildActivityChart);
+    }
+  });
+  // Tab-specific data
+  let discoveries = $derived(achievements.filter(a => a.type === 'discovery'));
+  let tierRecords = $derived(achievements.filter(a => a.type === 'tier'));
+  // Overview helpers
+  let overviewRareItems = $derived(rareItems.slice(0, 5));
+  let overviewDiscoveries = $derived(discoveries.slice(0, 5));
+  let overviewTopHunting = $derived(topLoots.hunting.slice(0, OVERVIEW_TOP_LIMIT));
+  let overviewTopMining = $derived(topLoots.mining.slice(0, OVERVIEW_TOP_LIMIT));
+  let overviewTopCrafting = $derived(topLoots.crafting.slice(0, OVERVIEW_TOP_LIMIT));
 </script>
 
 <svelte:head>
@@ -393,17 +398,17 @@
 
     <!-- Category Breakdown (clickable to switch tabs) -->
     <div class="stats-row category-row">
-      <button class="stat-card category-card clickable" on:click={() => activeTab = 'hunting'}>
+      <button class="stat-card category-card clickable" onclick={() => activeTab = 'hunting'}>
         <span class="stat-value hunting-color">{(summary.kill_count + summary.team_kill_count).toLocaleString()}</span>
         <span class="stat-label">Hunting</span>
         <span class="stat-sub">{formatPed(summary.hunting_value)} PED</span>
       </button>
-      <button class="stat-card category-card clickable" on:click={() => activeTab = 'mining'}>
+      <button class="stat-card category-card clickable" onclick={() => activeTab = 'mining'}>
         <span class="stat-value mining-color">{summary.deposit_count.toLocaleString()}</span>
         <span class="stat-label">Mining</span>
         <span class="stat-sub">{formatPed(summary.mining_value)} PED</span>
       </button>
-      <button class="stat-card category-card clickable" on:click={() => activeTab = 'crafting'}>
+      <button class="stat-card category-card clickable" onclick={() => activeTab = 'crafting'}>
         <span class="stat-value crafting-color">{summary.craft_count.toLocaleString()}</span>
         <span class="stat-label">Crafting</span>
         <span class="stat-sub">{formatPed(summary.crafting_value)} PED</span>
@@ -417,7 +422,7 @@
           <button
             class="tab-link"
             class:active={activeTab === tab.value}
-            on:click={() => activeTab = tab.value}
+            onclick={() => activeTab = tab.value}
           >
             {tab.label}
           </button>
@@ -434,7 +439,7 @@
           <div class="section-card overview-category">
             <div class="overview-cat-header">
               <h2>Top Hunting Loots</h2>
-              <button class="view-all-btn" on:click={() => activeTab = 'hunting'}>View all &rarr;</button>
+              <button class="view-all-btn" onclick={() => activeTab = 'hunting'}>View all &rarr;</button>
             </div>
             {#if overviewTopHunting.length > 0}
               <div class="top-loots-list">
@@ -446,7 +451,7 @@
                     {#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}
                     <span class="top-loot-actions">
                       {#if loot.media_image || loot.media_video}
-                        <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                           {#if loot.media_image}
                             <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                           {:else}
@@ -469,7 +474,7 @@
           <div class="section-card overview-category">
             <div class="overview-cat-header">
               <h2>Top Mining Loots</h2>
-              <button class="view-all-btn" on:click={() => activeTab = 'mining'}>View all &rarr;</button>
+              <button class="view-all-btn" onclick={() => activeTab = 'mining'}>View all &rarr;</button>
             </div>
             {#if overviewTopMining.length > 0}
               <div class="top-loots-list">
@@ -481,7 +486,7 @@
                     {#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}
                     <span class="top-loot-actions">
                       {#if loot.media_image || loot.media_video}
-                        <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                           {#if loot.media_image}
                             <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                           {:else}
@@ -504,7 +509,7 @@
           <div class="section-card overview-category">
             <div class="overview-cat-header">
               <h2>Top Crafting Loots</h2>
-              <button class="view-all-btn" on:click={() => activeTab = 'crafting'}>View all &rarr;</button>
+              <button class="view-all-btn" onclick={() => activeTab = 'crafting'}>View all &rarr;</button>
             </div>
             {#if overviewTopCrafting.length > 0}
               <div class="top-loots-list">
@@ -516,7 +521,7 @@
                     {#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}
                     <span class="top-loot-actions">
                       {#if loot.media_image || loot.media_video}
-                        <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                           {#if loot.media_image}
                             <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                           {:else}
@@ -565,7 +570,7 @@
                         </td>
                         <td class="col-media">
                           {#if item.media_image || item.media_video}
-                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(item)}>
+                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
                               {#if item.media_image}
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                               {:else}
@@ -597,7 +602,7 @@
                     <span class="achievement-target">{ach.target}</span>
                     <span class="achievement-actions">
                       {#if ach.media_image || ach.media_video}
-                        <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(ach)}>
+                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(ach)}>
                           {#if ach.media_image}
                             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                           {:else}
@@ -639,10 +644,10 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
-                    <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'type')}>Type{sortIcon(recentSort, 'type')}</th>
-                    <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'target')}>Target{sortIcon(recentSort, 'target')}</th>
-                    <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
+                    <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                    <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'type')}>Type{sortIcon(recentSort, 'type')}</th>
+                    <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'target')}>Target{sortIcon(recentSort, 'target')}</th>
+                    <th class="sortable right" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                     <th></th>
                     <th class="col-media"></th>
                     <th class="col-gz"></th>
@@ -661,7 +666,7 @@
                       </td>
                       <td class="col-media">
                         {#if g.media_image || g.media_video}
-                          <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                          <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(g)}>
                             {#if g.media_image}
                               <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                             {:else}
@@ -696,13 +701,13 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="sortable" on:click={() => { huntSort = toggleSort(huntSort, 'target'); huntTargetPage = 0; }}>
+                      <th class="sortable" onclick={() => { huntSort = toggleSort(huntSort, 'target'); huntTargetPage = 0; }}>
                         Target{sortIcon(huntSort, 'target')}
                       </th>
-                      <th class="sortable right" on:click={() => { huntSort = toggleSort(huntSort, 'kills'); huntTargetPage = 0; }}>
+                      <th class="sortable right" onclick={() => { huntSort = toggleSort(huntSort, 'kills'); huntTargetPage = 0; }}>
                         Kills{sortIcon(huntSort, 'kills')}
                       </th>
-                      <th class="sortable right" on:click={() => { huntSort = toggleSort(huntSort, 'total_value'); huntTargetPage = 0; }}>
+                      <th class="sortable right" onclick={() => { huntSort = toggleSort(huntSort, 'total_value'); huntTargetPage = 0; }}>
                         Total{sortIcon(huntSort, 'total_value')}
                       </th>
                       <th class="right">Best</th>
@@ -716,13 +721,13 @@
                       <tr
                         class="mob-row"
                         class:expandable={hasDetails}
-                        on:click={() => hasDetails && toggleMob(mobKey)}
+                        onclick={() => hasDetails && toggleMob(mobKey)}
                       >
                         <td>
                           {#if hasDetails}
                             <span class="expand-icon">{expandedMobs.has(mobKey) ? '\u25BC' : '\u25B6'}</span>
                           {/if}
-                          <a href="/globals/target/{encodeURIComponent(displayName)}" class="target-link" on:click|stopPropagation>{displayName}</a>
+                          <a href="/globals/target/{encodeURIComponent(displayName)}" class="target-link" onclick={stopPropagation(bubble('click'))}>{displayName}</a>
                         </td>
                         <td class="right">{mob.kills}</td>
                         <td class="right">{formatPed(mob.total_value)}</td>
@@ -744,9 +749,9 @@
               </div>
               {#if huntTargetPages > 1}
                 <div class="pagination">
-                  <button disabled={huntTargetPage === 0} on:click={() => huntTargetPage--}>&laquo; Prev</button>
+                  <button disabled={huntTargetPage === 0} onclick={() => huntTargetPage--}>&laquo; Prev</button>
                   <span>{huntTargetPage + 1} / {huntTargetPages}</span>
-                  <button disabled={huntTargetPage >= huntTargetPages - 1} on:click={() => huntTargetPage++}>Next &raquo;</button>
+                  <button disabled={huntTargetPage >= huntTargetPages - 1} onclick={() => huntTargetPage++}>Next &raquo;</button>
                 </div>
               {/if}
             {:else}
@@ -765,12 +770,12 @@
                   <thead>
                     <tr>
                       <th class="col-rank">#</th>
-                      <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
-                      <th class="sortable right" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
+                      <th class="sortable" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
+                      <th class="sortable right" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
                       <th></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
+                      <th class="sortable" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -782,7 +787,7 @@
                         <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
-                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                               {#if loot.media_image}
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                               {:else}
@@ -802,9 +807,9 @@
               </div>
               {#if huntLootPages > 1}
                 <div class="pagination">
-                  <button disabled={huntLootPage === 0} on:click={() => huntLootPage--}>&laquo; Prev</button>
+                  <button disabled={huntLootPage === 0} onclick={() => huntLootPage--}>&laquo; Prev</button>
                   <span>{huntLootPage + 1} / {huntLootPages}</span>
-                  <button disabled={huntLootPage >= huntLootPages - 1} on:click={() => huntLootPage++}>Next &raquo;</button>
+                  <button disabled={huntLootPage >= huntLootPages - 1} onclick={() => huntLootPage++}>Next &raquo;</button>
                 </div>
               {/if}
             {:else}
@@ -826,13 +831,13 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="sortable" on:click={() => { miningSort = toggleSort(miningSort, 'target'); miningTargetPage = 0; }}>
+                      <th class="sortable" onclick={() => { miningSort = toggleSort(miningSort, 'target'); miningTargetPage = 0; }}>
                         Resource{sortIcon(miningSort, 'target')}
                       </th>
-                      <th class="sortable right" on:click={() => { miningSort = toggleSort(miningSort, 'finds'); miningTargetPage = 0; }}>
+                      <th class="sortable right" onclick={() => { miningSort = toggleSort(miningSort, 'finds'); miningTargetPage = 0; }}>
                         Finds{sortIcon(miningSort, 'finds')}
                       </th>
-                      <th class="sortable right" on:click={() => { miningSort = toggleSort(miningSort, 'total_value'); miningTargetPage = 0; }}>
+                      <th class="sortable right" onclick={() => { miningSort = toggleSort(miningSort, 'total_value'); miningTargetPage = 0; }}>
                         Total{sortIcon(miningSort, 'total_value')}
                       </th>
                       <th class="right">Best</th>
@@ -852,9 +857,9 @@
               </div>
               {#if miningTargetPages > 1}
                 <div class="pagination">
-                  <button disabled={miningTargetPage === 0} on:click={() => miningTargetPage--}>&laquo; Prev</button>
+                  <button disabled={miningTargetPage === 0} onclick={() => miningTargetPage--}>&laquo; Prev</button>
                   <span>{miningTargetPage + 1} / {miningTargetPages}</span>
-                  <button disabled={miningTargetPage >= miningTargetPages - 1} on:click={() => miningTargetPage++}>Next &raquo;</button>
+                  <button disabled={miningTargetPage >= miningTargetPages - 1} onclick={() => miningTargetPage++}>Next &raquo;</button>
                 </div>
               {/if}
             {:else}
@@ -873,12 +878,12 @@
                   <thead>
                     <tr>
                       <th class="col-rank">#</th>
-                      <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
-                      <th class="sortable right" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
+                      <th class="sortable" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
+                      <th class="sortable right" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
                       <th></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
+                      <th class="sortable" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -890,7 +895,7 @@
                         <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
-                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                               {#if loot.media_image}
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                               {:else}
@@ -910,9 +915,9 @@
               </div>
               {#if miningLootPages > 1}
                 <div class="pagination">
-                  <button disabled={miningLootPage === 0} on:click={() => miningLootPage--}>&laquo; Prev</button>
+                  <button disabled={miningLootPage === 0} onclick={() => miningLootPage--}>&laquo; Prev</button>
                   <span>{miningLootPage + 1} / {miningLootPages}</span>
-                  <button disabled={miningLootPage >= miningLootPages - 1} on:click={() => miningLootPage++}>Next &raquo;</button>
+                  <button disabled={miningLootPage >= miningLootPages - 1} onclick={() => miningLootPage++}>Next &raquo;</button>
                 </div>
               {/if}
             {:else}
@@ -934,13 +939,13 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="sortable" on:click={() => { craftSort = toggleSort(craftSort, 'target'); craftTargetPage = 0; }}>
+                      <th class="sortable" onclick={() => { craftSort = toggleSort(craftSort, 'target'); craftTargetPage = 0; }}>
                         Item{sortIcon(craftSort, 'target')}
                       </th>
-                      <th class="sortable right" on:click={() => { craftSort = toggleSort(craftSort, 'crafts'); craftTargetPage = 0; }}>
+                      <th class="sortable right" onclick={() => { craftSort = toggleSort(craftSort, 'crafts'); craftTargetPage = 0; }}>
                         Crafts{sortIcon(craftSort, 'crafts')}
                       </th>
-                      <th class="sortable right" on:click={() => { craftSort = toggleSort(craftSort, 'total_value'); craftTargetPage = 0; }}>
+                      <th class="sortable right" onclick={() => { craftSort = toggleSort(craftSort, 'total_value'); craftTargetPage = 0; }}>
                         Total{sortIcon(craftSort, 'total_value')}
                       </th>
                       <th class="right">Best</th>
@@ -960,9 +965,9 @@
               </div>
               {#if craftTargetPages > 1}
                 <div class="pagination">
-                  <button disabled={craftTargetPage === 0} on:click={() => craftTargetPage--}>&laquo; Prev</button>
+                  <button disabled={craftTargetPage === 0} onclick={() => craftTargetPage--}>&laquo; Prev</button>
                   <span>{craftTargetPage + 1} / {craftTargetPages}</span>
-                  <button disabled={craftTargetPage >= craftTargetPages - 1} on:click={() => craftTargetPage++}>Next &raquo;</button>
+                  <button disabled={craftTargetPage >= craftTargetPages - 1} onclick={() => craftTargetPage++}>Next &raquo;</button>
                 </div>
               {/if}
             {:else}
@@ -981,12 +986,12 @@
                   <thead>
                     <tr>
                       <th class="col-rank">#</th>
-                      <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
-                      <th class="sortable right" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
+                      <th class="sortable" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
+                      <th class="sortable right" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
                       <th></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
+                      <th class="sortable" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -998,7 +1003,7 @@
                         <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
-                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(loot)}>
+                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
                               {#if loot.media_image}
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                               {:else}
@@ -1018,9 +1023,9 @@
               </div>
               {#if craftLootPages > 1}
                 <div class="pagination">
-                  <button disabled={craftLootPage === 0} on:click={() => craftLootPage--}>&laquo; Prev</button>
+                  <button disabled={craftLootPage === 0} onclick={() => craftLootPage--}>&laquo; Prev</button>
                   <span>{craftLootPage + 1} / {craftLootPages}</span>
-                  <button disabled={craftLootPage >= craftLootPages - 1} on:click={() => craftLootPage++}>Next &raquo;</button>
+                  <button disabled={craftLootPage >= craftLootPages - 1} onclick={() => craftLootPage++}>Next &raquo;</button>
                 </div>
               {/if}
             {:else}
@@ -1038,9 +1043,9 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th class="sortable" on:click={() => rareFindSort = toggleSort(rareFindSort, 'target')}>Item{sortIcon(rareFindSort, 'target')}</th>
-                    <th class="sortable right" on:click={() => rareFindSort = toggleSort(rareFindSort, 'value')}>Value{sortIcon(rareFindSort, 'value')}</th>
-                    <th class="sortable" on:click={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
+                    <th class="sortable" onclick={() => rareFindSort = toggleSort(rareFindSort, 'target')}>Item{sortIcon(rareFindSort, 'target')}</th>
+                    <th class="sortable right" onclick={() => rareFindSort = toggleSort(rareFindSort, 'value')}>Value{sortIcon(rareFindSort, 'value')}</th>
+                    <th class="sortable" onclick={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
                     <th></th>
                     <th class="col-media"></th>
                     <th class="col-gz"></th>
@@ -1057,7 +1062,7 @@
                       </td>
                       <td class="col-media">
                         {#if item.media_image || item.media_video}
-                          <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(item)}>
+                          <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
                             {#if item.media_image}
                               <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                             {:else}
@@ -1093,7 +1098,7 @@
                   {#if ach.ath}<span class="badge-ath">ATH</span>{/if}
                   <span class="achievement-actions">
                     {#if ach.media_image || ach.media_video}
-                      <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(ach)}>
+                      <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(ach)}>
                         {#if ach.media_image}
                           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                         {:else}
@@ -1130,7 +1135,7 @@
                   {#if ach.hof}<span class="badge-hof">HoF</span>{/if}
                   <span class="achievement-actions">
                     {#if ach.media_image || ach.media_video}
-                      <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(ach)}>
+                      <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(ach)}>
                         {#if ach.media_image}
                           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                         {:else}
@@ -1160,11 +1165,11 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th class="sortable right" on:click={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
+                    <th class="sortable right" onclick={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
                     <th></th>
                     <th class="col-media"></th>
                     <th class="col-gz"></th>
-                    <th class="sortable" on:click={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
+                    <th class="sortable" onclick={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1176,7 +1181,7 @@
                       </td>
                       <td class="col-media">
                         {#if g.media_image || g.media_video}
-                          <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(g)}>
+                          <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(g)}>
                             {#if g.media_image}
                               <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                             {:else}
@@ -1210,7 +1215,7 @@
             </h2>
             <div class="sort-toggle">
               {#each ATH_CATEGORIES as cat}
-                <button class="sort-btn" class:active={activeAthCategory === cat.value} on:click={() => { athCategoryOverride = cat.value; }}>{cat.label}</button>
+                <button class="sort-btn" class:active={activeAthCategory === cat.value} onclick={() => { athCategoryOverride = cat.value; }}>{cat.label}</button>
               {/each}
             </div>
           </div>
@@ -1238,7 +1243,7 @@
                         <td>{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if entry.media_image || entry.media_video}
-                            <button class="media-icon-btn" title="View media" on:click={() => openMediaDialog(entry)}>
+                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(entry)}>
                               {#if entry.media_image}
                                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                               {:else}

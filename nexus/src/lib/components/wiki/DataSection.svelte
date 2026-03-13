@@ -4,29 +4,49 @@
   Supports expand/collapse with smooth animation.
 -->
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { slide } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string} Section title */
-  export let title = '';
+  
 
-  /** @type {string} Optional icon (emoji or SVG) */
-  export let icon = '';
+  
 
-  /** @type {boolean} Whether section is expanded */
-  export let expanded = true;
+  
 
-  /** @type {boolean} Whether section can be collapsed */
-  export let collapsible = true;
+  
 
-  /** @type {string} Optional subtitle/summary text */
-  export let subtitle = '';
+  
 
-  /** @type {boolean} Allow content overflow (for dropdowns) */
-  export let allowOverflow = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [title]
+   * @property {string} [icon]
+   * @property {boolean} [expanded]
+   * @property {boolean} [collapsible]
+   * @property {string} [subtitle]
+   * @property {boolean} [allowOverflow]
+   * @property {import('svelte').Snippet} [actions]
+   * @property {import('svelte').Snippet} [children]
+   */
+
+  /** @type {Props} */
+  let {
+    title = '',
+    icon = '',
+    expanded = $bindable(true),
+    collapsible = true,
+    subtitle = '',
+    allowOverflow = false,
+    actions,
+    children
+  } = $props();
 
   function toggle() {
     if (collapsible) {
@@ -49,8 +69,8 @@
     role={collapsible ? 'button' : undefined}
     tabindex={collapsible ? 0 : undefined}
     aria-expanded={collapsible ? expanded : undefined}
-    on:click={toggle}
-    on:keydown={handleKeydown}
+    onclick={toggle}
+    onkeydown={handleKeydown}
   >
     <div class="section-title-group">
       {#if icon}
@@ -62,8 +82,8 @@
       {/if}
     </div>
 
-    <div class="section-actions" role="presentation" on:click|stopPropagation>
-      <slot name="actions" />
+    <div class="section-actions" role="presentation" onclick={stopPropagation(bubble('click'))}>
+      {@render actions?.()}
     </div>
 
     {#if collapsible}
@@ -77,7 +97,7 @@
 
   {#if expanded}
     <div class="section-content" transition:slide={{ duration: 200 }}>
-      <slot />
+      {@render children?.()}
     </div>
   {/if}
 </section>

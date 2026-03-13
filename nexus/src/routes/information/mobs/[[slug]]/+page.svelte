@@ -5,6 +5,8 @@
   Article: Description → Maturities → Locations → Loots → Codex
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -53,49 +55,51 @@
     updateField
   } from '$lib/stores/wikiEditState';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.speciesList === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'speciesList', url: '/api/mobspecies' },
-      { key: 'itemsList', url: '/api/items?limit=5000' },
-      { key: 'planetsList', url: '/api/planets' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.speciesList === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'speciesList', url: '/api/mobspecies' },
+        { key: 'itemsList', url: '/api/items?limit=5000' },
+        { key: 'planetsList', url: '/api/planets' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: mob = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: speciesList = data.speciesList || [];
-  $: itemsList = data.itemsList || [];  // Items for loot autocomplete
-  $: planetsList = data.planetsList || [];  // All planets from API
-  $: skillsList = data.skillsList || [];  // Skills for codex calculator
-  $: pendingChange = data.pendingChange;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: isCreateMode = data.isCreateMode || false;
-  $: currentChangeId = $page.url.searchParams.get('changeId');
-  $: activeView = data.view || 'mobs';
-  $: isMaturityView = activeView === 'maturities' && !isCreateMode;
-  $: selectedMaturityId = data.selectedMaturityId ?? null;
-  $: mobEntityId = mob?.Id ?? mob?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, mobEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let mob = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let speciesList = $derived(data.speciesList || []);
+  let itemsList = $derived(data.itemsList || []);  // Items for loot autocomplete
+  let planetsList = $derived(data.planetsList || []);  // All planets from API
+  let skillsList = $derived(data.skillsList || []);  // Skills for codex calculator
+  let pendingChange = $derived(data.pendingChange);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let currentChangeId = $derived($page.url.searchParams.get('changeId'));
+  let activeView = $derived(data.view || 'mobs');
+  let isMaturityView = $derived(activeView === 'maturities' && !isCreateMode);
+  let selectedMaturityId = $derived(data.selectedMaturityId ?? null);
+  let mobEntityId = $derived(mob?.Id ?? mob?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, mobEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Build species options for autocomplete
-  let showCreateSpeciesDialog = false;
-  let showEditSpeciesDialog = false;
-  let localSpeciesList = [];
-  let localSpeciesSeed = '';
-  $: {
+  let showCreateSpeciesDialog = $state(false);
+  let showEditSpeciesDialog = $state(false);
+  let localSpeciesList = $state([]);
+  let localSpeciesSeed = $state('');
+  run(() => {
     const seed = JSON.stringify((speciesList || []).map(s => [
       s?.Name || '',
       s?.Properties?.CodexBaseCost ?? null,
@@ -105,16 +109,16 @@
       localSpeciesSeed = seed;
       localSpeciesList = [...(speciesList || [])];
     }
-  }
-  $: speciesOptions = localSpeciesList.map(s => ({ value: s.Name, label: s.Name }));
+  });
+  let speciesOptions = $derived(localSpeciesList.map(s => ({ value: s.Name, label: s.Name })));
 
   // Verified users can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // Planet options from API (filter out Id=0 which is "Unknown")
-  $: planetOptions = planetsList
+  let planetOptions = $derived(planetsList
     .filter(p => p.Id > 0)
-    .map(p => ({ value: p.Name, label: p.Name }));
+    .map(p => ({ value: p.Name, label: p.Name })));
 
   // Mob type options
   const typeOptions = [
@@ -151,8 +155,8 @@
   };
 
   // Track initialization to avoid resetting edits on query-only navigation.
-  let lastInitKey = null;
-  $: {
+  let lastInitKey = $state(null);
+  run(() => {
     const initKey = `Mob-${mob?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
     if (user && initKey !== lastInitKey) {
       lastInitKey = initKey;
@@ -163,22 +167,24 @@
       const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
       initEditState(initialEntity, 'Mob', isCreateMode, editChange);
     }
-  }
+  });
 
   // Set pending change in store when it changes
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active mob: use currentEntity in edit mode, pendingChange data when viewing, otherwise original
-  $: activeMob = $editMode
+  let activeMob = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : mob;
+      : mob);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -186,8 +192,8 @@
   });
 
   // Sidebar expanded/full-width state
-  let sidebarExpanded = false;
-  let sidebarFullWidth = false;
+  let sidebarExpanded = $state(false);
+  let sidebarFullWidth = $state(false);
 
   // Damage type abbreviations for sidebar columns
   const damageAbbreviations = {
@@ -206,7 +212,7 @@
   }
 
   // Build navigation items from mobs
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   function getPrimaryDamage(maturity) {
     const primaryAttack = maturity?.Attacks?.find(a => a.Name === 'Primary') || maturity?.Attacks?.[0];
@@ -241,7 +247,7 @@
   }
 
   // Flatten mobs to maturity rows for sidebar maturity mode.
-  $: maturityNavItems = (allItems || []).flatMap((mobItem) => {
+  let maturityNavItems = $derived((allItems || []).flatMap((mobItem) => {
     const mobName = mobItem?.Name;
     if (!mobName || !Array.isArray(mobItem?.Maturities)) return [];
 
@@ -285,7 +291,7 @@
         };
       })
       .filter(Boolean);
-  });
+  }));
 
   // Navigation filters - filter by planet and type
   const navFilters = [
@@ -666,14 +672,14 @@
 
   const maturityAllAvailableColumns = Object.values(maturityColumnDefs);
 
-  $: activeSidebarItems = isMaturityView ? maturityNavItems : navItems;
-  $: activeSidebarFilters = isMaturityView ? maturityNavFilters : navFilters;
-  $: activeSidebarTableColumns = isMaturityView ? maturityNavTableColumns : navTableColumns;
-  $: activeSidebarFullWidthColumns = isMaturityView ? maturityNavFullWidthColumns : navFullWidthColumns;
-  $: activeSidebarColumns = isMaturityView ? maturityAllAvailableColumns : allAvailableColumns;
-  $: activeSidebarPageTypeId = isMaturityView ? 'mobs-maturities' : 'mobs';
-  $: sidebarPendingCreates = isMaturityView ? [] : userPendingCreates;
-  $: sidebarPendingUpdates = isMaturityView ? [] : userPendingUpdates;
+  let activeSidebarItems = $derived(isMaturityView ? maturityNavItems : navItems);
+  let activeSidebarFilters = $derived(isMaturityView ? maturityNavFilters : navFilters);
+  let activeSidebarTableColumns = $derived(isMaturityView ? maturityNavTableColumns : navTableColumns);
+  let activeSidebarFullWidthColumns = $derived(isMaturityView ? maturityNavFullWidthColumns : navFullWidthColumns);
+  let activeSidebarColumns = $derived(isMaturityView ? maturityAllAvailableColumns : allAvailableColumns);
+  let activeSidebarPageTypeId = $derived(isMaturityView ? 'mobs-maturities' : 'mobs');
+  let sidebarPendingCreates = $derived(isMaturityView ? [] : userPendingCreates);
+  let sidebarPendingUpdates = $derived(isMaturityView ? [] : userPendingUpdates);
 
   function switchSidebar(mode) {
     if (mode === 'maturities' && isMaturityView) return;
@@ -696,33 +702,33 @@
   }
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Information', href: '/information' },
     { label: 'Mobs', href: '/information/mobs' },
     ...(activeMob?.Name ? [{ label: activeMob.Name }] : isCreateMode ? [{ label: 'New Mob' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeMob?.Properties?.Description ||
-    `${activeMob?.Name || 'Mob'} - ${activeMob?.Type || ''} mob on ${activeMob?.Planet?.Name || 'Calypso'} in Entropia Universe.`;
+  let seoDescription = $derived(activeMob?.Properties?.Description ||
+    `${activeMob?.Name || 'Mob'} - ${activeMob?.Type || ''} mob on ${activeMob?.Planet?.Name || 'Calypso'} in Entropia Universe.`);
 
-  $: canonicalUrl = activeMob?.Name
+  let canonicalUrl = $derived(activeMob?.Name
     ? `https://entropianexus.com/information/mobs/${encodeURIComponentSafe(activeMob.Name)}`
-    : 'https://entropianexus.com/information/mobs';
+    : 'https://entropianexus.com/information/mobs');
 
   // Image URL for SEO (approved images only)
-  $: entityImageUrl = mob?.Id ? `/api/img/mob/${mob.Id}` : null;
+  let entityImageUrl = $derived(mob?.Id ? `/api/img/mob/${mob.Id}` : null);
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     maturities: true,
     locations: true,
     loots: true,
     codex: true,
     globals: false
-  };
-  let maturitiesSectionAnchor;
-  let lastMaturityScrollKey = null;
+  });
+  let maturitiesSectionAnchor = $state();
+  let lastMaturityScrollKey = $state(null);
 
   onMount(() => {
     try {
@@ -879,36 +885,38 @@
   }
 
   // Reactive calculations
-  $: primaryDamageGroups = getDamageGroups(activeMob, 'Primary');
-  $: secondaryDamageGroups = getDamageGroups(activeMob, 'Secondary');
-  $: tertiaryDamageGroups = getDamageGroups(activeMob, 'Tertiary');
-  $: totalMaturityCount = activeMob?.Maturities?.length || 0;
-  $: lowestHpPerLevel = getLowestHpPerLevel(activeMob);
-  $: healthRange = getHealthRange(activeMob);
-  $: levelRange = getLevelRange(activeMob);
-  $: mobType = getMobTypeLabel(activeMob);
-  $: isAsteroid = activeMob?.Type === 'Asteroid';
-  $: scanningProfession = getScanningProfession(activeMob);
-  $: lootingProfession = getLootingProfession(activeMob);
-  $: speciesCodexBaseCost = activeMob?.Species?._newSpecies?.CodexBaseCost ?? activeMob?.Species?.Properties?.CodexBaseCost;
-  $: speciesCodexType = activeMob?.Species?._newSpecies?.CodexType ?? activeMob?.Species?.Properties?.CodexType;
-  $: hasCodex = speciesCodexBaseCost != null;
-  $: selectedMaturityBelongsToActiveMob = selectedMaturityId != null
-    && !!activeMob?.Maturities?.some(m => String(m.Id) === String(selectedMaturityId));
-  $: selectedMaturityIdForActiveMob = selectedMaturityBelongsToActiveMob ? selectedMaturityId : null;
+  let primaryDamageGroups = $derived(getDamageGroups(activeMob, 'Primary'));
+  let secondaryDamageGroups = $derived(getDamageGroups(activeMob, 'Secondary'));
+  let tertiaryDamageGroups = $derived(getDamageGroups(activeMob, 'Tertiary'));
+  let totalMaturityCount = $derived(activeMob?.Maturities?.length || 0);
+  let lowestHpPerLevel = $derived(getLowestHpPerLevel(activeMob));
+  let healthRange = $derived(getHealthRange(activeMob));
+  let levelRange = $derived(getLevelRange(activeMob));
+  let mobType = $derived(getMobTypeLabel(activeMob));
+  let isAsteroid = $derived(activeMob?.Type === 'Asteroid');
+  let scanningProfession = $derived(getScanningProfession(activeMob));
+  let lootingProfession = $derived(getLootingProfession(activeMob));
+  let speciesCodexBaseCost = $derived(activeMob?.Species?._newSpecies?.CodexBaseCost ?? activeMob?.Species?.Properties?.CodexBaseCost);
+  let speciesCodexType = $derived(activeMob?.Species?._newSpecies?.CodexType ?? activeMob?.Species?.Properties?.CodexType);
+  let hasCodex = $derived(speciesCodexBaseCost != null);
+  let selectedMaturityBelongsToActiveMob = $derived(selectedMaturityId != null
+    && !!activeMob?.Maturities?.some(m => String(m.Id) === String(selectedMaturityId)));
+  let selectedMaturityIdForActiveMob = $derived(selectedMaturityBelongsToActiveMob ? selectedMaturityId : null);
 
   // Ensure selected maturity is visible in the article and section stays open.
-  $: maturityScrollKey = selectedMaturityIdForActiveMob != null && activeMob?.Id != null && !$editMode
+  let maturityScrollKey = $derived(selectedMaturityIdForActiveMob != null && activeMob?.Id != null && !$editMode
     ? `${activeMob.Id}-${selectedMaturityIdForActiveMob}`
-    : null;
-  $: if (maturityScrollKey && maturityScrollKey !== lastMaturityScrollKey) {
-    lastMaturityScrollKey = maturityScrollKey;
-    panelStates = { ...panelStates, maturities: true };
-    savePanelStates();
-    tick().then(() => {
-      maturitiesSectionAnchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
+    : null);
+  run(() => {
+    if (maturityScrollKey && maturityScrollKey !== lastMaturityScrollKey) {
+      lastMaturityScrollKey = maturityScrollKey;
+      panelStates = { ...panelStates, maturities: true };
+      savePanelStates();
+      tick().then(() => {
+        maturitiesSectionAnchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  });
 
   // ========== EDIT HANDLERS ==========
   function handleDescriptionChange(event) {
@@ -1014,33 +1022,36 @@
   bind:sidebarExpanded
   bind:sidebarFullWidth
 >
-  <div slot="sidebar" class="mobs-sidebar">
-    <WikiNavigation
-      items={activeSidebarItems}
-      filters={activeSidebarFilters}
-      basePath="/information/mobs"
-      title="Mobs"
-      currentSlug={isMaturityView ? null : activeMob?.Name}
-      currentItemId={isMaturityView ? selectedMaturityId : null}
-      {currentChangeId}
-      customGetItemHref={isMaturityView ? getMaturitySidebarHref : null}
-      userPendingCreates={sidebarPendingCreates}
-      userPendingUpdates={sidebarPendingUpdates}
-      tableColumns={activeSidebarTableColumns}
-      fullWidthColumns={activeSidebarFullWidthColumns}
-      allAvailableColumns={activeSidebarColumns}
-      pageTypeId={activeSidebarPageTypeId}
-      expanded={sidebarExpanded}
-      fullWidth={sidebarFullWidth}
-      on:toggleExpand={() => sidebarExpanded = !sidebarExpanded}
-      on:toggleFullWidth={() => sidebarFullWidth = !sidebarFullWidth}
-    >
-      <div slot="after-header" class="sidebar-toggle">
-        <button class:active={!isMaturityView} on:click={() => switchSidebar('mobs')}>Mobs</button>
-        <button class:active={isMaturityView} on:click={() => switchSidebar('maturities')}>Maturities</button>
-      </div>
-    </WikiNavigation>
-  </div>
+  {#snippet sidebar()}
+    <div  class="mobs-sidebar">
+      <WikiNavigation
+        items={activeSidebarItems}
+        filters={activeSidebarFilters}
+        basePath="/information/mobs"
+        title="Mobs"
+        currentSlug={isMaturityView ? null : activeMob?.Name}
+        currentItemId={isMaturityView ? selectedMaturityId : null}
+        {currentChangeId}
+        customGetItemHref={isMaturityView ? getMaturitySidebarHref : null}
+        userPendingCreates={sidebarPendingCreates}
+        userPendingUpdates={sidebarPendingUpdates}
+        tableColumns={activeSidebarTableColumns}
+        fullWidthColumns={activeSidebarFullWidthColumns}
+        allAvailableColumns={activeSidebarColumns}
+        pageTypeId={activeSidebarPageTypeId}
+        expanded={sidebarExpanded}
+        fullWidth={sidebarFullWidth}
+        on:toggleExpand={() => sidebarExpanded = !sidebarExpanded}
+        on:toggleFullWidth={() => sidebarFullWidth = !sidebarFullWidth}
+      >
+        <!-- @migration-task: migrate this slot by hand, `after-header` is an invalid identifier -->
+  <div slot="after-header" class="sidebar-toggle">
+          <button class:active={!isMaturityView} onclick={() => switchSidebar('mobs')}>Mobs</button>
+          <button class:active={isMaturityView} onclick={() => switchSidebar('maturities')}>Maturities</button>
+        </div>
+      </WikiNavigation>
+    </div>
+  {/snippet}
 
   {#if activeMob || isCreateMode}
     <!-- Pending Change Banner -->
@@ -1061,11 +1072,11 @@
         </div>
         <div class="banner-actions">
           {#if $viewingPendingChange}
-            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>
+            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>
               View Current
             </button>
           {:else}
-            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>
+            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>
               View Pending
             </button>
           {/if}
@@ -1136,14 +1147,14 @@
                       on:select={(e) => handleSpeciesNameInput(e.detail.value)}
                     />
                     {#if activeMob?.Species?.Name}
-                      <button class="btn-create-inline" on:click={() => showEditSpeciesDialog = true} title="Edit species details">
+                      <button class="btn-create-inline" onclick={() => showEditSpeciesDialog = true} title="Edit species details">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
                         </svg>
                         Edit
                       </button>
                     {/if}
-                    <button class="btn-create-inline" on:click={() => showCreateSpeciesDialog = true} title="Create new species">
+                    <button class="btn-create-inline" onclick={() => showCreateSpeciesDialog = true} title="Create new species">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19" />
                         <line x1="5" y1="12" x2="19" y2="12" />

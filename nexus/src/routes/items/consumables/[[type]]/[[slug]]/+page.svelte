@@ -9,6 +9,8 @@
   - capsules: Name, Properties (Economy, MinProfessionLevel), Mob, Profession
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -48,60 +50,66 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' },
-      { key: 'mobs', url: '/api/mobs' },
-      { key: 'professions', url: '/api/professions' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' },
+        { key: 'mobs', url: '/api/mobs' },
+        { key: 'professions', url: '/api/professions' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: consumable = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
+  let consumable = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
 
   // Local filter state - decoupled from URL
-  let selectedFilter = null;
-  let filterInitialized = false;
+  let selectedFilter = $state(null);
+  let filterInitialized = $state(false);
 
-  $: if (!filterInitialized) {
-    selectedFilter = additional.type || null;
-    filterInitialized = true;
-  }
-
-  $: if (filterInitialized && !consumable && !isCreateMode) {
-    if ((additional.type || null) !== selectedFilter) {
+  run(() => {
+    if (!filterInitialized) {
       selectedFilter = additional.type || null;
+      filterInitialized = true;
     }
-  }
-  $: effectsList = data.effects || [];
-  $: mobsList = data.mobs || [];
-  $: mobOptions = (mobsList || []).map(m => ({ label: m.Name, value: m.Name }));
-  $: professionsList = data.professions || [];
-  $: consumableEntityId = consumable?.Id ?? consumable?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, consumableEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  });
+
+  run(() => {
+    if (filterInitialized && !consumable && !isCreateMode) {
+      if ((additional.type || null) !== selectedFilter) {
+        selectedFilter = additional.type || null;
+      }
+    }
+  });
+  let effectsList = $derived(data.effects || []);
+  let mobsList = $derived(data.mobs || []);
+  let mobOptions = $derived((mobsList || []).map(m => ({ label: m.Name, value: m.Name })));
+  let professionsList = $derived(data.professions || []);
+  let consumableEntityId = $derived(consumable?.Id ?? consumable?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, consumableEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Permission check - verified users and admins can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // For multi-type pages, data.items is an object keyed by type
-  $: allItems = (() => {
+  let allItems = $derived((() => {
     if (!data.items) return [];
     if (selectedFilter && data.items[selectedFilter]) {
       return data.items[selectedFilter];
@@ -114,7 +122,7 @@
       }
     }
     return combined;
-  })();
+  })());
 
   // Type navigation buttons
   const typeButtons = [
@@ -170,28 +178,32 @@
 
   // ========== WIKI EDIT STATE ==========
   // Initialize edit state when user/entity changes
-  $: if (user) {
-    const entityType = getEntityType(additional.type);
-    const emptyEntity = getEmptyEntity(additional.type);
-    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : consumable;
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(entity || emptyEntity, entityType, isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const entityType = getEntityType(additional.type);
+      const emptyEntity = getEmptyEntity(additional.type);
+      const entity = isCreateMode ? (existingChange?.data || emptyEntity) : consumable;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(entity || emptyEntity, entityType, isCreateMode, editChange);
+    }
+  });
 
   // Set pending change when it exists
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
-  $: activeEntity = $editMode
+  let activeEntity = $derived($editMode
     ? $currentEntity
     : $viewingPendingChange && $existingPendingChange?.data
       ? $existingPendingChange.data
-      : consumable;
+      : consumable);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -199,16 +211,16 @@
   });
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - uses selectedFilter for active state (local, not URL-based)
-  $: navFilters = typeButtons.map(btn => ({
+  let navFilters = $derived(typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
     active: selectedFilter === btn.type,
     href: selectedFilter === btn.type ? '/items/consumables' : `/items/consumables/${btn.type}`
-  }));
+  })));
 
   // Full column definitions for consumables
   const columnDefs = {
@@ -247,10 +259,10 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(selectedFilter);
-  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
+  let navTableColumns = $derived(getNavTableColumns(selectedFilter));
+  let navFullWidthColumns = $derived(getNavFullWidthColumns(selectedFilter));
   const allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `consumables-${selectedFilter || 'all'}`;
+  let navPageTypeId = $derived(`consumables-${selectedFilter || 'all'}`);
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -262,46 +274,46 @@
   }
 
   // Base path for navigation - uses selectedFilter so it persists
-  $: effectiveBasePath = selectedFilter
+  let effectiveBasePath = $derived(selectedFilter
     ? `/items/consumables/${selectedFilter}`
-    : '/items/consumables';
+    : '/items/consumables');
 
   // Create categories for the "New" dropdown
-  $: createCategories = typeButtons.map(btn => ({
+  let createCategories = $derived(typeButtons.map(btn => ({
     label: getTypeName(btn.type),
     href: `/items/consumables/${btn.type}`
-  }));
+  })));
 
   // Filter pending creates by selected filter type
-  $: filteredPendingCreates = selectedFilter
+  let filteredPendingCreates = $derived(selectedFilter
     ? (userPendingCreates || []).filter(change => {
         const entityType = getEntityType(selectedFilter);
         return change.entity === entityType;
       })
-    : userPendingCreates || [];
+    : userPendingCreates || []);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Consumables', href: '/items/consumables' },
     ...(additional.type ? [{ label: getTypeName(additional.type) + 's', href: `/items/consumables/${additional.type}` }] : []),
     ...(consumable ? [{ label: consumable.Name }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = consumable?.Properties?.Description ||
-    `${consumable?.Name || 'Consumable'} - ${getTypeName(additional.type)} in Entropia Universe.`;
+  let seoDescription = $derived(consumable?.Properties?.Description ||
+    `${consumable?.Name || 'Consumable'} - ${getTypeName(additional.type)} in Entropia Universe.`);
 
-  $: canonicalUrl = consumable
+  let canonicalUrl = $derived(consumable
     ? `https://entropianexus.com/items/consumables/${additional.type}/${encodeURIComponentSafe(consumable.Name)}`
     : additional.type
     ? `https://entropianexus.com/items/consumables/${additional.type}`
-    : 'https://entropianexus.com/items/consumables';
+    : 'https://entropianexus.com/items/consumables');
 
   // Image URL for SEO
-  $: entityImageUrl = consumable?.Id && additional.type
+  let entityImageUrl = $derived(consumable?.Id && additional.type
     ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${consumable.Id}`
-    : null;
+    : null);
 
   // Format effects grouped by duration (use activeEntity for live updates)
   function getFormattedEffects(item) {
@@ -319,13 +331,13 @@
       }));
   }
 
-  $: formattedEffects = getFormattedEffects(activeEntity);
+  let formattedEffects = $derived(getFormattedEffects(activeEntity));
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {

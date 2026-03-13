@@ -1,4 +1,7 @@
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -6,17 +9,17 @@
   import { encodeURIComponentSafe } from '$lib/util';
   import { clickable } from '$lib/actions/clickable.js';
 
-  let changes = [];
-  let total = 0;
-  let currentPage = 1;
-  let totalPages = 1;
-  let isLoading = true;
-  let error = null;
+  let changes = $state([]);
+  let total = $state(0);
+  let currentPage = $state(1);
+  let totalPages = $state(1);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   // Filters
-  let stateFilter = '';
-  let entityFilter = '';
-  let searchFilter = '';
+  let stateFilter = $state('');
+  let entityFilter = $state('');
+  let searchFilter = $state('');
   let searchTimeout = null;
 
   // Entity types grouped by category
@@ -546,7 +549,7 @@
   <div class="filters">
     <div class="filter-group">
       <label>State</label>
-      <select bind:value={stateFilter} on:change={handleFilterChange}>
+      <select bind:value={stateFilter} onchange={handleFilterChange}>
         <option value="">All States</option>
         {#each stateOptions as state}
           <option value={state}>{state}</option>
@@ -556,7 +559,7 @@
 
     <div class="filter-group">
       <label>Entity Type</label>
-      <select bind:value={entityFilter} on:change={handleFilterChange}>
+      <select bind:value={entityFilter} onchange={handleFilterChange}>
         <option value="">All Entities</option>
         {#each Object.entries(entityCategories) as [category, entities]}
           <optgroup label={category}>
@@ -574,12 +577,12 @@
         type="text"
         placeholder="Search..."
         bind:value={searchFilter}
-        on:input={handleSearchInput}
+        oninput={handleSearchInput}
       />
     </div>
 
     {#if stateFilter || entityFilter || searchFilter}
-      <button class="btn-clear" on:click={clearFilters}>Clear Filters</button>
+      <button class="btn-clear" onclick={clearFilters}>Clear Filters</button>
     {/if}
   </div>
 
@@ -613,7 +616,7 @@
       </thead>
       <tbody>
         {#each changes as change}
-          <tr on:click={() => goto(`/admin/changes/${change.id}`)}>
+          <tr onclick={() => goto(`/admin/changes/${change.id}`)}>
             <td>#{change.id}</td>
             <td>
               <div class="entity-name">{change.entityName}</div>
@@ -631,7 +634,7 @@
                   <a
                     class="author-link"
                     href={getProfileUrl(change.author_id, change.author_eu_name)}
-                    on:click|stopPropagation
+                    onclick={stopPropagation(bubble('click'))}
                   >
                     {change.author_name || 'Unknown'}
                   </a>
@@ -647,7 +650,7 @@
                   <a
                     class="author-link"
                     href={getProfileUrl(change.reviewed_by, null)}
-                    on:click|stopPropagation
+                    onclick={stopPropagation(bubble('click'))}
                   >
                     {change.reviewer_name || 'Unknown'}
                   </a>
@@ -667,7 +670,7 @@
     <!-- Mobile card view -->
     <div class="mobile-cards">
       {#each changes as change}
-        <div class="mobile-card" use:clickable on:click={() => goto(`/admin/changes/${change.id}`)}>
+        <div class="mobile-card" use:clickable onclick={() => goto(`/admin/changes/${change.id}`)}>
           <div class="mobile-card-header">
             <div class="mobile-card-title">
               <div class="entity-name">{change.entityName}</div>
@@ -685,7 +688,7 @@
                 <a
                   class="mobile-card-meta-value author-link"
                   href={getProfileUrl(change.author_id, change.author_eu_name)}
-                  on:click|stopPropagation
+                  onclick={stopPropagation(bubble('click'))}
                 >
                   {change.author_name || 'Unknown'}
                 </a>
@@ -707,7 +710,7 @@
         <button
           class="btn-page"
           disabled={currentPage <= 1}
-          on:click={() => { currentPage--; loadChanges(); }}
+          onclick={() => { currentPage--; loadChanges(); }}
         >
           Previous
         </button>
@@ -715,7 +718,7 @@
         <button
           class="btn-page"
           disabled={currentPage >= totalPages}
-          on:click={() => { currentPage++; loadChanges(); }}
+          onclick={() => { currentPage++; loadChanges(); }}
         >
           Next
         </button>

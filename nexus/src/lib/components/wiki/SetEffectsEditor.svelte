@@ -8,30 +8,45 @@
   Display format: Shows "<strength><unit> <effect name>" (e.g., "+5% Speed Increase")
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from './SearchInput.svelte';
   import CreateEffectDialog from './CreateEffectDialog.svelte';
 
-  /** @type {Array} Effects array to display/edit */
-  export let effects = [];
+  
 
-  /** @type {string} Field path for updateField */
-  export let fieldName = 'EffectsOnSetEquip';
+  
 
-  /** @type {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}}] */
-  export let availableEffects = [];
+  
 
-  /** @type {number} Max number of pieces in the set (for MinSetPieces validation) */
-  export let maxPieces = 7;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [effects]
+   * @property {string} [fieldName]
+   * @property {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}} [availableEffects]
+   * @property {number} [maxPieces]
+   */
 
-  let showCreateDialog = false;
-  let createDialogPieceCount = null;
-  let localAvailableEffects = [];
-  $: localAvailableEffects = [...(availableEffects || [])];
+  /** @type {Props} */
+  let {
+    effects = [],
+    fieldName = 'EffectsOnSetEquip',
+    availableEffects = [],
+    maxPieces = 7
+  } = $props();
+
+  let showCreateDialog = $state(false);
+  let createDialogPieceCount = $state(null);
+  let localAvailableEffects = $state([]);
+  run(() => {
+    localAvailableEffects = [...(availableEffects || [])];
+  });
 
   // Group effects by MinSetPieces for display and editing
-  $: groupedEffects = (() => {
+  let groupedEffects = $derived((() => {
     const groups = {};
     (effects || []).forEach((e, originalIndex) => {
       const pieces = e.Values?.MinSetPieces || 1;
@@ -44,24 +59,24 @@
         pieces: Number(pieces),
         effects: effs
       }));
-  })();
+  })());
 
   // Get which piece counts are already used
-  $: usedPieceCounts = new Set(groupedEffects.map(g => g.pieces));
+  let usedPieceCounts = $derived(new Set(groupedEffects.map(g => g.pieces)));
 
   // Available piece counts for adding new sections
-  $: availablePieceCounts = Array.from({ length: maxPieces - 1 }, (_, i) => i + 2)
-    .filter(n => !usedPieceCounts.has(n));
+  let availablePieceCounts = $derived(Array.from({ length: maxPieces - 1 }, (_, i) => i + 2)
+    .filter(n => !usedPieceCounts.has(n)));
 
   // Available effect options with sublabel for SearchInput
-  $: effectOptions = localAvailableEffects.map(e => ({
+  let effectOptions = $derived(localAvailableEffects.map(e => ({
     label: e.Name,
     value: e.Name,
     sublabel: e.CanonicalName || null
-  }));
+  })));
 
   // Show section if has effects or in edit mode
-  $: shouldShow = $editMode || (effects?.length > 0);
+  let shouldShow = $derived($editMode || (effects?.length > 0));
 
   // Get unit for an effect name from availableEffects list
   function getEffectUnit(effectName) {
@@ -163,10 +178,12 @@
   }
 
   // New section piece count selection
-  let newSectionPieceCount = 2;
-  $: if (availablePieceCounts.length > 0 && !availablePieceCounts.includes(newSectionPieceCount)) {
-    newSectionPieceCount = availablePieceCounts[0];
-  }
+  let newSectionPieceCount = $state(2);
+  run(() => {
+    if (availablePieceCounts.length > 0 && !availablePieceCounts.includes(newSectionPieceCount)) {
+      newSectionPieceCount = availablePieceCounts[0];
+    }
+  });
 </script>
 
 {#if shouldShow}
@@ -177,7 +194,7 @@
           <div class="effect-section">
             <div class="section-header">
               <span class="section-title">{group.pieces} Pieces</span>
-              <button class="btn-remove-section" on:click={() => removeSection(group.pieces)} title="Remove section">
+              <button class="btn-remove-section" onclick={() => removeSection(group.pieces)} title="Remove section">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -197,7 +214,7 @@
                         on:change={(e) => updateEffect(effect._originalIndex, 'Name', e.detail.value)}
                       />
                     </div>
-                    <button class="btn-remove-effect" on:click={() => removeEffect(effect._originalIndex)} title="Remove effect">
+                    <button class="btn-remove-effect" onclick={() => removeEffect(effect._originalIndex)} title="Remove effect">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
@@ -210,7 +227,7 @@
                       class="effect-strength"
                       value={effect.Values?.Strength ?? 0}
                       step="0.1"
-                      on:change={(e) => updateEffect(effect._originalIndex, 'Strength', parseFloat(e.target.value) || 0)}
+                      onchange={(e) => updateEffect(effect._originalIndex, 'Strength', parseFloat(e.target.value) || 0)}
                       title="Strength value"
                     />
                     <span class="effect-unit-display">{getEffectUnit(effect.Name)}</span>
@@ -218,14 +235,14 @@
                 </div>
               {/each}
               <div class="btn-row">
-                <button class="btn-add-effect" on:click={() => addEffectToSection(group.pieces)}>
+                <button class="btn-add-effect" onclick={() => addEffectToSection(group.pieces)}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
                   Add Effect
                 </button>
-                <button class="btn-add-effect btn-create" on:click={() => { createDialogPieceCount = group.pieces; showCreateDialog = true; }}>
+                <button class="btn-add-effect btn-create" onclick={() => { createDialogPieceCount = group.pieces; showCreateDialog = true; }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
@@ -247,7 +264,7 @@
                 <option value={count}>{count} Pieces</option>
               {/each}
             </select>
-            <button class="btn-add-section" on:click={() => addSection(newSectionPieceCount)}>
+            <button class="btn-add-section" onclick={() => addSection(newSectionPieceCount)}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />

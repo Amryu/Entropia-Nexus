@@ -5,6 +5,8 @@
   Supports full wiki editing with wikiEditState integration.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -42,36 +44,38 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.allItems === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'allItems', url: '/api/items' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.allItems === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'allItems', url: '/api/items' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: strongbox = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: allItemsList = data.allItems || [];
-  $: strongboxEntityId = strongbox?.Id ?? strongbox?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, strongboxEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let strongbox = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let allItemsList = $derived(data.allItems || []);
+  let strongboxEntityId = $derived(strongbox?.Id ?? strongbox?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, strongboxEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Permission check - verified users can edit
-  $: canEdit = user?.verified === true;
+  let canEdit = $derived(user?.verified === true);
 
   // Empty entity template for create mode
   const emptyStrongbox = {
@@ -84,29 +88,33 @@
   };
 
   // Initialize edit state when entity/user changes
-  $: if (user) {
-    if (data.isCreateMode) {
-      const initialData = existingChange?.data || emptyStrongbox;
-      initEditState(initialData, 'Strongbox', true, existingChange);
-    } else if (strongbox) {
-      initEditState(strongbox, 'Strongbox', false, canUsePendingChange ? resolvedPendingChange : null);
+  run(() => {
+    if (user) {
+      if (data.isCreateMode) {
+        const initialData = existingChange?.data || emptyStrongbox;
+        initEditState(initialData, 'Strongbox', true, existingChange);
+      } else if (strongbox) {
+        initEditState(strongbox, 'Strongbox', false, canUsePendingChange ? resolvedPendingChange : null);
+      }
     }
-  }
+  });
 
   // Handle pending changes from API
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity - use this everywhere in templates
-  $: activeStrongbox = $editMode
+  let activeStrongbox = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : strongbox;
+      : strongbox);
 
   // Cleanup on unmount
   onDestroy(() => {
@@ -114,13 +122,13 @@
   });
 
   // All strongboxes for navigation
-  $: allItems = data.items || [];
+  let allItems = $derived(data.items || []);
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // No filters for strongboxes
-  $: navFilters = [];
+  let navFilters = $derived([]);
 
   // Full column definitions for strongboxes
   const columnDefs = {
@@ -128,30 +136,30 @@
   };
 
   // Sidebar table columns
-  $: navTableColumns = [columnDefs.loots];
+  let navTableColumns = $derived([columnDefs.loots]);
   const navFullWidthColumns = [columnDefs.loots];
   const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Strongboxes', href: '/items/strongboxes' },
     ...(activeStrongbox?.Name ? [{ label: activeStrongbox.Name }] : data.isCreateMode ? [{ label: 'New Strongbox' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeStrongbox?.Properties?.Description ||
-    `${activeStrongbox?.Name || 'Strongbox'} - Strongbox container in Entropia Universe.`;
+  let seoDescription = $derived(activeStrongbox?.Properties?.Description ||
+    `${activeStrongbox?.Name || 'Strongbox'} - Strongbox container in Entropia Universe.`);
 
-  $: canonicalUrl = activeStrongbox?.Name
+  let canonicalUrl = $derived(activeStrongbox?.Name
     ? `https://entropianexus.com/items/strongboxes/${encodeURIComponentSafe(activeStrongbox.Name)}`
-    : 'https://entropianexus.com/items/strongboxes';
+    : 'https://entropianexus.com/items/strongboxes');
 
   // SEO Image URL (if entity has an image)
-  $: entityImageUrl = strongbox?.Id ? `/api/img/strongbox/${strongbox.Id}` : null;
+  let entityImageUrl = $derived(strongbox?.Id ? `/api/img/strongbox/${strongbox.Id}` : null);
 
   // Check for loots
-  $: hasLoots = activeStrongbox?.Loots?.length > 0;
+  let hasLoots = $derived(activeStrongbox?.Loots?.length > 0);
 
   // Rarity order for sorting
   const rarityOrder = {
@@ -197,14 +205,14 @@
   }
 
   // Sorted loots
-  $: sortedLoots = hasLoots ? [...activeStrongbox.Loots].sort(sortByRarity) : [];
+  let sortedLoots = $derived(hasLoots ? [...activeStrongbox.Loots].sort(sortByRarity) : []);
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     loots: true,
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -267,7 +275,7 @@
         </span>
         <button
           class="banner-toggle"
-          on:click={() => setViewingPendingChange(!$viewingPendingChange)}
+          onclick={() => setViewingPendingChange(!$viewingPendingChange)}
         >
           {$viewingPendingChange ? 'View Original' : 'View Changes'}
         </button>
@@ -402,7 +410,7 @@
                       <label>Rarity</label>
                       <select
                         value={loot.Rarity || 'Common'}
-                        on:change={(e) => {
+                        onchange={(e) => {
                           const loots = [...(activeStrongbox?.Loots || [])];
                           loots[index] = { ...loots[index], Rarity: e.target.value };
                           updateField('Loots', loots);
@@ -418,7 +426,7 @@
                       <input
                         type="date"
                         value={loot.AvailableFrom || ''}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           const loots = [...(activeStrongbox?.Loots || [])];
                           loots[index] = { ...loots[index], AvailableFrom: e.target.value || null };
                           updateField('Loots', loots);
@@ -430,7 +438,7 @@
                       <input
                         type="date"
                         value={loot.AvailableUntil || ''}
-                        on:input={(e) => {
+                        oninput={(e) => {
                           const loots = [...(activeStrongbox?.Loots || [])];
                           loots[index] = { ...loots[index], AvailableUntil: e.target.value || null };
                           updateField('Loots', loots);
@@ -440,7 +448,7 @@
                     <button
                       type="button"
                       class="remove-loot-btn"
-                      on:click={() => {
+                      onclick={() => {
                         const loots = [...(activeStrongbox?.Loots || [])];
                         loots.splice(index, 1);
                         updateField('Loots', loots);
@@ -457,7 +465,7 @@
                 <button
                   type="button"
                   class="add-loot-btn"
-                  on:click={() => {
+                  onclick={() => {
                     const loots = [...(activeStrongbox?.Loots || []), {
                       Item: { Name: '' },
                       Rarity: 'Common',

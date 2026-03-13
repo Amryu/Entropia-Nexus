@@ -8,6 +8,8 @@
   Supports full wiki editing.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -51,62 +53,68 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' },
-      { key: 'professions', url: '/api/professions' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' },
+        { key: 'professions', url: '/api/professions' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: tool = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
+  let tool = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
 
   // Local filter state - decoupled from URL
   // Filter persists through item navigation; only changes when explicitly clicking filter buttons
-  let selectedFilter = null;
-  let filterInitialized = false;
+  let selectedFilter = $state(null);
+  let filterInitialized = $state(false);
 
   // Initialize filter from URL once on first data load
-  $: if (!filterInitialized) {
-    selectedFilter = additional.type || null;
-    filterInitialized = true;
-  }
+  run(() => {
+    if (!filterInitialized) {
+      selectedFilter = additional.type || null;
+      filterInitialized = true;
+    }
+  });
 
   // Sync filter only when on list view (no item selected, not create mode)
-  $: if (filterInitialized && !tool && !isCreateMode) {
-    if ((additional.type || null) !== selectedFilter) {
-      selectedFilter = additional.type || null;
+  run(() => {
+    if (filterInitialized && !tool && !isCreateMode) {
+      if ((additional.type || null) !== selectedFilter) {
+        selectedFilter = additional.type || null;
+      }
     }
-  }
-  $: effects = data.effects || [];
-  $: professions = data.professions || [];
-  $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
-  $: toolEntityId = tool?.Id ?? tool?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, toolEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  });
+  let effects = $derived(data.effects || []);
+  let professions = $derived(data.professions || []);
+  let professionOptions = $derived(professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })));
+  let toolEntityId = $derived(tool?.Id ?? tool?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, toolEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Permission check - verified users and admins can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // For multi-type pages, data.items is an object keyed by type
   // When no filter is selected, show all items from all types (with _type added for linking)
-  $: allItems = (() => {
+  let allItems = $derived((() => {
     if (!data.items) return [];
     if (selectedFilter && data.items[selectedFilter]) {
       return data.items[selectedFilter];
@@ -119,7 +127,7 @@
       }
     }
     return combined;
-  })();
+  })());
 
   // Type navigation buttons
   const typeButtons = [
@@ -266,27 +274,31 @@
 
   // ========== WIKI EDIT STATE ==========
   // Initialize edit state when user/entity changes
-  $: if (user) {
-    const entityType = getEntityType(additional.type);
-    const emptyEntity = getEmptyEntity(additional.type);
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(tool || emptyEntity, entityType, isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const entityType = getEntityType(additional.type);
+      const emptyEntity = getEmptyEntity(additional.type);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(tool || emptyEntity, entityType, isCreateMode, editChange);
+    }
+  });
 
   // Set pending change when it exists
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
-  $: activeEntity = $editMode
+  let activeEntity = $derived($editMode
     ? $currentEntity
     : $viewingPendingChange && $existingPendingChange?.data
       ? $existingPendingChange.data
-      : tool;
+      : tool);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -294,17 +306,17 @@
   });
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - type buttons
   // Uses selectedFilter for active state (local filter state, not URL-based)
-  $: navFilters = typeButtons.map(btn => ({
+  let navFilters = $derived(typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
     active: selectedFilter === btn.type,
     href: selectedFilter === btn.type ? '/items/tools' : `/items/tools/${btn.type}`
-  }));
+  })));
 
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
@@ -385,7 +397,7 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(selectedFilter);
+  let navTableColumns = $derived(getNavTableColumns(selectedFilter));
 
   // Full column definitions for all tool types
   const columnDefs = {
@@ -431,9 +443,9 @@
     }
   }
 
-  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
-  $: allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `tools-${selectedFilter || 'all'}`;
+  let navFullWidthColumns = $derived(getNavFullWidthColumns(selectedFilter));
+  let allAvailableColumns = $derived(Object.values(columnDefs));
+  let navPageTypeId = $derived(`tools-${selectedFilter || 'all'}`);
 
   // Custom href generator for items - handles _type property for "all items" view
   function getItemHref(item, basePath) {
@@ -445,56 +457,56 @@
   }
 
   // Base path for navigation - uses selectedFilter so it persists through navigation
-  $: effectiveBasePath = selectedFilter
+  let effectiveBasePath = $derived(selectedFilter
     ? `/items/tools/${selectedFilter}`
-    : '/items/tools';
+    : '/items/tools');
 
   // Create categories for the "New" dropdown
-  $: createCategories = typeButtons.map(btn => ({
+  let createCategories = $derived(typeButtons.map(btn => ({
     label: getTypeName(btn.type),
     href: `/items/tools/${btn.type}`
-  }));
+  })));
 
   // Filter pending creates by selected filter type
-  $: filteredPendingCreates = selectedFilter
+  let filteredPendingCreates = $derived(selectedFilter
     ? (userPendingCreates || []).filter(change => {
         const entityType = getEntityType(selectedFilter);
         return change.entity === entityType;
       })
-    : userPendingCreates || [];
+    : userPendingCreates || []);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Tools', href: '/items/tools' },
     ...(additional.type ? [{ label: getTypeName(additional.type) + 's', href: `/items/tools/${additional.type}` }] : []),
     ...(tool ? [{ label: tool.Name }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = tool?.Properties?.Description ||
-    `${tool?.Name || 'Tool'} - ${getTypeName(additional.type)} in Entropia Universe.`;
+  let seoDescription = $derived(tool?.Properties?.Description ||
+    `${tool?.Name || 'Tool'} - ${getTypeName(additional.type)} in Entropia Universe.`);
 
-  $: canonicalUrl = tool
+  let canonicalUrl = $derived(tool
     ? `https://entropianexus.com/items/tools/${additional.type}/${encodeURIComponentSafe(tool.Name)}`
     : additional.type
     ? `https://entropianexus.com/items/tools/${additional.type}`
-    : 'https://entropianexus.com/items/tools';
+    : 'https://entropianexus.com/items/tools');
 
   // Image URL for SEO (use entity type in lowercase format)
-  $: entityImageUrl = tool?.Id && additional.type
+  let entityImageUrl = $derived(tool?.Id && additional.type
     ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${tool.Id}`
-    : null;
+    : null);
 
   // Check if item is tierable (not Limited)
-  $: isTierable = activeEntity && !hasItemTag(activeEntity.Name, 'L') && ['finders', 'excavators'].includes(additional.type);
+  let isTierable = $derived(activeEntity && !hasItemTag(activeEntity.Name, 'L') && ['finders', 'excavators'].includes(additional.type));
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     tiering: true,
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -516,8 +528,8 @@
   }
 
   // ========== RELOAD/USES TOGGLE ==========
-  let showReload = true;
-  $: showReloadEffective = $editMode ? false : showReload;
+  let showReload = $state(true);
+  let showReloadEffective = $derived($editMode ? false : showReload);
   const mindforceAmmoOptions = [
     { value: 'Mind Essence', label: 'Mind Essence' },
     { value: 'Synthetic Mind Essence', label: 'Synthetic Mind Essence' },
@@ -577,11 +589,11 @@
   }
 
   // Reactive calculations (use activeEntity for live editing updates)
-  $: totalUses = getTotalUses(activeEntity);
-  $: cost = getCost(activeEntity);
-  $: reload = getReload(activeEntity);
-  $: effPerPed = calcEfficiencyPerPed(activeEntity);
-  $: effPerSec = calcEfficiencyPerSec(activeEntity);
+  let totalUses = $derived(getTotalUses(activeEntity));
+  let cost = $derived(getCost(activeEntity));
+  let reload = $derived(getReload(activeEntity));
+  let effPerPed = $derived(calcEfficiencyPerPed(activeEntity));
+  let effPerSec = $derived(calcEfficiencyPerSec(activeEntity));
 </script>
 
 <WikiSEO
@@ -762,7 +774,7 @@
             </div>
           {/if}
           {#if additional.type !== 'refiners' && additional.type !== 'misctools'}
-            <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
+            <div class="stat-row toggleable" onclick={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
               {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
                 <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>

@@ -6,31 +6,31 @@
   import { goto } from '$app/navigation';
   import { apiPut } from '$lib/util';
 
-  export let data;
+  let { data } = $props();
 
-  $: service = data.service;
-  $: request = data.request;
+  let service = $derived(data.service);
+  let request = $derived(data.request);
 
-  let loading = false;
-  let error = null;
+  let loading = $state(false);
+  let error = $state(null);
 
   // Form fields
-  let actualEnd = new Date().toISOString().slice(0, 16); // datetime-local format
-  let actualStart = request.actual_start
+  let actualEnd = $state(new Date().toISOString().slice(0, 16)); // datetime-local format
+  let actualStart = $state(request.actual_start
     ? new Date(request.actual_start).toISOString().slice(0, 16)
-    : new Date().toISOString().slice(0, 16);
-  let actualPayment = request.final_payment || request.estimated_payment || '';
-  let providerNotes = '';
-  let breakMinutes = '';
-  let actualDecay = '';
+    : new Date().toISOString().slice(0, 16));
+  let actualPayment = $state(request.final_payment || request.estimated_payment || '');
+  let providerNotes = $state('');
+  let breakMinutes = $state('');
+  let actualDecay = $state('');
 
   // Check if this is a DPS/heal service that needs break/decay tracking
-  $: isDurationService = service.type === 'healing' || service.type === 'dps';
+  let isDurationService = $derived(service.type === 'healing' || service.type === 'dps');
 
   // Calculate duration
-  $: durationMinutes = actualStart && actualEnd
+  let durationMinutes = $derived(actualStart && actualEnd
     ? Math.round((new Date(actualEnd) - new Date(actualStart)) / (1000 * 60))
-    : 0;
+    : 0);
 
   function formatDateTime(dateStr) {
     if (!dateStr) return '-';
@@ -245,7 +245,7 @@
         type="button"
         class="btn primary"
         disabled={loading || durationMinutes < 0}
-        on:click={handleFinish}
+        onclick={handleFinish}
       >
         {loading ? 'Completing...' : 'Complete Request'}
       </button>

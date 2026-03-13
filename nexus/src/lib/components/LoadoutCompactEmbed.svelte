@@ -1,8 +1,19 @@
 <script>
-  export let loadout = null;
-  export let stats = {};
-  export let shareCode = null;
-  export let title = 'Loadout Overview';
+  /**
+   * @typedef {Object} Props
+   * @property {any} [loadout]
+   * @property {any} [stats]
+   * @property {any} [shareCode]
+   * @property {string} [title]
+   */
+
+  /** @type {Props} */
+  let {
+    loadout = null,
+    stats = {},
+    shareCode = null,
+    title = 'Loadout Overview'
+  } = $props();
 
   const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
   const isRingSlot = (slot) => /ring|finger/i.test(slot || '');
@@ -59,21 +70,21 @@
     return list.find(item => isRingSlot(item?.Slot)) || null;
   }
 
-  $: leftRing = getRing('Left');
-  $: rightRing = getRing('Right');
-  $: armorLabel = getArmorLabel();
-  $: weaponLabel = loadout?.Gear?.Weapon?.Name || '-';
-  $: petLabel = loadout?.Gear?.Pet?.Name || '-';
-  $: weaponLink = getEquipmentLink('weapon', loadout?.Gear?.Weapon?.Name);
-  $: petLink = getEquipmentLink('pet', loadout?.Gear?.Pet?.Name);
-  $: leftRingLink = getEquipmentLink('clothing', leftRing?.Name);
-  $: rightRingLink = getEquipmentLink('clothing', rightRing?.Name);
-  $: armorLink = loadout?.Gear?.Armor?.ManageIndividual
+  let leftRing = $derived(getRing('Left'));
+  let rightRing = $derived(getRing('Right'));
+  let armorLabel = $derived(getArmorLabel());
+  let weaponLabel = $derived(loadout?.Gear?.Weapon?.Name || '-');
+  let petLabel = $derived(loadout?.Gear?.Pet?.Name || '-');
+  let weaponLink = $derived(getEquipmentLink('weapon', loadout?.Gear?.Weapon?.Name));
+  let petLink = $derived(getEquipmentLink('pet', loadout?.Gear?.Pet?.Name));
+  let leftRingLink = $derived(getEquipmentLink('clothing', leftRing?.Name));
+  let rightRingLink = $derived(getEquipmentLink('clothing', rightRing?.Name));
+  let armorLink = $derived(loadout?.Gear?.Armor?.ManageIndividual
     ? null
-    : getEquipmentLink('armorset', loadout?.Gear?.Armor?.SetName || loadout?.Gear?.Armor?.Name);
-  $: healingLabel = loadout?.Gear?.Healing?.Name || '-';
-  $: healingLink = getEquipmentLink('healingtool', loadout?.Gear?.Healing?.Name);
-  $: encodedShareCode = shareCode ? encodeURIComponent(shareCode) : null;
+    : getEquipmentLink('armorset', loadout?.Gear?.Armor?.SetName || loadout?.Gear?.Armor?.Name));
+  let healingLabel = $derived(loadout?.Gear?.Healing?.Name || '-');
+  let healingLink = $derived(getEquipmentLink('healingtool', loadout?.Gear?.Healing?.Name));
+  let encodedShareCode = $derived(shareCode ? encodeURIComponent(shareCode) : null);
 </script>
 
 <div class="compact-embed">

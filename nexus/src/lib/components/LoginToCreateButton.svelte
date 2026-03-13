@@ -1,22 +1,31 @@
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   import { page } from '$app/stores';
 
-  /** @type {{ verified?: boolean } | null} */
-  export let user = null;
+  
 
-  /** Button label text (e.g. "Login to create service") */
-  export let label = 'Login to create';
+  
 
-  /** URL to redirect to after login (e.g. "/market/services/create") */
-  export let createUrl = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ verified?: boolean } | null} [user]
+   * @property {string} [label] - Button label text (e.g. "Login to create service")
+   * @property {string} [createUrl] - URL to redirect to after login (e.g. "/market/services/create")
+   */
 
-  let showDialog = false;
+  /** @type {Props} */
+  let { user = null, label = 'Login to create', createUrl = '' } = $props();
 
-  $: needsAuth = !user;
-  $: needsVerification = user && !user.verified;
-  $: visible = needsAuth || needsVerification;
+  let showDialog = $state(false);
 
-  $: loginUrl = `/discord/login?redirect=${encodeURIComponent(createUrl || $page.url.pathname)}`;
+  let needsAuth = $derived(!user);
+  let needsVerification = $derived(user && !user.verified);
+  let visible = $derived(needsAuth || needsVerification);
+
+  let loginUrl = $derived(`/discord/login?redirect=${encodeURIComponent(createUrl || $page.url.pathname)}`);
 
   function openDialog() {
     showDialog = true;
@@ -28,7 +37,7 @@
 </script>
 
 {#if visible}
-  <button class="auth-hint-btn" on:click={openDialog} title={needsAuth ? 'Login required' : 'Verification required'}>
+  <button class="auth-hint-btn" onclick={openDialog} title={needsAuth ? 'Login required' : 'Verification required'}>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -38,9 +47,9 @@
 {/if}
 
 {#if showDialog}
-  <div class="dialog-overlay" on:click={closeDialog} on:keydown={(e) => e.key === 'Escape' && closeDialog()}>
-    <div class="dialog-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
-      <button class="dialog-close" on:click={closeDialog} aria-label="Close">
+  <div class="dialog-overlay" onclick={closeDialog} onkeydown={(e) => e.key === 'Escape' && closeDialog()}>
+    <div class="dialog-content" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+      <button class="dialog-close" onclick={closeDialog} aria-label="Close">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
@@ -118,7 +127,7 @@
 
           <div class="dialog-actions">
             <a href="https://discord.gg/hBGKyJ6EDr" target="_blank" rel="noopener" class="dialog-btn primary">Join Discord Server</a>
-            <button class="dialog-btn secondary" on:click={closeDialog}>Close</button>
+            <button class="dialog-btn secondary" onclick={closeDialog}>Close</button>
           </div>
         </div>
       {/if}

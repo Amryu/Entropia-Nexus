@@ -3,16 +3,16 @@
   import { goto } from '$app/navigation';
   import { addToast } from '$lib/stores/toasts';
 
-  let title = '';
-  let description = '';
-  let start_date = '';
-  let end_date = '';
-  let location = '';
-  let type = 'player_run';
-  let link = '';
+  let title = $state('');
+  let description = $state('');
+  let start_date = $state('');
+  let end_date = $state('');
+  let location = $state('');
+  let type = $state('player_run');
+  let link = $state('');
 
-  let submitting = false;
-  let error = null;
+  let submitting = $state(false);
+  let error = $state(null);
 
   async function handleSubmit() {
     if (!title.trim()) {
@@ -123,8 +123,8 @@
     </div>
 
     <div class="form-actions">
-      <button class="btn btn-cancel" on:click={() => goto('/')}>Cancel</button>
-      <button class="btn btn-primary" on:click={handleSubmit} disabled={submitting || !title.trim() || !start_date}>
+      <button class="btn btn-cancel" onclick={() => goto('/')}>Cancel</button>
+      <button class="btn btn-primary" onclick={handleSubmit} disabled={submitting || !title.trim() || !start_date}>
         {submitting ? 'Submitting...' : 'Submit Event'}
       </button>
     </div>

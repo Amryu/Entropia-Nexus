@@ -1,12 +1,14 @@
 <script>
+  import { stopPropagation } from 'svelte/legacy';
+
   //@ts-nocheck
   import { onMount } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  let items = [];
-  let loading = true;
-  let showResolved = false;
+  let items = $state([]);
+  let loading = $state(true);
+  let showResolved = $state(false);
 
   const columns = [
     { key: 'item_name', header: 'Item Name', main: true, sortable: true, searchable: true },
@@ -79,7 +81,7 @@
     <h1>Unknown Items</h1>
     <div class="header-actions">
       <label class="toggle-label">
-        <input type="checkbox" bind:checked={showResolved} on:change={toggleResolved} />
+        <input type="checkbox" bind:checked={showResolved} onchange={toggleResolved} />
         Show resolved
       </label>
     </div>
@@ -97,17 +99,19 @@
     emptyMessage={showResolved ? 'No resolved items' : 'No unknown items found'}
     defaultSort={{ column: 'user_count', order: 'DESC' }}
   >
-    <svelte:fragment slot="cell" let:column let:row>
-      {#if column.key === '_actions'}
-        {#if !row.resolved}
-          <button class="btn btn-sm btn-resolve" on:click|stopPropagation={() => markResolved(row)}>
-            Resolve
-          </button>
-        {:else}
-          <span class="badge badge-subtle badge-success">Resolved</span>
+    {#snippet cell({ column, row })}
+      
+        {#if column.key === '_actions'}
+          {#if !row.resolved}
+            <button class="btn btn-sm btn-resolve" onclick={stopPropagation(() => markResolved(row))}>
+              Resolve
+            </button>
+          {:else}
+            <span class="badge badge-subtle badge-success">Resolved</span>
+          {/if}
         {/if}
-      {/if}
-    </svelte:fragment>
+      
+      {/snippet}
   </FancyTable>
 </div>
 

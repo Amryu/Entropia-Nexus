@@ -5,6 +5,8 @@
   Groups are user-defined (not tied to estate areas).
 -->
 <script>
+  import { run, stopPropagation } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util';
@@ -13,17 +15,28 @@
 
   const dispatch = createEventDispatcher();
 
-  /** Shop name/identifier for API calls */
-  export let shopName = '';
+  
 
-  /** Whether the dialog is open */
-  export let open = false;
+  
 
-  /** Current inventory groups from shop data */
-  export let inventoryGroups = [];
+  
 
-  /** Item details map (ItemId -> Item object) for looking up names */
-  export let itemDetails = {};
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [shopName] - Shop name/identifier for API calls
+   * @property {boolean} [open] - Whether the dialog is open
+   * @property {any} [inventoryGroups] - Current inventory groups from shop data
+   * @property {any} [itemDetails] - Item details map (ItemId -> Item object) for looking up names
+   */
+
+  /** @type {Props} */
+  let {
+    shopName = '',
+    open = $bindable(false),
+    inventoryGroups = [],
+    itemDetails = {}
+  } = $props();
 
   // Constants
   const MIN_STACK_SIZE = 1;
@@ -32,42 +45,29 @@
   const MAX_MARKUP = 100000;
 
   // Local state
-  let localGroups = [];
-  let activeGroupIndex = 0;
-  let saving = false;
-  let error = null;
-  let success = null;
+  let localGroups = $state([]);
+  let activeGroupIndex = $state(0);
+  let saving = $state(false);
+  let error = $state(null);
+  let success = $state(null);
 
   // Item search state
-  let itemSearchQuery = '';
+  let itemSearchQuery = $state('');
 
   // New group state
-  let showNewGroupInput = false;
-  let newGroupName = '';
+  let showNewGroupInput = $state(false);
+  let newGroupName = $state('');
 
   // Edit group name state
-  let editingGroupIndex = null;
-  let editGroupName = '';
+  let editingGroupIndex = $state(null);
+  let editGroupName = $state('');
 
   // Edit item state
-  let editingItemIndex = null;
+  let editingItemIndex = $state(null);
 
   // Group edit mode - when false, hides reorder/rename/delete controls for cleaner UI
-  let groupEditMode = false;
+  let groupEditMode = $state(false);
 
-  // Initialize groups when dialog opens
-  $: if (open) {
-    initializeGroups();
-    error = null;
-    success = null;
-    itemSearchQuery = '';
-    editingItemIndex = null;
-    editingGroupIndex = null;
-    editGroupName = '';
-    showNewGroupInput = false;
-    newGroupName = '';
-    groupEditMode = false; // Reset edit mode when dialog opens
-  }
 
   function initializeGroups() {
     // Copy existing inventory groups (user-defined, not estate-based)
@@ -315,8 +315,6 @@
     return errors;
   }
 
-  // Reactive total items count - updates when localGroups changes
-  $: totalItems = localGroups.reduce((sum, g) => sum + g.Items.length, 0);
 
   async function save() {
     if (saving) return;
@@ -377,14 +375,31 @@
     }
   }
 
+  // Initialize groups when dialog opens
+  run(() => {
+    if (open) {
+      initializeGroups();
+      error = null;
+      success = null;
+      itemSearchQuery = '';
+      editingItemIndex = null;
+      editingGroupIndex = null;
+      editGroupName = '';
+      showNewGroupInput = false;
+      newGroupName = '';
+      groupEditMode = false; // Reset edit mode when dialog opens
+    }
+  });
+  // Reactive total items count - updates when localGroups changes
+  let totalItems = $derived(localGroups.reduce((sum, g) => sum + g.Items.length, 0));
 </script>
 
 {#if open}
-  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="inventory-dialog-title">
       <div class="dialog-header">
         <h3 id="inventory-dialog-title">Edit Shop Inventory</h3>
-        <button class="close-btn" on:click={close} aria-label="Close dialog">
+        <button class="close-btn" onclick={close} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -402,7 +417,7 @@
                 {#if groupEditMode && activeGroupIndex === index && localGroups.length > 1}
                   <button
                     class="reorder-group-btn"
-                    on:click|stopPropagation={() => moveGroup(index, -1)}
+                    onclick={stopPropagation(() => moveGroup(index, -1))}
                     disabled={saving || index === 0}
                     title="Move group left"
                   >
@@ -416,16 +431,16 @@
                     <input
                       type="text"
                       bind:value={editGroupName}
-                      on:keydown={handleEditGroupKeydown}
+                      onkeydown={handleEditGroupKeydown}
                       class="edit-group-input"
                       disabled={saving}
                     />
-                    <button class="edit-group-confirm" on:click={saveGroupName} disabled={!editGroupName.trim() || saving} title="Save">
+                    <button class="edit-group-confirm" onclick={saveGroupName} disabled={!editGroupName.trim() || saving} title="Save">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
                     </button>
-                    <button class="edit-group-cancel" on:click={cancelEditGroupName} title="Cancel">
+                    <button class="edit-group-cancel" onclick={cancelEditGroupName} title="Cancel">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -436,8 +451,8 @@
                   <button
                     class="group-tab"
                     class:active={activeGroupIndex === index}
-                    on:click={() => { activeGroupIndex = index; editingItemIndex = null; }}
-                    on:dblclick|stopPropagation={() => startEditGroupName(index)}
+                    onclick={() => { activeGroupIndex = index; editingItemIndex = null; }}
+                    ondblclick={stopPropagation(() => startEditGroupName(index))}
                     disabled={saving}
                     title="Double-click to rename"
                   >
@@ -450,7 +465,7 @@
                   {#if localGroups.length > 1}
                     <button
                       class="reorder-group-btn"
-                      on:click|stopPropagation={() => moveGroup(index, 1)}
+                      onclick={stopPropagation(() => moveGroup(index, 1))}
                       disabled={saving || index === localGroups.length - 1}
                       title="Move group right"
                     >
@@ -463,7 +478,7 @@
                   <div class="group-action-buttons">
                     <button
                       class="group-action-btn rename"
-                      on:click|stopPropagation={() => startEditGroupName(index)}
+                      onclick={stopPropagation(() => startEditGroupName(index))}
                       disabled={saving}
                       title="Rename group"
                     >
@@ -475,7 +490,7 @@
                     {#if localGroups.length > 1}
                       <button
                         class="group-action-btn delete"
-                        on:click|stopPropagation={() => deleteGroup(index)}
+                        onclick={stopPropagation(() => deleteGroup(index))}
                         disabled={saving}
                         title="Delete group"
                       >
@@ -495,17 +510,17 @@
                 <input
                   type="text"
                   bind:value={newGroupName}
-                  on:keydown={handleNewGroupKeydown}
+                  onkeydown={handleNewGroupKeydown}
                   placeholder="Group name..."
                   class="new-group-input"
                   disabled={saving}
                 />
-                <button class="add-group-confirm" on:click={addGroup} disabled={!newGroupName.trim() || saving}>
+                <button class="add-group-confirm" onclick={addGroup} disabled={!newGroupName.trim() || saving}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
                 </button>
-                <button class="add-group-cancel" on:click={() => { showNewGroupInput = false; newGroupName = ''; }}>
+                <button class="add-group-cancel" onclick={() => { showNewGroupInput = false; newGroupName = ''; }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -513,7 +528,7 @@
                 </button>
               </div>
             {:else}
-              <button class="add-group-btn" on:click={() => showNewGroupInput = true} disabled={saving} title="Add new group">
+              <button class="add-group-btn" onclick={() => showNewGroupInput = true} disabled={saving} title="Add new group">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -525,7 +540,7 @@
             <button
               class="edit-mode-toggle"
               class:active={groupEditMode}
-              on:click={() => groupEditMode = !groupEditMode}
+              onclick={() => groupEditMode = !groupEditMode}
               disabled={saving}
               title={groupEditMode ? 'Exit group edit mode' : 'Edit groups (reorder, rename, delete)'}
             >
@@ -572,7 +587,7 @@
                     <div class="reorder-btns">
                       <button
                         class="reorder-btn"
-                        on:click={() => moveItem(activeGroupIndex, index, -1)}
+                        onclick={() => moveItem(activeGroupIndex, index, -1)}
                         disabled={saving || index === 0}
                         title="Move up"
                       >
@@ -582,7 +597,7 @@
                       </button>
                       <button
                         class="reorder-btn"
-                        on:click={() => moveItem(activeGroupIndex, index, 1)}
+                        onclick={() => moveItem(activeGroupIndex, index, 1)}
                         disabled={saving || index === localGroups[activeGroupIndex].Items.length - 1}
                         title="Move down"
                       >
@@ -600,8 +615,8 @@
                       type="number"
                       class="compact-input"
                       value={item.StackSize}
-                      on:input={(e) => updateItem(activeGroupIndex, index, 'StackSize', e.target.value)}
-                      on:focus={() => editingItemIndex = index}
+                      oninput={(e) => updateItem(activeGroupIndex, index, 'StackSize', e.target.value)}
+                      onfocus={() => editingItemIndex = index}
                       min={MIN_STACK_SIZE}
                       max={MAX_STACK_SIZE}
                       disabled={saving}
@@ -612,8 +627,8 @@
                       type="number"
                       class="compact-input"
                       value={item.Markup}
-                      on:input={(e) => updateItem(activeGroupIndex, index, 'Markup', e.target.value)}
-                      on:focus={() => editingItemIndex = index}
+                      oninput={(e) => updateItem(activeGroupIndex, index, 'Markup', e.target.value)}
+                      onfocus={() => editingItemIndex = index}
                       min={MIN_MARKUP}
                       max={MAX_MARKUP}
                       step="0.01"
@@ -624,7 +639,7 @@
                   <span class="col-actions">
                     <button
                       class="remove-btn"
-                      on:click={() => removeItem(activeGroupIndex, index)}
+                      onclick={() => removeItem(activeGroupIndex, index)}
                       disabled={saving}
                       aria-label="Remove item"
                       title="Remove item"
@@ -655,10 +670,10 @@
           Total: {totalItems} item{totalItems !== 1 ? 's' : ''}
         </div>
         <div class="footer-actions">
-          <button class="cancel-btn" on:click={close} disabled={saving}>
+          <button class="cancel-btn" onclick={close} disabled={saving}>
             Cancel
           </button>
-          <button class="save-btn" on:click={save} disabled={saving}>
+          <button class="save-btn" onclick={save} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>

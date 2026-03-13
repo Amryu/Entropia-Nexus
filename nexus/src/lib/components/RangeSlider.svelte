@@ -6,27 +6,41 @@
 <script>
   import { createEventDispatcher } from 'svelte';
 
-  export let min = 0;
-  export let max = 100;
-  export let step = 1;
-  export let valueMin = 0;
-  export let valueMax = 100;
-  export let label = '';
-  export let compact = false;
+  /**
+   * @typedef {Object} Props
+   * @property {number} [min]
+   * @property {number} [max]
+   * @property {number} [step]
+   * @property {number} [valueMin]
+   * @property {number} [valueMax]
+   * @property {string} [label]
+   * @property {boolean} [compact]
+   */
+
+  /** @type {Props} */
+  let {
+    min = 0,
+    max = 100,
+    step = 1,
+    valueMin = $bindable(0),
+    valueMax = $bindable(100),
+    label = '',
+    compact = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let trackEl;
+  let trackEl = $state();
   let dragging = null; // 'min' | 'max' | null
 
-  $: range = max - min || 1;
-  $: pctMin = ((valueMin - min) / range) * 100;
-  $: pctMax = ((valueMax - min) / range) * 100;
-  $: isFullRange = valueMin <= min && valueMax >= max;
-  $: displayText = isFullRange ? 'All' : `${valueMin}–${valueMax}`;
+  let range = $derived(max - min || 1);
+  let pctMin = $derived(((valueMin - min) / range) * 100);
+  let pctMax = $derived(((valueMax - min) / range) * 100);
+  let isFullRange = $derived(valueMin <= min && valueMax >= max);
+  let displayText = $derived(isFullRange ? 'All' : `${valueMin}–${valueMax}`);
   // Reserve width for the widest possible label to prevent layout shifts
-  $: maxChars = `${max}`.length * 2 + 1; // e.g. "4000–4000" = 9ch
-  $: labelWidth = `${Math.max(3, maxChars)}ch`; // minimum 3ch for "All"
+  let maxChars = $derived(`${max}`.length * 2 + 1); // e.g. "4000–4000" = 9ch
+  let labelWidth = $derived(`${Math.max(3, maxChars)}ch`); // minimum 3ch for "All"
 
   function clamp(v) {
     return Math.round(Math.min(max, Math.max(min, v)) / step) * step;
@@ -110,7 +124,7 @@
     class="track"
     bind:this={trackEl}
     role="presentation"
-    on:click={onTrackClick}
+    onclick={onTrackClick}
   >
     <div class="track-bg"></div>
     <div class="track-fill" style="left:{pctMin}%;right:{100-pctMax}%"></div>
@@ -123,8 +137,8 @@
       aria-valuemin={min}
       aria-valuemax={valueMax}
       aria-valuenow={valueMin}
-      on:pointerdown={(e) => onPointerDown(e, 'min')}
-      on:keydown={(e) => onKeydown(e, 'min')}
+      onpointerdown={(e) => onPointerDown(e, 'min')}
+      onkeydown={(e) => onKeydown(e, 'min')}
     ></div>
     <div
       class="thumb"
@@ -135,8 +149,8 @@
       aria-valuemin={valueMin}
       aria-valuemax={max}
       aria-valuenow={valueMax}
-      on:pointerdown={(e) => onPointerDown(e, 'max')}
-      on:keydown={(e) => onKeydown(e, 'max')}
+      onpointerdown={(e) => onPointerDown(e, 'max')}
+      onkeydown={(e) => onKeydown(e, 'max')}
     ></div>
   </div>
 </div>

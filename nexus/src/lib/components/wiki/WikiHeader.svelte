@@ -11,26 +11,39 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string} Page title */
-  export let title = '';
+  
 
-  /** @type {Array} Breadcrumb items [{label, href}, ...] */
-  export let breadcrumbs = [];
+  
 
-  /** @type {object|null} Current entity */
-  export let entity = null;
+  
 
-  /** @type {object|null} Current user */
-  export let user = null;
+  
 
-  /** @type {boolean} Whether editing is allowed */
-  export let editable = false;
+  
 
-  /** @type {boolean} Whether we're on mobile */
-  export let isMobile = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [title]
+   * @property {Array} Breadcrumb items [{label, href} [breadcrumbs]
+   * @property {object|null} [entity]
+   * @property {object|null} [user]
+   * @property {boolean} [editable]
+   * @property {boolean} [isMobile]
+   */
+
+  /** @type {Props} */
+  let {
+    title = '',
+    breadcrumbs = [],
+    entity = null,
+    user = null,
+    editable = false,
+    isMobile = false
+  } = $props();
 
   // Check if user can edit
-  $: canEdit = editable && user && user.verified;
+  let canEdit = $derived(editable && user && user.verified);
 
   function handleEditClick() {
     if ($editMode) {
@@ -56,7 +69,7 @@
 <header class="wiki-header" class:mobile={isMobile}>
   <div class="header-left">
     {#if isMobile}
-      <button class="nav-toggle" on:click={toggleNav} aria-label="Toggle navigation">
+      <button class="nav-toggle" onclick={toggleNav} aria-label="Toggle navigation">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 12h18M3 6h18M3 18h18" />
         </svg>
@@ -86,7 +99,7 @@
       <button
         class="action-btn"
         class:active={$editMode}
-        on:click={handleEditClick}
+        onclick={handleEditClick}
         title={$editMode ? 'Cancel editing' : 'Edit this page'}
       >
         {#if $editMode}

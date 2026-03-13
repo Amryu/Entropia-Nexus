@@ -11,6 +11,8 @@
   filters market price data by tier.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
@@ -21,27 +23,33 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {number|null} Item ID from the Items table */
-  export let itemId = null;
+  
 
-  /** @type {string|null} Item name — fallback for unresolved items */
-  export let itemName = null;
+  
 
-  /** @type {boolean} Expand/collapse state */
-  export let expanded = true;
+  
 
+  
+
+  
   /**
-   * Armor set pieces for piece-level market price selection.
-   * When provided, a slot/gender selector is shown and prices are fetched per piece.
-   * @type {Array<{name: string, slot: string, gender: string}>|null}
+   * @typedef {Object} Props
+   * @property {number|null} [itemId]
+   * @property {string|null} [itemName]
+   * @property {boolean} [expanded]
+   * @property {Array<{name: string, slot: string, gender: string}>|null} [pieces] - Armor set pieces for piece-level market price selection.
+When provided, a slot/gender selector is shown and prices are fetched per piece.
+   * @property {string|null} [entityType] - Entity type (e.g. "Weapon", "ArmorSet"). When tierable, a tier selector is shown.
    */
-  export let pieces = null;
 
-  /**
-   * Entity type (e.g. "Weapon", "ArmorSet"). When tierable, a tier selector is shown.
-   * @type {string|null}
-   */
-  export let entityType = null;
+  /** @type {Props} */
+  let {
+    itemId = null,
+    itemName = null,
+    expanded = $bindable(true),
+    pieces = null,
+    entityType = null
+  } = $props();
 
   const PERIODS = [
     { key: '1d', label: '1 Day' },
@@ -54,23 +62,23 @@
   const SLOT_ORDER = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
   const TIER_OPTIONS = Array.from({ length: 11 }, (_, i) => i); // 0-10
 
-  let snapshot = null;
-  let loading = true;
-  let historyData = [];
-  let historyLoading = false;
+  let snapshot = $state(null);
+  let loading = $state(true);
+  let historyData = $state([]);
+  let historyLoading = $state(false);
   let historyLoaded = false;
-  let selectedPeriod = '30d';
-  let showCharts = false;
+  let selectedPeriod = $state('30d');
+  let showCharts = $state(false);
 
   // Piece selector state
-  let selectedSlot = null;
-  let selectedGender = 'male';
+  let selectedSlot = $state(null);
+  let selectedGender = $state('male');
 
   // Tier selector state
-  let selectedTier = 0;
+  let selectedTier = $state(0);
 
   // Determine if tier selector should be shown
-  $: showTierSelector = entityType && TIERABLE_TYPES.has(entityType);
+  let showTierSelector = $derived(entityType && TIERABLE_TYPES.has(entityType));
 
   function toggleSection() {
     dispatch('toggle', { expanded });
@@ -96,24 +104,26 @@
     return filtered;
   }
 
-  $: piecesBySlot = pieces ? buildPiecesBySlot(pieces) : null;
-  $: availableSlots = piecesBySlot ? SLOT_ORDER.filter(s => piecesBySlot[s]) : [];
+  let piecesBySlot = $derived(pieces ? buildPiecesBySlot(pieces) : null);
+  let availableSlots = $derived(piecesBySlot ? SLOT_ORDER.filter(s => piecesBySlot[s]) : []);
 
   // Auto-select first slot when pieces change
-  $: if (availableSlots.length > 0 && (!selectedSlot || !piecesBySlot?.[selectedSlot])) {
-    selectedSlot = availableSlots[0];
-  }
+  run(() => {
+    if (availableSlots.length > 0 && (!selectedSlot || !piecesBySlot?.[selectedSlot])) {
+      selectedSlot = availableSlots[0];
+    }
+  });
 
   // Check if selected slot has distinct gender variants
-  $: slotHasGenderVariants = (() => {
+  let slotHasGenderVariants = $derived((() => {
     if (!piecesBySlot || !selectedSlot) return false;
     const entry = piecesBySlot[selectedSlot];
     if (!entry?.male || !entry?.female) return false;
     return entry.male.name !== entry.female.name;
-  })();
+  })());
 
   // Resolve active piece name for fetching
-  $: activePieceName = (() => {
+  let activePieceName = $derived((() => {
     if (!piecesBySlot || !selectedSlot) return null;
     const entry = piecesBySlot[selectedSlot];
     if (!entry) return null;
@@ -122,7 +132,7 @@
       return pick?.name || entry.male?.name || entry.female?.name || null;
     }
     return entry.male?.name || entry.female?.name || null;
-  })();
+  })());
 
   function selectSlot(slot) {
     selectedSlot = slot;
@@ -240,14 +250,18 @@
 
   // Reactive: fetch when piece, item, or tier changes (client-side only)
   // Reference selectedTier to track it as a dependency for refetch on tier change.
-  $: if (browser && pieces && activePieceName) {
-    selectedTier;
-    fetchLatest(null, activePieceName);
-  }
-  $: if (browser && !pieces && (itemId || itemName)) {
-    selectedTier;
-    fetchLatest(itemId, itemName);
-  }
+  run(() => {
+    if (browser && pieces && activePieceName) {
+      selectedTier;
+      fetchLatest(null, activePieceName);
+    }
+  });
+  run(() => {
+    if (browser && !pieces && (itemId || itemName)) {
+      selectedTier;
+      fetchLatest(itemId, itemName);
+    }
+  });
 </script>
 
 <DataSection title="Market Prices" bind:expanded on:toggle={toggleSection}>
@@ -259,7 +273,7 @@
             <button
               class="tier-btn"
               class:active={selectedTier === tier}
-              on:click={() => selectTier(tier)}
+              onclick={() => selectTier(tier)}
             >{tier}</button>
           {/each}
         </div>
@@ -273,7 +287,7 @@
             <button
               class="slot-btn"
               class:active={selectedSlot === slot}
-              on:click={() => selectSlot(slot)}
+              onclick={() => selectSlot(slot)}
             >{slot}</button>
           {/each}
         </div>
@@ -282,7 +296,7 @@
             <button
               class="gender-btn"
               class:active={selectedGender === 'male'}
-              on:click={() => selectGender('male')}
+              onclick={() => selectGender('male')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="10" cy="14" r="5"/><line x1="14" y1="10" x2="21" y2="3"/><polyline points="15,3 21,3 21,9"/>
@@ -292,7 +306,7 @@
             <button
               class="gender-btn"
               class:active={selectedGender === 'female'}
-              on:click={() => selectGender('female')}
+              onclick={() => selectGender('female')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="8" r="5"/><line x1="12" y1="13" x2="12" y2="21"/><line x1="9" y1="18" x2="15" y2="18"/>
@@ -339,7 +353,7 @@
       </div>
 
       <div class="mps-chart-toggle">
-        <button class="mps-chart-btn" on:click={toggleCharts}>
+        <button class="mps-chart-btn" onclick={toggleCharts}>
           {showCharts ? 'Hide Charts' : 'Show Price History'}
         </button>
       </div>
@@ -350,7 +364,7 @@
             <button
               class="period-btn"
               class:active={selectedPeriod === key}
-              on:click={() => selectPeriod(key)}
+              onclick={() => selectPeriod(key)}
             >{label}</button>
           {/each}
         </div>

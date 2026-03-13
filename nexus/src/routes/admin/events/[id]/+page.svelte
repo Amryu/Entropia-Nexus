@@ -1,4 +1,7 @@
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -7,26 +10,26 @@
 
   const id = $page.params.id;
 
-  let event = null;
-  let isLoading = true;
-  let saving = false;
-  let error = null;
+  let event = $state(null);
+  let isLoading = $state(true);
+  let saving = $state(false);
+  let error = $state(null);
 
   // Edit form fields
-  let title = '';
-  let description = '';
-  let start_date = '';
-  let end_date = '';
-  let location = '';
-  let type = 'player_run';
-  let link = '';
-  let image_url = '';
+  let title = $state('');
+  let description = $state('');
+  let start_date = $state('');
+  let end_date = $state('');
+  let location = $state('');
+  let type = $state('player_run');
+  let link = $state('');
+  let image_url = $state('');
 
-  let denyReason = '';
-  let showDenyDialog = false;
-  let approving = false;
-  let denying = false;
-  let deleting = false;
+  let denyReason = $state('');
+  let showDenyDialog = $state(false);
+  let approving = $state(false);
+  let denying = $state(false);
+  let deleting = $state(false);
 
   onMount(async () => {
     try {
@@ -196,10 +199,10 @@
       </div>
       {#if event.state === 'pending'}
         <div class="state-actions">
-          <button class="btn btn-success" on:click={handleApprove} disabled={approving}>
+          <button class="btn btn-success" onclick={handleApprove} disabled={approving}>
             {approving ? 'Approving...' : 'Approve'}
           </button>
-          <button class="btn btn-danger-outline" on:click={() => { showDenyDialog = true; }}>
+          <button class="btn btn-danger-outline" onclick={() => { showDenyDialog = true; }}>
             Deny
           </button>
         </div>
@@ -208,16 +211,16 @@
 
     <!-- Deny dialog -->
     {#if showDenyDialog}
-      <div class="dialog-overlay" role="presentation" on:click={() => { showDenyDialog = false; }} on:keydown={(e) => e.key === 'Escape' && (showDenyDialog = false)}>
-        <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true">
+      <div class="dialog-overlay" role="presentation" onclick={() => { showDenyDialog = false; }} onkeydown={(e) => e.key === 'Escape' && (showDenyDialog = false)}>
+        <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
           <h3>Deny Event</h3>
           <div class="form-group">
             <label for="deny-reason">Reason (optional)</label>
             <textarea id="deny-reason" bind:value={denyReason} rows="3" placeholder="Reason for denying this event"></textarea>
           </div>
           <div class="dialog-actions">
-            <button class="btn btn-cancel" on:click={() => { showDenyDialog = false; }}>Cancel</button>
-            <button class="btn btn-danger" on:click={handleDeny} disabled={denying}>
+            <button class="btn btn-cancel" onclick={() => { showDenyDialog = false; }}>Cancel</button>
+            <button class="btn btn-danger" onclick={handleDeny} disabled={denying}>
               {denying ? 'Denying...' : 'Deny Event'}
             </button>
           </div>
@@ -278,11 +281,11 @@
       </div>
 
       <div class="form-actions">
-        <button class="btn btn-cancel" on:click={() => goto('/admin/events')}>Back</button>
-        <button class="btn btn-danger" on:click={handleDelete} disabled={deleting}>
+        <button class="btn btn-cancel" onclick={() => goto('/admin/events')}>Back</button>
+        <button class="btn btn-danger" onclick={handleDelete} disabled={deleting}>
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
-        <button class="btn btn-primary" on:click={handleSave} disabled={saving || !title.trim()}>
+        <button class="btn btn-primary" onclick={handleSave} disabled={saving || !title.trim()}>
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>

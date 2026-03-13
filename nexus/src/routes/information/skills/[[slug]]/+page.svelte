@@ -7,6 +7,8 @@
   Supports full wiki editing with wikiEditState integration.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
@@ -44,32 +46,34 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.professions === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'professions', url: '/api/professions' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.professions === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'professions', url: '/api/professions' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: skill = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: allProfessions = data.professions || [];
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: canCreateNew = data.canCreateNew ?? true;
+  let skill = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let allProfessions = $derived(data.professions || []);
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
 
   // Permission check - verified users can edit
-  $: canEdit = user?.verified === true;
+  let canEdit = $derived(user?.verified === true);
 
   // Empty entity template for create mode
   const emptySkill = {
@@ -103,35 +107,39 @@
     { value: 'Social', label: 'Social' }
   ];
 
-  $: skillEntityId = skill?.Id ?? skill?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, skillEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let skillEntityId = $derived(skill?.Id ?? skill?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, skillEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Initialize edit state when entity/user changes
-  $: if (user) {
-    if (data.isCreateMode) {
-      const initialData = existingChange?.data || emptySkill;
-      initEditState(initialData, 'Skill', true, existingChange);
-    } else if (skill) {
-      initEditState(skill, 'Skill', false, canUsePendingChange ? resolvedPendingChange : null);
+  run(() => {
+    if (user) {
+      if (data.isCreateMode) {
+        const initialData = existingChange?.data || emptySkill;
+        initEditState(initialData, 'Skill', true, existingChange);
+      } else if (skill) {
+        initEditState(skill, 'Skill', false, canUsePendingChange ? resolvedPendingChange : null);
+      }
     }
-  }
+  });
 
   // Handle pending changes from API
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity - use this everywhere in templates
-  $: activeSkill = $editMode
+  let activeSkill = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : skill;
+      : skill);
 
   // Cleanup on unmount
   onDestroy(() => {
@@ -139,7 +147,7 @@
   });
 
   // Build navigation items from skills
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - filter by category and hidden status
   const navFilters = [
@@ -172,9 +180,9 @@
     }
   ];
 
-  $: professionOptions = (allProfessions || [])
+  let professionOptions = $derived((allProfessions || [])
     .filter((prof) => prof?.Name)
-    .map((prof) => ({ label: prof.Name, value: prof.Name }));
+    .map((prof) => ({ label: prof.Name, value: prof.Name })));
 
   const skillColumnDefs = {
     category: {
@@ -234,28 +242,28 @@
   const allAvailableColumns = Object.values(skillColumnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Information', href: '/information' },
     { label: 'Skills', href: '/information/skills' },
     ...(activeSkill?.Name ? [{ label: activeSkill.Name }] : data.isCreateMode ? [{ label: 'New Skill' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeSkill?.Properties?.Description ||
-    `${activeSkill?.Name || 'Skill'} - ${activeSkill?.Category?.Name || ''} skill in Entropia Universe.`;
+  let seoDescription = $derived(activeSkill?.Properties?.Description ||
+    `${activeSkill?.Name || 'Skill'} - ${activeSkill?.Category?.Name || ''} skill in Entropia Universe.`);
 
-  $: canonicalUrl = activeSkill?.Name
+  let canonicalUrl = $derived(activeSkill?.Name
     ? `https://entropianexus.com/information/skills/${encodeURIComponentSafe(activeSkill.Name)}`
-    : 'https://entropianexus.com/information/skills';
+    : 'https://entropianexus.com/information/skills');
 
   // SEO Image URL (if entity has an image)
-  $: entityImageUrl = skill?.Id ? `/api/img/skill/${skill.Id}` : null;
+  let entityImageUrl = $derived(skill?.Id ? `/api/img/skill/${skill.Id}` : null);
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     professions: true,
     unlocks: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -338,24 +346,28 @@
   }
 
   // Reactive calculations using activeSkill
-  $: professionCount = getProfessionCount(activeSkill);
-  $: unlockCount = getUnlockCount(activeSkill);
-  $: isHidden = activeSkill?.Properties?.IsHidden ?? false;
-  $: isExtractable = activeSkill?.Properties?.IsExtractable ?? false;
-  $: if ($editMode) {
-    const unlockCount = activeSkill?.Unlocks?.length || 0;
-    const shouldBeHidden = unlockCount > 0;
-    if ((activeSkill?.Properties?.IsHidden ?? false) !== shouldBeHidden) {
-      updateField('Properties.IsHidden', shouldBeHidden);
+  let professionCount = $derived(getProfessionCount(activeSkill));
+  let unlockCount = $derived(getUnlockCount(activeSkill));
+  let isHidden = $derived(activeSkill?.Properties?.IsHidden ?? false);
+  let isExtractable = $derived(activeSkill?.Properties?.IsExtractable ?? false);
+  run(() => {
+    if ($editMode) {
+      const unlockCount = activeSkill?.Unlocks?.length || 0;
+      const shouldBeHidden = unlockCount > 0;
+      if ((activeSkill?.Properties?.IsHidden ?? false) !== shouldBeHidden) {
+        updateField('Properties.IsHidden', shouldBeHidden);
+      }
     }
-  }
-  $: hpIncrease = activeSkill?.Properties?.HpIncrease || 0;
-  $: if ($editMode) {
-    const categoryName = (activeSkill?.Category?.Name || '').trim();
-    setFieldError('Category.Name', categoryName ? null : 'Category is required');
-  } else {
-    setFieldError('Category.Name', null);
-  }
+  });
+  let hpIncrease = $derived(activeSkill?.Properties?.HpIncrease || 0);
+  run(() => {
+    if ($editMode) {
+      const categoryName = (activeSkill?.Category?.Name || '').trim();
+      setFieldError('Category.Name', categoryName ? null : 'Category is required');
+    } else {
+      setFieldError('Category.Name', null);
+    }
+  });
 </script>
 
 <WikiSEO
@@ -403,7 +415,7 @@
         </span>
         <button
           class="banner-toggle"
-          on:click={() => setViewingPendingChange(!$viewingPendingChange)}
+          onclick={() => setViewingPendingChange(!$viewingPendingChange)}
         >
           {$viewingPendingChange ? 'View Original' : 'View Changes'}
         </button>
@@ -607,14 +619,14 @@
                       step="0.01"
                       placeholder="Weight"
                       value={entry?.Weight ?? ''}
-                      on:input={(e) => updateProfessionEntry(index, 'Weight', e.target.value)}
+                      oninput={(e) => updateProfessionEntry(index, 'Weight', e.target.value)}
                     />
-                    <button class="skill-edit-remove" on:click={() => removeProfessionEntry(index)} aria-label="Remove profession">
+                    <button class="skill-edit-remove" onclick={() => removeProfessionEntry(index)} aria-label="Remove profession">
                       ×
                     </button>
                   </div>
                 {/each}
-                <button class="skill-edit-add" on:click={addProfessionEntry}>
+                <button class="skill-edit-add" onclick={addProfessionEntry}>
                   + Add profession
                 </button>
               </div>
@@ -656,14 +668,14 @@
                       step="1"
                       placeholder="Level"
                       value={entry?.Level ?? ''}
-                      on:input={(e) => updateUnlockEntry(index, 'Level', e.target.value)}
+                      oninput={(e) => updateUnlockEntry(index, 'Level', e.target.value)}
                     />
-                    <button class="skill-edit-remove" on:click={() => removeUnlockEntry(index)} aria-label="Remove unlock">
+                    <button class="skill-edit-remove" onclick={() => removeUnlockEntry(index)} aria-label="Remove unlock">
                       ×
                     </button>
                   </div>
                 {/each}
-                <button class="skill-edit-add" on:click={addUnlockEntry}>
+                <button class="skill-edit-add" onclick={addUnlockEntry}>
                   + Add unlock
                 </button>
               </div>

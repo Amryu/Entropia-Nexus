@@ -1,6 +1,12 @@
 <script>
-  /** @type {'active'|'stale'|'expired'|'terminated'|'closed'} */
-  export let state = 'active';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {'active'|'stale'|'expired'|'terminated'|'closed'} [state]
+   */
+
+  /** @type {Props} */
+  let { state = 'active' } = $props();
 </script>
 
 <span class="badge badge-subtle {state === 'active' ? 'badge-success' : state === 'stale' ? 'badge-warning' : state === 'expired' ? 'badge-error' : 'badge-muted'}">

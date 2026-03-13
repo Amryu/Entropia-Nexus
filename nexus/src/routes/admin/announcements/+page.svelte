@@ -3,11 +3,11 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
-  let announcements = [];
-  let total = 0;
-  let currentPage = 1;
-  let isLoading = true;
-  let error = null;
+  let announcements = $state([]);
+  let total = $state(0);
+  let currentPage = $state(1);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   onMount(() => {
     loadAnnouncements();
@@ -45,7 +45,7 @@
 
   <div class="page-header">
     <h1>Announcements</h1>
-    <button class="action-btn" on:click={() => goto('/admin/announcements/new')}>
+    <button class="action-btn" onclick={() => goto('/admin/announcements/new')}>
       New Announcement
     </button>
   </div>
@@ -71,7 +71,7 @@
         </thead>
         <tbody>
           {#each announcements as item}
-            <tr class="clickable-row" on:click={() => goto(`/admin/announcements/${item.id}`)}>
+            <tr class="clickable-row" onclick={() => goto(`/admin/announcements/${item.id}`)}>
               <td class="title-cell">
                 {item.title}
                 {#if item.source === 'steam'}
@@ -98,9 +98,9 @@
 
     {#if total > 20}
       <div class="pagination">
-        <button disabled={currentPage <= 1} on:click={() => { currentPage--; loadAnnouncements(); }}>Previous</button>
+        <button disabled={currentPage <= 1} onclick={() => { currentPage--; loadAnnouncements(); }}>Previous</button>
         <span>Page {currentPage} of {Math.ceil(total / 20)}</span>
-        <button disabled={currentPage >= Math.ceil(total / 20)} on:click={() => { currentPage++; loadAnnouncements(); }}>Next</button>
+        <button disabled={currentPage >= Math.ceil(total / 20)} onclick={() => { currentPage++; loadAnnouncements(); }}>Next</button>
       </div>
     {/if}
   {/if}

@@ -14,17 +14,23 @@
   import { browser } from '$app/environment';
 
   /** @type {string} */
-  let value = '';
+  let value = $state('');
 
-  /** @type {number} Debounce delay in ms */
-  export let debounceMs = 300;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} [debounceMs]
+   */
+
+  /** @type {Props} */
+  let { debounceMs = 300 } = $props();
 
   // Internal state
-  let inputElement;
-  let results = [];
-  let isSearching = false;
-  let showResults = false;
-  let highlightedIndex = -1;
+  let inputElement = $state();
+  let results = $state([]);
+  let isSearching = $state(false);
+  let showResults = $state(false);
+  let highlightedIndex = $state(-1);
   let searchTimeout;
   let preventBlurClose = false;
 
@@ -188,10 +194,10 @@
       class="market-search-input"
       placeholder="Search items, services, auctions, rentals, shops..."
       value={value}
-      on:input={handleInput}
-      on:keydown={handleKeydown}
-      on:blur={handleBlur}
-      on:focus={handleFocus}
+      oninput={handleInput}
+      onkeydown={handleKeydown}
+      onblur={handleBlur}
+      onfocus={handleFocus}
       autocomplete="off"
       spellcheck="false"
     />
@@ -213,9 +219,9 @@
             href={result.url}
             class="market-result-item"
             class:highlighted={i === highlightedIndex}
-            on:mousedown={handleResultMouseDown}
-            on:click={(e) => handleResultClick(e, result)}
-            on:mouseenter={() => handleResultMouseEnter(i)}
+            onmousedown={handleResultMouseDown}
+            onclick={(e) => handleResultClick(e, result)}
+            onmouseenter={() => handleResultMouseEnter(i)}
           >
             <span class="market-result-badge {badge.cls}">{badge.label}</span>
             <span class="market-result-name">{result.name}</span>

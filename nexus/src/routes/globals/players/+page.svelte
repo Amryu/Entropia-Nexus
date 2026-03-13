@@ -16,20 +16,20 @@
 
   // Read initial state from URL params
   const sp = $page.url.searchParams;
-  let typeFilter = sp.get('type') || '';
-  let playerFilter = sp.get('player') || '';
-  let targetFilter = sp.get('target') || '';
-  let locationFilter = sp.get('location') || '';
-  let minValue = sp.get('min_value') || '';
-  let hofOnly = sp.get('hof') === 'true';
-  let period = sp.get('period') || '7d';
-  let dateFrom = sp.get('from') || null;
-  let dateTo = sp.get('to') || null;
-  let sortBy = sp.get('sort') || 'value';
-  let currentPage = 1;
+  let typeFilter = $state(sp.get('type') || '');
+  let playerFilter = $state(sp.get('player') || '');
+  let targetFilter = $state(sp.get('target') || '');
+  let locationFilter = $state(sp.get('location') || '');
+  let minValue = $state(sp.get('min_value') || '');
+  let hofOnly = $state(sp.get('hof') === 'true');
+  let period = $state(sp.get('period') || '7d');
+  let dateFrom = $state(sp.get('from') || null);
+  let dateTo = $state(sp.get('to') || null);
+  let sortBy = $state(sp.get('sort') || 'value');
+  let currentPage = $state(1);
 
-  let data = null;
-  let loading = true;
+  let data = $state(null);
+  let loading = $state(true);
 
   function onDateRangeChange(e) {
     period = e.detail.period;
@@ -101,9 +101,9 @@
   onMount(fetchData);
 
   // Search handlers
-  let playerSearchInput;
-  let targetSearchInput;
-  let locationSearchInput;
+  let playerSearchInput = $state();
+  let targetSearchInput = $state();
+  let locationSearchInput = $state();
 
   function handlePlayerSelect(e) {
     playerFilter = e.detail.name;
@@ -172,7 +172,7 @@
   <div class="filters-bar">
     <div class="type-filters">
       {#each TYPE_FILTERS as tf}
-        <button class="type-btn" class:active={typeFilter === tf.value} on:click={() => onTypeFilter(tf.value)}>
+        <button class="type-btn" class:active={typeFilter === tf.value} onclick={() => onTypeFilter(tf.value)}>
           {tf.label}
         </button>
       {/each}
@@ -182,7 +182,7 @@
         {#if playerFilter}
           <div class="filter-chip">
             <span>{playerFilter}</span>
-            <button class="chip-clear" on:click={clearPlayerFilter}>&times;</button>
+            <button class="chip-clear" onclick={clearPlayerFilter}>&times;</button>
           </div>
         {:else}
           <SearchInput bind:this={playerSearchInput} placeholder="Player / Team..." endpoint="/api/globals/players" apiPrefix={false} maxPerCategory={10} maxTotal={15} on:select={handlePlayerSelect} containerClass="filter-search-input" />
@@ -192,7 +192,7 @@
         {#if targetFilter}
           <div class="filter-chip">
             <span>{targetFilter}</span>
-            <button class="chip-clear" on:click={clearTargetFilter}>&times;</button>
+            <button class="chip-clear" onclick={clearTargetFilter}>&times;</button>
           </div>
         {:else}
           <SearchInput bind:this={targetSearchInput} placeholder="Target..." endpoint="/api/globals/targets" apiPrefix={false} maxPerCategory={10} maxTotal={15} on:select={handleTargetSelect} containerClass="filter-search-input" />
@@ -202,15 +202,15 @@
         {#if locationFilter}
           <div class="filter-chip">
             <span>{locationFilter}</span>
-            <button class="chip-clear" on:click={clearLocationFilter}>&times;</button>
+            <button class="chip-clear" onclick={clearLocationFilter}>&times;</button>
           </div>
         {:else}
           <SearchInput bind:this={locationSearchInput} placeholder="Location..." endpoint="/api/globals/locations" apiPrefix={false} maxPerCategory={10} maxTotal={15} on:select={handleLocationSelect} containerClass="filter-search-input" />
         {/if}
       </div>
-      <input type="number" placeholder="Min PED" bind:value={minValue} on:input={onFilterChange} class="filter-input filter-input-short" />
+      <input type="number" placeholder="Min PED" bind:value={minValue} oninput={onFilterChange} class="filter-input filter-input-short" />
       <label class="hof-toggle">
-        <input type="checkbox" bind:checked={hofOnly} on:change={onFilterChange} />
+        <input type="checkbox" bind:checked={hofOnly} onchange={onFilterChange} />
         HoF only
       </label>
     </div>
@@ -223,10 +223,10 @@
   <div class="controls-row">
     <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} on:change={onDateRangeChange} />
     <div class="sort-toggle">
-      <button class="sort-btn" class:active={sortBy === 'value'} on:click={() => onSortChange('value')}>By Value</button>
-      <button class="sort-btn" class:active={sortBy === 'count'} on:click={() => onSortChange('count')}>By Count</button>
-      <button class="sort-btn" class:active={sortBy === 'avg'} on:click={() => onSortChange('avg')}>By Avg</button>
-      <button class="sort-btn" class:active={sortBy === 'best'} on:click={() => onSortChange('best')}>By Best</button>
+      <button class="sort-btn" class:active={sortBy === 'value'} onclick={() => onSortChange('value')}>By Value</button>
+      <button class="sort-btn" class:active={sortBy === 'count'} onclick={() => onSortChange('count')}>By Count</button>
+      <button class="sort-btn" class:active={sortBy === 'avg'} onclick={() => onSortChange('avg')}>By Avg</button>
+      <button class="sort-btn" class:active={sortBy === 'best'} onclick={() => onSortChange('best')}>By Best</button>
     </div>
   </div>
 
@@ -274,9 +274,9 @@
     <!-- Pagination -->
     {#if data.pages > 1}
       <div class="pagination">
-        <button class="page-btn" disabled={currentPage <= 1} on:click={() => goToPage(currentPage - 1)}>Previous</button>
+        <button class="page-btn" disabled={currentPage <= 1} onclick={() => goToPage(currentPage - 1)}>Previous</button>
         <span class="page-info">Page {data.page} of {data.pages}</span>
-        <button class="page-btn" disabled={currentPage >= data.pages} on:click={() => goToPage(currentPage + 1)}>Next</button>
+        <button class="page-btn" disabled={currentPage >= data.pages} onclick={() => goToPage(currentPage + 1)}>Next</button>
       </div>
     {/if}
   {/if}

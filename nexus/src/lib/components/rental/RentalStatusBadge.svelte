@@ -1,9 +1,15 @@
 <script>
-  /** @type {'draft'|'available'|'rented'|'unlisted'|'deleted'|'open'|'accepted'|'rejected'|'in_progress'|'completed'|'cancelled'} */
-  export let status;
-  /** @type {'offer'|'request'} */
-  export let type = 'offer';
-  export let size = 'normal';
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {'draft'|'available'|'rented'|'unlisted'|'deleted'|'open'|'accepted'|'rejected'|'in_progress'|'completed'|'cancelled'} status
+   * @property {'offer'|'request'} [type]
+   * @property {string} [size]
+   */
+
+  /** @type {Props} */
+  let { status, type = 'offer', size = 'normal' } = $props();
 
   const offerConfig = {
     draft: { label: 'Draft', semantic: 'muted' },
@@ -22,8 +28,8 @@
     cancelled: { label: 'Cancelled', semantic: 'muted' }
   };
 
-  $: configs = type === 'offer' ? offerConfig : requestConfig;
-  $: config = configs[status] || { label: status, semantic: 'muted' };
+  let configs = $derived(type === 'offer' ? offerConfig : requestConfig);
+  let config = $derived(configs[status] || { label: status, semantic: 'muted' });
 </script>
 
 <span class="status-badge {size} {config.semantic}">

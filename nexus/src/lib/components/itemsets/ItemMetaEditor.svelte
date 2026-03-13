@@ -10,31 +10,43 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {object} Item entry: { itemId, type, name, quantity, meta } */
-  export let item;
+  
 
-  /** @type {string|null} Item gender from database (e.g. "Both" for unisex) */
-  export let itemGender = null;
+  
 
-  /** @type {number|null} MaxTT from items database */
-  export let maxTT = null;
+  
 
-  /** @type {number|null} MinTT from items database */
-  export let minTT = null;
+  
 
-  /** @type {Array} Pet skills/effects for pet items */
-  export let petEffects = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} Item entry: { itemId, type, name, quantity, meta } item
+   * @property {string|null} [itemGender]
+   * @property {number|null} [maxTT]
+   * @property {number|null} [minTT]
+   * @property {Array} [petEffects]
+   */
 
-  $: meta = item?.meta || {};
-  $: type = item?.type || '';
-  $: name = item?.name || '';
-  $: isLimited = isLimitedByName(name);
-  $: isTierable = TIERABLE_TYPES.has(type) && !isLimited;
-  $: hasCondition = CONDITION_TYPES.has(type);
-  $: isBlueprint = type === 'Blueprint' && !isLimited;
-  $: isUnisex = itemGender === 'Both';
-  $: isPet = type === 'Pet';
-  $: maxTTKnown = maxTT != null && maxTT > 0;
+  /** @type {Props} */
+  let {
+    item,
+    itemGender = null,
+    maxTT = null,
+    minTT = null,
+    petEffects = []
+  } = $props();
+
+  let meta = $derived(item?.meta || {});
+  let type = $derived(item?.type || '');
+  let name = $derived(item?.name || '');
+  let isLimited = $derived(isLimitedByName(name));
+  let isTierable = $derived(TIERABLE_TYPES.has(type) && !isLimited);
+  let hasCondition = $derived(CONDITION_TYPES.has(type));
+  let isBlueprint = $derived(type === 'Blueprint' && !isLimited);
+  let isUnisex = $derived(itemGender === 'Both');
+  let isPet = $derived(type === 'Pet');
+  let maxTTKnown = $derived(maxTT != null && maxTT > 0);
 
   function updateMeta(field, value) {
     const newMeta = { ...meta, [field]: value };
@@ -65,7 +77,7 @@
         max="9"
         step="1"
         placeholder="0"
-        on:change={(e) => updateMeta('tier', e.target.value === '' ? null : Math.floor(Number(e.target.value)))}
+        onchange={(e) => updateMeta('tier', e.target.value === '' ? null : Math.floor(Number(e.target.value)))}
       />
     </div>
     <div class="meta-row">
@@ -77,7 +89,7 @@
         min="0"
         step="0.01"
         placeholder="0.00"
-        on:change={(e) => updateMeta('tiR', e.target.value === '' ? null : Number(e.target.value))}
+        onchange={(e) => updateMeta('tiR', e.target.value === '' ? null : Number(e.target.value))}
       />
     </div>
   {/if}
@@ -93,7 +105,7 @@
         max={maxTTKnown ? maxTT : 10000}
         step="0.01"
         placeholder={maxTTKnown ? `0 - ${maxTT}` : '0.00'}
-        on:change={(e) => updateMeta('currentTT', e.target.value === '' ? null : Number(e.target.value))}
+        onchange={(e) => updateMeta('currentTT', e.target.value === '' ? null : Number(e.target.value))}
       />
       {#if !maxTTKnown}
         <span class="meta-warning" title="MaxTT unknown, value is not clamped">?</span>
@@ -112,7 +124,7 @@
         max="1"
         step="0.0001"
         placeholder="0.0100"
-        on:change={(e) => updateMeta('qr', e.target.value === '' ? null : Number(e.target.value))}
+        onchange={(e) => updateMeta('qr', e.target.value === '' ? null : Number(e.target.value))}
       />
     </div>
   {/if}
@@ -123,7 +135,7 @@
       <select
         class="meta-select"
         value={meta.gender || ''}
-        on:change={(e) => updateMeta('gender', e.target.value || null)}
+        onchange={(e) => updateMeta('gender', e.target.value || null)}
       >
         <option value="">Select...</option>
         <option value="Male">Male</option>
@@ -143,7 +155,7 @@
         max="200"
         step="1"
         placeholder="0"
-        on:change={(e) => updatePetField('level', e.target.value === '' ? null : Math.floor(Number(e.target.value)))}
+        onchange={(e) => updatePetField('level', e.target.value === '' ? null : Math.floor(Number(e.target.value)))}
       />
     </div>
     <div class="meta-row">
@@ -155,7 +167,7 @@
         min="0"
         step="0.01"
         placeholder="0.00"
-        on:change={(e) => updatePetField('currentTT', e.target.value === '' ? null : Number(e.target.value))}
+        onchange={(e) => updatePetField('currentTT', e.target.value === '' ? null : Number(e.target.value))}
       />
     </div>
     {#if petEffects.length > 0}
@@ -167,7 +179,7 @@
               <input
                 type="checkbox"
                 checked={meta.pet?.skills?.[effect] ?? false}
-                on:change={(e) => updatePetSkill(effect, e.target.checked)}
+                onchange={(e) => updatePetSkill(effect, e.target.checked)}
               />
               <span>{effect}</span>
             </label>

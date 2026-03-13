@@ -10,12 +10,18 @@
   import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
   import { getTieringUsage, formatTierRange } from '$lib/tieringUtil.js';
 
-  export let item;
-  export let usage;
-  export let isMultiItem = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} item
+   * @property {any} usage
+   * @property {boolean} [isMultiItem]
+   */
+
+  /** @type {Props} */
+  let { item, usage, isMultiItem = false } = $props();
 
   // Build blueprint data
-  $: blueprintData = (() => {
+  let blueprintData = $derived((() => {
     if (!usage?.Blueprints?.length) return [];
     return usage.Blueprints.map(blueprint => ({
       name: blueprint.Name,
@@ -23,16 +29,16 @@
       type: blueprint.Properties?.Type ?? 'N/A',
       amount: blueprint.MaterialAmount ?? 'N/A'
     }));
-  })();
+  })());
 
-  $: blueprintColumns = [
+  let blueprintColumns = $derived([
     { key: 'name', header: 'Blueprint', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'type', header: 'Type' },
     { key: 'amount', header: 'Amount' }
-  ];
+  ]);
 
   // Build mission data
-  $: missionData = (() => {
+  let missionData = $derived((() => {
     if (!usage?.Missions?.length) return [];
     return usage.Missions.map(mission => ({
       name: mission.Name,
@@ -41,17 +47,17 @@
       location: mission.Location ?? 'N/A',
       handins: mission.HandIns ?? 'N/A'
     }));
-  })();
+  })());
 
-  $: missionColumns = [
+  let missionColumns = $derived([
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'type', header: 'Type' },
     { key: 'location', header: 'Location' },
     { key: 'handins', header: 'Hand-ins' }
-  ];
+  ]);
 
   // Build vendor offer data (where this item is used as currency)
-  $: vendorOfferData = (() => {
+  let vendorOfferData = $derived((() => {
     if (!usage?.VendorOffers?.length) return [];
     return usage.VendorOffers.flatMap(vendorOffer =>
       vendorOffer.Prices.map(price => ({
@@ -63,17 +69,17 @@
         amount: price?.Amount ?? 'N/A'
       }))
     );
-  })();
+  })());
 
-  $: vendorOfferColumns = [
+  let vendorOfferColumns = $derived([
     { key: 'vendor', header: 'Vendor', main: true, formatter: (v, row) => row.vendorLink ? `<a href="${row.vendorLink}">${v}</a>` : v },
     { key: 'planet', header: 'Planet' },
     { key: 'item', header: 'Item', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
     { key: 'amount', header: 'Amount' }
-  ];
+  ]);
 
   // Build market data from exchange buy orders
-  $: marketData = (() => {
+  let marketData = $derived((() => {
     if (!usage?.ExchangeBuyOrders?.length) return [];
     // Deduplicate by buyer (+ item for multi-item) — keep highest bid
     const bestByBuyer = new Map();
@@ -100,11 +106,11 @@
       });
     }
     return rows;
-  })();
+  })());
 
-  $: hasMarketData = marketData.length > 0;
+  let hasMarketData = $derived(marketData.length > 0);
 
-  $: marketColumns = [
+  let marketColumns = $derived([
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => {
       const label = row.stale ? `<span class="stale-text">${v}</span>` : v;
       const setBadge = row.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
@@ -114,7 +120,7 @@
     { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
     { key: 'quantity', header: 'Qty' },
     { key: 'planet', header: 'Planet' }
-  ];
+  ]);
 
   function handleMarketRowClick(e) {
     const { row } = e.detail;
@@ -122,16 +128,16 @@
   }
 
   // Tiering usage (static, client-side lookup)
-  $: tieringData = getTieringUsage(item?.Name);
+  let tieringData = $derived(getTieringUsage(item?.Name));
 
   // Check if there's any usage data
-  $: hasUsageData = (usage != null && (
+  let hasUsageData = $derived((usage != null && (
     hasMarketData ||
     (usage.Blueprints?.length > 0) ||
     (usage.RefiningRecipes?.length > 0) ||
     (usage.Missions?.length > 0) ||
     (usage.VendorOffers?.length > 0 && usage.VendorOffers.some(vo => vo.Prices?.length > 0))
-  )) || tieringData.length > 0;
+  )) || tieringData.length > 0);
 </script>
 
 <style>

@@ -6,11 +6,17 @@
 <script>
   import { calculateAuctionFee } from '$lib/common/auctionUtils.js';
 
-  /** @type {number} Amount to calculate fee for (PED) */
-  export let amount = 0;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} [amount]
+   */
 
-  $: fee = calculateAuctionFee(amount);
-  $: netAmount = amount > 0 ? Math.max(0, amount - fee) : 0;
+  /** @type {Props} */
+  let { amount = 0 } = $props();
+
+  let fee = $derived(calculateAuctionFee(amount));
+  let netAmount = $derived(amount > 0 ? Math.max(0, amount - fee) : 0);
 </script>
 
 <div class="fee-preview">

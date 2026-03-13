@@ -1,13 +1,31 @@
 <script>
-  // @ts-nocheck
-  export let categories = {};
-  export let onSelectCategory;
-  export let category = null; // For recursive component use
-  export let selectedPath = null;
-  export let expandedNodes = new Set();
-  export let toggleExpanded = null;
-  export let getItemCount = null;
-  export let handleCategorySelect = null;
+  import CategoryTree from './CategoryTree.svelte';
+  import { stopPropagation } from 'svelte/legacy';
+
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [categories]
+   * @property {any} onSelectCategory
+   * @property {any} [category] - For recursive component use
+   * @property {any} [selectedPath]
+   * @property {any} [expandedNodes]
+   * @property {any} [toggleExpanded]
+   * @property {any} [getItemCount]
+   * @property {any} [handleCategorySelect]
+   */
+
+  /** @type {Props} */
+  let {
+    categories = {},
+    onSelectCategory,
+    category = null,
+    selectedPath = null,
+    expandedNodes = $bindable(new Set()),
+    toggleExpanded = $bindable(null),
+    getItemCount = $bindable(null),
+    handleCategorySelect = $bindable(null)
+  } = $props();
 
   // Initialize functions if not provided (for root component)
   if (!toggleExpanded) {
@@ -103,12 +121,12 @@
     return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
   }
 
-  $: categoryTree = category ? [] : buildCategoryTree(categories);
+  let categoryTree = $derived(category ? [] : buildCategoryTree(categories));
 </script>
 
 <div class="category-tree">
   {#each categoryTree as category}
-    <svelte:self
+    <CategoryTree
       category={category}
       {onSelectCategory}
       {expandedNodes}
@@ -125,8 +143,8 @@
   <div class="category-item" style="padding-left: {category.level * 8}px">
     <div
       class="category-header clickable {selectedPath === category.path.map(formatCategoryName).join(' > ') ? 'selected' : ''}"
-      on:click={() => handleCategorySelect(category)}
-      on:keydown={(e) => {
+      onclick={() => handleCategorySelect(category)}
+      onkeydown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           handleCategorySelect(category);
@@ -138,7 +156,7 @@
       {#if category.children.length > 0}
         <span
           class="expand-toggle {expandedNodes.has(category.id) ? 'expanded' : ''}"
-          on:click|stopPropagation={() => toggleExpanded(category.id, category)}
+          onclick={stopPropagation(() => toggleExpanded(category.id, category))}
           role="button"
           tabindex="-1"
         >{expandedNodes.has(category.id) ? '▾' : '▸'}</span>
@@ -154,7 +172,7 @@
     {#if category.children.length > 0 && expandedNodes.has(category.id)}
       <div class="category-children" style="margin-left: -{category.level * 8}px">
         {#each category.children as child}
-          <svelte:self
+          <CategoryTree
             category={child}
             {onSelectCategory}
             {expandedNodes}

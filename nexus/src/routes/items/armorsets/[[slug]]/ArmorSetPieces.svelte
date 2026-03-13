@@ -12,12 +12,12 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import '$lib/style.css';
 
-  export let armorSet;
+  let { armorSet } = $props();
 
   const slots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
 
   // Process armor pieces by slot
-  $: piecesBySlot = (() => {
+  let piecesBySlot = $derived((() => {
     const result = {};
     slots.forEach(slot => {
       result[slot] = { male: null, female: null, slotIndex: -1 };
@@ -41,18 +41,18 @@
     });
 
     return result;
-  })();
+  })());
 
   // Check if there are different male/female variants
-  $: hasGenderVariants = (() => {
+  let hasGenderVariants = $derived((() => {
     return slots.some(slot => {
       const piece = piecesBySlot[slot];
       return piece.male?.Name !== piece.female?.Name && piece.male && piece.female;
     });
-  })();
+  })());
 
   // Gender toggle for view mode
-  let viewGender = 'male';
+  let viewGender = $state('male');
 
   // FancyTable columns: Slot, Name, Weight, MaxTT, MinTT
   const tableColumns = [
@@ -70,7 +70,7 @@
   }
 
   // Transform data for FancyTable based on selected gender
-  $: tableData = slots.map(slot => {
+  let tableData = $derived(slots.map(slot => {
     const piece = piecesBySlot[slot];
     // Select piece based on toggle (or fallback if only one exists)
     const displayPiece = viewGender === 'male'
@@ -86,7 +86,7 @@
       maxTT: formatTT(displayPiece.Properties?.Economy?.MaxTT),
       minTT: formatTT(displayPiece.Properties?.Economy?.MinTT)
     };
-  }).filter(row => row !== null);
+  }).filter(row => row !== null));
 
   // ========== EDIT MODE FUNCTIONS ==========
 
@@ -214,11 +214,11 @@
                 <input
                   type="checkbox"
                   checked={unisex}
-                  on:change={() => toggleUnisex(slot)}
+                  onchange={() => toggleUnisex(slot)}
                 />
                 <span>Unisex</span>
               </label>
-              <button class="btn-remove-piece" on:click={() => removePieceFromSlot(slot)} title="Remove piece">
+              <button class="btn-remove-piece" onclick={() => removePieceFromSlot(slot)} title="Remove piece">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -235,7 +235,7 @@
                   class="field-name"
                   value={armor?.Name || ''}
                   placeholder="Name"
-                  on:change={(e) => updatePiece(slot, 'Both', 'Name', e.target.value)}
+                  onchange={(e) => updatePiece(slot, 'Both', 'Name', e.target.value)}
                 />
                 <div class="labeled-field">
                   <span class="field-label">Wt</span>
@@ -245,7 +245,7 @@
                     step="0.1"
                     min="0"
                     value={armor?.Properties?.Weight ?? 0}
-                    on:change={(e) => updatePiece(slot, 'Both', 'Properties.Weight', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updatePiece(slot, 'Both', 'Properties.Weight', parseFloat(e.target.value) || 0)}
                   />
                 </div>
                 <div class="labeled-field">
@@ -256,7 +256,7 @@
                     step="0.0001"
                     min="0"
                     value={armor?.Properties?.Economy?.MaxTT ?? 0}
-                    on:change={(e) => updatePiece(slot, 'Both', 'Properties.Economy.MaxTT', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updatePiece(slot, 'Both', 'Properties.Economy.MaxTT', parseFloat(e.target.value) || 0)}
                   />
                 </div>
                 <div class="labeled-field">
@@ -267,7 +267,7 @@
                     step="0.0001"
                     min="0"
                     value={armor?.Properties?.Economy?.MinTT ?? 0}
-                    on:change={(e) => updatePiece(slot, 'Both', 'Properties.Economy.MinTT', parseFloat(e.target.value) || 0)}
+                    onchange={(e) => updatePiece(slot, 'Both', 'Properties.Economy.MinTT', parseFloat(e.target.value) || 0)}
                   />
                 </div>
               </div>
@@ -281,7 +281,7 @@
                     class="field-name"
                     value={armor?.Name || ''}
                     placeholder="Name"
-                    on:change={(e) => updatePiece(slot, gender, 'Name', e.target.value)}
+                    onchange={(e) => updatePiece(slot, gender, 'Name', e.target.value)}
                   />
                   <div class="labeled-field">
                     <span class="field-label">Wt</span>
@@ -291,7 +291,7 @@
                       step="0.1"
                       min="0"
                       value={armor?.Properties?.Weight ?? 0}
-                      on:change={(e) => updatePiece(slot, gender, 'Properties.Weight', parseFloat(e.target.value) || 0)}
+                      onchange={(e) => updatePiece(slot, gender, 'Properties.Weight', parseFloat(e.target.value) || 0)}
                     />
                   </div>
                   <div class="labeled-field">
@@ -302,7 +302,7 @@
                       step="0.0001"
                       min="0"
                       value={armor?.Properties?.Economy?.MaxTT ?? 0}
-                      on:change={(e) => updatePiece(slot, gender, 'Properties.Economy.MaxTT', parseFloat(e.target.value) || 0)}
+                      onchange={(e) => updatePiece(slot, gender, 'Properties.Economy.MaxTT', parseFloat(e.target.value) || 0)}
                     />
                   </div>
                   <div class="labeled-field">
@@ -313,7 +313,7 @@
                       step="0.0001"
                       min="0"
                       value={armor?.Properties?.Economy?.MinTT ?? 0}
-                      on:change={(e) => updatePiece(slot, gender, 'Properties.Economy.MinTT', parseFloat(e.target.value) || 0)}
+                      onchange={(e) => updatePiece(slot, gender, 'Properties.Economy.MinTT', parseFloat(e.target.value) || 0)}
                     />
                   </div>
                 </div>
@@ -323,7 +323,7 @@
         {:else}
           <div class="piece-edit-header">
             <span class="slot-label">{slot}</span>
-            <button class="btn-add-piece" on:click={() => addPieceToSlot(slot)}>
+            <button class="btn-add-piece" onclick={() => addPieceToSlot(slot)}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -342,7 +342,7 @@
         <button
           class="gender-btn"
           class:active={viewGender === 'male'}
-          on:click={() => viewGender = 'male'}
+          onclick={() => viewGender = 'male'}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="10" cy="14" r="5"/>
@@ -354,7 +354,7 @@
         <button
           class="gender-btn"
           class:active={viewGender === 'female'}
-          on:click={() => viewGender = 'female'}
+          onclick={() => viewGender = 'female'}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="8" r="5"/>

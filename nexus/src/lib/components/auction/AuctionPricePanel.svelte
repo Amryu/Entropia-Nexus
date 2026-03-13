@@ -6,16 +6,22 @@
   import { getMinNextBid, calculateAuctionFee, isBuyoutOnly } from '$lib/common/auctionUtils.js';
   import AuctionCountdown from './AuctionCountdown.svelte';
 
-  /** @type {object} Auction data */
-  export let auction;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} auction
+   */
 
-  $: hasBids = auction.bid_count > 0;
-  $: currentAmount = hasBids ? parseFloat(auction.current_bid) : parseFloat(auction.starting_bid);
-  $: minNext = hasBids ? getMinNextBid(parseFloat(auction.current_bid), true) : parseFloat(auction.starting_bid);
-  $: fee = calculateAuctionFee(currentAmount);
-  $: buyoutOnly = isBuyoutOnly(auction);
-  $: isActive = auction.status === 'active';
-  $: isFrozen = auction.status === 'frozen';
+  /** @type {Props} */
+  let { auction } = $props();
+
+  let hasBids = $derived(auction.bid_count > 0);
+  let currentAmount = $derived(hasBids ? parseFloat(auction.current_bid) : parseFloat(auction.starting_bid));
+  let minNext = $derived(hasBids ? getMinNextBid(parseFloat(auction.current_bid), true) : parseFloat(auction.starting_bid));
+  let fee = $derived(calculateAuctionFee(currentAmount));
+  let buyoutOnly = $derived(isBuyoutOnly(auction));
+  let isActive = $derived(auction.status === 'active');
+  let isFrozen = $derived(auction.status === 'frozen');
 </script>
 
 <div class="price-panel">

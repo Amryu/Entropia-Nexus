@@ -1,5 +1,7 @@
 <script lang="ts">
-  /**
+  
+  interface Props {
+    /**
    * Skeleton table loading placeholder
    *
    * Props:
@@ -8,10 +10,18 @@
    * - rowHeight: number - Height of each row in px
    * - showHeader: boolean - Whether to show header skeleton
    */
-  export let rows: number = 5;
-  export let columns: number = 4;
-  export let rowHeight: number = 48;
-  export let showHeader: boolean = true;
+    rows?: number;
+    columns?: number;
+    rowHeight?: number;
+    showHeader?: boolean;
+  }
+
+  let {
+    rows = 5,
+    columns = 4,
+    rowHeight = 48,
+    showHeader = true
+  }: Props = $props();
 </script>
 
 <div class="skeleton-table">

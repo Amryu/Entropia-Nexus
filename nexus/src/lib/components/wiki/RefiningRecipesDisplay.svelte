@@ -6,37 +6,52 @@
   // @ts-nocheck
   import { getItemLink } from '$lib/util';
 
-  /** @type {Array} RefiningRecipes array */
-  export let recipes = [];
+  
 
-  /** @type {string} The material name (for display) */
-  export let materialName = '';
+  
 
-  /** @type {boolean} Link the recipe product */
-  export let linkProduct = false;
+  
 
-  /** @type {boolean} Link ingredient items */
-  export let linkIngredients = true;
+  
 
-  /** @type {string|null} Current entity name (used to disable linking) */
-  export let currentEntityName = null;
+  
 
-  /** @type {'list'|'grid'} Layout mode */
-  export let layout = 'list';
+  
 
-  /** @type {number} Columns when layout is grid */
-  export let columns = 2;
+  
 
-  /** @type {boolean} Show empty state when no recipes */
-  export let showEmpty = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [recipes]
+   * @property {string} [materialName]
+   * @property {boolean} [linkProduct]
+   * @property {boolean} [linkIngredients]
+   * @property {string|null} [currentEntityName]
+   * @property {'list'|'grid'} [layout]
+   * @property {number} [columns]
+   * @property {boolean} [showEmpty]
+   */
 
-  $: hasRecipes = recipes?.length > 0;
-  $: outputName = (recipe) => materialName || recipe?.Product?.Name || 'Material';
-  $: outputLink = (recipe) => recipe?.Product ? getItemLink(recipe.Product) : null;
-  $: isCurrentEntity = (name) => {
+  /** @type {Props} */
+  let {
+    recipes = [],
+    materialName = '',
+    linkProduct = false,
+    linkIngredients = true,
+    currentEntityName = null,
+    layout = 'list',
+    columns = 2,
+    showEmpty = false
+  } = $props();
+
+  let hasRecipes = $derived(recipes?.length > 0);
+  let outputName = $derived((recipe) => materialName || recipe?.Product?.Name || 'Material');
+  let outputLink = $derived((recipe) => recipe?.Product ? getItemLink(recipe.Product) : null);
+  let isCurrentEntity = $derived((name) => {
     if (!name || !currentEntityName) return false;
     return name === currentEntityName;
-  };
+  });
 </script>
 
 {#if hasRecipes}

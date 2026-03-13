@@ -1,19 +1,35 @@
 <script>
+  import EditFormControlGroup from './EditFormControlGroup.svelte';
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from "svelte";
 
   import { writable } from "svelte/store";
 
-  export let root;
-  export let object;
-  export let dependencies = {};
-  export let controls = [];
-  export let title = null;
-  export let disabled = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} root
+   * @property {any} object
+   * @property {any} [dependencies]
+   * @property {any} [controls]
+   * @property {any} [title]
+   * @property {boolean} [disabled]
+   */
 
-  let stores = {};
+  /** @type {Props} */
+  let {
+    root,
+    object = $bindable(),
+    dependencies = {},
+    controls = [],
+    title = null,
+    disabled = false
+  } = $props();
+
+  let stores = $state({});
   let dispatch = createEventDispatcher();
-  let tempValues = {};
+  let tempValues = $state({});
 
   function createStore(object, _get, _set, dependencies) {
     const { subscribe, set, update } = writable('');
@@ -33,18 +49,20 @@
     };
   }
 
-  $: if(controls) {
-    stores = {};
-    controls.forEach((control, i) => {
-      stores[i] = createStore(object, control._get, control._set, dependencies);
-      // Initialize temporary buffer for input-validator so user can type freely
-      if (control.type === 'input-validator' && tempValues[i] === undefined) {
-        try {
-          tempValues[i] = stores[i].value;
-        } catch {}
-      }
-    });
-  }
+  run(() => {
+    if(controls) {
+      stores = {};
+      controls.forEach((control, i) => {
+        stores[i] = createStore(object, control._get, control._set, dependencies);
+        // Initialize temporary buffer for input-validator so user can type freely
+        if (control.type === 'input-validator' && tempValues[i] === undefined) {
+          try {
+            tempValues[i] = stores[i].value;
+          } catch {}
+        }
+      });
+    }
+  });
 
   function commitInputValidator(i, control) {
     const val = tempValues[i];
@@ -139,7 +157,7 @@
           <span>{field}</span>
         {/each}
         {#each Array.from({ length: control.fields.length }) as _, j}
-          <input type="number" style="width: calc(100% - 8px);" id={control.key} value={stores[i].value[j]} disabled={disabled} on:input={(event) => stores[i].value = stores[i].value.map((x, k) => k === j ? Number(event.target.value) : x)} />
+          <input type="number" style="width: calc(100% - 8px);" id={control.key} value={stores[i].value[j]} disabled={disabled} oninput={(event) => stores[i].value = stores[i].value.map((x, k) => k === j ? Number(event.target.value) : x)} />
         {/each}
       </div>
     {:else if control.type === 'checkbox'}
@@ -149,14 +167,14 @@
     {:else if control.type === 'textarea'}
       <textarea id={control.key} bind:value={stores[i].value} disabled={disabled}></textarea>
     {:else if control.type === 'select'}
-      <select id={control.key} bind:value={stores[i].value} disabled={disabled} on:change={() => dispatch('change')}>
+      <select id={control.key} bind:value={stores[i].value} disabled={disabled} onchange={() => dispatch('change')}>
         {#each control.options(object, dependencies, root) as option}
           <option value={option ?? ''}>{option ?? 'None'}</option>
         {/each}
       </select>
-    {:else if control.type === 'input-select' }
+    {:else if control.type === 'input-select'}
       <div class="select-editable">
-        <select on:change={e => stores[i].value = e.target.value} disabled={disabled}>
+        <select onchange={e => stores[i].value = e.target.value} disabled={disabled}>
           <option value="" selected></option>
           {#each control.options(object, dependencies, root) as option}
             <option value={option ?? ''}>{option ?? 'None'}</option>
@@ -171,14 +189,14 @@
         class={(tempValues[i] ?? stores[i].value) && control.validator((tempValues[i] ?? stores[i].value), dependencies, root) ? '' : 'invalid'}
         bind:value={tempValues[i]}
         disabled={disabled}
-        on:keydown={(e) => { if (e.key === 'Enter') { commitInputValidator(i, control); e.currentTarget.blur(); } }}
-        on:blur={() => commitInputValidator(i, control)}
+        onkeydown={(e) => { if (e.key === 'Enter') { commitInputValidator(i, control); e.currentTarget.blur(); } }}
+        onblur={() => commitInputValidator(i, control)}
       />
     {:else if control.type === 'waypoint'}
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
         <input type="number" placeholder="Longitude" step="0.0001"
           value={Array.isArray(stores[i].value) ? stores[i].value[0] || '' : ''}
-          on:paste={(event) => {
+          onpaste={(event) => {
             event.preventDefault();
             let paste = (event.clipboardData || window.clipboardData).getData('text');
             try {
@@ -200,7 +218,7 @@
               }
             }
           }}
-          on:input={(event) => {
+          oninput={(event) => {
             let input = event.target.value.trim();
             // Check if it looks like a waypoint paste
             if (input.includes('[') || input.includes(',')) {
@@ -230,7 +248,7 @@
           disabled={disabled} />
         <input type="number" placeholder="Latitude" step="0.0001"
           value={Array.isArray(stores[i].value) ? stores[i].value[1] || '' : ''}
-          on:paste={(event) => {
+          onpaste={(event) => {
             event.preventDefault();
             let paste = (event.clipboardData || window.clipboardData).getData('text');
             // Handle waypoint paste format: [ARIS, 34498, 21428, 194, Waypoint]
@@ -253,7 +271,7 @@
               }
             }
           }}
-          on:input={(event) => {
+          oninput={(event) => {
             let input = event.target.value.trim();
             // Check if it looks like a waypoint paste
             if (input.includes('[') || input.includes(',')) {
@@ -283,7 +301,7 @@
           disabled={disabled} />
         <input type="number" placeholder="Altitude" step="0.01"
           value={Array.isArray(stores[i].value) ? stores[i].value[2] || '' : ''}
-          on:paste={(event) => {
+          onpaste={(event) => {
             event.preventDefault();
             let paste = (event.clipboardData || window.clipboardData).getData('text');
             // Handle waypoint paste format: [ARIS, 34498, 21428, 194, Waypoint]
@@ -306,7 +324,7 @@
               }
             }
           }}
-          on:input={(event) => {
+          oninput={(event) => {
             let input = event.target.value.trim();
             // Check if it looks like a waypoint paste
             if (input.includes('[') || input.includes(',')) {
@@ -337,19 +355,19 @@
       </div>
     {:else if control.type === 'range'}
       <span>
-        <input type="number" id={control.key} value={stores[i].value[0]} step={control.step} min={control.min} max={control.max} on:input={(event) => stores[i].value = [Number(event.target.value), stores[i].value[1]]} disabled={disabled} />
+        <input type="number" id={control.key} value={stores[i].value[0]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [Number(event.target.value), stores[i].value[1]]} disabled={disabled} />
         -
-        <input type="number" id={control.key} value={stores[i].value[1]} step={control.step} min={control.min} max={control.max} on:input={(event) => stores[i].value = [stores[i].value[0], Number(event.target.value)]} disabled={disabled} />
+        <input type="number" id={control.key} value={stores[i].value[1]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [stores[i].value[0], Number(event.target.value)]} disabled={disabled} />
       </span>
     {:else if control.type === 'group'}
-      <svelte:self root={root} bind:object={object} controls={control.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+      <EditFormControlGroup root={root} bind:object={object} controls={control.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
     {:else if control.type === 'list'}
       {#each (stores[i].value ?? [])
         .map((item, idx) => ({ item, idx }))
         .sort((a, b) => control.sort ? control.sort(a.item, b.item) : 0) as entry, j (entry.item)}
         <span>
           {control.itemNameFunc ? control.itemNameFunc(j) : `#${j + 1}`} &nbsp; 
-          <input type="button" title="Remove" value="🗑️" on:click={() => { 
+          <input type="button" title="Remove" value="🗑️" onclick={() => { 
             const itemRef = entry.item;
             const arr = stores[i].value || [];
             const idx = arr.findIndex(x => x === itemRef);
@@ -362,7 +380,7 @@
             }
           }} disabled={disabled} />
           {#if control.allowInsert !== false}
-            <input type="button" title="Insert" value="➕" on:click={() => { 
+            <input type="button" title="Insert" value="➕" onclick={() => { 
               let newItem = control.config.constructor(); 
               const parentArray = stores[i].value || [];
               // insert relative to the clicked item in the underlying array
@@ -382,11 +400,11 @@
           {/if}
         </span>
         <div class="efcg-item">
-          <svelte:self root={root} bind:object={entry.item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+          <EditFormControlGroup root={root} bind:object={entry.item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
         </div>
       {/each}
       {control.itemNameFunc ? control.itemNameFunc(stores[i].value?.length) : `#${(stores[i].value?.length ?? 0) + 1}`}
-      <input type="button" value="Add" on:click={() => { 
+      <input type="button" value="Add" onclick={() => { 
         let newItem = control.config.constructor(); 
         if (control.config.initialize) {
           const currentIndex = stores[i].value?.length || 0;
@@ -397,19 +415,20 @@
         dispatch('change'); 
       }} disabled={disabled} />
     {:else if control.type === 'array'}
-      {#each Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k, root)) ?? undefined) as value, j}
+      {@const arrayItems = Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k, root)) ?? undefined)}
+      {#each arrayItems as value, j}
         <span>
-          {control.itemNameFunc(j)} &nbsp; 
+          {control.itemNameFunc(j)} &nbsp;
           {#if value !== undefined}
-      <input type="button" title="Remove" value="🗑️" on:click={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j, root)); dispatch('change'); }} disabled={disabled} />
+      <input type="button" title="Remove" value="🗑️" onclick={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j, root)); dispatch('change'); }} disabled={disabled} />
           {/if}
         </span>
         {#if value !== undefined}
           <div class="efcg-item">
-            <svelte:self root={root} bind:object={value} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+            <EditFormControlGroup root={root} bind:object={arrayItems[j]} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
           </div>
         {:else}
-          <input type="button" value="Add" on:click={() => { 
+          <input type="button" value="Add" onclick={() => { 
             const newItem = control.config.constructor(j);
             if (control.config.initialize) {
               const currentIndex = j;

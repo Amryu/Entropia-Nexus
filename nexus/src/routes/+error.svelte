@@ -4,8 +4,6 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
 
-  $: status = $page.status;
-  $: message = $page.error?.message || getDefaultMessage(status);
 
   function getDefaultMessage(status: number): string {
     switch (status) {
@@ -66,6 +64,8 @@
   function goHome() {
     goto('/');
   }
+  let status = $derived($page.status);
+  let message = $derived($page.error?.message || getDefaultMessage(status));
 </script>
 
 <svelte:head>
@@ -80,10 +80,10 @@
     <p class="error-message">{message}</p>
 
     <div class="error-actions">
-      <button class="btn btn-primary" on:click={goBack}>
+      <button class="btn btn-primary" onclick={goBack}>
         Go Back
       </button>
-      <button class="btn btn-secondary" on:click={goHome}>
+      <button class="btn btn-secondary" onclick={goHome}>
         Go to Homepage
       </button>
     </div>

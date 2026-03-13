@@ -4,6 +4,8 @@
   Can also activate the auction from here.
 -->
 <script>
+  import { self } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
@@ -12,23 +14,23 @@
   import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
   import { addToast } from '$lib/stores/toasts';
 
-  export let data;
+  let { data } = $props();
 
-  $: auction = data.auction;
+  let auction = $derived(data.auction);
 
   // Form state (initialized from server data to avoid SSR issues)
-  let title = data.auction?.title || '';
-  let description = data.auction?.description || '';
-  let startingBid = data.auction?.starting_bid ? String(parseFloat(data.auction.starting_bid)) : '';
-  let buyoutPrice = data.auction?.buyout_price ? String(parseFloat(data.auction.buyout_price)) : '';
-  let buyoutOnly = data.auction?.buyout_price != null && parseFloat(data.auction.buyout_price) === parseFloat(data.auction.starting_bid);
-  let durationDays = data.auction?.duration_days || 7;
+  let title = $state(data.auction?.title || '');
+  let description = $state(data.auction?.description || '');
+  let startingBid = $state(data.auction?.starting_bid ? String(parseFloat(data.auction.starting_bid)) : '');
+  let buyoutPrice = $state(data.auction?.buyout_price ? String(parseFloat(data.auction.buyout_price)) : '');
+  let buyoutOnly = $state(data.auction?.buyout_price != null && parseFloat(data.auction.buyout_price) === parseFloat(data.auction.starting_bid));
+  let durationDays = $state(data.auction?.duration_days || 7);
 
-  let saving = false;
+  let saving = $state(false);
 
-  $: startingBidNum = parseFloat(startingBid) || 0;
-  $: buyoutPriceNum = buyoutOnly ? startingBidNum : (parseFloat(buyoutPrice) || 0);
-  $: effectiveBuyout = buyoutOnly ? startingBidNum : (buyoutPriceNum > 0 ? buyoutPriceNum : null);
+  let startingBidNum = $derived(parseFloat(startingBid) || 0);
+  let buyoutPriceNum = $derived(buyoutOnly ? startingBidNum : (parseFloat(buyoutPrice) || 0));
+  let effectiveBuyout = $derived(buyoutOnly ? startingBidNum : (buyoutPriceNum > 0 ? buyoutPriceNum : null));
 
   async function handleSave(activate = false) {
     if (!title.trim()) {
@@ -74,8 +76,8 @@
     }
   }
 
-  let showDeleteConfirm = false;
-  let showActivateConfirm = false;
+  let showDeleteConfirm = $state(false);
+  let showActivateConfirm = $state(false);
 
   async function handleDelete() {
     showDeleteConfirm = true;
@@ -205,40 +207,40 @@
 
     <!-- Actions -->
     <div class="form-actions">
-      <button class="btn-danger" on:click={handleDelete} disabled={saving}>Delete Draft</button>
+      <button class="btn-danger" onclick={handleDelete} disabled={saving}>Delete Draft</button>
       <div class="actions-right">
-        <button class="btn-secondary" on:click={() => goto(`/market/auction/${auction.id}`)} disabled={saving}>
+        <button class="btn-secondary" onclick={() => goto(`/market/auction/${auction.id}`)} disabled={saving}>
           Cancel
         </button>
-        <button class="btn-secondary" on:click={() => handleSave(false)} disabled={saving}>
+        <button class="btn-secondary" onclick={() => handleSave(false)} disabled={saving}>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
-        <button class="btn-primary" on:click={() => showActivateConfirm = true} disabled={saving}>
+        <button class="btn-primary" onclick={() => showActivateConfirm = true} disabled={saving}>
           {saving ? 'Activating...' : 'Activate Auction'}
         </button>
       </div>
     </div>
 
     {#if showDeleteConfirm}
-      <div class="modal-overlay" role="presentation" on:click|self={() => showDeleteConfirm = false}>
+      <div class="modal-overlay" role="presentation" onclick={self(() => showDeleteConfirm = false)}>
         <div class="confirm-dialog" role="dialog" aria-modal="true">
           <p class="confirm-message">Delete this draft auction?</p>
           <div class="confirm-actions">
-            <button class="btn-secondary" on:click={() => showDeleteConfirm = false}>Cancel</button>
-            <button class="btn-danger" on:click={doDelete}>Delete</button>
+            <button class="btn-secondary" onclick={() => showDeleteConfirm = false}>Cancel</button>
+            <button class="btn-danger" onclick={doDelete}>Delete</button>
           </div>
         </div>
       </div>
     {/if}
 
     {#if showActivateConfirm}
-      <div class="modal-overlay" role="presentation" on:click|self={() => showActivateConfirm = false}>
+      <div class="modal-overlay" role="presentation" onclick={self(() => showActivateConfirm = false)}>
         <div class="confirm-dialog" role="dialog" aria-modal="true">
           <p class="confirm-message">Are you sure you want to activate this auction?</p>
           <p class="confirm-warning">Once a bid is placed, the auction cannot be cancelled or edited. Make sure your pricing, duration, and item set are correct before proceeding.</p>
           <div class="confirm-actions">
-            <button class="btn-secondary" on:click={() => showActivateConfirm = false}>Cancel</button>
-            <button class="btn-primary" on:click={() => { showActivateConfirm = false; handleSave(true); }}>Activate Auction</button>
+            <button class="btn-secondary" onclick={() => showActivateConfirm = false}>Cancel</button>
+            <button class="btn-primary" onclick={() => { showActivateConfirm = false; handleSave(true); }}>Activate Auction</button>
           </div>
         </div>
       </div>

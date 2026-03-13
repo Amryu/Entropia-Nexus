@@ -9,14 +9,14 @@
   import RentalStatusBadge from '$lib/components/rental/RentalStatusBadge.svelte';
   import { formatPrice, formatDateDisplay } from '$lib/utils/rentalPricing.js';
 
-  export let data;
+  let { data } = $props();
 
-  $: offers = data.offers || [];
-  $: requests = data.requests || [];
-  $: user = data.session?.user;
-  $: isVerified = !!user?.verified;
+  let offers = $derived(data.offers || []);
+  let requests = $derived(data.requests || []);
+  let user = $derived(data.session?.user);
+  let isVerified = $derived(!!user?.verified);
 
-  let activeTab = 'offers';
+  let activeTab = $state('offers');
 </script>
 
 <svelte:head>
@@ -45,14 +45,14 @@
       <button
         class="tab"
         class:active={activeTab === 'offers'}
-        on:click={() => activeTab = 'offers'}
+        onclick={() => activeTab = 'offers'}
       >
         My Offers ({offers.length})
       </button>
       <button
         class="tab"
         class:active={activeTab === 'requests'}
-        on:click={() => activeTab = 'requests'}
+        onclick={() => activeTab = 'requests'}
       >
         My Requests ({requests.length})
       </button>

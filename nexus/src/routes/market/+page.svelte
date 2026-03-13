@@ -7,7 +7,7 @@
   import '$lib/style.css';
   import MarketSearch from '$lib/components/MarketSearch.svelte';
 
-  export let data;
+  let { data } = $props();
 
   const featuredSections = [
     {
@@ -122,7 +122,7 @@
             href="/market/exchange/{category.key}"
             class="category-card"
             class:category-empty={category.activeCount === 0}
-            on:click={() => typeof sessionStorage !== 'undefined' && sessionStorage.setItem('exchangeCategory', category.key)}
+            onclick={() => typeof sessionStorage !== 'undefined' && sessionStorage.setItem('exchangeCategory', category.key)}
           >
             <span class="category-name">{category.name}</span>
             <span class="category-count">{formatCount(category.activeCount)} {category.activeCount === 1 ? 'item' : 'items'}</span>

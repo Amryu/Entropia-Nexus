@@ -3,9 +3,15 @@
   A link button that navigates to a spawn location on the map, used in MobLocations FancyTable.
 -->
 <script>
-  // @ts-nocheck
-  export let row = {};
-  export let value = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [row]
+   * @property {string} [value]
+   */
+
+  /** @type {Props} */
+  let { row = {}, value = '' } = $props();
 </script>
 
 <a

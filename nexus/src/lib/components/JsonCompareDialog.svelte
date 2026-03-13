@@ -1,23 +1,39 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import JsonTreeNode from './JsonTreeNode.svelte';
 
-  export let show = false;
-  export let title = 'Compare JSON';
-  export let oldData = null;
-  export let newData = null;
-  export let oldLabel = 'Previous';
-  export let newLabel = 'Current';
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {string} [title]
+   * @property {any} [oldData]
+   * @property {any} [newData]
+   * @property {string} [oldLabel]
+   * @property {string} [newLabel]
+   */
+
+  /** @type {Props} */
+  let {
+    show = false,
+    title = 'Compare JSON',
+    oldData = null,
+    newData = null,
+    oldLabel = 'Previous',
+    newLabel = 'Current'
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let leftPane;
-  let rightPane;
+  let leftPane = $state();
+  let rightPane = $state();
   let syncingScroll = false;
 
   // Shared collapse state between both panes (by JSON path)
-  let collapsedPaths = new Set();
+  let collapsedPaths = $state(new Set());
 
   function close() {
     dispatch('close');
@@ -101,23 +117,25 @@
     return result;
   }
 
-  $: cleanedOld = oldData ? cleanAndSort(oldData) : null;
-  $: cleanedNew = newData ? cleanAndSort(newData) : null;
+  let cleanedOld = $derived(oldData ? cleanAndSort(oldData) : null);
+  let cleanedNew = $derived(newData ? cleanAndSort(newData) : null);
 
   // Reset collapsed state when dialog opens
-  $: if (show) {
-    collapsedPaths = new Set();
-  }
+  run(() => {
+    if (show) {
+      collapsedPaths = new Set();
+    }
+  });
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if show}
-  <div class="dialog-overlay" role="presentation" on:click={close}>
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={close}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))}>
       <div class="dialog-header">
         <h3>{title}</h3>
-        <button type="button" class="close-btn" on:click={close}>×</button>
+        <button type="button" class="close-btn" onclick={close}>×</button>
       </div>
       <div class="dialog-body">
         <div class="compare-container">
@@ -126,7 +144,7 @@
             <div
               class="pane-content"
               bind:this={leftPane}
-              on:scroll={handleLeftScroll}
+              onscroll={handleLeftScroll}
             >
               {#if cleanedOld}
                 <JsonTreeNode
@@ -145,7 +163,7 @@
             <div
               class="pane-content"
               bind:this={rightPane}
-              on:scroll={handleRightScroll}
+              onscroll={handleRightScroll}
             >
               {#if cleanedNew}
                 <JsonTreeNode
@@ -162,7 +180,7 @@
         </div>
       </div>
       <div class="dialog-footer">
-        <button type="button" class="btn" on:click={close}>Close</button>
+        <button type="button" class="btn" onclick={close}>Close</button>
       </div>
     </div>
   </div>

@@ -1,4 +1,7 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
@@ -63,28 +66,27 @@
     return getTypeLink(change.data.Name, linkType);
   }
 
-  let change = null;
-  let history = [];
-  let relatedChanges = []; // Other approved changes for the same entity
-  let originalVersion = null;
-  let isLoading = true;
-  let error = null;
+  let change = $state(null);
+  let history = $state([]);
+  let relatedChanges = $state([]); // Other approved changes for the same entity
+  let originalVersion = $state(null);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   // Diff view state
-  let showDiff = false;
-  let showChangesOnly = false;
-  let showRawJson = false;
-  let showCompareDialog = false;
-  let selectedVersionType = null; // 'original', 'history-{index}', 'related-{index}'
-  let shouldAutoSelectDiff = false;
+  let showDiff = $state(false);
+  let showChangesOnly = $state(false);
+  let showRawJson = $state(false);
+  let showCompareDialog = $state(false);
+  let selectedVersionType = $state(null); // 'original', 'history-{index}', 'related-{index}'
+  let shouldAutoSelectDiff = $state(false);
 
   // Reward state
-  let changeReward = null;
-  let matchingRules = [];
-  let rewardForm = { rule_id: '', amount: '', contribution_score: '', note: '' };
-  let isAssigningReward = false;
+  let changeReward = $state(null);
+  let matchingRules = $state([]);
+  let rewardForm = $state({ rule_id: '', amount: '', contribution_score: '', note: '' });
+  let isAssigningReward = $state(false);
 
-  $: changeId = $page.params.id;
 
   onMount(() => {
     loadChange();
@@ -231,96 +233,9 @@
     return new Date(dateStr).toLocaleString();
   }
 
-  // Normalize current data (e.g., infer Type for Mobs)
-  $: currentData = normalizeChangeData(change?.data || {}, change?.entity);
 
-  // Filter history to exclude entries identical to current change data
-  // This prevents showing "Current Change" and "Edit #1" as duplicates
-  $: filteredHistory = history.filter(h => {
-    const historyDataStr = JSON.stringify(normalizeChangeData(h.data, change?.entity));
-    const currentDataStr = JSON.stringify(currentData);
-    return historyDataStr !== currentDataStr;
-  });
 
-  // Combined and sorted list of all versions including current (newest to oldest)
-  $: combinedVersions = (() => {
-    const versions = [];
 
-    // Add current change being viewed
-    if (change) {
-      versions.push({
-        key: 'current',
-        type: 'current',
-        title: `Change #${change.id} (${change.type})`,
-        subtitle: change.author_name || 'Unknown',
-        date: new Date(change.last_update),
-        changeId: change.id,
-        isCurrent: true
-      });
-    }
-
-    // Add original version
-    if (originalVersion) {
-      versions.push({
-        key: 'original',
-        type: 'original',
-        title: 'Original Version',
-        subtitle: 'From database',
-        date: new Date(originalVersion.Timestamp)
-      });
-    }
-
-    // Add edit history entries
-    filteredHistory.forEach((h, i) => {
-      versions.push({
-        key: `history-${i}`,
-        type: 'history',
-        title: `Edit #${i + 1}`,
-        subtitle: h.author_name || 'Unknown',
-        date: new Date(h.created_at)
-      });
-    });
-
-    // Add previous approved changes
-    relatedChanges.forEach((rc, i) => {
-      versions.push({
-        key: `related-${i}`,
-        type: 'related',
-        title: `Change #${rc.id} (${rc.type})`,
-        subtitle: rc.author_name || 'Unknown',
-        date: new Date(rc.last_update),
-        changeId: rc.id
-      });
-    });
-
-    // Sort by date (newest first), with changeId as fallback for equal dates
-    versions.sort((a, b) => {
-      const dateA = a.date?.getTime() || 0;
-      const dateB = b.date?.getTime() || 0;
-      if (dateB !== dateA) return dateB - dateA;
-      // Fallback: sort by changeId (higher = newer)
-      return (b.changeId || 0) - (a.changeId || 0);
-    });
-
-    return versions;
-  })();
-
-  // Compute the comparison data based on selection
-  $: comparisonData = (() => {
-    if (!showDiff || !selectedVersionType) return null;
-    if (selectedVersionType === 'original' && originalVersion) {
-      return normalizeChangeData(originalVersion.Data, change?.entity);
-    }
-    if (selectedVersionType.startsWith('history-')) {
-      const index = parseInt(selectedVersionType.split('-')[1], 10);
-      return normalizeChangeData(filteredHistory[index]?.data, change?.entity) || null;
-    }
-    if (selectedVersionType.startsWith('related-')) {
-      const index = parseInt(selectedVersionType.split('-')[1], 10);
-      return normalizeChangeData(relatedChanges[index]?.data, change?.entity) || null;
-    }
-    return null;
-  })();
 
   // Infer Type from ScanningProfession for Mob entities (matches bot logic)
   // Type is a simple string value, not a reference object
@@ -398,18 +313,108 @@
     return inferGeneratedFields(clone);
   }
 
-  $: hasComparisonOptions = originalVersion || filteredHistory.length > 0 || relatedChanges.length > 0;
 
-  // Auto-select the newest non-current version for diff when flag is set
-  $: if (shouldAutoSelectDiff && combinedVersions.length > 0) {
-    // Find the first version that isn't the current change (can't compare against itself)
-    const firstComparable = combinedVersions.find(v => !v.isCurrent);
-    if (firstComparable) {
-      selectedVersionType = firstComparable.key;
-      showDiff = true;
+  let changeId = $derived($page.params.id);
+  // Normalize current data (e.g., infer Type for Mobs)
+  let currentData = $derived(normalizeChangeData(change?.data || {}, change?.entity));
+  // Filter history to exclude entries identical to current change data
+  // This prevents showing "Current Change" and "Edit #1" as duplicates
+  let filteredHistory = $derived(history.filter(h => {
+    const historyDataStr = JSON.stringify(normalizeChangeData(h.data, change?.entity));
+    const currentDataStr = JSON.stringify(currentData);
+    return historyDataStr !== currentDataStr;
+  }));
+  // Combined and sorted list of all versions including current (newest to oldest)
+  let combinedVersions = $derived((() => {
+    const versions = [];
+
+    // Add current change being viewed
+    if (change) {
+      versions.push({
+        key: 'current',
+        type: 'current',
+        title: `Change #${change.id} (${change.type})`,
+        subtitle: change.author_name || 'Unknown',
+        date: new Date(change.last_update),
+        changeId: change.id,
+        isCurrent: true
+      });
     }
-    shouldAutoSelectDiff = false;
-  }
+
+    // Add original version
+    if (originalVersion) {
+      versions.push({
+        key: 'original',
+        type: 'original',
+        title: 'Original Version',
+        subtitle: 'From database',
+        date: new Date(originalVersion.Timestamp)
+      });
+    }
+
+    // Add edit history entries
+    filteredHistory.forEach((h, i) => {
+      versions.push({
+        key: `history-${i}`,
+        type: 'history',
+        title: `Edit #${i + 1}`,
+        subtitle: h.author_name || 'Unknown',
+        date: new Date(h.created_at)
+      });
+    });
+
+    // Add previous approved changes
+    relatedChanges.forEach((rc, i) => {
+      versions.push({
+        key: `related-${i}`,
+        type: 'related',
+        title: `Change #${rc.id} (${rc.type})`,
+        subtitle: rc.author_name || 'Unknown',
+        date: new Date(rc.last_update),
+        changeId: rc.id
+      });
+    });
+
+    // Sort by date (newest first), with changeId as fallback for equal dates
+    versions.sort((a, b) => {
+      const dateA = a.date?.getTime() || 0;
+      const dateB = b.date?.getTime() || 0;
+      if (dateB !== dateA) return dateB - dateA;
+      // Fallback: sort by changeId (higher = newer)
+      return (b.changeId || 0) - (a.changeId || 0);
+    });
+
+    return versions;
+  })());
+  // Auto-select the newest non-current version for diff when flag is set
+  run(() => {
+    if (shouldAutoSelectDiff && combinedVersions.length > 0) {
+      // Find the first version that isn't the current change (can't compare against itself)
+      const firstComparable = combinedVersions.find(v => !v.isCurrent);
+      if (firstComparable) {
+        selectedVersionType = firstComparable.key;
+        showDiff = true;
+      }
+      shouldAutoSelectDiff = false;
+    }
+  });
+  // Compute the comparison data based on selection
+  let comparisonData = $derived((() => {
+    if (!showDiff || !selectedVersionType) return null;
+    if (selectedVersionType === 'original' && originalVersion) {
+      return normalizeChangeData(originalVersion.Data, change?.entity);
+    }
+    if (selectedVersionType.startsWith('history-')) {
+      const index = parseInt(selectedVersionType.split('-')[1], 10);
+      return normalizeChangeData(filteredHistory[index]?.data, change?.entity) || null;
+    }
+    if (selectedVersionType.startsWith('related-')) {
+      const index = parseInt(selectedVersionType.split('-')[1], 10);
+      return normalizeChangeData(relatedChanges[index]?.data, change?.entity) || null;
+    }
+    return null;
+  })());
+  let hasComparisonOptions = $derived(originalVersion || filteredHistory.length > 0 || relatedChanges.length > 0);
 </script>
 
 <svelte:head>
@@ -844,7 +849,7 @@
               <button
                 class="toggle-btn"
                 class:active={showRawJson}
-                on:click={() => { showRawJson = !showRawJson; if (showRawJson) showDiff = false; }}
+                onclick={() => { showRawJson = !showRawJson; if (showRawJson) showDiff = false; }}
               >
                 {showRawJson ? 'Formatted' : 'Raw JSON'}
               </button>
@@ -852,13 +857,13 @@
                 <button
                   class="toggle-btn"
                   class:active={showChangesOnly}
-                  on:click={() => showChangesOnly = !showChangesOnly}
+                  onclick={() => showChangesOnly = !showChangesOnly}
                 >
                   {showChangesOnly ? 'Show All' : 'Changes Only'}
                 </button>
                 <button
                   class="toggle-btn"
-                  on:click={() => showCompareDialog = true}
+                  onclick={() => showCompareDialog = true}
                 >
                   Side by Side
                 </button>
@@ -867,7 +872,7 @@
                 <button
                   class="toggle-btn"
                   class:active={showDiff}
-                  on:click={() => showDiff = !showDiff}
+                  onclick={() => showDiff = !showDiff}
                 >
                   {showDiff ? 'Hide Diff' : 'Show Diff'}
                 </button>
@@ -957,7 +962,7 @@
                     class="history-item"
                     class:selected={selectedVersionType === version.key}
                     use:clickable
-                    on:click={() => {
+                    onclick={() => {
                       selectedVersionType = selectedVersionType === version.key ? null : version.key;
                       showDiff = selectedVersionType !== null;
                     }}
@@ -969,7 +974,7 @@
                           href="/admin/changes/{version.changeId}"
                           class="view-change-link"
                           title="View this change"
-                          on:click|stopPropagation
+                          onclick={stopPropagation(bubble('click'))}
                         >→</a>
                       {/if}
                     </div>
@@ -1064,14 +1069,14 @@
                     <span class="info-label">Date</span>
                     <span class="info-value">{formatDate(changeReward.created_at)}</span>
                   </div>
-                  <button class="reward-remove-btn" on:click={removeReward}>Remove Reward</button>
+                  <button class="reward-remove-btn" onclick={removeReward}>Remove Reward</button>
                 </div>
               {:else}
                 <div class="reward-form">
                   {#if matchingRules.length > 0}
                     <div class="reward-field">
                       <label>Rule</label>
-                      <select bind:value={rewardForm.rule_id} on:change={onRuleSelect}>
+                      <select bind:value={rewardForm.rule_id} onchange={onRuleSelect}>
                         <option value="">Custom (no rule)</option>
                         {#each matchingRules as rule}
                           <option value={String(rule.id)}>
@@ -1093,7 +1098,7 @@
                     <label>Note</label>
                     <input type="text" bind:value={rewardForm.note} placeholder="Optional" />
                   </div>
-                  <button class="action-link action-link-primary" style="margin-top: 8px;" on:click={assignReward} disabled={isAssigningReward}>
+                  <button class="action-link action-link-primary" style="margin-top: 8px;" onclick={assignReward} disabled={isAssigningReward}>
                     {isAssigningReward ? 'Assigning...' : 'Assign Reward'}
                   </button>
                 </div>

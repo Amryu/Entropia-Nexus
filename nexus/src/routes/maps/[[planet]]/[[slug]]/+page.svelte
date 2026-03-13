@@ -1,4 +1,7 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   //@ts-nocheck
   import '$lib/style.css';
 
@@ -26,7 +29,7 @@
   // Map Editor components (Leaflet-based edit mode) — loaded dynamically to avoid SSR issues
   import { browser } from '$app/environment';
 
-  let MapEditorWorkspace, ChangesSummary;
+  let MapEditorWorkspace = $state(), ChangesSummary = $state();
 
   if (browser) {
     Promise.all([
@@ -45,47 +48,47 @@
     setViewingPendingChange
   } from '$lib/stores/wikiEditState';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
-  let mapRef;
-  let currentSlug = null;
-  let searchQuery = '';
-  let searchOpen = false;
-  let selectedLocation = null;
-  let hoveredLocation = null;
-  let lastFocusedId = null;
-  let pendingDialogOpen = false;
-  let selectedMainPlanet = '';
-  let selectedSubArea = '';
-  let subAreas = [];
-  let lastPlanetGroup = null;
-  let lastPlanetSlug = null;
-  let isMobile = false;
-  let panelExpanded = false;
-  let panelClosing = false;
+  let mapRef = $state();
+  let currentSlug = $state(null);
+  let searchQuery = $state('');
+  let searchOpen = $state(false);
+  let selectedLocation = $state(null);
+  let hoveredLocation = $state(null);
+  let lastFocusedId = $state(null);
+  let pendingDialogOpen = $state(false);
+  let selectedMainPlanet = $state('');
+  let selectedSubArea = $state('');
+  let subAreas = $state([]);
+  let lastPlanetGroup = $state(null);
+  let lastPlanetSlug = $state(null);
+  let isMobile = $state(false);
+  let panelExpanded = $state(false);
+  let panelClosing = $state(false);
   let touchStartY = 0;
   let touchDeltaY = 0;
-  let apartmentDetails = {};
+  let apartmentDetails = $state({});
   let apartmentFetches = new Set();
   let apartmentDetailsLoaded = new Set();
-  let selectedDetails = null;
-  let searchResultsHovered = false;
-  let searchSelectedIndex = -1;
-  let panelLoading = false;
+  let selectedDetails = $state(null);
+  let searchResultsHovered = $state(false);
+  let searchSelectedIndex = $state(-1);
+  let panelLoading = $state(false);
   let activatingLeaflet = false;
-  let autoLeafletHandledKey = null;
+  let autoLeafletHandledKey = $state(null);
 
   // --- Leaflet Edit Mode state ---
-  let leafletEditMode = false;
-  let editorPendingChanges = new Map();
-  let editorRightPanel = 'editor';
-  let editorChangeCount = 0;
-  let editorDbChangeIdMap = new Map();
-  let allMobs = [];
-  let seededChangeId = null;
-  let planetPendingOverride = null;
-  let manualEditFocus = null;
-  let manualEditFocusKey = null;
+  let leafletEditMode = $state(false);
+  let editorPendingChanges = $state(new Map());
+  let editorRightPanel = $state('editor');
+  let editorChangeCount = $state(0);
+  let editorDbChangeIdMap = $state(new Map());
+  let allMobs = $state([]);
+  let seededChangeId = $state(null);
+  let planetPendingOverride = $state(null);
+  let manualEditFocus = $state(null);
+  let manualEditFocusKey = $state(null);
 
   async function handleChangesSubmitted() {
     editorPendingChanges = new Map();
@@ -136,34 +139,6 @@
   const DEFAULT_VISIBLE_LOCATION_TYPES = new Set(['Teleporter']);
   const DEFAULT_VISIBLE_AREA_TYPES = new Set(['PvpArea', 'PvpLootArea', 'ZoneArea']);
 
-  $: user = data.session?.user;
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
-  $: isEditAllowed = canEdit && !isMobile;
-  $: routeMode = ($page.url.searchParams.get('mode') || '').toLowerCase();
-  $: routeChangeId = $page.url.searchParams.get('changeId');
-  $: shouldAutoOpenLeaflet = !!currentPlanet && isEditAllowed && (routeMode === 'edit' || routeMode === 'create');
-  $: autoLeafletKey = `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}`;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: pendingChange = data.pendingChange;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: hasPendingChanges = userPendingCreates.length + userPendingUpdates.length > 0;
-  $: locationEntityId = selectedLocation?.Id ?? selectedLocation?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, locationEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: locations = data?.additional?.locations || [];
-  // Pre-compute difficulty for MobArea locations
-  $: if (locations.length) {
-    for (const loc of locations) {
-      if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
-        loc._difficulty = getMobAreaDifficulty(loc.Maturities);
-      }
-    }
-  }
-  $: error = data.error;
-  $: currentPlanet = data?.additional?.planet;
-  $: isCreateMode = data.isCreateMode || false;
-  $: effectiveCreateMode = isCreateMode && isEditAllowed;
 
 
   function convertChangeToModified(changeData, tempId) {
@@ -273,158 +248,28 @@
     }
   }
 
-  $: if (locations) {
-    const slug = $page.params.slug;
-    if (!slug) {
-      currentSlug = null;
-      selectedLocation = null;
-      if (isMobile) {
-        panelExpanded = false;
-      }
-    } else if (slug !== currentSlug && !isCreateMode) {
-      currentSlug = slug;
-      // Only update selectedLocation if it doesn't already match the slug.
-      // This prevents a race condition where the URL updates before new locations
-      // data arrives, which would clear the selection set by selectLocation().
-      if (!selectedLocation || selectedLocation.Id != slug) {
-        const found = findLocationBySlug(slug, locations) || data.object;
-        selectedLocation = found;
-      }
-    }
-  }
 
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  $: if (selectedLocation && isApartmentType(selectedLocation?.Properties?.Type)) {
-    const viewId = selectedLocation.Id;
-    selectedDetails = apartmentDetails[viewId] || null;
-    if (!apartmentDetailsLoaded.has(viewId) && !selectedDetails) {
-      fetchApartmentDetails(selectedLocation);
-    }
-  } else {
-    selectedDetails = null;
-  }
 
-  $: activeLocation = ($viewingPendingChange && $existingPendingChange?.data)
-    ? $existingPendingChange.data
-    : (selectedDetails || selectedLocation);
 
-  $: selectedEntityType = getEntityTypeForLocation(selectedLocation);
 
-  $: activeEntityType = selectedEntityType;
-  $: isAreaEntity = !!activeLocation?.Properties?.Shape || isAreaType(activeLocation?.Properties?.Type);
-  $: isApartmentEntity = isApartmentType(activeLocation?.Properties?.Type) || activeEntityType === 'Apartment';
-  $: hasLocationContent = !isMobile && !!activeLocation?.Properties?.Coordinates;
 
-  $: if (mapRef && selectedLocation?.Id && selectedLocation.Id !== lastFocusedId) {
-    lastFocusedId = selectedLocation.Id;
-    mapRef.focusOnLocation(selectedLocation);
-  }
 
-  $: canEditExistingChange = data.existingChange?.id && (
-    data.existingChange.author_id === user?.id ||
-    user?.grants?.includes('wiki.approve')
-  );
 
-  $: leafletFocusLocation = (() => {
-    if (manualEditFocus) return manualEditFocus;
-    if (!shouldAutoOpenLeaflet) return null;
-    if (routeMode === 'create' && data.existingChange?.data) {
-      const focus = buildLeafletFocusLocation(data.existingChange.data);
-      if (focus && data.existingChange.id) {
-        // Author/admin: select the seeded editable pending add
-        // Normal reviewer: select the read-only DB change overlay
-        focus.Id = canEditExistingChange ? -data.existingChange.id : `db-${data.existingChange.id}`;
-        focus._dbChange = canEditExistingChange ? null : data.existingChange;
-      }
-      return focus;
-    }
-    if (routeMode === 'edit' && selectedLocation) {
-      return selectedLocation;
-    }
-    if (selectedLocation) return selectedLocation;
-    return null;
-  })();
 
-  $: leafletFocusKey = manualEditFocusKey
-    || (shouldAutoOpenLeaflet ? `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}` : null);
 
-  // Seed editorPendingChanges for author/admin viewing an existing Create change
-  $: if (leafletEditMode && data.existingChange?.id && data.existingChange.type === 'Create'
-      && canEditExistingChange && seededChangeId !== data.existingChange.id) {
-    seededChangeId = data.existingChange.id;
-    const tempId = -data.existingChange.id;
-    const modified = convertChangeToModified(data.existingChange.data, tempId);
-    if (modified) {
-      editorPendingChanges.set(tempId, { action: 'add', original: null, modified });
-      editorPendingChanges = editorPendingChanges;
-    }
-  }
 
-  $: if (shouldAutoOpenLeaflet && autoLeafletHandledKey !== autoLeafletKey && !leafletEditMode) {
-    autoLeafletHandledKey = autoLeafletKey;
-    activateEditMode();
-  }
 
-  $: if (currentPlanet) {
-    const group = getPlanetGroupByType($page.params.planet) || getPlanetGroupByType(normalizePlanetSlug(currentPlanet.Name));
-    const planetSlug = $page.params.planet;
-    if (group && (group.groupName !== lastPlanetGroup || planetSlug !== lastPlanetSlug)) {
-      selectedMainPlanet = group.groupName;
-      subAreas = group.list;
-      const match = group.list.find((entry) => entry._type === planetSlug);
-      selectedSubArea = match ? match._type : group.list[0]?._type;
-      lastPlanetGroup = group.groupName;
-      lastPlanetSlug = planetSlug;
-    }
-  }
 
-  $: if (!currentPlanet && !selectedMainPlanet && mainPlanets.length > 0) {
-    selectedMainPlanet = mainPlanets[0];
-    subAreas = planetGroups[selectedMainPlanet] || [];
-    selectedSubArea = subAreas[0]?._type || '';
-  }
 
   function getDisplayName(loc) {
     if (loc.Properties?.AreaType === 'MobArea') return getMobAreaShortName(loc.Name);
     return loc.Name;
   }
 
-  $: searchResults = (() => {
-    const query = searchQuery.trim();
-    if (!query) return [];
-    return locations
-      .map((item) => ({
-        item,
-        score: Math.max(
-          fuzzyScore(item.Name, query),
-          item.Properties?.AreaType === 'MobArea' ? fuzzyScore(getMobAreaShortName(item.Name), query) : 0,
-          fuzzyScore(item.Properties?.Type, query) * 0.4
-        )
-      }))
-      .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 20)
-      .map((entry) => entry.item);
-  })();
 
-  $: if (!searchQuery.trim()) {
-    searchOpen = false;
-  }
 
-  // Reset keyboard selection when results change
-  $: searchResults, searchSelectedIndex = -1;
 
-  // Clear hover state when search closes
-  $: if (!searchOpen && searchResultsHovered) {
-    searchResultsHovered = false;
-    hoveredLocation = null;
-  }
 
   function handleMainPlanetChange() {
     const group = planetGroups[selectedMainPlanet] || [];
@@ -512,7 +357,6 @@
       .slice(0, 3);
   }
 
-  $: closestTeleporters = getClosestTeleporters(activeLocation);
 
   function isDefaultVisibleType(loc) {
     const type = loc?.Properties?.Type;
@@ -525,13 +369,6 @@
     return DEFAULT_VISIBLE_LOCATION_TYPES.has(type);
   }
 
-  $: filteredLocations = (() => {
-    const base = (locations || []).filter((loc) => isDefaultVisibleType(loc));
-    if (selectedLocation && !base.some((loc) => loc.Id === selectedLocation.Id)) {
-      return [...base, selectedLocation];
-    }
-    return base;
-  })();
 
   function formatCoord(value) {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
@@ -667,13 +504,7 @@
     }, 220);
   }
 
-  $: if (selectedLocation) {
-    panelClosing = false;
-  }
 
-  $: if (isMobile && (selectedLocation || effectiveCreateMode)) {
-    panelClosing = false;
-  }
 
   onMount(() => {
     if (typeof window === 'undefined') return;
@@ -689,6 +520,206 @@
     return () => media.removeEventListener?.('change', update);
   });
 
+  let user = $derived(data.session?.user);
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
+  let isEditAllowed = $derived(canEdit && !isMobile);
+  let routeMode = $derived(($page.url.searchParams.get('mode') || '').toLowerCase());
+  let routeChangeId = $derived($page.url.searchParams.get('changeId'));
+  let currentPlanet = $derived(data?.additional?.planet);
+  let shouldAutoOpenLeaflet = $derived(!!currentPlanet && isEditAllowed && (routeMode === 'edit' || routeMode === 'create'));
+  let autoLeafletKey = $derived(`${$page.url.pathname}|${routeMode}|${routeChangeId || ''}`);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let pendingChange = $derived(data.pendingChange);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let hasPendingChanges = $derived(userPendingCreates.length + userPendingUpdates.length > 0);
+  let locations = $derived(data?.additional?.locations || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  run(() => {
+    if (locations) {
+      const slug = $page.params.slug;
+      if (!slug) {
+        currentSlug = null;
+        selectedLocation = null;
+        if (isMobile) {
+          panelExpanded = false;
+        }
+      } else if (slug !== currentSlug && !isCreateMode) {
+        currentSlug = slug;
+        // Only update selectedLocation if it doesn't already match the slug.
+        // This prevents a race condition where the URL updates before new locations
+        // data arrives, which would clear the selection set by selectLocation().
+        if (!selectedLocation || selectedLocation.Id != slug) {
+          const found = findLocationBySlug(slug, locations) || data.object;
+          selectedLocation = found;
+        }
+      }
+    }
+  });
+  let locationEntityId = $derived(selectedLocation?.Id ?? selectedLocation?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, locationEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  // Pre-compute difficulty for MobArea locations
+  run(() => {
+    if (locations.length) {
+      for (const loc of locations) {
+        if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
+          loc._difficulty = getMobAreaDifficulty(loc.Maturities);
+        }
+      }
+    }
+  });
+  let error = $derived(data.error);
+  let effectiveCreateMode = $derived(isCreateMode && isEditAllowed);
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  run(() => {
+    if (selectedLocation && isApartmentType(selectedLocation?.Properties?.Type)) {
+      const viewId = selectedLocation.Id;
+      selectedDetails = apartmentDetails[viewId] || null;
+      if (!apartmentDetailsLoaded.has(viewId) && !selectedDetails) {
+        fetchApartmentDetails(selectedLocation);
+      }
+    } else {
+      selectedDetails = null;
+    }
+  });
+  let activeLocation = $derived(($viewingPendingChange && $existingPendingChange?.data)
+    ? $existingPendingChange.data
+    : (selectedDetails || selectedLocation));
+  let selectedEntityType = $derived(getEntityTypeForLocation(selectedLocation));
+  let activeEntityType = $derived(selectedEntityType);
+  let isAreaEntity = $derived(!!activeLocation?.Properties?.Shape || isAreaType(activeLocation?.Properties?.Type));
+  let isApartmentEntity = $derived(isApartmentType(activeLocation?.Properties?.Type) || activeEntityType === 'Apartment');
+  let hasLocationContent = $derived(!isMobile && !!activeLocation?.Properties?.Coordinates);
+  run(() => {
+    if (mapRef && selectedLocation?.Id && selectedLocation.Id !== lastFocusedId) {
+      lastFocusedId = selectedLocation.Id;
+      mapRef.focusOnLocation(selectedLocation);
+    }
+  });
+  let canEditExistingChange = $derived(data.existingChange?.id && (
+    data.existingChange.author_id === user?.id ||
+    user?.grants?.includes('wiki.approve')
+  ));
+  let leafletFocusLocation = $derived((() => {
+    if (manualEditFocus) return manualEditFocus;
+    if (!shouldAutoOpenLeaflet) return null;
+    if (routeMode === 'create' && data.existingChange?.data) {
+      const focus = buildLeafletFocusLocation(data.existingChange.data);
+      if (focus && data.existingChange.id) {
+        // Author/admin: select the seeded editable pending add
+        // Normal reviewer: select the read-only DB change overlay
+        focus.Id = canEditExistingChange ? -data.existingChange.id : `db-${data.existingChange.id}`;
+        focus._dbChange = canEditExistingChange ? null : data.existingChange;
+      }
+      return focus;
+    }
+    if (routeMode === 'edit' && selectedLocation) {
+      return selectedLocation;
+    }
+    if (selectedLocation) return selectedLocation;
+    return null;
+  })());
+  let leafletFocusKey = $derived(manualEditFocusKey
+    || (shouldAutoOpenLeaflet ? `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}` : null));
+  // Seed editorPendingChanges for author/admin viewing an existing Create change
+  run(() => {
+    if (leafletEditMode && data.existingChange?.id && data.existingChange.type === 'Create'
+        && canEditExistingChange && seededChangeId !== data.existingChange.id) {
+      seededChangeId = data.existingChange.id;
+      const tempId = -data.existingChange.id;
+      const modified = convertChangeToModified(data.existingChange.data, tempId);
+      if (modified) {
+        editorPendingChanges.set(tempId, { action: 'add', original: null, modified });
+        editorPendingChanges = editorPendingChanges;
+      }
+    }
+  });
+  run(() => {
+    if (shouldAutoOpenLeaflet && autoLeafletHandledKey !== autoLeafletKey && !leafletEditMode) {
+      autoLeafletHandledKey = autoLeafletKey;
+      activateEditMode();
+    }
+  });
+  run(() => {
+    if (currentPlanet) {
+      const group = getPlanetGroupByType($page.params.planet) || getPlanetGroupByType(normalizePlanetSlug(currentPlanet.Name));
+      const planetSlug = $page.params.planet;
+      if (group && (group.groupName !== lastPlanetGroup || planetSlug !== lastPlanetSlug)) {
+        selectedMainPlanet = group.groupName;
+        subAreas = group.list;
+        const match = group.list.find((entry) => entry._type === planetSlug);
+        selectedSubArea = match ? match._type : group.list[0]?._type;
+        lastPlanetGroup = group.groupName;
+        lastPlanetSlug = planetSlug;
+      }
+    }
+  });
+  run(() => {
+    if (!currentPlanet && !selectedMainPlanet && mainPlanets.length > 0) {
+      selectedMainPlanet = mainPlanets[0];
+      subAreas = planetGroups[selectedMainPlanet] || [];
+      selectedSubArea = subAreas[0]?._type || '';
+    }
+  });
+  let searchResults = $derived((() => {
+    const query = searchQuery.trim();
+    if (!query) return [];
+    return locations
+      .map((item) => ({
+        item,
+        score: Math.max(
+          fuzzyScore(item.Name, query),
+          item.Properties?.AreaType === 'MobArea' ? fuzzyScore(getMobAreaShortName(item.Name), query) : 0,
+          fuzzyScore(item.Properties?.Type, query) * 0.4
+        )
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20)
+      .map((entry) => entry.item);
+  })());
+  run(() => {
+    if (!searchQuery.trim()) {
+      searchOpen = false;
+    }
+  });
+  // Reset keyboard selection when results change
+  run(() => {
+    searchResults, searchSelectedIndex = -1;
+  });
+  // Clear hover state when search closes
+  run(() => {
+    if (!searchOpen && searchResultsHovered) {
+      searchResultsHovered = false;
+      hoveredLocation = null;
+    }
+  });
+  let closestTeleporters = $derived(getClosestTeleporters(activeLocation));
+  let filteredLocations = $derived((() => {
+    const base = (locations || []).filter((loc) => isDefaultVisibleType(loc));
+    if (selectedLocation && !base.some((loc) => loc.Id === selectedLocation.Id)) {
+      return [...base, selectedLocation];
+    }
+    return base;
+  })());
+  run(() => {
+    if (selectedLocation) {
+      panelClosing = false;
+    }
+  });
+  run(() => {
+    if (isMobile && (selectedLocation || effectiveCreateMode)) {
+      panelClosing = false;
+    }
+  });
 </script>
 
 <svelte:head>
@@ -730,7 +761,7 @@
     <div class="control-row">
       <div class="control-group">
         <label>Planet</label>
-        <select bind:value={selectedMainPlanet} on:change={handleMainPlanetChange}>
+        <select bind:value={selectedMainPlanet} onchange={handleMainPlanetChange}>
           {#each mainPlanets as planetName}
             <option value={planetName}>{planetGroups[planetName]?.[0]?.Name || planetName}</option>
           {/each}
@@ -738,7 +769,7 @@
       </div>
       <div class="control-group">
         <label>Area</label>
-        <select bind:value={selectedSubArea} on:change={handleSubAreaChange}>
+        <select bind:value={selectedSubArea} onchange={handleSubAreaChange}>
           {#each subAreas as area}
             <option value={area._type}>{area.Name}</option>
           {/each}
@@ -752,17 +783,17 @@
         type="text"
         placeholder="Search locations..."
         bind:value={searchQuery}
-        on:focus={() => searchOpen = true}
-        on:blur={handleSearchBlur}
-        on:keydown={handleSearchKeydown}
+        onfocus={() => searchOpen = true}
+        onblur={handleSearchBlur}
+        onkeydown={handleSearchKeydown}
       />
 
       {#if isEditAllowed}
-        <button class="create-btn" on:click={handleCreate} title={canCreateNew ? 'Create new location/area' : 'Create limit reached'} disabled={!canCreateNew}>
+        <button class="create-btn" onclick={handleCreate} title={canCreateNew ? 'Create new location/area' : 'Create limit reached'} disabled={!canCreateNew}>
           +
         </button>
         {#if hasPendingChanges}
-          <button class="pending-btn" on:click={() => pendingDialogOpen = true} title="Your pending changes">
+          <button class="pending-btn" onclick={() => pendingDialogOpen = true} title="Your pending changes">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
               <path d="M12 6v6l4 2"></path>
@@ -775,16 +806,16 @@
     {#if searchOpen && searchResults.length > 0}
       <div
         class="search-results"
-        on:mouseenter={() => searchResultsHovered = true}
-        on:mouseleave={() => { searchResultsHovered = false; hoveredLocation = null; }}
+        onmouseenter={() => searchResultsHovered = true}
+        onmouseleave={() => { searchResultsHovered = false; hoveredLocation = null; }}
       >
         {#each searchResults as result, index}
           <button
             class="search-result"
             class:active={searchSelectedIndex === index}
-            on:click={() => { searchSelectedIndex = index; if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
-            on:mouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; mapRef?.panTo(result); }}
-            on:mouseleave={() => {}}
+            onclick={() => { searchSelectedIndex = index; if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
+            onmouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; mapRef?.panTo(result); }}
+            onmouseleave={() => {}}
           >
             <span class="result-index">{index + 1}</span>
             <span class="result-name" style={result._difficulty?.color ? `color: ${result._difficulty.color}` : ''}>{getDisplayName(result)}</span>
@@ -801,9 +832,9 @@
       class:mobile={isMobile}
       class:expanded={panelExpanded}
       class:closing={panelClosing}
-      on:touchstart={handlePanelTouchStart}
-      on:touchmove={handlePanelTouchMove}
-      on:touchend={handlePanelTouchEnd}
+      ontouchstart={handlePanelTouchStart}
+      ontouchmove={handlePanelTouchMove}
+      ontouchend={handlePanelTouchEnd}
     >
       {#if panelLoading}
         <div class="panel-loading-overlay">
@@ -819,7 +850,7 @@
       {/if}
       <div class="info-header">
         {#if isMobile}
-          <button class="panel-grip" on:click={handlePanelToggle} aria-label="Toggle details">
+          <button class="panel-grip" onclick={handlePanelToggle} aria-label="Toggle details">
             <span class="grip-bar"></span>
           </button>
         {/if}
@@ -830,7 +861,7 @@
                 {getDisplayName(activeLocation)}
               </div>
               {#if isEditAllowed && activeEntityType}
-                <button class="icon-btn" on:click={handleEdit} title="Edit location">
+                <button class="icon-btn" onclick={handleEdit} title="Edit location">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
                     <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -900,9 +931,9 @@
                   <div class="teleporter-list">
                     {#each closestTeleporters as teleporter}
                       <button class="teleporter-item"
-                        on:click={() => selectLocation(teleporter, { focus: true })}
-                        on:mouseenter={() => { hoveredLocation = teleporter; mapRef?.panTo(teleporter); }}
-                        on:mouseleave={() => { hoveredLocation = null; if (selectedLocation) mapRef?.panTo(selectedLocation); }}
+                        onclick={() => selectLocation(teleporter, { focus: true })}
+                        onmouseenter={() => { hoveredLocation = teleporter; mapRef?.panTo(teleporter); }}
+                        onmouseleave={() => { hoveredLocation = null; if (selectedLocation) mapRef?.panTo(selectedLocation); }}
                       >
                         <span class="teleporter-name">{teleporter.Name}</span>
                         <span class="teleporter-distance">{teleporter._distance?.toFixed(0)} m</span>
@@ -1007,20 +1038,20 @@
   {#if pendingDialogOpen}
     <div
       class="dialog-backdrop"
-      on:click={() => pendingDialogOpen = false}
-      on:keydown={(e) => e.key === 'Escape' && (pendingDialogOpen = false)}
+      onclick={() => pendingDialogOpen = false}
+      onkeydown={(e) => e.key === 'Escape' && (pendingDialogOpen = false)}
     >
-      <div class="dialog dialog-compact" on:click|stopPropagation>
+      <div class="dialog dialog-compact" onclick={stopPropagation(bubble('click'))}>
         <div class="dialog-header">
           <h3>Your Drafts & Reviews</h3>
-          <button class="close-btn" on:click={() => pendingDialogOpen = false} aria-label="Close dialog">
+          <button class="close-btn" onclick={() => pendingDialogOpen = false} aria-label="Close dialog">
             ×
           </button>
         </div>
         <div class="dialog-body">
           <div class="pending-list">
             {#each [...userPendingCreates, ...userPendingUpdates] as change}
-              <button class="pending-item" on:click={() => handlePendingSelect(change)}>
+              <button class="pending-item" onclick={() => handlePendingSelect(change)}>
                 <div class="pending-name">{change.data?.Name || 'Unnamed'}</div>
                 <div class="pending-meta">{change.entity} - {change.state}</div>
               </button>
@@ -1033,7 +1064,7 @@
 
   <!-- Edit Mode Button (bottom-right, desktop only) -->
   {#if canEdit && !isMobile && currentPlanet && !leafletEditMode}
-    <button class="edit-mode-btn" on:click={activateEditMode} title="Open Leaflet map editor">
+    <button class="edit-mode-btn" onclick={activateEditMode} title="Open Leaflet map editor">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
         <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -1052,20 +1083,20 @@
           <button
             class="editor-toolbar-btn"
             class:active={editorRightPanel === 'changes'}
-            on:click={() => editorRightPanel = editorRightPanel === 'changes' ? 'editor' : 'changes'}
+            onclick={() => editorRightPanel = editorRightPanel === 'changes' ? 'editor' : 'changes'}
           >
             Changes
             {#if editorChangeCount > 0}
               <span class="editor-badge">{editorChangeCount}</span>
             {/if}
           </button>
-          <button class="editor-toolbar-btn editor-exit-btn" on:click={deactivateEditMode}>
+          <button class="editor-toolbar-btn editor-exit-btn" onclick={deactivateEditMode}>
             Exit Edit Mode
           </button>
         </div>
       </div>
 
-      <svelte:component this={MapEditorWorkspace}
+      <MapEditorWorkspace
         planet={currentPlanet}
         {locations}
         {allMobs}
@@ -1081,30 +1112,32 @@
         bind:changeCount={editorChangeCount}
         bind:dbChangeIdMap={editorDbChangeIdMap}
       >
-        <svelte:fragment slot="output">
-          <svelte:component this={ChangesSummary}
-            pendingChanges={editorPendingChanges}
-            planet={currentPlanet}
-            isAdmin={user?.grants?.includes('admin.panel') || user?.administrator || false}
-            dbChangeIdMap={editorDbChangeIdMap}
-            on:clear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
-            on:submitted={handleChangesSubmitted}
-            on:removed={() => { editorPendingChanges = editorPendingChanges; }}
-            on:changeCreated={(e) => {
-              editorDbChangeIdMap.set(e.detail.key, e.detail.changeId);
-              editorDbChangeIdMap = editorDbChangeIdMap;
-            }}
-            on:dbChangeDeleted={(e) => {
-              if (planetPendingOverride) {
-                planetPendingOverride = planetPendingOverride.filter(c => c.id !== e.detail.dbId);
-              } else if (data.planetPendingChanges) {
-                data.planetPendingChanges = data.planetPendingChanges.filter(c => c.id !== e.detail.dbId);
-              }
-              editorPendingChanges = editorPendingChanges;
-            }}
-          />
-        </svelte:fragment>
-      </svelte:component>
+        {#snippet output()}
+              
+            <ChangesSummary
+              pendingChanges={editorPendingChanges}
+              planet={currentPlanet}
+              isAdmin={user?.grants?.includes('admin.panel') || user?.administrator || false}
+              dbChangeIdMap={editorDbChangeIdMap}
+              on:clear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
+              on:submitted={handleChangesSubmitted}
+              on:removed={() => { editorPendingChanges = editorPendingChanges; }}
+              on:changeCreated={(e) => {
+                editorDbChangeIdMap.set(e.detail.key, e.detail.changeId);
+                editorDbChangeIdMap = editorDbChangeIdMap;
+              }}
+              on:dbChangeDeleted={(e) => {
+                if (planetPendingOverride) {
+                  planetPendingOverride = planetPendingOverride.filter(c => c.id !== e.detail.dbId);
+                } else if (data.planetPendingChanges) {
+                  data.planetPendingChanges = data.planetPendingChanges.filter(c => c.id !== e.detail.dbId);
+                }
+                editorPendingChanges = editorPendingChanges;
+              }}
+            />
+          
+              {/snippet}
+      </MapEditorWorkspace>
     </div>
   {/if}
 </div>

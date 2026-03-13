@@ -8,16 +8,16 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  export let unlocks = [];
+  let { unlocks = [] } = $props();
 
-  $: sortedUnlocks = unlocks ? [...unlocks].sort((a, b) => a.Level - b.Level) : [];
+  let sortedUnlocks = $derived(unlocks ? [...unlocks].sort((a, b) => a.Level - b.Level) : []);
 
   // Transform data for FancyTable
-  $: tableData = sortedUnlocks.map(unlock => ({
+  let tableData = $derived(sortedUnlocks.map(unlock => ({
     professionName: unlock.Profession.Name,
     professionLink: `/information/professions/${encodeURIComponentSafe(unlock.Profession.Name)}`,
     level: unlock.Level
-  }));
+  })));
 
   const columns = [
     {

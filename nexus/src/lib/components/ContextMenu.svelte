@@ -2,13 +2,25 @@
   //@ts-nocheck
   import { onMount } from 'svelte';
 
-  export let menu = [];
 
-  export let element;
 
-  export let payload = null;
-  export let visible = false;
-  export let contextMenuPos = { x: 0, y: 0 };
+  /**
+   * @typedef {Object} Props
+   * @property {any} [menu]
+   * @property {any} element
+   * @property {any} [payload]
+   * @property {boolean} [visible]
+   * @property {any} [contextMenuPos]
+   */
+
+  /** @type {Props} */
+  let {
+    menu = [],
+    element = $bindable(),
+    payload = null,
+    visible = $bindable(false),
+    contextMenuPos = { x: 0, y: 0 }
+  } = $props();
 
   onMount(() => {
     if (typeof document === 'undefined') return;
@@ -30,6 +42,14 @@
 
     // This is a click outside the context menu, hide it
     visible = false;
+  }
+
+  export {
+  	menu,
+  	element,
+  	payload,
+  	visible,
+  	contextMenuPos,
   }
 </script>
 
@@ -69,10 +89,9 @@
   }
 </style>
 
-<svelte:options accessors={true} />
-<svelte:body on:mousedown={handleMouseDownOutside} />
+<svelte:body onmousedown={handleMouseDownOutside} />
 <div bind:this={element} class="context-menu" style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;" class:show={visible}>
   {#each menu as item}
-    <button on:click={() => { visible = false; item.action(payload, contextMenuPos); }}>{item.label}</button>
+    <button onclick={() => { visible = false; item.action(payload, contextMenuPos); }}>{item.label}</button>
   {/each}
 </div>

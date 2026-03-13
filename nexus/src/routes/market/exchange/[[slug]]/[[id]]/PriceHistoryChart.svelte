@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { onMount, onDestroy } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend } from 'chart.js';
@@ -7,22 +9,34 @@
 
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend);
 
-  /** @type {number|null} */
-  export let itemId = null;
+  
 
-  /** @type {string} Price period (24h, 7d, 30d, etc.) */
-  export let period = '7d';
+  
 
-  /** @type {boolean} Whether this item uses absolute markup (+PED) */
-  export let isAbsoluteMarkup = false;
+  
 
-  /** @type {Array} Pre-fetched history data (from parent) */
-  export let data = [];
+  
 
-  /** @type {boolean} */
-  export let loading = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number|null} [itemId]
+   * @property {string} [period]
+   * @property {boolean} [isAbsoluteMarkup]
+   * @property {Array} [data]
+   * @property {boolean} [loading]
+   */
 
-  let canvasEl;
+  /** @type {Props} */
+  let {
+    itemId = null,
+    period = '7d',
+    isAbsoluteMarkup = false,
+    data = [],
+    loading = false
+  } = $props();
+
+  let canvasEl = $state();
   let chart = null;
 
   const PERIOD_TIME_UNITS = {
@@ -165,9 +179,11 @@
     });
   }
 
-  $: if (canvasEl && data) {
-    buildChart(data);
-  }
+  run(() => {
+    if (canvasEl && data) {
+      buildChart(data);
+    }
+  });
 
   onDestroy(() => {
     if (chart) { chart.destroy(); chart = null; }

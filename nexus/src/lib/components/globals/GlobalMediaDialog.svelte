@@ -9,32 +9,38 @@
   import { addToast } from '$lib/stores/toasts.js';
   import GzButton from '$lib/components/globals/GzButton.svelte';
 
-  /** @type {boolean} */
-  export let show = false;
+  
 
-  /** @type {object|null} Global entry with media_image/media_video */
-  export let global = null;
+  
 
-  /** @type {object|null} User session */
-  export let user = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {object|null} [global]
+   * @property {object|null} [user]
+   */
+
+  /** @type {Props} */
+  let { show = false, global = null, user = null } = $props();
 
   const dispatch = createEventDispatcher();
 
-  $: videoInfo = global?.media_video
+  let videoInfo = $derived(global?.media_video
     ? parseVideoUrl(global.media_video, typeof window !== 'undefined' ? window.location.hostname : 'entropianexus.com')
-    : null;
+    : null);
 
-  $: userId = user ? String(user.Id || user.id) : null;
-  $: isUploader = userId && global?.media_uploaded_by && String(global.media_uploaded_by) === userId;
-  $: isAdmin = user?.administrator || user?.grants?.includes('admin.panel');
-  $: canDelete = isUploader || isAdmin;
-  $: canReport = user && !isUploader && (global?.media_image || global?.media_video);
+  let userId = $derived(user ? String(user.Id || user.id) : null);
+  let isUploader = $derived(userId && global?.media_uploaded_by && String(global.media_uploaded_by) === userId);
+  let isAdmin = $derived(user?.administrator || user?.grants?.includes('admin.panel'));
+  let canDelete = $derived(isUploader || isAdmin);
+  let canReport = $derived(user && !isUploader && (global?.media_image || global?.media_video));
 
-  let deleting = false;
-  let showReportForm = false;
-  let reportReason = '';
-  let reporting = false;
-  let reported = false;
+  let deleting = $state(false);
+  let showReportForm = $state(false);
+  let reportReason = $state('');
+  let reporting = $state(false);
+  let reported = $state(false);
 
   function close() {
     showReportForm = false;
@@ -105,10 +111,10 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if show && global}
-  <div class="modal-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="modal-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="modal" class:modal-wide={global.media_image}>
       <div class="modal-header">
         <div class="header-info">
@@ -127,7 +133,7 @@
             {/if}
           </span>
         </div>
-        <button type="button" class="modal-close" on:click={close}>&times;</button>
+        <button type="button" class="modal-close" onclick={close}>&times;</button>
       </div>
 
       <div class="modal-body">
@@ -157,7 +163,7 @@
           <GzButton globalId={global.id} count={global.gz_count || 0} {user} />
           {#if canReport && !reported}
             {#if !showReportForm}
-              <button type="button" class="report-btn" on:click={() => { showReportForm = true; }}>
+              <button type="button" class="report-btn" onclick={() => { showReportForm = true; }}>
                 Report
               </button>
             {:else}
@@ -167,12 +173,12 @@
                   bind:value={reportReason}
                   placeholder="Reason for report..."
                   maxlength="500"
-                  on:keydown={(e) => { if (e.key === 'Enter') submitReport(); }}
+                  onkeydown={(e) => { if (e.key === 'Enter') submitReport(); }}
                 />
-                <button type="button" class="report-submit" on:click={submitReport} disabled={!reportReason.trim() || reporting}>
+                <button type="button" class="report-submit" onclick={submitReport} disabled={!reportReason.trim() || reporting}>
                   Submit
                 </button>
-                <button type="button" class="report-cancel" on:click={() => { showReportForm = false; reportReason = ''; }}>
+                <button type="button" class="report-cancel" onclick={() => { showReportForm = false; reportReason = ''; }}>
                   Cancel
                 </button>
               </div>
@@ -183,11 +189,11 @@
         </div>
         <div class="footer-right">
           {#if canDelete}
-            <button type="button" class="delete-btn" on:click={deleteMedia} disabled={deleting}>
+            <button type="button" class="delete-btn" onclick={deleteMedia} disabled={deleting}>
               {deleting ? 'Deleting...' : 'Delete'}
             </button>
           {/if}
-          <button type="button" class="close-btn" on:click={close}>Close</button>
+          <button type="button" class="close-btn" onclick={close}>Close</button>
         </div>
       </div>
     </div>

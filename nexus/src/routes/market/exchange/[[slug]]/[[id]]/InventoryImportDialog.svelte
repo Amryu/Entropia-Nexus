@@ -1,4 +1,7 @@
 <script>
+  import { createBubbler, preventDefault } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -8,39 +11,45 @@
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { formatPedRaw } from '../../orderUtils';
 
-  export let show = false;
-  /** Flattened item list from ExchangeBrowser for name→id resolution: [{i, n}, ...] */
-  export let allItems = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {any} [allItems] - Flattened item list from ExchangeBrowser for name→id resolution: [{i, n}, ...]
+   */
+
+  /** @type {Props} */
+  let { show = false, allItems = [] } = $props();
 
   const dispatch = createEventDispatcher();
   const MAX_ITEMS = 30000;
 
-  let step = 'paste'; // 'paste' | 'preview' | 'done'
-  let rawInput = '';
-  let parseError = null;
-  let parsedItems = [];
-  let unresolvedItems = [];
-  let rawItemCount = 0;
-  let importing = false;
-  let importResult = null;
-  let importError = null;
-  let showHelp = false;
-  let showUnresolved = false;
-  let inputMode = 'text'; // 'text' | 'file'
-  let fileInput;
+  let step = $state('paste'); // 'paste' | 'preview' | 'done'
+  let rawInput = $state('');
+  let parseError = $state(null);
+  let parsedItems = $state([]);
+  let unresolvedItems = $state([]);
+  let rawItemCount = $state(0);
+  let importing = $state(false);
+  let importResult = $state(null);
+  let importError = $state(null);
+  let showHelp = $state(false);
+  let showUnresolved = $state(false);
+  let inputMode = $state('text'); // 'text' | 'file'
+  let fileInput = $state();
 
   // Diff state (computed in preview)
-  let diffSummary = { added: 0, changed: 0, removed: 0, unchanged: 0 };
+  let diffSummary = $state({ added: 0, changed: 0, removed: 0, unchanged: 0 });
 
   // Container ref mapping for cross-import name preservation
   // Maps raw containerRefId → { path, itemName }
   let containerRefMap = new Map();
 
   // Order coverage state (computed after import)
-  let discrepancies = [];
-  let checkingCoverage = false;
-  let adjustingAll = false;
-  let cancellingAll = false;
+  let discrepancies = $state([]);
+  let checkingCoverage = $state(false);
+  let adjustingAll = $state(false);
+  let cancellingAll = $state(false);
 
   // --- Name → ID resolution ---
 
@@ -887,8 +896,8 @@
   <div
     class="modal-overlay"
     role="presentation"
-    on:click={(e) => { if (e.target.classList.contains('modal-overlay')) handleClose(); }}
-    on:keydown={(e) => { if (e.key === 'Escape') handleClose(); }}
+    onclick={(e) => { if (e.target.classList.contains('modal-overlay')) handleClose(); }}
+    onkeydown={(e) => { if (e.key === 'Escape') handleClose(); }}
   >
     <div class="modal" class:modal-wide={step === 'done' && discrepancies.length > 0}>
       <div class="modal-header">
@@ -901,12 +910,12 @@
             Import Complete
           {/if}
         </h3>
-        <button class="close-btn" on:click={handleClose}>&times;</button>
+        <button class="close-btn" onclick={handleClose}>&times;</button>
       </div>
 
       {#if step === 'paste'}
         <!-- How to get items -->
-        <button class="help-toggle" on:click={() => showHelp = !showHelp}>
+        <button class="help-toggle" onclick={() => showHelp = !showHelp}>
           {showHelp ? '\u25BC' : '\u25B6'} How do I get my items?
         </button>
 
@@ -927,15 +936,15 @@
             class="file-drop-zone"
             use:clickable
             aria-label="Choose file to upload"
-            on:click={() => fileInput?.click()}
-            on:dragover|preventDefault
-            on:drop={handleDrop}
+            onclick={() => fileInput?.click()}
+            ondragover={preventDefault(bubble('dragover'))}
+            ondrop={handleDrop}
           >
             <input
               bind:this={fileInput}
               type="file"
               accept=".json,.tsv,.csv,.txt,application/json,text/tab-separated-values,text/csv,text/plain"
-              on:change={handleFileUpload}
+              onchange={handleFileUpload}
               style="display:none"
             />
             <div class="file-drop-label">
@@ -954,13 +963,13 @@
           <div class="error-msg">{parseError}</div>
         {/if}
         <div class="modal-actions">
-          <button class="btn-link" on:click={() => inputMode = inputMode === 'file' ? 'text' : 'file'}>
+          <button class="btn-link" onclick={() => inputMode = inputMode === 'file' ? 'text' : 'file'}>
             {inputMode === 'file' ? 'Paste text instead' : 'Upload file instead'}
           </button>
           <div class="actions-right">
-            <button class="btn-secondary" on:click={handleClose}>Cancel</button>
+            <button class="btn-secondary" onclick={handleClose}>Cancel</button>
             {#if inputMode === 'text'}
-              <button class="btn-primary" on:click={handleParse} disabled={!rawInput.trim()}>Parse</button>
+              <button class="btn-primary" onclick={handleParse} disabled={!rawInput.trim()}>Parse</button>
             {/if}
           </div>
         </div>
@@ -987,11 +996,11 @@
 
         {#if unresolvedItems.length > 0}
           <div class="unresolved-header">
-            <button class="help-toggle warn" on:click={() => showUnresolved = !showUnresolved}>
+            <button class="help-toggle warn" onclick={() => showUnresolved = !showUnresolved}>
               {showUnresolved ? '\u25BC' : '\u25B6'} {unresolvedItems.length} item{unresolvedItems.length !== 1 ? 's' : ''} not in our database
             </button>
             {#if showUnresolved}
-              <button class="copy-btn" on:click={copyUnresolved} title="Copy item names">Copy</button>
+              <button class="copy-btn" onclick={copyUnresolved} title="Copy item names">Copy</button>
             {/if}
           </div>
           {#if showUnresolved}
@@ -1018,8 +1027,8 @@
           <div class="error-msg">{importError}</div>
         {/if}
         <div class="modal-actions">
-          <button class="btn-secondary" on:click={handleBack}>Back</button>
-          <button class="btn-primary" on:click={handleImport} disabled={importing || parsedItems.length === 0}>
+          <button class="btn-secondary" onclick={handleBack}>Back</button>
+          <button class="btn-primary" onclick={handleImport} disabled={importing || parsedItems.length === 0}>
             {importing ? 'Importing...' : `Import ${parsedItems.length.toLocaleString()} item${parsedItems.length !== 1 ? 's' : ''}`}
           </button>
         </div>
@@ -1047,12 +1056,12 @@
             <div class="bulk-actions">
               <button
                 class="btn-adjust"
-                on:click={adjustAll}
+                onclick={adjustAll}
                 disabled={adjustingAll || cancellingAll}
               >Adjust All</button>
               <button
                 class="btn-cancel"
-                on:click={cancelAll}
+                onclick={cancelAll}
                 disabled={adjustingAll || cancellingAll}
               >Cancel All</button>
             </div>
@@ -1078,12 +1087,12 @@
                         {#if disc._processing}
                           <span class="processing">...</span>
                         {:else}
-                          <button class="disc-btn adjust" on:click={() => adjustOrder(disc)}
+                          <button class="disc-btn adjust" onclick={() => adjustOrder(disc)}
                             title={disc.invQty > 0 ? `Set to ${disc.invQty}` : 'Cancel (no inventory)'}>
                             {disc.invQty > 0 ? 'Adjust' : 'Cancel'}
                           </button>
                           {#if disc.invQty > 0}
-                            <button class="disc-btn cancel" on:click={() => cancelOrder(disc)}>Cancel</button>
+                            <button class="disc-btn cancel" onclick={() => cancelOrder(disc)}>Cancel</button>
                           {/if}
                         {/if}
                       </td>
@@ -1098,7 +1107,7 @@
         {/if}
 
         <div class="modal-actions">
-          <button class="btn-primary" on:click={handleClose} disabled={checkingCoverage}>Done</button>
+          <button class="btn-primary" onclick={handleClose} disabled={checkingCoverage}>Done</button>
         </div>
       {/if}
     </div>

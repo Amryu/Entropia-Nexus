@@ -3,9 +3,15 @@
   Displays mob damage type breakdown as bars.
 -->
 <script>
-  // @ts-nocheck
-  export let damageSpread = null;
-  export let label = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [damageSpread]
+   * @property {string} [label]
+   */
+
+  /** @type {Props} */
+  let { damageSpread = null, label = '' } = $props();
 
   const damageTypes = [
     { key: 'Impact', color: 'var(--damage-impact)' },
@@ -19,13 +25,13 @@
     { key: 'Electric', color: 'var(--damage-electric)' }
   ];
 
-  $: activeDamage = damageSpread
+  let activeDamage = $derived(damageSpread
     ? damageTypes.filter(d => damageSpread[d.key] && damageSpread[d.key] > 0)
-    : [];
+    : []);
 
-  $: maxValue = activeDamage.length > 0
+  let maxValue = $derived(activeDamage.length > 0
     ? Math.max(...activeDamage.map(d => damageSpread[d.key]))
-    : 100;
+    : 100);
 </script>
 
 {#if label}

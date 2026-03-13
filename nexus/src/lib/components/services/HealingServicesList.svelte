@@ -5,13 +5,27 @@
   import { encodeURIComponentSafe } from '$lib/util';
   import { getEstimatedHealingHPS, getMaxHealingDecayPerHour } from './serviceCalculations';
 
-  export let services = [];
-  export let medicalTools = [];
-  export let medicalChips = [];
-  export let clothingItems = [];
-  export let armorSets = [];
-  export let consumables = [];
-  export let loading = false;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [services]
+   * @property {any} [medicalTools]
+   * @property {any} [medicalChips]
+   * @property {any} [clothingItems]
+   * @property {any} [armorSets]
+   * @property {any} [consumables]
+   * @property {boolean} [loading]
+   */
+
+  /** @type {Props} */
+  let {
+    services = [],
+    medicalTools = [],
+    medicalChips = [],
+    clothingItems = [],
+    armorSets = [],
+    consumables = [],
+    loading = false
+  } = $props();
 
   function viewService(service) {
     goto(`/market/services/${service.id}`);
@@ -140,7 +154,7 @@
   }
 
   // Precompute values for sorting
-  $: tableData = services.map(service => ({
+  let tableData = $derived(services.map(service => ({
     ...service,
     _hps: getHealingPerSecond(service),
     _hpsDisplay: getHPSDisplay(service),
@@ -148,7 +162,7 @@
     _decayDisplay: getMaxDecayDisplay(service),
     _location: getLocationDisplay(service),
     _pricing: getPricingInfo(service)
-  }));
+  })));
 
   const columns = [
     {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from "svelte";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT, itemTypeBadge } from "../../orderUtils";
@@ -8,43 +10,33 @@
   import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  let turnstileToken = null;
-  let resetTurnstile = false;
-  export let show = false;
-  export let mode = 'create'; // 'create' | 'edit'
-  export let order = null;
+  let turnstileToken = $state(null);
+  let resetTurnstile = $state(false);
 
-  /** @type {string|undefined} Item gender: 'Both', 'Male', 'Female', 'Neutral', null (untradeable clothing), undefined (non-gendered type) */
-  export let itemGender = undefined;
+  
 
-  $: isGenderedItem = itemGender !== undefined;
-  $: showGenderSelect = isGenderedItem && itemGender !== 'Neutral' && itemGender !== null;
-  $: genderFixed = itemGender === 'Male' || itemGender === 'Female';
   // Dialog-local calculations
-  let unitPrice = 0;
-  let totalPrice = 0;
+  let unitPrice = $state(0);
+  let totalPrice = $state(0);
   let muLabel = '';
   let ttValueDisplay = '';
   let singlePieceMaxTT = null; // Original single-piece MaxTT for set toggle reference
   // Price suggestions
-  let suggestions = null; // { bestBuy, bestSell }
+  let suggestions = $state(null); // { bestBuy, bestSell }
   let suggestionsLoading = false;
-  let dailyAverage = null;
+  let dailyAverage = $state(null);
 
   // Partial trade state
-  let allowPartial = true;
+  let allowPartial = $state(true);
 
-  /** @type {number} How many orders already exist for this item+side */
-  export let existingOrderCount = 0;
+  
 
-  /** @type {number} Max orders allowed per item */
-  export let maxOrdersPerItem = 5;
+  
 
-  /** @type {boolean} Whether this is a non-fungible item (allows multiple orders) */
-  export let isNonFungible = false;
+  
 
   // Track orders created in this multi-order session
-  let sessionOrderCount = 0;
+  let sessionOrderCount = $state(0);
 
   async function loadSuggestions(itemId) {
     if (!itemId) return;
@@ -314,16 +306,7 @@
           : `Max TT: ${maxTT || 'N/A'}`;
   }
 
-  // Watch for changes to recalc
-  $: if (order) recalcPrices();
-  // When pet level changes, refresh disabled/color state (options re-compute from order state)
-  // Derived flags for template: show Quantity only for fungible items (no instance metadata)
-  $: showQuantity = order ? isItemStackable(order.Item) : false;
-  $: isArmorPlating = order?.Item?.Type === 'ArmorPlating';
 
-  export let  planets = [
-    'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
-  ];
   // QR range options for buy orders (matching the exchange filter pattern)
   const qrRangeOptions = [
     ...Array.from({ length: 10 }, (_, i) => ({
@@ -334,21 +317,33 @@
   ];
 
 
-  // Inventory-sourced warnings
-  $: inventoryWarning = order?._inventoryWarning || null;
-  $: inventoryQty = order?._inventoryQty ?? null;
-  $: totalOrdersIfSubmitted = existingOrderCount + sessionOrderCount + 1;
-  $: canCreateMore = isNonFungible && totalOrdersIfSubmitted < maxOrdersPerItem && mode === 'create';
-  $: orderLimitReached = totalOrdersIfSubmitted >= maxOrdersPerItem;
-  // For inventory sell: warn if total sell orders exceed inventory qty
-  $: totalSellQty = (() => {
-    if (inventoryQty == null || order?.Type !== 'Sell') return null;
-    return (existingOrderCount + sessionOrderCount + 1);
-  })();
-  $: qtyExceedsInventory = inventoryQty != null && totalSellQty != null && totalSellQty > inventoryQty;
 
-  /** @type {boolean} Prevent double-click submission */
-  export let submitting = false;
+  
+  interface Props {
+    show?: boolean;
+    mode?: string; // 'create' | 'edit'
+    order?: any;
+    itemGender?: string|undefined;
+    existingOrderCount?: number;
+    maxOrdersPerItem?: number;
+    isNonFungible?: boolean;
+    planets?: any;
+    submitting?: boolean;
+  }
+
+  let {
+    show = false,
+    mode = $bindable('create'),
+    order = $bindable(null),
+    itemGender = undefined,
+    existingOrderCount = 0,
+    maxOrdersPerItem = 5,
+    isNonFungible = false,
+    planets = [
+    'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
+  ],
+    submitting = false
+  }: Props = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -376,6 +371,29 @@
     sessionOrderCount++;
     resetTurnstile = true;
   }
+  let isGenderedItem = $derived(itemGender !== undefined);
+  let showGenderSelect = $derived(isGenderedItem && itemGender !== 'Neutral' && itemGender !== null);
+  let genderFixed = $derived(itemGender === 'Male' || itemGender === 'Female');
+  // Watch for changes to recalc
+  run(() => {
+    if (order) recalcPrices();
+  });
+  // When pet level changes, refresh disabled/color state (options re-compute from order state)
+  // Derived flags for template: show Quantity only for fungible items (no instance metadata)
+  let showQuantity = $derived(order ? isItemStackable(order.Item) : false);
+  let isArmorPlating = $derived(order?.Item?.Type === 'ArmorPlating');
+  // Inventory-sourced warnings
+  let inventoryWarning = $derived(order?._inventoryWarning || null);
+  let inventoryQty = $derived(order?._inventoryQty ?? null);
+  let totalOrdersIfSubmitted = $derived(existingOrderCount + sessionOrderCount + 1);
+  let canCreateMore = $derived(isNonFungible && totalOrdersIfSubmitted < maxOrdersPerItem && mode === 'create');
+  let orderLimitReached = $derived(totalOrdersIfSubmitted >= maxOrdersPerItem);
+  // For inventory sell: warn if total sell orders exceed inventory qty
+  let totalSellQty = $derived((() => {
+    if (inventoryQty == null || order?.Type !== 'Sell') return null;
+    return (existingOrderCount + sessionOrderCount + 1);
+  })());
+  let qtyExceedsInventory = $derived(inventoryQty != null && totalSellQty != null && totalSellQty > inventoryQty);
 </script>
 
 {#if show}
@@ -383,10 +401,10 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    on:click={(e) => {
+    onclick={(e) => {
       if (e.target.classList.contains('modal-overlay')) close();
     }}
-    on:keydown={(e) => {
+    onkeydown={(e) => {
       if (e.key === 'Escape' || e.key === 'Enter') close();
     }}
   >
@@ -423,7 +441,7 @@
             bind:value={order.Metadata.Gender}
             class="filter-select select-center"
             disabled={genderFixed}
-            on:change={recalcPrices}
+            onchange={recalcPrices}
           >
             <option value="Male">Male</option>
             <option value="Female">Female</option>
@@ -438,7 +456,7 @@
             type="number"
             min="1"
             bind:value={order.Quantity}
-            on:input={() => {
+            oninput={() => {
               recalcPrices();
               if (allowPartial && order.MinQuantity > order.Quantity) {
                 order.MinQuantity = order.Quantity;
@@ -448,7 +466,7 @@
         </div>
         <div class="form-row">
           <label class="partial-label">
-            <input type="checkbox" bind:checked={allowPartial} on:change={() => {
+            <input type="checkbox" bind:checked={allowPartial} onchange={() => {
               if (allowPartial) {
                 order.MinQuantity = Math.max(1, Math.floor((order.Quantity || 1) * DEFAULT_PARTIAL_RATIO));
               } else {
@@ -475,8 +493,8 @@
             type="number"
             min="0"
             bind:value={order.Metadata.Pet.Level}
-            on:input={recalcPrices}
-            on:blur={() => { order.Metadata.Pet.Level = Math.max(0, Math.round(Number(order.Metadata.Pet.Level) || 0)); recalcPrices(); }}
+            oninput={recalcPrices}
+            onblur={() => { order.Metadata.Pet.Level = Math.max(0, Math.round(Number(order.Metadata.Pet.Level) || 0)); recalcPrices(); }}
           />
         </div>
       {/if}
@@ -490,8 +508,8 @@
             max="10"
             step="1"
             bind:value={order.Metadata.Tier}
-            on:input={recalcPrices}
-            on:blur={() => { order.Metadata.Tier = Math.max(0, Math.min(10, Math.round(Number(order.Metadata.Tier) || 0))); recalcPrices(); }}
+            oninput={recalcPrices}
+            onblur={() => { order.Metadata.Tier = Math.max(0, Math.min(10, Math.round(Number(order.Metadata.Tier) || 0))); recalcPrices(); }}
           />
         </div>
         <div class="form-row">
@@ -503,8 +521,8 @@
             max={isLimited(order.Item) ? 4000 : 200}
             step="1"
             bind:value={order.Metadata.TierIncreaseRate}
-            on:input={recalcPrices}
-            on:blur={() => { const maxTir = isLimited(order.Item) ? 4000 : 200; order.Metadata.TierIncreaseRate = Math.max(0, Math.min(maxTir, Math.round(Number(order.Metadata.TierIncreaseRate) || 0))); recalcPrices(); }}
+            oninput={recalcPrices}
+            onblur={() => { const maxTir = isLimited(order.Item) ? 4000 : 200; order.Metadata.TierIncreaseRate = Math.max(0, Math.min(maxTir, Math.round(Number(order.Metadata.TierIncreaseRate) || 0))); recalcPrices(); }}
           />
         </div>
       {/if}
@@ -520,15 +538,15 @@
                 max="100"
                 step="1"
                 bind:value={order.Metadata.QualityRating}
-                on:input={recalcPrices}
-                on:blur={() => { order.Metadata.QualityRating = Math.max(1, Math.min(100, Math.round(Number(order.Metadata.QualityRating) || 1))); recalcPrices(); }}
+                oninput={recalcPrices}
+                onblur={() => { order.Metadata.QualityRating = Math.max(1, Math.min(100, Math.round(Number(order.Metadata.QualityRating) || 1))); recalcPrices(); }}
               />
             {:else}
               <select
                 id="bpCond"
                 class="filter-select select-center"
                 bind:value={order.Metadata.QualityRating}
-                on:change={recalcPrices}
+                onchange={recalcPrices}
               >
                 {#each qrRangeOptions as opt}
                   <option value={opt.value}>{opt.label}</option>
@@ -547,7 +565,7 @@
             </div>
             {#if isArmorPlating}
               <label class="set-label">
-                <input type="checkbox" bind:checked={order.Metadata.is_set} on:change={handleSetToggle} />
+                <input type="checkbox" bind:checked={order.Metadata.is_set} onchange={handleSetToggle} />
                 Full set ({PLATE_SET_SIZE})
               </label>
             {/if}
@@ -561,8 +579,8 @@
               max={order.Item.MaxTT ?? undefined}
               step="0.01"
               bind:value={order.CurrentTT}
-              on:input={recalcPrices}
-              on:blur={() => { const max = order.Item.MaxTT ?? Infinity; order.CurrentTT = Math.max(0, Math.min(max, Math.round((Number(order.CurrentTT) || 0) * 100) / 100)); recalcPrices(); }}
+              oninput={recalcPrices}
+              onblur={() => { const max = order.Item.MaxTT ?? Infinity; order.CurrentTT = Math.max(0, Math.min(max, Math.round((Number(order.CurrentTT) || 0) * 100) / 100)); recalcPrices(); }}
             />
           </div>
         {/if}
@@ -576,8 +594,8 @@
             min="100"
             step="0.01"
             bind:value={order.Markup}
-            on:input={recalcPrices}
-            on:blur={() => { order.Markup = Math.max(100, Math.round((Number(order.Markup) || 100) * 100) / 100); recalcPrices(); }}
+            oninput={recalcPrices}
+            onblur={() => { order.Markup = Math.max(100, Math.round((Number(order.Markup) || 100) * 100) / 100); recalcPrices(); }}
           />
         </div>
       {:else}
@@ -589,8 +607,8 @@
             min="0"
             step="0.01"
             bind:value={order.Markup}
-            on:input={recalcPrices}
-            on:blur={() => { order.Markup = Math.max(0, Math.round((Number(order.Markup) || 0) * 100) / 100); recalcPrices(); }}
+            oninput={recalcPrices}
+            onblur={() => { order.Markup = Math.max(0, Math.round((Number(order.Markup) || 0) * 100) / 100); recalcPrices(); }}
           />
         </div>
       {/if}
@@ -600,10 +618,10 @@
           <div class="suggestions">
             {#if order.Type === 'Sell'}
               {#if suggestions?.bestSell != null}
-                <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestSell)} title="Match the lowest sell order">
+                <button class="suggest-btn" onclick={() => applySuggestion(suggestions.bestSell)} title="Match the lowest sell order">
                   Match Best ({isPercentMarkup(order.Item) ? suggestions.bestSell.toFixed(2) : formatPedRaw(suggestions.bestSell)})
                 </button>
-                <button class="suggest-btn undercut" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestSell, 'Sell'))} title="Undercut the lowest sell by ~2%">
+                <button class="suggest-btn undercut" onclick={() => applySuggestion(computeUndercutValue(suggestions.bestSell, 'Sell'))} title="Undercut the lowest sell by ~2%">
                   Undercut
                 </button>
               {:else if suggestions}
@@ -611,10 +629,10 @@
               {/if}
             {:else}
               {#if suggestions?.bestBuy != null}
-                <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestBuy)} title="Match the highest buy order">
+                <button class="suggest-btn" onclick={() => applySuggestion(suggestions.bestBuy)} title="Match the highest buy order">
                   Match Best ({isPercentMarkup(order.Item) ? suggestions.bestBuy.toFixed(2) : formatPedRaw(suggestions.bestBuy)})
                 </button>
-                <button class="suggest-btn outbid" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestBuy, 'Buy'))} title="Outbid the highest buy by ~2%">
+                <button class="suggest-btn outbid" onclick={() => applySuggestion(computeUndercutValue(suggestions.bestBuy, 'Buy'))} title="Outbid the highest buy by ~2%">
                   Outbid
                 </button>
               {:else if suggestions}
@@ -622,7 +640,7 @@
               {/if}
             {/if}
             {#if dailyAverage != null}
-              <button class="suggest-btn daily" on:click={() => applySuggestion(dailyAverage)} title="Use the daily average markup">
+              <button class="suggest-btn daily" onclick={() => applySuggestion(dailyAverage)} title="Use the daily average markup">
                 Daily Avg ({isPercentMarkup(order.Item) ? dailyAverage.toFixed(2) : formatPedRaw(dailyAverage)})
               </button>
             {/if}
@@ -668,14 +686,14 @@
       {/if}
       <div class="actions">
         {#if mode === 'edit'}
-          <button class="delete-btn" on:click={() => { if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) { addToast('Please complete the captcha verification', { type: 'warning' }); return; } dispatch('delete', { order, turnstileToken }); resetTurnstile = true; }} title="Delete this order">Delete</button>
+          <button class="delete-btn" onclick={() => { if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) { addToast('Please complete the captcha verification', { type: 'warning' }); return; } dispatch('delete', { order, turnstileToken }); resetTurnstile = true; }} title="Delete this order">Delete</button>
         {/if}
         <span class="actions-spacer"></span>
-        <button on:click={close} disabled={submitting}>{sessionOrderCount > 0 ? 'Done' : 'Cancel'}</button>
+        <button onclick={close} disabled={submitting}>{sessionOrderCount > 0 ? 'Done' : 'Cancel'}</button>
         {#if canCreateMore && !orderLimitReached}
-          <button class="next-btn" on:click={submitAndNext} disabled={submitting} title="Create this order and set up the next one">{submitting ? 'Saving...' : 'Next'}</button>
+          <button class="next-btn" onclick={submitAndNext} disabled={submitting} title="Create this order and set up the next one">{submitting ? 'Saving...' : 'Next'}</button>
         {/if}
-        <button on:click={submit} disabled={orderLimitReached || submitting} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{submitting ? 'Saving...' : (mode === 'edit' ? 'Save' : 'Submit')}</button>
+        <button onclick={submit} disabled={orderLimitReached || submitting} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{submitting ? 'Saving...' : (mode === 'edit' ? 'Save' : 'Submit')}</button>
       </div>
     </div>
   </div>

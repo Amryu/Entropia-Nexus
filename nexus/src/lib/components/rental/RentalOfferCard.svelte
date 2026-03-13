@@ -8,18 +8,21 @@
   import { formatPrice } from '$lib/utils/rentalPricing.js';
   import { stripHtml } from '$lib/sanitize.js';
 
-  /** @type {object} Rental offer object */
-  export let offer;
+  
 
-  /** @type {boolean} Whether to show status badge (for owner's "My Offers" view) */
-  export let showStatus = false;
+  
 
-  /** @type {object|null} Planets lookup map { id: name } */
-  export let planets = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} offer
+   * @property {boolean} [showStatus]
+   * @property {object|null} Planets lookup map { id: name } [planets]
+   */
 
-  $: itemCount = offer.item_count ?? 0;
-  $: planetName = planets && offer.planet_id ? planets[offer.planet_id] : null;
-  $: bestDiscount = getBestDiscount(offer.discounts);
+  /** @type {Props} */
+  let { offer, showStatus = false, planets = null } = $props();
+
 
   function getBestDiscount(discounts) {
     if (!Array.isArray(discounts) || discounts.length === 0) return null;
@@ -31,6 +34,9 @@
     }
     return best;
   }
+  let itemCount = $derived(offer.item_count ?? 0);
+  let planetName = $derived(planets && offer.planet_id ? planets[offer.planet_id] : null);
+  let bestDiscount = $derived(getBestDiscount(offer.discounts));
 </script>
 
 <a href="/market/rental/{offer.id}" class="rental-offer-card">

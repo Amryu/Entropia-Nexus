@@ -9,27 +9,33 @@
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
 
-  export let user = null;
-  export let allItems = [];
+  /**
+   * @typedef {Object} Props
+   * @property {any} [user]
+   * @property {any} [allItems]
+   */
+
+  /** @type {Props} */
+  let { user = null, allItems = [] } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let loading = false;
-  let error = null;
+  let loading = $state(false);
+  let error = $state(null);
 
   // Config dialog state
-  let showConfigDialog = false;
-  let configItem = null;
+  let showConfigDialog = $state(false);
+  let configItem = $state(null);
 
   // Mass sell mode
-  let massSellMode = false;
-  let massSellList = new Map(); // Map<inventory_id, { invItem, count }>
+  let massSellMode = $state(false);
+  let massSellList = $state(new Map()); // Map<inventory_id, { invItem, count }>
 
-  $: totalMassSellOrders = (() => {
+  let totalMassSellOrders = $derived((() => {
     let total = 0;
     for (const entry of massSellList.values()) total += entry.count;
     return total;
-  })();
+  })());
 
   export function setMassSellMode(enabled) {
     massSellMode = enabled;
@@ -37,13 +43,13 @@
   }
 
   // Build a lookup map for allItems to avoid linear scans
-  $: itemLookup = (() => {
+  let itemLookup = $derived((() => {
     const map = new Map();
     for (const item of allItems || []) {
       if (item?.i != null) map.set(item.i, item);
     }
     return map;
-  })();
+  })());
 
   function getItemLimit(itemId) {
     const slim = itemLookup.get(itemId);
@@ -51,7 +57,7 @@
   }
 
   // Count existing sell orders for this user (exclude closed)
-  $: existingSellCount = ($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length;
+  let existingSellCount = $derived(($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length);
 
   // Count mass sell orders for a specific item_id across all selections
   function getMassSellCountForItem(itemId) {
@@ -102,7 +108,7 @@
   }
 
   // Build order count lookup: item_id → { buy, sell } (exclude closed orders)
-  $: OrdersByItemId = (() => {
+  let OrdersByItemId = $derived((() => {
     const map = new Map();
     for (const order of ($myOrders || [])) {
       if (order.state === 'closed') continue;
@@ -114,10 +120,10 @@
       else if (order.type === 'SELL') entry.sell++;
     }
     return map;
-  })();
+  })());
 
   // Sort inventory: items with active sell orders first, then items with buy demand
-  $: sortedInventory = [...($inventory || [])].sort((a, b) => {
+  let sortedInventory = $derived([...($inventory || [])].sort((a, b) => {
     const aOrders = OrdersByItemId.get(a.item_id)?.sell || 0;
     const bOrders = OrdersByItemId.get(b.item_id)?.sell || 0;
     const aBuyDemand = itemLookup.get(a.item_id)?.b || 0;
@@ -125,9 +131,9 @@
     const aScore = (aOrders > 0 ? 2 : 0) + (aBuyDemand > 0 ? 1 : 0);
     const bScore = (bOrders > 0 ? 2 : 0) + (bBuyDemand > 0 ? 1 : 0);
     return bScore - aScore;
-  });
+  }));
 
-  $: columns = (() => {
+  let columns = $derived((() => {
     // Reference dependencies to trigger re-evaluation
     massSellMode;
     massSellList;
@@ -225,7 +231,7 @@
         }
       },
     ];
-  })();
+  })());
 
   onMount(() => {
     loadInventory();
@@ -339,12 +345,12 @@
 {:else if error}
   <div class="error-state">
     <p>{error}</p>
-    <button class="btn-retry" on:click={loadInventory}>Retry</button>
+    <button class="btn-retry" onclick={loadInventory}>Retry</button>
   </div>
 {:else if loading}
   <div class="panel-loading">Loading inventory...</div>
 {:else}
-  <div class="inventory-table" role="presentation" on:click|capture={handleTableClick}>
+  <div class="inventory-table" role="presentation" onclickcapture={handleTableClick}>
     <FancyTable
       columns={columns}
       data={sortedInventory}
@@ -357,7 +363,7 @@
     {#if massSellMode && massSellList.size > 0}
       <div class="mass-sell-bar">
         <span class="mass-sell-bar-text">{massSellList.size} items, {totalMassSellOrders} orders</span>
-        <button class="mass-sell-submit" on:click={openMassSellDialog}>Configure &amp; Submit</button>
+        <button class="mass-sell-submit" onclick={openMassSellDialog}>Configure &amp; Submit</button>
       </div>
     {/if}
   </div>

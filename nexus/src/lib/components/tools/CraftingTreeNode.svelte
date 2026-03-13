@@ -4,51 +4,78 @@
   Supports up to MAX_DEPTH levels of nesting.
 -->
 <script>
+  import CraftingTreeNode from './CraftingTreeNode.svelte';
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { getMaxNonFailChance, isLimitedBlueprint } from '$lib/utils/constructionCalculator.js';
 
   const MAX_DEPTH = 10;
 
-  /** @type {object} The crafting tree node */
-  export let node;
+  
 
-  /** @type {number} Current nesting depth */
-  export let depth = 0;
+  
 
-  /** @type {boolean} Whether this is a target blueprint (root) */
-  export let isTarget = false;
+  
 
   // Callback functions passed from the parent page
-  /** @type {(bp: object) => string} */
-  export let getBlueprintLink;
-  /** @type {(id: number) => boolean} */
-  export let isTargetBlueprint;
-  /** @type {(id: number) => boolean} */
-  export let isOwned;
-  /** @type {(id: number) => boolean} */
-  export let isBuying;
-  /** @type {(id: number) => void} */
-  export let toggleBuyPreference;
-  /** @type {(id: number) => void} */
-  export let toggleOwnership;
-  /** @type {(id: number, value: string) => void} */
-  export let setNonFailChance;
-  /** @type {(id: number) => number} */
-  export let getNonFailChance;
-  /** @type {(materialName: string) => object[]|null} */
-  export let getMaterialBlueprintOptions;
-  /** @type {(materialName: string) => number|null} */
-  export let getSelectedBlueprintId;
-  /** @type {(materialName: string, blueprintId: number) => void} */
-  export let selectMaterialBlueprint;
-  /** @type {(node: object) => number} */
-  export let getNodeTotalTime;
-  /** @type {(seconds: number) => string} */
-  export let formatCraftTime;
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} node
+   * @property {number} [depth]
+   * @property {boolean} [isTarget]
+   * @property {(bp: object) => string} getBlueprintLink
+   * @property {(id: number) => boolean} isTargetBlueprint
+   * @property {(id: number) => boolean} isOwned
+   * @property {(id: number) => boolean} isBuying
+   * @property {(id: number) => void} toggleBuyPreference
+   * @property {(id: number) => void} toggleOwnership
+   * @property {(id: number, value: string) => void} setNonFailChance
+   * @property {(id: number) => number} getNonFailChance
+   * @property {(materialName: string) => object[]|null} getMaterialBlueprintOptions
+   * @property {(materialName: string) => number|null} getSelectedBlueprintId
+   * @property {(materialName: string, blueprintId: number) => void} selectMaterialBlueprint
+   * @property {(node: object) => number} getNodeTotalTime
+   * @property {(seconds: number) => string} formatCraftTime
+   */
 
-  $: maxNonFail = getMaxNonFailChance(node.blueprint);
-  $: actuallyOwned = isOwned(node.blueprint.Id);
-  $: totalTime = getNodeTotalTime(node);
+  /** @type {Props} */
+  let {
+    node,
+    depth = 0,
+    isTarget = false,
+    getBlueprintLink,
+    isTargetBlueprint,
+    isOwned,
+    isBuying,
+    toggleBuyPreference,
+    toggleOwnership,
+    setNonFailChance,
+    getNonFailChance,
+    getMaterialBlueprintOptions,
+    getSelectedBlueprintId,
+    selectMaterialBlueprint,
+    getNodeTotalTime,
+    formatCraftTime
+  } = $props();
+
+  let maxNonFail = $derived(getMaxNonFailChance(node.blueprint));
+  let actuallyOwned = $derived(isOwned(node.blueprint.Id));
+  let totalTime = $derived(getNodeTotalTime(node));
 </script>
 
 <li class="tree-node" class:material-child={!isTarget} class:not-owned={!node.owned}>
@@ -72,8 +99,8 @@
           min="0"
           max={maxNonFail}
           step="any"
-          on:change={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
-          on:click|stopPropagation
+          onchange={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
+          onclick={stopPropagation(bubble('click'))}
         />%
       </span>
     {/if}
@@ -84,7 +111,7 @@
       <button
         class="node-toggle"
         class:buying={isBuying(node.blueprint.Id)}
-        on:click={() => toggleBuyPreference(node.blueprint.Id)}
+        onclick={() => toggleBuyPreference(node.blueprint.Id)}
         disabled={!actuallyOwned}
         title={!actuallyOwned ? 'Must own to craft' : (isBuying(node.blueprint.Id) ? 'Switch to crafting' : 'Switch to buying')}
       >
@@ -93,7 +120,7 @@
       <button
         class="node-toggle ownership-toggle"
         class:not-owned={!actuallyOwned}
-        on:click={() => toggleOwnership(node.blueprint.Id)}
+        onclick={() => toggleOwnership(node.blueprint.Id)}
         title={actuallyOwned ? 'Mark as not owned' : 'Mark as owned'}
       >
         {actuallyOwned ? 'Own' : "Don't Own"}
@@ -112,7 +139,7 @@
         <select
           class="bp-selector-select"
           value={node.blueprint.Id}
-          on:change={(e) => selectMaterialBlueprint(node.parentMaterialName, parseInt(e.target.value))}
+          onchange={(e) => selectMaterialBlueprint(node.parentMaterialName, parseInt(e.target.value))}
         >
           {#each options as bp}
             <option value={bp.Id}>
@@ -130,7 +157,7 @@
   {#if node.materialChildren?.length > 0 && depth < MAX_DEPTH}
     <ul class="tree-children">
       {#each node.materialChildren as child (child.blueprint.Id + '-' + child.parentMaterialName)}
-        <svelte:self
+        <CraftingTreeNode
           node={child}
           depth={depth + 1}
           isTarget={false}

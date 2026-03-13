@@ -1,6 +1,12 @@
 <script>
-  //@ts-nocheck
-  export let data;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} data
+   */
+
+  /** @type {Props} */
+  let { data } = $props();
 </script>
 <style>
   p {

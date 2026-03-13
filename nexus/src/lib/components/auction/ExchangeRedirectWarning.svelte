@@ -8,13 +8,19 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {boolean} */
-  export let visible = false;
+  
 
-  /** @type {number|null} Item ID for Exchange link */
-  export let itemId = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [visible]
+   * @property {number|null} [itemId]
+   */
 
-  let dismissed = false;
+  /** @type {Props} */
+  let { visible = false, itemId = null } = $props();
+
+  let dismissed = $state(false);
 
   function handleDismiss() {
     dismissed = true;
@@ -40,7 +46,7 @@
         {#if itemId}
           <a href="/market/exchange?item={itemId}" class="btn btn-accent">Go to Exchange</a>
         {/if}
-        <button class="btn btn-secondary" on:click={handleDismiss}>Continue with Auction</button>
+        <button class="btn btn-secondary" onclick={handleDismiss}>Continue with Auction</button>
       </div>
     </div>
   </div>

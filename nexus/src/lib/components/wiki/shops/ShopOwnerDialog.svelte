@@ -4,34 +4,44 @@
   When a new owner is set, all managers are cleared automatically.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
 
-  /** Shop name/identifier for API calls */
-  export let shopName = '';
+  
 
-  /** Whether the dialog is open */
-  export let open = false;
+  
 
-  /** Current owner name (for display) */
-  export let currentOwner = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [shopName] - Shop name/identifier for API calls
+   * @property {boolean} [open] - Whether the dialog is open
+   * @property {string} [currentOwner] - Current owner name (for display)
+   */
+
+  /** @type {Props} */
+  let { shopName = '', open = $bindable(false), currentOwner = '' } = $props();
 
   // Local state
-  let newOwnerName = '';
-  let saving = false;
-  let error = null;
-  let success = null;
-  let confirmClear = false;
+  let newOwnerName = $state('');
+  let saving = $state(false);
+  let error = $state(null);
+  let success = $state(null);
+  let confirmClear = $state(false);
 
   // Reset state when dialog opens
-  $: if (open) {
-    newOwnerName = '';
-    error = null;
-    success = null;
-    confirmClear = false;
-  }
+  run(() => {
+    if (open) {
+      newOwnerName = '';
+      error = null;
+      success = null;
+      confirmClear = false;
+    }
+  });
 
   function close() {
     open = false;
@@ -112,11 +122,11 @@
 </script>
 
 {#if open}
-  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick} on:keydown={handleKeydown}>
+  <div class="dialog-backdrop" role="presentation" onclick={handleBackdropClick} onkeydown={handleKeydown}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="owner-dialog-title">
       <div class="dialog-header">
         <h3 id="owner-dialog-title">Assign Shop Owner</h3>
-        <button class="close-btn" on:click={close} aria-label="Close dialog">
+        <button class="close-btn" onclick={close} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -189,21 +199,21 @@
 
       <div class="dialog-footer">
         {#if !confirmClear}
-          <button class="cancel-btn" on:click={close} disabled={saving}>
+          <button class="cancel-btn" onclick={close} disabled={saving}>
             Cancel
           </button>
           <button
             class="next-btn"
-            on:click={proceedToConfirm}
+            onclick={proceedToConfirm}
             disabled={!newOwnerName.trim() || saving}
           >
             Continue
           </button>
         {:else}
-          <button class="cancel-btn" on:click={() => confirmClear = false} disabled={saving}>
+          <button class="cancel-btn" onclick={() => confirmClear = false} disabled={saving}>
             Back
           </button>
-          <button class="save-btn danger" on:click={save} disabled={saving}>
+          <button class="save-btn danger" onclick={save} disabled={saving}>
             {saving ? 'Updating...' : 'Confirm Change'}
           </button>
         {/if}

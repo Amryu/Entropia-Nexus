@@ -3,10 +3,21 @@
   import { createEventDispatcher } from 'svelte';
   import { stripHtml } from '$lib/sanitize.js';
 
-  export let offer;
-  export let isOwner = false;
-  export let purchasing = false;
-  export let showAsSingleOption = false; // If true, shows "Request Flight" button
+  /**
+   * @typedef {Object} Props
+   * @property {any} offer
+   * @property {boolean} [isOwner]
+   * @property {boolean} [purchasing]
+   * @property {boolean} [showAsSingleOption] - If true, shows "Request Flight" button
+   */
+
+  /** @type {Props} */
+  let {
+    offer,
+    isOwner = false,
+    purchasing = false,
+    showAsSingleOption = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -66,11 +77,11 @@
     </div>
 
     {#if showAsSingleOption && !isOwner}
-      <button class="request-btn" on:click={handleRequestFlight}>
+      <button class="request-btn" onclick={handleRequestFlight}>
         Request Flight
       </button>
     {:else}
-      <button class="buy-btn" on:click={handlePurchase} disabled={purchasing || isOwner}>
+      <button class="buy-btn" onclick={handlePurchase} disabled={purchasing || isOwner}>
         {purchasing ? 'Purchasing...' : 'Buy Ticket'}
       </button>
     {/if}

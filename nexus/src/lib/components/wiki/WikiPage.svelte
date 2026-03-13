@@ -1,3 +1,4 @@
+<!-- @migration-task Error while migrating Svelte code: This migration would change the name of a slot (header-actions to header_actions) making the component unusable -->
 <!--
   @component WikiPage
   Main responsive container for wiki entity pages.

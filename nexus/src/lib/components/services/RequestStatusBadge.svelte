@@ -1,6 +1,12 @@
 <script>
-  export let status;
-  export let size = 'normal'; // 'small', 'normal', 'large'
+  /**
+   * @typedef {Object} Props
+   * @property {any} status
+   * @property {string} [size] - 'small', 'normal', 'large'
+   */
+
+  /** @type {Props} */
+  let { status, size = 'normal' } = $props();
 
   const statusConfig = {
     pending: { label: 'Pending', color: '#f59e0b', bgColor: '#fef3c7' },
@@ -13,7 +19,7 @@
     aborted: { label: 'Aborted', color: '#dc2626', bgColor: '#fecaca' }
   };
 
-  $: config = statusConfig[status] || { label: status, color: '#6b7280', bgColor: '#e5e7eb' };
+  let config = $derived(statusConfig[status] || { label: status, color: '#6b7280', bgColor: '#e5e7eb' });
 </script>
 
 <span

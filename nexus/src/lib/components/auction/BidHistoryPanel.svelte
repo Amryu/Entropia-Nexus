@@ -4,13 +4,19 @@
   Highlights the current winning bid and shows rolled-back bids.
 -->
 <script>
-  /** @type {Array} Bid history from API */
-  export let bids = [];
+  
 
-  /** @type {boolean} Whether current user is admin (shows rollback points) */
-  export let isAdmin = false;
+  
 
   import { createEventDispatcher } from 'svelte';
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [bids]
+   * @property {boolean} [isAdmin]
+   */
+
+  /** @type {Props} */
+  let { bids = [], isAdmin = false } = $props();
   const dispatch = createEventDispatcher();
 
   function formatTimeAgo(dateStr) {
@@ -60,7 +66,7 @@
             <button
               class="rollback-btn"
               title="Rollback to this bid"
-              on:click={() => dispatch('rollback', { bidId: bid.id, amount: bid.amount })}
+              onclick={() => dispatch('rollback', { bidId: bid.id, amount: bid.amount })}
             >
               Rollback here
             </button>

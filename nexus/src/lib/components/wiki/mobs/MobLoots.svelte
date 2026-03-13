@@ -9,7 +9,7 @@
   import '$lib/style.css';
   import { getItemLink } from '$lib/util';
 
-  export let loots = [];
+  let { loots = [] } = $props();
 
   const frequencyOrder = {
     'Always': 0,
@@ -43,14 +43,14 @@
     return `background-color: ${style.bg}; color: ${style.color};`;
   }
 
-  $: sortedLoots = loots ? [...loots].sort((a, b) => {
+  let sortedLoots = $derived(loots ? [...loots].sort((a, b) => {
     const freqA = frequencyOrder[a.Frequency] ?? 99;
     const freqB = frequencyOrder[b.Frequency] ?? 99;
     return freqA - freqB;
-  }) : [];
+  }) : []);
 
   // Transform data for FancyTable
-  $: tableData = sortedLoots.map(loot => ({
+  let tableData = $derived(sortedLoots.map(loot => ({
     itemName: loot.Item?.Name || 'Unknown',
     itemLink: getItemLink(loot.Item),
     maturity: loot.Maturity?.Name || 'N/A',
@@ -58,7 +58,7 @@
     frequency: loot.Frequency || 'Unknown',
     frequencyStyle: getFrequencyStyle(loot.Frequency),
     frequencyOrder: frequencyOrder[loot.Frequency] ?? 99
-  }));
+  })));
 
   const columns = [
     {

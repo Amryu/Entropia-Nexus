@@ -9,130 +9,28 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  export let user = null;
-  export let sideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
-  /** @type {Array} All slim items for item type lookup */
-  export let allItems = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [user]
+   * @property {string} [sideFilter] - 'all' | 'BUY' | 'SELL'
+   * @property {Array} [allItems]
+   */
+
+  /** @type {Props} */
+  let { user = null, sideFilter = 'all', allItems = [] } = $props();
 
   const dispatch = createEventDispatcher();
-  let loading = false;
+  let loading = $state(false);
   let bumping = false;
-  let error = null;
+  let error = $state(null);
 
-  // Build item lookup by ID
-  $: itemLookup = (() => {
-    const map = new Map();
-    for (const item of allItems || []) {
-      if (item?.i != null) map.set(item.i, item);
-    }
-    return map;
-  })();
 
-  $: filteredOrders = sideFilter === 'all'
-    ? $myOrders
-    : $myOrders.filter(o => o.type === sideFilter);
 
   const STATUS_ORDER = { active: 0, stale: 1, expired: 2, closed: 3 };
 
-  // Enrich orders with computed fields for filtering and sorting
-  // Pre-sorted by status (active first, closed last) then category
-  $: enrichedOrders = filteredOrders.map(o => {
-    const item = itemLookup.get(o.item_id);
-    const mu = o.markup != null ? Number(o.markup) : null;
-    return {
-      ...o,
-      _category: getTopCategory(item?.t),
-      _value: getOrderStackValue(item, o) ?? null,
-      _total: (() => {
-        const u = computeUnitPrice(item, mu, o);
-        if (u == null) return null;
-        // Set orders: computeUnitPrice already includes full set TT, don't multiply by qty again
-        const isSet = item?.t === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
-        return isSet ? u : u * (o.quantity || 1);
-      })(),
-    };
-  }).sort((a, b) => {
-    const sa = STATUS_ORDER[a.state_display] ?? 9;
-    const sb = STATUS_ORDER[b.state_display] ?? 9;
-    if (sa !== sb) return sa - sb;
-    return getCategoryOrder(a._category) - getCategoryOrder(b._category);
-  });
 
-  // Summary of active sell orders
-  $: orderSummary = (() => {
-    const sells = enrichedOrders.filter(o => o.type === 'SELL' && o.state_display !== 'closed');
-    let totalTT = 0, totalValue = 0;
-    for (const o of sells) {
-      if (o._value != null) totalTT += o._value;
-      if (o._total != null) totalValue += o._total;
-    }
-    return { totalTT, totalValue, count: sells.length };
-  })();
 
-  $: columns = [
-    {
-      key: 'item_name', header: 'Item', main: true, width: '150px', mobileWidth: '1fr', sortable: true, searchable: true,
-      formatter: (val, row) => {
-        const slim = itemLookup.get(row.item_id);
-        const setBadge = slim?.t === 'ArmorPlating' && Number(row.quantity) === PLATE_SET_SIZE ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
-        return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}${setBadge}</a>`;
-      }
-    },
-    {
-      key: 'type', header: 'Side', width: '55px', mobileWidth: '40px', sortable: true, searchable: false,
-      formatter: (val) => {
-        const cls = val === 'BUY' ? 'badge-success' : 'badge-error';
-        return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
-      }
-    },
-    {
-      key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
-      sortValue: (row) => getCategoryOrder(row._category)
-    },
-    {
-      key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: true, hideOnMobile: true,
-      formatter: (val, row) => row.min_quantity != null && row.min_quantity < val ? `${val}/${row.min_quantity}` : val
-    },
-    {
-      key: '_value', header: 'Value', width: '90px', sortable: true, searchable: true, hideOnMobile: true,
-      formatter: (val) => formatPedValue(val)
-    },
-    {
-      key: 'markup', header: 'Markup', width: '90px', mobileWidth: '70px', sortable: true, searchable: true,
-      formatter: (val, row) => {
-        const item = itemLookup.get(row?.item_id);
-        if (item) return formatMarkupForItem(val, item);
-        return val != null ? formatPedRaw(val) : 'N/A';
-      }
-    },
-    {
-      key: '_total', header: 'Total', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
-      formatter: (val) => formatPedValue(val)
-    },
-    { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true, hideOnMobile: true },
-    {
-      key: 'state_display', header: 'Status', width: '80px', mobileWidth: '60px', sortable: true, searchable: true,
-      formatter: (val) => {
-        const cls = val === 'active' ? 'badge-success' : val === 'stale' ? 'badge-warning' : 'badge-error';
-        return `<span class="badge badge-subtle ${cls}">${val}</span>`;
-      }
-    },
-    {
-      key: 'bumped_at', header: 'Last Bumped', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
-    formatter: (val) => formatAge(val)
-    },
-    {
-      key: '_actions', header: '', width: '120px', mobileWidth: '80px', sortable: false, searchable: false,
-      cellClass: () => 'cell-center',
-      formatter: (val, row) => {
-        if (row.state_display === 'closed') return '';
-        return `<span class="order-actions">`
-          + `<button class="order-action-btn edit" data-action="edit" data-id="${row.id}">Edit</button>`
-          + `<button class="order-action-btn close" data-action="close" data-id="${row.id}">Close</button>`
-          + `</span>`;
-      }
-    },
-  ];
 
   onMount(loadOrders);
 
@@ -229,6 +127,114 @@
     return loadOrders();
   }
 
+  // Build item lookup by ID
+  let itemLookup = $derived((() => {
+    const map = new Map();
+    for (const item of allItems || []) {
+      if (item?.i != null) map.set(item.i, item);
+    }
+    return map;
+  })());
+  let filteredOrders = $derived(sideFilter === 'all'
+    ? $myOrders
+    : $myOrders.filter(o => o.type === sideFilter));
+  // Enrich orders with computed fields for filtering and sorting
+  // Pre-sorted by status (active first, closed last) then category
+  let enrichedOrders = $derived(filteredOrders.map(o => {
+    const item = itemLookup.get(o.item_id);
+    const mu = o.markup != null ? Number(o.markup) : null;
+    return {
+      ...o,
+      _category: getTopCategory(item?.t),
+      _value: getOrderStackValue(item, o) ?? null,
+      _total: (() => {
+        const u = computeUnitPrice(item, mu, o);
+        if (u == null) return null;
+        // Set orders: computeUnitPrice already includes full set TT, don't multiply by qty again
+        const isSet = item?.t === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
+        return isSet ? u : u * (o.quantity || 1);
+      })(),
+    };
+  }).sort((a, b) => {
+    const sa = STATUS_ORDER[a.state_display] ?? 9;
+    const sb = STATUS_ORDER[b.state_display] ?? 9;
+    if (sa !== sb) return sa - sb;
+    return getCategoryOrder(a._category) - getCategoryOrder(b._category);
+  }));
+  // Summary of active sell orders
+  let orderSummary = $derived((() => {
+    const sells = enrichedOrders.filter(o => o.type === 'SELL' && o.state_display !== 'closed');
+    let totalTT = 0, totalValue = 0;
+    for (const o of sells) {
+      if (o._value != null) totalTT += o._value;
+      if (o._total != null) totalValue += o._total;
+    }
+    return { totalTT, totalValue, count: sells.length };
+  })());
+  let columns = $derived([
+    {
+      key: 'item_name', header: 'Item', main: true, width: '150px', mobileWidth: '1fr', sortable: true, searchable: true,
+      formatter: (val, row) => {
+        const slim = itemLookup.get(row.item_id);
+        const setBadge = slim?.t === 'ArmorPlating' && Number(row.quantity) === PLATE_SET_SIZE ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
+        return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}${setBadge}</a>`;
+      }
+    },
+    {
+      key: 'type', header: 'Side', width: '55px', mobileWidth: '40px', sortable: true, searchable: false,
+      formatter: (val) => {
+        const cls = val === 'BUY' ? 'badge-success' : 'badge-error';
+        return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
+      }
+    },
+    {
+      key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
+      sortValue: (row) => getCategoryOrder(row._category)
+    },
+    {
+      key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: true, hideOnMobile: true,
+      formatter: (val, row) => row.min_quantity != null && row.min_quantity < val ? `${val}/${row.min_quantity}` : val
+    },
+    {
+      key: '_value', header: 'Value', width: '90px', sortable: true, searchable: true, hideOnMobile: true,
+      formatter: (val) => formatPedValue(val)
+    },
+    {
+      key: 'markup', header: 'Markup', width: '90px', mobileWidth: '70px', sortable: true, searchable: true,
+      formatter: (val, row) => {
+        const item = itemLookup.get(row?.item_id);
+        if (item) return formatMarkupForItem(val, item);
+        return val != null ? formatPedRaw(val) : 'N/A';
+      }
+    },
+    {
+      key: '_total', header: 'Total', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
+      formatter: (val) => formatPedValue(val)
+    },
+    { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true, hideOnMobile: true },
+    {
+      key: 'state_display', header: 'Status', width: '80px', mobileWidth: '60px', sortable: true, searchable: true,
+      formatter: (val) => {
+        const cls = val === 'active' ? 'badge-success' : val === 'stale' ? 'badge-warning' : 'badge-error';
+        return `<span class="badge badge-subtle ${cls}">${val}</span>`;
+      }
+    },
+    {
+      key: 'bumped_at', header: 'Last Bumped', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
+    formatter: (val) => formatAge(val)
+    },
+    {
+      key: '_actions', header: '', width: '120px', mobileWidth: '80px', sortable: false, searchable: false,
+      cellClass: () => 'cell-center',
+      formatter: (val, row) => {
+        if (row.state_display === 'closed') return '';
+        return `<span class="order-actions">`
+          + `<button class="order-action-btn edit" data-action="edit" data-id="${row.id}">Edit</button>`
+          + `<button class="order-action-btn close" data-action="close" data-id="${row.id}">Close</button>`
+          + `</span>`;
+      }
+    },
+  ]);
 </script>
 
 {#if !user}
@@ -238,12 +244,12 @@
 {:else if error}
   <div class="error-state">
     <p>{error}</p>
-    <button class="btn-retry" on:click={loadOrders}>Retry</button>
+    <button class="btn-retry" onclick={loadOrders}>Retry</button>
   </div>
 {:else if loading}
   <div class="panel-loading">Loading orders...</div>
 {:else}
-  <div class="orders-table" role="presentation" on:click|capture={handleTableClick}>
+  <div class="orders-table" role="presentation" onclickcapture={handleTableClick}>
     <FancyTable
       columns={columns}
       data={enrichedOrders}

@@ -1,37 +1,40 @@
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
-  export let data;
+  let { data } = $props();
 
-  let society = data.societyData.society;
-  let members = data.societyData.members || [];
-  let isLeader = data.societyData.isLeader;
-  let pendingCount = data.societyData.pendingCount || 0;
+  let society = $state(data.societyData.society);
+  let members = $state(data.societyData.members || []);
+  let isLeader = $state(data.societyData.isLeader);
+  let pendingCount = $state(data.societyData.pendingCount || 0);
 
-  let showPendingDialog = false;
-  let pendingTableKey = 0;
-  let pendingError = '';
-  let pendingStatus = '';
+  let showPendingDialog = $state(false);
+  let pendingTableKey = $state(0);
+  let pendingError = $state('');
+  let pendingStatus = $state('');
   let pendingActionBusy = false;
-  let disbandError = '';
-  let disbandStatus = '';
-  let isDisbanding = false;
-  let showDisbandDialog = false;
-  let disbandStep = 1;
-  let isMember = data.societyData.isMember;
-  let isEditingDescription = false;
-  let descriptionDraft = society.description || '';
-  let discordDraft = society.discord_code || '';
-  let discordPublicDraft = society.discord_public || false;
-  let descriptionError = '';
-  let descriptionStatus = '';
-  let isSavingDescription = false;
+  let disbandError = $state('');
+  let disbandStatus = $state('');
+  let isDisbanding = $state(false);
+  let showDisbandDialog = $state(false);
+  let disbandStep = $state(1);
+  let isMember = $state(data.societyData.isMember);
+  let isEditingDescription = $state(false);
+  let descriptionDraft = $state(society.description || '');
+  let discordDraft = $state(society.discord_code || '');
+  let discordPublicDraft = $state(society.discord_public || false);
+  let descriptionError = $state('');
+  let descriptionStatus = $state('');
+  let isSavingDescription = $state(false);
 
-  $: leader = members.find(member => String(member.id) === String(society.leader_id));
+  let leader = $derived(members.find(member => String(member.id) === String(society.leader_id)));
 
   function escapeHtml(text) {
     if (!text) return '';
@@ -322,17 +325,17 @@
     {#if isLeader}
       <div class="society-actions">
         {#if !isEditingDescription}
-          <button class="secondary edit-btn" on:click={startEditingDescription}>Edit</button>
+          <button class="secondary edit-btn" onclick={startEditingDescription}>Edit</button>
         {:else}
-          <button class="secondary" on:click={cancelEditingDescription} disabled={isSavingDescription}>Cancel</button>
-          <button class="primary" on:click={saveDescription} disabled={isSavingDescription}>
+          <button class="secondary" onclick={cancelEditingDescription} disabled={isSavingDescription}>Cancel</button>
+          <button class="primary" onclick={saveDescription} disabled={isSavingDescription}>
             {isSavingDescription ? 'Saving...' : 'Save'}
           </button>
         {/if}
-        <button class="primary" on:click={openPendingDialog}>
+        <button class="primary" onclick={openPendingDialog}>
           Pending Invites{pendingCount ? ` (${pendingCount})` : ''}
         </button>
-        <button class="danger" on:click={openDisbandDialog} disabled={isDisbanding}>
+        <button class="danger" onclick={openDisbandDialog} disabled={isDisbanding}>
           Disband
         </button>
       </div>
@@ -381,11 +384,11 @@
 </div>
 
 {#if showPendingDialog}
-  <div class="dialog-backdrop" on:click={() => (showPendingDialog = false)} on:keydown={(e) => e.key === 'Escape' && (showPendingDialog = false)}>
-    <div class="dialog dialog-wide" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="pending-invites-title">
+  <div class="dialog-backdrop" onclick={() => (showPendingDialog = false)} onkeydown={(e) => e.key === 'Escape' && (showPendingDialog = false)}>
+    <div class="dialog dialog-wide" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="pending-invites-title">
       <div class="dialog-header">
         <h3 id="pending-invites-title">Pending Society Invites</h3>
-        <button class="close-btn" on:click={() => (showPendingDialog = false)} aria-label="Close dialog">&#10005;</button>
+        <button class="close-btn" onclick={() => (showPendingDialog = false)} aria-label="Close dialog">&#10005;</button>
       </div>
       <div class="dialog-body">
         {#if pendingError}
@@ -409,18 +412,18 @@
         </div>
       </div>
       <div class="dialog-footer">
-        <button class="dialog-btn secondary" on:click={() => (showPendingDialog = false)}>Close</button>
+        <button class="dialog-btn secondary" onclick={() => (showPendingDialog = false)}>Close</button>
       </div>
     </div>
   </div>
 {/if}
 
 {#if showDisbandDialog}
-  <div class="dialog-backdrop" on:click={closeDisbandDialog} on:keydown={(e) => e.key === 'Escape' && closeDisbandDialog()}>
-    <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="disband-title">
+  <div class="dialog-backdrop" onclick={closeDisbandDialog} onkeydown={(e) => e.key === 'Escape' && closeDisbandDialog()}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true" aria-labelledby="disband-title">
       <div class="dialog-header">
         <h3 id="disband-title">Disband Society</h3>
-        <button class="close-btn" on:click={closeDisbandDialog} aria-label="Close dialog">&#10005;</button>
+        <button class="close-btn" onclick={closeDisbandDialog} aria-label="Close dialog">&#10005;</button>
       </div>
       <div class="dialog-body">
         {#if disbandError}
@@ -439,11 +442,11 @@
         {/if}
       </div>
       <div class="dialog-footer">
-        <button class="dialog-btn secondary" on:click={closeDisbandDialog} disabled={isDisbanding}>Cancel</button>
+        <button class="dialog-btn secondary" onclick={closeDisbandDialog} disabled={isDisbanding}>Cancel</button>
         {#if disbandStep === 1}
-          <button class="dialog-btn danger" on:click={advanceDisbandStep} disabled={isDisbanding}>Continue</button>
+          <button class="dialog-btn danger" onclick={advanceDisbandStep} disabled={isDisbanding}>Continue</button>
         {:else}
-          <button class="dialog-btn danger" on:click={handleDisband} disabled={isDisbanding}>
+          <button class="dialog-btn danger" onclick={handleDisband} disabled={isDisbanding}>
             {isDisbanding ? 'Disbanding...' : 'Disband Society'}
           </button>
         {/if}

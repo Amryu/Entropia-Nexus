@@ -9,14 +9,20 @@
   import { getItemLink } from '$lib/util';
   import { isPercentMarkupType } from '$lib/common/itemTypes.js';
 
-  /** Array of inventory groups, each with a Name and Items array */
-  export let inventoryGroups = [];
+  
 
-  /** Map of item ID to item details (for linking and display names) */
-  export let itemDetails = {};
+  
 
-  /** Message to show when inventory is empty */
-  export let emptyMessage = "The shop owner has not yet added any items for display.";
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [inventoryGroups] - Array of inventory groups, each with a Name and Items array
+   * @property {any} [itemDetails] - Map of item ID to item details (for linking and display names)
+   * @property {string} [emptyMessage] - Message to show when inventory is empty
+   */
+
+  /** @type {Props} */
+  let { inventoryGroups = [], itemDetails = {}, emptyMessage = "The shop owner has not yet added any items for display." } = $props();
 
   // Transform a group's items into table data
   function getTableData(group) {
@@ -73,8 +79,8 @@
   ];
 
   // Check if inventory has any items
-  $: hasInventory = inventoryGroups && inventoryGroups.length > 0 &&
-    inventoryGroups.some(g => g?.Items?.length > 0);
+  let hasInventory = $derived(inventoryGroups && inventoryGroups.length > 0 &&
+    inventoryGroups.some(g => g?.Items?.length > 0));
 </script>
 
 <div class="inventory-container">

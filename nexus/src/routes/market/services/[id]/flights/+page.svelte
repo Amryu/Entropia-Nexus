@@ -9,21 +9,21 @@
     toDateTimeLocalFormat
   } from '$lib/utils/flightUtils';
 
-  export let data;
+  let { data } = $props();
 
-  $: service = data.service;
-  $: planets = data.planets || [];
-  $: flights = data.flights || [];
+  let service = $derived(data.service);
+  let planets = $derived(data.planets || []);
+  let flights = $derived(data.flights || []);
 
-  let showCreateForm = false;
-  let saving = false;
-  let error = '';
+  let showCreateForm = $state(false);
+  let saving = $state(false);
+  let error = $state('');
 
   // Create flight form
-  let scheduledDeparture = '';
-  let routeType = 'fixed';
-  let routeStops = [{ planet_id: null, name: '' }, { planet_id: null, name: '' }];
-  let flexibleEndPoint = { planet_id: null, name: '' };
+  let scheduledDeparture = $state('');
+  let routeType = $state('fixed');
+  let routeStops = $state([{ planet_id: null, name: '' }, { planet_id: null, name: '' }]);
+  let flexibleEndPoint = $state({ planet_id: null, name: '' });
 
   function addStop() {
     routeStops = [...routeStops, { planet_id: null, name: '' }];
@@ -159,9 +159,9 @@
     }
   }
 
-  $: activeFlights = flights.filter(f => !['completed', 'cancelled'].includes(f.status));
-  $: cancelledFlights = flights.filter(f => f.status === 'cancelled' && canRestoreFlight(f, activeFlights));
-  $: pastFlights = flights.filter(f => f.status === 'completed' || (f.status === 'cancelled' && !canRestoreFlight(f, activeFlights)));
+  let activeFlights = $derived(flights.filter(f => !['completed', 'cancelled'].includes(f.status)));
+  let cancelledFlights = $derived(flights.filter(f => f.status === 'cancelled' && canRestoreFlight(f, activeFlights)));
+  let pastFlights = $derived(flights.filter(f => f.status === 'completed' || (f.status === 'cancelled' && !canRestoreFlight(f, activeFlights))));
 
   async function restoreFlight(flight) {
     if (hasFlightOverlap(flight, activeFlights)) {
@@ -175,8 +175,8 @@
   }
 
   // Reschedule state
-  let reschedulingFlightId = null;
-  let rescheduledDeparture = '';
+  let reschedulingFlightId = $state(null);
+  let rescheduledDeparture = $state('');
 
   function startReschedule(flight) {
     reschedulingFlightId = flight.id;
@@ -219,10 +219,10 @@
   }
 
   // Route editing state
-  let editingRouteFlightId = null;
-  let editingRouteStops = [];
-  let editingRouteLocked = 0;
-  let pendingOptimizedRoute = null;
+  let editingRouteFlightId = $state(null);
+  let editingRouteStops = $state([]);
+  let editingRouteLocked = $state(0);
+  let pendingOptimizedRoute = $state(null);
 
   function startEditRoute(flight) {
     const stops = typeof flight.route_stops === 'string'
@@ -429,26 +429,26 @@
               {#each routeStops as stop, i}
                 <div class="route-stop">
                   <span class="stop-number">{i + 1}</span>
-                  <select bind:value={stop.planet_id} on:change={() => { stop.name = getPlanetName(stop.planet_id); }}>
+                  <select bind:value={stop.planet_id} onchange={() => { stop.name = getPlanetName(stop.planet_id); }}>
                     <option value={null}>-- Select Planet --</option>
                     {#each planets as planet}
                       <option value={planet.Id}>{planet.Name}</option>
                     {/each}
                   </select>
                   {#if routeStops.length > 2}
-                    <button type="button" class="remove-stop-btn" on:click={() => removeStop(i)}>x</button>
+                    <button type="button" class="remove-stop-btn" onclick={() => removeStop(i)}>x</button>
                   {/if}
                 </div>
               {/each}
             </div>
-            <button type="button" class="add-stop-btn" on:click={addStop}>+ Add Stop</button>
+            <button type="button" class="add-stop-btn" onclick={addStop}>+ Add Stop</button>
           </div>
         {:else}
           <div class="form-group">
             <label>Starting Point *</label>
             <div class="route-stop">
               <span class="stop-number">1</span>
-              <select bind:value={routeStops[0].planet_id} on:change={() => { routeStops[0].name = getPlanetName(routeStops[0].planet_id); }}>
+              <select bind:value={routeStops[0].planet_id} onchange={() => { routeStops[0].name = getPlanetName(routeStops[0].planet_id); }}>
                 <option value={null}>-- Select Planet --</option>
                 {#each planets as planet}
                   <option value={planet.Id}>{planet.Name}</option>
@@ -462,7 +462,7 @@
             <label>End Point (Optional)</label>
             <div class="route-stop">
               <span class="stop-number end">E</span>
-              <select bind:value={flexibleEndPoint.planet_id} on:change={() => { flexibleEndPoint.name = getPlanetName(flexibleEndPoint.planet_id); }}>
+              <select bind:value={flexibleEndPoint.planet_id} onchange={() => { flexibleEndPoint.name = getPlanetName(flexibleEndPoint.planet_id); }}>
                 <option value={null}>-- No specific end point --</option>
                 {#each planets as planet}
                   <option value={planet.Id}>{planet.Name}</option>
@@ -474,15 +474,15 @@
         {/if}
 
         <div class="form-actions">
-          <button type="button" class="cancel-btn" on:click={() => { showCreateForm = false; error = ''; }} disabled={saving}>Cancel</button>
-          <button type="button" class="save-btn" on:click={createFlight} disabled={saving}>
+          <button type="button" class="cancel-btn" onclick={() => { showCreateForm = false; error = ''; }} disabled={saving}>Cancel</button>
+          <button type="button" class="save-btn" onclick={createFlight} disabled={saving}>
             {saving ? 'Creating...' : 'Create Flight'}
           </button>
         </div>
       </div>
     {:else}
       <div class="actions-bar">
-        <button class="create-btn" on:click={() => { showCreateForm = true; error = ''; }}>
+        <button class="create-btn" onclick={() => { showCreateForm = true; error = ''; }}>
           + Schedule New Flight
         </button>
       </div>
@@ -530,46 +530,46 @@
                           <span class="stop-name locked">{stop.name || getPlanetName(stop.planet_id)}</span>
                           <span class="lock-icon">🔒</span>
                         {:else}
-                          <select bind:value={stop.planet_id} on:change={() => { stop.name = getPlanetName(stop.planet_id); }}>
+                          <select bind:value={stop.planet_id} onchange={() => { stop.name = getPlanetName(stop.planet_id); }}>
                             <option value={null}>-- Select Planet --</option>
                             {#each planets as planet}
                               <option value={planet.Id}>{planet.Name}</option>
                             {/each}
                           </select>
                           {#if i > 0}
-                            <button type="button" class="move-btn" on:click={() => moveStop(i, i - 1)} disabled={i <= editingRouteLocked}>↑</button>
+                            <button type="button" class="move-btn" onclick={() => moveStop(i, i - 1)} disabled={i <= editingRouteLocked}>↑</button>
                           {/if}
                           {#if i < editingRouteStops.length - 1}
-                            <button type="button" class="move-btn" on:click={() => moveStop(i, i + 1)}>↓</button>
+                            <button type="button" class="move-btn" onclick={() => moveStop(i, i + 1)}>↓</button>
                           {/if}
                           {#if editingRouteStops.length > editingRouteLocked + 1}
-                            <button type="button" class="remove-stop-btn" on:click={() => removeEditStop(i)}>x</button>
+                            <button type="button" class="remove-stop-btn" onclick={() => removeEditStop(i)}>x</button>
                           {/if}
                         {/if}
                       </div>
                     {/each}
                   </div>
-                  <button type="button" class="add-stop-btn" on:click={addEditStop}>+ Add Stop</button>
+                  <button type="button" class="add-stop-btn" onclick={addEditStop}>+ Add Stop</button>
 
                   <div class="route-editor-actions">
                     {#if flight.route_type === 'flexible' && !pendingOptimizedRoute}
-                      <button class="action-btn optimize-btn" on:click={() => optimizeRouteForFlight(flight.id)} disabled={saving}>
+                      <button class="action-btn optimize-btn" onclick={() => optimizeRouteForFlight(flight.id)} disabled={saving}>
                         Auto-Optimize
                       </button>
                     {/if}
                     {#if pendingOptimizedRoute}
-                      <button class="action-btn apply-btn" on:click={applyOptimizedRoute} disabled={saving}>
+                      <button class="action-btn apply-btn" onclick={applyOptimizedRoute} disabled={saving}>
                         Accept & Save
                       </button>
-                      <button class="action-btn reject-btn" on:click={rejectOptimizedRoute} disabled={saving}>
+                      <button class="action-btn reject-btn" onclick={rejectOptimizedRoute} disabled={saving}>
                         Reject
                       </button>
                     {:else}
-                      <button class="action-btn save-route-btn" on:click={saveRouteChanges} disabled={saving}>
+                      <button class="action-btn save-route-btn" onclick={saveRouteChanges} disabled={saving}>
                         Save Changes
                       </button>
                     {/if}
-                    <button class="action-btn cancel-edit-btn" on:click={cancelEditRoute} disabled={saving}>
+                    <button class="action-btn cancel-edit-btn" onclick={cancelEditRoute} disabled={saving}>
                       Cancel
                     </button>
                   </div>
@@ -579,40 +579,40 @@
                   {#if reschedulingFlightId === flight.id}
                     <div class="reschedule-form">
                       <input type="datetime-local" bind:value={rescheduledDeparture} />
-                      <button class="action-btn save-btn" on:click={saveReschedule} disabled={saving}>Save</button>
-                      <button class="action-btn cancel-edit-btn" on:click={cancelReschedule} disabled={saving}>Cancel</button>
+                      <button class="action-btn save-btn" onclick={saveReschedule} disabled={saving}>Save</button>
+                      <button class="action-btn cancel-edit-btn" onclick={cancelReschedule} disabled={saving}>Cancel</button>
                     </div>
                   {:else}
                     {#if flight.status === 'scheduled'}
-                      <button class="action-btn start-btn" on:click={() => goto(`/market/services/${service.id}/flights/${flight.id}/manage`)} disabled={saving}>
+                      <button class="action-btn start-btn" onclick={() => goto(`/market/services/${service.id}/flights/${flight.id}/manage`)} disabled={saving}>
                         Start Boarding
                       </button>
                     {/if}
                     {#if flight.status === 'boarding'}
-                      <button class="action-btn start-btn" on:click={() => goto(`/market/services/${service.id}/flights/${flight.id}/manage`)} disabled={saving}>
+                      <button class="action-btn start-btn" onclick={() => goto(`/market/services/${service.id}/flights/${flight.id}/manage`)} disabled={saving}>
                         Manage
                       </button>
-                      <button class="action-btn reschedule-btn" on:click={() => startReschedule(flight)} disabled={saving}>
+                      <button class="action-btn reschedule-btn" onclick={() => startReschedule(flight)} disabled={saving}>
                         Reschedule
                       </button>
                     {/if}
                     {#if flight.status === 'running'}
-                      <button class="action-btn manage-btn" on:click={() => goto(`/market/services/${service.id}/flights/${flight.id}/manage`)}>
+                      <button class="action-btn manage-btn" onclick={() => goto(`/market/services/${service.id}/flights/${flight.id}/manage`)}>
                         Manage Flight
                       </button>
                     {/if}
                     {#if flight.status !== 'completed' && flight.status !== 'cancelled'}
-                      <button class="action-btn edit-route-btn" on:click={() => startEditRoute(flight)} disabled={saving}>
+                      <button class="action-btn edit-route-btn" onclick={() => startEditRoute(flight)} disabled={saving}>
                         Edit Route
                       </button>
-                      <button class="action-btn cancel-flight-btn" on:click={() => flightAction(flight.id, 'cancel')} disabled={saving}>
+                      <button class="action-btn cancel-flight-btn" onclick={() => flightAction(flight.id, 'cancel')} disabled={saving}>
                         Cancel
                       </button>
                     {/if}
-                    <button class="action-btn copy-btn" on:click={() => copyFlight(flight)} title="Copy to new flight">
+                    <button class="action-btn copy-btn" onclick={() => copyFlight(flight)} title="Copy to new flight">
                       Copy
                     </button>
-                    <button class="action-btn copy-week-btn" on:click={() => copyFlightNextWeek(flight)} title="Copy to same time next week">
+                    <button class="action-btn copy-week-btn" onclick={() => copyFlightNextWeek(flight)} title="Copy to same time next week">
                       +7 Days
                     </button>
                   {/if}
@@ -646,10 +646,10 @@
                 <p>Scheduled: <strong>{formatDateTime(flight.scheduled_departure)}</strong></p>
               </div>
               <div class="flight-actions">
-                <button class="action-btn restore-btn" on:click={() => restoreFlight(flight)} disabled={saving}>
+                <button class="action-btn restore-btn" onclick={() => restoreFlight(flight)} disabled={saving}>
                   Restore
                 </button>
-                <button class="action-btn copy-btn" on:click={() => copyFlight(flight)} title="Copy to new flight">
+                <button class="action-btn copy-btn" onclick={() => copyFlight(flight)} title="Copy to new flight">
                   Copy
                 </button>
               </div>
@@ -680,10 +680,10 @@
                 <p>Scheduled: {formatDateTime(flight.scheduled_departure)}</p>
               </div>
               <div class="flight-actions">
-                <button class="action-btn copy-btn" on:click={() => copyFlight(flight)} title="Copy to new flight">
+                <button class="action-btn copy-btn" onclick={() => copyFlight(flight)} title="Copy to new flight">
                   Copy
                 </button>
-                <button class="action-btn copy-week-btn" on:click={() => copyFlightNextWeek(flight)} title="Copy to same time next week">
+                <button class="action-btn copy-week-btn" onclick={() => copyFlightNextWeek(flight)} title="Copy to same time next week">
                   +7 Days
                 </button>
               </div>

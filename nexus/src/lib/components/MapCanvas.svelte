@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
 
 
@@ -233,26 +235,37 @@
 
   import { copyLocation, getTooltipText, getWaypoint, getMobAreaDifficulty } from '$lib/mapUtil';
 
-  export let mapName = '';
-  export let planet = null;
-  // No cache invalidation needed
-  export let locations = [];
-  export let selected;
-  export let hovered;
-  export let searchResults = [];
-  let filteredLocations = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [mapName]
+   * @property {any} [planet]
+   * @property {any} [locations] - No cache invalidation needed
+   * @property {any} selected
+   * @property {any} hovered
+   * @property {any} [searchResults]
+   */
+
+  /** @type {Props} */
+  let {
+    mapName = '',
+    planet = null,
+    locations = $bindable([]),
+    selected = $bindable(),
+    hovered = $bindable(),
+    searchResults = []
+  } = $props();
+  let filteredLocations = $state([]);
 
   // Pre-compute search result lookup (Id → index) to avoid creating a Map every draw frame
-  let searchResultMap = new Map();
-  $: { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); }
-  $: if (filteredLocations) { if (browser) markDirty(); }
+  let searchResultMap = $state(new Map());
 
   // Layer visibility toggles
-  let showTeleporters = true;
-  let showLandAreas = true;
-  let showMobAreas = true;
-  let showPvpAreas = true;
-  let showOtherAreas = false;
+  let showTeleporters = $state(true);
+  let showLandAreas = $state(true);
+  let showMobAreas = $state(true);
+  let showPvpAreas = $state(true);
+  let showOtherAreas = $state(false);
 
   const mapLoadedStore = writable(false);
 
@@ -260,9 +273,6 @@
 
   initPromise();
 
-  $: if ($mapLoadedStore === false) {
-    initPromise();
-  }
 
   let imageTileSize;
   let imageToEntropiaRatio;
@@ -270,15 +280,14 @@
 
   let imgLoaded = false;
 
-  let mapCenterPos = { x: 0, y: 0 };
+  let mapCenterPos = $state({ x: 0, y: 0 });
   let mousePos = { x: 0, y: 0 };
   let dragStartPos = { x: 0, y: 0 };
   let dragMoved = false;
   let ignoreNextClick = false;
   const dragSlop = 4;
 
-  let dragging = false;
-  $: if (typeof window !== 'undefined') document.documentElement.style.setProperty('--cursorStatus', dragging ? 'grabbing' : 'default');
+  let dragging = $state(false);
   let isTouching = false;
   let lastTouchDistance = null;
   let lastTouchCenter = null;
@@ -292,16 +301,16 @@
   let inertiaId = null;
   let velocity = { x: 0, y: 0 };
 
-  let zoom = 1;
+  let zoom = $state(1);
   let targetZoom = zoom;
   let zoomTransitionStart = null;
   let zoomAnimationId = null;
   let moveAnimationId = null;
   
-  let canvasElement;
+  let canvasElement = $state();
   let img;
   let ctx;
-  let canvasBounds;
+  let canvasBounds = $state();
   let drawAnimationId;
 
   // Dirty-flag rendering: only redraw when something changes
@@ -309,11 +318,11 @@
   function markDirty() { _renderDirty = true; }
 
 
-  let tooltipElement;
-  let tooltipText;
-  let tooltipShow = false;
-  let tooltipPos = { x: 0, y: 0 };
-  let wasPositionCopied = false;
+  let tooltipElement = $state();
+  let tooltipText = $state();
+  let tooltipShow = $state(false);
+  let tooltipPos = $state({ x: 0, y: 0 });
+  let wasPositionCopied = $state(false);
 
   let editMode = false;
   let editType = null;
@@ -329,56 +338,13 @@
       }
     },
   ];
-  let mapContextMenuElement;
-
-  $: if (canvasBounds && mapCenterPos != null && zoom) {
-    locations = locations;
-  }
-
-  $: if (mapName) reloadImage(mapName);
+  let mapContextMenuElement = $state();
 
 
 
-  // Pre-compute difficulty colors for MobArea locations
-  $: if (locations) {
-    for (const loc of locations) {
-      if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
-        loc._difficulty = getMobAreaDifficulty(loc.Maturities);
-      }
-    }
-  }
 
-  // Filter locations based on layer toggles
-  // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
-  $: {
-    // Touch all toggle variables to establish reactive dependencies
-    const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected, searchResults];
-    const searchResultIds = new Set(searchResults.map(sr => sr.Id));
-    filteredLocations = locations ? locations.filter(loc => {
-      // Always show the selected location regardless of layer toggles
-      if (selected && loc.Id === selected.Id) return true;
-      // Always show search results regardless of layer toggles
-      if (searchResultIds.has(loc.Id)) return true;
 
-      const type = loc.Properties?.Type;
-      const areaType = loc.Properties?.AreaType || type;
 
-      // Teleporters
-      if (type === 'Teleporter') return showTeleporters;
-
-      // Land Areas
-      if (areaType === 'LandArea') return showLandAreas;
-
-      // Mob Areas (creatures)
-      if (areaType === 'MobArea') return showMobAreas;
-
-      // PvP Areas (PvpArea and PvpLootArea)
-      if (areaType === 'PvpArea' || areaType === 'PvpLootArea') return showPvpAreas;
-
-      // Other areas (Zone, Event, City, Estate, etc.)
-      return showOtherAreas;
-    }) : [];
-  }
 
 
   function getMinZoom() {
@@ -1445,9 +1411,8 @@
     }
   }
 
-  let mapContextMenuObject = { contextMenu: null, payload: null }
+  let mapContextMenuObject = $state({ contextMenu: null, payload: null })
 
-  $: mapContextMenuObject = { contextMenu: mapContextMenuElement, payload: null }
 
   // Layer toggle functions
   function toggleTeleporters() { showTeleporters = !showTeleporters; }
@@ -1455,6 +1420,70 @@
   function toggleMobAreas() { showMobAreas = !showMobAreas; }
   function togglePvpAreas() { showPvpAreas = !showPvpAreas; }
   function toggleOtherAreas() { showOtherAreas = !showOtherAreas; }
+  run(() => { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); });
+  run(() => {
+    if (canvasBounds && mapCenterPos != null && zoom) {
+      locations = locations;
+    }
+  });
+  // Filter locations based on layer toggles
+  // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
+  run(() => {
+    // Touch all toggle variables to establish reactive dependencies
+    const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected, searchResults];
+    const searchResultIds = new Set(searchResults.map(sr => sr.Id));
+    filteredLocations = locations ? locations.filter(loc => {
+      // Always show the selected location regardless of layer toggles
+      if (selected && loc.Id === selected.Id) return true;
+      // Always show search results regardless of layer toggles
+      if (searchResultIds.has(loc.Id)) return true;
+
+      const type = loc.Properties?.Type;
+      const areaType = loc.Properties?.AreaType || type;
+
+      // Teleporters
+      if (type === 'Teleporter') return showTeleporters;
+
+      // Land Areas
+      if (areaType === 'LandArea') return showLandAreas;
+
+      // Mob Areas (creatures)
+      if (areaType === 'MobArea') return showMobAreas;
+
+      // PvP Areas (PvpArea and PvpLootArea)
+      if (areaType === 'PvpArea' || areaType === 'PvpLootArea') return showPvpAreas;
+
+      // Other areas (Zone, Event, City, Estate, etc.)
+      return showOtherAreas;
+    }) : [];
+  });
+  run(() => {
+    if (filteredLocations) { if (browser) markDirty(); }
+  });
+  run(() => {
+    if ($mapLoadedStore === false) {
+      initPromise();
+    }
+  });
+  run(() => {
+    if (typeof window !== 'undefined') document.documentElement.style.setProperty('--cursorStatus', dragging ? 'grabbing' : 'default');
+  });
+  run(() => {
+    if (mapName) reloadImage(mapName);
+  });
+  // Pre-compute difficulty colors for MobArea locations
+  run(() => {
+    if (locations) {
+      for (const loc of locations) {
+        if (loc.Properties?.AreaType === 'MobArea' && !loc._difficulty) {
+          loc._difficulty = getMobAreaDifficulty(loc.Maturities);
+        }
+      }
+    }
+  });
+  run(() => {
+    mapContextMenuObject = { contextMenu: mapContextMenuElement, payload: null }
+  });
 </script>
 
 <style>
@@ -1567,7 +1596,7 @@
   bind:this={mapContextMenuElement}
   menu={mapContextMenu} />
 <div class="map-container">
-  <canvas use:contextmenu={mapContextMenuObject} bind:this={canvasElement} on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp} on:mouseleave={onMouseUp} on:wheel={onWheel}>
+  <canvas use:contextmenu={mapContextMenuObject} bind:this={canvasElement} onmousedown={onMouseDown} onmousemove={onMouseMove} onmouseup={onMouseUp} onmouseleave={onMouseUp} onwheel={onWheel}>
   </canvas>
 
   <!-- Layer toggles (bottom-left, desktop only) -->
@@ -1575,7 +1604,7 @@
     <button
       class="layer-btn"
       class:active={showTeleporters}
-      on:click={toggleTeleporters}
+      onclick={toggleTeleporters}
       title="Toggle Teleporters"
     >
       <span class="layer-icon tp-icon">TP</span>
@@ -1583,7 +1612,7 @@
     <button
       class="layer-btn"
       class:active={showLandAreas}
-      on:click={toggleLandAreas}
+      onclick={toggleLandAreas}
       title="Toggle Land Areas"
     >
       <span class="layer-icon la-icon">LA</span>
@@ -1591,7 +1620,7 @@
     <button
       class="layer-btn"
       class:active={showMobAreas}
-      on:click={toggleMobAreas}
+      onclick={toggleMobAreas}
       title="Toggle Mob Areas"
     >
       <span class="layer-icon ma-icon">MA</span>
@@ -1599,7 +1628,7 @@
     <button
       class="layer-btn"
       class:active={showPvpAreas}
-      on:click={togglePvpAreas}
+      onclick={togglePvpAreas}
       title="Toggle PvP Areas"
     >
       <span class="layer-icon pvp-icon">PVP</span>
@@ -1607,7 +1636,7 @@
     <button
       class="layer-btn"
       class:active={showOtherAreas}
-      on:click={toggleOtherAreas}
+      onclick={toggleOtherAreas}
       title="Toggle Other Areas"
     >
       <span class="layer-icon other-icon">OTH</span>

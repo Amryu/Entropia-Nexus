@@ -15,6 +15,8 @@
   See plan file for full migration details.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   /**
    * @deprecated Use WikiPage and related components from $lib/components/wiki/ instead.
@@ -30,23 +32,42 @@
   import ManagerEditForm from './ManagerEditForm.svelte';
   import EntityHistory from './EntityHistory.svelte';
 
-  export let data;
-  export let tableViewInfo;
-  export let navButtonInfo = [];
-  export let editConfig;
-  export let propertiesDataFunction;
-  export let title;
-  export let type;
-  export let basePath;
-  export let ownershipBasedEditing = false; // New parameter for shops
-  export let getOwnershipInfo = null; // Function to check ownership
 
-  export let user;
+  /**
+   * @typedef {Object} Props
+   * @property {any} data
+   * @property {any} tableViewInfo
+   * @property {any} [navButtonInfo]
+   * @property {any} editConfig
+   * @property {any} propertiesDataFunction
+   * @property {any} title
+   * @property {any} type
+   * @property {any} basePath
+   * @property {boolean} [ownershipBasedEditing] - New parameter for shops
+   * @property {any} [getOwnershipInfo] - Function to check ownership
+   * @property {any} user
+   * @property {import('svelte').Snippet<[any]>} [children]
+   */
 
-  let mode = null;
-  let change = null;
+  /** @type {Props} */
+  let {
+    data,
+    tableViewInfo,
+    navButtonInfo = [],
+    editConfig,
+    propertiesDataFunction,
+    title,
+    type,
+    basePath,
+    ownershipBasedEditing = false,
+    getOwnershipInfo = null,
+    user,
+    children
+  } = $props();
+
+  let mode = $state(null);
+  let change = $state(null);
   
-  $: if (typeof window !== 'undefined' && mode != new URLSearchParams(window.location.search).get('mode') && data != null) updateMode();
 
   function updateMode() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -97,7 +118,7 @@
       });
   }
 
-  let expanded = false;
+  let expanded = $state(false);
 
   function getCurrentData(change, object) {
     if (mode === 'edit' || mode === 'preview') {
@@ -120,6 +141,9 @@
       return `https://entropianexus.com${basePath}`;
   } 
 
+  run(() => {
+    if (typeof window !== 'undefined' && mode != new URLSearchParams(window.location.search).get('mode') && data != null) updateMode();
+  });
 </script>
 
 <style>
@@ -200,7 +224,7 @@
               entityType={type}
               object={data.object} />
           </div>
-          <slot object={getCurrentData(change?.data, data.object)} change={change} mode={mode} additional={data.additional} {user}></slot>
+          {@render children?.({ object: getCurrentData(change?.data, data.object), change, mode, additional: data.additional, user, })}
         {:else if mode === 'edit' || mode === 'create'}
           <div class="flex-item flex-span-2">
             <EntityTitleBar 

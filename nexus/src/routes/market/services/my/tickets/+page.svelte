@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import '$lib/style.css';
   import DashboardNav from "$lib/components/services/DashboardNav.svelte";
@@ -6,27 +9,27 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { navigating } from '$app/stores';
 
-  export let data;
+  let { data } = $props();
 
   // Loading state
-  $: isLoading = $navigating !== null;
+  let isLoading = $derived($navigating !== null);
 
-  $: ownedTickets = data.ownedTickets || [];
-  $: issuedTickets = data.issuedTickets || [];
-  $: expiredTickets = data.expiredTickets || [];
-  $: expiredIssuedTickets = data.expiredIssuedTickets || [];
-  $: hasTransportServices = data.hasTransportServices;
+  let ownedTickets = $derived(data.ownedTickets || []);
+  let issuedTickets = $derived(data.issuedTickets || []);
+  let expiredTickets = $derived(data.expiredTickets || []);
+  let expiredIssuedTickets = $derived(data.expiredIssuedTickets || []);
+  let hasTransportServices = $derived(data.hasTransportServices);
 
-  let activeTab = 'owned';
+  let activeTab = $state('owned');
 
   // Ticket extension dialog state
-  let showExtendDialog = false;
-  let selectedTicket = null;
-  let extendAction = 'extend_uses';
-  let additionalUses = 1;
-  let additionalDays = 7;
-  let saving = false;
-  let error = '';
+  let showExtendDialog = $state(false);
+  let selectedTicket = $state(null);
+  let extendAction = $state('extend_uses');
+  let additionalUses = $state(1);
+  let additionalDays = $state(7);
+  let saving = $state(false);
+  let error = $state('');
 
   function formatDate(dateStr) {
     if (!dateStr) return '-';
@@ -58,8 +61,8 @@
   }
 
   // Group owned tickets by active/expired
-  $: activeTickets = ownedTickets.filter(t => getTicketStatus(t) === 'active');
-  $: usedOrExpiredTickets = ownedTickets.filter(t => getTicketStatus(t) !== 'active');
+  let activeTickets = $derived(ownedTickets.filter(t => getTicketStatus(t) === 'active'));
+  let usedOrExpiredTickets = $derived(ownedTickets.filter(t => getTicketStatus(t) !== 'active'));
 
   function openExtendDialog(ticket) {
     selectedTicket = ticket;
@@ -166,10 +169,10 @@
 
   {#if hasTransportServices}
     <div class="tab-row">
-      <button class="tab" class:active={activeTab === 'owned'} on:click={() => activeTab = 'owned'}>
+      <button class="tab" class:active={activeTab === 'owned'} onclick={() => activeTab = 'owned'}>
         My Tickets
       </button>
-      <button class="tab" class:active={activeTab === 'issued'} on:click={() => activeTab = 'issued'}>
+      <button class="tab" class:active={activeTab === 'issued'} onclick={() => activeTab = 'issued'}>
         Issued Tickets
       </button>
     </div>
@@ -233,7 +236,7 @@
                     <span class="value">{formatDate(ticket.valid_until)}</span>
                   </div>
                 </div>
-                <button class="rebuy-btn" on:click={() => goto(`/market/services/${ticket.service_id}`)}>
+                <button class="rebuy-btn" onclick={() => goto(`/market/services/${ticket.service_id}`)}>
                   Buy New Ticket
                 </button>
               </div>
@@ -270,7 +273,7 @@
           <p class="section-description">Click a ticket to extend it</p>
           <div class="ticket-list issued">
             {#each issuedTickets as ticket}
-              <div class="ticket-row clickable" on:click={() => openExtendDialog(ticket)} on:keypress={(e) => e.key === 'Enter' && openExtendDialog(ticket)} role="button" tabindex="0">
+              <div class="ticket-row clickable" onclick={() => openExtendDialog(ticket)} onkeypress={(e) => e.key === 'Enter' && openExtendDialog(ticket)} role="button" tabindex="0">
                 <span class="buyer">{ticket.buyer_name}</span>
                 <span class="service">{ticket.service_title}</span>
                 <span class="name">{ticket.offer_name}</span>
@@ -289,7 +292,7 @@
           <p class="section-description">Click to reactivate an expired ticket</p>
           <div class="ticket-list issued">
             {#each expiredIssuedTickets as ticket}
-              <div class="ticket-row clickable expired-row" on:click={() => openExtendDialog(ticket)} on:keypress={(e) => e.key === 'Enter' && openExtendDialog(ticket)} role="button" tabindex="0">
+              <div class="ticket-row clickable expired-row" onclick={() => openExtendDialog(ticket)} onkeypress={(e) => e.key === 'Enter' && openExtendDialog(ticket)} role="button" tabindex="0">
                 <span class="buyer">{ticket.buyer_name}</span>
                 <span class="service">{ticket.service_title}</span>
                 <span class="name">{ticket.offer_name}</span>
@@ -308,11 +311,11 @@
 
 <!-- Ticket Extension Dialog -->
 {#if showExtendDialog && selectedTicket}
-  <div class="dialog-overlay" on:click={closeExtendDialog} on:keypress={(e) => e.key === 'Escape' && closeExtendDialog()}>
-    <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="dialog-overlay" onclick={closeExtendDialog} onkeypress={(e) => e.key === 'Escape' && closeExtendDialog()}>
+    <div class="dialog" onclick={stopPropagation(bubble('click'))} role="dialog" aria-modal="true">
       <div class="dialog-header">
         <h2>{getTicketStatus(selectedTicket) === 'expired' ? 'Reactivate Ticket' : 'Extend Ticket'}</h2>
-        <button class="close-btn" on:click={closeExtendDialog}>&times;</button>
+        <button class="close-btn" onclick={closeExtendDialog}>&times;</button>
       </div>
 
       <div class="dialog-body">
@@ -373,7 +376,7 @@
 
       {#if selectedTicket.status !== 'cancelled'}
         <div class="cancel-ticket-section">
-          <button class="cancel-ticket-btn" on:click={handleCancelTicket} disabled={saving}>
+          <button class="cancel-ticket-btn" onclick={handleCancelTicket} disabled={saving}>
             Cancel This Ticket
           </button>
           <small>Cancelling is permanent. Coordinate refunds with the customer separately.</small>
@@ -381,9 +384,9 @@
       {/if}
 
       <div class="dialog-footer">
-        <button class="cancel-btn" on:click={closeExtendDialog} disabled={saving}>Close</button>
+        <button class="cancel-btn" onclick={closeExtendDialog} disabled={saving}>Close</button>
         {#if selectedTicket.status !== 'cancelled'}
-          <button class="confirm-btn" on:click={submitExtension} disabled={saving}>
+          <button class="confirm-btn" onclick={submitExtension} disabled={saving}>
             {saving ? 'Processing...' : (getTicketStatus(selectedTicket) === 'expired' ? 'Reactivate' : 'Extend')}
           </button>
         {/if}

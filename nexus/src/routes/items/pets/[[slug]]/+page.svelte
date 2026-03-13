@@ -6,6 +6,8 @@
   Legacy editConfig preserved in pets-legacy/+page.svelte
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -43,45 +45,14 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' },
-      { key: 'planetsList', url: '/api/planets' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
 
-  $: pet = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: planetsList = data.planets || [];
-  $: effectsList = data.effects || [];
-  $: petEntityId = pet?.Id ?? pet?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, petEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
-  // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
-  // All pets for navigation
-  $: allItems = data.allItems || [];
 
-  // Build navigation items
-  $: navItems = allItems;
 
   // Empty entity template for create mode
   const emptyEntity = {
@@ -99,29 +70,8 @@
     Effects: []
   };
 
-  // Initialize edit state when entity or user changes
-  $: if (user) {
-    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : pet;
-    if (entity) {
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(entity, 'Pet', isCreateMode, editChange);
-    }
-  }
 
-  // Set existing pending change when data loads
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → pet)
-  $: activeEntity = $editMode
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.changes)
-      ? applyChangesToEntity(pet, $existingPendingChange.changes)
-      : pet;
 
   // Helper to apply pending changes to entity for display
   function applyChangesToEntity(entity, changes) {
@@ -148,16 +98,6 @@
     resetEditState();
   });
 
-  // Rarity filters for sidebar
-  $: navFilters = [
-    { key: 'Properties.Rarity', label: 'Rarity', values: [
-      { value: 'Common', label: 'Common' },
-      { value: 'Uncommon', label: 'Uncommon' },
-      { value: 'Rare', label: 'Rare' },
-      { value: 'Epic', label: 'Epic' },
-      { value: 'Legendary', label: 'Legendary' }
-    ]}
-  ];
 
   // Full column definitions for pets
   const columnDefs = {
@@ -171,31 +111,13 @@
     nutrioConsumption: { key: 'nutrioConsumption', header: 'Nutrio/h', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.NutrioConsumptionPerHour, format: (v) => v != null ? `${(v / 100).toFixed(2)}` : '-' }
   };
 
-  // Sidebar table columns
-  $: navTableColumns = [columnDefs.rarity, columnDefs.effects];
   const navFullWidthColumns = [columnDefs.rarity, columnDefs.effects, columnDefs.planet, columnDefs.tamingLevel, columnDefs.training, columnDefs.exportable, columnDefs.nutrioCapacity];
   const allAvailableColumns = Object.values(columnDefs);
 
-  // Breadcrumbs
-  $: breadcrumbs = [
-    { label: 'Items', href: '/items' },
-    { label: 'Pets', href: '/items/pets' },
-    ...(activeEntity ? [{ label: activeEntity.Name || 'New Pet' }] : [])
-  ];
 
-  // SEO
-  $: seoDescription = activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Pet'} - ${activeEntity?.Properties?.Rarity || ''} pet in Entropia Universe.`;
 
-  $: canonicalUrl = pet
-    ? `https://entropianexus.com/items/pets/${encodeURIComponentSafe(pet.Name)}`
-    : 'https://entropianexus.com/items/pets';
 
-  // Image URL for SEO
-  $: entityImageUrl = pet?.Id ? `/api/img/pet/${pet.Id}` : null;
 
-  // Check for effects
-  $: hasEffects = activeEntity?.Effects?.length > 0;
 
   // Rarity options for editing
   const rarityOptions = [
@@ -216,12 +138,12 @@
   ];
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     skills: true,
     marketPrices: true,
     acquisition: true,
     usage: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -251,6 +173,92 @@
       default: return '#9ca3af';
     }
   }
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' },
+        { key: 'planetsList', url: '/api/planets' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
+  let pet = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let planetsList = $derived(data.planets || []);
+  let effectsList = $derived(data.effects || []);
+  let petEntityId = $derived(pet?.Id ?? pet?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, petEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  // Can edit if user is verified or admin
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
+  // All pets for navigation
+  let allItems = $derived(data.allItems || []);
+  // Build navigation items
+  let navItems = $derived(allItems);
+  // Initialize edit state when entity or user changes
+  run(() => {
+    if (user) {
+      const entity = isCreateMode ? (existingChange?.data || emptyEntity) : pet;
+      if (entity) {
+        const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+        initEditState(entity, 'Pet', isCreateMode, editChange);
+      }
+    }
+  });
+  // Set existing pending change when data loads
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → pet)
+  let activeEntity = $derived($editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(pet, $existingPendingChange.changes)
+      : pet);
+  // Rarity filters for sidebar
+  let navFilters = $derived([
+    { key: 'Properties.Rarity', label: 'Rarity', values: [
+      { value: 'Common', label: 'Common' },
+      { value: 'Uncommon', label: 'Uncommon' },
+      { value: 'Rare', label: 'Rare' },
+      { value: 'Epic', label: 'Epic' },
+      { value: 'Legendary', label: 'Legendary' }
+    ]}
+  ]);
+  // Sidebar table columns
+  let navTableColumns = $derived([columnDefs.rarity, columnDefs.effects]);
+  // Breadcrumbs
+  let breadcrumbs = $derived([
+    { label: 'Items', href: '/items' },
+    { label: 'Pets', href: '/items/pets' },
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Pet' }] : [])
+  ]);
+  // SEO
+  let seoDescription = $derived(activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Pet'} - ${activeEntity?.Properties?.Rarity || ''} pet in Entropia Universe.`);
+  let canonicalUrl = $derived(pet
+    ? `https://entropianexus.com/items/pets/${encodeURIComponentSafe(pet.Name)}`
+    : 'https://entropianexus.com/items/pets');
+  // Image URL for SEO
+  let entityImageUrl = $derived(pet?.Id ? `/api/img/pet/${pet.Id}` : null);
+  // Check for effects
+  let hasEffects = $derived(activeEntity?.Effects?.length > 0);
 </script>
 
 <WikiSEO
@@ -367,7 +375,7 @@
                 <select
                   class="pet-select"
                   value={activeEntity?.Planet?.Name || ''}
-                  on:change={(e) => {
+                  onchange={(e) => {
                     const value = e.target.value;
                     if (value) {
                       updateField('Planet', { Name: value });

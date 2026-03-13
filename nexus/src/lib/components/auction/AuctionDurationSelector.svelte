@@ -4,30 +4,40 @@
   Respects buyout-only 365 day max vs 30 day normal max.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   import { createEventDispatcher } from 'svelte';
   import { getMaxDuration } from '$lib/common/auctionUtils.js';
 
   const dispatch = createEventDispatcher();
 
-  /** @type {number} Current duration in days */
-  export let value = 7;
+  
 
-  /** @type {number|null} Buyout price (null if none) */
-  export let buyoutPrice = null;
+  
 
-  /** @type {number} Starting bid */
-  export let startingBid = 0;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {number} [value]
+   * @property {number|null} [buyoutPrice]
+   * @property {number} [startingBid]
+   */
 
-  $: maxDuration = getMaxDuration({ starting_bid: startingBid, buyout_price: buyoutPrice });
-  $: presets = maxDuration > 30
+  /** @type {Props} */
+  let { value = $bindable(7), buyoutPrice = null, startingBid = 0 } = $props();
+
+  let maxDuration = $derived(getMaxDuration({ starting_bid: startingBid, buyout_price: buyoutPrice }));
+  let presets = $derived(maxDuration > 30
     ? [1, 3, 7, 14, 30, 90, 180, 365]
-    : [1, 3, 7, 14, 30];
+    : [1, 3, 7, 14, 30]);
 
   // Clamp value if max changes
-  $: if (value > maxDuration) {
-    value = maxDuration;
-    dispatch('change', value);
-  }
+  run(() => {
+    if (value > maxDuration) {
+      value = maxDuration;
+      dispatch('change', value);
+    }
+  });
 
   function handlePreset(days) {
     value = days;
@@ -50,7 +60,7 @@
       <button
         class="preset-btn"
         class:active={value === days}
-        on:click={() => handlePreset(days)}
+        onclick={() => handlePreset(days)}
         disabled={days > maxDuration}
       >
         {days}d
@@ -63,7 +73,7 @@
       {value}
       min="1"
       max={maxDuration}
-      on:input={handleInput}
+      oninput={handleInput}
       class="duration-input"
     />
     <span class="duration-unit">days (max {maxDuration})</span>

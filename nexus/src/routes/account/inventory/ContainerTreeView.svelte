@@ -1,25 +1,37 @@
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { clickable } from '$lib/actions/clickable.js';
   import { formatPedRaw, formatMarkupValue } from '../../market/exchange/orderUtils';
 
-  export let items = [];
-  export let editingMarkupId = null;
-  export let editingMarkupValue = '';
-  export let containerNames = new Map();
+  /**
+   * @typedef {Object} Props
+   * @property {any} [items]
+   * @property {any} [editingMarkupId]
+   * @property {string} [editingMarkupValue]
+   * @property {any} [containerNames]
+   */
+
+  /** @type {Props} */
+  let {
+    items = [],
+    editingMarkupId = null,
+    editingMarkupValue = $bindable(''),
+    containerNames = new Map()
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let expandedPaths = new Set();
-  let expandedVersion = 0; // Trigger reactivity on set changes
+  let expandedPaths = $state(new Set());
+  let expandedVersion = $state(0); // Trigger reactivity on set changes
 
   // Container rename state
-  let editingContainerPath = null;
-  let editingContainerName = '';
+  let editingContainerPath = $state(null);
+  let editingContainerName = $state('');
 
-  // Build tree from items' container_path
-  $: tree = buildTree(items);
 
   /** Strip '#refID' suffix from a container path segment for display. */
   function stripContainerRef(segment) {
@@ -170,8 +182,10 @@
     editingContainerName = '';
   }
 
+  // Build tree from items' container_path
+  let tree = $derived(buildTree(items));
   // Depend on both tree AND expandedVersion for reactivity
-  $: flatRows = (expandedVersion, flattenTree(tree, expandedPaths));
+  let flatRows = $derived((expandedVersion, flattenTree(tree, expandedPaths)));
 </script>
 
 <div class="tree-view">
@@ -183,7 +197,7 @@
         <div
           class="tree-row tree-container"
           class:expanded={expandedPaths.has(row.node.path)}
-          on:click={() => editingContainerPath !== row.node.path && toggleExpand(row.node.path)}
+          onclick={() => editingContainerPath !== row.node.path && toggleExpand(row.node.path)}
           use:clickable
         >
           <span class="tree-indent" style="width: {row.node.depth * 12}px"></span>
@@ -196,17 +210,17 @@
           </span>
           <span class="tree-name">
             {#if editingContainerPath === row.node.path}
-              <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
+              <!-- svelte-ignore a11y_autofocus -- intentional focus on inline edit activation -->
               <input
                 type="text"
                 class="container-name-input"
                 bind:value={editingContainerName}
-                on:blur={finishContainerRename}
-                on:keydown={(e) => {
+                onblur={finishContainerRename}
+                onkeydown={(e) => {
                   if (e.key === 'Enter') finishContainerRename();
                   if (e.key === 'Escape') cancelContainerRename();
                 }}
-                on:click|stopPropagation
+                onclick={stopPropagation(bubble('click'))}
                 autofocus
                 maxlength="100"
               />
@@ -224,8 +238,8 @@
                   class="rename-btn"
                   role="button"
                   tabindex="0"
-                  on:click|stopPropagation={() => startContainerRename(row.node)}
-                  on:keydown|stopPropagation={(e) => e.key === 'Enter' && startContainerRename(row.node)}
+                  onclick={stopPropagation(() => startContainerRename(row.node))}
+                  onkeydown={stopPropagation((e) => e.key === 'Enter' && startContainerRename(row.node))}
                   title="Rename container"
                 >&#9998;</span>
               {/if}
@@ -243,7 +257,7 @@
       {:else}
         <div
           class="tree-row tree-item"
-          on:click={() => handleItemClick(row.item)}
+          onclick={() => handleItemClick(row.item)}
           use:clickable
         >
           <span class="tree-indent" style="width: {row.depth * 12}px"></span>
@@ -255,15 +269,15 @@
           <span class="tree-col tree-col-qty">{row.item.quantity?.toLocaleString() ?? '-'}</span>
           <span class="tree-col tree-col-mu">
             {#if editingMarkupId === row.item.item_id}
-              <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
+              <!-- svelte-ignore a11y_autofocus -- intentional focus on inline edit activation -->
               <input
                 type="number"
                 class="mu-input"
                 bind:value={editingMarkupValue}
-                on:input={handleMarkupInput}
-                on:blur={finishMarkupEdit}
-                on:keydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
-                on:click|stopPropagation
+                oninput={handleMarkupInput}
+                onblur={finishMarkupEdit}
+                onkeydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
+                onclick={stopPropagation(bubble('click'))}
                 autofocus
                 step="0.01"
                 placeholder={row.item._isAbsolute ? '+0' : '100%'}
@@ -273,7 +287,7 @@
                 class="mu-cell"
                 class:has-mu={row.item._markup != null}
                 class:has-market={row.item._markup == null && row.item._marketPrice != null}
-                on:click|stopPropagation={() => row.item.item_id > 0 && startMarkupEdit(row.item)}
+                onclick={stopPropagation(() => row.item.item_id > 0 && startMarkupEdit(row.item))}
                 title="Click to edit markup"
                 use:clickable
               >

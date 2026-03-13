@@ -7,20 +7,31 @@
   // @ts-nocheck
   import { clampDecimals } from '$lib/util';
 
-  /** @type {object} Weapon entity */
-  export let weapon = null;
+  
 
-  /** @type {boolean} Show skill slider */
-  export let showSkillSlider = true;
+  
 
-  /** @type {boolean} Compact mode (fewer displayed stats) */
-  export let compact = false;
+  
 
-  /** @type {string} Layout variant: 'inline', 'grid', 'list' */
-  export let variant = 'grid';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} [weapon]
+   * @property {boolean} [showSkillSlider]
+   * @property {boolean} [compact]
+   * @property {string} [variant]
+   */
+
+  /** @type {Props} */
+  let {
+    weapon = null,
+    showSkillSlider = true,
+    compact = false,
+    variant = 'grid'
+  } = $props();
 
   // Skill level state (0-100%)
-  let skillLevel = 75;
+  let skillLevel = $state(75);
 
   // Calculator functions
   function getTotalDamage(item) {
@@ -100,17 +111,17 @@
   }
 
   // Reactive calculations
-  $: totalDamage = getTotalDamage(weapon);
-  $: effectiveDamage = getEffectiveDamage(weapon, skillLevel);
-  $: reload = getReload(weapon);
-  $: cost = getCost(weapon);
-  $: dps = getDps(weapon, skillLevel);
-  $: dpp = getDpp(weapon, skillLevel);
-  $: totalUses = getTotalUses(weapon);
-  $: cyclePerRepair = getCyclePerRepair(weapon);
-  $: cyclePerHour = getCyclePerHour(weapon);
-  $: timeToBreak = getTimeToBreak(weapon);
-  $: usesPerMinute = reload ? clampDecimals(60 / reload, 0, 2) : null;
+  let totalDamage = $derived(getTotalDamage(weapon));
+  let effectiveDamage = $derived(getEffectiveDamage(weapon, skillLevel));
+  let reload = $derived(getReload(weapon));
+  let cost = $derived(getCost(weapon));
+  let dps = $derived(getDps(weapon, skillLevel));
+  let dpp = $derived(getDpp(weapon, skillLevel));
+  let totalUses = $derived(getTotalUses(weapon));
+  let cyclePerRepair = $derived(getCyclePerRepair(weapon));
+  let cyclePerHour = $derived(getCyclePerHour(weapon));
+  let timeToBreak = $derived(getTimeToBreak(weapon));
+  let usesPerMinute = $derived(reload ? clampDecimals(60 / reload, 0, 2) : null);
 
   // Format helpers
   function formatValue(value, decimals = 2, suffix = '') {

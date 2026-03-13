@@ -7,10 +7,10 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  export let data;
+  let { data } = $props();
 
-  $: streams = data.streams || [];
-  $: hasLive = data.hasLive;
+  let streams = $derived(data.streams || []);
+  let hasLive = $derived(data.hasLive);
 
   const platformLabels = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick' };
 

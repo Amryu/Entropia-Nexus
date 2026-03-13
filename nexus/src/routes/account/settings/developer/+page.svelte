@@ -2,22 +2,22 @@
   // @ts-nocheck
   import { invalidateAll } from '$app/navigation';
 
-  export let data;
+  let { data } = $props();
 
-  let showCreateForm = false;
-  let creating = false;
-  let createError = '';
-  let newClientResult = null;
-  let rotatingSecret = null;
-  let rotatedSecret = null;
-  let deletingClient = null;
+  let showCreateForm = $state(false);
+  let creating = $state(false);
+  let createError = $state('');
+  let newClientResult = $state(null);
+  let rotatingSecret = $state(null);
+  let rotatedSecret = $state(null);
+  let deletingClient = $state(null);
 
   // Create form fields
-  let formName = '';
-  let formDescription = '';
-  let formWebsiteUrl = '';
-  let formRedirectUri = '';
-  let formIsConfidential = true;
+  let formName = $state('');
+  let formDescription = $state('');
+  let formWebsiteUrl = $state('');
+  let formRedirectUri = $state('');
+  let formIsConfidential = $state(true);
 
   async function createClient() {
     if (!formName.trim() || !formRedirectUri.trim()) return;
@@ -82,13 +82,13 @@
   }
 
   // URL builder state per client
-  let urlBuilderOpen = {};
-  let selectedScopes = {};
-  let selectedRedirectUri = {};
-  let copied = {};
+  let urlBuilderOpen = $state({});
+  let selectedScopes = $state({});
+  let selectedRedirectUri = $state({});
+  let copied = $state({});
 
   // Group scopes by category (base name before colon)
-  $: scopeGroups = (() => {
+  let scopeGroups = $derived((() => {
     const groups = new Map();
     for (const scope of data.scopes) {
       const [category] = scope.key.split(':');
@@ -96,7 +96,7 @@
       groups.get(category).push(scope);
     }
     return [...groups.entries()].map(([name, scopes]) => ({ name, scopes }));
-  })();
+  })());
 
   function toggleUrlBuilder(clientId) {
     urlBuilderOpen[clientId] = !urlBuilderOpen[clientId];
@@ -172,7 +172,7 @@
           <code>{newClientResult.clientSecret}</code>
         </div>
       {/if}
-      <button class="btn-secondary" on:click={dismissNewClient}>
+      <button class="btn-secondary" onclick={dismissNewClient}>
         {newClientResult.clientSecret ? "I've saved it" : 'Done'}
       </button>
     </div>
@@ -186,14 +186,14 @@
         <label>New Client Secret</label>
         <code>{rotatedSecret.secret}</code>
       </div>
-      <button class="btn-secondary" on:click={dismissRotatedSecret}>I've saved it</button>
+      <button class="btn-secondary" onclick={dismissRotatedSecret}>I've saved it</button>
     </div>
   {/if}
 
   <div class="clients-header">
     <span class="count">{data.clients.length} / {data.maxClients} applications</span>
     {#if data.clients.length < data.maxClients}
-      <button class="btn-primary" on:click={() => showCreateForm = !showCreateForm}>
+      <button class="btn-primary" onclick={() => showCreateForm = !showCreateForm}>
         {showCreateForm ? 'Cancel' : 'New Application'}
       </button>
     {/if}
@@ -239,7 +239,7 @@
       {#if createError}
         <div class="error-msg">{createError}</div>
       {/if}
-      <button class="btn-primary" on:click={createClient} disabled={creating || !formName.trim() || !formRedirectUri.trim()}>
+      <button class="btn-primary" onclick={createClient} disabled={creating || !formName.trim() || !formRedirectUri.trim()}>
         {creating ? 'Creating...' : 'Create Application'}
       </button>
     </div>
@@ -289,7 +289,7 @@
           </div>
           <!-- Authorization URL Builder -->
           <div class="url-builder-section">
-            <button class="btn-url-builder" on:click={() => toggleUrlBuilder(client.id)}>
+            <button class="btn-url-builder" onclick={() => toggleUrlBuilder(client.id)}>
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
@@ -322,7 +322,7 @@
                             <input
                               type="checkbox"
                               checked={selectedScopes[client.id]?.[scope.key] || false}
-                              on:change={() => toggleScope(client.id, scope.key)}
+                              onchange={() => toggleScope(client.id, scope.key)}
                             />
                             <span class="scope-key">{scope.key}</span>
                             <span class="scope-desc">{scope.description}</span>
@@ -336,7 +336,7 @@
                 <div class="generated-url">
                   <div class="url-header">
                     <label>Generated URL</label>
-                    <button class="btn-copy" on:click={() => copyUrl(client.id, getAuthUrl(client, selectedScopes, selectedRedirectUri))}>
+                    <button class="btn-copy" onclick={() => copyUrl(client.id, getAuthUrl(client, selectedScopes, selectedRedirectUri))}>
                       {copied[client.id] ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
@@ -352,11 +352,11 @@
 
           <div class="client-actions">
             {#if client.is_confidential}
-              <button class="btn-secondary" on:click={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
+              <button class="btn-secondary" onclick={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
                 {rotatingSecret === client.id ? 'Rotating...' : 'Rotate Secret'}
               </button>
             {/if}
-            <button class="btn-danger" on:click={() => deleteOAuthClient(client.id)} disabled={deletingClient === client.id}>
+            <button class="btn-danger" onclick={() => deleteOAuthClient(client.id)} disabled={deletingClient === client.id}>
               {deletingClient === client.id ? 'Deleting...' : 'Delete'}
             </button>
           </div>

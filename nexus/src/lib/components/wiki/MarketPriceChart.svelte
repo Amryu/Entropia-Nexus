@@ -4,6 +4,8 @@
   Shows either markup (%) or sales (count) over time for a selected period.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { onDestroy } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler } from 'chart.js';
@@ -11,22 +13,34 @@
 
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler);
 
-  /** @type {Array} Historical snapshots sorted by recorded_at */
-  export let data = [];
+  
 
-  /** @type {string} Period column key: '1d', '7d', '30d', '365d', '3650d' */
-  export let period = '30d';
+  
 
-  /** @type {'markup' | 'sales'} Which field to plot */
-  export let field = 'markup';
+  
 
-  /** @type {boolean} */
-  export let loading = false;
+  
 
-  /** @type {string} Chart title */
-  export let title = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [data]
+   * @property {string} [period]
+   * @property {'markup' | 'sales'} [field]
+   * @property {boolean} [loading]
+   * @property {string} [title]
+   */
 
-  let canvasEl;
+  /** @type {Props} */
+  let {
+    data = [],
+    period = '30d',
+    field = 'markup',
+    loading = false,
+    title = ''
+  } = $props();
+
+  let canvasEl = $state();
   let chart = null;
 
   function getComputedCssVar(name) {
@@ -123,9 +137,11 @@
     });
   }
 
-  $: if (canvasEl && data && period && field) {
-    buildChart(data);
-  }
+  run(() => {
+    if (canvasEl && data && period && field) {
+      buildChart(data);
+    }
+  });
 
   onDestroy(() => {
     if (chart) { chart.destroy(); chart = null; }

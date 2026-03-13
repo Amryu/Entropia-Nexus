@@ -12,6 +12,8 @@
   - controls: General, Economy, Set (with Name and EffectsOnSetEquip), Equip Effects
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -51,53 +53,55 @@
     changeMetadata
   } from '$lib/stores/wikiEditState';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' },
-      { key: 'equipsets', url: '/api/equipsets' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' },
+        { key: 'equipsets', url: '/api/equipsets' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: clothing = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: allItems = data.allItems || [];
-  $: pendingChange = data.pendingChange;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: isCreateMode = data.isCreateMode || false;
-  $: effectsList = data.effects || [];
-  $: equipsetsList = data.equipsets || [];
-  $: clothingEntityId = clothing?.Id ?? clothing?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, clothingEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  let clothing = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let allItems = $derived(data.allItems || []);
+  let pendingChange = $derived(data.pendingChange);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let effectsList = $derived(data.effects || []);
+  let equipsetsList = $derived(data.equipsets || []);
+  let clothingEntityId = $derived(clothing?.Id ?? clothing?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, clothingEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Verified users can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // Type options
-  $: typeOptions = Array.from(new Set(
+  let typeOptions = $derived(Array.from(new Set(
     (allItems || [])
       .map(item => item?.Properties?.Type)
       .filter(v => v && v.trim().length > 0)
-  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })));
 
   // Slot options
-  $: slotOptions = Array.from(new Set(
+  let slotOptions = $derived(Array.from(new Set(
     (allItems || [])
       .map(item => item?.Properties?.Slot)
       .filter(v => v && v.trim().length > 0)
-  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })));
 
   // Gender options
   const genderOptions = [
@@ -127,29 +131,33 @@
   };
 
   // Initialize edit state when user/clothing changes
-  $: if (user) {
-    const existingChange = data.existingChange || null;
-    const initialEntity = isCreateMode
-      ? (existingChange?.data || emptyClothing)
-      : clothing;
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(initialEntity, 'Clothing', isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const existingChange = data.existingChange || null;
+      const initialEntity = isCreateMode
+        ? (existingChange?.data || emptyClothing)
+        : clothing;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(initialEntity, 'Clothing', isCreateMode, editChange);
+    }
+  });
 
   // Set pending change in store when it changes
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active clothing: use currentEntity in edit mode, pendingChange data when viewing, otherwise original
-  $: activeClothing = $editMode
+  let activeClothing = $derived($editMode
     ? $currentEntity
     : ($viewingPendingChange && $existingPendingChange?.data)
       ? $existingPendingChange.data
-      : clothing;
+      : clothing);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -180,7 +188,7 @@
   }
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters
   const navFilters = [
@@ -225,26 +233,26 @@
   const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Clothing', href: '/items/clothing' },
     ...(activeClothing?.Name ? [{ label: activeClothing.Name }] : isCreateMode ? [{ label: 'New Clothing' }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = activeClothing?.Properties?.Description ||
-    `${activeClothing?.Name || 'Clothing'} - ${activeClothing?.Properties?.Type || ''} ${activeClothing?.Properties?.Slot || ''} clothing in Entropia Universe.`;
+  let seoDescription = $derived(activeClothing?.Properties?.Description ||
+    `${activeClothing?.Name || 'Clothing'} - ${activeClothing?.Properties?.Type || ''} ${activeClothing?.Properties?.Slot || ''} clothing in Entropia Universe.`);
 
-  $: canonicalUrl = activeClothing?.Name
+  let canonicalUrl = $derived(activeClothing?.Name
     ? `https://entropianexus.com/items/clothing/${encodeURIComponentSafe(activeClothing.Name)}`
-    : 'https://entropianexus.com/items/clothing';
+    : 'https://entropianexus.com/items/clothing');
 
   // Image URL for SEO
-  $: entityImageUrl = clothing?.Id ? `/api/img/clothing/${clothing.Id}` : null;
+  let entityImageUrl = $derived(clothing?.Id ? `/api/img/clothing/${clothing.Id}` : null);
 
   // Check if item has effects
-  $: hasEquipEffects = activeClothing?.EffectsOnEquip?.length > 0;
-  $: hasSetEffects = activeClothing?.Set?.EffectsOnSetEquip?.length > 0;
+  let hasEquipEffects = $derived(activeClothing?.EffectsOnEquip?.length > 0);
+  let hasSetEffects = $derived(activeClothing?.Set?.EffectsOnSetEquip?.length > 0);
 
   // Get set effects grouped by piece count
   function getSetEffects(item) {
@@ -262,13 +270,13 @@
       }));
   }
 
-  $: setEffects = getSetEffects(activeClothing);
+  let setEffects = $derived(getSetEffects(activeClothing));
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -345,11 +353,11 @@
         </div>
         <div class="banner-actions">
           {#if $viewingPendingChange}
-            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>
+            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>
               View Current
             </button>
           {:else}
-            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>
+            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>
               View Pending
             </button>
           {/if}

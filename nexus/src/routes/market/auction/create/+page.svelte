@@ -3,6 +3,8 @@
   Form to create a new auction. Creates as draft, then can activate.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { goto, beforeNavigate } from '$app/navigation';
@@ -17,29 +19,29 @@
 
   const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
 
-  export let data;
+  let { data } = $props();
 
-  $: loadouts = data.loadouts || [];
-  $: disclaimerStatus = data.disclaimerStatus || {};
+  let loadouts = $derived(data.loadouts || []);
+  let disclaimerStatus = $derived(data.disclaimerStatus || {});
 
   // Form state
-  let title = '';
-  let description = '';
-  let startingBid = '';
-  let buyoutPrice = '';
-  let buyoutOnly = false;
-  let durationDays = 7;
-  let customized = false;
+  let title = $state('');
+  let description = $state('');
+  let startingBid = $state('');
+  let buyoutPrice = $state('');
+  let buyoutOnly = $state(false);
+  let durationDays = $state(7);
+  let customized = $state(false);
 
-  let itemSet = null;
-  let showItemSetDialog = false;
-  let showDisclaimer = false;
-  let saving = false;
-  let removingItemSet = false;
+  let itemSet = $state(null);
+  let showItemSetDialog = $state(false);
+  let showDisclaimer = $state(false);
+  let saving = $state(false);
+  let removingItemSet = $state(false);
 
   // Custom image upload
-  let customImagePreview = null;
-  let uploadingImage = false;
+  let customImagePreview = $state(null);
+  let uploadingImage = $state(false);
 
   // Track whether the auction was saved so we don't orphan the item set
   let auctionSaved = false;
@@ -60,23 +62,25 @@
     cleanupOrphanedItemSet();
   });
 
-  $: startingBidNum = parseFloat(startingBid) || 0;
-  $: buyoutPriceNum = buyoutOnly ? startingBidNum : (parseFloat(buyoutPrice) || 0);
-  $: effectiveBuyout = buyoutOnly ? startingBidNum : (buyoutPriceNum > 0 ? buyoutPriceNum : null);
+  let startingBidNum = $derived(parseFloat(startingBid) || 0);
+  let buyoutPriceNum = $derived(buyoutOnly ? startingBidNum : (parseFloat(buyoutPrice) || 0));
+  let effectiveBuyout = $derived(buyoutOnly ? startingBidNum : (buyoutPriceNum > 0 ? buyoutPriceNum : null));
 
   // Check if any item in the set has a (C) tag
-  $: hasCustomizableItems = itemSet?.items?.some(item =>
+  let hasCustomizableItems = $derived(itemSet?.items?.some(item =>
     item.setName
       ? item.pieces?.some(p => hasItemTag(p.name, 'C'))
       : hasItemTag(item.name, 'C')
-  ) ?? false;
+  ) ?? false);
 
   // Reset customized if no (C) items
-  $: if (!hasCustomizableItems) customized = false;
+  run(() => {
+    if (!hasCustomizableItems) customized = false;
+  });
 
   // Exchange redirect warning
-  $: singleNonCustomItem = !customized && itemSet && itemSet.items?.length === 1;
-  $: firstItemId = itemSet?.items?.[0]?.id || null;
+  let singleNonCustomItem = $derived(!customized && itemSet && itemSet.items?.length === 1);
+  let firstItemId = $derived(itemSet?.items?.[0]?.id || null);
 
   function handleItemSetCreated(e) {
     const result = e.detail;
@@ -286,7 +290,7 @@
               <input type="checkbox" bind:checked={customized} disabled={!hasCustomizableItems} />
               <span>Customized (C) — items have custom modifications</span>
             </label>
-            <button class="btn-danger-sm" on:click={removeItemSet} disabled={removingItemSet}>
+            <button class="btn-danger-sm" onclick={removeItemSet} disabled={removingItemSet}>
               Remove
             </button>
           </div>
@@ -296,11 +300,11 @@
               {#if customImagePreview}
                 <div class="image-preview-row">
                   <img src={customImagePreview} alt="Custom item preview" class="image-preview" />
-                  <button class="btn-danger-sm" on:click={removeCustomImage}>Remove</button>
+                  <button class="btn-danger-sm" onclick={removeCustomImage}>Remove</button>
                 </div>
               {:else}
                 <label class="upload-area" class:uploading={uploadingImage}>
-                  <input type="file" accept="image/*" on:change={handleImageUpload} disabled={uploadingImage} />
+                  <input type="file" accept="image/*" onchange={handleImageUpload} disabled={uploadingImage} />
                   {#if uploadingImage}
                     <span>Uploading...</span>
                   {:else}
@@ -317,7 +321,7 @@
           {/if}
         </div>
       {:else}
-        <button class="btn-secondary" on:click={() => showItemSetDialog = true}>
+        <button class="btn-secondary" onclick={() => showItemSetDialog = true}>
           Create Item Set
         </button>
       {/if}
@@ -413,13 +417,13 @@
 
     <!-- Actions -->
     <div class="form-actions">
-      <button class="btn-secondary" on:click={() => goto('/market/auction')} disabled={saving}>
+      <button class="btn-secondary" onclick={() => goto('/market/auction')} disabled={saving}>
         Cancel
       </button>
-      <button class="btn-secondary" on:click={() => handleSave(false)} disabled={saving || !itemSet}>
+      <button class="btn-secondary" onclick={() => handleSave(false)} disabled={saving || !itemSet}>
         {saving ? 'Saving...' : 'Save Draft'}
       </button>
-      <button class="btn-primary" on:click={() => handleSave(true)} disabled={saving || !itemSet}>
+      <button class="btn-primary" onclick={() => handleSave(true)} disabled={saving || !itemSet}>
         {saving ? 'Creating...' : 'Create & Activate'}
       </button>
     </div>

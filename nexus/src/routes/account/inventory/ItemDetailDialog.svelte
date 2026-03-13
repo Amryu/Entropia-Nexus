@@ -1,4 +1,6 @@
 <script>
+  import { run, self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { apiCall, getTypeLink } from '$lib/util.js';
@@ -6,18 +8,23 @@
     formatPedRaw, formatMarkupValue, itemTypeBadge
   } from '../../market/exchange/orderUtils';
 
-  export let show = false;
-  export let item = null;   // enriched inventory item
-  export let allItems = [];  // flat slim items
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {any} [item] - enriched inventory item
+   * @property {any} [allItems] - flat slim items
+   */
+
+  /** @type {Props} */
+  let { show = false, item = null, allItems = [] } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let wikiData = null;
-  let loading = false;
+  let wikiData = $state(null);
+  let loading = $state(false);
 
   const wikiCache = new Map();
 
-  $: if (show && item) loadWikiData(item.item_id);
 
   async function loadWikiData(itemId) {
     if (!itemId || itemId <= 0) { wikiData = null; return; }
@@ -35,12 +42,6 @@
     }
   }
 
-  $: type = item?._type || wikiData?.Properties?.Type || wikiData?.Type || null;
-  $: imageUrl = item?._type && item?.item_id > 0
-    ? `/api/img/${item._type.toLowerCase()}/${item.item_id}?size=128`
-    : null;
-  $: wikiLink = wikiData ? getTypeLink(wikiData.Name || item?.item_name, type) : null;
-  $: stats = wikiData ? getStatsForType(wikiData, type) : [];
 
   function getStatsForType(data, itemType) {
     const s = [];
@@ -139,10 +140,19 @@
   function openOrders() {
     if (item?.item_id) window.open(`/market/exchange/listings/${item.item_id}`, '_blank');
   }
+  run(() => {
+    if (show && item) loadWikiData(item.item_id);
+  });
+  let type = $derived(item?._type || wikiData?.Properties?.Type || wikiData?.Type || null);
+  let imageUrl = $derived(item?._type && item?.item_id > 0
+    ? `/api/img/${item._type.toLowerCase()}/${item.item_id}?size=128`
+    : null);
+  let wikiLink = $derived(wikiData ? getTypeLink(wikiData.Name || item?.item_name, type) : null);
+  let stats = $derived(wikiData ? getStatsForType(wikiData, type) : []);
 </script>
 
 {#if show && item}
-  <div class="modal-overlay" role="presentation" on:click|self={handleClose}>
+  <div class="modal-overlay" role="presentation" onclick={self(handleClose)}>
     <div class="modal">
       <!-- Item identity header -->
       <div class="item-identity">
@@ -152,7 +162,7 @@
             width="64" height="64"
             alt=""
             class="item-thumb"
-            on:error={(e) => {
+            onerror={(e) => {
               const placeholder = document.createElement('span');
               placeholder.className = 'item-thumb item-thumb-placeholder';
               e.target.replaceWith(placeholder);
@@ -172,7 +182,7 @@
             {/if}
           </div>
         </div>
-        <button class="close-btn" on:click={handleClose}>&times;</button>
+        <button class="close-btn" onclick={handleClose}>&times;</button>
       </div>
 
       <!-- Wiki stats -->
@@ -245,14 +255,14 @@
       <!-- Action buttons -->
       <div class="actions">
         {#if wikiLink}
-          <button on:click={openWiki}>Wiki Page</button>
+          <button onclick={openWiki}>Wiki Page</button>
         {/if}
         {#if item._sellOrders?.length}
-          <button on:click={openOrders}>View Orders</button>
+          <button onclick={openOrders}>View Orders</button>
         {/if}
         <span class="actions-spacer"></span>
-        <button on:click={handleClose}>Close</button>
-        <button on:click={handleEdit}>Edit</button>
+        <button onclick={handleClose}>Close</button>
+        <button onclick={handleEdit}>Edit</button>
       </div>
     </div>
   </div>

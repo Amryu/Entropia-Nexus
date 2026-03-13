@@ -7,16 +7,22 @@
   import { onMount, onDestroy } from 'svelte';
   import { getTimeRemaining } from '$lib/common/auctionUtils.js';
 
-  /** @type {string|Date} Auction end time */
-  export let endsAt;
+  
 
-  /** @type {boolean} Whether auction is frozen (paused countdown) */
-  export let frozen = false;
+  
 
-  /** @type {'normal'|'compact'} Display size */
-  export let size = 'normal';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string|Date} endsAt
+   * @property {boolean} [frozen]
+   * @property {'normal'|'compact'} [size]
+   */
 
-  let remaining = getTimeRemaining(endsAt);
+  /** @type {Props} */
+  let { endsAt, frozen = false, size = 'normal' } = $props();
+
+  let remaining = $state(getTimeRemaining(endsAt));
   let interval;
 
   function update() {
@@ -36,8 +42,8 @@
     if (interval) clearInterval(interval);
   });
 
-  $: urgent = !frozen && remaining.total > 0 && remaining.total < 3600000; // Last hour
-  $: veryUrgent = !frozen && remaining.total > 0 && remaining.total < 300000; // Last 5 min
+  let urgent = $derived(!frozen && remaining.total > 0 && remaining.total < 3600000); // Last hour
+  let veryUrgent = $derived(!frozen && remaining.total > 0 && remaining.total < 300000); // Last 5 min
 
   function pad(n) {
     return String(n).padStart(2, '0');

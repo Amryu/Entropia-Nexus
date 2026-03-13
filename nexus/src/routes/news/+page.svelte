@@ -8,16 +8,16 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
 
-  export let data;
+  let { data } = $props();
 
   const BATCH_SIZE = 12;
-  let visibleCount = BATCH_SIZE;
-  let sentinel;
+  let visibleCount = $state(BATCH_SIZE);
+  let sentinel = $state();
   let observer;
 
-  $: allNews = data.news || [];
-  $: visibleNews = allNews.slice(0, visibleCount);
-  $: hasMore = visibleCount < allNews.length;
+  let allNews = $derived(data.news || []);
+  let visibleNews = $derived(allNews.slice(0, visibleCount));
+  let hasMore = $derived(visibleCount < allNews.length);
 
   function timeAgo(dateStr) {
     const now = Date.now();

@@ -15,22 +15,33 @@
     calcCumulativeSkillGain
   } from '$lib/utils/codexUtils';
 
-  export let baseCost = null;
-  export let codexType = null;
-  export let mobType = 'Animal';  // Animal, Mutant, Robot - to determine which looter profession to check
-  export let skills = [];  // Skills data from API
+  /**
+   * @typedef {Object} Props
+   * @property {any} [baseCost]
+   * @property {any} [codexType]
+   * @property {string} [mobType] - Animal, Mutant, Robot - to determine which looter profession to check
+   * @property {any} [skills] - Skills data from API
+   */
+
+  /** @type {Props} */
+  let {
+    baseCost = null,
+    codexType = null,
+    mobType = 'Animal',
+    skills = []
+  } = $props();
 
   // Build skill lookup from API data
-  $: skillLookup = skills.reduce((acc, skill) => {
+  let skillLookup = $derived(skills.reduce((acc, skill) => {
     acc[skill.Name] = skill;
     return acc;
-  }, {});
+  }, {}));
 
   // Get looter profession name based on mob type
-  $: looterProfession = mobType === 'Animal' ? 'Animal Looter'
+  let looterProfession = $derived(mobType === 'Animal' ? 'Animal Looter'
     : mobType === 'Mutant' ? 'Mutant Looter'
     : mobType === 'Robot' ? 'Robot Looter'
-    : null;
+    : null);
 
   // Codex skill categories are a specific game mechanic that doesn't map directly
   // to database skill categories, so we use the hardcoded lists.
@@ -161,23 +172,23 @@
   }
 
 
-  let selectedRank = 0;
-  let showCumulative = false;
+  let selectedRank = $state(0);
+  let showCumulative = $state(false);
 
-  $: category = getCategoryForRank(selectedRank + 1);
-  $: skillsForRank = codexType === 'Asteroid' ? SKILLS.asteroid : SKILLS[category];
-  $: rewardDivisor = REWARD_DIVISORS[category];
-  $: isCat4Rank = codexType === 'MobLooter' && (selectedRank + 1) % 10 === 5;
-  $: costForRank = baseCost ? CODEX_MULTIPLIERS[selectedRank] * baseCost : null;
-  $: cumulativeCost = baseCost ? getCumulativeCost(selectedRank, baseCost) : null;
-  $: displayCost = showCumulative ? cumulativeCost : costForRank;
-  $: rewardValue = costForRank ? (costForRank / rewardDivisor).toFixed(4) : 'N/A';
-  $: cat4RewardValue = costForRank ? (costForRank / REWARD_DIVISORS.cat4).toFixed(4) : 'N/A';
+  let category = $derived(getCategoryForRank(selectedRank + 1));
+  let skillsForRank = $derived(codexType === 'Asteroid' ? SKILLS.asteroid : SKILLS[category]);
+  let rewardDivisor = $derived(REWARD_DIVISORS[category]);
+  let isCat4Rank = $derived(codexType === 'MobLooter' && (selectedRank + 1) % 10 === 5);
+  let costForRank = $derived(baseCost ? CODEX_MULTIPLIERS[selectedRank] * baseCost : null);
+  let cumulativeCost = $derived(baseCost ? getCumulativeCost(selectedRank, baseCost) : null);
+  let displayCost = $derived(showCumulative ? cumulativeCost : costForRank);
+  let rewardValue = $derived(costForRank ? (costForRank / rewardDivisor).toFixed(4) : 'N/A');
+  let cat4RewardValue = $derived(costForRank ? (costForRank / REWARD_DIVISORS.cat4).toFixed(4) : 'N/A');
 
   // Reactive cumulative skill gains - these update when selectedRank changes
-  $: cumulativeCat1 = calcCumulativeSkillGain('cat1', selectedRank, baseCost).toFixed(4);
-  $: cumulativeCat2 = calcCumulativeSkillGain('cat2', selectedRank, baseCost).toFixed(4);
-  $: cumulativeCat3 = calcCumulativeSkillGain('cat3', selectedRank, baseCost).toFixed(4);
+  let cumulativeCat1 = $derived(calcCumulativeSkillGain('cat1', selectedRank, baseCost).toFixed(4));
+  let cumulativeCat2 = $derived(calcCumulativeSkillGain('cat2', selectedRank, baseCost).toFixed(4));
+  let cumulativeCat3 = $derived(calcCumulativeSkillGain('cat3', selectedRank, baseCost).toFixed(4));
 </script>
 
 <div class="codex-calculator">
@@ -201,7 +212,7 @@
                   class="rank-btn cat-{rankCategory}"
                   class:selected={isSelected}
                   class:cat4-bonus={isCat4}
-                  on:click={() => selectedRank = rankIndex}
+                  onclick={() => selectedRank = rankIndex}
                   title="Rank {rankIndex + 1}: {displayValue} PED"
                 >
                   <span class="rank-number">{rankIndex + 1}</span>
@@ -218,14 +229,14 @@
           <button
             class="toggle-btn"
             class:active={!showCumulative}
-            on:click={() => showCumulative = false}
+            onclick={() => showCumulative = false}
           >
             Per Rank
           </button>
           <button
             class="toggle-btn"
             class:active={showCumulative}
-            on:click={() => showCumulative = true}
+            onclick={() => showCumulative = true}
           >
             Cumulative
           </button>

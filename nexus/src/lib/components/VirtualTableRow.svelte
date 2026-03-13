@@ -1,48 +1,55 @@
 <script>
+	import { run } from 'svelte/legacy';
+
 	//@ts-nocheck
 	import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
 
   import '$lib/style.css';
 
-	// props
-	export let items;
-	export let itemHeight;
-	export let viewport;
-  export let contents;
+	
 
-	// read-only, but visible to consumers via bind:start
-	export let start = 0;
-	export let end = 0;
+	
+	/**
+	 * @typedef {Object} Props
+	 * @property {any} items - props
+	 * @property {any} itemHeight
+	 * @property {any} viewport
+	 * @property {any} contents
+	 * @property {number} [start] - read-only, but visible to consumers via bind:start
+	 * @property {number} [end]
+	 * @property {import('svelte').Snippet<[any]>} [children]
+	 */
+
+	/** @type {Props} */
+	let {
+		items,
+		itemHeight,
+		viewport = $bindable(),
+		contents = $bindable(),
+		start = $bindable(0),
+		end = $bindable(0),
+		children
+	} = $props();
   
 	// local state
-	let viewport_height = 0;
-	let visible;
-	let mounted;
+	let viewport_height = $state(0);
+	let visible = $derived(items.slice(start, end).map((data, i) => {
+		return { index: i + start, data };
+	}));
+	let mounted = $state();
 
-  let top = 0;
-  let bottom = 0;
+  let top = $state(0);
+  let bottom = $state(0);
 
-  $: if(contents) contents.style.paddingTop = `${top}px`;
-  $: if(contents) contents.style.paddingBottom = `${bottom}px`;
 
-  let resizeObserver;
+  let resizeObserver = $state();
 
   let dispatch = createEventDispatcher();
   
-	$: visible = items.slice(start, end).map((data, i) => {
-		return { index: i + start, data };
-	});
 
-  let handlersAttached = false;
+  let handlersAttached = $state(false);
 
-  $: if(resizeObserver && viewport && !handlersAttached) {
-    viewport.addEventListener('scroll', handle_scroll);
-    resizeObserver.observe(viewport);
-    handlersAttached = true;
-  }
 
-	// whenever `items` changes, invalidate the current heightmap
-	$: if (mounted) refresh(items, viewport_height, itemHeight);
 
 	async function refresh() {
     if (end > items.length) {
@@ -78,8 +85,6 @@
 		end = i;
 	}
 
-	$: top = start * itemHeight;
-	$: bottom = (items.length - end) * itemHeight + (Math.max(viewport_height - start * itemHeight, end * itemHeight) - start * itemHeight);
 
 	// trigger initial refresh
 	onMount(() => {
@@ -99,6 +104,30 @@
       resizeObserver.disconnect();
     }
   });
+	run(() => {
+		top = start * itemHeight;
+	});
+  run(() => {
+		if(contents) contents.style.paddingTop = `${top}px`;
+	});
+	run(() => {
+		bottom = (items.length - end) * itemHeight + (Math.max(viewport_height - start * itemHeight, end * itemHeight) - start * itemHeight);
+	});
+  run(() => {
+		if(contents) contents.style.paddingBottom = `${bottom}px`;
+	});
+	
+  run(() => {
+		if(resizeObserver && viewport && !handlersAttached) {
+	    viewport.addEventListener('scroll', handle_scroll);
+	    resizeObserver.observe(viewport);
+	    handlersAttached = true;
+	  }
+	});
+	// whenever `items` changes, invalidate the current heightmap
+	run(() => {
+		if (mounted) refresh(items, viewport_height, itemHeight);
+	});
 </script>
 
 <style>
@@ -109,14 +138,14 @@
 
 {#if typeof window !== 'undefined'}
 	{#each visible as row, rowIndex (row.index)}
-	<tr on:click={() => dispatch('rowClick', row)} on:mouseover={() => dispatch('rowHover', row)} on:focus={() => dispatch('rowHover', row)} on:mouseout={() => dispatch('rowHover', null)} on:blur={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
-		<slot item={row.data} index={rowIndex + start}></slot>
+	<tr onclick={() => dispatch('rowClick', row)} onmouseover={() => dispatch('rowHover', row)} onfocus={() => dispatch('rowHover', row)} onmouseout={() => dispatch('rowHover', null)} onblur={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
+		{@render children?.({ item: row.data, index: rowIndex + start, })}
 	</tr>
 	{/each}
 {:else}
 	{#each items as item, i}
 	<tr>
-		<slot item={item} index={i}></slot>
+		{@render children?.({ item, index: i, })}
 	</tr>
 	{/each}
 {/if}

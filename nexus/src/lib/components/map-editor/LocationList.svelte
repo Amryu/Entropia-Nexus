@@ -1,24 +1,39 @@
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { LOCATION_TYPES, AREA_TYPES, getEffectiveType, getTypeColor, isArea } from './mapEditorUtils.js';
 
-  export let locations = [];
-  export let selectedId = null;
-  export let pendingChanges = new Map();
-  export let editMode = false;
-  /** @type {'admin' | 'public'} */
-  export let mode = 'admin';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [locations]
+   * @property {any} [selectedId]
+   * @property {any} [pendingChanges]
+   * @property {boolean} [editMode]
+   * @property {'admin' | 'public'} [mode]
+   */
+
+  /** @type {Props} */
+  let {
+    locations = [],
+    selectedId = null,
+    pendingChanges = new Map(),
+    editMode = false,
+    mode = 'admin'
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
   // Filter state
-  let typeFilters = {};
-  let areaTypeFilters = {};
-  let searchQuery = '';
-  let multiSelectMode = false;
-  let selectedForDeletion = new Set();
+  let typeFilters = $state({});
+  let areaTypeFilters = $state({});
+  let searchQuery = $state('');
+  let multiSelectMode = $state(false);
+  let selectedForDeletion = $state(new Set());
 
   // Initialize all filters as checked
   LOCATION_TYPES.forEach(t => typeFilters[t] = true);
@@ -48,7 +63,7 @@
   }
 
   // Filter locations
-  $: filteredLocations = locations.filter(loc => {
+  let filteredLocations = $derived(locations.filter(loc => {
     const effectiveType = getEffectiveType(loc);
     const locType = loc.Properties?.Type;
 
@@ -68,10 +83,10 @@
     }
 
     return true;
-  });
+  }));
 
   // Group by effective type
-  $: groupedLocations = (() => {
+  let groupedLocations = $derived((() => {
     const groups = {};
     for (const loc of filteredLocations) {
       const type = getEffectiveType(loc);
@@ -81,13 +96,13 @@
     // Sort each group by name
     for (const g of Object.values(groups)) g.sort((a, b) => (a.Name || '').localeCompare(b.Name || ''));
     return groups;
-  })();
+  })());
 
   // Emit filtered IDs to parent for map visibility
-  $: {
+  run(() => {
     const ids = new Set(filteredLocations.map(l => l.Id));
     dispatch('filterChange', ids);
-  }
+  });
 
   function handleSelect(loc) {
     if (multiSelectMode) {
@@ -131,14 +146,14 @@
   // Reactive map of locId → change action for the orange/green/red dots.
   // Must be a reactive declaration (not a function) so Svelte tracks pendingChanges as a dependency
   // and re-renders the list items when changes are added/removed.
-  $: changeIndicators = (() => {
+  let changeIndicators = $derived((() => {
     const m = new Map();
     for (const [key, change] of pendingChanges) {
       const locId = change.original?.Id ?? key;
       m.set(locId, change.action);
     }
     return m;
-  })();
+  })());
 </script>
 
 <style>
@@ -320,10 +335,10 @@
 <div class="location-list-container">
   <div class="filters-section">
     <div class="quick-toggles">
-      <button on:click={() => toggleAll(true)}>All</button>
-      <button on:click={() => toggleAll(false)}>None</button>
-      <button on:click={setPointsOnly}>Points</button>
-      <button on:click={setAreasOnly}>Areas</button>
+      <button onclick={() => toggleAll(true)}>All</button>
+      <button onclick={() => toggleAll(false)}>None</button>
+      <button onclick={setPointsOnly}>Points</button>
+      <button onclick={setAreasOnly}>Areas</button>
     </div>
 
     <div class="filter-header">Location Types</div>
@@ -367,13 +382,13 @@
           class="location-row"
           class:selected={selectedId === loc.Id}
           class:multi-selected={multiSelectMode && selectedForDeletion.has(loc.Id)}
-          on:click={() => handleSelect(loc)}
-          on:keydown={(e) => e.key === 'Enter' && handleSelect(loc)}
+          onclick={() => handleSelect(loc)}
+          onkeydown={(e) => e.key === 'Enter' && handleSelect(loc)}
           role="button"
           tabindex="0"
         >
           {#if multiSelectMode}
-            <input type="checkbox" checked={selectedForDeletion.has(loc.Id)} on:click|stopPropagation />
+            <input type="checkbox" checked={selectedForDeletion.has(loc.Id)} onclick={stopPropagation(bubble('click'))} />
           {/if}
           {#if changeType}
             <span class="change-dot {changeType}"></span>
@@ -387,12 +402,12 @@
   {#if editMode}
     <div class="mass-actions">
       {#if multiSelectMode}
-        <button class="delete-btn" on:click={markSelectedForDeletion} disabled={selectedForDeletion.size === 0}>
+        <button class="delete-btn" onclick={markSelectedForDeletion} disabled={selectedForDeletion.size === 0}>
           {mode === 'public' ? 'Copy Info' : 'Delete Selected'} ({selectedForDeletion.size})
         </button>
-        <button on:click={() => { multiSelectMode = false; selectedForDeletion = new Set(); }}>Cancel</button>
+        <button onclick={() => { multiSelectMode = false; selectedForDeletion = new Set(); }}>Cancel</button>
       {:else}
-        <button on:click={() => { multiSelectMode = true; }}>Multi-Select</button>
+        <button onclick={() => { multiSelectMode = true; }}>Multi-Select</button>
       {/if}
     </div>
   {/if}

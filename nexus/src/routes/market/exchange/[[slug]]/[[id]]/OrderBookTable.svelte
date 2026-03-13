@@ -6,37 +6,51 @@
   import { formatMarkupValue } from '../../orderUtils';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
-  /** @type {'buy'|'sell'} */
-  export let side = 'sell';
+  
 
-  /** @type {Array} Orders from the API */
-  export let orders = [];
+  
 
-  /** @type {boolean} */
-  export let loading = false;
+  
 
-  /** @type {boolean} Whether this item is tierable */
-  export let tierable = false;
+  
 
-  /** @type {boolean} Whether this item uses absolute markup */
-  export let absoluteMarkup = false;
+  
 
-  /** @type {string|null} Current user ID for highlighting own orders */
-  export let currentUserId = null;
+  
 
-  /** @type {boolean} Whether this item is an ArmorPlating (shows Set column) */
-  export let isArmorPlating = false;
+  
 
-  /** @type {boolean} Whether this item uses gender (Armor/ArmorSet/Clothing) */
-  export let isGendered = false;
+  
 
-  /** @type {string} Planet filter */
-  export let planetFilter = 'All Planets';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {'buy'|'sell'} [side]
+   * @property {Array} [orders]
+   * @property {boolean} [loading]
+   * @property {boolean} [tierable]
+   * @property {boolean} [absoluteMarkup]
+   * @property {string|null} [currentUserId]
+   * @property {boolean} [isArmorPlating]
+   * @property {boolean} [isGendered]
+   * @property {string} [planetFilter]
+   */
+
+  /** @type {Props} */
+  let {
+    side = 'sell',
+    orders = [],
+    loading = false,
+    tierable = false,
+    absoluteMarkup = false,
+    currentUserId = null,
+    isArmorPlating = false,
+    isGendered = false,
+    planetFilter = 'All Planets'
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  // Build columns dynamically based on item type
-  $: columns = buildColumns(tierable, absoluteMarkup, isArmorPlating, isGendered);
 
   function buildColumns(isTierable, isAbsoluteMu, isPlating, isGend) {
     const cols = [];
@@ -119,20 +133,7 @@
     return cols;
   }
 
-  // Filter and sort orders for display
-  $: filteredOrders = (orders || [])
-    .filter(o => planetFilter === 'All Planets' || o.planet === planetFilter)
-    .map(o => ({
-      ...o,
-      state: o.computed_state || computeState(o.bumped_at),
-      seller_name: o.seller_name || 'Unknown',
-      tier: o.details?.Tier ?? o.details?.tier ?? null,
-      tir: o.details?.TierIncreaseRate ?? o.details?.tir ?? null,
-      is_set: Number(o.quantity) === PLATE_SET_SIZE,
-      gender: o.details?.Gender ?? null,
-    }));
 
-  $: tableData = filteredOrders;
 
   function formatAge(dateStr) {
     if (!dateStr) return 'N/A';
@@ -159,9 +160,24 @@
     const name = sellerEl.dataset.sellerName || 'Unknown';
     if (userId) dispatch('sellerClick', { id: userId, name });
   }
+  // Build columns dynamically based on item type
+  let columns = $derived(buildColumns(tierable, absoluteMarkup, isArmorPlating, isGendered));
+  // Filter and sort orders for display
+  let filteredOrders = $derived((orders || [])
+    .filter(o => planetFilter === 'All Planets' || o.planet === planetFilter)
+    .map(o => ({
+      ...o,
+      state: o.computed_state || computeState(o.bumped_at),
+      seller_name: o.seller_name || 'Unknown',
+      tier: o.details?.Tier ?? o.details?.tier ?? null,
+      tir: o.details?.TierIncreaseRate ?? o.details?.tir ?? null,
+      is_set: Number(o.quantity) === PLATE_SET_SIZE,
+      gender: o.details?.Gender ?? null,
+    })));
+  let tableData = $derived(filteredOrders);
 </script>
 
-<div class="order-book-table" role="presentation" on:click|capture={handleTableClick}>
+<div class="order-book-table" role="presentation" onclickcapture={handleTableClick}>
   <div class="table-header">
     <h3 class="table-title {side}">{side === 'buy' ? 'Buy' : 'Sell'} Orders</h3>
     {#if loading}

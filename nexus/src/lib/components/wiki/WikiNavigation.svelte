@@ -1,3 +1,4 @@
+<!-- @migration-task Error while migrating Svelte code: Can't migrate code with afterUpdate. Please migrate by hand. -->
 <!--
   @component WikiNavigation
   Sidebar navigation with search, filters, and virtualized item list.

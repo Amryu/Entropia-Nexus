@@ -1,6 +1,12 @@
 <script>
-  // @ts-nocheck
-  export let data;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} data
+   */
+
+  /** @type {Props} */
+  let { data } = $props();
 
   const { client, scopeInfo, effectiveScopes, redirectUri, state, codeChallenge, codeChallengeMethod } = data;
   const hasWriteScopes = scopeInfo.some(s => s.isWrite && s.available);

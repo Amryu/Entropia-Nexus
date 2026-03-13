@@ -2,7 +2,7 @@
   // @ts-nocheck
   import ExchangeBrowser from './ExchangeBrowser.svelte';
   
-  export let data;
+  let { data } = $props();
 </script>
 
 <ExchangeBrowser {data} />

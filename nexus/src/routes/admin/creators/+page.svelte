@@ -1,12 +1,14 @@
 <script>
+  import { stopPropagation } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { addToast } from '$lib/stores/toasts';
 
-  let creators = [];
-  let isLoading = true;
-  let error = null;
+  let creators = $state([]);
+  let isLoading = $state(true);
+  let error = $state(null);
 
   const platformLabels = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick' };
   const platformColors = { youtube: '#FF0000', twitch: '#9146FF', kick: '#53FC18' };
@@ -85,7 +87,7 @@
 
   <div class="page-header">
     <h1>Content Creators</h1>
-    <button class="action-btn" on:click={() => goto('/admin/creators/new')}>
+    <button class="action-btn" onclick={() => goto('/admin/creators/new')}>
       Add Creator
     </button>
   </div>
@@ -102,7 +104,7 @@
     <div class="creators-list">
       {#each creators as creator}
         <div class="creator-row" class:inactive={!creator.active}>
-          <div class="creator-main" on:click={() => goto(`/admin/creators/${creator.id}`)} role="button" tabindex="0" on:keypress={(e) => e.key === 'Enter' && goto(`/admin/creators/${creator.id}`)}>
+          <div class="creator-main" onclick={() => goto(`/admin/creators/${creator.id}`)} role="button" tabindex="0" onkeypress={(e) => e.key === 'Enter' && goto(`/admin/creators/${creator.id}`)}>
             <div class="creator-avatar">
               {#if creator.avatar_url || creator.cached_data?.channelAvatar || creator.cached_data?.avatar}
                 <img src={creator.cached_data?.channelAvatar || creator.cached_data?.avatar || creator.avatar_url} alt={creator.name} />
@@ -131,11 +133,11 @@
           </div>
           <div class="creator-actions">
             {#if creator.platform !== 'kick'}
-              <button class="btn-icon" title="Refresh data" on:click|stopPropagation={() => refreshCreator(creator)} disabled={creator._refreshing}>
+              <button class="btn-icon" title="Refresh data" onclick={stopPropagation(() => refreshCreator(creator))} disabled={creator._refreshing}>
                 {creator._refreshing ? '...' : 'Refresh'}
               </button>
             {/if}
-            <button class="btn-icon" class:active-toggle={creator.active} title={creator.active ? 'Deactivate' : 'Activate'} on:click|stopPropagation={() => toggleActive(creator)}>
+            <button class="btn-icon" class:active-toggle={creator.active} title={creator.active ? 'Deactivate' : 'Activate'} onclick={stopPropagation(() => toggleActive(creator))}>
               {creator.active ? 'On' : 'Off'}
             </button>
           </div>

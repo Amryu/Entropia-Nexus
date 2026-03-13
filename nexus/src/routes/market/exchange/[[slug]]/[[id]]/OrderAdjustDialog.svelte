@@ -1,18 +1,25 @@
 <script>
+  import { run, self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
   import { myOrders, inventory, enrichOrders, upsertOrder } from '../../exchangeStore.js';
 
-  export let show = false;
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   */
+
+  /** @type {Props} */
+  let { show = false } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let discrepancies = [];
-  let adjustingAll = false;
-  let cancellingAll = false;
-  let loading = false;
+  let discrepancies = $state([]);
+  let adjustingAll = $state(false);
+  let cancellingAll = $state(false);
+  let loading = $state(false);
 
-  $: if (show) computeDiscrepancies();
 
   async function computeDiscrepancies() {
     loading = true;
@@ -141,14 +148,17 @@
   export function refresh() {
     if (show) computeDiscrepancies();
   }
+  run(() => {
+    if (show) computeDiscrepancies();
+  });
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" on:click|self={handleClose}>
+  <div class="modal-overlay" role="presentation" onclick={self(handleClose)}>
     <div class="modal">
       <div class="modal-header">
         <h3 class="modal-title">Order Coverage</h3>
-        <button class="close-btn" on:click={handleClose}>&times;</button>
+        <button class="close-btn" onclick={handleClose}>&times;</button>
       </div>
 
       {#if loading}
@@ -160,12 +170,12 @@
         <div class="bulk-actions">
           <button
             class="btn-adjust"
-            on:click={adjustAll}
+            onclick={adjustAll}
             disabled={adjustingAll || cancellingAll}
           >{adjustingAll ? 'Adjusting...' : 'Adjust All'}</button>
           <button
             class="btn-cancel"
-            on:click={cancelAll}
+            onclick={cancelAll}
             disabled={adjustingAll || cancellingAll}
           >{cancellingAll ? 'Cancelling...' : 'Cancel All'}</button>
         </div>
@@ -191,12 +201,12 @@
                     {#if disc._processing}
                       <span class="processing">...</span>
                     {:else}
-                      <button class="disc-btn adjust" on:click={() => adjustOrder(disc)}
+                      <button class="disc-btn adjust" onclick={() => adjustOrder(disc)}
                         title={disc.invQty > 0 ? `Set to ${disc.invQty}` : 'Cancel (no inventory)'}>
                         {disc.invQty > 0 ? 'Adjust' : 'Cancel'}
                       </button>
                       {#if disc.invQty > 0}
-                        <button class="disc-btn cancel" on:click={() => cancelOrder(disc)}>Cancel</button>
+                        <button class="disc-btn cancel" onclick={() => cancelOrder(disc)}>Cancel</button>
                       {/if}
                     {/if}
                   </td>
@@ -210,7 +220,7 @@
       {/if}
 
       <div class="modal-actions">
-        <button class="btn-primary" on:click={handleClose}>Done</button>
+        <button class="btn-primary" onclick={handleClose}>Done</button>
       </div>
     </div>
   </div>

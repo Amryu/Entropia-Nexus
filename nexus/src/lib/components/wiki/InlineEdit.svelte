@@ -4,6 +4,8 @@
   Supports various field types: text, number, select, checkbox, coordinates, etc.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import {
@@ -16,64 +18,90 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {any} Current value */
-  export let value = '';
+  
 
-  /** @type {string} Field path for state management (e.g., 'Properties.Weight') */
-  export let path = '';
+  
 
-  /** @type {string} Field type: text, number, select, checkbox, textarea, coordinates, autocomplete */
-  export let type = 'text';
+  
 
-  /** @type {string} Unique ID for autocomplete datalist */
-  export let datalistId = '';
+  
 
-  /** @type {string} Optional prefix text */
-  export let prefix = '';
+  
 
-  /** @type {string} Optional suffix text */
-  export let suffix = '';
+  
 
-  /** @type {string} Placeholder text */
-  export let placeholder = '';
+  
 
-  /** @type {Array} Options for select type [{value, label}] */
-  export let options = [];
+  
 
-  /** @type {Function|null} Custom validation function (value) => string|null */
-  export let validate = null;
+  
 
-  /** @type {number|null} Min value for number type */
-  export let min = null;
+  
 
-  /** @type {number|null} Max value for number type */
-  export let max = null;
+  
 
-  /** @type {number|null} Step for number type */
-  export let step = null;
+  
 
-  /** @type {boolean} Whether field is required */
-  export let required = false;
+  
 
-  /** @type {string} Display format for view mode */
-  export let displayFormat = '';
+  
 
-  /** @type {boolean} Override editable state */
-  export let editable = undefined;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [value]
+   * @property {string} [path]
+   * @property {string} [type]
+   * @property {string} [datalistId]
+   * @property {string} [prefix]
+   * @property {string} [suffix]
+   * @property {string} [placeholder]
+   * @property {Array} Options for select type [{value, label} [options]
+   * @property {Function|null} [validate]
+   * @property {number|null} [min]
+   * @property {number|null} [max]
+   * @property {number|null} [step]
+   * @property {boolean} [required]
+   * @property {string} [displayFormat]
+   * @property {boolean} [editable]
+   */
+
+  /** @type {Props} */
+  let {
+    value = '',
+    path = '',
+    type = 'text',
+    datalistId = '',
+    prefix = '',
+    suffix = '',
+    placeholder = '',
+    options = [],
+    validate = null,
+    min = null,
+    max = null,
+    step = null,
+    required = false,
+    displayFormat = '',
+    editable = undefined
+  } = $props();
 
   // Internal state
-  let inputEl;
-  let localValue = value;
-  let error = null;
+  let inputEl = $state();
+  let localValue = $state(value);
+  let error = $state(null);
 
   // Determine if field is editable
-  $: isEditable = editable !== undefined ? editable : $editMode;
+  let isEditable = $derived(editable !== undefined ? editable : $editMode);
 
   // Sync local value with prop
-  $: localValue = value;
+  run(() => {
+    localValue = value;
+  });
 
   // Get error from store
-  $: error = path ? $validationErrors[path] : null;
+  run(() => {
+    error = path ? $validationErrors[path] : null;
+  });
 
   function handleInput(event) {
     let newValue = event.target.value;
@@ -200,8 +228,8 @@
           {max}
           {step}
           class="edit-input"
-          on:input={handleInput}
-          on:blur={handleBlur}
+          oninput={handleInput}
+          onblur={handleBlur}
         />
       {:else if type === 'textarea'}
         <textarea
@@ -209,17 +237,17 @@
           value={localValue ?? ''}
           {placeholder}
           class="edit-textarea"
-          on:input={handleInput}
-          on:blur={handleBlur}
+          oninput={handleInput}
+          onblur={handleBlur}
           rows="3"
-        />
+></textarea>
       {:else if type === 'select'}
         {#key options.length}
         <select
           bind:this={inputEl}
           value={localValue ?? ''}
           class="edit-select"
-          on:change={handleInput}
+          onchange={handleInput}
         >
           <option value="">{placeholder || 'Select...'}</option>
           {#each options as option}
@@ -235,8 +263,8 @@
           {placeholder}
           class="edit-input edit-autocomplete"
           list={datalistId || `datalist-${path}`}
-          on:input={handleInput}
-          on:blur={handleBlur}
+          oninput={handleInput}
+          onblur={handleBlur}
         />
         <datalist id={datalistId || `datalist-${path}`}>
           {#each options as option}
@@ -249,7 +277,7 @@
           type="checkbox"
           checked={localValue ?? false}
           class="edit-checkbox"
-          on:change={handleInput}
+          onchange={handleInput}
         />
       {:else if type === 'coordinates'}
         <span class="coordinates-input">
@@ -258,7 +286,7 @@
             value={localValue?.x ?? ''}
             placeholder="X"
             class="edit-input coord"
-            on:input={(e) => {
+            oninput={(e) => {
               localValue = { ...localValue, x: parseFloat(e.target.value) || 0 };
               validateAndUpdate(localValue);
             }}
@@ -269,7 +297,7 @@
             value={localValue?.y ?? ''}
             placeholder="Y"
             class="edit-input coord"
-            on:input={(e) => {
+            oninput={(e) => {
               localValue = { ...localValue, y: parseFloat(e.target.value) || 0 };
               validateAndUpdate(localValue);
             }}

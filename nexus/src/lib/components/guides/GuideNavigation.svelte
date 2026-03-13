@@ -4,25 +4,35 @@
   Expandable categories and chapters with lesson items as leaf nodes.
 -->
 <script>
-  export let tree = [];
-  export let currentSlug = null;
+  import { run } from 'svelte/legacy';
 
-  let expandedCategories = new Set();
-  let expandedChapters = new Set();
+  /**
+   * @typedef {Object} Props
+   * @property {any} [tree]
+   * @property {any} [currentSlug]
+   */
+
+  /** @type {Props} */
+  let { tree = [], currentSlug = null } = $props();
+
+  let expandedCategories = $state(new Set());
+  let expandedChapters = $state(new Set());
 
   // Auto-expand to show current lesson
-  $: if (currentSlug && tree.length > 0) {
-    for (const cat of tree) {
-      for (const ch of cat.chapters || []) {
-        if ((ch.lessons || []).some(l => l.slug === currentSlug)) {
-          expandedCategories.add(cat.id);
-          expandedChapters.add(ch.id);
-          expandedCategories = expandedCategories;
-          expandedChapters = expandedChapters;
+  run(() => {
+    if (currentSlug && tree.length > 0) {
+      for (const cat of tree) {
+        for (const ch of cat.chapters || []) {
+          if ((ch.lessons || []).some(l => l.slug === currentSlug)) {
+            expandedCategories.add(cat.id);
+            expandedChapters.add(ch.id);
+            expandedCategories = expandedCategories;
+            expandedChapters = expandedChapters;
+          }
         }
       }
     }
-  }
+  });
 
   function toggleCategory(catId) {
     if (expandedCategories.has(catId)) {
@@ -62,7 +72,7 @@
         <button
           class="tree-toggle"
           class:expanded={expandedCategories.has(category.id)}
-          on:click={() => toggleCategory(category.id)}
+          onclick={() => toggleCategory(category.id)}
         >
           <svg class="chevron" width="12" height="12" viewBox="0 0 12 12">
             <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -77,7 +87,7 @@
                 <button
                   class="tree-toggle chapter-toggle"
                   class:expanded={expandedChapters.has(chapter.id)}
-                  on:click={() => toggleChapter(chapter.id)}
+                  onclick={() => toggleChapter(chapter.id)}
                 >
                   <svg class="chevron" width="10" height="10" viewBox="0 0 12 12">
                     <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" />

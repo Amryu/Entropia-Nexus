@@ -5,6 +5,8 @@
   Supports full wiki editing.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -45,55 +47,61 @@
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.effects === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'effects', url: '/api/effects' }
-    ]).then(deps => {
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
+  run(() => {
+    if ($editMode && data.effects === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'effects', url: '/api/effects' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
-  $: medtool = data.object;
-  $: user = data.session?.user;
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: effectsList = data.effects || [];
+  let medtool = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let effectsList = $derived(data.effects || []);
 
   // Local filter state - decoupled from URL
-  let selectedFilter = null;
-  let filterInitialized = false;
+  let selectedFilter = $state(null);
+  let filterInitialized = $state(false);
 
-  $: if (!filterInitialized) {
-    selectedFilter = additional.type || null;
-    filterInitialized = true;
-  }
-
-  $: if (filterInitialized && !medtool && !isCreateMode) {
-    if ((additional.type || null) !== selectedFilter) {
+  run(() => {
+    if (!filterInitialized) {
       selectedFilter = additional.type || null;
+      filterInitialized = true;
     }
-  }
-  $: medtoolEntityId = medtool?.Id ?? medtool?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, medtoolEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
+  });
+
+  run(() => {
+    if (filterInitialized && !medtool && !isCreateMode) {
+      if ((additional.type || null) !== selectedFilter) {
+        selectedFilter = additional.type || null;
+      }
+    }
+  });
+  let medtoolEntityId = $derived(medtool?.Id ?? medtool?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, medtoolEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
 
   // Permission check - verified users and admins can edit
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
 
   // For multi-type pages, data.items is an object keyed by type
-  $: allItems = (() => {
+  let allItems = $derived((() => {
     if (!data.items) return [];
     if (selectedFilter && data.items[selectedFilter]) {
       return data.items[selectedFilter];
@@ -105,7 +113,7 @@
       }
     }
     return combined;
-  })();
+  })());
 
   // Type navigation buttons
   const typeButtons = [
@@ -176,27 +184,31 @@
 
   // ========== WIKI EDIT STATE ==========
   // Initialize edit state when user/entity changes
-  $: if (user) {
-    const entityType = getEntityType(additional.type);
-    const emptyEntity = getEmptyEntity(additional.type);
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(medtool || emptyEntity, entityType, isCreateMode, editChange);
-  }
+  run(() => {
+    if (user) {
+      const entityType = getEntityType(additional.type);
+      const emptyEntity = getEmptyEntity(additional.type);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(medtool || emptyEntity, entityType, isCreateMode, editChange);
+    }
+  });
 
   // Set pending change when it exists
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
-  $: activeEntity = $editMode
+  let activeEntity = $derived($editMode
     ? $currentEntity
     : $viewingPendingChange && $existingPendingChange?.data
       ? $existingPendingChange.data
-      : medtool;
+      : medtool);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -204,16 +216,16 @@
   });
 
   // Build navigation items
-  $: navItems = allItems;
+  let navItems = $derived(allItems);
 
   // Navigation filters - uses selectedFilter for active state (local, not URL-based)
-  $: navFilters = typeButtons.map(btn => ({
+  let navFilters = $derived(typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
     active: selectedFilter === btn.type,
     href: selectedFilter === btn.type ? '/items/medicaltools' : `/items/medicaltools/${btn.type}`
-  }));
+  })));
 
   // All column definitions for medical tools
   const columnDefs = {
@@ -412,10 +424,10 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(selectedFilter);
-  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
-  $: allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `medicaltools-${selectedFilter || 'all'}`;
+  let navTableColumns = $derived(getNavTableColumns(selectedFilter));
+  let navFullWidthColumns = $derived(getNavFullWidthColumns(selectedFilter));
+  let allAvailableColumns = $derived(Object.values(columnDefs));
+  let navPageTypeId = $derived(`medicaltools-${selectedFilter || 'all'}`);
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -427,46 +439,46 @@
   }
 
   // Base path for navigation - uses selectedFilter so it persists
-  $: effectiveBasePath = selectedFilter
+  let effectiveBasePath = $derived(selectedFilter
     ? `/items/medicaltools/${selectedFilter}`
-    : '/items/medicaltools';
+    : '/items/medicaltools');
 
   // Create categories for the "New" dropdown
-  $: createCategories = typeButtons.map(btn => ({
+  let createCategories = $derived(typeButtons.map(btn => ({
     label: getTypeName(btn.type),
     href: `/items/medicaltools/${btn.type}`
-  }));
+  })));
 
   // Filter pending creates by selected filter type
-  $: filteredPendingCreates = selectedFilter
+  let filteredPendingCreates = $derived(selectedFilter
     ? (userPendingCreates || []).filter(change => {
         const entityType = getEntityType(selectedFilter);
         return change.entity === entityType;
       })
-    : userPendingCreates || [];
+    : userPendingCreates || []);
 
   // Breadcrumbs
-  $: breadcrumbs = [
+  let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Medical Tools', href: '/items/medicaltools' },
     ...(additional.type ? [{ label: getTypeName(additional.type) + 's', href: `/items/medicaltools/${additional.type}` }] : []),
     ...(medtool ? [{ label: medtool.Name }] : [])
-  ];
+  ]);
 
   // SEO
-  $: seoDescription = medtool?.Properties?.Description ||
-    `${medtool?.Name || 'Medical Tool'} - ${getTypeName(additional.type)} in Entropia Universe.`;
+  let seoDescription = $derived(medtool?.Properties?.Description ||
+    `${medtool?.Name || 'Medical Tool'} - ${getTypeName(additional.type)} in Entropia Universe.`);
 
-  $: canonicalUrl = medtool
+  let canonicalUrl = $derived(medtool
     ? `https://entropianexus.com/items/medicaltools/${additional.type}/${encodeURIComponentSafe(medtool.Name)}`
     : additional.type
     ? `https://entropianexus.com/items/medicaltools/${additional.type}`
-    : 'https://entropianexus.com/items/medicaltools';
+    : 'https://entropianexus.com/items/medicaltools');
 
   // Image URL for SEO
-  $: entityImageUrl = medtool?.Id && additional.type
+  let entityImageUrl = $derived(medtool?.Id && additional.type
     ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${medtool.Id}`
-    : null;
+    : null);
 
   // ========== CALCULATION FUNCTIONS ==========
   function getCost(item) {
@@ -507,21 +519,21 @@
   }
 
   // ========== COMPUTED VALUES ========== (use activeEntity for live updates)
-  $: cost = getCost(activeEntity);
-  $: reload = getReload(activeEntity);
-  $: hps = getHps(activeEntity);
-  $: hpp = getHpp(activeEntity);
-  $: totalUses = getTotalUses(activeEntity);
-  $: cyclePerRepair = totalUses && cost ? totalUses * (cost / 100) : null;
-  $: cyclePerHour = reload && cost ? (3600 / reload) * (cost / 100) : null;
-  $: timeToBreak = cyclePerHour > 0 && cyclePerRepair ? cyclePerRepair / cyclePerHour : null;
+  let cost = $derived(getCost(activeEntity));
+  let reload = $derived(getReload(activeEntity));
+  let hps = $derived(getHps(activeEntity));
+  let hpp = $derived(getHpp(activeEntity));
+  let totalUses = $derived(getTotalUses(activeEntity));
+  let cyclePerRepair = $derived(totalUses && cost ? totalUses * (cost / 100) : null);
+  let cyclePerHour = $derived(reload && cost ? (3600 / reload) * (cost / 100) : null);
+  let timeToBreak = $derived(cyclePerHour > 0 && cyclePerRepair ? cyclePerRepair / cyclePerHour : null);
 
   // Check for tiering (tools only, non-L items)
-  $: hasTiering = additional.type === 'tools' && activeEntity && !hasItemTag(activeEntity.Name, 'L');
+  let hasTiering = $derived(additional.type === 'tools' && activeEntity && !hasItemTag(activeEntity.Name, 'L'));
 
   // ========== RELOAD/USES TOGGLE ==========
-  let showReload = true;
-  $: showReloadEffective = $editMode ? false : showReload;
+  let showReload = $state(true);
+  let showReloadEffective = $derived($editMode ? false : showReload);
 
   onMount(() => {
     try {
@@ -544,11 +556,11 @@
   }
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     tiering: true,
     marketPrices: true,
     acquisition: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -685,7 +697,7 @@
             </div>
           {:else}
             <!-- In view mode, toggle between Reload and Uses/min -->
-            <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
+            <div class="stat-row toggleable" onclick={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
               {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
                 <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>

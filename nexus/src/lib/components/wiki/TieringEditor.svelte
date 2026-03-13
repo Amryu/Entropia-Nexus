@@ -22,20 +22,32 @@
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
 
-  /** @type {object} Entity being displayed/edited */
-  export let entity = null;
+  
 
-  /** @type {string} Entity type: 'Weapon', 'ArmorSet', 'MedicalTool', 'Finder', 'Excavator' */
-  export let entityType = 'Weapon';
+  
 
-  /** @type {Array} Tier information from additional data (server-side enriched) */
-  export let tierInfo = [];
+  
 
-  /** @type {boolean} Compact view */
-  export let compact = false;
+  
 
-  /** @type {number} Number of pieces in set (for armor set cost calculation) */
-  export let setPieceCount = 1;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {object} [entity]
+   * @property {string} [entityType]
+   * @property {Array} [tierInfo]
+   * @property {boolean} [compact]
+   * @property {number} [setPieceCount]
+   */
+
+  /** @type {Props} */
+  let {
+    entity = null,
+    entityType = 'Weapon',
+    tierInfo = [],
+    compact = false,
+    setPieceCount = 1
+  } = $props();
 
   const MAX_TIERS = 10;
 
@@ -77,7 +89,6 @@
     }
   }
 
-  $: materialArrays = getMaterialArrays(entityType);
 
   // Format PED values - avoid negative zero and ensure consistent decimals
   function formatPED(value) {
@@ -93,22 +104,20 @@
   const SAVE_DEBOUNCE_MS = 500;
 
   // Selected tier for material display
-  let selectedTier = 1;
+  let selectedTier = $state(1);
 
   // Per-tier markups: { [tierNum]: [mu1, mu2, mu3, mu4, mu5] }
-  let allMarkups = {};
+  let allMarkups = $state({});
   let saveTimer = null;
   let prefCache = null;
 
   // Markup source toggle: 'custom' | 'inventory' | 'ingame' | 'exchange'
-  let markupSource = 'custom';
-  let nameToWapMap = new Map();
-  let nameToIdMap = new Map();
-  let inventoryMarkupMap = new Map();
-  let ingameMarkupMap = new Map();
+  let markupSource = $state('custom');
+  let nameToWapMap = $state(new Map());
+  let nameToIdMap = $state(new Map());
+  let inventoryMarkupMap = $state(new Map());
+  let ingameMarkupMap = $state(new Map());
 
-  // Markups for the currently selected tier
-  $: markups = allMarkups[selectedTier] || DEFAULT_MARKUPS;
 
   /**
    * Resolve the effective markup for a material based on the active source.
@@ -226,32 +235,12 @@
   });
 
   // Full set toggle for armor
-  let fullSet = false;
+  let fullSet = $state(false);
 
-  // Get current tier from entity
-  $: currentTier = entity?.Properties?.Tier || null;
 
-  // Use tierInfo if available, otherwise fall back to entity.Tiers
-  $: rawTiers = (tierInfo && tierInfo.length > 0) ? tierInfo : (entity?.Tiers || []);
 
-  // Check if entity can be tiered (not (L) tagged)
-  $: canBeTiered = entity && !entity.Name?.includes('(L)');
 
-  // Process and extrapolate tier data
-  $: processedTierInfo = (() => {
-    if (!rawTiers || rawTiers.length === 0) return [];
-    return extrapolateTiers(rawTiers);
-  })();
 
-  // Build a map of known tier data by tier number
-  $: tierDataMap = (() => {
-    const map = new Map();
-    rawTiers.forEach((tier, idx) => {
-      const tierNum = tier.Properties?.Tier || tier.Tier || idx + 1;
-      map.set(tierNum, tier);
-    });
-    return map;
-  })();
 
   // Extrapolate missing tiers based on known data
   function extrapolateTiers(info) {
@@ -347,55 +336,14 @@
     return result;
   }
 
-  // Get tier info for selected tier
-  $: selectedTierInfo = processedTierInfo.find(t => (t.Properties?.Tier || t.Tier) === selectedTier);
 
-  // Calculate tier costs
-  $: tierCost = (() => {
-    // Declare reactive deps hidden inside getResolvedMarkup
-    void (markups, markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
-    if (!selectedTierInfo?.Materials) return { tt: 0, mu: 0, total: 0 };
-    let tt = 0;
-    let total = 0;
-    selectedTierInfo.Materials.forEach((mat, idx) => {
-      const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
-      const cost = matTT * mat.Amount;
-      tt += cost;
-      total += cost * getResolvedMarkup(mat.Material?.Name, idx) / 100;
-    });
-    return { tt, mu: total - tt, total };
-  })();
 
-  // Calculate cumulative cost up to selected tier (using per-tier markups)
-  $: cumulativeCost = (() => {
-    // Declare reactive deps hidden inside getResolvedMarkup
-    void (markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
-    let tt = 0;
-    let total = 0;
-    for (let i = 1; i <= selectedTier; i++) {
-      const tierData = processedTierInfo.find(t => (t.Properties?.Tier || t.Tier) === i);
-      if (tierData?.Materials) {
-        const tierMarkups = allMarkups[i] || DEFAULT_MARKUPS;
-        tierData.Materials.forEach((mat, idx) => {
-          const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
-          const cost = matTT * mat.Amount;
-          tt += cost;
-          total += cost * getResolvedMarkup(mat.Material?.Name, idx, tierMarkups) / 100;
-        });
-      }
-    }
-    return { tt, mu: total - tt, total };
-  })();
 
-  // Apply set piece multiplier for armor
-  $: setMultiplier = (entityType === 'ArmorSet' && fullSet) ? setPieceCount : 1;
 
   function selectTier(tier) {
     selectedTier = tier;
   }
 
-  // === Edit Mode Functions ===
-  $: entityTiers = entity?.Tiers || [];
 
   function getEditableTier(tierNum) {
     return entityTiers.find(t => (t.Properties?.Tier || t.Tier) === tierNum);
@@ -474,7 +422,73 @@
     return materials;
   }
 
-  $: displayMaterials = (() => {
+
+
+  let materialArrays = $derived(getMaterialArrays(entityType));
+  // Markups for the currently selected tier
+  let markups = $derived(allMarkups[selectedTier] || DEFAULT_MARKUPS);
+  // Get current tier from entity
+  let currentTier = $derived(entity?.Properties?.Tier || null);
+  // Use tierInfo if available, otherwise fall back to entity.Tiers
+  let rawTiers = $derived((tierInfo && tierInfo.length > 0) ? tierInfo : (entity?.Tiers || []));
+  // Check if entity can be tiered (not (L) tagged)
+  let canBeTiered = $derived(entity && !entity.Name?.includes('(L)'));
+  // Process and extrapolate tier data
+  let processedTierInfo = $derived((() => {
+    if (!rawTiers || rawTiers.length === 0) return [];
+    return extrapolateTiers(rawTiers);
+  })());
+  // Build a map of known tier data by tier number
+  let tierDataMap = $derived((() => {
+    const map = new Map();
+    rawTiers.forEach((tier, idx) => {
+      const tierNum = tier.Properties?.Tier || tier.Tier || idx + 1;
+      map.set(tierNum, tier);
+    });
+    return map;
+  })());
+  // Get tier info for selected tier
+  let selectedTierInfo = $derived(processedTierInfo.find(t => (t.Properties?.Tier || t.Tier) === selectedTier));
+  // Calculate tier costs
+  let tierCost = $derived((() => {
+    // Declare reactive deps hidden inside getResolvedMarkup
+    void (markups, markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
+    if (!selectedTierInfo?.Materials) return { tt: 0, mu: 0, total: 0 };
+    let tt = 0;
+    let total = 0;
+    selectedTierInfo.Materials.forEach((mat, idx) => {
+      const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
+      const cost = matTT * mat.Amount;
+      tt += cost;
+      total += cost * getResolvedMarkup(mat.Material?.Name, idx) / 100;
+    });
+    return { tt, mu: total - tt, total };
+  })());
+  // Calculate cumulative cost up to selected tier (using per-tier markups)
+  let cumulativeCost = $derived((() => {
+    // Declare reactive deps hidden inside getResolvedMarkup
+    void (markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
+    let tt = 0;
+    let total = 0;
+    for (let i = 1; i <= selectedTier; i++) {
+      const tierData = processedTierInfo.find(t => (t.Properties?.Tier || t.Tier) === i);
+      if (tierData?.Materials) {
+        const tierMarkups = allMarkups[i] || DEFAULT_MARKUPS;
+        tierData.Materials.forEach((mat, idx) => {
+          const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
+          const cost = matTT * mat.Amount;
+          tt += cost;
+          total += cost * getResolvedMarkup(mat.Material?.Name, idx, tierMarkups) / 100;
+        });
+      }
+    }
+    return { tt, mu: total - tt, total };
+  })());
+  // Apply set piece multiplier for armor
+  let setMultiplier = $derived((entityType === 'ArmorSet' && fullSet) ? setPieceCount : 1);
+  // === Edit Mode Functions ===
+  let entityTiers = $derived(entity?.Tiers || []);
+  let displayMaterials = $derived((() => {
     if (selectedTierInfo?.Materials && selectedTierInfo.Materials.length > 0) {
       return selectedTierInfo.Materials;
     }
@@ -482,10 +496,9 @@
       return getDefaultTierMaterials(selectedTier);
     }
     return [];
-  })();
-
+  })());
   // Transform materials data for table display (sorted by material category)
-  $: materialTableData = (() => {
+  let materialTableData = $derived((() => {
     // Declare reactive deps hidden inside getResolvedMarkup
     void (markups, markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
     return displayMaterials
@@ -506,12 +519,11 @@
         };
       })
       .sort((a, b) => a._sort - b._sort);
-  })();
-
+  })());
   // Sorted material entries for edit mode (preserves original indices for data operations)
-  $: orderedEditMaterials = displayMaterials
+  let orderedEditMaterials = $derived(displayMaterials
     .map((mat, origIdx) => ({ mat, origIdx, sort: classifyMaterial(mat.Material?.Name) }))
-    .sort((a, b) => a.sort - b.sort);
+    .sort((a, b) => a.sort - b.sort));
 </script>
 
 {#if canBeTiered}
@@ -524,25 +536,25 @@
           <button
             class="source-btn"
             class:active={markupSource === 'custom'}
-            on:click={() => { markupSource = 'custom'; debounceSaveMarkups(); }}
+            onclick={() => { markupSource = 'custom'; debounceSaveMarkups(); }}
           >Custom</button>
           <button
             class="source-btn"
             class:active={markupSource === 'inventory'}
             disabled={inventoryMarkupMap.size === 0}
-            on:click={() => { markupSource = 'inventory'; debounceSaveMarkups(); }}
+            onclick={() => { markupSource = 'inventory'; debounceSaveMarkups(); }}
           >Inventory</button>
           <button
             class="source-btn"
             class:active={markupSource === 'ingame'}
             disabled={ingameMarkupMap.size === 0}
-            on:click={() => { markupSource = 'ingame'; debounceSaveMarkups(); }}
+            onclick={() => { markupSource = 'ingame'; debounceSaveMarkups(); }}
           >In-Game</button>
           <button
             class="source-btn"
             class:active={markupSource === 'exchange'}
             disabled={nameToWapMap.size === 0}
-            on:click={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}
+            onclick={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}
           >Exchange</button>
         </div>
       </div>
@@ -561,7 +573,7 @@
           class:disabled={!isClickable}
           class:no-data={!hasTierData && $editMode}
           disabled={!isClickable}
-          on:click={() => selectTier(tierNum)}
+          onclick={() => selectTier(tierNum)}
         >
           {tierNum}
         </button>
@@ -584,7 +596,7 @@
                 min="0"
                 step="1"
                 class="amount-input-compact"
-                on:change={(e) => updateMaterialAmount(selectedTier, origIdx, parseInt(e.target.value) || 0)}
+                onchange={(e) => updateMaterialAmount(selectedTier, origIdx, parseInt(e.target.value) || 0)}
               />
             </div>
           {/each}
@@ -617,8 +629,8 @@
                     <input
                       type="text"
                       value={markups[row._idx]}
-                      on:input={(e) => handleMarkupInput(e, row._idx)}
-                      on:blur={(e) => handleMarkupInput(e, row._idx)}
+                      oninput={(e) => handleMarkupInput(e, row._idx)}
+                      onblur={(e) => handleMarkupInput(e, row._idx)}
                       class="markup-input"
                       inputmode="decimal"
                     />

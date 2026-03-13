@@ -5,9 +5,9 @@
 <script>
   import '$lib/style.css';
 
-  export let data;
-  $: changelog = data.changelog || [];
-  $: latestVersion = changelog[0]?.version || '0.1.0';
+  let { data } = $props();
+  let changelog = $derived(data.changelog || []);
+  let latestVersion = $derived(changelog[0]?.version || '0.1.0');
 
   const features = [
     {
@@ -94,7 +94,7 @@
     <h2 class="section-title">Download <span class="version-tag">v{latestVersion} beta</span></h2>
     <div class="downloads-grid">
       {#each platforms as platform}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <svelte:element this={platform.disabled ? 'div' : 'a'} href={platform.disabled ? undefined : platform.file(latestVersion)} class="download-card" class:download-disabled={platform.disabled} download={platform.disabled ? undefined : ''}>
           <span class="download-icon">
             {#if platform.name === 'Windows'}

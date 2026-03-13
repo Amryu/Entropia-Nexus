@@ -8,14 +8,20 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {boolean} */
-  export let open = false;
+  
 
-  /** @type {'bidder'|'seller'} */
-  export let role = 'bidder';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [open]
+   * @property {'bidder'|'seller'} [role]
+   */
 
-  let accepted = false;
-  let submitting = false;
+  /** @type {Props} */
+  let { open = $bindable(false), role = 'bidder' } = $props();
+
+  let accepted = $state(false);
+  let submitting = $state(false);
 
   const disclaimerText = {
     bidder: {
@@ -43,7 +49,7 @@
     }
   };
 
-  $: config = disclaimerText[role] || disclaimerText.bidder;
+  let config = $derived(disclaimerText[role] || disclaimerText.bidder);
 
   async function handleAccept() {
     if (!accepted) return;
@@ -85,10 +91,10 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" onclick={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
       <div class="dialog-header">
         <h2 id="disclaimer-title">{config.title}</h2>
@@ -108,8 +114,8 @@
       </div>
 
       <div class="dialog-footer">
-        <button class="btn btn-secondary" on:click={handleClose}>Cancel</button>
-        <button class="btn btn-primary" on:click={handleAccept} disabled={!accepted || submitting}>
+        <button class="btn btn-secondary" onclick={handleClose}>Cancel</button>
+        <button class="btn btn-primary" onclick={handleAccept} disabled={!accepted || submitting}>
           {submitting ? 'Accepting...' : 'Accept & Continue'}
         </button>
       </div>

@@ -1,77 +1,63 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { createEventDispatcher } from 'svelte';
 
   import VirtualTableRow from '$lib/components/VirtualTableRow.svelte';
 
-  export let title = null;
-  export let header = { values: [] };
-  export let data = [];
-  export let options = {};
 
-  export let style = '';
 
-  export let start = 0;
-  export let end = 0;
-  export let count = 0;
+  /**
+   * @typedef {Object} Props
+   * @property {any} [title]
+   * @property {any} [header]
+   * @property {any} [data]
+   * @property {any} [options]
+   * @property {string} [style]
+   * @property {number} [start]
+   * @property {number} [end]
+   * @property {number} [count]
+   */
+
+  /** @type {Props} */
+  let {
+    title = null,
+    header = { values: [] },
+    data = [],
+    options = {},
+    style = '',
+    start = $bindable(0),
+    end = $bindable(0),
+    count = $bindable(0)
+  } = $props();
 
   const rowHeight = 19;
 
-  let viewport;
-  let contents;
+  let viewport = $state();
+  let contents = $state();
 
-  let searchValues = [];
-  let sortDirections = [];
+  let searchValues = $state([]);
+  let sortDirections = $state([]);
 
-  let filteredData = [];
+  let filteredData = $state([]);
 
-  let currentHeaders = [];
+  let currentHeaders = $state([]);
 
-  $: if (header.values
-    && (currentHeaders.length !== header?.values.length 
-    || !currentHeaders.every((x, i) => x === header.values[i])
-    || !header.values.every((x, i) => x === currentHeaders[i]))) {
-    resetHeaderFilters();
-    currentHeaders = header.values;
-  }
 
   function resetHeaderFilters() {
     searchValues = Array(header?.values?.length).fill('');
     sortDirections = [];
   }
 
-  let spanMap = [];
-  let spanLengths = [];
+  let spanMap = $state([]);
+  let spanLengths = $state([]);
 
   function isSpannable(v) {
     return v === true || (typeof v === 'number' && v >= 1);
   }
 
-  $: if (filteredData && options.virtual !== true) {
-    // Map the starting index of every span column. A new span starts once the value of the current row is different from the previous row.
-    spanMap = Array(getColumnCount(header, filteredData)).fill(null);
-    spanLengths = Array(getColumnCount(header, filteredData)).fill(null);
-
-    for (let i = 0; i < getColumnCount(header, filteredData); i++) {
-      spanMap[i] = [0];
-      for (let j = 1; j < filteredData.length; j++) {
-        // Start a new span group if this column is not spannable, or if the value changes vs previous row
-        if (!spanCellMatches(i, filteredData[j], filteredData[j - 1])) {
-          spanMap[i].push(j);
-        }
-      }
-      // Compute dynamic span lengths per start index
-      const starts = spanMap[i];
-      const lengthsMap = new Map();
-      for (let k = 0; k < starts.length; k++) {
-        const start = starts[k];
-        const next = (k + 1 < starts.length) ? starts[k + 1] : filteredData.length;
-        lengthsMap.set(start, Math.max(1, next - start));
-      }
-      spanLengths[i] = lengthsMap;
-    }
-  }
 
   function getSpanLength(colIndex, rowIndex) {
     if (!spanLengths || !spanLengths[colIndex]) return 1;
@@ -112,74 +98,6 @@
     return value.includes(searchString);
   }
 
-  $: if (data != null && data.length > 0) {
-    filteredData = data;
-
-    if (options.searchable) {
-      if (searchValues?.length !== header?.values?.length) {
-        searchValues = Array(header?.values?.length).fill('');
-      }
-
-      filteredData = filteredData.filter((row) => {
-        for (let i = 0; i < searchValues.length; i++) {
-          if (searchValues[i].trim().length !== 0 && !search(row.values[i]?.toString().toLowerCase() ?? '', searchValues[i].toLowerCase())) {
-            return false;
-          }
-        }
-        return true;
-      });
-    }
-
-    if (options.sortable !== false) {
-      filteredData = filteredData.sort((a, b) => {
-        for (let i = 0; i < sortDirections.length; i++) {
-          let index = sortDirections[i].index;
-
-          if (!header?.options?.sortFunctions || header.options.sortFunctions[index] == null) {
-            let isANull = (a.values[index] == null || a.values[index] === 'N/A');
-            let isBNull = (b.values[index] == null || b.values[index] === 'N/A');
-
-            if (isANull && b.values[index] != null) {
-              return 1;
-            }
-            if (isBNull && a.values[index] != null) {
-              return -1;
-            }
-            if (isANull && isBNull) {
-              continue;
-            }
-
-            if (typeof a.values[index] !== 'number' && typeof b.values[index] === 'number') {
-              return sortDirections[i].asc ? 1 : -1;
-            }
-            if (typeof a.values[index] === 'number' && typeof b.values[index] !== 'number') {
-              return sortDirections[i].asc ? -1 : 1;
-            }
-
-            let value = typeof a.values[index] === 'number' && typeof b.values[index] !== 'number'
-              ? a.values[index] - b.values[index]
-              : a.values[index].toString().localeCompare(b.values[index].toString(), undefined, { numeric: true });
-            
-            if (value !== 0) {
-              return sortDirections[i].asc ? value : -value;
-            }
-          }
-          else if (header?.options?.sortFunctions && header.options.sortFunctions[index] != null) {
-            let result = sortDirections[i].asc
-              ? header.options.sortFunctions[index](a?.values[index], b?.values[index])
-              : header.options.sortFunctions[index](b?.values[index], a?.values[index]);
-
-            if (result !== 0) {
-              return result;
-            }
-          }
-        }
-        return 0;
-      });
-    }
-
-    count = filteredData.length;
-  }
 
   function sortColumn(evt, index) {
     if (options.sortable == false) return;
@@ -267,6 +185,111 @@
     if (!isSpannable(spans[colIndex])) return false;
     return row.values[colIndex] === prevRow.values[colIndex];
   }
+  run(() => {
+    if (header.values
+      && (currentHeaders.length !== header?.values.length 
+      || !currentHeaders.every((x, i) => x === header.values[i])
+      || !header.values.every((x, i) => x === currentHeaders[i]))) {
+      resetHeaderFilters();
+      currentHeaders = header.values;
+    }
+  });
+  run(() => {
+    if (data != null && data.length > 0) {
+      filteredData = data;
+
+      if (options.searchable) {
+        if (searchValues?.length !== header?.values?.length) {
+          searchValues = Array(header?.values?.length).fill('');
+        }
+
+        filteredData = filteredData.filter((row) => {
+          for (let i = 0; i < searchValues.length; i++) {
+            if (searchValues[i].trim().length !== 0 && !search(row.values[i]?.toString().toLowerCase() ?? '', searchValues[i].toLowerCase())) {
+              return false;
+            }
+          }
+          return true;
+        });
+      }
+
+      if (options.sortable !== false) {
+        filteredData = filteredData.sort((a, b) => {
+          for (let i = 0; i < sortDirections.length; i++) {
+            let index = sortDirections[i].index;
+
+            if (!header?.options?.sortFunctions || header.options.sortFunctions[index] == null) {
+              let isANull = (a.values[index] == null || a.values[index] === 'N/A');
+              let isBNull = (b.values[index] == null || b.values[index] === 'N/A');
+
+              if (isANull && b.values[index] != null) {
+                return 1;
+              }
+              if (isBNull && a.values[index] != null) {
+                return -1;
+              }
+              if (isANull && isBNull) {
+                continue;
+              }
+
+              if (typeof a.values[index] !== 'number' && typeof b.values[index] === 'number') {
+                return sortDirections[i].asc ? 1 : -1;
+              }
+              if (typeof a.values[index] === 'number' && typeof b.values[index] !== 'number') {
+                return sortDirections[i].asc ? -1 : 1;
+              }
+
+              let value = typeof a.values[index] === 'number' && typeof b.values[index] !== 'number'
+                ? a.values[index] - b.values[index]
+                : a.values[index].toString().localeCompare(b.values[index].toString(), undefined, { numeric: true });
+              
+              if (value !== 0) {
+                return sortDirections[i].asc ? value : -value;
+              }
+            }
+            else if (header?.options?.sortFunctions && header.options.sortFunctions[index] != null) {
+              let result = sortDirections[i].asc
+                ? header.options.sortFunctions[index](a?.values[index], b?.values[index])
+                : header.options.sortFunctions[index](b?.values[index], a?.values[index]);
+
+              if (result !== 0) {
+                return result;
+              }
+            }
+          }
+          return 0;
+        });
+      }
+
+      count = filteredData.length;
+    }
+  });
+  run(() => {
+    if (filteredData && options.virtual !== true) {
+      // Map the starting index of every span column. A new span starts once the value of the current row is different from the previous row.
+      spanMap = Array(getColumnCount(header, filteredData)).fill(null);
+      spanLengths = Array(getColumnCount(header, filteredData)).fill(null);
+
+      for (let i = 0; i < getColumnCount(header, filteredData); i++) {
+        spanMap[i] = [0];
+        for (let j = 1; j < filteredData.length; j++) {
+          // Start a new span group if this column is not spannable, or if the value changes vs previous row
+          if (!spanCellMatches(i, filteredData[j], filteredData[j - 1])) {
+            spanMap[i].push(j);
+          }
+        }
+        // Compute dynamic span lengths per start index
+        const starts = spanMap[i];
+        const lengthsMap = new Map();
+        for (let k = 0; k < starts.length; k++) {
+          const start = starts[k];
+          const next = (k + 1 < starts.length) ? starts[k + 1] : filteredData.length;
+          lengthsMap.set(start, Math.max(1, next - start));
+        }
+        spanLengths[i] = lengthsMap;
+      }
+    }
+  });
 </script>
 
 <style>
@@ -415,9 +438,9 @@
         <tr>
           {#each header.values as headerValue, index}
             {#if sortDirections.find((x) => x.index === index)}
-              <th class='sortable' on:click={(evt) => sortColumn(evt, index)}>{headerValue} {getSortIndicator(sortDirections.find((x) => x.index === index))}</th>
+              <th class='sortable' onclick={(evt) => sortColumn(evt, index)}>{headerValue} {getSortIndicator(sortDirections.find((x) => x.index === index))}</th>
             {:else}
-              <th class='{options.sortable !== false ? 'sortable' : ''}' on:click={(evt) => sortColumn(evt, index)}>{headerValue}</th>
+              <th class='{options.sortable !== false ? 'sortable' : ''}' onclick={(evt) => sortColumn(evt, index)}>{headerValue}</th>
             {/if}
           {/each}
           {#if options.virtual}
@@ -451,32 +474,34 @@
             on:rowHover={(e) => rowHover(e.detail)}
             bind:start
             bind:end
-            let:item
-            let:index>
-            <tdgroup style="display: contents;">
-            {#each item.values as value, valueIndex}
-              <td class="clickable {(index) % 2 === 0 ? 'row-color' : 'row-color-alt'}" height="17px" style={item?.tdStyles ? item?.tdStyles[valueIndex] : null}>
-                <span class={(shouldShowTooltip(item, valueIndex) && !(item?.copyables && item.copyables[valueIndex])) ? 'dotted-underline' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
-                  {#if item?.links != null && item?.links[valueIndex] != null}
-                    <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>
-                  {:else if item?.copyables && item.copyables[valueIndex]}
-                    <button type="button" class='copyable-link' title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null} on:click={() => item?.onClicks && item.onClicks[valueIndex] ? item.onClicks[valueIndex]() : null}>
+            
+            >
+            {#snippet children({ item, index })}
+                    <tdgroup style="display: contents;">
+              {#each item.values as value, valueIndex}
+                <td class="clickable {(index) % 2 === 0 ? 'row-color' : 'row-color-alt'}" height="17px" style={item?.tdStyles ? item?.tdStyles[valueIndex] : null}>
+                  <span class={(shouldShowTooltip(item, valueIndex) && !(item?.copyables && item.copyables[valueIndex])) ? 'dotted-underline' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
+                    {#if item?.links != null && item?.links[valueIndex] != null}
+                      <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>
+                    {:else if item?.copyables && item.copyables[valueIndex]}
+                      <button type="button" class='copyable-link' title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null} onclick={() => item?.onClicks && item.onClicks[valueIndex] ? item.onClicks[valueIndex]() : null}>
+                        {@html value ?? ''}
+                      </button>
+                    {:else}
                       {@html value ?? ''}
-                    </button>
-                  {:else}
-                    {@html value ?? ''}
-                  {/if}
-                </span>
-              </td>
-            {/each}
-            </tdgroup>
-          </VirtualTableRow>
+                    {/if}
+                  </span>
+                </td>
+              {/each}
+              </tdgroup>
+                              {/snippet}
+                </VirtualTableRow>
         </tbody>
       </table>
     {:else}
       <tbody bind:this={contents} class={options.virtual ? 'virtual' : ''} style={`grid-column: span ${getColumnCount(header, filteredData)};`}>
         {#each filteredData as item, index}
-          <tr on:click={() => rowClick({ index, data: item })} on:mouseover={() => rowHover({ index, data: item })} on:focus={() => rowHover({ index, data: item })} on:mouseout={() => rowHover(null)} on:blur={() => rowHover(null)} style={item?.trStyle ?? ''} class="{options.highlightOnHover ? 'hover' : ''}">
+          <tr onclick={() => rowClick({ index, data: item })} onmouseover={() => rowHover({ index, data: item })} onfocus={() => rowHover({ index, data: item })} onmouseout={() => rowHover(null)} onblur={() => rowHover(null)} style={item?.trStyle ?? ''} class="{options.highlightOnHover ? 'hover' : ''}">
             {#each item.values as value, valueIndex}
               {#if (item?.spans == null || item?.spans[valueIndex] == null) || (isSpannable(item?.spans[valueIndex]) && !spanCellMatches(valueIndex, item, filteredData[index - 1]))}
                 <td class={(item?.spans != null && isSpannable(item?.spans[valueIndex]) ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && isSpannable(item?.spans[valueIndex]) && !spanCellMatches(valueIndex, item, filteredData[index - 1]) ? `grid-row: span ${getSpanLength(valueIndex, index)};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>
@@ -484,7 +509,7 @@
                     {#if item?.links != null && item?.links[valueIndex] != null}
                       <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>
                     {:else if item?.copyables && item.copyables[valueIndex]}
-                      <button type="button" class='copyable-link' title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null} on:click={() => item?.onClicks && item.onClicks[valueIndex] ? item.onClicks[valueIndex]() : null}>
+                      <button type="button" class='copyable-link' title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null} onclick={() => item?.onClicks && item.onClicks[valueIndex] ? item.onClicks[valueIndex]() : null}>
                         {@html value ?? ''}
                       </button>
                     {:else}

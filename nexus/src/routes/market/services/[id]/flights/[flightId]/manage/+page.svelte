@@ -1,39 +1,27 @@
 <script lang="ts">
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
 
-  export let data;
+  let { data } = $props();
 
-  $: flight = data.flight;
-  $: service = data.service;
-  $: checkins = data.checkins || [];
-  $: stateLog = data.stateLog || [];
-  $: user = data.session?.user;
-  $: isOwner = user && service && (user.id === service.user_id || user.grants?.includes('admin.panel'));
 
-  let routeStops = [];
-  let currentStopIndex = 0;
-  let showOptimizedRoute = false;
-  let optimizedRoute = [];
-  let optimizedValidation = null;
+  let routeStops = $state([]);
+  let currentStopIndex = $state(0);
+  let showOptimizedRoute = $state(false);
+  let optimizedRoute = $state([]);
+  let optimizedValidation = $state(null);
 
   // Pending action system - delays API calls until 10s undo period elapses
-  let pendingAction = null; // 'board', 'start', 'advance'
-  let pendingCountdown = 0;
+  let pendingAction = $state(null); // 'board', 'start', 'advance'
+  let pendingCountdown = $state(0);
   let pendingInterval = null;
   let pendingStartTime = null;
 
-  // For displaying the "projected" state during pending period
-  $: projectedStatus = pendingAction === 'board' ? 'boarding'
-    : pendingAction === 'start' ? 'running'
-    : flight?.status;
-  $: projectedState = pendingAction === 'start' ? 'departing'
-    : pendingAction === 'advance' ? getNextState()
-    : flight?.current_state;
-  $: projectedStopIndex = pendingAction === 'advance' ? getNextStopIndex() : (flight?.current_stop_index || 0);
 
   function getNextState() {
     const currentState = flight?.current_state || 'departing';
@@ -65,12 +53,6 @@
     return stopIndex;
   }
 
-  $: if (flight && !pendingAction) {
-    routeStops = typeof flight.route_stops === 'string'
-      ? JSON.parse(flight.route_stops)
-      : (flight.route_stops || []);
-    currentStopIndex = flight.current_stop_index || 0;
-  }
 
   // Start pending action countdown
   function startPendingAction(action) {
@@ -160,10 +142,6 @@
     startPendingAction('board');
   }
 
-  // Check if there are pending check-ins
-  $: pendingCheckins = checkins.filter(c => c.status === 'pending');
-  $: hasPendingCheckins = pendingCheckins.length > 0;
-  $: isFlexibleRoute = (flight?.route_type || 'fixed') === 'flexible';
 
   // Start flight (from boarding status)
   function startFlight() {
@@ -426,6 +404,32 @@
 
     return 'Advance';
   }
+  let flight = $derived(data.flight);
+  let service = $derived(data.service);
+  let checkins = $derived(data.checkins || []);
+  let stateLog = $derived(data.stateLog || []);
+  let user = $derived(data.session?.user);
+  let isOwner = $derived(user && service && (user.id === service.user_id || user.grants?.includes('admin.panel')));
+  // For displaying the "projected" state during pending period
+  let projectedStatus = $derived(pendingAction === 'board' ? 'boarding'
+    : pendingAction === 'start' ? 'running'
+    : flight?.status);
+  let projectedState = $derived(pendingAction === 'start' ? 'departing'
+    : pendingAction === 'advance' ? getNextState()
+    : flight?.current_state);
+  let projectedStopIndex = $derived(pendingAction === 'advance' ? getNextStopIndex() : (flight?.current_stop_index || 0));
+  run(() => {
+    if (flight && !pendingAction) {
+      routeStops = typeof flight.route_stops === 'string'
+        ? JSON.parse(flight.route_stops)
+        : (flight.route_stops || []);
+      currentStopIndex = flight.current_stop_index || 0;
+    }
+  });
+  // Check if there are pending check-ins
+  let pendingCheckins = $derived(checkins.filter(c => c.status === 'pending'));
+  let hasPendingCheckins = $derived(pendingCheckins.length > 0);
+  let isFlexibleRoute = $derived((flight?.route_type || 'fixed') === 'flexible');
 </script>
 
 <div class="scroll-container">
@@ -491,7 +495,7 @@
           </li>
           <li>Review and optimize the route based on accepted passengers</li>
         </ul>
-        <button on:click={optimizeRoute} class="btn btn-secondary" disabled={showOptimizedRoute}>
+        <button onclick={optimizeRoute} class="btn btn-secondary" disabled={showOptimizedRoute}>
           Optimize Route
         </button>
       </div>
@@ -518,33 +522,33 @@
 
       <div class="control-buttons">
         {#if flight.status === 'scheduled' && !pendingAction}
-          <button on:click={startBoarding} class="btn btn-primary">Start Boarding</button>
+          <button onclick={startBoarding} class="btn btn-primary">Start Boarding</button>
         {/if}
 
         {#if flight.status === 'boarding' && !pendingAction}
-          <button on:click={startFlight} class="btn btn-primary" disabled={isFlexibleRoute && hasPendingCheckins}>
+          <button onclick={startFlight} class="btn btn-primary" disabled={isFlexibleRoute && hasPendingCheckins}>
             Start Flight
           </button>
         {/if}
 
         {#if flight.status === 'running' && !pendingAction}
-          <button on:click={advanceRoute} class="btn btn-primary">
+          <button onclick={advanceRoute} class="btn btn-primary">
             {getAdvanceButtonText()}
           </button>
         {/if}
 
         {#if pendingAction}
-          <button on:click={undoAction} class="btn btn-warning">
+          <button onclick={undoAction} class="btn btn-warning">
             Undo ({pendingCountdown}s)
           </button>
         {/if}
 
         {#if flight.route_type === 'flexible' && flight.status === 'running' && !showOptimizedRoute && !pendingAction}
-          <button on:click={optimizeRoute} class="btn btn-secondary">Optimize Route</button>
+          <button onclick={optimizeRoute} class="btn btn-secondary">Optimize Route</button>
         {/if}
 
         {#if flight.status !== 'completed' && flight.status !== 'cancelled' && !pendingAction}
-          <button on:click={cancelFlight} class="btn btn-danger">Cancel Flight</button>
+          <button onclick={cancelFlight} class="btn btn-danger">Cancel Flight</button>
         {/if}
       </div>
     </div>
@@ -582,8 +586,8 @@
           </div>
         </div>
         <div class="route-actions">
-          <button on:click={acceptOptimizedRoute} class="btn btn-primary">Accept & Apply</button>
-          <button on:click={rejectOptimizedRoute} class="btn btn-secondary">Reject</button>
+          <button onclick={acceptOptimizedRoute} class="btn btn-primary">Accept & Apply</button>
+          <button onclick={rejectOptimizedRoute} class="btn btn-secondary">Reject</button>
         </div>
       </div>
     {/if}
@@ -613,12 +617,12 @@
               </div>
               {#if checkin.status === 'pending'}
                 <div class="checkin-actions">
-                  <button on:click={() => acceptCheckin(checkin.id)} class="btn btn-sm btn-success">Accept</button>
-                  <button on:click={() => denyCheckin(checkin.id)} class="btn btn-sm btn-danger">Deny</button>
+                  <button onclick={() => acceptCheckin(checkin.id)} class="btn btn-sm btn-success">Accept</button>
+                  <button onclick={() => denyCheckin(checkin.id)} class="btn btn-sm btn-danger">Deny</button>
                 </div>
               {:else if canRefundCheckin(checkin)}
                 <div class="checkin-actions">
-                  <button on:click={() => refundCheckin(checkin.id)} class="btn btn-sm btn-warning">Refund</button>
+                  <button onclick={() => refundCheckin(checkin.id)} class="btn btn-sm btn-warning">Refund</button>
                 </div>
               {/if}
             </div>

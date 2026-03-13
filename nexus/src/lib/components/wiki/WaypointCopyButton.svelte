@@ -13,26 +13,38 @@
   // @ts-nocheck
   import { copyToClipboard } from '$lib/util';
 
-  /** Waypoint string - used in standalone mode */
-  export let waypoint = '';
+  
 
-  /** FancyTable compatibility: row data */
-  export let row = null;
+  
 
-  /** FancyTable compatibility: cell value (waypoint) */
-  export let value = '';
+  
 
-  /** Whether to show the full waypoint text or just an icon */
-  export let compact = false;
+  
 
-  /** Custom label when not showing waypoint text */
-  export let label = '';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [waypoint] - Waypoint string - used in standalone mode
+   * @property {any} [row] - FancyTable compatibility: row data
+   * @property {string} [value] - FancyTable compatibility: cell value (waypoint)
+   * @property {boolean} [compact] - Whether to show the full waypoint text or just an icon
+   * @property {string} [label] - Custom label when not showing waypoint text
+   */
 
-  let copied = false;
+  /** @type {Props} */
+  let {
+    waypoint = '',
+    row = null,
+    value = '',
+    compact = false,
+    label = ''
+  } = $props();
+
+  let copied = $state(false);
   let timeout = null;
 
   // Use waypoint prop if provided, otherwise fall back to value (FancyTable mode)
-  $: actualWaypoint = waypoint || value || '';
+  let actualWaypoint = $derived(waypoint || value || '');
 
   async function handleCopy() {
     const success = await copyToClipboard(`/wp ${actualWaypoint}`);
@@ -50,7 +62,7 @@
   class="waypoint-btn"
   class:copied
   class:compact
-  on:click={handleCopy}
+  onclick={handleCopy}
   title="Click to copy waypoint"
   disabled={!actualWaypoint}
 >

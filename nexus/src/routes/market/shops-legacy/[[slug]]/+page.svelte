@@ -7,7 +7,7 @@
   import { waypoint } from "$lib/components/Properties.svelte";
   import { apiCall, getItemLink } from '$lib/util';
 
-  export let data;
+  let { data } = $props();
 
   // Constants for section names
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
@@ -294,10 +294,10 @@
   }
 
   // Cache of item details by ItemId
-  let itemDetails = {};
+  let itemDetails = $state({});
 
   // Prefetch all unique item IDs for the current shop using batch endpoint
-  $: prefetchItems = (async () => {
+  let prefetchItems = $derived((async () => {
     const ids = Array.from(new Set((data?.object?.InventoryGroups || [])
       .flatMap(g => (g?.Items || []).map(i => i.ItemId ?? i.item_id))
       .filter(Boolean)));
@@ -306,7 +306,7 @@
     const map = {};
     (results || []).forEach(item => { if (item?.Id) map[item.Id] = item; });
     itemDetails = map;
-  })();
+  })());
 </script>
 
 <EntityViewer
@@ -321,43 +321,45 @@
   basePath='/market/shops'
   ownershipBasedEditing={true}
   getOwnershipInfo={canUserEditShop}
-  let:object
-  let:additional>
+  
+  >
 
-  <div class="flex-item">
-    <div class="content-block">
-      {#key object?.Id}
-        {#if !object?.InventoryGroups || object.InventoryGroups.length === 0 || object.InventoryGroups.every(g => (g?.Items || []).length === 0)}
-          <div style="text-align: center; color: var(--text-muted, #888); margin: 2rem 0; font-size: 1.1rem;">
-            The shop owner has not yet added any items for display. Try again later!
-          </div>
-        {:else}
-          {#each (object?.InventoryGroups || []) as group}
-            {#if group && (group.Items || []).length > 0}
-              <Table
-                title={group.Name || group.name}
-                header={{
-                  values: ['Item', 'Stack Size', 'Markup %'],
-                  widths: ['1fr', '120px', '120px']
-                }}
-                data={(group.Items || []).map(item => {
-                  const id = item.ItemId ?? item.item_id;
-                  const it = id ? itemDetails[id] : null;
-                  return {
-                    values: [
-                      it?.Name || it?.name || 'Unknown Item',
-                      (item.StackSize ?? item.stack_size ?? 0).toString(),
-                      ((item.Markup ?? item.markup ?? 0).toFixed ? (item.Markup ?? 0).toFixed(2) : Number(item.Markup ?? item.markup ?? 0).toFixed(2)) + '%'
-                    ],
-                    links: [it ? getItemLink(it) : null]
-                  };
-                })}
-                options={{ searchable: true, sortable: true }}
-                style="margin-bottom: 1rem;" />
-            {/if}
-          {/each}
-        {/if}
-      {/key}
+  {#snippet children({ object, additional })}
+    <div class="flex-item">
+      <div class="content-block">
+        {#key object?.Id}
+          {#if !object?.InventoryGroups || object.InventoryGroups.length === 0 || object.InventoryGroups.every(g => (g?.Items || []).length === 0)}
+            <div style="text-align: center; color: var(--text-muted, #888); margin: 2rem 0; font-size: 1.1rem;">
+              The shop owner has not yet added any items for display. Try again later!
+            </div>
+          {:else}
+            {#each (object?.InventoryGroups || []) as group}
+              {#if group && (group.Items || []).length > 0}
+                <Table
+                  title={group.Name || group.name}
+                  header={{
+                    values: ['Item', 'Stack Size', 'Markup %'],
+                    widths: ['1fr', '120px', '120px']
+                  }}
+                  data={(group.Items || []).map(item => {
+                    const id = item.ItemId ?? item.item_id;
+                    const it = id ? itemDetails[id] : null;
+                    return {
+                      values: [
+                        it?.Name || it?.name || 'Unknown Item',
+                        (item.StackSize ?? item.stack_size ?? 0).toString(),
+                        ((item.Markup ?? item.markup ?? 0).toFixed ? (item.Markup ?? 0).toFixed(2) : Number(item.Markup ?? item.markup ?? 0).toFixed(2)) + '%'
+                      ],
+                      links: [it ? getItemLink(it) : null]
+                    };
+                  })}
+                  options={{ searchable: true, sortable: true }}
+                  style="margin-bottom: 1rem;" />
+              {/if}
+            {/each}
+          {/if}
+        {/key}
+      </div>
     </div>
-  </div>
+  {/snippet}
 </EntityViewer>

@@ -17,6 +17,8 @@
   />
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
@@ -25,49 +27,68 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {string} Placeholder text */
-  export let placeholder = 'Search...';
+  
 
-  /** @type {string} Current search query (bindable) */
-  export let value = '';
+  
 
-  /** @type {number} Debounce delay in ms */
-  export let debounceMs = 300;
+  
 
-  /** @type {'dropdown' | 'fullscreen'} Display mode */
-  export let mode = 'dropdown';
+  
 
-  /** @type {boolean} Whether the input is disabled */
-  export let disabled = false;
+  
 
-  /** @type {string} Additional CSS class for the container */
-  export let containerClass = '';
+  
 
-  /** @type {number} Maximum results per category */
-  export let maxPerCategory = 5;
+  
 
-  /** @type {number} Maximum total results */
-  export let maxTotal = 20;
+  
 
-  /** @type {boolean} Show results dropdown */
-  export let showResults = false;
+  
 
-  /** @type {string} Search API endpoint (default: /search, use /search/items for items-only) */
-  export let endpoint = '/search';
+  
 
-  /** @type {boolean} Whether to prepend VITE_API_URL to the endpoint (false for SvelteKit routes) */
-  export let apiPrefix = true;
+  
 
-  /** @type {boolean} Whether to show results area on focus (useful for mobile) */
-  export let showOnFocus = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [placeholder]
+   * @property {string} [value]
+   * @property {number} [debounceMs]
+   * @property {'dropdown' | 'fullscreen'} [mode]
+   * @property {boolean} [disabled]
+   * @property {string} [containerClass]
+   * @property {number} [maxPerCategory]
+   * @property {number} [maxTotal]
+   * @property {boolean} [showResults]
+   * @property {string} [endpoint]
+   * @property {boolean} [apiPrefix]
+   * @property {boolean} [showOnFocus]
+   */
+
+  /** @type {Props} */
+  let {
+    placeholder = 'Search...',
+    value = $bindable(''),
+    debounceMs = 300,
+    mode = 'dropdown',
+    disabled = false,
+    containerClass = '',
+    maxPerCategory = 5,
+    maxTotal = 20,
+    showResults = $bindable(false),
+    endpoint = '/search',
+    apiPrefix = true,
+    showOnFocus = false
+  } = $props();
 
   // Internal state
-  let inputElement;
-  let searchResults = [];
-  let isSearching = false;
-  let highlightedIndex = -1;
+  let inputElement = $state();
+  let searchResults = $state([]);
+  let isSearching = $state(false);
+  let highlightedIndex = $state(-1);
   let searchTimeout;
-  let flatResults = []; // Flattened results for keyboard navigation
+  let flatResults = $state([]); // Flattened results for keyboard navigation
   let preventBlurClose = false; // Prevent blur from closing when context menu opens
   let hasUsedArrowKeys = false; // Track if arrow keys were used for selection
 
@@ -146,8 +167,8 @@
   }
 
   // Build flat list for keyboard navigation
-  $: categorizedResults = categorizeResults(searchResults);
-  $: {
+  let categorizedResults = $derived(categorizeResults(searchResults));
+  run(() => {
     flatResults = [];
     for (const category of Object.keys(categorizedResults)) {
       for (const result of categorizedResults[category]) {
@@ -160,7 +181,7 @@
     }
     // Don't auto-select — let user explicitly choose with arrow keys
     highlightedIndex = -1;
-  }
+  });
 
   async function performSearch() {
     // Only run on client side
@@ -356,10 +377,10 @@
       {placeholder}
       {disabled}
       value={value}
-      on:input={handleInput}
-      on:keydown={handleKeydown}
-      on:blur={handleBlur}
-      on:focus={handleFocus}
+      oninput={handleInput}
+      onkeydown={handleKeydown}
+      onblur={handleBlur}
+      onfocus={handleFocus}
       autocomplete="off"
       spellcheck="false"
     />
@@ -386,9 +407,9 @@
               href={resultUrl}
               class="search-result-item"
               class:highlighted={globalIndex === highlightedIndex}
-              on:mousedown={handleResultMouseDown}
-              on:click={(e) => handleResultClick(e, result)}
-              on:mouseenter={() => handleResultMouseEnter(globalIndex)}
+              onmousedown={handleResultMouseDown}
+              onclick={(e) => handleResultClick(e, result)}
+              onmouseenter={() => handleResultMouseEnter(globalIndex)}
             >
               <span class="search-result-name">{result.DisplayName || result.Name}</span>
               <span class="search-result-type">{getTypeName(result.Type)}</span>

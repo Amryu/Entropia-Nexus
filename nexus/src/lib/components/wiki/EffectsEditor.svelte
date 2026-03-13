@@ -5,54 +5,71 @@
   Uses SearchInput for effect selection with sublabel support for CanonicalName.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { getTimeString } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import SearchInput from './SearchInput.svelte';
   import CreateEffectDialog from './CreateEffectDialog.svelte';
 
-  /** @type {Array} Effects array to display/edit */
-  export let effects = [];
+  
 
-  /** @type {string} Field path for updateField (e.g., 'EffectsOnEquip', 'EffectsOnConsume') */
-  export let fieldName = 'EffectsOnEquip';
+  
 
-  /** @type {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}}] */
-  export let availableEffects = [];
+  
 
-  /** @type {string} Effect type: 'equip', 'use', 'consume' - determines UI/features */
-  export let effectType = 'equip';
+  
 
-  /** @type {string} Section title */
-  export let title = '';
+  
 
-  /** @type {boolean} Whether to show the section even when empty */
-  export let showEmpty = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [effects]
+   * @property {string} [fieldName]
+   * @property {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}} [availableEffects]
+   * @property {string} [effectType]
+   * @property {string} [title]
+   * @property {boolean} [showEmpty]
+   */
 
-  let showCreateDialog = false;
-  let editingEffectIndex = null;
+  /** @type {Props} */
+  let {
+    effects = [],
+    fieldName = 'EffectsOnEquip',
+    availableEffects = [],
+    effectType = 'equip',
+    title = '',
+    showEmpty = false
+  } = $props();
+
+  let showCreateDialog = $state(false);
+  let editingEffectIndex = $state(null);
   // Local copy of available effects so newly created ones appear immediately
-  let localAvailableEffects = [];
-  $: localAvailableEffects = [...(availableEffects || [])];
+  let localAvailableEffects = $state([]);
+  run(() => {
+    localAvailableEffects = [...(availableEffects || [])];
+  });
 
   // Computed title based on effect type if not provided
-  $: displayTitle = title || (effectType === 'equip' ? 'Effects on Equip' : effectType === 'use' ? 'Effects on Use' : 'Effects on Consume');
+  let displayTitle = $derived(title || (effectType === 'equip' ? 'Effects on Equip' : effectType === 'use' ? 'Effects on Use' : 'Effects on Consume'));
 
   // Whether effects have duration (use and consume types)
-  $: hasDuration = effectType === 'use' || effectType === 'consume';
+  let hasDuration = $derived(effectType === 'use' || effectType === 'consume');
 
   // Sort effects alphabetically for display
-  $: sortedEffects = [...(effects || [])].sort((a, b) => a.Name?.localeCompare(b.Name) || 0);
+  let sortedEffects = $derived([...(effects || [])].sort((a, b) => a.Name?.localeCompare(b.Name) || 0));
 
   // Build SearchInput options with sublabel
-  $: effectOptions = localAvailableEffects.map(e => ({
+  let effectOptions = $derived(localAvailableEffects.map(e => ({
     label: e.Name,
     value: e.Name,
     sublabel: e.CanonicalName || null
-  }));
+  })));
 
   // Show section if has effects, in edit mode, or showEmpty is true
-  $: shouldShow = $editMode || (effects?.length > 0) || showEmpty;
+  let shouldShow = $derived($editMode || (effects?.length > 0) || showEmpty);
 
   // Get unit for an effect name from availableEffects list
   function getEffectUnit(effectName, currentEffect = null) {
@@ -235,13 +252,13 @@
                 />
               </div>
               {#if effect.Name}
-                <button class="btn-edit" on:click={() => openEditEffect(i)} title="Edit effect properties">
+                <button class="btn-edit" onclick={() => openEditEffect(i)} title="Edit effect properties">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                   </svg>
                 </button>
               {/if}
-              <button class="btn-remove" on:click={() => removeEffect(i)} title="Remove effect">
+              <button class="btn-remove" onclick={() => removeEffect(i)} title="Remove effect">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -255,7 +272,7 @@
                 value={effect.Values?.Strength ?? 0}
                 step="0.1"
                 min="0"
-                on:change={(e) => updateEffect(i, 'Strength', parseFloat(e.target.value) || 0)}
+                onchange={(e) => updateEffect(i, 'Strength', parseFloat(e.target.value) || 0)}
               />
               <span class="effect-unit">{getEffectUnit(effect.Name)}</span>
               {#if hasDuration}
@@ -266,7 +283,7 @@
                   value={effect.Values?.DurationSeconds ?? 0}
                   step="0.1"
                   min="0"
-                  on:change={(e) => updateEffect(i, 'Duration', parseFloat(e.target.value) || 0)}
+                  onchange={(e) => updateEffect(i, 'Duration', parseFloat(e.target.value) || 0)}
                 />
                 <span class="effect-unit">s</span>
               {/if}
@@ -274,14 +291,14 @@
           </div>
         {/each}
         <div class="btn-row">
-          <button class="btn-add" on:click={addEffect}>
+          <button class="btn-add" onclick={addEffect}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Add Effect
           </button>
-          <button class="btn-add btn-create" on:click={() => showCreateDialog = true}>
+          <button class="btn-add btn-create" onclick={() => showCreateDialog = true}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <polyline points="14 2 14 8 20 8" />

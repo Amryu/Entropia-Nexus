@@ -9,30 +9,44 @@
   - Click to expand to full map (opens new tab)
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  /** @type {Array<{stepIndex: number, title?: string, coordinates: {Longitude: number, Latitude: number, Altitude?: number}, type: string, planetId?: number}>} */
-  export let objectives = [];
+  
 
-  /** @type {{Id: number, Name: string, TechnicalName?: string, X?: number, Y?: number, Width?: number, Height?: number}} */
-  export let planet = null;
+  
 
-  /** @type {boolean} Whether to draw path lines between objectives */
-  export let showPath = true;
+  
 
-  /** @type {number} Height of the embed in pixels */
-  export let height = 280;
+  
 
-  /** @type {string} Optional title for the map section */
-  export let title = 'Mission Objectives';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array<{stepIndex: number, title?: string, coordinates: {Longitude: number, Latitude: number, Altitude?: number}, type: string, planetId?: number}>} [objectives]
+   * @property {{Id: number, Name: string, TechnicalName?: string, X?: number, Y?: number, Width?: number, Height?: number}} [planet]
+   * @property {boolean} [showPath]
+   * @property {number} [height]
+   * @property {string} [title]
+   */
+
+  /** @type {Props} */
+  let {
+    objectives = [],
+    planet = null,
+    showPath = true,
+    height = 280,
+    title = 'Mission Objectives'
+  } = $props();
 
   // Canvas and rendering state
-  let canvas;
+  let canvas = $state();
   let ctx;
-  let container;
+  let container = $state();
   let mapImage = null;
   let mapLoaded = false;
   let viewScale = 1;
@@ -44,22 +58,22 @@
   let animationFrameId;
 
   // Planet map bounds (from planet data or defaults for Calypso)
-  $: mapBounds = planet?.X != null ? {
+  let mapBounds = $derived(planet?.X != null ? {
     x: planet.X,
     y: planet.Y,
     width: planet.Width || 100000,
     height: planet.Height || 100000
-  } : { x: 0, y: 0, width: 100000, height: 100000 };
+  } : { x: 0, y: 0, width: 100000, height: 100000 });
 
   // Get map image URL based on planet
-  $: mapImageUrl = planet?.TechnicalName
+  let mapImageUrl = $derived(planet?.TechnicalName
     ? `/maps/${planet.TechnicalName}.jpg`
     : planet?.Name
       ? `/maps/Planet_${planet.Name}.jpg`
-      : '/maps/Planet_Calypso.jpg';
+      : '/maps/Planet_Calypso.jpg');
 
   // Compute bounds of all objectives for auto-centering
-  $: objectiveBounds = (() => {
+  let objectiveBounds = $derived((() => {
     if (!objectives.length) return null;
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
@@ -85,7 +99,7 @@
       centerX: (minX + maxX) / 2,
       centerY: (minY + maxY) / 2
     };
-  })();
+  })());
 
   // Colors for different objective types
   const objectiveColors = {
@@ -379,9 +393,11 @@
   });
 
   // Reload map when planet changes
-  $: if (browser && mapImageUrl) {
-    loadMapImage();
-  }
+  run(() => {
+    if (browser && mapImageUrl) {
+      loadMapImage();
+    }
+  });
 </script>
 
 {#if objectives.length > 0}
@@ -390,10 +406,10 @@
       <div class="map-header">
         <h4 class="map-title">{title}</h4>
         <div class="map-controls">
-          <button class="zoom-btn" on:click={zoomIn} title="Zoom in">+</button>
-          <button class="zoom-btn" on:click={zoomOut} title="Zoom out">-</button>
-          <button class="zoom-btn" on:click={resetView} title="Reset view">&#8634;</button>
-          <button class="expand-btn" on:click={openFullMap} title="Open full map">
+          <button class="zoom-btn" onclick={zoomIn} title="Zoom in">+</button>
+          <button class="zoom-btn" onclick={zoomOut} title="Zoom out">-</button>
+          <button class="zoom-btn" onclick={resetView} title="Reset view">&#8634;</button>
+          <button class="expand-btn" onclick={openFullMap} title="Open full map">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="15 3 21 3 21 9"></polyline>
               <polyline points="9 21 3 21 3 15"></polyline>
@@ -408,11 +424,11 @@
     <div class="map-container" bind:this={container}>
       <canvas
         bind:this={canvas}
-        on:pointerdown={handlePointerDown}
-        on:pointermove={handlePointerMove}
-        on:pointerup={handlePointerUp}
-        on:pointerleave={handlePointerUp}
-        on:wheel={handleWheel}
+        onpointerdown={handlePointerDown}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerUp}
+        onpointerleave={handlePointerUp}
+        onwheel={handleWheel}
       ></canvas>
     </div>
 

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { stopPropagation, createBubbler } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
 
   import '$lib/style.css';
@@ -16,39 +19,39 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
 
-  export let user;
-  export let realUser = null; // The actual admin user when impersonating
+  interface Props {
+    user: any;
+    realUser?: any; // The actual admin user when impersonating
+  }
 
-  // Login/Logout URLs with redirect back to current page
-  $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
-  $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
-  $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/discord/login';
+  let { user, realUser = null }: Props = $props();
+
   const SHORT_LINK_ORIGIN = 'eunex.us';
   const SHORT_ROUTE_PREFIXES = Object.entries(PREFERRED_SHORT_ROUTE_BY_PREFIX)
     .sort((a, b) => b[0].length - a[0].length);
 
-  let dropdownOpen: string | null = null;
+  let dropdownOpen: string | null = $state(null);
   let dropdownCloseTimeout: ReturnType<typeof setTimeout> | null = null;
-  let showImpersonateDialog = false;
-  let mobileMenuOpen = false;
-  let expandedSections: Set<string> = new Set();
-  let mobileSearchMode = false;
-  let mobileUserExpanded = false; // Track mobile user panel expanded state
+  let showImpersonateDialog = $state(false);
+  let mobileMenuOpen = $state(false);
+  let expandedSections: Set<string> = $state(new Set());
+  let mobileSearchMode = $state(false);
+  let mobileUserExpanded = $state(false); // Track mobile user panel expanded state
 
   // Ko-fi support prompt
-  let showKofiPrompt = false;
+  let showKofiPrompt = $state(false);
   let kofiTimeInterval = null;
 
   // Notifications state
-  let notifications = [];
-  let notificationsLoading = false;
-  let notificationsError = '';
-  let notificationsPage = 1;
+  let notifications = $state([]);
+  let notificationsLoading = $state(false);
+  let notificationsError = $state('');
+  let notificationsPage = $state(1);
   const notificationsPageSize = 8;
-  let notificationsTotal = 0;
-  let notificationsUnread = 0;
+  let notificationsTotal = $state(0);
+  let notificationsUnread = $state(0);
   let notificationsLastLoaded = 0;
-  let expandedNotificationId = null;
+  let expandedNotificationId = $state(null);
 
   const notificationActionMap = {
     Society: { label: 'View Societies', href: '/societies' },
@@ -56,9 +59,6 @@
     Admin: { label: 'Review', href: '/admin/review' },
   };
 
-  $: notificationsTotalPages = Math.max(1, Math.ceil(notificationsTotal / notificationsPageSize));
-  $: shortLinkUrl = getShortLinkForCurrentPage($page.url);
-  $: canCopyShortLink = !!shortLinkUrl;
 
   // Media query for auto-closing mobile menu
   let mediaQuery: MediaQueryList | null = null;
@@ -354,21 +354,21 @@
     expandedSections = expandedSections; // Trigger reactivity
   }
 
-  let impersonateUserId = '';
-  let impersonateError = '';
-  let isImpersonating = false;
+  let impersonateUserId = $state('');
+  let impersonateError = $state('');
+  let isImpersonating = $state(false);
 
   // User search state (for impersonation)
-  let userSearchQuery = '';
-  let userSearchResults = [];
-  let isUserSearching = false;
+  let userSearchQuery = $state('');
+  let userSearchResults = $state([]);
+  let isUserSearching = $state(false);
   let userSearchTimeout: ReturnType<typeof setTimeout> | null = null;
-  let showUserSuggestions = false;
-  let selectedUser: { id: string; global_name: string; eu_name: string | null; matches?: any[] } | null = null;
+  let showUserSuggestions = $state(false);
+  let selectedUser: { id: string; global_name: string; eu_name: string | null; matches?: any[] } | null = $state(null);
 
   // Browse users dialog state
-  let showBrowseDialog = false;
-  let browseTableKey = 0; // Key to force table reload
+  let showBrowseDialog = $state(false);
+  let browseTableKey = $state(0); // Key to force table reload
 
   // Column definitions for browse users FancyTable
   const browseUserColumns = [
@@ -448,9 +448,6 @@
     }
   }
 
-  $: isCurrentlyImpersonating = !!realUser;
-  $: effectiveAdmin = realUser?.administrator || user?.administrator;
-  $: isUnverified = user && !user.verified;
 
   // Search users as they type (for impersonation)
   async function handleUserSearchInput() {
@@ -612,12 +609,12 @@
   };
 
   // Desktop search state (now managed by SearchInput component)
-  let desktopSearchValue = '';
-  let desktopSearchRef;
+  let desktopSearchValue = $state('');
+  let desktopSearchRef = $state();
 
   // Mobile search state (now managed by SearchInput component)
-  let mobileSearchValue = '';
-  let mobileSearchRef;
+  let mobileSearchValue = $state('');
+  let mobileSearchRef = $state();
 
   // Close search dropdowns on navigation
   afterNavigate(() => {
@@ -696,6 +693,16 @@
   function getMenuOverviewUrl(menu: string): string | null {
     return menuOverviewUrls[menu] || null;
   }
+  // Login/Logout URLs with redirect back to current page
+  let loginUrl = $derived(`/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
+  let logoutUrl = $derived(`/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
+  let profileUrl = $derived(user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/discord/login');
+  let notificationsTotalPages = $derived(Math.max(1, Math.ceil(notificationsTotal / notificationsPageSize)));
+  let shortLinkUrl = $derived(getShortLinkForCurrentPage($page.url));
+  let canCopyShortLink = $derived(!!shortLinkUrl);
+  let isCurrentlyImpersonating = $derived(!!realUser);
+  let effectiveAdmin = $derived(realUser?.administrator || user?.administrator);
+  let isUnverified = $derived(user && !user.verified);
 </script>
 
 <style>
@@ -2146,7 +2153,7 @@
     }
 
     .auth-container .discord-button,
-    .auth-container a:has(.discord-button) {
+    .auth-container a:has(:global(.discord-button)) {
       display: none;
     }
 
@@ -2180,7 +2187,7 @@
   <div class="menu-container">
     <a href="/" class="logo-link"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItemsWiki) as menu (menu)}
-      <div class="menu-item" role="none" class:menu-top={!!getMenuOverviewUrl(menu)} class:highlighted={highlightedMenus.has(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item" role="none" class:menu-top={!!getMenuOverviewUrl(menu)} class:highlighted={highlightedMenus.has(menu)} onmouseenter={() => handleDropdownEnter(menu)} onmouseleave={handleDropdownLeave}>
         {#if getMenuOverviewUrl(menu)}
           <a href={getMenuOverviewUrl(menu)} class="menu-header-link menu-header-link-full" use:loading>{menu}</a>
         {:else}
@@ -2220,9 +2227,9 @@
           <div class="kofi-bubble-arrow"></div>
           <p class="kofi-bubble-text">Enjoying Entropia Nexus? Consider supporting me!</p>
           <div class="kofi-bubble-actions">
-            <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="kofi-bubble-btn support" on:click={dismissKofi}>Support Me</a>
-            <button class="kofi-bubble-btn later" on:click={snoozeKofi}>Maybe Later</button>
-            <button class="kofi-bubble-btn dismiss" on:click={dismissKofi}>No, Thanks</button>
+            <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="kofi-bubble-btn support" onclick={dismissKofi}>Support Me</a>
+            <button class="kofi-bubble-btn later" onclick={snoozeKofi}>Maybe Later</button>
+            <button class="kofi-bubble-btn dismiss" onclick={dismissKofi}>No, Thanks</button>
           </div>
         </div>
       {/if}
@@ -2241,7 +2248,7 @@
     {#if canCopyShortLink}
       <button
         class="short-link-action"
-        on:click={copyCurrentShortLink}
+        onclick={copyCurrentShortLink}
         title="Copy short link"
         aria-label="Copy short link"
         data-short-url={shortLinkUrl}
@@ -2253,7 +2260,7 @@
       </button>
     {/if}
     {#if user}
-      <div class="menu-item notification-menu" role="none" on:mouseenter={() => handleDropdownEnter('notifications')} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item notification-menu" role="none" onmouseenter={() => handleDropdownEnter('notifications')} onmouseleave={handleDropdownLeave}>
         <div class="notification-icon" title="Notifications">
           <svg class="notification-bell" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2z"/>
@@ -2268,7 +2275,7 @@
             <span>Notifications</span>
             <button
               class="notification-markall"
-              on:click|stopPropagation={markAllNotificationsRead}
+              onclick={stopPropagation(markAllNotificationsRead)}
               disabled={notificationsUnread === 0 || notificationsLoading}
             >
               Mark all as read
@@ -2288,7 +2295,7 @@
                   class="notification-item"
                   class:unread={!notification.read}
                   class:expanded={expandedNotificationId === notification.id}
-                  on:click={() => toggleNotification(notification)}
+                  onclick={() => toggleNotification(notification)}
                 >
                   <div class="notification-message">{notification.message}</div>
                   <div class="notification-meta">{formatNotificationDate(notification.date)} &bull; {notification.type}</div>
@@ -2296,7 +2303,7 @@
                     <a
                       class="notification-action"
                       href={notificationActionMap[notification.type].href}
-                      on:click|stopPropagation
+                      onclick={stopPropagation(bubble('click'))}
                     >{notificationActionMap[notification.type].label}</a>
                   {/if}
                 </button>
@@ -2305,7 +2312,7 @@
             <div class="notification-footer">
               <button
                 class="notification-page-btn"
-                on:click={() => changeNotificationsPage(notificationsPage - 1)}
+                onclick={() => changeNotificationsPage(notificationsPage - 1)}
                 disabled={notificationsPage <= 1 || notificationsLoading}
               >
                 Prev
@@ -2315,7 +2322,7 @@
               </div>
               <button
                 class="notification-page-btn"
-                on:click={() => changeNotificationsPage(notificationsPage + 1)}
+                onclick={() => changeNotificationsPage(notificationsPage + 1)}
                 disabled={notificationsPage >= notificationsTotalPages || notificationsLoading}
               >
                 Next
@@ -2332,7 +2339,7 @@
         </button>
       </a>
     {:else}
-      <div class="menu-item user" role="none" on:mouseenter={() => handleDropdownEnter('user')} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item user" role="none" onmouseenter={() => handleDropdownEnter('user')} onmouseleave={handleDropdownLeave}>
         {#if !isCurrentlyImpersonating && isUnverified}
           <span class="unverified-badge" title="Account not verified">!</span>
         {/if}
@@ -2351,7 +2358,7 @@
             <div class="menu-dropdown-item impersonate-info">
               (Admin: {realUser.global_name || realUser.username})
             </div>
-            <button class="menu-dropdown-item stop-impersonate-btn" on:click={stopImpersonation}>
+            <button class="menu-dropdown-item stop-impersonate-btn" onclick={stopImpersonation}>
               Stop Impersonating
             </button>
           {:else}
@@ -2411,7 +2418,7 @@
                 Admin Dashboard
               </div>
             </a>
-            <button class="menu-dropdown-item" on:click={() => showImpersonateDialog = true}>
+            <button class="menu-dropdown-item" onclick={() => showImpersonateDialog = true}>
               <span class="menu-item-icon">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -2438,7 +2445,7 @@
         </div>
       </div>
     {/if}
-    <button class="burger-button" class:open={mobileMenuOpen} on:click={toggleMobileMenu} aria-label="Toggle menu">
+    <button class="burger-button" class:open={mobileMenuOpen} onclick={toggleMobileMenu} aria-label="Toggle menu">
       <span class="burger-line"></span>
       <span class="burger-line"></span>
       <span class="burger-line"></span>
@@ -2464,7 +2471,7 @@
         on:close={exitMobileSearchMode}
       />
       {#if mobileSearchMode}
-        <button class="mobile-search-cancel" on:click={exitMobileSearchMode}>Cancel</button>
+        <button class="mobile-search-cancel" onclick={exitMobileSearchMode}>Cancel</button>
       {/if}
     </div>
   </div>
@@ -2476,7 +2483,7 @@
           <div class="mobile-section">
             <!-- On mobile, clicking header just expands/collapses - no navigation -->
             <!-- This prevents menu from closing before user can see options -->
-            <div class="mobile-section-header" use:clickable on:click={() => toggleSection(menu)}>
+            <div class="mobile-section-header" use:clickable onclick={() => toggleSection(menu)}>
               <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
               <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
             </div>
@@ -2485,9 +2492,9 @@
                 {#if item.disabled}
                   <span class="mobile-menu-item disabled">{item.label} <span class="coming-soon">coming soon</span></span>
                 {:else if isExternalLink(item)}
-                  <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
+                  <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}</a>
                 {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</a>
+                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</a>
                 {/if}
               {/each}
             </div>
@@ -2496,7 +2503,7 @@
     </div>
 
     <!-- Ko-fi support link -->
-    <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="mobile-kofi-link" on:click={closeMobileMenu}>
+    <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="mobile-kofi-link" onclick={closeMobileMenu}>
       <svg viewBox="0 0 24 24" aria-hidden="true" class="mobile-kofi-icon">
         <path fill="currentColor" d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311zm6.173.478c-.928.116-1.682.028-1.682.028V7.284h1.77s1.971.551 1.971 2.638c0 1.913-.985 2.667-2.059 3.015z"/>
       </svg>
@@ -2506,7 +2513,7 @@
     <!-- User Section (at bottom, collapsible) -->
     <div class="mobile-user-section" class:expanded={mobileUserExpanded}>
       {#if user}
-        <div class="mobile-user-header" use:clickable on:click={() => mobileUserExpanded = !mobileUserExpanded}>
+        <div class="mobile-user-header" use:clickable onclick={() => mobileUserExpanded = !mobileUserExpanded}>
           <img
             src={user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : `https://cdn.discordapp.com/embed/avatars/${Number(user.id) % 5}.png`}
             class="mobile-user-avatar"
@@ -2524,11 +2531,11 @@
               {/if}
             </div>
           </div>
-          <div class="mobile-user-quick-actions" on:click|stopPropagation>
+          <div class="mobile-user-quick-actions" onclick={stopPropagation(bubble('click'))}>
             {#if canCopyShortLink}
               <button
                 class="mobile-quick-btn short-link-mobile-btn"
-                on:click={copyCurrentShortLink}
+                onclick={copyCurrentShortLink}
                 title="Copy short link"
                 aria-label="Copy short link"
                 data-short-url={shortLinkUrl}
@@ -2543,7 +2550,7 @@
               <a
                 href="/admin"
                 class="mobile-quick-btn"
-                on:click={closeMobileMenu}
+                onclick={closeMobileMenu}
                 title="Admin Dashboard"
                 use:loading
               >
@@ -2554,7 +2561,7 @@
               </a>
               <button
                 class="mobile-quick-btn"
-                on:click={() => { closeMobileMenu(); showImpersonateDialog = true; }}
+                onclick={() => { closeMobileMenu(); showImpersonateDialog = true; }}
                 title="Impersonate User"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2566,7 +2573,7 @@
           </div>
           <button
             class="mobile-user-chevron-btn"
-            on:click|stopPropagation={() => (mobileUserExpanded = !mobileUserExpanded)}
+            onclick={stopPropagation(() => (mobileUserExpanded = !mobileUserExpanded))}
             aria-label={mobileUserExpanded ? 'Collapse user menu' : 'Expand user menu'}
           >
             <span class="mobile-user-chevron" class:expanded={mobileUserExpanded}>&#9656;</span>
@@ -2575,21 +2582,21 @@
 
         <div class="mobile-user-actions" class:expanded={mobileUserExpanded}>
           {#if isCurrentlyImpersonating}
-            <button class="mobile-user-action danger" on:click={stopImpersonation}>
+            <button class="mobile-user-action danger" onclick={stopImpersonation}>
               <span class="mobile-action-icon">✕</span>
               <span class="mobile-action-text">Stop Impersonating</span>
             </button>
           {:else if isUnverified}
-            <a href="/account/setup" class="mobile-user-action success" on:click={closeMobileMenu}>
+            <a href="/account/setup" class="mobile-user-action success" onclick={closeMobileMenu}>
               <span class="mobile-action-icon">✓</span>
               <span class="mobile-action-text">Verify Account</span>
             </a>
-            <a use:loading href={logoutUrl} class="mobile-user-action" on:click={closeMobileMenu}>
+            <a use:loading href={logoutUrl} class="mobile-user-action" onclick={closeMobileMenu}>
               <span class="mobile-action-icon">→</span>
               <span class="mobile-action-text">Logout</span>
             </a>
           {:else}
-            <a href={profileUrl} class="mobile-user-action" on:click={closeMobileMenu}>
+            <a href={profileUrl} class="mobile-user-action" onclick={closeMobileMenu}>
               <span class="mobile-action-icon">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -2598,7 +2605,7 @@
               </span>
               <span class="mobile-action-text">User Profile</span>
             </a>
-            <a href="/account/inventory" class="mobile-user-action" on:click={closeMobileMenu}>
+            <a href="/account/inventory" class="mobile-user-action" onclick={closeMobileMenu}>
               <span class="mobile-action-icon">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -2606,7 +2613,7 @@
               </span>
               <span class="mobile-action-text">Inventory</span>
             </a>
-            <a href="/account/settings" class="mobile-user-action" on:click={closeMobileMenu}>
+            <a href="/account/settings" class="mobile-user-action" onclick={closeMobileMenu}>
               <span class="mobile-action-icon">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="3" />
@@ -2615,7 +2622,7 @@
               </span>
               <span class="mobile-action-text">Settings</span>
             </a>
-            <a use:loading href={logoutUrl} class="mobile-user-action" on:click={closeMobileMenu}>
+            <a use:loading href={logoutUrl} class="mobile-user-action" onclick={closeMobileMenu}>
               <span class="mobile-action-icon">→</span>
               <span class="mobile-action-text">Logout</span>
             </a>
@@ -2626,7 +2633,7 @@
           {#if canCopyShortLink}
             <button
               class="mobile-quick-btn short-link-mobile-btn"
-              on:click={copyCurrentShortLink}
+              onclick={copyCurrentShortLink}
               title="Copy short link"
               aria-label="Copy short link"
               data-short-url={shortLinkUrl}
@@ -2637,7 +2644,7 @@
               </svg>
             </button>
           {/if}
-          <a href={loginUrl} class="mobile-user-action primary" on:click={closeMobileMenu}>
+          <a href={loginUrl} class="mobile-user-action primary" onclick={closeMobileMenu}>
             <img src="/discord.svg" alt="" class="mobile-discord-icon" />
             <span class="mobile-action-text">Login with Discord</span>
           </a>
@@ -2648,8 +2655,8 @@
 </div>
 
 {#if showImpersonateDialog}
-  <div class="dialog-overlay" role="presentation" on:click={resetImpersonateDialog}>
-    <div class="dialog dialog-wide" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={resetImpersonateDialog}>
+    <div class="dialog dialog-wide" onclick={stopPropagation(bubble('click'))}>
       <h3>Impersonate User</h3>
       <p class="dialog-description">Search for a user by their Discord name or EU character name.</p>
 
@@ -2663,15 +2670,15 @@
           {#if selectedUser}
             <div class="selected-user-chip">
               <span class="selected-user-name">{selectedUser.eu_name || selectedUser.global_name}</span>
-              <button type="button" class="chip-remove" on:click={clearSelectedUser}>&#10005;</button>
+              <button type="button" class="chip-remove" onclick={clearSelectedUser}>&#10005;</button>
             </div>
           {:else}
             <input
               id="impersonate-search"
               type="text"
               bind:value={userSearchQuery}
-              on:input={handleUserSearchInput}
-              on:focus={() => { if (userSearchResults.length > 0) showUserSuggestions = true; }}
+              oninput={handleUserSearchInput}
+              onfocus={() => { if (userSearchResults.length > 0) showUserSuggestions = true; }}
               placeholder="Type to search by name..."
               disabled={isImpersonating}
               autocomplete="off"
@@ -2685,7 +2692,7 @@
         {#if showUserSuggestions && userSearchResults.length > 0}
           <div class="suggestions-dropdown">
             {#each userSearchResults as result}
-              <div class="suggestion-item" use:clickable on:click={() => selectUser(result)}>
+              <div class="suggestion-item" use:clickable onclick={() => selectUser(result)}>
                 <div class="suggestion-name">
                   {result.global_name || result.username}
                   {#if result.verified}
@@ -2707,16 +2714,16 @@
       </div>
 
       <div class="browse-section">
-        <button type="button" class="btn-browse" on:click={openBrowseDialog}>
+        <button type="button" class="btn-browse" onclick={openBrowseDialog}>
           Browse All Users
         </button>
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn-secondary" on:click={resetImpersonateDialog} disabled={isImpersonating}>
+        <button class="btn-secondary" onclick={resetImpersonateDialog} disabled={isImpersonating}>
           Cancel
         </button>
-        <button class="btn-primary" on:click={startImpersonation} disabled={isImpersonating || !impersonateUserId.trim()}>
+        <button class="btn-primary" onclick={startImpersonation} disabled={isImpersonating || !impersonateUserId.trim()}>
           {isImpersonating ? 'Impersonating...' : 'Impersonate'}
         </button>
       </div>
@@ -2725,8 +2732,8 @@
 {/if}
 
 {#if showBrowseDialog}
-  <div class="dialog-overlay" role="presentation" on:click={() => showBrowseDialog = false}>
-    <div class="dialog dialog-large" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" onclick={() => showBrowseDialog = false}>
+    <div class="dialog dialog-large" onclick={stopPropagation(bubble('click'))}>
       <h3>Browse Users</h3>
       <p class="dialog-description">Click on a row to select a user. Use the search boxes to filter.</p>
 
@@ -2746,7 +2753,7 @@
       </div>
 
       <div class="dialog-buttons">
-        <button class="btn-secondary" on:click={() => showBrowseDialog = false}>
+        <button class="btn-secondary" onclick={() => showBrowseDialog = false}>
           Close
         </button>
       </div>

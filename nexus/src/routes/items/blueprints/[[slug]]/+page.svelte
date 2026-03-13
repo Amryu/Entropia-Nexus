@@ -24,6 +24,8 @@
   }
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
@@ -66,53 +68,15 @@
     changeMetadata
   } from '$lib/stores/wikiEditState.js';
 
-  export let data;
+  let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
-  let editDepsLoading = false;
-  $: if ($editMode && data.blueprintbooks === null && !editDepsLoading) {
-    editDepsLoading = true;
-    loadEditDeps([
-      { key: 'blueprintbooks', url: '/api/blueprintbooks' },
-      { key: 'professions', url: '/api/professions' },
-      { key: 'productItems', url: '/api/items' },
-      { key: 'weaponItems', url: '/api/weapons' }
-    ]).then(deps => {
-      deps.professions = (deps.professions || []).filter(p => p.Category?.Name === 'Manufacturing');
-      deps.productItems = (deps.productItems || []).filter(i => i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet');
-      data = { ...data, ...deps };
-      editDepsLoading = false;
-    });
-  }
+  let editDepsLoading = $state(false);
 
   const craftDuration = 5; // seconds per craft cycle
 
-  $: blueprint = data.object;
-  $: user = data.session?.user;
-  $: allItems = data.allItems || [];
-  $: additional = data.additional || {};
-  $: pendingChange = data.pendingChange;
-  $: existingChange = data.existingChange;
-  $: isCreateMode = data.isCreateMode || false;
-  $: canCreateNew = data.canCreateNew ?? true;
-  $: userPendingCreates = data.userPendingCreates || [];
 
-  $: userPendingUpdates = data.userPendingUpdates || [];
-  $: blueprintEntityId = blueprint?.Id ?? blueprint?.ItemId;
-  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, blueprintEntityId);
-  $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
-  // Edit mode dropdown data
-  $: blueprintbooks = data.blueprintbooks || [];
-  $: professions = data.professions || [];
-  $: productItems = data.productItems || [];
-  $: materials = data.materials || [];
-  $: weaponItems = data.weaponItems || [];
 
-  // Options for SearchInput dropdowns
-  $: bookOptions = blueprintbooks.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label));
-  $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label));
-  $: productOptions = productItems.map(i => ({ value: i.Name, label: i.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
   // Rarity options for drop rarity editing
   const rarityOptions = [
     { value: null, label: '—' },
@@ -123,11 +87,7 @@
     { value: 'Extremely Rare', label: 'Extremely Rare' },
   ];
 
-  // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
-  // Build navigation items
-  $: navItems = allItems;
 
   // Empty entity template for create mode
   const emptyEntity = {
@@ -165,33 +125,8 @@
     return enriched;
   }
 
-  // Initialize edit state when entity or user changes
-  $: if (user) {
-    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : blueprint;
-    if (entity) {
-      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      // Enrich material Items in the change data so cost calculations work
-      const enrichedChange = editChange?.data
-        ? { ...editChange, data: enrichMaterials(editChange.data) }
-        : editChange;
-      initEditState(enrichMaterials(entity), 'Blueprint', isCreateMode, enrichedChange);
-    }
-  }
 
-  // Set existing pending change when data loads
-  $: if (resolvedPendingChange) {
-    setExistingPendingChange(resolvedPendingChange);
-  } else {
-    setExistingPendingChange(null);
-    setViewingPendingChange(false);
-  }
 
-  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → blueprint)
-  $: activeEntity = $editMode
-    ? $currentEntity
-    : ($viewingPendingChange && $existingPendingChange?.changes)
-      ? applyChangesToEntity(blueprint, $existingPendingChange.changes)
-      : blueprint;
 
   // Helper to apply pending changes to entity for display
   function applyChangesToEntity(entity, changes) {
@@ -360,31 +295,17 @@
 
   const allAvailableColumns = Object.values(bpColumnDefs);
 
-  // Breadcrumbs
-  $: breadcrumbs = [
-    { label: 'Items', href: '/items' },
-    { label: 'Blueprints', href: '/items/blueprints' },
-    ...(activeEntity ? [{ label: activeEntity.Name || 'New Blueprint' }] : [])
-  ];
 
-  // SEO
-  $: seoDescription = activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Blueprint'} - Level ${activeEntity?.Properties?.Level || '?'} ${activeEntity?.Properties?.Type || ''} blueprint in Entropia Universe.`;
 
-  $: canonicalUrl = blueprint
-    ? `https://entropianexus.com/items/blueprints/${encodeURIComponentSafe(blueprint.Name)}`
-    : 'https://entropianexus.com/items/blueprints';
 
-  // Image URL for SEO
-  $: entityImageUrl = blueprint?.Id ? `/api/img/blueprint/${blueprint.Id}` : null;
 
   // ========== PANEL STATE PERSISTENCE ==========
-  let panelStates = {
+  let panelStates = $state({
     construction: true,
     marketPrices: true,
     acquisition: true,
     drops: true
-  };
+  });
 
   onMount(() => {
     try {
@@ -420,19 +341,7 @@
     return (3600 / craftDuration) * cost;
   }
 
-  // Reactive calculations
-  $: cost = getCost(activeEntity);
-  $: cyclePerHour = getCyclePerHour(activeEntity);
 
-  // Skill interval: use stored values, fall back to computed from blueprint level.
-  // End is inferred as start + 5 only when the start matches the expected value for the level.
-  $: displayLearningIntervalStart = activeEntity?.Properties?.Skill?.LearningIntervalStart
-    ?? LEVEL_TO_MIN_PROFESSION[activeEntity?.Properties?.Level] ?? null;
-  $: displayLearningIntervalEnd = activeEntity?.Properties?.Skill?.LearningIntervalEnd
-    ?? (displayLearningIntervalStart != null
-        && displayLearningIntervalStart === LEVEL_TO_MIN_PROFESSION[activeEntity?.Properties?.Level]
-      ? displayLearningIntervalStart + 5
-      : null);
 
   // ========== AUTO-FILL MAPPINGS ==========
   const TYPE_TO_PROFESSION = {
@@ -589,6 +498,105 @@
   }
 
 
+  run(() => {
+    if ($editMode && data.blueprintbooks === null && !editDepsLoading) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'blueprintbooks', url: '/api/blueprintbooks' },
+        { key: 'professions', url: '/api/professions' },
+        { key: 'productItems', url: '/api/items' },
+        { key: 'weaponItems', url: '/api/weapons' }
+      ]).then(deps => {
+        deps.professions = (deps.professions || []).filter(p => p.Category?.Name === 'Manufacturing');
+        deps.productItems = (deps.productItems || []).filter(i => i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet');
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
+  let blueprint = $derived(data.object);
+  let user = $derived(data.session?.user);
+  let allItems = $derived(data.allItems || []);
+  let additional = $derived(data.additional || {});
+  let pendingChange = $derived(data.pendingChange);
+  let existingChange = $derived(data.existingChange);
+  let isCreateMode = $derived(data.isCreateMode || false);
+  let canCreateNew = $derived(data.canCreateNew ?? true);
+  let userPendingCreates = $derived(data.userPendingCreates || []);
+  let userPendingUpdates = $derived(data.userPendingUpdates || []);
+  let blueprintEntityId = $derived(blueprint?.Id ?? blueprint?.ItemId);
+  let userPendingUpdate = $derived(getLatestPendingUpdate(userPendingUpdates, blueprintEntityId));
+  let resolvedPendingChange = $derived(userPendingUpdate || pendingChange);
+  let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
+  // Edit mode dropdown data
+  let blueprintbooks = $derived(data.blueprintbooks || []);
+  let professions = $derived(data.professions || []);
+  let productItems = $derived(data.productItems || []);
+  let materials = $derived(data.materials || []);
+  let weaponItems = $derived(data.weaponItems || []);
+  // Options for SearchInput dropdowns
+  let bookOptions = $derived(blueprintbooks.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label)));
+  let professionOptions = $derived(professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label)));
+  let productOptions = $derived(productItems.map(i => ({ value: i.Name, label: i.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })));
+  // Can edit if user is verified or admin
+  let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
+  // Build navigation items
+  let navItems = $derived(allItems);
+  // Initialize edit state when entity or user changes
+  run(() => {
+    if (user) {
+      const entity = isCreateMode ? (existingChange?.data || emptyEntity) : blueprint;
+      if (entity) {
+        const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+        // Enrich material Items in the change data so cost calculations work
+        const enrichedChange = editChange?.data
+          ? { ...editChange, data: enrichMaterials(editChange.data) }
+          : editChange;
+        initEditState(enrichMaterials(entity), 'Blueprint', isCreateMode, enrichedChange);
+      }
+    }
+  });
+  // Set existing pending change when data loads
+  run(() => {
+    if (resolvedPendingChange) {
+      setExistingPendingChange(resolvedPendingChange);
+    } else {
+      setExistingPendingChange(null);
+      setViewingPendingChange(false);
+    }
+  });
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → blueprint)
+  let activeEntity = $derived($editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(blueprint, $existingPendingChange.changes)
+      : blueprint);
+  // Breadcrumbs
+  let breadcrumbs = $derived([
+    { label: 'Items', href: '/items' },
+    { label: 'Blueprints', href: '/items/blueprints' },
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Blueprint' }] : [])
+  ]);
+  // SEO
+  let seoDescription = $derived(activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Blueprint'} - Level ${activeEntity?.Properties?.Level || '?'} ${activeEntity?.Properties?.Type || ''} blueprint in Entropia Universe.`);
+  let canonicalUrl = $derived(blueprint
+    ? `https://entropianexus.com/items/blueprints/${encodeURIComponentSafe(blueprint.Name)}`
+    : 'https://entropianexus.com/items/blueprints');
+  // Image URL for SEO
+  let entityImageUrl = $derived(blueprint?.Id ? `/api/img/blueprint/${blueprint.Id}` : null);
+  // Reactive calculations
+  let cost = $derived(getCost(activeEntity));
+  let cyclePerHour = $derived(getCyclePerHour(activeEntity));
+  // Skill interval: use stored values, fall back to computed from blueprint level.
+  // End is inferred as start + 5 only when the start matches the expected value for the level.
+  let displayLearningIntervalStart = $derived(activeEntity?.Properties?.Skill?.LearningIntervalStart
+    ?? LEVEL_TO_MIN_PROFESSION[activeEntity?.Properties?.Level] ?? null);
+  let displayLearningIntervalEnd = $derived(activeEntity?.Properties?.Skill?.LearningIntervalEnd
+    ?? (displayLearningIntervalStart != null
+        && displayLearningIntervalStart === LEVEL_TO_MIN_PROFESSION[activeEntity?.Properties?.Level]
+      ? displayLearningIntervalStart + 5
+      : null));
 </script>
 
 <WikiSEO

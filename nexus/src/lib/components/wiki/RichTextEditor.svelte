@@ -17,6 +17,9 @@
   Market usage: showHeadings={false} showCodeBlock={false} showVideo={false} showImages={false}
 -->
 <script>
+  import { run, createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { Editor, Node, mergeAttributes } from '@tiptap/core';
@@ -27,75 +30,91 @@
   const dispatch = createEventDispatcher();
 
   /** Suppress the initial onUpdate that TipTap fires when normalizing empty content */
-  let initialized = false;
+  let initialized = $state(false);
 
-  /** @type {string} Initial HTML content */
-  export let content = '';
+  
 
-  /** @type {string} Placeholder text when empty */
-  export let placeholder = 'Enter description...';
+  
 
-  /** @type {boolean} Whether the editor is disabled */
-  export let disabled = false;
+  
 
-  /** @type {boolean} Show heading buttons (H2, H3, H4) */
-  export let showHeadings = true;
+  
 
-  /** @type {boolean} Show code block button */
-  export let showCodeBlock = true;
+  
 
-  /** @type {boolean} Show video embed button */
-  export let showVideo = true;
+  
 
-  /** @type {boolean} Show image upload button */
-  export let showImages = true;
+  
 
-  /** @type {boolean} Show waypoint insert button */
-  export let showWaypoints = false;
+  
 
-  /** @type {boolean} Auto-detect and convert markdown pastes to rich text */
-  export let handleMarkdownPaste = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [content]
+   * @property {string} [placeholder]
+   * @property {boolean} [disabled]
+   * @property {boolean} [showHeadings]
+   * @property {boolean} [showCodeBlock]
+   * @property {boolean} [showVideo]
+   * @property {boolean} [showImages]
+   * @property {boolean} [showWaypoints]
+   * @property {boolean} [handleMarkdownPaste]
+   */
+
+  /** @type {Props} */
+  let {
+    content = $bindable(''),
+    placeholder = 'Enter description...',
+    disabled = false,
+    showHeadings = true,
+    showCodeBlock = true,
+    showVideo = true,
+    showImages = true,
+    showWaypoints = false,
+    handleMarkdownPaste = false
+  } = $props();
 
   /** @type {Editor|null} */
-  let editor = null;
+  let editor = $state(null);
 
   /** @type {HTMLElement} */
-  let editorElement;
+  let editorElement = $state();
 
   /** @type {boolean} */
-  let isLinkModalOpen = false;
+  let isLinkModalOpen = $state(false);
 
   /** @type {string} */
-  let linkUrl = '';
+  let linkUrl = $state('');
 
   /** @type {string} */
-  let linkText = '';
+  let linkText = $state('');
 
   /** @type {boolean} */
-  let isVideoModalOpen = false;
+  let isVideoModalOpen = $state(false);
 
   /** @type {string} */
-  let videoUrl = '';
+  let videoUrl = $state('');
 
   /** @type {string} */
-  let videoWidth = '';
+  let videoWidth = $state('');
 
   /** @type {boolean} */
-  let isUploading = false;
+  let isUploading = $state(false);
 
   /** @type {HTMLInputElement} */
-  let fileInput;
+  let fileInput = $state();
 
   // Resize toolbar state
-  let showResizeToolbar = false;
-  let resizeToolbarPos = { top: 0, left: 0 };
+  let showResizeToolbar = $state(false);
+  let resizeToolbarPos = $state({ top: 0, left: 0 });
   let activeResizeNodeType = null;
-  let customWidth = '';
+  let customWidth = $state('');
 
   // User state from session (read internally, no props needed)
-  $: user = $page.data?.session?.user;
-  $: canUploadImages = !!user?.verified;
-  $: canAutoApprove = user?.grants?.includes('wiki.approve') || user?.grants?.includes('guide.edit') || false;
+  let user = $derived($page.data?.session?.user);
+  let canUploadImages = $derived(!!user?.verified);
+  let canAutoApprove = $derived(user?.grants?.includes('wiki.approve') || user?.grants?.includes('guide.edit') || false);
 
   // Custom YouTube/Vimeo video embed extension with resizable width
   const VideoEmbed = Node.create({
@@ -515,16 +534,20 @@
   });
 
   // Update content when prop changes externally (suppress onUpdate echo)
-  $: if (editor && content !== editor.getHTML()) {
-    initialized = false;
-    editor.commands.setContent(content || '');
-    tick().then(() => { initialized = true; });
-  }
+  run(() => {
+    if (editor && content !== editor.getHTML()) {
+      initialized = false;
+      editor.commands.setContent(content || '');
+      tick().then(() => { initialized = true; });
+    }
+  });
 
   // Update editable state
-  $: if (editor) {
-    editor.setEditable(!disabled);
-  }
+  run(() => {
+    if (editor) {
+      editor.setEditable(!disabled);
+    }
+  });
 
   function toggleBold() {
     editor?.chain().focus().toggleBold().run();
@@ -698,9 +721,9 @@
   }
 
   // Waypoint modal state
-  let isWaypointModalOpen = false;
-  let waypointString = '';
-  let waypointLabel = '';
+  let isWaypointModalOpen = $state(false);
+  let waypointString = $state('');
+  let waypointLabel = $state('');
 
   function openWaypointModal() {
     waypointString = '';
@@ -734,7 +757,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('bold')}
-          on:click={toggleBold}
+          onclick={toggleBold}
           title="Bold (Ctrl+B)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -746,7 +769,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('italic')}
-          on:click={toggleItalic}
+          onclick={toggleItalic}
           title="Italic (Ctrl+I)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -759,7 +782,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('strike')}
-          on:click={toggleStrike}
+          onclick={toggleStrike}
           title="Strikethrough"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -779,7 +802,7 @@
             type="button"
             class="toolbar-btn"
             class:active={isActive('heading', { level: 2 })}
-            on:click={() => toggleHeading(2)}
+            onclick={() => toggleHeading(2)}
             title="Heading 2"
           >
             H2
@@ -788,7 +811,7 @@
             type="button"
             class="toolbar-btn"
             class:active={isActive('heading', { level: 3 })}
-            on:click={() => toggleHeading(3)}
+            onclick={() => toggleHeading(3)}
             title="Heading 3"
           >
             H3
@@ -797,7 +820,7 @@
             type="button"
             class="toolbar-btn"
             class:active={isActive('heading', { level: 4 })}
-            on:click={() => toggleHeading(4)}
+            onclick={() => toggleHeading(4)}
             title="Heading 4"
           >
             H4
@@ -813,7 +836,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('bulletList')}
-          on:click={toggleBulletList}
+          onclick={toggleBulletList}
           title="Bullet List"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -829,7 +852,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('orderedList')}
-          on:click={toggleOrderedList}
+          onclick={toggleOrderedList}
           title="Numbered List"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -851,7 +874,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('blockquote')}
-          on:click={toggleBlockquote}
+          onclick={toggleBlockquote}
           title="Blockquote"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -864,7 +887,7 @@
             type="button"
             class="toolbar-btn"
             class:active={isActive('codeBlock')}
-            on:click={toggleCodeBlock}
+            onclick={toggleCodeBlock}
             title="Code Block"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -876,7 +899,7 @@
         <button
           type="button"
           class="toolbar-btn"
-          on:click={insertHorizontalRule}
+          onclick={insertHorizontalRule}
           title="Horizontal Rule"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -893,7 +916,7 @@
           type="button"
           class="toolbar-btn"
           class:active={isActive('link')}
-          on:click={openLinkModal}
+          onclick={openLinkModal}
           title="Insert Link"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -905,7 +928,7 @@
           <button
             type="button"
             class="toolbar-btn"
-            on:click={openVideoModal}
+            onclick={openVideoModal}
             title="Embed Video (YouTube/Vimeo)"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -919,7 +942,7 @@
             type="button"
             class="toolbar-btn"
             class:uploading={isUploading}
-            on:click={triggerImageUpload}
+            onclick={triggerImageUpload}
             disabled={isUploading}
             title="Upload Image"
           >
@@ -940,7 +963,7 @@
           <button
             type="button"
             class="toolbar-btn"
-            on:click={openWaypointModal}
+            onclick={openWaypointModal}
             title="Insert Waypoint"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -958,13 +981,13 @@
 
     {#if showResizeToolbar && !disabled && (showVideo || showImages)}
       <div class="resize-toolbar" style="top: {resizeToolbarPos.top}px; left: {resizeToolbarPos.left}px;">
-        <button type="button" class="resize-btn" on:click={() => setMediaWidth(null)} title="Reset to full width">Full</button>
+        <button type="button" class="resize-btn" onclick={() => setMediaWidth(null)} title="Reset to full width">Full</button>
         <div class="resize-width-input">
           <input
             type="number"
             bind:value={customWidth}
-            on:keydown={handleWidthKeydown}
-            on:blur={applyCustomWidth}
+            onkeydown={handleWidthKeydown}
+            onblur={applyCustomWidth}
             placeholder="Width"
             min="50"
             max="1920"
@@ -982,13 +1005,13 @@
       type="file"
       accept="image/jpeg,image/png,image/webp,image/gif"
       style="display:none"
-      on:change={handleImageUpload}
+      onchange={handleImageUpload}
     />
   {/if}
 
   {#if isLinkModalOpen}
-    <div class="link-modal-overlay" role="presentation" on:click={closeLinkModal} on:keydown={(e) => e.key === 'Escape' && closeLinkModal()}>
-      <div class="link-modal" role="dialog" on:click|stopPropagation>
+    <div class="link-modal-overlay" role="presentation" onclick={closeLinkModal} onkeydown={(e) => e.key === 'Escape' && closeLinkModal()}>
+      <div class="link-modal" role="dialog" onclick={stopPropagation(bubble('click'))}>
         <h4>Insert Link</h4>
         <div class="link-field">
           <label for="link-text">Link Text</label>
@@ -1010,11 +1033,11 @@
           />
         </div>
         <div class="link-actions">
-          <button type="button" class="btn-secondary" on:click={closeLinkModal}>Cancel</button>
+          <button type="button" class="btn-secondary" onclick={closeLinkModal}>Cancel</button>
           {#if isActive('link')}
-            <button type="button" class="btn-danger" on:click={removeLink}>Remove Link</button>
+            <button type="button" class="btn-danger" onclick={removeLink}>Remove Link</button>
           {/if}
-          <button type="button" class="btn-primary" on:click={insertLink}>
+          <button type="button" class="btn-primary" onclick={insertLink}>
             {isActive('link') ? 'Update' : 'Insert'}
           </button>
         </div>
@@ -1023,8 +1046,8 @@
   {/if}
 
   {#if showVideo && isVideoModalOpen}
-    <div class="link-modal-overlay" role="presentation" on:click={closeVideoModal} on:keydown={(e) => e.key === 'Escape' && closeVideoModal()}>
-      <div class="link-modal" role="dialog" on:click|stopPropagation>
+    <div class="link-modal-overlay" role="presentation" onclick={closeVideoModal} onkeydown={(e) => e.key === 'Escape' && closeVideoModal()}>
+      <div class="link-modal" role="dialog" onclick={stopPropagation(bubble('click'))}>
         <h4>Embed Video</h4>
         <div class="link-field">
           <label for="video-url">YouTube or Vimeo URL</label>
@@ -1049,11 +1072,11 @@
           <p class="field-hint">Leave empty for 100% width</p>
         </div>
         <div class="link-actions">
-          <button type="button" class="btn-secondary" on:click={closeVideoModal}>Cancel</button>
+          <button type="button" class="btn-secondary" onclick={closeVideoModal}>Cancel</button>
           <button
             type="button"
             class="btn-primary"
-            on:click={insertVideo}
+            onclick={insertVideo}
             disabled={!detectVideoProvider(videoUrl)}
           >
             Embed Video
@@ -1064,8 +1087,8 @@
   {/if}
 
   {#if showWaypoints && isWaypointModalOpen}
-    <div class="link-modal-overlay" role="presentation" on:click={closeWaypointModal} on:keydown={(e) => e.key === 'Escape' && closeWaypointModal()}>
-      <div class="link-modal" role="dialog" on:click|stopPropagation>
+    <div class="link-modal-overlay" role="presentation" onclick={closeWaypointModal} onkeydown={(e) => e.key === 'Escape' && closeWaypointModal()}>
+      <div class="link-modal" role="dialog" onclick={stopPropagation(bubble('click'))}>
         <h4>Insert Waypoint</h4>
         <div class="link-field">
           <label for="waypoint-string">Waypoint</label>
@@ -1088,11 +1111,11 @@
           <p class="field-hint">Leave empty to show the coordinates</p>
         </div>
         <div class="link-actions">
-          <button type="button" class="btn-secondary" on:click={closeWaypointModal}>Cancel</button>
+          <button type="button" class="btn-secondary" onclick={closeWaypointModal}>Cancel</button>
           <button
             type="button"
             class="btn-primary"
-            on:click={insertWaypoint}
+            onclick={insertWaypoint}
             disabled={!waypointString.trim()}
           >
             Insert

@@ -1,23 +1,24 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   //@ts-nocheck
   import { apiCall, apiPost, apiPut, navigate } from "$lib/util";
   import EditFormControlGroup from "./EditFormControlGroup.svelte";
 
-  export let entity;
-  export let change;
-  export let object;
-  export let config;
-  export let user;
+  let {
+    entity,
+    change = $bindable(),
+    object = $bindable(),
+    config = $bindable(),
+    user
+  } = $props();
  
-  let disabled = false;
+  let disabled = $state(false);
  
-  $: disabled = change != null && user?.id !== change.author_id && !user?.grants?.includes('wiki.approve');
 
-  $: if (config) loadForm(config);
-  $: if ((object == null || Object.keys(object).length === 0) && change?.data) object = change.data;
 
-  let isLoading = true;
-  let dependencies = {};
+  let isLoading = $state(true);
+  let dependencies = $state({});
 
   function loadForm(config) {
     if (!config) return;
@@ -149,6 +150,15 @@
         });
     }
   }
+  run(() => {
+    disabled = change != null && user?.id !== change.author_id && !user?.grants?.includes('wiki.approve');
+  });
+  run(() => {
+    if (config) loadForm(config);
+  });
+  run(() => {
+    if ((object == null || Object.keys(object).length === 0) && change?.data) object = change.data;
+  });
 </script>
 
 <style>
@@ -177,9 +187,9 @@
     {/each}
     <br />
     <div style="text-align: right;">
-      <button type="button" on:click={cancel} disabled={disabled}>Cancel</button>
-      <button type="button" on:click={save} disabled={disabled}>{change && change?.state !== 'Draft' ? 'Save Changes' : 'Save as Draft'}</button>
-      <button type="button" on:click={submit} disabled={disabled || (change && change?.state !== 'Draft')} title={change && change?.state !== 'Draft' ? 'This change was already submitted. Use the Save button to make further changes!' : null}>Ready for Review</button>
+      <button type="button" onclick={cancel} disabled={disabled}>Cancel</button>
+      <button type="button" onclick={save} disabled={disabled}>{change && change?.state !== 'Draft' ? 'Save Changes' : 'Save as Draft'}</button>
+      <button type="button" onclick={submit} disabled={disabled || (change && change?.state !== 'Draft')} title={change && change?.state !== 'Draft' ? 'This change was already submitted. Use the Save button to make further changes!' : null}>Ready for Review</button>
     </div>
   </form>
 {/if}

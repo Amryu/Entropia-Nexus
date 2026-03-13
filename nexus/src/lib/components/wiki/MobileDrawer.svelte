@@ -4,17 +4,27 @@
   Includes backdrop overlay and swipe-to-close support.
 -->
 <script>
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { fly, fade } from 'svelte/transition';
 
   const dispatch = createEventDispatcher();
 
-  /** @type {boolean} Whether drawer is open */
-  export let open = false;
+  
 
-  /** @type {string} Side to slide from */
-  export let side = 'left';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [open]
+   * @property {string} [side]
+   * @property {import('svelte').Snippet} [children]
+   */
+
+  /** @type {Props} */
+  let { open = $bindable(false), side = 'left', children } = $props();
 
   function close() {
     open = false;
@@ -65,30 +75,30 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if open}
   <div class="drawer-overlay" transition:fade={{ duration: 200 }}>
     <button
       class="backdrop"
-      on:click={handleBackdropClick}
+      onclick={handleBackdropClick}
       aria-label="Close navigation"
-    />
+></button>
 
-    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -- aside used as dialog with role="dialog" and touch handlers -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -- aside used as dialog with role="dialog" and touch handlers -->
     <aside
       class="drawer drawer-{side}"
       transition:fly={{ x: side === 'left' ? -300 : 300, duration: 250 }}
-      on:touchstart={handleTouchStart}
-      on:touchmove={handleTouchMove}
-      on:touchend={handleTouchEnd}
-      on:click|stopPropagation
+      ontouchstart={handleTouchStart}
+      ontouchmove={handleTouchMove}
+      ontouchend={handleTouchEnd}
+      onclick={stopPropagation(bubble('click'))}
       role="dialog"
       aria-modal="true"
       aria-label="Navigation"
     >
       <div class="drawer-header">
-        <button class="close-btn" on:click={close} aria-label="Close">
+        <button class="close-btn" onclick={close} aria-label="Close">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
@@ -96,7 +106,7 @@
       </div>
 
       <div class="drawer-content">
-        <slot />
+        {@render children?.()}
       </div>
     </aside>
   </div>

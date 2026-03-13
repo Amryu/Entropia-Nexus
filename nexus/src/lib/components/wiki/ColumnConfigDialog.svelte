@@ -9,31 +9,37 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {Array} Currently visible column definitions (ordered) */
-  export let visibleColumns = [];
+  
 
-  /** @type {Array} All available column definitions */
-  export let allColumns = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {Array} [visibleColumns]
+   * @property {Array} [allColumns]
+   */
+
+  /** @type {Props} */
+  let { visibleColumns = [], allColumns = [] } = $props();
 
   // Internal state: working copy of visible column keys (in order)
-  let selectedKeys = visibleColumns.map(c => c.key);
+  let selectedKeys = $state(visibleColumns.map(c => c.key));
 
   // Drag state
-  let dragIndex = null;
-  let dragOverIndex = null;
+  let dragIndex = $state(null);
+  let dragOverIndex = $state(null);
   let touchDragElement = null;
   let touchStartY = 0;
   let touchCurrentY = 0;
   let touchStarted = false;
 
   // Build lookup map for all columns
-  $: columnMap = Object.fromEntries(allColumns.map(c => [c.key, c]));
+  let columnMap = $derived(Object.fromEntries(allColumns.map(c => [c.key, c])));
 
   // Available columns = all columns not currently selected
-  $: availableColumns = allColumns.filter(c => !selectedKeys.includes(c.key));
+  let availableColumns = $derived(allColumns.filter(c => !selectedKeys.includes(c.key)));
 
   // Resolved visible columns from selected keys
-  $: resolvedVisible = selectedKeys.map(k => columnMap[k]).filter(Boolean);
+  let resolvedVisible = $derived(selectedKeys.map(k => columnMap[k]).filter(Boolean));
 
   function addColumn(key) {
     selectedKeys = [...selectedKeys, key];
@@ -148,8 +154,8 @@
   class="modal-overlay"
   role="button"
   tabindex="0"
-  on:click={handleOverlayClick}
-  on:keydown={handleKeydown}
+  onclick={handleOverlayClick}
+  onkeydown={handleKeydown}
 >
   <div class="modal" role="dialog" aria-modal="true">
     <h3>Configure Columns</h3>
@@ -164,14 +170,14 @@
           class:drag-over={dragOverIndex === i && dragIndex !== i}
           class:dragging={dragIndex === i}
           draggable="true"
-          on:dragstart={(e) => handleDragStart(e, i)}
-          on:dragover={(e) => handleDragOver(e, i)}
-          on:dragleave={handleDragLeave}
-          on:drop={(e) => handleDrop(e, i)}
-          on:dragend={handleDragEnd}
-          on:touchstart={(e) => handleTouchStart(e, i)}
-          on:touchmove={(e) => handleTouchMove(e, i)}
-          on:touchend={handleTouchEnd}
+          ondragstart={(e) => handleDragStart(e, i)}
+          ondragover={(e) => handleDragOver(e, i)}
+          ondragleave={handleDragLeave}
+          ondrop={(e) => handleDrop(e, i)}
+          ondragend={handleDragEnd}
+          ontouchstart={(e) => handleTouchStart(e, i)}
+          ontouchmove={(e) => handleTouchMove(e, i)}
+          ontouchend={handleTouchEnd}
         >
           <span class="drag-handle" title="Drag to reorder">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -185,7 +191,7 @@
           {#if i < 5}
             <span class="col-badge expanded">E</span>
           {/if}
-          <button class="remove-btn" on:click={() => removeColumn(column.key)} title="Remove column">
+          <button class="remove-btn" onclick={() => removeColumn(column.key)} title="Remove column">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"/>
             </svg>
@@ -201,7 +207,7 @@
       <div class="section-label">Available Columns ({availableColumns.length})</div>
       <div class="available-list">
         {#each availableColumns as column (column.key)}
-          <button class="available-item" on:click={() => addColumn(column.key)}>
+          <button class="available-item" onclick={() => addColumn(column.key)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
@@ -212,8 +218,8 @@
     {/if}
 
     <div class="actions">
-      <button class="btn-cancel" on:click={handleCancel}>Cancel</button>
-      <button class="btn-apply" on:click={handleApply}>Apply</button>
+      <button class="btn-cancel" onclick={handleCancel}>Cancel</button>
+      <button class="btn-apply" onclick={handleApply}>Apply</button>
     </div>
   </div>
 </div>

@@ -5,25 +5,36 @@
   import { addToast } from '$lib/stores/toasts.js';
   import { getEffectiveType } from './mapEditorUtils.js';
 
-  export let pendingChanges = new Map();
-  export let planet = null;
-  export let isAdmin = false;
-  /** Maps local pending change key → DB change ID for PUT updates */
-  export let dbChangeIdMap = new Map();
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [pendingChanges]
+   * @property {any} [planet]
+   * @property {boolean} [isAdmin]
+   * @property {any} [dbChangeIdMap] - Maps local pending change key → DB change ID for PUT updates
+   */
+
+  /** @type {Props} */
+  let {
+    pendingChanges = $bindable(new Map()),
+    planet = null,
+    isAdmin = false,
+    dbChangeIdMap = new Map()
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let submitting = false;
-  let directApplying = false;
-  let changeStatuses = {}; // changeKey → 'pending' | 'submitting' | 'success' | 'error'
+  let submitting = $state(false);
+  let directApplying = $state(false);
+  let changeStatuses = $state({}); // changeKey → 'pending' | 'submitting' | 'success' | 'error'
 
-  $: changeList = Array.from(pendingChanges.entries())
+  let changeList = $derived(Array.from(pendingChanges.entries())
     .filter(([, change]) => !change._dbSeeded)
-    .map(([key, change]) => ({ key, ...change }));
+    .map(([key, change]) => ({ key, ...change })));
 
-  $: addCount = changeList.filter(c => c.action !== 'delete' && !c.original && !dbChangeIdMap.has(c.key)).length;
-  $: editCount = changeList.filter(c => c.action !== 'delete' && (c.original || dbChangeIdMap.has(c.key))).length;
-  $: deleteCount = changeList.filter(c => c.action === 'delete').length;
+  let addCount = $derived(changeList.filter(c => c.action !== 'delete' && !c.original && !dbChangeIdMap.has(c.key)).length);
+  let editCount = $derived(changeList.filter(c => c.action !== 'delete' && (c.original || dbChangeIdMap.has(c.key))).length);
+  let deleteCount = $derived(changeList.filter(c => c.action === 'delete').length);
 
   function buildEntityBody(change) {
     // Delete changes: construct body from original
@@ -522,9 +533,9 @@
             <span class="status-indicator {statusKey}">{getStatusIcon(change.key)}</span>
           {/if}
           {#if hasDbChange}
-            <button class="row-delete-btn" title="Delete submitted change" on:click={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
+            <button class="row-delete-btn" title="Delete submitted change" onclick={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
           {:else}
-            <button class="row-remove-btn" title="Revert" on:click={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; dispatch('removed', change.key); }}>×</button>
+            <button class="row-remove-btn" title="Revert" onclick={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; dispatch('removed', change.key); }}>×</button>
           {/if}
         </div>
       {/each}
@@ -532,14 +543,14 @@
 
     <div class="changes-actions">
       {#if isAdmin}
-        <button class="btn btn-apply" on:click={directApplyAll} disabled={submitting || directApplying || changeList.length === 0}>
+        <button class="btn btn-apply" onclick={directApplyAll} disabled={submitting || directApplying || changeList.length === 0}>
           {directApplying ? 'Applying...' : `Direct Apply ${changeList.length} Change(s)`}
         </button>
       {/if}
-      <button class="btn btn-primary" on:click={submitAll} disabled={submitting || directApplying || changeList.length === 0}>
+      <button class="btn btn-primary" onclick={submitAll} disabled={submitting || directApplying || changeList.length === 0}>
         {submitting ? 'Submitting...' : `Submit ${changeList.length} Change(s)`}
       </button>
-      <button class="btn btn-danger" on:click={clearAll} disabled={submitting || directApplying}>
+      <button class="btn btn-danger" onclick={clearAll} disabled={submitting || directApplying}>
         Clear All
       </button>
     </div>

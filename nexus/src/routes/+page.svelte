@@ -8,9 +8,9 @@
   import '$lib/style.css';
   import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
 
-  export let data;
+  let { data } = $props();
 
-  $: ({ news, events, streams, videos, globals } = data);
+  let { news, events, streams, videos, globals } = $derived(data);
 
   const features = [
     { name: 'Items Database', href: '/items', icon: 'ITM', description: 'Weapons, armor, tools, materials, blueprints and more' },

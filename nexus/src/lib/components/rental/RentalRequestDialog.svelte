@@ -4,6 +4,8 @@
   Contains date picker, pricing breakdown, and optional note.
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import DateRangePicker from './DateRangePicker.svelte';
@@ -11,40 +13,42 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {boolean} */
-  export let show = false;
+  
 
-  /** @type {object} Rental offer */
-  export let offer;
+  
 
-  /** @type {Set<string>} Unavailable dates (blocked + booked) */
-  export let unavailableDates = new Set();
+  
 
-  /** @type {string|null} Pre-selected start date from calendar */
-  export let initialStart = null;
+  
 
-  /** @type {string|null} Pre-selected end date from calendar */
-  export let initialEnd = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {object} offer
+   * @property {Set<string>} [unavailableDates]
+   * @property {string|null} [initialStart]
+   * @property {string|null} [initialEnd]
+   */
 
-  let selectedStart = null;
-  let selectedEnd = null;
-  let note = '';
-  let submitting = false;
-  let error = '';
+  /** @type {Props} */
+  let {
+    show = $bindable(false),
+    offer,
+    unavailableDates = new Set(),
+    initialStart = null,
+    initialEnd = null
+  } = $props();
+
+  let selectedStart = $state(null);
+  let selectedEnd = $state(null);
+  let note = $state('');
+  let submitting = $state(false);
+  let error = $state('');
 
   // Initialize from calendar selection when dialog opens
-  let initialized = false;
-  $: if (show && !initialized) {
-    selectedStart = initialStart || null;
-    selectedEnd = initialEnd || null;
-    initialized = true;
-  } else if (!show) {
-    initialized = false;
-  }
+  let initialized = $state(false);
 
-  $: totalDays = selectedStart && selectedEnd ? countDays(selectedStart, selectedEnd) : 0;
-  $: hasConflict = selectedStart && selectedEnd ? checkConflict(selectedStart, selectedEnd) : false;
-  $: canSubmit = selectedStart && selectedEnd && totalDays > 0 && !submitting && !hasConflict;
 
   function checkConflict(start, end) {
     const s = new Date(start + 'T00:00:00');
@@ -114,6 +118,18 @@
   function handleKeydown(e) {
     if (e.key === 'Escape') close();
   }
+  run(() => {
+    if (show && !initialized) {
+      selectedStart = initialStart || null;
+      selectedEnd = initialEnd || null;
+      initialized = true;
+    } else if (!show) {
+      initialized = false;
+    }
+  });
+  let totalDays = $derived(selectedStart && selectedEnd ? countDays(selectedStart, selectedEnd) : 0);
+  let hasConflict = $derived(selectedStart && selectedEnd ? checkConflict(selectedStart, selectedEnd) : false);
+  let canSubmit = $derived(selectedStart && selectedEnd && totalDays > 0 && !submitting && !hasConflict);
 </script>
 
 {#if show}
@@ -121,8 +137,8 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    on:click={handleOverlayClick}
-    on:keydown={handleKeydown}
+    onclick={handleOverlayClick}
+    onkeydown={handleKeydown}
   >
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rental-request-title">
       <h3 id="rental-request-title">Request Rental</h3>
@@ -156,11 +172,11 @@
       </div>
 
       <div class="actions">
-        <button type="button" on:click={close}>Cancel</button>
+        <button type="button" onclick={close}>Cancel</button>
         <button
           type="button"
           class="btn-primary"
-          on:click={handleSubmit}
+          onclick={handleSubmit}
           disabled={!canSubmit}
         >
           {submitting ? 'Submitting...' : 'Submit Request'}

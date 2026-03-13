@@ -1,4 +1,6 @@
 <script>
+  import { run, self } from 'svelte/legacy';
+
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { isItemStackable, isPercentMarkup, isItemTierable, isBlueprint, isLimited, itemHasCondition, itemTypeBadge } from '../../orderUtils';
@@ -8,30 +10,37 @@
   import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
   import { addToast } from '$lib/stores/toasts.js';
 
-  let turnstileToken = null;
-  let resetTurnstile = false;
+  let turnstileToken = $state(null);
+  let resetTurnstile = $state(false);
 
-  export let show = false;
-  export let items = []; // Array of { invItem, count }
-  export let allItems = []; // Slim items for type lookup
-  export let sellOrderCount = 0; // Current number of active sell orders
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {any} [items] - Array of { invItem, count }
+   * @property {any} [allItems] - Slim items for type lookup
+   * @property {number} [sellOrderCount] - Current number of active sell orders
+   */
+
+  /** @type {Props} */
+  let {
+    show = false,
+    items = [],
+    allItems = [],
+    sellOrderCount = 0
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let orderRows = [];
-  let globalPlanet = 'Calypso';
-  let submitting = false;
-  let progress = 0;
-  let totalOrders = 0;
-  let progressError = null;
+  let orderRows = $state([]);
+  let globalPlanet = $state('Calypso');
+  let submitting = $state(false);
+  let progress = $state(0);
+  let totalOrders = $state(0);
+  let progressError = $state(null);
 
   // Unique key counter for expanded rows
   let rowKeyCounter = 0;
 
-  // Rebuild order rows when items change and dialog is shown
-  $: if (show && items.length > 0) {
-    buildOrderRows();
-  }
 
   function buildOrderRows() {
     // Preserve existing rows if re-opening (cancel preserves state)
@@ -227,10 +236,6 @@
     return null;
   }
 
-  // Submittable rows: not blocked, not already done
-  $: submittableRows = orderRows.filter(r => !r.blocked && r.status !== 'done');
-  $: newOrderCount = orderRows.filter(r => !r.isEdit && !r.blocked && r.status !== 'done').length;
-  $: editOrderCount = orderRows.filter(r => r.isEdit && !r.blocked && r.status !== 'done').length;
 
   function validateAll() {
     let valid = true;
@@ -365,14 +370,24 @@
     if (submitting) return;
     dispatch('close');
   }
+  // Rebuild order rows when items change and dialog is shown
+  run(() => {
+    if (show && items.length > 0) {
+      buildOrderRows();
+    }
+  });
+  // Submittable rows: not blocked, not already done
+  let submittableRows = $derived(orderRows.filter(r => !r.blocked && r.status !== 'done'));
+  let newOrderCount = $derived(orderRows.filter(r => !r.isEdit && !r.blocked && r.status !== 'done').length);
+  let editOrderCount = $derived(orderRows.filter(r => r.isEdit && !r.blocked && r.status !== 'done').length);
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" on:click|self={close}>
+  <div class="modal-overlay" role="presentation" onclick={self(close)}>
     <div class="modal">
       <div class="modal-header">
         <h3>Mass Sell Orders</h3>
-        <button class="close-btn" on:click={close} disabled={submitting}>&times;</button>
+        <button class="close-btn" onclick={close} disabled={submitting}>&times;</button>
       </div>
 
       <div class="global-settings">
@@ -411,7 +426,7 @@
                 {/if}
               </span>
               {#if !submitting && !row.blocked}
-                <button class="row-remove" on:click={() => removeRow(i)} title="Remove">&times;</button>
+                <button class="row-remove" onclick={() => removeRow(i)} title="Remove">&times;</button>
               {/if}
             </div>
             {#if !row.blocked}
@@ -426,7 +441,7 @@
                   disabled={submitting || row.status === 'done'}
                   class="field-input"
                   class:field-error={row.error && row.error.includes('Markup')}
-                  on:change={() => clampMarkup(row)}
+                  onchange={() => clampMarkup(row)}
                 />
               </div>
               {#if row.stackable}
@@ -439,7 +454,7 @@
                     disabled={submitting || row.status === 'done'}
                     class="field-input field-sm"
                     class:field-error={row.error && row.error.includes('Quantity')}
-                    on:change={() => clampQty(row)}
+                    onchange={() => clampQty(row)}
                   />
                 </div>
                 <div class="field field-partial">
@@ -448,7 +463,7 @@
                       type="checkbox"
                       bind:checked={row.allowPartial}
                       disabled={submitting || row.status === 'done'}
-                      on:change={() => {
+                      onchange={() => {
                         if (row.allowPartial) {
                           row.minQuantity = Math.max(1, Math.floor((row.quantity || 1) * DEFAULT_PARTIAL_RATIO));
                         } else {
@@ -468,7 +483,7 @@
                       class="field-input field-xs"
                       class:field-error={row.error && row.error.includes('Min')}
                       placeholder="Min"
-                      on:change={() => clampMinQty(row)}
+                      onchange={() => clampMinQty(row)}
                     />
                   {/if}
                 </div>
@@ -485,7 +500,7 @@
                     disabled={submitting || row.status === 'done'}
                     class="field-input field-sm"
                     class:field-error={row.error && row.error.includes('TT')}
-                    on:change={() => clampTT(row)}
+                    onchange={() => clampTT(row)}
                   />
                 </div>
               {/if}
@@ -500,7 +515,7 @@
                     bind:value={row.tier}
                     disabled={submitting || row.status === 'done'}
                     class="field-input field-xs"
-                    on:change={() => clampTier(row)}
+                    onchange={() => clampTier(row)}
                   />
                 </div>
                 <div class="field">
@@ -513,7 +528,7 @@
                     bind:value={row.tir}
                     disabled={submitting || row.status === 'done'}
                     class="field-input field-xs"
-                    on:change={() => clampTiR(row)}
+                    onchange={() => clampTiR(row)}
                   />
                 </div>
               {/if}
@@ -528,7 +543,7 @@
                     bind:value={row.qr}
                     disabled={submitting || row.status === 'done'}
                     class="field-input field-xs"
-                    on:change={() => clampQR(row)}
+                    onchange={() => clampQR(row)}
                   />
                 </div>
               {/if}
@@ -567,15 +582,15 @@
       {/if}
 
       <div class="modal-footer">
-        <button class="btn-cancel" on:click={close} disabled={submitting}>
+        <button class="btn-cancel" onclick={close} disabled={submitting}>
           {progress > 0 && !progressError ? 'Done' : 'Cancel'}
         </button>
         <span class="footer-spacer"></span>
         {#if progressError}
-          <button class="btn-retry" on:click={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
+          <button class="btn-retry" onclick={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
         {/if}
         {#if !progressError && submittableRows.length > 0 && progress < submittableRows.length}
-          <button class="btn-submit" on:click={submit} disabled={submitting || submittableRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
+          <button class="btn-submit" onclick={submit} disabled={submitting || submittableRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
             {submitting ? 'Submitting...' : `Submit ${submittableRows.length} Order${submittableRows.length !== 1 ? 's' : ''}${editOrderCount > 0 ? ` (${editOrderCount} edit${editOrderCount !== 1 ? 's' : ''})` : ''}`}
           </button>
         {/if}

@@ -4,6 +4,8 @@
   Item sets are created inline (1:1 with rental) — no dropdown selection.
 -->
 <script>
+  import { preventDefault } from 'svelte/legacy';
+
   // @ts-nocheck
   import '$lib/style.css';
   import { goto } from '$app/navigation';
@@ -13,21 +15,21 @@
   import ItemSetDialog from '$lib/components/itemsets/ItemSetDialog.svelte';
   import { addToast } from '$lib/stores/toasts';
 
-  export let data;
+  let { data } = $props();
 
-  $: planets = data.planets || [];
-  $: loadouts = data.loadouts || [];
-  $: availableLoadouts = loadouts.filter(l => !l.linked_item_set);
+  let planets = $derived(data.planets || []);
+  let loadouts = $derived(data.loadouts || []);
+  let availableLoadouts = $derived(loadouts.filter(l => !l.linked_item_set));
 
-  let saving = false;
-  let error = '';
-  let showItemSetDialog = false;
-  let showLoadoutPicker = false;
-  let creatingFromLoadout = null;
-  let removingItemSet = false;
+  let saving = $state(false);
+  let error = $state('');
+  let showItemSetDialog = $state(false);
+  let showLoadoutPicker = $state(false);
+  let creatingFromLoadout = $state(null);
+  let removingItemSet = $state(false);
 
   // The created item set for this rental (1:1 relationship)
-  let itemSet = null;       // { id, items, loadoutId? }
+  let itemSet = $state(null);       // { id, items, loadoutId? }
 
   function handleItemSetCreated(e) {
     const result = e.detail;
@@ -206,13 +208,13 @@
   }
 
   // Form data
-  let title = '';
-  let description = '';
-  let planetId = '';
-  let location = '';
-  let pricePerDay = 0;
-  let discounts = [];
-  let deposit = 0;
+  let title = $state('');
+  let description = $state('');
+  let planetId = $state('');
+  let location = $state('');
+  let pricePerDay = $state(0);
+  let discounts = $state([]);
+  let deposit = $state(0);
 
   function handlePricingChange(e) {
     pricePerDay = e.detail.pricePerDay;
@@ -264,7 +266,7 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
   <title>Create Rental Offer - Market - Entropia Nexus</title>
@@ -280,13 +282,13 @@
       <span>Create Offer</span>
     </div>
 
-    <button class="back-btn" on:click={() => goto('/market/rental')}>
+    <button class="back-btn" onclick={() => goto('/market/rental')}>
       &larr; Back to Listings
     </button>
 
     <h1>Create Rental Offer</h1>
 
-    <form on:submit|preventDefault={handleSubmit} class="create-form">
+    <form onsubmit={preventDefault(handleSubmit)} class="create-form">
       {#if error}
         <div class="error-banner">{error}</div>
       {/if}
@@ -329,11 +331,11 @@
         {#if !itemSet}
           <p class="section-hint">Create the set of items included in this rental. The item set cannot be changed after the offer is created.</p>
           <div class="item-set-actions">
-            <button type="button" class="btn-create-set" on:click={() => showItemSetDialog = true}>
+            <button type="button" class="btn-create-set" onclick={() => showItemSetDialog = true}>
               Create Item Set
             </button>
             {#if availableLoadouts.length > 0}
-              <button type="button" class="btn-from-loadout" on:click={() => showLoadoutPicker = true}>
+              <button type="button" class="btn-from-loadout" onclick={() => showLoadoutPicker = true}>
                 From Loadout
               </button>
             {/if}
@@ -349,7 +351,7 @@
                 type="button"
                 class="btn-remove-set"
                 disabled={removingItemSet}
-                on:click={removeItemSet}
+                onclick={removeItemSet}
               >
                 {removingItemSet ? 'Removing...' : 'Remove'}
               </button>
@@ -408,7 +410,7 @@
 
       <!-- Submit -->
       <div class="form-actions">
-        <button type="button" class="cancel-btn" on:click={() => goto('/market/rental')}>
+        <button type="button" class="cancel-btn" onclick={() => goto('/market/rental')}>
           Cancel
         </button>
         <button type="submit" class="save-btn" disabled={saving}>
@@ -420,11 +422,11 @@
 </div>
 
 {#if showLoadoutPicker}
-  <div class="picker-backdrop" role="presentation" on:click={handleLoadoutPickerBackdrop}>
+  <div class="picker-backdrop" role="presentation" onclick={handleLoadoutPickerBackdrop}>
     <div class="picker-dialog" role="dialog" aria-modal="true" aria-label="Select Loadout">
       <div class="picker-header">
         <h3>Select Loadout</h3>
-        <button class="picker-close" disabled={creatingFromLoadout != null} on:click={() => showLoadoutPicker = false}>&times;</button>
+        <button class="picker-close" disabled={creatingFromLoadout != null} onclick={() => showLoadoutPicker = false}>&times;</button>
       </div>
       <div class="picker-body">
         <p class="picker-hint">Create a new item set from one of your loadouts.</p>
@@ -432,7 +434,7 @@
           <button
             class="picker-item"
             disabled={creatingFromLoadout != null}
-            on:click={() => createItemSetFromLoadout(loadout)}
+            onclick={() => createItemSetFromLoadout(loadout)}
           >
             {#if creatingFromLoadout === loadout.id}
               Creating...

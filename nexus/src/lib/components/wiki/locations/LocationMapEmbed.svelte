@@ -9,26 +9,40 @@
   - Click to open full map view
 -->
 <script>
+  import { run } from 'svelte/legacy';
+
   // @ts-nocheck
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
 
-  /** @type {{Id: number, Name: string, Properties: {Coordinates: {Longitude: number, Latitude: number, Altitude?: number}, Type: string, AreaType?: string, Shape?: string, Data?: any}}} */
-  export let location = null;
+  
 
-  /** @type {{Id: number, Name: string, Properties?: {Map?: {X: number, Y: number, Width: number, Height: number}, TechnicalName?: string}}} */
-  export let planet = null;
+  
 
-  /** @type {number} Height of the embed in pixels */
-  export let height = 200;
+  
 
-  /** @type {string} Optional title for the map section */
-  export let title = '';
+  
 
-  /** @type {Array} Nearby locations to display (land areas and teleporters) */
-  export let nearbyLocations = [];
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{Id: number, Name: string, Properties: {Coordinates: {Longitude: number, Latitude: number, Altitude?: number}, Type: string, AreaType?: string, Shape?: string, Data?: any}}} [location]
+   * @property {{Id: number, Name: string, Properties?: {Map?: {X: number, Y: number, Width: number, Height: number}, TechnicalName?: string}}} [planet]
+   * @property {number} [height]
+   * @property {string} [title]
+   * @property {Array} [nearbyLocations]
+   */
+
+  /** @type {Props} */
+  let {
+    location = null,
+    planet = null,
+    height = 200,
+    title = '',
+    nearbyLocations = []
+  } = $props();
 
   // Coordinate conversion ratios (computed when map loads)
   let imageTileSize = 1;
@@ -36,11 +50,11 @@
   let entropiaTileSize = 8192;
 
   // Canvas and rendering state
-  let canvas;
+  let canvas = $state();
   let ctx;
-  let container;
+  let container = $state();
   let mapImage = null;
-  let mapLoaded = false;
+  let mapLoaded = $state(false);
   let viewScale = 1;
   let viewX = 0;
   let viewY = 0;
@@ -67,22 +81,22 @@
   let inertiaId = null;
 
   // Hover state for nearby locations
-  let hoveredLocation = null;
+  let hoveredLocation = $state(null);
 
   // Layer visibility toggles
-  let showTeleporters = true;
-  let showLandAreas = true;
-  let showNpcs = false;       // Not yet implemented
-  let showMobAreas = false;   // Not yet implemented
-  let showEstates = false;    // Not yet implemented
+  let showTeleporters = $state(true);
+  let showLandAreas = $state(true);
+  let showNpcs = $state(false);       // Not yet implemented
+  let showMobAreas = $state(false);   // Not yet implemented
+  let showEstates = $state(false);    // Not yet implemented
 
   // Get map image URL based on planet (matches Map.svelte format)
-  $: mapImageUrl = planet?.Name
+  let mapImageUrl = $derived(planet?.Name
     ? `/${planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}.jpg`
-    : '/calypso.jpg';
+    : '/calypso.jpg');
 
   // Get location coordinates
-  $: locationCoords = location?.Properties?.Coordinates;
+  let locationCoords = $derived(location?.Properties?.Coordinates);
 
   // Color based on location type
   const typeColors = {
@@ -101,9 +115,9 @@
     WaveEventArea: '#ec4899'  // Pink
   };
 
-  $: markerColor = (location?.Properties?.Type === 'Area' && areaTypeColors[location?.Properties?.AreaType])
+  let markerColor = $derived((location?.Properties?.Type === 'Area' && areaTypeColors[location?.Properties?.AreaType])
     || typeColors[location?.Properties?.Type]
-    || typeColors.default;
+    || typeColors.default);
 
   // Convert game (entropia) coordinates to image coordinates
   // Uses the same logic as Map.svelte's entropiaCoordsToImageCoords
@@ -931,21 +945,25 @@
   });
 
   // Reload map when planet changes
-  $: if (browser && mapImageUrl) {
-    loadMapImage();
-  }
+  run(() => {
+    if (browser && mapImageUrl) {
+      loadMapImage();
+    }
+  });
 
   // Re-center map when location changes (external navigation)
   // Track location.Id to detect when we've navigated to a different location
-  let lastLocationId = null;
-  $: if (browser && mapLoaded && location?.Id !== lastLocationId) {
-    lastLocationId = location?.Id;
-    // Only re-center if we have valid coordinates
-    if (locationCoords?.Longitude != null) {
-      centerOnLocation();
-      draw();
+  let lastLocationId = $state(null);
+  run(() => {
+    if (browser && mapLoaded && location?.Id !== lastLocationId) {
+      lastLocationId = location?.Id;
+      // Only re-center if we have valid coordinates
+      if (locationCoords?.Longitude != null) {
+        centerOnLocation();
+        draw();
+      }
     }
-  }
+  });
 </script>
 
 {#if locationCoords?.Longitude != null}
@@ -957,10 +975,10 @@
         <div class="map-title-spacer"></div>
       {/if}
       <div class="map-controls">
-        <button class="zoom-btn" on:click={zoomIn} title="Zoom in">+</button>
-        <button class="zoom-btn" on:click={zoomOut} title="Zoom out">-</button>
-        <button class="zoom-btn" on:click={resetView} title="Reset view">&#8634;</button>
-        <button class="expand-btn" on:click={openFullMap} title="Open full map">
+        <button class="zoom-btn" onclick={zoomIn} title="Zoom in">+</button>
+        <button class="zoom-btn" onclick={zoomOut} title="Zoom out">-</button>
+        <button class="zoom-btn" onclick={resetView} title="Reset view">&#8634;</button>
+        <button class="expand-btn" onclick={openFullMap} title="Open full map">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="15 3 21 3 21 9"></polyline>
             <polyline points="9 21 3 21 3 15"></polyline>
@@ -974,11 +992,11 @@
     <div class="map-container" bind:this={container}>
       <canvas
         bind:this={canvas}
-        on:mousedown={handleMouseDown}
-        on:mousemove={handleMouseMove}
-        on:mouseup={handleMouseUp}
-        on:mouseleave={handleMouseLeave}
-        on:wheel={handleWheel}
+        onmousedown={handleMouseDown}
+        onmousemove={handleMouseMove}
+        onmouseup={handleMouseUp}
+        onmouseleave={handleMouseLeave}
+        onwheel={handleWheel}
       ></canvas>
 
       <!-- Layer toggles (top-left) -->
@@ -986,7 +1004,7 @@
         <button
           class="layer-btn"
           class:active={showTeleporters}
-          on:click={toggleTeleporters}
+          onclick={toggleTeleporters}
           title="Toggle Teleporters"
         >
           <span class="layer-icon tp-icon">TP</span>
@@ -994,7 +1012,7 @@
         <button
           class="layer-btn"
           class:active={showLandAreas}
-          on:click={toggleLandAreas}
+          onclick={toggleLandAreas}
           title="Toggle Land Areas"
         >
           <span class="layer-icon la-icon">LA</span>
@@ -1002,7 +1020,7 @@
         <button
           class="layer-btn"
           class:active={showNpcs}
-          on:click={toggleNpcs}
+          onclick={toggleNpcs}
           title="Toggle NPCs"
         >
           <span class="layer-icon npc-icon">NPC</span>
@@ -1010,7 +1028,7 @@
         <button
           class="layer-btn"
           class:active={showMobAreas}
-          on:click={toggleMobAreas}
+          onclick={toggleMobAreas}
           title="Toggle Mob Areas"
         >
           <span class="layer-icon ma-icon">MA</span>
@@ -1018,7 +1036,7 @@
         <button
           class="layer-btn"
           class:active={showEstates}
-          on:click={toggleEstates}
+          onclick={toggleEstates}
           title="Toggle Estates"
         >
           <span class="layer-icon est-icon">EST</span>
@@ -1026,7 +1044,7 @@
       </div>
 
       <!-- Re-center button (bottom-right) -->
-      <button class="recenter-btn" on:click={resetView} title="Re-center on location">
+      <button class="recenter-btn" onclick={resetView} title="Re-center on location">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M12 2v4m0 12v4m-10-10h4m12 0h4"></path>
