@@ -457,11 +457,14 @@
     }
   });
   // Update shape fields when shape data changes externally (e.g., map drag/resize)
+  // Uses JSON comparison because selectedLocation is a $derived that always creates new objects
   $effect(() => {
     if (location && location.Id === loadedLocationId && !isNew) {
       const newData = location.Properties?.Data;
       const newCoords = location.Properties?.Coordinates;
-      if (newData !== _lastShapeDataRef) {
+      const newDataJson = newData ? JSON.stringify(newData) : null;
+      const lastDataJson = _lastShapeDataRef ? JSON.stringify(_lastShapeDataRef) : null;
+      if (newDataJson !== lastDataJson) {
         _lastShapeDataRef = newData;
         if (newData) {
           const currentShape = location.Properties?.Shape || shape;
@@ -479,7 +482,9 @@
           }
         }
       }
-      if (newCoords !== _lastCoordsRef) {
+      const newCoordsJson = newCoords ? `${newCoords.Longitude},${newCoords.Latitude}` : null;
+      const lastCoordsJson = _lastCoordsRef ? `${_lastCoordsRef.Longitude},${_lastCoordsRef.Latitude}` : null;
+      if (newCoordsJson !== lastCoordsJson) {
         _lastCoordsRef = newCoords;
         if (newCoords) {
           longitude = newCoords.Longitude ?? longitude;
