@@ -236,6 +236,7 @@
         {#each approvedImages as image}
           <div class="image-card approved">
             <div class="image-preview">
+              <!-- svelte-ignore a11y_img_redundant_alt -- "image" in alt is descriptive context here, not redundant -->
               <img src={image.imageUrl} alt="Approved image" />
             </div>
 

@@ -1975,6 +1975,7 @@
                 {@const isCollapsed = collapsedSteps.has(i)}
                 <li class="step-item" class:not-owned={!step.owned} class:checked={isChecked} class:collapsed={isCollapsed}>
                   <div class="step-header" onclick={() => toggleStepCollapsed(i)} role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleStepCollapsed(i))}>
+                    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -- label wraps checkbox; stopPropagation prevents parent button click -->
                     <label class="step-checkbox" onclick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={isChecked} onchange={() => toggleStepChecked(i)} />
                     </label>

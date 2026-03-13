@@ -889,7 +889,6 @@
   }
 
   .stat-pending { color: var(--warning-color); }
-  .stat-approved { color: var(--success-color); }
   .stat-denied { color: var(--error-color); }
 
   /* Tabs */

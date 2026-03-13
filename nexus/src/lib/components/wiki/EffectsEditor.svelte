@@ -335,7 +335,7 @@
 
 {#if editingEffectIndex != null}
   <CreateEffectDialog
-    effect={getEditEffectData(editingEffectIndex)}
+    effectData={getEditEffectData(editingEffectIndex)}
     onedit={handleEditEffect}
     oncancel={() => editingEffectIndex = null}
   />

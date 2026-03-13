@@ -189,6 +189,7 @@
   <div class="search-header">
     <h1>Search</h1>
     <div class="search-input-container">
+      <!-- svelte-ignore a11y_autofocus -- search page's primary purpose is searching; autofocus is intentional UX -->
       <input
         type="text"
         class="search-input"

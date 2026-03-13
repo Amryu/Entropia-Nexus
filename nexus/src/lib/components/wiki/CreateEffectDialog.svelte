@@ -11,16 +11,16 @@
 
   /**
    * @typedef {Object} Props
-   * @property {{ Name: string, CanonicalName?: string, Properties?: { Unit?: string, IsPositive?: boolean, Description?: string } } | null} [effect]
+   * @property {{ Name: string, CanonicalName?: string, Properties?: { Unit?: string, IsPositive?: boolean, Description?: string } } | null} [effectData]
    * @property {Function} [oncreate]
    * @property {Function} [onedit]
    * @property {Function} [oncancel]
    */
 
   /** @type {Props} */
-  let { effect = null, oncreate, onedit, oncancel } = $props();
+  let { effectData = null, oncreate, onedit, oncancel } = $props();
 
-  let isEditMode = $derived(!!effect);
+  let isEditMode = $derived(!!effectData);
 
   let name = $state('');
   let canonicalName = $state('');
@@ -28,13 +28,13 @@
   let isPositive = $state(true);
   let description = $state('');
 
-  // Sync form fields when the effect prop changes (e.g. dialog reopens with different effect)
+  // Sync form fields when the effectData prop changes (e.g. dialog reopens with different effect)
   $effect(() => {
-    name = effect?.Name || '';
-    canonicalName = effect?.CanonicalName || '';
-    unit = effect?.Properties?.Unit || '';
-    isPositive = effect?.Properties?.IsPositive ?? true;
-    description = effect?.Properties?.Description || '';
+    name = effectData?.Name || '';
+    canonicalName = effectData?.CanonicalName || '';
+    unit = effectData?.Properties?.Unit || '';
+    isPositive = effectData?.Properties?.IsPositive ?? true;
+    description = effectData?.Properties?.Description || '';
   });
 
   let canSubmit = $derived(name.trim().length > 0);

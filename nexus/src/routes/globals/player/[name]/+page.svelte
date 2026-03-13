@@ -1857,7 +1857,6 @@
     margin-bottom: 16px;
   }
 
-  .ath-targets-grid .section-card,
   .ath-targets-grid .section-card-inner {
     margin-bottom: 0;
   }

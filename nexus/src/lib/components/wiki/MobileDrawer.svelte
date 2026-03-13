@@ -80,7 +80,7 @@
       aria-label="Close navigation"
 ></button>
 
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -- aside used as dialog with role="dialog" and touch handlers -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_element_to_interactive_role -- aside is semantically appropriate for a navigation drawer; role="dialog" needed for accessibility -->
     <aside
       class="drawer drawer-{side}"
       transition:fly={{ x: side === 'left' ? -300 : 300, duration: 250 }}

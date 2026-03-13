@@ -426,6 +426,7 @@
       {#each Object.entries(hourGroups) as [hour, slots]}
         <!-- Hour row (always visible) -->
         <div class="time-label">
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -- tabindex is conditional: only set when !readonly makes this a button -->
           <span
             class="hour-label"
             class:clickable={!readonly}
@@ -474,6 +475,7 @@
         <!-- 15-minute slots (expanded view) -->
         {#if expandedHours.has(parseInt(hour))}
           {#each slots as slot}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -- tabindex is conditional: only set when !readonly makes this a button -->
             <div
               class="time-label sub-label"
               class:clickable={!readonly}

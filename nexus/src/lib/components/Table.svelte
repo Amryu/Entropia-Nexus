@@ -457,6 +457,7 @@
     </thead>
   {/if}
     {#if options.virtual}
+      <!-- svelte-ignore node_invalid_placement_ssr -- virtual scrolling requires nested table; client-only rendering so no SSR hydration mismatch -->
       <table class="tscroll" bind:this={viewport} style={`grid-column: span ${getColumnCount(header, filteredData) + 1};`}>
         <tbody bind:this={contents} class={options.virtual ? 'virtual' : ''} style={`grid-column: span ${getColumnCount(header, filteredData)};`}>
           <VirtualTableRow
@@ -473,6 +474,7 @@
             {#snippet children({ item, index })}
                     <tdgroup style="display: contents;">
               {#each item.values as value, valueIndex}
+                <!-- svelte-ignore node_invalid_placement_ssr -- virtual scrolling uses tdgroup for display:contents; client-only -->
                 <td class="clickable {(index) % 2 === 0 ? 'row-color' : 'row-color-alt'}" height="17px" style={item?.tdStyles ? item?.tdStyles[valueIndex] : null}>
                   <span class={(shouldShowTooltip(item, valueIndex) && !(item?.copyables && item.copyables[valueIndex])) ? 'dotted-underline' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
                     {#if item?.links != null && item?.links[valueIndex] != null}

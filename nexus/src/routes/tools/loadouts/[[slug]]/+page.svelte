@@ -4889,6 +4889,7 @@
       </div>
     {/if}
 
+    <!-- svelte-ignore a11y_no_static_element_interactions -- touch swipe handler for mobile panel navigation; tab buttons provide keyboard alternative -->
     <div
       class="mobile-panels"
       bind:this={mobilePanelsEl}

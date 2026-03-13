@@ -165,6 +165,7 @@
 </script>
 
 <div class="entity-infobox" class:compact class:floating={variant === 'floating'} class:card={variant === 'card'}>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -- tabindex is conditional: only set when canUpload makes this a button -->
   <div
     class="infobox-icon"
     class:editable={canUpload}

@@ -161,6 +161,7 @@
     <div class="section-label">Visible Columns ({resolvedVisible.length})</div>
     <div class="visible-list">
       {#each resolvedVisible as column, i (column.key)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -- draggable list item; drag/touch handlers are the primary interaction -->
         <div
           class="visible-item"
           class:drag-over={dragOverIndex === i && dragIndex !== i}

@@ -60,6 +60,7 @@
 </script>
 
 <section class="data-section" class:expanded class:collapsible class:allow-overflow={allowOverflow}>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -- tabindex is conditional: only set when collapsible makes header a button -->
   <header
     class="section-header"
     role={collapsible ? 'button' : undefined}

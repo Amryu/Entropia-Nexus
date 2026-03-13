@@ -166,6 +166,7 @@
       {/if}
     </div>
   {:else}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -- tabindex is conditional: set to 0 when editable (role=button), -1 otherwise (role=img) -->
     <div
       class="image-preview"
       class:editable

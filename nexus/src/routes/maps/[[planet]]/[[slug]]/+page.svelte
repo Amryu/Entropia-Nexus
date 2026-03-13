@@ -800,6 +800,7 @@
     </div>
 
     {#if searchOpen && searchResults.length > 0}
+      <!-- svelte-ignore a11y_no_static_element_interactions -- mouse hover tracking for search results dropdown; keyboard nav handled via parent input -->
       <div
         class="search-results"
         onmouseenter={() => searchResultsHovered = true}

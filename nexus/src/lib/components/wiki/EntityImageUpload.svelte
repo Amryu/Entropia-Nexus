@@ -175,6 +175,7 @@
   let showPendingOverlay = $derived(!isCreateMode && (pendingImagePreview || (userPendingImage?.previewUrl && entityImageUrl === userPendingImage.previewUrl)));
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -- tabindex is conditional: only set when canUploadImage makes this a button -->
 <div
   class="entity-icon-wrapper"
   class:editable={canUploadImage}
