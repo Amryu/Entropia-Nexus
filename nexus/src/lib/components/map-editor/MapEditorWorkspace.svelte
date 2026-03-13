@@ -170,8 +170,8 @@
   $: isReadOnly = !!selectedDbChange || (!isAdmin && selectedId != null
     && selectedId > 0 && lockedLocationMap.has(selectedId));
 
-  // Count all pending changes so badge matches the changes list
-  $: changeCount = pendingChanges.size;
+  // Count pending changes excluding DB-seeded but unmodified entries
+  $: changeCount = Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length;
 
   $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
     if (focusLocation._dbChange) {
@@ -238,7 +238,7 @@
           if (data?.Waves) {
             modified.waveData = { waves: data.Waves };
           }
-          pendingChanges.set(tempId, { action: 'edit', original: null, modified });
+          pendingChanges.set(tempId, { action: 'edit', original: null, modified, _dbSeeded: true });
           dbChangeIdMap.set(tempId, change.id);
           pendingChanges = pendingChanges;
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
@@ -259,7 +259,7 @@
             shapeData: props.Data ?? loc.Properties?.Data ?? null,
             parentLocationName: data.ParentLocation?.Name || loc.ParentLocation?.Name || null,
           };
-          pendingChanges.set(data.Id, { action: 'edit', original: loc, modified });
+          pendingChanges.set(data.Id, { action: 'edit', original: loc, modified, _dbSeeded: true });
           dbChangeIdMap.set(data.Id, change.id);
           pendingChanges = pendingChanges;
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
@@ -361,6 +361,7 @@
     if (existingChange && !existingChange.original) {
       // Editing a pending add: merge into the existing entry
       Object.assign(existingChange.modified, modified);
+      delete existingChange._dbSeeded;
       pendingChanges.set(original.Id, existingChange);
     } else {
       // Preserve the true original from the first edit — `original` from the editor
@@ -537,6 +538,7 @@
         modified.shape = entropiaData.shape;
         modified.shapeData = entropiaData.data;
       }
+      delete existing._dbSeeded;
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
       pendingChanges.set(locId, existing);
       pendingChanges = pendingChanges;

@@ -17,13 +17,12 @@
   let directApplying = false;
   let changeStatuses = {}; // changeKey → 'pending' | 'submitting' | 'success' | 'error'
 
-  $: changeList = Array.from(pendingChanges.entries()).map(([key, change]) => ({
-    key,
-    ...change
-  }));
+  $: changeList = Array.from(pendingChanges.entries())
+    .filter(([, change]) => !change._dbSeeded)
+    .map(([key, change]) => ({ key, ...change }));
 
-  $: addCount = changeList.filter(c => c.action !== 'delete' && !c.original).length;
-  $: editCount = changeList.filter(c => c.action !== 'delete' && c.original).length;
+  $: addCount = changeList.filter(c => c.action !== 'delete' && !c.original && !dbChangeIdMap.has(c.key)).length;
+  $: editCount = changeList.filter(c => c.action !== 'delete' && (c.original || dbChangeIdMap.has(c.key))).length;
   $: deleteCount = changeList.filter(c => c.action === 'delete').length;
 
   function buildEntityBody(change) {
@@ -117,7 +116,7 @@
     changeStatuses = changeStatuses;
 
     try {
-      const changeType = change.action === 'delete' ? 'Delete' : (change.original?.Id ? 'Update' : 'Create');
+      const changeType = change.action === 'delete' ? 'Delete' : ((change.original?.Id || dbChangeIdMap.has(change.key)) ? 'Update' : 'Create');
       const body = buildEntityBody(change);
 
       if (!body) {
@@ -199,7 +198,7 @@
       changeStatuses = changeStatuses;
 
       try {
-        const changeType = change.action === 'delete' ? 'Delete' : (change.original?.Id ? 'Update' : 'Create');
+        const changeType = change.action === 'delete' ? 'Delete' : ((change.original?.Id || dbChangeIdMap.has(change.key)) ? 'Update' : 'Create');
         const body = buildEntityBody(change);
 
         if (!body) {
@@ -514,7 +513,7 @@
         {@const type = change.action === 'delete' ? getEffectiveType(change.original) : (change.modified?.areaType || change.modified?.locationType || '')}
         {@const statusKey = changeStatuses[change.key]}
         {@const hasDbChange = dbChangeIdMap.has(change.key)}
-        {@const displayAction = change.action === 'delete' ? 'delete' : (change.original ? 'edit' : 'add')}
+        {@const displayAction = change.action === 'delete' ? 'delete' : ((change.original || dbChangeIdMap.has(change.key)) ? 'edit' : 'add')}
         <div class="change-row">
           <span class="action-indicator" style="color: {getActionColor(displayAction)}">{getActionLabel(displayAction)}</span>
           <span class="change-name">{name}</span>
