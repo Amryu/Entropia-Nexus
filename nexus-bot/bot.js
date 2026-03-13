@@ -7,6 +7,7 @@ import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedCha
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
+import { handleReward, fetchEntityForReward } from './changes/rewards.js';
 import { getTypeLink, getStateLabel } from './util.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 import { checkAuctions, refreshAuctionColors } from './auctions.js';
@@ -627,8 +628,9 @@ async function startNameCollectionFlow(thread, user, guild) {
 }
 
 /**
- * Handle a DirectApply change: apply immediately without creating a review thread.
- * On success, set state to Approved and DM the admin.
+ * Handle a DirectApply change: apply immediately.
+ * If a Discord thread exists (or needs to be created), close it with a reason
+ * and post reward prompts before archiving.
  * On failure, set state to ApplyFailed and DM the admin with retry/discard buttons.
  */
 async function handleDirectApply(change) {
@@ -642,10 +644,62 @@ async function handleDirectApply(change) {
     return;
   }
 
+  // Fetch pre-change entity for reward diffing BEFORE applying
+  const preChangeEntity = await fetchEntityForReward(change);
+
   const success = await applyChange(change);
 
   if (success) {
     await setChangeState(change.id, 'Approved');
+
+    // Find or create a Discord thread for the closing message and rewards
+    const channel = client.channels.cache.find(ch => ch.id === config.pendingChangesChannelId);
+    let thread = null;
+
+    if (channel) {
+      // Try to fetch existing thread
+      if (change.thread_id) {
+        thread = await channel.threads.fetch(change.thread_id).catch(_ => null);
+        // Unarchive if needed so we can post to it
+        if (thread?.archived) {
+          try { await thread.setArchived(false); } catch {}
+        }
+      }
+
+      // Create a thread if none exists
+      if (!thread) {
+        try {
+          thread = await channel.threads.create({
+            name: `[Approved] ${change.type}: ${change.data.Name.substring(0, 80)}`,
+            autoArchiveDuration: 10080,
+            reason: `Direct apply thread for change ${change.id}`,
+          });
+          await setChangeThreadId(change.id, thread.id);
+        } catch (e) {
+          console.error(`Failed to create thread for direct apply (change ${change.id}):`, e.message);
+        }
+      }
+    }
+
+    if (thread) {
+      try {
+        // Update thread name to show approved state
+        if (change.thread_id) {
+          await thread.setName(`[Approved] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+        }
+        await thread.send(`This change was directly applied by <@${change.author_id}>.`);
+      } catch (e) {
+        console.error(`Failed to post direct apply message to thread (change ${change.id}):`, e.message);
+      }
+
+      // Evaluate and prompt for rewards in the thread, then archive
+      const archived = await handleReward(thread, change, preChangeEntity);
+      if (!archived) {
+        try { await thread.setArchived(true); } catch {}
+      }
+    }
+
+    // DM the admin confirmation
     try {
       const dmUser = await client.users.fetch(String(change.author_id));
       await dmUser.send(`Your change **${change.data.Name}** (${change.type} ${change.entity}) was directly applied successfully.`);

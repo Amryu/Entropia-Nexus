@@ -277,6 +277,24 @@
     } else if (newShape === 'Polygon') {
       if (cached) {
         shapeDataJson = cached;
+      } else if (oldShape === 'Rectangle') {
+        // Convert rectangle to 4-vertex polygon
+        const x = Number(rectX) || 0, y = Number(rectY) || 0;
+        const w = Number(rectWidth) || 100, h = Number(rectHeight) || 100;
+        const verts = [x, y, x + w, y, x + w, y + h, x, y + h, x, y];
+        shapeDataJson = JSON.stringify({ vertices: verts }, null, 2);
+      } else if (oldShape === 'Circle') {
+        // Convert circle to hexagon
+        const cx = Number(circleX) || 0, cy = Number(circleY) || 0;
+        const r = Number(circleRadius) || 100;
+        const verts = [];
+        for (let i = 0; i < 6; i++) {
+          const angle = (Math.PI / 3) * i - Math.PI / 2; // start at top
+          verts.push(Math.round(cx + r * Math.cos(angle)), Math.round(cy + r * Math.sin(angle)));
+        }
+        // Close the ring
+        verts.push(verts[0], verts[1]);
+        shapeDataJson = JSON.stringify({ vertices: verts }, null, 2);
       } else {
         shapeDataJson = '';
       }
