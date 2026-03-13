@@ -494,6 +494,13 @@
           latitude = newCoords.Latitude ?? latitude;
         }
       }
+      // Sync name when it changes externally (e.g., MobAreaEditor auto-generated name)
+      if (isMobArea) {
+        const newName = location.Name || '';
+        if (newName !== name) {
+          name = newName;
+        }
+      }
     }
   });
   $effect(() => {
