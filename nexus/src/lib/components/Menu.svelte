@@ -342,11 +342,13 @@
   }
 
   function toggleSection(section: string) {
-    if (expandedSections.has(section)) {
-      expandedSections.delete(section);
+    const next = new Set(expandedSections);
+    if (next.has(section)) {
+      next.delete(section);
     } else {
-      expandedSections.add(section);
+      next.add(section);
     }
+    expandedSections = next;
   }
 
   let impersonateUserId = $state('');
