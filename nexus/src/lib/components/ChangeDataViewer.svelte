@@ -186,7 +186,6 @@
 
   function toggleSection(key) {
     expandedSections[key] = !expandedSections[key];
-    expandedSections = expandedSections;
   }
 
   function formatValue(value) {

@@ -348,7 +348,6 @@
     } else {
       expandedSections.add(section);
     }
-    expandedSections = expandedSections; // Trigger reactivity
   }
 
   let impersonateUserId = $state('');

@@ -473,7 +473,6 @@
           SortOrder: idx
         }))
       }));
-      shop = shop;
       fetchItemDetails();
     }
   }

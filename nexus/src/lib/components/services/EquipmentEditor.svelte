@@ -980,7 +980,6 @@
                         } else {
                           attachments.enabledAbilities = attachments.enabledAbilities.filter(id => id !== uniqueKey);
                         }
-                        attachments = attachments; // Trigger reactivity
                       }}
                     />
                     <span class="ability-name">{effect.Name}</span>

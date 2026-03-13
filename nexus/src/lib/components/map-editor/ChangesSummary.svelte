@@ -130,7 +130,6 @@
   async function submitChange(change) {
     const key = change.key;
     changeStatuses[key] = 'submitting';
-    changeStatuses = changeStatuses;
 
     try {
       const changeType = change.action === 'delete' ? 'Delete' : ((change.original?.Id || dbChangeIdMap.has(change.key)) ? 'Update' : 'Create');
@@ -138,7 +137,6 @@
 
       if (!body) {
         changeStatuses[key] = 'error';
-        changeStatuses = changeStatuses;
         return false;
       }
 
@@ -166,17 +164,14 @@
           onchangeCreated?.({ key, changeId: result.id });
         }
         changeStatuses[key] = 'success';
-        changeStatuses = changeStatuses;
         return true;
       } else {
         changeStatuses[key] = 'error';
-        changeStatuses = changeStatuses;
         addToast(`Failed to submit: ${result?.error || 'Unknown error'}`, { type: 'error' });
         return false;
       }
     } catch (e) {
       changeStatuses[key] = 'error';
-      changeStatuses = changeStatuses;
       addToast(`Submit error: ${e.message}`, { type: 'error' });
       return false;
     }
@@ -212,7 +207,6 @@
 
       const key = change.key;
       changeStatuses[key] = 'submitting';
-      changeStatuses = changeStatuses;
 
       try {
         const changeType = change.action === 'delete' ? 'Delete' : ((change.original?.Id || dbChangeIdMap.has(change.key)) ? 'Update' : 'Create');
@@ -220,7 +214,6 @@
 
         if (!body) {
           changeStatuses[key] = 'error';
-          changeStatuses = changeStatuses;
           continue;
         }
 
@@ -255,7 +248,6 @@
         changeStatuses[key] = 'error';
         addToast(`Apply error: ${e.message}`, { type: 'error' });
       }
-      changeStatuses = changeStatuses;
     }
 
     directApplying = false;
@@ -277,7 +269,6 @@
     if (!confirm('Delete this submitted change? This cannot be undone.')) return;
 
     changeStatuses[key] = 'submitting';
-    changeStatuses = changeStatuses;
 
     try {
       const res = await apiDelete(fetch, `/api/changes/${dbId}`);
@@ -285,20 +276,16 @@
         // 204 No Content → apiDelete returns null on success
         pendingChanges.delete(key);
         dbChangeIdMap.delete(key);
-        pendingChanges = pendingChanges;
         delete changeStatuses[key];
-        changeStatuses = changeStatuses;
         addToast('Change deleted', { type: 'success' });
         ondbChangeDeleted?.({ key, dbId });
         onsubmitted?.();
       } else {
         changeStatuses[key] = 'error';
-        changeStatuses = changeStatuses;
         addToast(`Delete failed: ${res.error}`, { type: 'error' });
       }
     } catch (e) {
       changeStatuses[key] = 'error';
-      changeStatuses = changeStatuses;
       addToast(`Delete error: ${e.message}`, { type: 'error' });
     }
   }

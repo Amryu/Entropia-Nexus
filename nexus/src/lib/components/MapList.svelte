@@ -187,7 +187,6 @@
           // Set selection immediately and update the URL
           const clicked = row.data.payload;
           selected = clicked;
-          locations = locations;
           if (clicked?.Id) {
             navigate(`/maps/${planetSimpleName}/${clicked.Id}`);
           }

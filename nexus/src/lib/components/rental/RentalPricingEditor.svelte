@@ -39,13 +39,11 @@
 
   function handleDiscountMinDaysChange(index, e) {
     discounts[index].minDays = parseInt(e.target.value) || 0;
-    discounts = discounts;
     emitChange();
   }
 
   function handleDiscountPercentChange(index, e) {
     discounts[index].percent = parseFloat(e.target.value) || 0;
-    discounts = discounts;
     emitChange();
   }
 

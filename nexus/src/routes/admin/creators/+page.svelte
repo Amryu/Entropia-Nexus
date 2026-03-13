@@ -39,7 +39,6 @@
       });
       if (!response.ok) throw new Error('Failed to update');
       creator.active = !creator.active;
-      creators = creators;
       addToast(`Creator ${creator.active ? 'activated' : 'deactivated'}`, 'success');
     } catch (err) {
       addToast(err.message, 'error');
@@ -49,17 +48,14 @@
   async function refreshCreator(creator) {
     try {
       creator._refreshing = true;
-      creators = creators;
       const response = await fetch(`/api/admin/creators/${creator.id}/refresh`, { method: 'POST' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Refresh failed');
       Object.assign(creator, data);
       creator._refreshing = false;
-      creators = creators;
       addToast('Creator data refreshed', 'success');
     } catch (err) {
       creator._refreshing = false;
-      creators = creators;
       addToast(err.message, 'error');
     }
   }

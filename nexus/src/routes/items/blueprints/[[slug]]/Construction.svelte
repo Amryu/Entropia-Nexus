@@ -22,22 +22,18 @@
     if (trimmed === '' || isNaN(num)) {
       // Keep the old value if invalid
       markupInputs[index] = String(markup[index]);
-      markupInputs = markupInputs;
       return;
     }
 
     // Clamp to reasonable range
     const clamped = Math.max(0, Math.min(100000, num));
     markup[index] = clamped;
-    markup = markup;
     markupInputs[index] = String(clamped);
-    markupInputs = markupInputs;
   }
 
   // Handle blur to format the value
   function handleMarkupBlur(index) {
     markupInputs[index] = String(markup[index]);
-    markupInputs = markupInputs;
   }
 
 

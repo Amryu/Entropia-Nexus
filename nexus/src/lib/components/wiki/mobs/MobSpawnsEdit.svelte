@@ -399,7 +399,6 @@
   // === Utility ===
   function toggleSpawn(index) {
     expandedSpawns[index] = !expandedSpawns[index];
-    expandedSpawns = expandedSpawns;
   }
 
   function getSpawnLabel(spawn, index) {

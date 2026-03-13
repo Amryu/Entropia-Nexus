@@ -164,43 +164,36 @@
 
   // --- Input clamping (on blur) ---
   function clampMarkup(row) {
-    if (row.markup == null || row.markup === '') { row.markup = row.pctMarkup ? 100 : 0; orderRows = orderRows; return; }
+    if (row.markup == null || row.markup === '') { row.markup = row.pctMarkup ? 100 : 0; return; }
     row.markup = Math.max(row.pctMarkup ? 100 : 0, Number(row.markup) || 0);
-    orderRows = orderRows;
   }
   function clampTT(row) {
     if (row.currentTT == null || row.currentTT === '') return;
     let v = Math.max(0, Number(row.currentTT) || 0);
     if (row.maxTT != null) v = Math.min(v, row.maxTT);
     row.currentTT = Math.round(v * 100) / 100;
-    orderRows = orderRows;
   }
   function clampTier(row) {
     if (row.tier == null || row.tier === '') return;
     row.tier = Math.max(0, Math.min(10, Math.round(Number(row.tier) || 0)));
-    orderRows = orderRows;
   }
   function clampTiR(row) {
     if (row.tir == null || row.tir === '') return;
     const max = row.limited ? 4000 : 200;
     row.tir = Math.max(0, Math.min(max, Math.round(Number(row.tir) || 0)));
-    orderRows = orderRows;
   }
   function clampQR(row) {
     if (row.qr == null || row.qr === '') return;
     row.qr = Math.max(1, Math.min(100, Math.round(Number(row.qr) || 0)));
-    orderRows = orderRows;
   }
   function clampQty(row) {
     if (row.quantity == null) return;
     row.quantity = Math.max(1, Math.round(Number(row.quantity) || 1));
     if (row.allowPartial && row.minQuantity > row.quantity) row.minQuantity = row.quantity;
-    orderRows = orderRows;
   }
   function clampMinQty(row) {
     if (row.minQuantity == null) return;
     row.minQuantity = Math.max(1, Math.min(row.quantity || 1, Math.round(Number(row.minQuantity) || 1)));
-    orderRows = orderRows;
   }
 
   function validateRow(row) {
@@ -338,7 +331,6 @@
           failedCount++;
         }
       }
-      orderRows = orderRows;
 
       if (failedCount > 0) {
         progressError = `${failedCount} order${failedCount > 1 ? 's' : ''} failed. Review errors and retry.`;

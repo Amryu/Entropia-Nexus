@@ -39,15 +39,11 @@
   function toggleAll(val) {
     LOCATION_TYPES.forEach(t => typeFilters[t] = val);
     AREA_TYPES.forEach(t => areaTypeFilters[t] = val);
-    typeFilters = typeFilters;
-    areaTypeFilters = areaTypeFilters;
   }
 
   function setPointsOnly() {
     LOCATION_TYPES.forEach(t => typeFilters[t] = true);
     AREA_TYPES.forEach(t => areaTypeFilters[t] = false);
-    typeFilters = typeFilters;
-    areaTypeFilters = areaTypeFilters;
   }
 
   function setAreasOnly() {
@@ -55,8 +51,6 @@
     AREA_TYPES.forEach(t => areaTypeFilters[t] = true);
     // Keep 'Area' type enabled in location types since areas are stored as Type='Area'
     typeFilters['Estate'] = false;
-    typeFilters = typeFilters;
-    areaTypeFilters = areaTypeFilters;
   }
 
   // Filter locations
@@ -108,7 +102,6 @@
       } else {
         selectedForDeletion.add(loc.Id);
       }
-      selectedForDeletion = selectedForDeletion;
     } else {
       onselect?.(loc.Id);
     }

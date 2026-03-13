@@ -147,7 +147,6 @@
     };
 
     loadouts.push(newLoadout);
-    loadouts = loadouts;
     currentLoadout = newLoadout;
   }
 
@@ -157,7 +156,6 @@
     if (index < 0) return;
 
     loadouts.splice(index, 1);
-    loadouts = loadouts;
     currentLoadout = null;
   }
 

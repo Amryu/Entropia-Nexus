@@ -26,7 +26,7 @@ export async function load({ fetch, params, url, parent }) {
   const isCreateMode = mode === 'create' && !!(session?.user?.verified || session?.user?.grants?.includes('wiki.approve') || session?.user?.administrator);
   const changeId = url.searchParams.get('changeId');
 
-  let locations = await apiCall(fetch, '/locations?Planet=' + planet.Name);
+  let locations = await apiCall(fetch, '/locations?Planet=' + planet.Name) || [];
 
   if (!params.planet && !params.slug) {
     return pageResponse(

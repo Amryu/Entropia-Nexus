@@ -213,20 +213,17 @@
 
   // --- Input clamping ---
   function clampMarkup(row) {
-    if (row.markup == null || row.markup === '') { row.markup = 100; orderRows = orderRows; return; }
+    if (row.markup == null || row.markup === '') { row.markup = 100; return; }
     row.markup = Math.max(100, Number(row.markup) || 100);
-    orderRows = orderRows;
   }
   function clampQty(row) {
     if (row.quantity == null) return;
     row.quantity = Math.max(1, Math.round(Number(row.quantity) || 1));
     if (row.allowPartial && row.minQuantity > row.quantity) row.minQuantity = row.quantity;
-    orderRows = orderRows;
   }
   function clampMinQty(row) {
     if (row.minQuantity == null) return;
     row.minQuantity = Math.max(1, Math.min(row.quantity || 1, Math.round(Number(row.minQuantity) || 1)));
-    orderRows = orderRows;
   }
 
   function validateRow(row) {
@@ -330,7 +327,6 @@
           failedCount++;
         }
       }
-      orderRows = orderRows;
 
       if (failedCount > 0) {
         progressError = `${failedCount} order${failedCount > 1 ? 's' : ''} failed. Review errors and retry.`;

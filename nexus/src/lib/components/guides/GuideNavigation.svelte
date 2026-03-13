@@ -24,8 +24,6 @@
           if ((ch.lessons || []).some(l => l.slug === currentSlug)) {
             expandedCategories.add(cat.id);
             expandedChapters.add(ch.id);
-            expandedCategories = expandedCategories;
-            expandedChapters = expandedChapters;
           }
         }
       }
@@ -38,7 +36,6 @@
     } else {
       expandedCategories.add(catId);
     }
-    expandedCategories = expandedCategories;
   }
 
   function toggleChapter(chId) {
@@ -47,7 +44,6 @@
     } else {
       expandedChapters.add(chId);
     }
-    expandedChapters = expandedChapters;
   }
 </script>
 

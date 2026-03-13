@@ -50,7 +50,6 @@
     if (trimmed === '' || isNaN(num)) return;
     const clamped = Math.max(0, Math.min(100000, num));
     customMarkups[matName] = clamped;
-    customMarkups = customMarkups;
     debounceSaveMarkups();
   }
 

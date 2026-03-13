@@ -83,8 +83,8 @@
   let taxRateMining = $state(null);
   let taxRateShops = $state(null);
 
-  // Shape data cache — preserves shape data when swapping types
-  let _shapeCache = $state({ Circle: null, Rectangle: null, Polygon: null });
+  // Shape data cache — preserves shape data when swapping types (imperative, not reactive)
+  let _shapeCache = { Circle: null, Rectangle: null, Polygon: null };
 
   // Related entities
   let relatedExpanded = $state(false);
@@ -134,19 +134,20 @@
   }
 
   // Track which location is loaded to avoid resetting form when same location re-renders
-  let loadedLocationId = $state(null);
-  let loadedDrawnShapeRef = $state(null);
-  let _lastShapeDataRef = $state(null);
-  let _lastCoordsRef = $state(null);
-  let _populatingForm = $state(false); // suppress auto-save during programmatic form population
+  // These are imperative guards/caches — not reactive (no $state) to avoid cross-effect cascading
+  let loadedLocationId = null;
+  let loadedDrawnShapeRef = null;
+  let _lastShapeDataRef = null;
+  let _lastCoordsRef = null;
+  let _populatingForm = false;
 
 
 
 
 
 
-  // Track previous shape for swap caching
-  let _prevShape = $state(null);
+  // Track previous shape for swap caching (imperative, not reactive)
+  let _prevShape = null;
 
   function handleShapeSwap(oldShape, newShape) {
     // Save current shape data to cache
@@ -220,10 +221,10 @@
   }
 
   // Dispatch preview events when form fields change (debounced)
-  let previewTimeout = $state();
+  let previewTimeout;
 
   // Auto-save: dispatch edit when form fields change via user interaction
-  let autoSaveTimer = $state();
+  let autoSaveTimer;
 
   function scheduleAutoSave() {
     if (readOnly || isLocked || _populatingForm) return;
@@ -413,7 +414,7 @@
       setTimeout(() => { _populatingForm = false; }, 0);
     }
   });
-  // Clear tracking when deselected
+  // Clear tracking when deselected (guard to avoid redundant writes)
   $effect(() => {
     if (!location && !isNew) {
       loadedLocationId = null;
@@ -503,11 +504,12 @@
     const _lat = latitude;
     const _locType = locationType;
     const _active = location || isNew;
-    const _populating = _populatingForm;
+
+    // Skip preview during programmatic form population
+    if (_populatingForm) return;
 
     clearTimeout(previewTimeout);
     previewTimeout = setTimeout(() => {
-      if (_populating) return;
       if (!_active) {
         onpreview?.(null);
         return;

@@ -111,7 +111,6 @@
     } else {
       expandedPaths.add(path);
     }
-    expandedPaths = expandedPaths;
     expandedVersion++;
   }
 

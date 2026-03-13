@@ -427,7 +427,6 @@
         return;
       }
       userMarkups.delete(id);
-      userMarkups = userMarkups;
     } catch (err) {
       addToast('Failed to delete markup', 'error');
     }
@@ -458,7 +457,6 @@
         return;
       }
       userMarkups.set(id, val);
-      userMarkups = userMarkups;
     } catch (err) {
       addToast('Failed to save markup', 'error');
     }
@@ -477,14 +475,12 @@
     } else {
       selectedItems.add(id);
     }
-    selectedItems = selectedItems; // trigger reactivity
   }
 
   function selectAllVisible() {
     for (const item of filteredItems) {
       if (item.item_id > 0) selectedItems.add(item.item_id);
     }
-    selectedItems = selectedItems;
   }
 
   function clearSelection() {
@@ -517,7 +513,6 @@
       for (const { item_id, markup } of items) {
         userMarkups.set(item_id, markup);
       }
-      userMarkups = userMarkups;
       showBulkMarkupDialog = false;
       selectedItems = new Set();
       addToast(`Markup set for ${items.length} items`, 'success');
@@ -551,7 +546,6 @@
         return;
       }
       containerNames.set(path, name);
-      containerNames = containerNames;
     } catch {
       addToast('Failed to rename container', 'error');
     }
@@ -565,7 +559,6 @@
         body: JSON.stringify({ container_path: path }),
       });
       containerNames.delete(path);
-      containerNames = containerNames;
     } catch {
       // Non-critical — silently handle
     }
@@ -1115,7 +1108,6 @@
     onupdated={(data) => {
       const idx = inventoryItems.findIndex(i => i.id === data.id);
       if (idx >= 0) inventoryItems[idx] = { ...inventoryItems[idx], ...data };
-      inventoryItems = inventoryItems;
     }}
   />
 {/if}

@@ -82,12 +82,10 @@
     const { allowed } = canAddItem(invItem);
     if (!allowed) return;
     massSellList.set(invItem.id, { invItem, count: 1 });
-    massSellList = massSellList; // trigger reactivity
   }
 
   function removeFromMassSell(invItemId) {
     massSellList.delete(invItemId);
-    massSellList = massSellList;
   }
 
   function adjustMassSellCount(invItem, delta) {
@@ -100,7 +98,6 @@
     }
     if (delta > 0 && !canAddItem(invItem).allowed) return;
     entry.count = newCount;
-    massSellList = massSellList;
   }
 
   function openMassSellDialog() {
@@ -275,7 +272,6 @@
       // Also remove from mass sell list if present
       if (massSellList.has(item.id)) {
         massSellList.delete(item.id);
-        massSellList = massSellList;
       }
     } catch (e) {
       error = e.message;

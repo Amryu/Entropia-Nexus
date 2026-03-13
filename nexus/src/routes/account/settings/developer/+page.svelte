@@ -106,7 +106,6 @@
   function toggleScope(clientId, scopeKey) {
     if (!selectedScopes[clientId]) selectedScopes[clientId] = {};
     selectedScopes[clientId][scopeKey] = !selectedScopes[clientId][scopeKey];
-    selectedScopes = selectedScopes; // trigger reactivity
   }
 
   function getAuthUrl(client, scopeState, redirectState) {

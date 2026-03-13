@@ -301,7 +301,6 @@
   function toggleMaturity(mat) {
     const uid = getUid(mat);
     expandedMaturities[uid] = !expandedMaturities[uid];
-    expandedMaturities = expandedMaturities; // Trigger reactivity
   }
 
   // Format maturity name for header

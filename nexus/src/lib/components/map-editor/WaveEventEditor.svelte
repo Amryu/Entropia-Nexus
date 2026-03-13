@@ -68,7 +68,6 @@
     } catch {
       // leave empty
     }
-    mobMaturityCache = mobMaturityCache; // trigger reactivity
   }
 
   // Preload maturities for all mobs referenced in current waves
@@ -150,7 +149,6 @@
       i === waveIdx ? { ...w, MobMaturities: [...w.MobMaturities, matId] } : w
     );
     waveSearchQueries[waveIdx] = '';
-    waveSearchQueries = waveSearchQueries;
     maturitySearchResults = [];
     maturitySearchWaveIdx = null;
   }

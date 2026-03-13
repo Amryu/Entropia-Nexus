@@ -147,7 +147,6 @@
 
   function toggleUnlock(index) {
     expandedUnlock[index] = !expandedUnlock[index];
-    expandedUnlock = expandedUnlock;
   }
 </script>
 

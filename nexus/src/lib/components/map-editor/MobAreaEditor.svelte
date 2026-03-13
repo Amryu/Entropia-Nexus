@@ -1,5 +1,6 @@
 <script>
   // @ts-nocheck
+  import { untrack } from 'svelte';
   import { generateMobAreaName } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import { clickable } from '$lib/actions/clickable.js';
@@ -272,15 +273,18 @@
     oncancel?.();
   }
 
-  // If editing an existing mob area, populate from pending changes or spawn data
+  // If editing an existing mob area, populate from pending changes or spawn data.
+  // Use untrack for the body so deep property reads (location.Maturities, mobs.find, etc.)
+  // don't create reactive dependencies that would cause an infinite loop.
   $effect(() => {
-    if (location && !isNew && mobs.length) {
+    if (!location || isNew || !mobs.length) return;
+    untrack(() => {
       if (pendingMobData) {
         initFromPending();
       } else {
         initFromExisting();
       }
-    }
+    });
   });
   // Search mobs
   $effect(() => {

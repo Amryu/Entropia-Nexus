@@ -117,7 +117,6 @@
     } else {
       sortState[type] = { key, dir: 'asc' };
     }
-    sortState = sortState;
   }
 
   function getSortIndicator(type, key) {
@@ -149,7 +148,6 @@
 
   function toggleGroup(type) {
     collapsedGroups[type] = !collapsedGroups[type];
-    collapsedGroups = collapsedGroups;
   }
 
   function getLink(result) {

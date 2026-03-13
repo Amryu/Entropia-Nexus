@@ -1,6 +1,6 @@
 <script>
   // @ts-nocheck
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, getShapeEdges, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
@@ -42,16 +42,17 @@
   } = $props();
 
   let mapContainer = $state();
-  let map = $state();
+  let mapReady = $state(false); // Single reactive signal — avoids deep proxying Leaflet objects
+  let map;
   let imageOverlay;
   let layerGroup;
   let dbChangesLayerGroup;
   let drawControl;
-  let transforms = $state(null);
+  let transforms = null;
   let imgWidth = 0;
   let imgHeight = 0;
   let layerById = new Map();
-  let L = $state();
+  let L;
 
   // Snap state
   let snapEnabled = $state(true);
@@ -59,9 +60,9 @@
   let snapGap = $state(20);
   let snapGuideLayerGroup;
   let gridOverlayGroup;
-  let _cachedGridLines = $state(null);
-  let _activeVertexSnapData = $state(null); // { vertices, gridLines, gap, threshold } for vertex editing
-  let _editingLoc = $state(null); // Location object being edited (for reactive snap refresh)
+  let _cachedGridLines = null;
+  let _activeVertexSnapData = null;
+  let _editingLoc = null; // Location object being edited (for snap refresh)
 
   // Preview and editing state
   let previewLayer = null;
@@ -70,8 +71,8 @@
   let editableOverlay = null;
   let queuedPanTarget = null;
   let _clickedLayer = false;
-  let _editingActive = $state(false);
-  let _rebuildDeferred = $state(false); // true when rebuildLayers was skipped due to _editingActive
+  let _editingActive = false;
+  let _rebuildDeferred = false; // true when rebuildLayers was skipped due to _editingActive
   let _editDebounceTimer = null;
 
   // Context menu state
@@ -272,6 +273,7 @@
 
   onDestroy(() => {
     if (_editDebounceTimer) clearTimeout(_editDebounceTimer);
+    if (_rebuildRafId) cancelAnimationFrame(_rebuildRafId);
     if (map) map.remove();
   });
 
@@ -300,6 +302,7 @@
       map.on('zoomend', rebuildGridOverlay);
       map.on('moveend', rebuildGridOverlay);
 
+      mapReady = true;
       rebuildLayers();
       rebuildGridOverlay();
 
@@ -465,16 +468,22 @@
   function createLeafletShape(shape, data, style) {
     if (!data || !transforms || !L) return null;
     if (shape === 'Circle' && data.x != null) {
-      const [lat, lng] = transforms.entropiaToLeaflet(data.x, data.y);
-      return L.circle([lat, lng], { ...style, radius: (data.radius || 0) / transforms.ratio });
+      const x = Number(data.x), y = Number(data.y), r = Number(data.radius);
+      if (!isFinite(x) || !isFinite(y) || !isFinite(r) || r <= 0) return null;
+      const [lat, lng] = transforms.entropiaToLeaflet(x, y);
+      return L.circle([lat, lng], { ...style, radius: r / transforms.ratio });
     } else if (shape === 'Rectangle' && data.x != null) {
-      const [lat1, lng1] = transforms.entropiaToLeaflet(data.x, data.y);
-      const [lat2, lng2] = transforms.entropiaToLeaflet(data.x + (data.width || 0), data.y + (data.height || 0));
+      const x = Number(data.x), y = Number(data.y), w = Number(data.width), h = Number(data.height);
+      if (!isFinite(x) || !isFinite(y) || !isFinite(w) || !isFinite(h)) return null;
+      const [lat1, lng1] = transforms.entropiaToLeaflet(x, y);
+      const [lat2, lng2] = transforms.entropiaToLeaflet(x + w, y + h);
       return L.rectangle([[lat1, lng1], [lat2, lng2]], style);
     } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
       const latLngs = [];
       for (let i = 0; i < data.vertices.length; i += 2) {
-        const [lat, lng] = transforms.entropiaToLeaflet(data.vertices[i], data.vertices[i + 1]);
+        const vx = Number(data.vertices[i]), vy = Number(data.vertices[i + 1]);
+        if (!isFinite(vx) || !isFinite(vy)) return null;
+        const [lat, lng] = transforms.entropiaToLeaflet(vx, vy);
         latLngs.push([lat, lng]);
       }
       return L.polygon(latLngs, style);
@@ -1470,29 +1479,35 @@
       }
     }
   }
+  let _rebuildRafId = null;
   $effect(() => {
-    if (map && locations && pendingChanges !== undefined) {
-      if (!_editingActive) {
-        rebuildLayers();
-      } else {
-        _rebuildDeferred = true;
-      }
+    if (mapReady && locations && pendingChanges !== undefined) {
+      // Debounce with RAF to coalesce rapid mutations into one rebuild per frame
+      if (_rebuildRafId) cancelAnimationFrame(_rebuildRafId);
+      _rebuildRafId = requestAnimationFrame(() => {
+        _rebuildRafId = null;
+        if (!_editingActive) {
+          rebuildLayers();
+        } else {
+          _rebuildDeferred = true;
+        }
+      });
     }
   });
   $effect(() => {
-    if (map && dbPendingChanges && transforms) rebuildDbChangesOverlay();
+    if (mapReady && dbPendingChanges) rebuildDbChangesOverlay();
   });
   $effect(() => {
-    if (map && filteredLocationIds !== undefined) updateVisibility();
+    if (mapReady && filteredLocationIds !== undefined) updateVisibility();
   });
   $effect(() => {
-    if (map && selectedId !== undefined) updateSelection();
+    if (mapReady && selectedId !== undefined) updateSelection();
   });
   $effect(() => {
-    if (map && editMode !== undefined) toggleDrawControl();
+    if (mapReady && editMode !== undefined) toggleDrawControl();
   });
   $effect(() => {
-    if (map && L && transforms) updatePreview(previewShape);
+    if (mapReady) updatePreview(previewShape);
   });
   // Refresh vertex snap data reactively when snap settings change during editing
   $effect(() => {

@@ -147,7 +147,6 @@
         allMarkups[selectedTier] = [...DEFAULT_MARKUPS];
       }
       allMarkups[selectedTier][idx] = num;
-      allMarkups = allMarkups;
       debounceSaveMarkups();
     }
   }

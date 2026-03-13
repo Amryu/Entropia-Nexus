@@ -197,7 +197,6 @@
           Description: _newEffect.Description
         }
       };
-      localAvailableEffects = localAvailableEffects;
     }
 
     updateField(fieldName, newEffects);

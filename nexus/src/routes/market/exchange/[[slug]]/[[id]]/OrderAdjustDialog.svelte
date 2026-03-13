@@ -71,7 +71,6 @@
 
   async function adjustOrder(disc) {
     disc._processing = true;
-    discrepancies = discrepancies;
     try {
       const newQty = disc.invQty;
       if (newQty <= 0) {
@@ -95,13 +94,11 @@
       discrepancies = discrepancies.filter(d => d !== disc);
     } catch (e) {
       disc._processing = false;
-      discrepancies = discrepancies;
     }
   }
 
   async function cancelOrder(disc) {
     disc._processing = true;
-    discrepancies = discrepancies;
     try {
       const res = await fetch(`/api/market/exchange/orders/${disc.order.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to cancel order');
@@ -110,7 +107,6 @@
       discrepancies = discrepancies.filter(d => d !== disc);
     } catch (e) {
       disc._processing = false;
-      discrepancies = discrepancies;
     }
   }
 

@@ -291,7 +291,6 @@
     } else {
       expandedHours.add(hour);
     }
-    expandedHours = expandedHours;
   }
 
   // For display, check if any slot in an hour is available
