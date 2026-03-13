@@ -912,7 +912,7 @@
 
         <!-- Market Prices Section -->
         <MarketPriceSection
-          itemId={activeEntity?.Id}
+          itemId={activeEntity?.ItemId}
           itemName={activeEntity?.Name}
           bind:expanded={panelStates.marketPrices}
           ontoggle={savePanelStates}

@@ -422,7 +422,7 @@
         <!-- Market Prices Section -->
         {#if !data.isCreateMode}
           <MarketPriceSection
-            itemId={activeMaterial?.Id}
+            itemId={activeMaterial?.ItemId}
             itemName={activeMaterial?.Name}
             bind:expanded={panelStates.marketPrices}
             ontoggle={savePanelStates}

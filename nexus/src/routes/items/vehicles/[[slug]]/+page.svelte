@@ -690,7 +690,7 @@
         <!-- Market Prices Section -->
         {#if !isCreateMode}
           <MarketPriceSection
-            itemId={activeVehicle?.Id}
+            itemId={activeVehicle?.ItemId}
             itemName={activeVehicle?.Name}
             bind:expanded={panelStates.marketPrices}
             ontoggle={savePanelStates}

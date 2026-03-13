@@ -1358,7 +1358,7 @@
 
         <!-- Market Prices Section -->
         <MarketPriceSection
-          itemId={activeWeapon?.Id}
+          itemId={activeWeapon?.ItemId}
           itemName={activeWeapon?.Name}
           entityType="Weapon"
           bind:expanded={panelStates.marketPrices}

@@ -1200,7 +1200,7 @@
 
         <!-- Market Prices Section -->
         <MarketPriceSection
-          itemId={activeEntity?.Id}
+          itemId={activeEntity?.ItemId}
           itemName={activeEntity?.Name}
           entityType={getEntityType(additional.type)}
           bind:expanded={panelStates.marketPrices}

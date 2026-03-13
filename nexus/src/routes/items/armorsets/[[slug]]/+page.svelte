@@ -713,7 +713,7 @@
 
         <!-- Market Prices Section -->
         <MarketPriceSection
-          itemId={activeEntity?.Id}
+          itemId={activeEntity?.ItemId}
           itemName={activeEntity?.Name}
           entityType="ArmorSet"
           pieces={flattenArmorPieces(activeEntity?.Armors)}

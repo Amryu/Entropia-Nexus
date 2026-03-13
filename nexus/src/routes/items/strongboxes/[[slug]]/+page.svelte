@@ -521,7 +521,7 @@
         <!-- Market Prices Section -->
         {#if !data.isCreateMode}
           <MarketPriceSection
-            itemId={activeStrongbox?.Id}
+            itemId={activeStrongbox?.ItemId}
             itemName={activeStrongbox?.Name}
             bind:expanded={panelStates.marketPrices}
             ontoggle={savePanelStates}

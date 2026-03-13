@@ -566,7 +566,7 @@
         <!-- Market Prices Section -->
         {#if !isCreateMode}
           <MarketPriceSection
-            itemId={activeClothing?.Id}
+            itemId={activeClothing?.ItemId}
             itemName={activeClothing?.Name}
             bind:expanded={panelStates.marketPrices}
             ontoggle={savePanelStates}

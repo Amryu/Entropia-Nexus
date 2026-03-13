@@ -1021,7 +1021,7 @@
 
         <!-- Market Prices Section -->
         <MarketPriceSection
-          itemId={activeEntity?.Id}
+          itemId={activeEntity?.ItemId}
           itemName={activeEntity?.Name}
           entityType="MedicalTool"
           bind:expanded={panelStates.marketPrices}
