@@ -368,6 +368,7 @@ function validateChange(body, entity) {
   // Use removeAdditional: true (not 'all') to preserve nested properties when additionalProperties: true
   // 'all' removes properties even when additionalProperties: true, which breaks Payload fields
   let validator = getValidator(entity, true);
+  if (!validator) return getResponse({ error: `No validation schema found for entity type "${entity}".` }, 400);
   let valid = validator(body);
 
   if (!valid) {

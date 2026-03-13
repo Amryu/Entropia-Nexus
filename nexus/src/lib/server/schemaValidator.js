@@ -6,12 +6,14 @@ import { EntitySchemas } from "$lib/common/EntitySchemas.js";
 const shared = [EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tiers];
 
 /**
- * Entity type names that differ between the change_entity enum
- * (used by the changes system and audit endpoint) and the EntitySchemas keys.
+ * Maps entity type names to their EntitySchemas keys.
+ * Includes legacy compatibility mappings for old change records.
  */
 const ENTITY_TYPE_MAP = {
   TeleportChip: 'TeleportationChip',
   CreatureControlCapsule: 'Capsule',
+  Area: 'Location',
+  Apartment: 'Location',
 };
 
 /**

@@ -349,18 +349,23 @@ async function refreshSummaryTables() {
       await client.query(
         `INSERT INTO globals_target_agg
            (period, target_name, mob_id, event_count, sum_value, max_value, primary_type)
-         SELECT $1, target_name,
-                MAX(mob_id),
-                SUM(event_count)::integer,
-                SUM(sum_value),
-                MAX(max_value),
-                (SELECT r2.global_type FROM globals_rollup_target r2
-                 WHERE r2.granularity = $2${periodFilter}
-                   AND r2.target_name = globals_rollup_target.target_name
-                 GROUP BY r2.global_type ORDER BY SUM(r2.event_count) DESC LIMIT 1)
-         FROM globals_rollup_target
-         WHERE granularity = $2${periodFilter}
-         GROUP BY target_name
+         WITH type_ranks AS (
+           SELECT target_name, global_type, SUM(event_count) AS type_total,
+                  ROW_NUMBER() OVER (PARTITION BY target_name ORDER BY SUM(event_count) DESC) AS rn
+           FROM globals_rollup_target
+           WHERE granularity = $2${periodFilter}
+           GROUP BY target_name, global_type
+         )
+         SELECT $1, r.target_name,
+                MAX(r.mob_id),
+                SUM(r.event_count)::integer,
+                SUM(r.sum_value),
+                MAX(r.max_value),
+                MAX(tr.global_type)
+         FROM globals_rollup_target r
+         LEFT JOIN type_ranks tr ON tr.target_name = r.target_name AND tr.rn = 1
+         WHERE r.granularity = $2${periodFilter}
+         GROUP BY r.target_name
          ON CONFLICT (period, target_name) DO UPDATE SET
            mob_id = EXCLUDED.mob_id,
            event_count = EXCLUDED.event_count,
