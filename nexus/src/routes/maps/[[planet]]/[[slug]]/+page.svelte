@@ -3,7 +3,7 @@
   import '$lib/style.css';
 
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
+  import { goto, beforeNavigate } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
   import { loading } from '../../../../stores';
   import { apiCall, getErrorMessage, getLatestPendingUpdate } from '$lib/util';
@@ -113,14 +113,18 @@
     }
   }
 
-  function deactivateEditMode() {
-    // Don't count DB-seeded changes (unmodified) or the seeded Create change as unsaved local changes
+  /** Check if there are real unsaved local changes in the editor */
+  function hasUnsavedEditorChanges() {
+    if (!leafletEditMode) return false;
     const realChangeCount = Array.from(editorPendingChanges.values()).filter(c => !c._dbSeeded).length;
-    const hasUnsavedChanges = seededChangeId
+    return seededChangeId
       ? realChangeCount > 1 || (realChangeCount === 1 && !editorPendingChanges.has(-seededChangeId))
       : realChangeCount > 0;
-    if (hasUnsavedChanges) {
-      if (!confirm('You have unsaved changes. Exit edit mode?')) return;
+  }
+
+  function deactivateEditMode() {
+    if (hasUnsavedEditorChanges()) {
+      if (!confirm('You have unsaved changes. Discard and exit edit mode?')) return;
     }
     leafletEditMode = false;
     editorPendingChanges = new Map();
@@ -129,6 +133,64 @@
     manualEditFocus = null;
     manualEditFocusKey = null;
   }
+
+  // Guard against navigating away with unsaved changes (in-app navigation)
+  beforeNavigate(({ cancel, to }) => {
+    if (!leafletEditMode) return;
+
+    const isSameRoute = to?.route?.id === $page.route.id;
+    const targetPlanet = to?.params?.planet;
+    const currentPlanetSlug = $page.params.planet;
+    const isPlanetChange = isSameRoute && targetPlanet && targetPlanet !== currentPlanetSlug;
+
+    if (isPlanetChange) {
+      if (hasUnsavedEditorChanges()) {
+        if (!confirm('You have unsaved changes. Discard and switch planet?')) {
+          cancel();
+          return;
+        }
+      }
+      // Reset editor state — new planet data will load via SvelteKit
+      editorPendingChanges = new Map();
+      editorDbChangeIdMap = new Map();
+      editorRightPanel = 'editor';
+      seededChangeId = null;
+      manualEditFocus = null;
+      manualEditFocusKey = null;
+      return;
+    }
+
+    if (isSameRoute) return; // same planet, same route — allow
+
+    if (hasUnsavedEditorChanges()) {
+      if (!confirm('You have unsaved map editor changes. Discard and leave this page?')) {
+        cancel();
+      }
+    }
+  });
+
+  /** Switch planet while in edit mode — prompt if unsaved changes */
+  function switchEditorPlanet(slug) {
+    if (!slug) return;
+    const currentSlugNorm = normalizePlanetSlug(currentPlanet?.Name);
+    if (slug === currentSlugNorm) return;
+    if (hasUnsavedEditorChanges()) {
+      if (!confirm('You have unsaved changes. Discard and switch planet?')) return;
+    }
+    // Reset editor state before navigating
+    editorPendingChanges = new Map();
+    editorDbChangeIdMap = new Map();
+    editorRightPanel = 'editor';
+    seededChangeId = null;
+    manualEditFocus = null;
+    manualEditFocusKey = null;
+    goto(`/maps/${slug}?mode=edit`);
+  }
+
+  // Build flat list of all planets for the editor dropdown
+  const allMapPlanets = Object.entries(planetGroups).flatMap(([group, planets]) =>
+    planets.map(p => ({ ...p, group: group === 'NextIsland' ? 'Next Island' : group }))
+  );
 
   const mainPlanets = getMainPlanetNames();
 
@@ -1074,14 +1136,31 @@
   <!-- Leaflet Editor Layout (replaces canvas view) -->
   {#if leafletEditMode && MapEditorWorkspace}
     <div class="leaflet-editor-overlay">
+      {@const isSubEditor = editorRightPanel === 'mobEditor' || editorRightPanel === 'waveEditor'}
       <div class="editor-toolbar">
-        <span class="editor-toolbar-label">{currentPlanet?.Name || 'Map'} — Edit Mode</span>
+        <div class="editor-toolbar-left">
+          <select
+            class="editor-planet-select"
+            value={normalizePlanetSlug(currentPlanet?.Name)}
+            onchange={(e) => switchEditorPlanet(e.target.value)}
+          >
+            {#each allMapPlanets as planet}
+              <option value={planet._type}>{planet.Name}</option>
+            {/each}
+          </select>
+          <span class="editor-toolbar-mode">Edit Mode</span>
+        </div>
 
         <div class="editor-toolbar-right">
           <button
             class="editor-toolbar-btn"
             class:active={editorRightPanel === 'changes'}
-            onclick={() => editorRightPanel = editorRightPanel === 'changes' ? 'editor' : 'changes'}
+            disabled={isSubEditor}
+            title={isSubEditor ? 'Save or cancel the current editor first' : ''}
+            onclick={() => {
+              if (isSubEditor) return;
+              editorRightPanel = editorRightPanel === 'changes' ? 'editor' : 'changes';
+            }}
           >
             Changes
             {#if editorChangeCount > 0}
@@ -1136,6 +1215,13 @@
     </div>
   {/if}
 </div>
+
+<svelte:window onbeforeunload={(e) => {
+  if (hasUnsavedEditorChanges()) {
+    e.preventDefault();
+    return '';
+  }
+}} />
 
 <style>
   .map-page {
@@ -1928,10 +2014,28 @@
     flex-shrink: 0;
   }
 
-  .editor-toolbar-label {
+  .editor-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .editor-planet-select {
+    padding: 4px 8px;
     font-size: 13px;
     font-weight: 600;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
     color: var(--text-color);
+    cursor: pointer;
+  }
+  .editor-planet-select:focus { outline: none; border-color: var(--accent-color); }
+
+  .editor-toolbar-mode {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
   }
 
   .editor-toolbar-right {
