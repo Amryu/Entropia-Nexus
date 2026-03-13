@@ -1,4 +1,3 @@
-<!-- @migration-task Error while migrating Svelte code: This migration would change the name of a slot (header-actions to header_actions) making the component unusable -->
 <!--
   @component WikiPage
   Main responsive container for wiki entity pages.
@@ -6,7 +5,6 @@
   Header is inline within content (no fixed bar) to avoid scroll issues.
 -->
 <script>
-  // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { page, navigating } from '$app/stores';
   import { goto, afterNavigate, beforeNavigate } from '$app/navigation';
@@ -16,107 +14,110 @@
   import MobileDrawer from './MobileDrawer.svelte';
   import EditActionBar from './EditActionBar.svelte';
 
-  /** @type {string} Page title shown in header */
-  export let title = '';
+  /**
+   * @typedef {Object} Props
+   * @property {string} [title] Page title shown in header
+   * @property {Array} [breadcrumbs] Breadcrumb items [{label, href}, ...]
+   * @property {object|null} [entity] Current entity being viewed/edited
+   * @property {string} [basePath] Base path for navigation links
+   * @property {Array} [navItems] Items for navigation list
+   * @property {object|null} [user] Current user
+   * @property {boolean} [editable] Whether the page supports editing
+   * @property {boolean} [canEdit] Whether the current user can edit
+   * @property {Array} [navFilters] Filter options for navigation
+   * @property {Function|null} [onSave] Custom save handler
+   * @property {Function|null} [onSubmit] Custom submit handler
+   * @property {Array|null} [navTableColumns] Custom table columns for navigation sidebar
+   * @property {Object|null} [navColumnFormatters] Custom column formatters for navigation sidebar
+   * @property {Array|null} [navFullWidthColumns] Additional table columns for full-width mode
+   * @property {Array|null} [navAllAvailableColumns] All possible columns for column configuration
+   * @property {string} [navPageTypeId] Unique ID for localStorage column preferences key
+   * @property {Function|null} [navGetItemHref] Custom function to generate item href in navigation
+   * @property {boolean} [canCreateNew] Whether the user can create new entities
+   * @property {Array<{label: string, href: string}>|null} [createCategories] Category options for create dropdown
+   * @property {Array} [userPendingCreates] User's pending create changes
+   * @property {Array} [userPendingUpdates] User's pending update changes
+   * @property {string} [pageClass] Optional CSS class added to the root element
+   * @property {boolean} [editDepsLoading] Whether edit dependencies are currently being loaded
+   * @property {boolean} [drawerOpen] Mobile drawer state (bindable)
+   * @property {boolean} [sidebarExpanded] Sidebar expanded state (bindable)
+   * @property {boolean} [sidebarFullWidth] Sidebar full-width state (bindable)
+   * @property {import('svelte').Snippet<[{entity: object|null, user: object|null, isMobile: boolean, openDrawer: Function}]>} [children] Default content snippet
+   * @property {import('svelte').Snippet<[{isMobile: boolean}]>} [sidebar] Sidebar snippet
+   * @property {import('svelte').Snippet} [headerActions] Header actions snippet (replaces default edit/create buttons)
+   * @property {import('svelte').Snippet} [afterHeader] After-header snippet
+   */
 
-  /** @type {Array} Breadcrumb items [{label, href}, ...] */
-  export let breadcrumbs = [];
-
-  /** @type {object|null} Current entity being viewed/edited */
-  export let entity = null;
-
-  /** @type {string} Base path for navigation links */
-  export let basePath = '';
-
-  /** @type {Array} Items for navigation list */
-  export let navItems = [];
-
-  /** @type {object|null} Current user */
-  export let user = null;
-
-  /** @type {boolean} Whether the page supports editing (shows login/verify button if not authenticated) */
-  export let editable = false;
-
-  /** @type {boolean} Whether the current user can edit (has permission) */
-  export let canEdit = false;
-
-  /** @type {Array} Filter options for navigation */
-  export let navFilters = [];
-
-  /** @type {Function|null} Custom save handler */
-  export let onSave = null;
-
-  /** @type {Function|null} Custom submit handler */
-  export let onSubmit = null;
-
-  /** @type {Array|null} Custom table columns for navigation sidebar */
-  export let navTableColumns = null;
-
-  /** @type {Object|null} Custom column formatters for navigation sidebar */
-  export let navColumnFormatters = null;
-
-  /** @type {Array|null} Additional table columns for full-width mode (superset of navTableColumns) */
-  export let navFullWidthColumns = null;
-
-  /** @type {Array|null} All possible columns for column configuration */
-  export let navAllAvailableColumns = null;
-
-  /** @type {string} Unique ID for localStorage column preferences key */
-  export let navPageTypeId = '';
-
-  /** @type {Function|null} Custom function to generate item href in navigation */
-  export let navGetItemHref = null;
-
-  /** @type {boolean} Whether the user can create new entities (may be limited) */
-  export let canCreateNew = true;
-
-  /** @type {Array<{label: string, href: string}>|null} Category options for create dropdown (multi-type pages) */
-  export let createCategories = null;
-
-  /** @type {Array} User's pending create changes to show at top of sidebar */
-  export let userPendingCreates = [];
-
-  /** @type {Array} User's pending update changes to highlight in sidebar */
-  export let userPendingUpdates = [];
-
-  /** @type {string} Optional CSS class added to the root .wiki-page element for scoping */
-  export let pageClass = '';
-
-  /** @type {boolean} Whether edit dependencies are currently being loaded */
-  export let editDepsLoading = false;
-
-  // Mobile drawer state - can be bound from parent
-  export let drawerOpen = false;
-
-  // Sidebar expanded state (for table view) - exported for pages with custom sidebars
-  export let sidebarExpanded = false;
-
-  // Sidebar full-width state (takes entire page, hides content) - exported for pages with custom sidebars
-  export let sidebarFullWidth = false;
+  /** @type {Props} */
+  let {
+    title = '',
+    breadcrumbs = [],
+    entity = null,
+    basePath = '',
+    navItems = [],
+    user = null,
+    editable = false,
+    canEdit = false,
+    navFilters = [],
+    onSave = null,
+    onSubmit = null,
+    navTableColumns = null,
+    navColumnFormatters = null,
+    navFullWidthColumns = null,
+    navAllAvailableColumns = null,
+    navPageTypeId = '',
+    navGetItemHref = null,
+    canCreateNew = true,
+    createCategories = null,
+    userPendingCreates = [],
+    userPendingUpdates = [],
+    pageClass = '',
+    editDepsLoading = false,
+    drawerOpen = $bindable(false),
+    sidebarExpanded = $bindable(false),
+    sidebarFullWidth = $bindable(false),
+    children,
+    sidebar,
+    headerActions,
+    afterHeader,
+  } = $props();
 
   // Auth help dialog state
-  let showAuthDialog = false;
+  let showAuthDialog = $state(false);
 
   // Screen size tracking - initialize from server-detected viewport to avoid layout flash
   // The store is set by the layout based on User-Agent detection or stored cookie
   // This will be updated immediately on mount with actual window width
   // IMPORTANT: Breakpoints aligned with global 900px mobile breakpoint (see style.css)
-  let windowWidth = $initialViewportWidth;
-  let windowHeight = 0;
-  let isMobile = false;
-  let isTablet = false;
-  let mounted = false;
-  let hasCustomSidebar = false;
+  let windowWidth = $state($initialViewportWidth);
+  let windowHeight = $state(0);
+  let mounted = $state(false);
+
+  // Create category dropdown state (for multi-type pages)
+  let createDropdownOpen = $state(false);
+
+  // Navigation guard: warn about unsaved changes
+  let skipNavGuard = $state(false);
 
   // Portrait orientation check (height > width)
-  $: isPortrait = windowHeight > windowWidth;
+  let isPortrait = $derived(windowHeight > windowWidth);
 
   // Mobile: < 900px (sidebar hidden, mobile drawer)
   // Tablet: 900px - 1399px (sidebar visible, infobox stacks)
   // Desktop: >= 1400px (full layout with floating infobox)
-  $: isMobile = windowWidth < 900;
-  $: isTablet = !isMobile && windowWidth < 1400;
-  $: hasCustomSidebar = !!$$slots.sidebar;
+  let isMobile = $derived(windowWidth < 900);
+  let isTablet = $derived(!isMobile && windowWidth < 1400);
+  let hasCustomSidebar = $derived(!!sidebar);
+
+  // Determine if user needs to authenticate or verify
+  let needsAuth = $derived(editable && !user);
+  let needsVerification = $derived(editable && user && !user.verified);
+
+  // Login URL with redirect back to current page
+  let loginUrl = $derived(`/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
+
+  // Get current changeId from URL (for highlighting pending creates in sidebar)
+  let currentChangeId = $derived($page.url.searchParams.get('changeId'));
 
   function toggleDrawer() {
     drawerOpen = !drawerOpen;
@@ -200,9 +201,6 @@
     }
   }
 
-  // Create category dropdown state (for multi-type pages)
-  let createDropdownOpen = false;
-
   function toggleCreateDropdown() {
     createDropdownOpen = !createDropdownOpen;
   }
@@ -239,16 +237,6 @@
     showAuthDialog = false;
   }
 
-  // Determine if user needs to authenticate or verify
-  $: needsAuth = editable && !user;
-  $: needsVerification = editable && user && !user.verified;
-
-  // Login URL with redirect back to current page
-  $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
-
-  // Get current changeId from URL (for highlighting pending creates in sidebar)
-  $: currentChangeId = $page.url.searchParams.get('changeId');
-
   // Helper function to check if current entity has a pending change by the user
   function checkHasUserPendingChange(currentEntity, changeId, pendingUpdates, pendingCreates) {
     // Check for pending create first (via changeId in URL) - doesn't require an entity
@@ -269,8 +257,6 @@
     return false;
   }
 
-  // Navigation guard: warn about unsaved changes
-  let skipNavGuard = false;
   beforeNavigate(({ cancel }) => {
     if (skipNavGuard) { skipNavGuard = false; return; }
     if (!$editMode || !$hasChanges) return;
@@ -334,9 +320,9 @@
 <div class="wiki-page {pageClass}" class:mobile={isMobile} class:tablet={isTablet} class:sidebar-expanded={sidebarExpanded} class:sidebar-full-width={sidebarFullWidth}>
   <!-- Mobile Navigation Drawer -->
   {#if isMobile}
-    <MobileDrawer bind:open={drawerOpen} on:close={closeDrawer}>
+    <MobileDrawer bind:open={drawerOpen}>
       {#if hasCustomSidebar}
-        <slot name="sidebar" {isMobile} />
+        {@render sidebar?.({ isMobile })}
       {:else}
         <WikiNavigation
           items={navItems}
@@ -358,7 +344,7 @@
     {#if !isMobile}
       <aside class="wiki-sidebar">
         {#if hasCustomSidebar}
-          <slot name="sidebar" {isMobile} />
+          {@render sidebar?.({ isMobile })}
         {:else}
           <WikiNavigation
             items={navItems}
@@ -369,8 +355,8 @@
             currentChangeId={currentChangeId}
             expanded={sidebarExpanded}
             fullWidth={sidebarFullWidth}
-            on:toggleExpand={toggleSidebarExpand}
-            on:toggleFullWidth={toggleSidebarFullWidth}
+            ontoggleexpand={toggleSidebarExpand}
+            ontogglefullwidth={toggleSidebarFullWidth}
             tableColumns={navTableColumns}
             fullWidthColumns={navFullWidthColumns}
             allAvailableColumns={navAllAvailableColumns}
@@ -390,7 +376,7 @@
       <div class="content-header">
         <div class="header-left">
           {#if isMobile}
-            <button class="nav-toggle-btn" on:click={toggleDrawer} aria-label="Browse items">
+            <button class="nav-toggle-btn" onclick={toggleDrawer} aria-label="Browse items">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="7" height="7" rx="1" />
                 <rect x="14" y="3" width="7" height="7" rx="1" />
@@ -417,12 +403,14 @@
         </div>
 
         <div class="header-actions">
-          <slot name="header-actions">
+          {#if headerActions}
+            {@render headerActions()}
+          {:else}
             {#if canEdit}
               <div class="create-btn-wrapper">
                 <button
                   class="action-btn create"
-                  on:click={createCategories ? toggleCreateDropdown : handleCreate}
+                  onclick={createCategories ? toggleCreateDropdown : handleCreate}
                   title={canCreateNew ? 'Create new' : 'You have reached the limit of 50 pending creations'}
                   disabled={!canCreateNew}
                   aria-haspopup={createCategories ? 'true' : undefined}
@@ -440,13 +428,14 @@
                   {/if}
                 </button>
                 {#if createDropdownOpen}
-                  <div class="create-dropdown-backdrop" on:click={closeCreateDropdown} on:keydown={(e) => e.key === 'Escape' && closeCreateDropdown()} role="presentation"></div>
-                  <div class="create-dropdown" role="menu" on:keydown={(e) => e.key === 'Escape' && closeCreateDropdown()}>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <div class="create-dropdown-backdrop" onclick={closeCreateDropdown} onkeydown={(e) => e.key === 'Escape' && closeCreateDropdown()} role="presentation"></div>
+                  <div class="create-dropdown" role="menu" onkeydown={(e) => e.key === 'Escape' && closeCreateDropdown()}>
                     {#each createCategories as category}
                       <button
                         class="create-dropdown-item"
                         role="menuitem"
-                        on:click={() => handleCreateCategory(category)}
+                        onclick={() => handleCreateCategory(category)}
                       >
                         {category.label}
                       </button>
@@ -457,7 +446,7 @@
             {/if}
             {#if entity && canEdit && !$isCreateMode}
               {#if $editMode}
-                <button class="action-btn cancel" on:click={handleCancelEdit} title="Cancel editing">
+                <button class="action-btn cancel" onclick={handleCancelEdit} title="Cancel editing">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
@@ -465,7 +454,7 @@
                   <span>Cancel</span>
                 </button>
               {:else}
-                <button class="action-btn" on:click={handleEdit} title="Edit">
+                <button class="action-btn" onclick={handleEdit} title="Edit">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
                     <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -474,7 +463,7 @@
                 </button>
               {/if}
             {:else if editable && (needsAuth || needsVerification) && !$isCreateMode}
-              <button class="auth-hint-btn" on:click={openAuthDialog} title="Login required">
+              <button class="auth-hint-btn" onclick={openAuthDialog} title="Login required">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -482,9 +471,13 @@
                 <span>{needsAuth ? 'Login to edit' : 'Verify to edit'}</span>
               </button>
             {/if}
-          </slot>
+          {/if}
         </div>
       </div>
+
+      {#if afterHeader}
+        {@render afterHeader()}
+      {/if}
 
       <!-- Main Content Slot -->
       <div class="content-body" class:editing={$editMode}>
@@ -494,7 +487,7 @@
             <span>Loading editor...</span>
           </div>
         {/if}
-        <slot {entity} {user} {isMobile} {openDrawer} />
+        {@render children?.({ entity, user, isMobile, openDrawer })}
       </div>
     </main>
   </div>
@@ -506,9 +499,11 @@
 
   <!-- Auth Help Dialog -->
   {#if showAuthDialog}
-    <div class="dialog-overlay" on:click={closeAuthDialog} on:keydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
-      <div class="dialog-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
-        <button class="dialog-close" on:click={closeAuthDialog} aria-label="Close">
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="dialog-overlay" onclick={closeAuthDialog} onkeydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="dialog-content" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+        <button class="dialog-close" onclick={closeAuthDialog} aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
@@ -586,7 +581,7 @@
 
             <div class="dialog-actions">
               <a href="https://discord.gg/hBGKyJ6EDr" target="_blank" rel="noopener" class="dialog-btn primary">Join Discord Server</a>
-              <button class="dialog-btn secondary" on:click={closeAuthDialog}>Close</button>
+              <button class="dialog-btn secondary" onclick={closeAuthDialog}>Close</button>
             </div>
           </div>
         {/if}

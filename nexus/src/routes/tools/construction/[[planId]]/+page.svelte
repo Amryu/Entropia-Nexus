@@ -1500,8 +1500,8 @@
   editable={false}
   canEdit={false}
 >
-  <!-- @migration-task: migrate this slot by hand, `header-actions` is an invalid identifier -->
-  <div slot="header-actions" class="construction-header-actions">
+  {#snippet headerActions()}
+  <div class="construction-header-actions">
     <div class="view-tabs">
       <button
         class:active={currentView === 'planning'}
@@ -1573,6 +1573,7 @@
       <span class="action-label">Ownership</span>
     </button>
   </div>
+  {/snippet}
 
   {#snippet sidebar({ isMobile })}
     <div  >

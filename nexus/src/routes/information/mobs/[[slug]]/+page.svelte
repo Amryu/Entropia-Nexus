@@ -1041,14 +1041,15 @@
         pageTypeId={activeSidebarPageTypeId}
         expanded={sidebarExpanded}
         fullWidth={sidebarFullWidth}
-        on:toggleExpand={() => sidebarExpanded = !sidebarExpanded}
-        on:toggleFullWidth={() => sidebarFullWidth = !sidebarFullWidth}
+        ontoggleexpand={() => sidebarExpanded = !sidebarExpanded}
+        ontogglefullwidth={() => sidebarFullWidth = !sidebarFullWidth}
       >
-        <!-- @migration-task: migrate this slot by hand, `after-header` is an invalid identifier -->
-  <div slot="after-header" class="sidebar-toggle">
-          <button class:active={!isMaturityView} onclick={() => switchSidebar('mobs')}>Mobs</button>
-          <button class:active={isMaturityView} onclick={() => switchSidebar('maturities')}>Maturities</button>
-        </div>
+        {#snippet afterHeader()}
+          <div class="sidebar-toggle">
+            <button class:active={!isMaturityView} onclick={() => switchSidebar('mobs')}>Mobs</button>
+            <button class:active={isMaturityView} onclick={() => switchSidebar('maturities')}>Maturities</button>
+          </div>
+        {/snippet}
       </WikiNavigation>
     </div>
   {/snippet}

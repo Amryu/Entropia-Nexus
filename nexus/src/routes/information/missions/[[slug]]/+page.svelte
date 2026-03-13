@@ -1170,11 +1170,12 @@
         allAvailableColumns={activeAllAvailableColumns}
         pageTypeId={activePageTypeId}
       >
-        <!-- @migration-task: migrate this slot by hand, `after-header` is an invalid identifier -->
-  <div slot="after-header" class="sidebar-toggle">
-          <button class:active={!isChainView} onclick={() => switchSidebar('missions')}>Missions</button>
-          <button class:active={isChainView} onclick={() => switchSidebar('chains')}>Mission Chains</button>
-        </div>
+        {#snippet afterHeader()}
+          <div class="sidebar-toggle">
+            <button class:active={!isChainView} onclick={() => switchSidebar('missions')}>Missions</button>
+            <button class:active={isChainView} onclick={() => switchSidebar('chains')}>Mission Chains</button>
+          </div>
+        {/snippet}
       </WikiNavigation>
     </div>
   {/snippet}

@@ -1,4 +1,3 @@
-<!-- @migration-task Error while migrating Svelte code: Can't migrate code with afterUpdate. Please migrate by hand. -->
 <!--
   @component WikiNavigation
   Sidebar navigation with search, filters, and virtualized item list.
@@ -6,132 +5,118 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher, onMount, afterUpdate, tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { encodeURIComponentSafe } from '$lib/util';
   import ColumnConfigDialog from './ColumnConfigDialog.svelte';
 
-  const dispatch = createEventDispatcher();
-
   /** @type {Array} Items to display in the list */
-  export let items = [];
-
   /** @type {Array} Filter options [{key, label, values: [{value, label}], multiSelect?: boolean, filterFn?: Function}] */
-  export let filters = [];
-
   /** @type {Array} Link-based navigation buttons [{label, href, active, title}] - shown separately from value filters */
-  export let linkFilters = [];
-
   /** @type {string} Base path for links */
-  export let basePath = '';
-
   /** @type {string} Navigation title */
-  export let title = '';
-
   /** @type {string|null} Currently selected item slug */
-  export let currentSlug = null;
-
   /** @type {number|string|null} Currently selected item ID (for disambiguation when multiple items have same name) */
-  export let currentItemId = null;
-
   /** @type {string|null} Currently selected change ID (for pending creates) */
-  export let currentChangeId = null;
-
   /** @type {boolean} Whether sidebar is in expanded table view mode */
-  export let expanded = false;
-
   /** @type {boolean} Whether sidebar is in full-width mode (takes entire page width, content hidden) */
-  export let fullWidth = false;
-
   /**
    * @type {Array|null} Custom table columns for expanded view
    * Default: [{ key: 'class', header: 'Class', width: '70px' }, { key: 'maxLvl', header: 'Lvl', width: '40px' }, ...]
    * Each column: { key: string, header: string, width: string, getValue?: (item) => any, format?: (value, item) => string }
    */
-  export let tableColumns = null;
-
   /**
    * @type {Array|null} Additional table columns shown only in full-width mode
    * Falls back to tableColumns if not provided
    */
-  export let fullWidthColumns = null;
-
   /**
    * @type {Array|null} All possible columns for this page type (superset for column configuration)
    * When provided, enables column configuration UI (Columns.../Reset buttons)
    */
-  export let allAvailableColumns = null;
-
   /**
    * @type {string} Unique ID for localStorage key (e.g. 'weapons', 'tools-scanners')
    */
-  export let pageTypeId = '';
-
   /**
    * @type {Object|null} Custom column formatters keyed by column key
    * Example: { dps: (item) => calcDps(item)?.toFixed(1) || '-' }
    */
-  export let columnFormatters = null;
-
   /**
    * @type {Function|null} Custom function to generate item href
    * Example: (item, basePath) => `${basePath}/${item._type}/${item.Name}`
    * If null, defaults to `${basePath}/${item.Name}`
    */
-  export let customGetItemHref = null;
-
   /**
    * @type {Array} User's pending create changes to show at top of list
    * Each item should have: { id, data: { Name, ... }, state: 'Draft'|'Pending' }
    */
-  export let userPendingCreates = [];
-
   /**
    * @type {Array} User's pending update changes to highlight in list
    * Each item should have: { id, data: { Id|ItemId }, state: 'Draft'|'Pending' }
    */
-  export let userPendingUpdates = [];
+  let {
+    items = [],
+    filters = [],
+    linkFilters = [],
+    basePath = '',
+    title = '',
+    currentSlug = null,
+    currentItemId = null,
+    currentChangeId = null,
+    expanded = false,
+    fullWidth = false,
+    tableColumns = null,
+    fullWidthColumns = null,
+    allAvailableColumns = null,
+    pageTypeId = '',
+    columnFormatters = null,
+    customGetItemHref = null,
+    userPendingCreates = [],
+    userPendingUpdates = [],
+    ontoggleexpand = undefined,
+    ontogglefullwidth = undefined,
+    afterHeader = undefined,
+  } = $props();
 
   // Search and filter state
-  let searchQuery = '';
-  let activeFilters = {};
-  let columnFilters = { name: '' };
-  let sortColumn = null;
-  let sortDirection = 'asc';
-  let showFilterHelp = false;
-  let openFilterHelp = null; // Track which filter's help popover is open
+  let searchQuery = $state('');
+  let activeFilters = $state({});
+  let columnFilters = $state({ name: '' });
+  let sortColumn = $state(null);
+  let sortDirection = $state('asc');
+  let showFilterHelp = $state(false);
+  let openFilterHelp = $state(null); // Track which filter's help popover is open
 
   // Keyboard navigation state
-  let highlightedIndex = -1;
-  let hasKeyboardInput = false; // Track if user has interacted with keyboard navigation
-  let lastSearchQueryForHighlight = ''; // Track search query to detect actual typing vs re-renders
+  let highlightedIndex = $state(-1);
+  let hasKeyboardInput = $state(false); // Track if user has interacted with keyboard navigation
+  let lastSearchQueryForHighlight = $state(''); // Track search query to detect actual typing vs re-renders
 
   // Virtualization state
-  let listContainer;
-  let scrollTop = 0;
-  let containerHeight = 400;
+  let listContainer = $state();
+  let scrollTop = $state(0);
+  let containerHeight = $state(400);
   const ITEM_HEIGHT = 36;
   const BUFFER_SIZE = 5;
 
   // Initialize active filters
-  $: {
+  $effect(() => {
     for (const filter of filters) {
       if (activeFilters[filter.key] === undefined) {
         // Use array for multi-select filters, null for single-select
         activeFilters[filter.key] = filter.multiSelect ? [] : null;
       }
     }
-  }
+  });
 
   // Initialize column filter keys from active columns
-  $: {
+  $effect(() => {
     for (const column of activeColumns) {
       if (columnFilters[column.key] === undefined) {
         columnFilters[column.key] = '';
       }
     }
-  }
+  });
 
   // Check if an item is the currently selected item
   // Handles all three matching modes: changeId, itemId, and slug (Name)
@@ -149,13 +134,13 @@
 
   // Reactive current item key - forces template re-render when selection changes
   // This ensures item highlighting updates immediately on navigation
-  $: currentItemKey = currentChangeId
+  let currentItemKey = $derived(currentChangeId
     ? `change-${currentChangeId}`
     : (currentItemId != null
       ? `id-${currentItemId}`
       : (currentSlug
         ? `slug-${currentSlug}`
-        : null));
+        : null)));
 
   // Get item key for comparison (used for keyboard navigation and other lookups)
   function getItemKey(item) {
@@ -167,14 +152,14 @@
 
   // Optimistic click highlighting - immediately highlights clicked item
   // before navigation data loads and props update
-  let clickedItemKey = null;
+  let clickedItemKey = $state(null);
 
   function handleItemClick(item) {
     clickedItemKey = getItemKey(item);
   }
 
   // F5 reload: track whether initial scroll position has been set
-  let initialPositionDone = false;
+  let initialPositionDone = $state(false);
 
   // Smart filter function (supports >, <, >=, <=, !, =)
   function smartFilter(value, filterStr) {
@@ -347,7 +332,7 @@
   }
 
   // Filtered and sorted items
-  $: filteredItems = (() => {
+  let filteredItems = $derived.by(() => {
     if (!items) return [];
     let result = items;
 
@@ -503,14 +488,14 @@
     }
 
     return itemsWithUpdates;
-  })();
+  });
 
   // Virtualization calculations
-  $: totalHeight = filteredItems.length * ITEM_HEIGHT;
-  $: startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER_SIZE);
-  $: endIndex = Math.min(filteredItems.length, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + BUFFER_SIZE);
-  $: visibleItems = filteredItems.slice(startIndex, endIndex);
-  $: offsetY = startIndex * ITEM_HEIGHT;
+  let totalHeight = $derived(filteredItems.length * ITEM_HEIGHT);
+  let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER_SIZE));
+  let endIndex = $derived(Math.min(filteredItems.length, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + BUFFER_SIZE));
+  let visibleItems = $derived(filteredItems.slice(startIndex, endIndex));
+  let offsetY = $derived(startIndex * ITEM_HEIGHT);
 
 
   function setFilter(key, value, isMultiSelect = false) {
@@ -632,11 +617,11 @@
   }
 
   // Track if we should focus the list after navigation/update
-  let shouldFocusListAfterUpdate = false;
+  let shouldFocusListAfterUpdate = $state(false);
 
   // Handle click on item list container to enable keyboard navigation
   function handleListClick(event) {
-    // Mark that we want to focus the list (will be done in afterUpdate to ensure DOM is ready)
+    // Mark that we want to focus the list (will be done in $effect to ensure DOM is ready)
     shouldFocusListAfterUpdate = true;
     // Also try immediate focus for clicks on empty space
     if (listContainer) {
@@ -664,25 +649,27 @@
 
   // Set highlighted index based on search state and keyboard interaction
   // Only show highlight when user has actively started navigating (typing search or pressing arrow keys)
-  $: if (searchQuery !== undefined) {
-    if (filteredItems.length === 0) {
-      highlightedIndex = -1;
-      lastSearchQueryForHighlight = searchQuery;
-    } else if (searchQuery.trim().length > 0) {
-      // Only reset to first result when search query actually changes (user is typing)
-      // Not on re-renders with same query (e.g., after navigation)
-      if (searchQuery !== lastSearchQueryForHighlight) {
-        highlightedIndex = 0;
-        hasKeyboardInput = true; // Searching counts as keyboard interaction
+  $effect(() => {
+    if (searchQuery !== undefined) {
+      if (filteredItems.length === 0) {
+        highlightedIndex = -1;
+        lastSearchQueryForHighlight = searchQuery;
+      } else if (searchQuery.trim().length > 0) {
+        // Only reset to first result when search query actually changes (user is typing)
+        // Not on re-renders with same query (e.g., after navigation)
+        if (searchQuery !== lastSearchQueryForHighlight) {
+          highlightedIndex = 0;
+          hasKeyboardInput = true; // Searching counts as keyboard interaction
+          lastSearchQueryForHighlight = searchQuery;
+        }
+      } else if (!hasKeyboardInput) {
+        // No search and no keyboard input yet - don't show highlight
+        highlightedIndex = -1;
         lastSearchQueryForHighlight = searchQuery;
       }
-    } else if (!hasKeyboardInput) {
-      // No search and no keyboard input yet - don't show highlight
-      highlightedIndex = -1;
-      lastSearchQueryForHighlight = searchQuery;
+      // If hasKeyboardInput is true but no search, keep current highlightedIndex (set by arrow keys)
     }
-    // If hasKeyboardInput is true but no search, keep current highlightedIndex (set by arrow keys)
-  }
+  });
 
   // Scroll to the currently selected item if it's outside the visible viewport
   async function scrollToCurrentItem() {
@@ -725,11 +712,11 @@
   }
 
   // Track last scrolled-to item key to avoid redundant scroll attempts
-  let lastScrolledKey = null;
+  let lastScrolledKey = $state(null);
 
   // Scroll to current item on selection change (initial load or navigation)
   // Also handle deferred focus for keyboard navigation
-  afterUpdate(() => {
+  $effect(() => {
     if (currentItemKey && currentItemKey !== lastScrolledKey && filteredItems.length > 0 && listContainer) {
       lastScrolledKey = currentItemKey;
       clickedItemKey = null;
@@ -803,33 +790,35 @@
   ];
 
   // Column configuration state
-  let userColumnSelection = null; // null = defaults, string[] = user's ordered column keys
-  let showColumnDialog = false;
+  let userColumnSelection = $state(null); // null = defaults, string[] = user's ordered column keys
+  let showColumnDialog = $state(false);
 
   // localStorage key for column preferences
-  $: storageKey = pageTypeId ? `wiki-nav-columns-${pageTypeId}` : '';
+  let storageKey = $derived(pageTypeId ? `wiki-nav-columns-${pageTypeId}` : '');
 
   // Load user column selection from localStorage when pageTypeId changes
-  $: if (browser && storageKey) {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        const keys = JSON.parse(stored);
-        if (Array.isArray(keys) && keys.length > 0 && allAvailableColumns) {
-          // Validate keys against available columns
-          const validKeys = new Set(allAvailableColumns.map(c => c.key));
-          const filtered = keys.filter(k => validKeys.has(k));
-          userColumnSelection = filtered.length > 0 ? filtered : null;
+  $effect(() => {
+    if (browser && storageKey) {
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          const keys = JSON.parse(stored);
+          if (Array.isArray(keys) && keys.length > 0 && allAvailableColumns) {
+            // Validate keys against available columns
+            const validKeys = new Set(allAvailableColumns.map(c => c.key));
+            const filtered = keys.filter(k => validKeys.has(k));
+            userColumnSelection = filtered.length > 0 ? filtered : null;
+          } else {
+            userColumnSelection = null;
+          }
         } else {
           userColumnSelection = null;
         }
-      } else {
+      } catch {
         userColumnSelection = null;
       }
-    } catch {
-      userColumnSelection = null;
     }
-  }
+  });
 
   // Save user column selection to localStorage
   function saveColumnSelection(keys) {
@@ -842,24 +831,24 @@
   }
 
   // Build column lookup from allAvailableColumns
-  $: availableColumnMap = allAvailableColumns
+  let availableColumnMap = $derived(allAvailableColumns
     ? Object.fromEntries(allAvailableColumns.map(c => [c.key, c]))
-    : {};
+    : {});
 
   // Resolve user-configured columns from keys
-  $: userConfiguredColumns = userColumnSelection
+  let userConfiguredColumns = $derived(userColumnSelection
     ? userColumnSelection.map(k => availableColumnMap[k]).filter(Boolean)
-    : null;
+    : null);
 
   // Actual columns to use: user-configured > full-width/table defaults
-  $: activeColumns = (() => {
+  let activeColumns = $derived.by(() => {
     if (userConfiguredColumns) {
       return fullWidth ? userConfiguredColumns : userConfiguredColumns.slice(0, 5);
     }
     return (fullWidth && fullWidthColumns) ? fullWidthColumns : (tableColumns || defaultTableColumns);
-  })();
+  });
 
-  $: hasCustomColumns = userColumnSelection !== null;
+  let hasCustomColumns = $derived(userColumnSelection !== null);
 
   function handleOpenColumnDialog() {
     showColumnDialog = true;
@@ -901,11 +890,11 @@
   }
 
   // Direct column header drag-and-drop (full-width mode only)
-  let headerDragIndex = null;
-  let headerDragOverIndex = null;
-  let headerMouseDownX = 0;
-  let headerMouseDownY = 0;
-  let headerDragStarted = false;
+  let headerDragIndex = $state(null);
+  let headerDragOverIndex = $state(null);
+  let headerMouseDownX = $state(0);
+  let headerMouseDownY = $state(0);
+  let headerDragStarted = $state(false);
 
   function handleHeaderMouseDown(e, colIndex) {
     // Only in full-width mode with configurable columns
@@ -997,7 +986,7 @@
   }
 
   // Generate grid template from active columns
-  $: gridTemplateColumns = `1fr ${activeColumns.map(c => c.width).join(' ')}`;
+  let gridTemplateColumns = $derived(`1fr ${activeColumns.map(c => c.width).join(' ')}`);
 
   // Format a cell value for display
   function formatCell(item, column) {
@@ -1015,22 +1004,22 @@
   }
 
   // Table view is active when either expanded or full-width mode is on
-  $: showTableView = expanded || fullWidth;
+  let showTableView = $derived(expanded || fullWidth);
 
   function handleToggleExpand() {
-    dispatch('toggleExpand');
+    ontoggleexpand?.();
   }
 
   function handleToggleFullWidth() {
-    dispatch('toggleFullWidth');
+    ontogglefullwidth?.();
   }
 
   // Scrollbar width measurement
-  let scrollbarWidth = 0;
+  let scrollbarWidth = $state(0);
 
   // Calculated column widths based on initial data
-  let calculatedColumnWidths = {};
-  let widthsCalculated = false;
+  let calculatedColumnWidths = $state({});
+  let widthsCalculated = $state(false);
 
   // Measure text width using canvas
   let measureCanvas;
@@ -1101,26 +1090,29 @@
   }
 
   // Generate grid template from active columns with calculated widths
-  $: dynamicGridTemplateColumns = widthsCalculated
+  let dynamicGridTemplateColumns = $derived(widthsCalculated
     ? `1fr ${activeColumns.map(c => getColumnWidth(c)).join(' ')}`
-    : gridTemplateColumns;
+    : gridTemplateColumns);
 
   // Recalculate column widths when columns change (e.g. switching between expanded and full-width)
-  $: if (activeColumns) {
+  $effect(() => {
+    activeColumns; // track dependency
     widthsCalculated = false;
     calculatedColumnWidths = {};
-  }
+  });
 
   // Calculate column widths when table view is enabled (run in background to avoid blocking UI)
-  $: if (browser && showTableView && !widthsCalculated && items && items.length > 0) {
-    // Use requestIdleCallback to run calculation when browser is idle
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(() => calculateColumnWidths(), { timeout: 1000 });
-    } else {
-      // Fallback for browsers without requestIdleCallback
-      setTimeout(() => calculateColumnWidths(), 0);
+  $effect(() => {
+    if (browser && showTableView && !widthsCalculated && items && items.length > 0) {
+      // Use requestIdleCallback to run calculation when browser is idle
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => calculateColumnWidths(), { timeout: 1000 });
+      } else {
+        // Fallback for browsers without requestIdleCallback
+        setTimeout(() => calculateColumnWidths(), 0);
+      }
     }
-  }
+  });
 
   onMount(() => {
     // Measure scrollbar width
@@ -1148,7 +1140,7 @@
       {#if !fullWidth}
         <button
           class="expand-btn"
-          on:click={handleToggleExpand}
+          onclick={handleToggleExpand}
           title={expanded ? 'Collapse sidebar' : 'Expand to table view'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1163,7 +1155,7 @@
       <button
         class="expand-btn"
         class:active={fullWidth}
-        on:click={handleToggleFullWidth}
+        onclick={handleToggleFullWidth}
         title={fullWidth ? 'Exit full-width mode' : 'Full-width table view'}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1177,8 +1169,10 @@
     </div>
   </div>
 
-  <!-- Slot for custom content between header and search (e.g., view toggles) -->
-  <slot name="after-header"></slot>
+  <!-- Snippet for custom content between header and search (e.g., view toggles) -->
+  {#if afterHeader}
+    {@render afterHeader()}
+  {/if}
 
   <div class="search-box">
     <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1190,10 +1184,10 @@
       class="search-input"
       placeholder="Search..."
       bind:value={searchQuery}
-      on:keydown={handleSearchKeydown}
+      onkeydown={handleSearchKeydown}
     />
     {#if searchQuery}
-      <button class="clear-search" on:click={() => { searchQuery = ''; highlightedIndex = -1; hasKeyboardInput = false; lastSearchQueryForHighlight = ''; }} aria-label="Clear search">
+      <button class="clear-search" onclick={() => { searchQuery = ''; highlightedIndex = -1; hasKeyboardInput = false; lastSearchQueryForHighlight = ''; }} aria-label="Clear search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M18 6L6 18M6 6l12 12" />
         </svg>
@@ -1218,9 +1212,9 @@
           {/each}
           {#if showTableView && allAvailableColumns}
             <span class="column-config-inline">
-              <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+              <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
               {#if hasCustomColumns}
-                <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+                <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
               {/if}
             </span>
           {/if}
@@ -1240,9 +1234,9 @@
           {/each}
           {#if showTableView && allAvailableColumns}
             <span class="column-config-inline">
-              <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+              <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
               {#if hasCustomColumns}
-                <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+                <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
               {/if}
             </span>
           {/if}
@@ -1250,9 +1244,9 @@
       {:else if showTableView && allAvailableColumns && filters.length === 0}
         <!-- Column config only (no filter buttons on this page) -->
         <div class="column-config-actions">
-          <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+          <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
           {#if hasCustomColumns}
-            <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+            <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
           {/if}
         </div>
       {/if}
@@ -1267,7 +1261,7 @@
                 <button
                   class="filter-help-btn"
                   class:active={openFilterHelp === filter.key}
-                  on:click={() => openFilterHelp = openFilterHelp === filter.key ? null : filter.key}
+                  onclick={() => openFilterHelp = openFilterHelp === filter.key ? null : filter.key}
                   title="Filter info"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1292,7 +1286,7 @@
                   class:active={filter.multiSelect
                     ? (activeFilters[filter.key] || []).includes(option.value)
                     : activeFilters[filter.key] === option.value}
-                  on:click={() => setFilter(filter.key, option.value, filter.multiSelect)}
+                  onclick={() => setFilter(filter.key, option.value, filter.multiSelect)}
                 >
                   {option.label}
                 </button>
@@ -1302,16 +1296,16 @@
         {/each}
         {#if showTableView && allAvailableColumns && linkFilters.length === 0}
           <span class="column-config-inline">
-            <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+            <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
             {#if hasCustomColumns}
-              <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+              <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
             {/if}
           </span>
         {/if}
         </div>
 
         {#if Object.values(activeFilters).some(v => v !== null && (Array.isArray(v) ? v.length > 0 : true))}
-          <button class="clear-filters" on:click={clearFilters}>
+          <button class="clear-filters" onclick={clearFilters}>
             Clear filters
           </button>
         {/if}
@@ -1323,7 +1317,7 @@
   {#if showTableView}
     <div class="table-header-bar">
       <div class="table-header" style="grid-template-columns: {dynamicGridTemplateColumns} auto;">
-        <button class="th sortable" class:sorted={sortColumn === 'name'} on:click={() => handleSort('name')}>
+        <button class="th sortable" class:sorted={sortColumn === 'name'} onclick={() => handleSort('name')}>
           Name {sortColumn === 'name' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
         </button>
         {#each activeColumns as column, colIdx}
@@ -1331,15 +1325,15 @@
             class="th sortable"
             class:sorted={sortColumn === column.key}
             class:header-drag-over={headerDragStarted && headerDragOverIndex === colIdx && headerDragIndex !== colIdx}
-            on:click={(e) => { if (!fullWidth || !allAvailableColumns) handleSort(column.key); }}
-            on:mousedown={(e) => handleHeaderMouseDown(e, colIdx)}
-            on:mouseover={(e) => handleHeaderDragOver(e, colIdx)}
-            on:focus={() => {}}
+            onclick={(e) => { if (!fullWidth || !allAvailableColumns) handleSort(column.key); }}
+            onmousedown={(e) => handleHeaderMouseDown(e, colIdx)}
+            onmouseover={(e) => handleHeaderDragOver(e, colIdx)}
+            onfocus={() => {}}
           >
             {column.header} {sortColumn === column.key ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
           </button>
         {/each}
-        <button class="th help-gutter" on:click={toggleFilterHelp} title="Filter help" style="width: {scrollbarWidth}px; min-width: {scrollbarWidth}px;">?</button>
+        <button class="th help-gutter" onclick={toggleFilterHelp} title="Filter help" style="width: {scrollbarWidth}px; min-width: {scrollbarWidth}px;">?</button>
       </div>
     </div>
 
@@ -1368,9 +1362,9 @@
   <div
     class="item-list"
     bind:this={listContainer}
-    on:scroll={handleScroll}
-    on:keydown={handleListKeydown}
-    on:click={handleListClick}
+    onscroll={handleScroll}
+    onkeydown={handleListKeydown}
+    onclick={handleListClick}
     tabindex="0"
     role="listbox"
     aria-label="Item list"
@@ -1386,7 +1380,7 @@
       <div class="no-results">
         <p>No items found</p>
         {#if searchQuery || Object.values(activeFilters).some(v => v !== null) || Object.values(columnFilters).some(v => v)}
-          <button class="clear-filters" on:click={clearFilters}>
+          <button class="clear-filters" onclick={clearFilters}>
             Clear filters
           </button>
         {/if}
@@ -1409,8 +1403,8 @@
               class:pending-update={item._hasPendingUpdate}
               class:pending-update-draft={item._hasPendingUpdate && item._changeState === 'Draft'}
               class:pending-update-review={item._hasPendingUpdate && item._changeState === 'Pending'}
-              on:click={() => handleItemClick(item)}
-              on:mouseenter={() => { highlightedIndex = globalIndex; hasKeyboardInput = true; }}
+              onclick={() => handleItemClick(item)}
+              onmouseenter={() => { highlightedIndex = globalIndex; hasKeyboardInput = true; }}
               title={item._isPendingCreate
                 ? `${item.Name} (${item._changeState})`
                 : item._hasPendingUpdate
@@ -1474,8 +1468,8 @@
     <ColumnConfigDialog
       visibleColumns={userConfiguredColumns || activeColumns}
       allColumns={allAvailableColumns}
-      on:apply={handleColumnDialogApply}
-      on:cancel={handleColumnDialogCancel}
+      onapply={handleColumnDialogApply}
+      oncancel={handleColumnDialogCancel}
     />
   {/if}
 </nav>

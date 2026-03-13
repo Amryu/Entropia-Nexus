@@ -3839,8 +3839,8 @@
   editable={false}
   canEdit={false}
 >
-  <!-- @migration-task: migrate this slot by hand, `header-actions` is an invalid identifier -->
-  <div slot="header-actions" class="loadout-header-actions">
+  {#snippet headerActions()}
+  <div class="loadout-header-actions">
     {#if isSharedMode}
       <button class="action-btn" onclick={handleMakeCopy} disabled={!sharedLoadoutData || isCopying}>
         <span class="action-label">{isCopying ? 'Copying...' : 'Make a copy'}</span>
@@ -3917,6 +3917,7 @@
       </button>
     {/if}
   </div>
+  {/snippet}
 
   {#snippet sidebar({ isMobile })}
     <div  >
