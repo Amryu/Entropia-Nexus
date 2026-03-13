@@ -42,6 +42,8 @@
     lockedBy = null,
     allLocations = [],
     isDbChange = false,
+    pendingMobData = null,
+    pendingWaveData = null,
     onedit,
     ondelete,
     onremovePendingAdd,
@@ -559,13 +561,14 @@
         },
         ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
         ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
-        ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {})
+        ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {}),
+        ...(pendingMobData ? { Density: pendingMobData.density } : {})
       },
       ...(location?.Planet ? { Planet: location.Planet } : {}),
       ParentLocation: parentLocationName ? { Name: parentLocationName } : null,
       Facilities: location?.Facilities ?? [],
-      ...(location?.Waves ? { Waves: location.Waves } : {}),
-      ...(location?.Maturities ? { Maturities: location.Maturities } : {})
+      ...(pendingWaveData?.waves ? { Waves: pendingWaveData.waves } : location?.Waves ? { Waves: location.Waves } : {}),
+      ...(pendingMobData ? { Maturities: pendingMobData.maturities } : location?.Maturities ? { Maturities: location.Maturities } : {})
     };
   })() : null);
 </script>

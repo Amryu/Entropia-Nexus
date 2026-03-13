@@ -703,9 +703,9 @@
   let isReadOnly = $derived(!!selectedDbChange || (!isAdmin && selectedId != null
     && selectedId > 0 && lockedLocationMap.has(selectedId)));
   // Count pending changes excluding DB-seeded but unmodified entries
-  $effect(() => {
-    changeCount = Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length;
-  });
+  // Use $derived for synchronous updates (ChangesSummary uses $derived too, avoiding desync with $effect)
+  let computedChangeCount = $derived(Array.from(pendingChanges.values()).filter(c => !c._dbSeeded).length);
+  $effect(() => { changeCount = computedChangeCount; });
 </script>
 
 <style>
@@ -839,6 +839,8 @@
         lockedBy={selectedLocation?.Id ? lockedLocationMap.get(selectedLocation.Id) : null}
         allLocations={locations}
         isDbChange={selectedId != null && dbChangeIdMap.has(selectedId)}
+        pendingMobData={selectedLocation?.Id ? pendingChanges.get(selectedLocation.Id)?.modified?.mobData : (selectedId != null ? pendingChanges.get(selectedId)?.modified?.mobData : null)}
+        pendingWaveData={selectedLocation?.Id ? pendingChanges.get(selectedLocation.Id)?.modified?.waveData : (selectedId != null ? pendingChanges.get(selectedId)?.modified?.waveData : null)}
         onedit={handleEditLocation}
         ondelete={handleDeleteLocation}
         onrevert={handleRevertLocation}
