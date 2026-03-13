@@ -13,7 +13,6 @@
 
 import { spawnSync, execSync } from 'child_process';
 import { unlinkSync, existsSync } from 'fs';
-import { tmpdir } from 'os';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
@@ -172,7 +171,9 @@ async function cloneDatabase(sourceDb: string, targetDb: string) {
   await recreateDatabase(targetDb);
 
   // Step 2: Dump entire source database (schema + data) to temp file
-  const tempDumpFile = join(tmpdir(), `dump-${sourceDb}-${Date.now()}.sql`);
+  // Use project directory for temp files — system tmpdir (C:) may lack space
+  const tempDir = resolve(__dirname, '..');
+  const tempDumpFile = join(tempDir, `dump-${sourceDb}-${Date.now()}.sql`);
   console.log(`   Dumping ${sourceDb}...`);
 
   try {
