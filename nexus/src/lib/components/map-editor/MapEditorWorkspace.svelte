@@ -358,7 +358,7 @@
       dbChangeIdMap.set(original.Id, existingDbChange.id);
     }
     const existingChange = pendingChanges.get(original.Id);
-    if (!existingChange?.original) {
+    if (existingChange && !existingChange.original) {
       // Editing a pending add: merge into the existing entry
       Object.assign(existingChange.modified, modified);
       pendingChanges.set(original.Id, existingChange);
