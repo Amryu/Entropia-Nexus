@@ -13,7 +13,7 @@
    * @property {any} [mobs] - All mobs from /mobs (cached by parent)
    * @property {any} [location] - Existing MobArea location (if editing)
    * @property {boolean} [isNew]
-   * @property {any} [pendingMobData] - { density, maturities: [{ maturityId, isRare }] } from pending changes
+   * @property {any} [pendingMobData] - { density, maturities: [{ IsRare, Maturity: { Id } }] } from pending changes
    */
 
   /** @type {Props} */
@@ -92,13 +92,13 @@
 
   function initFromPending() {
     // Restore mob selections from pending changes (saved earlier in this session)
-    // pendingMobData.maturities is [{ maturityId, isRare }]
+    // pendingMobData.maturities is [{ IsRare, Maturity: { Id } }]
     if (!pendingMobData?.maturities?.length) return;
 
-    // Build a lookup: maturityId → isRare
+    // Build a lookup: maturityId → IsRare
     const pendingMap = new Map();
     for (const pm of pendingMobData.maturities) {
-      pendingMap.set(pm.maturityId, pm.isRare);
+      pendingMap.set(pm.Maturity?.Id, pm.IsRare);
     }
 
     // Walk all mobs and their maturities to find matches
@@ -260,7 +260,7 @@
     for (const mob of selectedMobs) {
       for (const mat of mob.maturities) {
         if (mat.selected) {
-          maturityList.push({ maturityId: mat.id, isRare: mat.isRare });
+          maturityList.push({ IsRare: mat.isRare, Maturity: { Id: mat.id } });
         }
       }
     }

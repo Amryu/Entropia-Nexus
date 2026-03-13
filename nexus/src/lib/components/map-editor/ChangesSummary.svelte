@@ -97,7 +97,6 @@
       // MobArea mob data (density + maturity selections)
       if (mod.mobData) {
         props.Density = mod.mobData.density ?? null;
-        props.MobData = mod.mobData.maturities ?? null;
       }
     }
 
@@ -107,6 +106,11 @@
       Properties: props,
       Planet: { Name: planet?.Name }
     };
+
+    // MobArea maturities (stored at body level, not in Properties)
+    if (mod.mobData?.maturities) {
+      body.Maturities = mod.mobData.maturities;
+    }
 
     // WaveEvent wave data (stored at body level, not in Properties)
     if (props.AreaType === 'WaveEventArea' && mod.waveData) {

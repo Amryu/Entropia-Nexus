@@ -113,11 +113,6 @@ export const Location = {
         "Notes": {
           "type": ["string", "null"],
           "default": null
-        },
-        "MobData": {
-          "type": ["array", "null"],
-          "default": null,
-          "items": { "type": "object", "additionalProperties": true }
         }
       },
       "required": ["Type", "Coordinates"]

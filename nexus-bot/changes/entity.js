@@ -1294,22 +1294,22 @@ async function applyLocationExtensionChanges(client, locationId, x) {
       [locationId, density]
     );
 
-    const mobData = x.Properties?.MobData;
+    const mobData = x.Maturities;
     if (Array.isArray(mobData)) {
       if (mobData.length === 0) {
         await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1`, [locationId]);
       } else {
-        const valid = mobData.filter(m => m.maturityId != null);
+        const valid = mobData.filter(m => m.Maturity?.Id != null);
         await client.query(
           `DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`,
-          [locationId, valid.map(m => m.maturityId)]
+          [locationId, valid.map(m => m.Maturity.Id)]
         );
         await Promise.all(valid.map(m =>
           client.query(
             `INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")
              VALUES ($1, $2, $3)
              ON CONFLICT ("LocationId", "MaturityId") DO UPDATE SET "IsRare" = $3`,
-            [locationId, m.maturityId, m.isRare ? 1 : 0]
+            [locationId, m.Maturity.Id, m.IsRare ? 1 : 0]
           )
         ));
       }

@@ -156,8 +156,8 @@
             tempId
           };
           // Restore mob data if persisted in the change
-          if (props.MobData || props.Density != null) {
-            modified.mobData = { density: props.Density ?? 4, maturities: props.MobData || [] };
+          if (data?.Maturities?.length || props.Density != null) {
+            modified.mobData = { density: props.Density ?? 4, maturities: data.Maturities || [] };
           }
           // Restore wave data if persisted in the change
           if (data?.Waves) {
