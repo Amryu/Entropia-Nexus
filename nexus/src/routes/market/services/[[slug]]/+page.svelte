@@ -68,7 +68,7 @@
   let purchasingTicket = false;
   let mounted = $state(false);
   let showAllFlights = $state(false); // For expandable flight list
-  let flightUpdateInterval = $state(null);
+  let flightUpdateInterval = null;
 
 
   // Load entity data on mount
@@ -406,7 +406,7 @@
 
   // Check if user has a ticket or single-use option available
   let userHasTicket = $state(false);
-  let hasSingleUseOffer = $state(false);
+  let hasSingleUseOffer = $derived(selectedService?.type === 'transportation' && ticketOffers?.some(offer => offer.uses_count === 1) || false);
 
 
   async function openRequestModal(tab = 'request') {
@@ -926,11 +926,6 @@
     
     return list;
   })());
-  $effect(() => {
-    if (selectedService?.type === 'transportation' && ticketOffers) {
-      hasSingleUseOffer = ticketOffers.some(offer => offer.uses_count === 1);
-    }
-  });
 </script>
 
 <svelte:head>

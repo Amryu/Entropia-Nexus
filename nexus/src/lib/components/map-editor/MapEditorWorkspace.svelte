@@ -67,7 +67,7 @@
   let mobEditorContext = $state(null);
   let filteredLocationIds = $state(null);
   let nextTempId = -1;
-  let lastAppliedFocusKey = $state(null);
+  let lastAppliedFocusKey = null;
   let waveEditorContext = $state(null);
   let selectedDbChange = $state(null); // DB pending change selected for read-only viewing
   let modifiedDbChanges = new Set(); // DB-seeded changes that have been locally modified
@@ -162,7 +162,7 @@
           }
           pendingChanges.set(tempId, { action: 'edit', original: null, modified, _dbSeeded: true });
           dbChangeIdMap.set(tempId, change.id);
-          pendingChanges = pendingChanges;
+
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
         }
         selectedId = tempId;
@@ -183,7 +183,7 @@
           };
           pendingChanges.set(data.Id, { action: 'edit', original: loc, modified, _dbSeeded: true });
           dbChangeIdMap.set(data.Id, change.id);
-          pendingChanges = pendingChanges;
+
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
           selectedId = data.Id;
         } else {
@@ -248,7 +248,7 @@
     };
 
     pendingChanges.set(tempId, { action: 'edit', original: null, modified });
-    pendingChanges = pendingChanges;
+
 
     // Select the new pending add for editing
     selectedId = tempId;
@@ -262,7 +262,7 @@
     const tempId = nextTempId--;
     modified.tempId = tempId;
     pendingChanges.set(tempId, { action: 'edit', original: null, modified });
-    pendingChanges = pendingChanges;
+
     isNewLocation = false;
     drawnShapeData = null;
   }
@@ -299,14 +299,14 @@
     }
     // Track that this DB-seeded change was locally modified
     if (dbChangeIdMap.has(original.Id)) { modifiedDbChanges.add(original.Id); modifiedDbChanges = modifiedDbChanges; }
-    pendingChanges = pendingChanges;
+
     // Force rebuild so the map reflects the saved state even when _editingActive blocks the reactive
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
   }
 
   function handleDeleteLocation(loc) {
     pendingChanges.set(loc.Id, { action: 'delete', original: loc, modified: null });
-    pendingChanges = pendingChanges;
+
   }
 
   function handleRevertLocation(loc) {
@@ -314,7 +314,7 @@
       pendingChanges.delete(loc.Id);
       if (modifiedDbChanges.delete(loc.Id)) modifiedDbChanges = modifiedDbChanges;
     }
-    pendingChanges = pendingChanges;
+
     previewShape = null; // Clear afterimage
     // Force rebuild: _editingActive may block the reactive rebuildLayers
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
@@ -327,7 +327,7 @@
       pendingChanges.delete(tempId);
       dbChangeIdMap.delete(tempId);
       modifiedDbChanges.delete(tempId);
-      pendingChanges = pendingChanges;
+  
       if (selectedId === tempId) {
         selectedId = null;
       }
@@ -353,7 +353,7 @@
         // Remove from dbPendingChanges so the overlay doesn't re-render it
         const idx = dbPendingChanges.findIndex(c => c.id === dbId);
         if (idx !== -1) { dbPendingChanges.splice(idx, 1); dbPendingChanges = dbPendingChanges; }
-        pendingChanges = pendingChanges;
+    
         if (selectedId === tempId) {
           selectedId = null;
         }
@@ -375,7 +375,7 @@
         pendingChanges.set(id, { action: 'delete', original: loc, modified: null });
       }
     }
-    pendingChanges = pendingChanges;
+
   }
 
   /**
@@ -460,7 +460,7 @@
       delete existing._dbSeeded;
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
       pendingChanges.set(locId, existing);
-      pendingChanges = pendingChanges;
+  
     } else if (loc) {
       // Existing location: create/update edit change
       const modified = existing?.modified || {};
@@ -485,7 +485,7 @@
 
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
       pendingChanges.set(locId, { action: 'edit', original: loc, modified });
-      pendingChanges = pendingChanges;
+  
 
       // Show afterimage of original position
       showAfterimageForOriginal(locId);
@@ -515,7 +515,7 @@
         pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
       }
     }
-    pendingChanges = pendingChanges;
+
     rightPanel = 'editor';
     waveEditorContext = null;
   }
@@ -541,7 +541,7 @@
         pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
       }
     }
-    pendingChanges = pendingChanges;
+
     rightPanel = 'editor';
     mobEditorContext = null;
   }
@@ -569,7 +569,7 @@
     };
 
     pendingChanges.set(tempId, { action: 'edit', original: null, modified });
-    pendingChanges = pendingChanges;
+
     isNewLocation = false;
     drawnShapeData = null;
   }
@@ -612,15 +612,25 @@
     }
   });
   // --- Reactive derivations ---
+  // Memoize selectedLocation to avoid emitting new object references when data hasn't changed.
+  // Without this, every pendingChanges mutation re-derives a new spread object, triggering
+  // downstream effects in LocationEditor even though the visible data is identical.
+  let _prevSelectedJson = null;
+  let _prevSelectedResult = null;
   let selectedLocation = $derived((() => {
-    if (!selectedId) return null;
+    let result = null;
+    if (!selectedId) {
+      _prevSelectedJson = null;
+      _prevSelectedResult = null;
+      return null;
+    }
     const loc = locations.find(l => l.Id === selectedId);
     if (loc) {
       // Merge pending edit data so the editor form reflects map edits
       const pending = pendingChanges.get(loc.Id);
       if (pending?.action === 'edit' && pending.modified) {
         const mod = pending.modified;
-        return {
+        result = {
           ...loc,
           Name: mod.name ?? loc.Name,
           _hasPendingEdit: true,
@@ -641,46 +651,52 @@
             }
           }
         };
+      } else {
+        result = loc;
       }
-      return loc;
+    } else {
+      const pending = pendingChanges.get(selectedId);
+      if (!pending?.original && pending?.modified) {
+        const mod = pending.modified;
+        result = {
+          Id: selectedId,
+          Name: mod.name || '',
+          _isPendingAdd: true,
+          ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
+          Properties: {
+            Type: mod.locationType === 'Area' ? (mod.areaType || 'MobArea') : (mod.locationType || 'Area'),
+            AreaType: mod.areaType || null,
+            Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
+            Shape: mod.shape || null,
+            Data: mod.shapeData || null,
+            Description: mod.description || null,
+          }
+        };
+      } else if (selectedDbChange) {
+        // DB pending change (read-only viewing)
+        const d = selectedDbChange.data;
+        const props = d?.Properties || {};
+        result = {
+          Id: selectedId,
+          Name: d?.Name || '',
+          _isDbChange: true,
+          Properties: {
+            Type: props.Type || 'Location',
+            AreaType: props.AreaType || null,
+            Coordinates: props.Coordinates || {},
+            Shape: props.Shape || null,
+            Data: props.Data || null,
+            Description: props.Description || null,
+          }
+        };
+      }
     }
-    const pending = pendingChanges.get(selectedId);
-    if (!pending?.original && pending?.modified) {
-      const mod = pending.modified;
-      return {
-        Id: selectedId,
-        Name: mod.name || '',
-        _isPendingAdd: true,
-        ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
-        Properties: {
-          Type: mod.locationType === 'Area' ? (mod.areaType || 'MobArea') : (mod.locationType || 'Area'),
-          AreaType: mod.areaType || null,
-          Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
-          Shape: mod.shape || null,
-          Data: mod.shapeData || null,
-          Description: mod.description || null,
-        }
-      };
-    }
-    // DB pending change (read-only viewing)
-    if (selectedDbChange) {
-      const d = selectedDbChange.data;
-      const props = d?.Properties || {};
-      return {
-        Id: selectedId,
-        Name: d?.Name || '',
-        _isDbChange: true,
-        Properties: {
-          Type: props.Type || 'Location',
-          AreaType: props.AreaType || null,
-          Coordinates: props.Coordinates || {},
-          Shape: props.Shape || null,
-          Data: props.Data || null,
-          Description: props.Description || null,
-        }
-      };
-    }
-    return null;
+    // Memoize: return the same reference if the data hasn't changed
+    const json = JSON.stringify(result);
+    if (json === _prevSelectedJson) return _prevSelectedResult;
+    _prevSelectedJson = json;
+    _prevSelectedResult = result;
+    return result;
   })());
   // Read-only when: viewing another user's DB pending change, or a non-admin
   // user selects a location locked by another user's pending change.

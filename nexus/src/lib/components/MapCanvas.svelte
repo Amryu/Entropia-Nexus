@@ -252,10 +252,12 @@
     hovered = $bindable(),
     searchResults = []
   } = $props();
-  let filteredLocations = $state([]);
+  let filteredLocations = [];
+  let filteredAreas = [];
+  let filteredPoints = [];
 
   // Pre-compute search result lookup (Id → index) to avoid creating a Map every draw frame
-  let searchResultMap = $state(new Map());
+  let searchResultMap = new Map();
 
   // Layer visibility toggles
   let showTeleporters = $state(true);
@@ -277,7 +279,7 @@
 
   let imgLoaded = false;
 
-  let mapCenterPos = $state({ x: 0, y: 0 });
+  let mapCenterPos = { x: 0, y: 0 };
   let mousePos = { x: 0, y: 0 };
   let dragStartPos = { x: 0, y: 0 };
   let dragMoved = false;
@@ -298,7 +300,7 @@
   let inertiaId = null;
   let velocity = { x: 0, y: 0 };
 
-  let zoom = $state(1);
+  let zoom = 1;
   let targetZoom = zoom;
   let zoomTransitionStart = null;
   let zoomAnimationId = null;
@@ -307,7 +309,7 @@
   let canvasElement = $state();
   let img;
   let ctx;
-  let canvasBounds = $state();
+  let canvasBounds;
   let drawAnimationId;
 
   // Dirty-flag rendering: only redraw when something changes
@@ -319,7 +321,7 @@
   let tooltipText = $state();
   let tooltipShow = $state(false);
   let tooltipPos = $state({ x: 0, y: 0 });
-  let wasPositionCopied = $state(false);
+
 
   let editMode = false;
   let editType = null;
@@ -329,6 +331,7 @@
       label: 'Copy Waypoint',
       action: (_, position) => {
         if (!browser) return;
+        updateTransform();
         let canvasCoords = windowToCanvasCoords(position.x, position.y);
         let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
         navigator.clipboard.writeText(`/wp ${getWaypoint(planet.Properties.TechnicalName ?? planet.Name, entropiaCoords.x.toFixed(0), entropiaCoords.y.toFixed(0), 100, 'Waypoint')}`)
@@ -512,6 +515,7 @@
 
   function onWheel(event) {
     event.preventDefault();
+    updateTransform();
 
     // Get mouse position in canvas coordinates
     const canvasCoords = windowToCanvasCoords(event.clientX, event.clientY);
@@ -832,20 +836,21 @@
       return;
     }
 
+    // Precompute transform for this frame (used by imageCoordsToCanvasCoords)
+    updateTransform();
+
     // Calculate the visible height and width of the image based on the zoom level
     const visibleHeight = imageTileSize / zoom;
     const visibleWidth = (canvasBounds.width / canvasBounds.height) * visibleHeight;
 
     // Calculate the source and destination coordinates and dimensions
-    const srcX = mapCenterPos.x - visibleWidth / 2;
-    const srcY = mapCenterPos.y - visibleHeight / 2;
-    const destX = 0;
-    const destY = 0;
+    const srcX = _txSrcX;
+    const srcY = _txSrcY;
     const destWidth = canvasBounds.width;
     const destHeight = (visibleHeight / visibleWidth) * destWidth;
 
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, srcX, srcY, visibleWidth, visibleHeight, destX, destY, destWidth, destHeight);
+    ctx.drawImage(img, srcX, srcY, visibleWidth, visibleHeight, 0, 0, destWidth, destHeight);
 
     // Ensure image-space cache is ready for all visible locations
     prepareLocationsCache();
@@ -862,39 +867,38 @@
     };
 
     // Draw areas first (below), then point locations on top
-    const isAreaType = (loc) => ['Circle', 'Rectangle', 'Polygon'].includes(loc.Properties?.Shape);
-    const hasSearch = searchResultMap.size > 0;
+    // Cache reactive values to avoid repeated proxy reads in hot loop
+    const _searchMap = searchResultMap;
+    const _hoveredId = hovered?.Id;
+    const _selectedId = selected?.Id;
+    const hasSearch = _searchMap.size > 0;
 
     // First pass: draw areas (they go underneath)
-    for (const loc of filteredLocations) {
-      if (!isAreaType(loc)) continue;
+    for (const loc of filteredAreas) {
       if (!isInViewport(loc)) continue;
-      const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
-      const isSelected = !!selected && !!loc && selected.Id === loc.Id;
-      if (hasSearch && searchResultMap.has(loc.Id) && !isHovered && !isSelected) {
-        // Search result: draw numbered label with its color
-        drawSearchResult(ctx, loc, searchResultMap.get(loc.Id));
-      } else if (hasSearch && !searchResultMap.has(loc.Id) && !isHovered && !isSelected) {
-        // Non-result during search: desaturate
+      const isHov = _hoveredId != null && loc.Id === _hoveredId;
+      const isSel = _selectedId != null && loc.Id === _selectedId;
+      if (hasSearch && _searchMap.has(loc.Id) && !isHov && !isSel) {
+        drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
+      } else if (hasSearch && !_searchMap.has(loc.Id) && !isHov && !isSel) {
         drawDesaturated(ctx, loc);
       } else {
-        drawShape(ctx, loc, isHovered, isSelected);
+        drawShape(ctx, loc, isHov, isSel);
       }
     }
 
     // Second pass: draw point locations (they go on top)
-    for (const loc of filteredLocations) {
-      if (isAreaType(loc)) continue;
+    for (const loc of filteredPoints) {
       if (!isInViewport(loc)) continue;
-      const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
-      const isSelected = !!selected && !!loc && selected.Id === loc.Id;
+      const isHov = _hoveredId != null && loc.Id === _hoveredId;
+      const isSel = _selectedId != null && loc.Id === _selectedId;
       const isTeleporter = loc.Properties?.Type === 'Teleporter';
-      if (hasSearch && searchResultMap.has(loc.Id) && !isHovered && !isSelected) {
-        drawSearchResult(ctx, loc, searchResultMap.get(loc.Id));
-      } else if (hasSearch && !searchResultMap.has(loc.Id) && !isHovered && !isSelected && !isTeleporter) {
+      if (hasSearch && _searchMap.has(loc.Id) && !isHov && !isSel) {
+        drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
+      } else if (hasSearch && !_searchMap.has(loc.Id) && !isHov && !isSel && !isTeleporter) {
         drawDesaturated(ctx, loc);
       } else {
-        drawShape(ctx, loc, isHovered, isSelected);
+        drawShape(ctx, loc, isHov, isSel);
       }
     }
 
@@ -926,6 +930,19 @@
   // --- Hit Detection ---
   function getShapeAtCanvasPos(x, y, buffer = 0) {
     const isAreaType = (loc) => ['Circle', 'Rectangle', 'Polygon'].includes(loc.Properties?.Shape);
+
+    // Viewport culling in image space — skip off-screen locations (uses precomputed transform)
+    const visibleHeight = imageTileSize / zoom;
+    const visibleWidth = visibleHeight * canvasBounds.width / canvasBounds.height;
+    const viewX0 = _txSrcX;
+    const viewY0 = _txSrcY;
+    const viewX1 = _txSrcX + visibleWidth;
+    const viewY1 = _txSrcY + visibleHeight;
+    const isInViewport = (loc) => {
+      const bb = loc._imgBbox;
+      if (!bb) return true;
+      return bb.x1 >= viewX0 && bb.x0 <= viewX1 && bb.y1 >= viewY0 && bb.y0 <= viewY1;
+    };
 
     // Helper to check if point hits a location (uses cached image-space coords)
     const checkHit = (loc, i) => {
@@ -969,6 +986,7 @@
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
       if (isAreaType(loc)) continue;
+      if (!isInViewport(loc)) continue;
       const hit = checkHit(loc, i);
       if (hit) return hit;
     }
@@ -977,6 +995,7 @@
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
       if (!isAreaType(loc)) continue;
+      if (!isInViewport(loc)) continue;
       const hit = checkHit(loc, i);
       if (hit) return hit;
     }
@@ -1002,9 +1021,22 @@
   let canvasHoverIndex = null;
 
   function handleCanvasMouseMove(event) {
+    if (dragging) {
+      // During pan, skip expensive hit detection
+      if (hovered) {
+        hovered = null;
+        canvasHover = null;
+        canvasHoverType = null;
+        canvasHoverIndex = null;
+        tooltipShow = false;
+        markDirty();
+      }
+      return;
+    }
     const rect = canvasElement.getBoundingClientRect();
     const x = (event.clientX - rect.left);
     const y = (event.clientY - rect.top);
+    updateTransform();
     prepareLocationsCache();
     const hit = getShapeAtCanvasPos(x, y);
     const prevHovered = hovered;
@@ -1025,7 +1057,7 @@
       canvasElement.style.cursor = dragging ? 'grabbing' : 'default';
       tooltipShow = false;
     }
-    if (hovered !== prevHovered) markDirty();
+    if (hovered?.Id !== prevHovered?.Id) markDirty();
   }
 
   function getAllShapesAtCanvasPos(x, y, buffer = 0) {
@@ -1034,8 +1066,18 @@
     const foundLocations = [];
     const foundAreas = [];
 
+    // Viewport culling in image space (uses precomputed transform)
+    const visibleHeight = imageTileSize / zoom;
+    const visibleWidth = visibleHeight * canvasBounds.width / canvasBounds.height;
+    const viewX0 = _txSrcX;
+    const viewY0 = _txSrcY;
+    const viewX1 = _txSrcX + visibleWidth;
+    const viewY1 = _txSrcY + visibleHeight;
+
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
+      const bb = loc._imgBbox;
+      if (bb && (bb.x1 < viewX0 || bb.x0 > viewX1 || bb.y1 < viewY0 || bb.y0 > viewY1)) continue;
       const type = loc.Properties.Shape;
       if (type === 'Circle') {
         const center = imageCoordsToCanvasCoords(loc._imgCircle.cx, loc._imgCircle.cy);
@@ -1075,8 +1117,19 @@
 
   function getNearestShapesAtCanvasPos(x, y, buffer = 0) {
     const candidates = [];
+
+    // Viewport culling in image space (uses precomputed transform)
+    const visibleHeight = imageTileSize / zoom;
+    const visibleWidth = visibleHeight * canvasBounds.width / canvasBounds.height;
+    const viewX0 = _txSrcX;
+    const viewY0 = _txSrcY;
+    const viewX1 = _txSrcX + visibleWidth;
+    const viewY1 = _txSrcY + visibleHeight;
+
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
+      const bb = loc._imgBbox;
+      if (bb && (bb.x1 < viewX0 || bb.x0 > viewX1 || bb.y1 < viewY0 || bb.y0 > viewY1)) continue;
       const type = loc.Properties.Shape;
       if (type === 'Circle') {
         const center = imageCoordsToCanvasCoords(loc._imgCircle.cx, loc._imgCircle.cy);
@@ -1137,6 +1190,7 @@
     const rect = canvasElement.getBoundingClientRect();
     const x = (event.clientX - rect.left);
     const y = (event.clientY - rect.top);
+    updateTransform();
     prepareLocationsCache();
     const hitBuffer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 28 : 0;
     const hits = getAllShapesAtCanvasPos(x, y, hitBuffer);
@@ -1172,6 +1226,7 @@
     const rect = canvasElement.getBoundingClientRect();
     const x = (event.clientX - rect.left);
     const y = (event.clientY - rect.top);
+    updateTransform();
     const hit = getShapeAtCanvasPos(x, y);
     if (hit) {
       // Automatically copy waypoint to clipboard
@@ -1312,34 +1367,31 @@
     };
   }
 
-  function imageCoordsToCanvasCoords(imageX, imageY) {
+  // Precomputed transform parameters (updated once per frame in draw())
+  let _txSrcX = 0, _txSrcY = 0, _txScaleX = 1, _txScaleY = 1;
+
+  function updateTransform() {
     const visibleHeight = imageTileSize / zoom;
     const visibleWidth = (canvasBounds.width / canvasBounds.height) * visibleHeight;
+    _txSrcX = mapCenterPos.x - visibleWidth / 2;
+    _txSrcY = mapCenterPos.y - visibleHeight / 2;
+    _txScaleX = canvasBounds.width / visibleWidth;
+    _txScaleY = canvasBounds.height / visibleHeight;
+  }
 
-    // Calculate the source and destination coordinates and dimensions
-    const srcX = mapCenterPos.x - visibleWidth / 2;
-    const srcY = mapCenterPos.y - visibleHeight / 2;
-
-    // Transform the image coordinates to canvas coordinates
-    const canvasX = (imageX - srcX) * (canvasBounds.width / visibleWidth);
-    const canvasY = (imageY - srcY) * (canvasBounds.height / visibleHeight);
-
-    return { x: canvasX, y: canvasY };
+  function imageCoordsToCanvasCoords(imageX, imageY) {
+    return {
+      x: (imageX - _txSrcX) * _txScaleX,
+      y: (imageY - _txSrcY) * _txScaleY
+    };
   }
 
   function canvasCoordsToImageCoords(canvasX, canvasY) {
-    const visibleHeight = imageTileSize / zoom;
-    const visibleWidth = (canvasBounds.width / canvasBounds.height) * visibleHeight;
-
-    // Calculate the source and destination coordinates and dimensions
-    const srcX = mapCenterPos.x - visibleWidth / 2;
-    const srcY = mapCenterPos.y - visibleHeight / 2;
-
-    // Transform the canvas coordinates to image coordinates
-    const imageX = srcX + (canvasX / canvasBounds.width) * visibleWidth;
-    const imageY = srcY + (canvasY / canvasBounds.height) * visibleHeight;
-
-    return { x: imageX, y: imageY };
+    // Inverse of imageCoordsToCanvasCoords using precomputed transform
+    return {
+      x: _txSrcX + canvasX / _txScaleX,
+      y: _txSrcY + canvasY / _txScaleY
+    };
   }
 
   function entropiaCoordsToCanvasCoords(entropiaX, entropiaY) {
@@ -1418,11 +1470,6 @@
   function togglePvpAreas() { showPvpAreas = !showPvpAreas; }
   function toggleOtherAreas() { showOtherAreas = !showOtherAreas; }
   $effect(() => { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); });
-  $effect(() => {
-    if (canvasBounds && mapCenterPos != null && zoom) {
-      locations = locations;
-    }
-  });
   // Filter locations based on layer toggles
   // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
   $effect(() => {
@@ -1453,9 +1500,16 @@
       // Other areas (Zone, Event, City, Estate, etc.)
       return showOtherAreas;
     }) : [];
-  });
-  $effect(() => {
-    if (filteredLocations) { if (browser) markDirty(); }
+    // Pre-split into areas and points for the two-pass draw loop
+    const _areas = [], _points = [];
+    for (const loc of filteredLocations) {
+      const s = loc.Properties?.Shape;
+      if (s === 'Circle' || s === 'Rectangle' || s === 'Polygon') _areas.push(loc);
+      else _points.push(loc);
+    }
+    filteredAreas = _areas;
+    filteredPoints = _points;
+    if (browser) markDirty();
   });
   $effect(() => {
     if ($mapLoadedStore === false) {

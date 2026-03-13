@@ -72,7 +72,7 @@
   };
 
   // Track initialization to prevent re-init during editing
-  let lastInitKey = $state(null);
+  let lastInitKey = null;
 
 
 
@@ -91,7 +91,7 @@
   // Cooldown duration state for Recurring missions
   let cooldownValue = $state(1);
   let cooldownUnit = $state('days');
-  let lastParsedMissionId = $state(null);
+  let lastParsedMissionId = null;
 
 
   // Parse PostgreSQL INTERVAL format (e.g., "1 day", "2 hours", "30 minutes", "00:30:00")
@@ -161,7 +161,7 @@
 
   // Track chain names that are trusted (from entity, pending change, or created via dialog)
   // These bypass validation since they will be created when the change is saved
-  let trustedChainNames = $state(new Set());
+  let trustedChainNames = new Set();
 
 
 

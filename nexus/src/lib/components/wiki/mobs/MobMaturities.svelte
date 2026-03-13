@@ -18,7 +18,7 @@
   /** @type {Props} */
   let { maturities = [], type = null, selectedMaturityId = null } = $props();
   let tableContainer = $state();
-  let lastSelectedKey = $state(null);
+  let lastSelectedKey = null;
 
   // Sort maturities: non-bosses first, by Level then Health (nulls at end)
   let sortedMaturities = $derived(maturities ? [...maturities].sort((a, b) => {

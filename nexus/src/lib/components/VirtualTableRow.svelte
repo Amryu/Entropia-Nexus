@@ -38,14 +38,14 @@
 	}));
 	let mounted = $state();
 
-  let top = $state(0);
-  let bottom = $state(0);
+  let top = $derived(start * itemHeight);
+  let bottom = $derived((items.length - end) * itemHeight + (Math.max(viewport_height - start * itemHeight, end * itemHeight) - start * itemHeight));
 
 
   let resizeObserver = $state();
 
 
-  let handlersAttached = $state(false);
+  let handlersAttached = false;
 
 
 
@@ -102,14 +102,8 @@
       resizeObserver.disconnect();
     }
   });
-	$effect(() => {
-		top = start * itemHeight;
-	});
   $effect(() => {
 		if(contents) contents.style.paddingTop = `${top}px`;
-	});
-	$effect(() => {
-		bottom = (items.length - end) * itemHeight + (Math.max(viewport_height - start * itemHeight, end * itemHeight) - start * itemHeight);
 	});
   $effect(() => {
 		if(contents) contents.style.paddingBottom = `${bottom}px`;

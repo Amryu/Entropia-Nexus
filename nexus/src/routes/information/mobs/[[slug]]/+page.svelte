@@ -96,7 +96,7 @@
   let showCreateSpeciesDialog = $state(false);
   let showEditSpeciesDialog = $state(false);
   let localSpeciesList = $state([]);
-  let localSpeciesSeed = $state('');
+  let localSpeciesSeed = '';
   $effect(() => {
     const seed = JSON.stringify((speciesList || []).map(s => [
       s?.Name || '',
@@ -153,7 +153,7 @@
   };
 
   // Track initialization to avoid resetting edits on query-only navigation.
-  let lastInitKey = $state(null);
+  let lastInitKey = null;
   $effect(() => {
     const initKey = `Mob-${mob?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
     if (user && initKey !== untrack(() => lastInitKey)) {
@@ -726,7 +726,7 @@
     globals: false
   });
   let maturitiesSectionAnchor = $state();
-  let lastMaturityScrollKey = $state(null);
+  let lastMaturityScrollKey = null;
 
   onMount(() => {
     try {

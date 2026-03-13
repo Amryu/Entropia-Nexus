@@ -107,7 +107,7 @@
   let isDirty = $state(false);
 
   // Debounced auto-save
-  let saveTimeout = $state(null);
+  let saveTimeout = null;
   const SAVE_DEBOUNCE_MS = 2000;
 
   let hasLocalData = $state(false);
@@ -159,7 +159,7 @@
   let exchangeSlimItems = $state([]); // flat array for InventoryImportDialog
 
   // Track targets for resetting checked state
-  let previousTargetsKey = $state('');
+  let previousTargetsKey = '';
 
   // Calculator configuration
   let rollChance = $state(DEFAULT_CONFIG.rollChance); // % chance each material wins refund roll
@@ -246,13 +246,11 @@
     const num = parseFloat(value);
     if (!isNaN(num) && num >= 0) {
       markupValues[key] = Math.min(100000, num);
-      markupValues = markupValues; // trigger reactivity
     }
   }
 
   function resetMarkup(key) {
     delete markupValues[key];
-    markupValues = markupValues; // trigger reactivity
   }
 
   // Exchange data helpers
@@ -888,7 +886,6 @@
           const idx = onlinePlans.findIndex(p => p.id === activePlanId);
           if (idx >= 0) {
             onlinePlans[idx] = updated;
-            onlinePlans = onlinePlans;
           }
           isDirty = false;
         } else {
@@ -898,7 +895,6 @@
         const idx = localPlans.findIndex(p => p.id === activePlanId);
         if (idx >= 0) {
           localPlans[idx] = { ...activePlan, last_update: new Date().toISOString() };
-          localPlans = localPlans;
           saveLocalData();
         }
         isDirty = false;

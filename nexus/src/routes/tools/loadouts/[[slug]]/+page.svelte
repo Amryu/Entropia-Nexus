@@ -188,11 +188,11 @@
   let clothingReplaceNotice = $state('');
   let loadoutVersion = $state(0);
   let evaluation = $state(null);
-  let allEffects = $state([]);
-  let offensiveEffects = $state([]);
-  let defensiveEffects = $state([]);
-  let utilityEffects = $state([]);
-  let offensiveTotals = $state({ damage: 0, reload: 0, critChance: 0, critDamage: 0 });
+  let allEffects = $derived(evaluation?.effects?.all ?? []);
+  let offensiveEffects = $derived(evaluation?.effects?.offensive ?? []);
+  let defensiveEffects = $derived(evaluation?.effects?.defensive ?? []);
+  let utilityEffects = $derived(evaluation?.effects?.utility ?? []);
+  let offensiveTotals = $derived(evaluation?.offensiveTotals ?? { damage: 0, reload: 0, critChance: 0, critDamage: 0 });
   let expandedEffectKeys = $state(new Set());
 
   // Set management
@@ -213,16 +213,20 @@
   let compareSetsOpen = $state(false);
   let compareSetSections = $state(new Set()); // Which sections to permute: 'Weapon', 'Armor', etc.
   let compareSetPermutations = $state([]); // Array of { loadout, label, setIndices }
-  let compareSetMode = $state(false); // Derived: compareSetSections.size > 0
+  let compareSetMode = $derived(compareSetSections.size > 0);
   let compareColumnKeysWeapons = $state(['name', 'efficiency', 'dps', 'dpp', 'critChance', 'critDamage', 'reload', 'cost']);
   let compareColumnKeysArmor = $state(['name', 'armorName', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance']);
-  let compareAnchorId = $state(null);
-  let compareAnchorEval = $state(null);
-  let compareEffectiveDisplay = $state('values');
-  let compareVisibleKeys = $state([]);
+  let compareAnchorId = $derived(loadout?.Id ?? null);
+  let compareAnchorEval = $derived(compareAnchorId ? compareEvalCache.get(compareAnchorId) : null);
+  let compareEffectiveDisplay = $derived(compareDisplay === 'delta' && compareAnchorEval ? 'delta' : 'values');
+  let compareVisibleKeys = $derived(isMobileLayout
+    ? COMPARE_MOBILE_KEYS[compareType]
+    : (compareType === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor));
   let compareRows = $state([]);
-  let hiddenCompareRows = $state([]);
-  let compareColumns = $state([]);
+  let hiddenCompareRows = $derived(loadouts
+    .filter(lo => lo?.Id && compareHiddenLoadoutIds.has(lo.Id))
+    .map(lo => ({ id: lo.Id, name: lo.Name })));
+  let compareColumns = $derived(compareMode ? buildCompareColumns() : []);
 
   const COMPARE_COLUMNS_STORAGE_KEYS = {
     weapons: 'nexus.loadouts.compare.columns.weapons',
@@ -460,7 +464,7 @@
     stimulants = (entities.consumables || []).sort(alphabeticalSort);
     entitiesVersion += 1;
     if (loadout) {
-      loadout = loadout;
+      loadoutVersion += 1;
     }
   }
 
@@ -1281,11 +1285,7 @@
 
   function touchLoadouts() {
     onLoadoutPreSave();
-    if (activeSource === 'online') {
-      onlineLoadouts = onlineLoadouts;
-    } else {
-      localLoadouts = localLoadouts;
-      loadouts = localLoadouts;
+    if (activeSource !== 'online') {
       writeLocalLoadouts(localLoadouts);
     }
     loadoutVersion += 1;
@@ -1343,7 +1343,6 @@
           last_update: result?.last_update || onlineLoadouts[recordIndex].last_update,
           data: loadout
         };
-        onlineLoadouts = onlineLoadouts;
       }
       if (result?.share_code && typeof window !== 'undefined') {
         shareLink = `${window.location.origin}/tools/loadouts/${result.share_code}`;
@@ -1430,8 +1429,6 @@
       const index = localLoadouts.findIndex(x => x.Id === loadout.Id);
       if (index < 0) return;
       localLoadouts.splice(index, 1);
-      localLoadouts = localLoadouts;
-      loadouts = localLoadouts;
       await setActiveLoadout(null, { skipSave: true });
       writeLocalLoadouts(localLoadouts);
     }
@@ -2197,8 +2194,6 @@
     applySectionData(section, loadout, setEntry);
 
     activeSetIndices[section] = newIndex;
-    activeSetIndices = activeSetIndices; // Trigger reactivity
-    loadout = loadout; // Trigger reactivity
     loadoutVersion += 1;
   }
 
@@ -2224,7 +2219,6 @@
       }
 
       loadout.Sets[section].splice(index, 1);
-      loadout.Sets[section] = loadout.Sets[section]; // Trigger reactivity
 
       // Ensure isDefault exists on at least one
       if (!loadout.Sets[section].some(s => s.isDefault)) {
@@ -2239,8 +2233,6 @@
       }
     }
 
-    activeSetIndices = activeSetIndices;
-    loadout = loadout;
     loadoutVersion += 1;
     setTabMenuOpen = null;
     markDirty();
@@ -2251,7 +2243,6 @@
     for (let i = 0; i < loadout.Sets[section].length; i++) {
       loadout.Sets[section][i].isDefault = (i === index);
     }
-    loadout = loadout;
     setTabMenuOpen = null;
     markDirty();
   }
@@ -2269,7 +2260,6 @@
     if (!setRenameDialog || !loadout?.Sets?.[setRenameDialog.section]) return;
     const { section, index, name } = setRenameDialog;
     loadout.Sets[section][index].name = name.trim().slice(0, 120) || `Set ${index + 1}`;
-    loadout = loadout;
     setRenameDialog = null;
     markDirty();
   }
@@ -3553,11 +3543,6 @@
           { effectsCatalog, effectCaps, isLimitedName }
         )
       : null;
-    allEffects = evaluation?.effects?.all ?? [];
-    offensiveEffects = evaluation?.effects?.offensive ?? [];
-    defensiveEffects = evaluation?.effects?.defensive ?? [];
-    utilityEffects = evaluation?.effects?.utility ?? [];
-    offensiveTotals = evaluation?.offensiveTotals ?? { damage: 0, reload: 0, critChance: 0, critDamage: 0 };
   });
   let stats = $derived(evaluation?.stats || {});
   let nonActiveHotBonuses = $derived((() => {
@@ -3630,10 +3615,6 @@
       if (pruned.size !== untrack(() => compareSetSections).size) compareSetSections = pruned;
     }
   });
-  // --- Set permutation comparison ---
-  $effect(() => {
-    compareSetMode = compareSetSections.size > 0;
-  });
   // Rebuild permutations when relevant state changes
   $effect(() => {
     if (compareMode && compareSetMode && loadout) {
@@ -3678,20 +3659,6 @@
     }
   });
   $effect(() => {
-    compareAnchorId = loadout?.Id ?? null;
-  });
-  $effect(() => {
-    compareAnchorEval = compareAnchorId ? compareEvalCache.get(compareAnchorId) : null;
-  });
-  $effect(() => {
-    compareEffectiveDisplay = compareDisplay === 'delta' && compareAnchorEval ? 'delta' : 'values';
-  });
-  $effect(() => {
-    compareVisibleKeys = isMobileLayout
-      ? COMPARE_MOBILE_KEYS[compareType]
-      : (compareType === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor);
-  });
-  $effect(() => {
     if (untrack(() => compareHiddenLoadoutIds).size > 0) {
       const existing = new Set(loadouts.filter(lo => lo?.Id).map(lo => lo.Id));
       const pruned = new Set(Array.from(untrack(() => compareHiddenLoadoutIds)).filter(id => existing.has(id)));
@@ -3727,17 +3694,6 @@
     }
   });
   $effect(() => {
-    hiddenCompareRows = loadouts
-      .filter(lo => lo?.Id && compareHiddenLoadoutIds.has(lo.Id))
-      .map(lo => ({ id: lo.Id, name: lo.Name }));
-  });
-  $effect(() => {
-    compareType;
-    compareVisibleKeys;
-    compareEffectiveDisplay;
-    compareColumns = compareMode ? buildCompareColumns() : [];
-  });
-  $effect(() => {
     if (activeSource === 'local') {
       writeLocalLoadouts(localLoadouts);
     }
@@ -3760,51 +3716,51 @@
     const query = loadoutSearch.trim().toLowerCase();
     return !query || name.includes(query);
   }));
+  // Enhancer/markup/armor normalization effects.
+  // These read and write the same $state (loadout), so use untrack to avoid infinite loops.
+  // They subscribe only to loadout identity; nested reads/writes are untracked.
   $effect(() => {
-    if(loadout?.Gear.Weapon.Enhancers) {
-      loadout.Gear.Weapon.Enhancers.Damage = clamp(loadout.Gear.Weapon.Enhancers.Damage, 0, 10);
-      loadout.Gear.Weapon.Enhancers.Accuracy = clamp(loadout.Gear.Weapon.Enhancers.Accuracy, 0, 10);
-      loadout.Gear.Weapon.Enhancers.Range = clamp(loadout.Gear.Weapon.Enhancers.Range, 0, 10);
-      loadout.Gear.Weapon.Enhancers.Economy = clamp(loadout.Gear.Weapon.Enhancers.Economy, 0, 10);
-      loadout.Gear.Weapon.Enhancers.SkillMod = clamp(loadout.Gear.Weapon.Enhancers.SkillMod, 0, 10);
-    }
-  });
-  $effect(() => {
-    if(loadout?.Gear.Armor.Enhancers) {
-      loadout.Gear.Armor.Enhancers.Defense = clamp(loadout.Gear.Armor.Enhancers.Defense, 0, 10);
-      loadout.Gear.Armor.Enhancers.Durability = clamp(loadout.Gear.Armor.Enhancers.Durability, 0, 10);
-    }
-  });
-  $effect(() => {
-    if(loadout?.Gear?.Healing?.Enhancers) {
-      loadout.Gear.Healing.Enhancers.Economy = clamp(loadout.Gear.Healing.Enhancers.Economy, 0, 10);
-      loadout.Gear.Healing.Enhancers.SkillMod = clamp(loadout.Gear.Healing.Enhancers.SkillMod, 0, 10);
-    }
-  });
-  $effect(() => {
-    if (loadout && loadout.Markup == null) {
-      resetMarkup();
-    }
-  });
-  $effect(() => {
-    if (loadout?.Markup) {
-      if (loadout.Markup.ArmorSet == null) loadout.Markup.ArmorSet = 100;
-      if (loadout.Markup.PlateSet == null) loadout.Markup.PlateSet = 100;
-      if (!loadout.Markup.Armors) loadout.Markup.Armors = {};
-      if (!loadout.Markup.Plates) loadout.Markup.Plates = {};
-      armorSlots.forEach(slot => {
-        if (loadout.Markup.Armors[slot] == null) loadout.Markup.Armors[slot] = 100;
-        if (loadout.Markup.Plates[slot] == null) loadout.Markup.Plates[slot] = 100;
-      });
-    }
-  });
-  $effect(() => {
-    if (loadout?.Gear?.Armor?.ManageIndividual === false && loadout?.Gear?.Armor?.SetName === null) {
-      resetArmor();
-    } else if (loadout?.Gear?.Armor?.ManageIndividual === true) {
-      loadout.Gear.Armor.SetName = null;
-      loadout.Gear.Armor.PlateName = null;
-    }
+    if (!loadout) return;
+    untrack(() => {
+      const e = loadout.Gear?.Weapon?.Enhancers;
+      if (e) {
+        for (const k of ['Damage', 'Accuracy', 'Range', 'Economy', 'SkillMod']) {
+          if (e[k] < 0 || e[k] > 10) e[k] = clamp(e[k], 0, 10);
+        }
+      }
+      const ae = loadout.Gear?.Armor?.Enhancers;
+      if (ae) {
+        for (const k of ['Defense', 'Durability']) {
+          if (ae[k] < 0 || ae[k] > 10) ae[k] = clamp(ae[k], 0, 10);
+        }
+      }
+      const he = loadout.Gear?.Healing?.Enhancers;
+      if (he) {
+        for (const k of ['Economy', 'SkillMod']) {
+          if (he[k] < 0 || he[k] > 10) he[k] = clamp(he[k], 0, 10);
+        }
+      }
+      if (loadout.Markup == null) {
+        resetMarkup();
+      } else {
+        const m = loadout.Markup;
+        if (m.ArmorSet == null) m.ArmorSet = 100;
+        if (m.PlateSet == null) m.PlateSet = 100;
+        if (!m.Armors) m.Armors = {};
+        if (!m.Plates) m.Plates = {};
+        armorSlots.forEach(slot => {
+          if (m.Armors[slot] == null) m.Armors[slot] = 100;
+          if (m.Plates[slot] == null) m.Plates[slot] = 100;
+        });
+      }
+      const armor = loadout.Gear?.Armor;
+      if (armor?.ManageIndividual === false && armor?.SetName === null) {
+        resetArmor();
+      } else if (armor?.ManageIndividual === true) {
+        armor.SetName = null;
+        armor.PlateName = null;
+      }
+    });
   });
 </script>
 

@@ -56,11 +56,11 @@
   let pendingImagePreview = $state(null);
   let imageExists = $state(false);
   let imageChecked = $state(false);
-  let lastCheckedId = $state(null);
+  let lastCheckedId = null;
 
   // User's pending image (fetched from server)
   let userPendingImage = $state(null);
-  let pendingImageFetched = $state(false);
+  let pendingImageFetched = false;
 
 
 

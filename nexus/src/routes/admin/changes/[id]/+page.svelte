@@ -76,7 +76,7 @@
   let showRawJson = $state(false);
   let showCompareDialog = $state(false);
   let selectedVersionType = $state(null); // 'original', 'history-{index}', 'related-{index}'
-  let shouldAutoSelectDiff = $state(false);
+  let shouldAutoSelectDiff = false;
 
   // Reward state
   let changeReward = $state(null);

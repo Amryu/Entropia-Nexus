@@ -800,8 +800,8 @@
     return formatPedValue(value);
   }
 
-  let detailMarkupItem = $state(null);
-  let detailIsAbsoluteMarkup = $state(true);
+  let detailMarkupItem = $derived(selectedItemDetails || selectedItem);
+  let detailIsAbsoluteMarkup = $derived(isAbsoluteMarkup(detailMarkupItem));
 
   function formatMarkupDisplay(value, absoluteMarkup) {
     return formatMarkupValue(value, absoluteMarkup);
@@ -1901,12 +1901,6 @@
     return rows;
   })());
   let listDefaultSort = $derived({ column: smallViewport ? 'orders' : 'lastUpdate', order: 'DESC' });
-  $effect(() => {
-    detailMarkupItem = selectedItemDetails || selectedItem;
-  });
-  $effect(() => {
-    detailIsAbsoluteMarkup = isAbsoluteMarkup(detailMarkupItem);
-  });
   let appliesLULForCurrent =
     $derived(selectedCategory &&
     selectedCategory !== "All" &&

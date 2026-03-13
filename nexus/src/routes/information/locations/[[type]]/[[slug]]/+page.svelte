@@ -149,7 +149,7 @@
   // Track initialization to prevent re-init during editing
   // Include currentChangeId in key to handle URL-based navigation between create changes
   // Only reinitialize when data is consistent (changeId matches existingChange.id or both are absent)
-  let lastInitKey = $state(null);
+  let lastInitKey = null;
 
 
 
@@ -298,7 +298,6 @@
 
   function toggleWave(index) {
     expandedWaves[index] = !expandedWaves[index];
-    expandedWaves = expandedWaves; // Trigger reactivity
   }
 
   function addWave() {
@@ -461,8 +460,6 @@
     if (query.length < 2) {
       maturitySearchResults[waveIdx] = [];
       showMaturitySuggestions[waveIdx] = false;
-      maturitySearchResults = maturitySearchResults;
-      showMaturitySuggestions = showMaturitySuggestions;
       return;
     }
 
@@ -482,8 +479,6 @@
 
     maturitySearchResults[waveIdx] = results;
     showMaturitySuggestions[waveIdx] = results.length > 0;
-    maturitySearchResults = maturitySearchResults;
-    showMaturitySuggestions = showMaturitySuggestions;
   }
 
   function selectMaturity(waveIdx, maturity) {
@@ -491,15 +486,11 @@
     maturitySearchQueries[waveIdx] = '';
     maturitySearchResults[waveIdx] = [];
     showMaturitySuggestions[waveIdx] = false;
-    maturitySearchQueries = maturitySearchQueries;
-    maturitySearchResults = maturitySearchResults;
-    showMaturitySuggestions = showMaturitySuggestions;
   }
 
   function hideMaturitySuggestions(waveIdx) {
     setTimeout(() => {
       showMaturitySuggestions[waveIdx] = false;
-      showMaturitySuggestions = showMaturitySuggestions;
     }, 150);
   }
 

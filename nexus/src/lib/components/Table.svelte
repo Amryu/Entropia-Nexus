@@ -43,7 +43,7 @@
 
   let filteredData = $state([]);
 
-  let currentHeaders = $state([]);
+  let currentHeaders = [];
 
 
   function resetHeaderFilters() {
@@ -115,8 +115,6 @@
       sortDirections.push({ index: index, asc: true });
     }
 
-    // Trigger svelte to re-sort the data
-    sortDirections = sortDirections;
   }
 
   function getSortIndicator(sortDirection) {

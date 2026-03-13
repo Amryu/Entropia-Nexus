@@ -951,7 +951,7 @@
 
   // Re-center map when location changes (external navigation)
   // Track location.Id to detect when we've navigated to a different location
-  let lastLocationId = $state(null);
+  let lastLocationId = null;
   $effect(() => {
     if (browser && mapLoaded && location?.Id !== untrack(() => lastLocationId)) {
       lastLocationId = location?.Id;

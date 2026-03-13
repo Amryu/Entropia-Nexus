@@ -108,7 +108,7 @@ Callback props:
 
 
   // React to preserveDataOrder transitions (e.g. search active/cleared)
-  let prevPreserveDataOrder = $state(false);
+  let prevPreserveDataOrder = false;
 
   let filters = $state({});
   let filterTimeouts = {};
@@ -200,8 +200,6 @@ Callback props:
       for (let i = 0; i < newRows.length; i++) {
         internalData[offset + i] = newRows[i];
       }
-      internalData = internalData; // Trigger reactivity
-
       if (result.total != null) {
         totalRows = result.total;
       }
@@ -307,7 +305,6 @@ Callback props:
 
     filterTimeouts[columnKey] = setTimeout(() => {
       filters[columnKey] = value;
-      filters = filters; // Trigger reactivity
 
       if (isLazyMode) {
         // Reset and reload with new filters

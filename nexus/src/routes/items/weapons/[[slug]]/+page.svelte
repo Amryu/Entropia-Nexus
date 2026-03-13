@@ -137,7 +137,7 @@
 
   // ========== EDIT STATE MANAGEMENT ==========
   // Initialize edit state when weapon changes or in create mode
-  let lastInitKey = $state(null);
+  let lastInitKey = null;
   $effect(() => {
     if (user) {
       const createSeedSource = existingChange?.data ? 'existing' : (resolvedPendingChange?.data ? 'pending' : 'empty');
@@ -180,7 +180,7 @@
       : (weapon || (data.isCreateMode ? createSeed : null)));
 
   // Track previous entity for navigation detection
-  let previousEntityId = $state(null);
+  let previousEntityId = null;
 
   // Exit edit mode when navigating to a different entity (unless it's a draft/pending change)
   $effect(() => {
@@ -740,8 +740,8 @@
   // This speeds up editing by inferring obvious choices.
 
   // Track previous values to detect changes
-  let prevClass = $state(null);
-  let prevType = $state(null);
+  let prevClass = null;
+  let prevType = null;
 
   // When Class changes, auto-select Category if only one option exists
   $effect(() => {

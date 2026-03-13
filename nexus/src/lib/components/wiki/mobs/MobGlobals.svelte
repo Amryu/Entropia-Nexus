@@ -27,8 +27,8 @@
   let loading = $state(false);
   let period = $state('30d');
   let mounted = $state(false);
-  let lastLoadedMobName = $state('');
-  let refreshTimer = $state(null);
+  let lastLoadedMobName = '';
+  let refreshTimer = null;
   const REFRESH_INTERVAL = 15000;
 
   // Chart

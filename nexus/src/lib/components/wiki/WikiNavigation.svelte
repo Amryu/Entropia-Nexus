@@ -512,7 +512,6 @@
       // Single-select toggle
       activeFilters[key] = value === activeFilters[key] ? null : value;
     }
-    activeFilters = activeFilters;
   }
 
   function clearFilters() {
@@ -524,7 +523,6 @@
       // Reset to array for multi-select, null for single-select
       activeFilters[filter.key] = filter.multiSelect ? [] : null;
     }
-    activeFilters = activeFilters;
     // Reset all column filters
     const resetFilters = { name: '' };
     for (const column of activeColumns) {
@@ -882,7 +880,6 @@
         delete columnFilters[key];
       }
     }
-    columnFilters = columnFilters;
   }
 
   function handleColumnDialogCancel() {
@@ -892,8 +889,8 @@
   // Direct column header drag-and-drop (full-width mode only)
   let headerDragIndex = $state(null);
   let headerDragOverIndex = $state(null);
-  let headerMouseDownX = $state(0);
-  let headerMouseDownY = $state(0);
+  let headerMouseDownX = 0;
+  let headerMouseDownY = 0;
   let headerDragStarted = $state(false);
 
   function handleHeaderMouseDown(e, colIndex) {

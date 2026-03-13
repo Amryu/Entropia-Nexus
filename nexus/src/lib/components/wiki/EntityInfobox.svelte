@@ -74,7 +74,7 @@
   // User's pending image (fetched from server)
   let userPendingImage = $state(null);
   let pendingImageChecked = $state(false);
-  let lastCheckedEntityId = $state(null);
+  let lastCheckedEntityId = null;
   let uploadAutoApproved = $state(false);
 
 

@@ -69,18 +69,26 @@
   let referenceLoading = $state(false);
   let referenceError = $state('');
   let referenceReady = $state(false);
-  let showcaseRecord = $state(null);
+  let showcaseRecord = $derived(avatar?.showcaseLoadout || null);
   let showcaseLoadout = $state(null);
-  let showcaseShareCode = $state(null);
-  let showcaseName = $state('Showcase Loadout');
-  let avatarSubTabs = $state([]);
-  let leftRing = $state(null);
-  let rightRing = $state(null);
-  let selectedClothing = $state([]);
-  let clothingEntries = $state([]);
+  let showcaseShareCode = $derived(showcaseRecord?.share_code || showcaseRecord?.shareCode || null);
+  let showcaseName = $derived(showcaseRecord?.name || showcaseLoadout?.Name || 'Showcase Loadout');
+  const avatarSubTabs = [
+    { id: 'Stats', label: 'Detailed Stats' },
+    { id: 'Weapons', label: 'Weapons' },
+    { id: 'Armor', label: 'Armor' },
+    { id: 'Healing', label: 'Healing' },
+    { id: 'Accessories', label: 'Rings, Clothing & Pet' }
+  ];
+  let clothingEntries = $derived((showcaseLoadout?.Gear?.Clothing || []).map(entry => (
+    typeof entry === 'string' ? { Name: entry } : entry
+  )));
+  let leftRing = $derived(clothingEntries.length ? getClothingSlot('Ring', 'Left') : null);
+  let rightRing = $derived(clothingEntries.length ? getClothingSlot('Ring', 'Right') : null);
+  let selectedClothing = $derived(clothingEntries.filter(item => !isRingSlot(item?.Slot)));
   let evaluation = $state(null);
-  let stats = $state({});
-  let effectsAll = $state([]);
+  let stats = $derived(evaluation?.stats || {});
+  let effectsAll = $derived(evaluation?.effects?.all || []);
   let expandedEffectKeys = $state(new Set());
   let isHydratingShowcase = $state(false);
 
@@ -732,57 +740,20 @@
   let globalsDiscoveries = $derived((globalsData?.achievements || []).filter(a => a.type === 'discovery').slice(0, 5));
   let buyOrders = $derived(sortOrdersByCategory(orders.filter(o => o.type === 'BUY')));
   let sellOrders = $derived(sortOrdersByCategory(orders.filter(o => o.type === 'SELL')));
-  $effect(() => {
-    showcaseRecord = avatar?.showcaseLoadout || null;
-  });
   let showcaseLoadoutRaw = $derived(showcaseRecord?.data || null);
   $effect(() => {
     showcaseLoadout = resolveDefaultSets(showcaseLoadoutRaw);
   });
   $effect(() => {
-    showcaseShareCode = showcaseRecord?.share_code || showcaseRecord?.shareCode || null;
-  });
-  $effect(() => {
-    showcaseName = showcaseRecord?.name || showcaseLoadout?.Name || 'Showcase Loadout';
-  });
-  $effect(() => {
-    avatarSubTabs = [
-      { id: 'Stats', label: 'Detailed Stats' },
-      { id: 'Weapons', label: 'Weapons' },
-      { id: 'Armor', label: 'Armor' },
-      { id: 'Healing', label: 'Healing' },
-      { id: 'Accessories', label: 'Rings, Clothing & Pet' }
-    ];
-  });
-  $effect(() => {
-    if (!untrack(() => avatarTabsInitialized) && avatarSubTabs.length > 0) {
+    if (!avatarTabsInitialized) {
       avatarDetailTab = 'Stats';
       avatarTabsInitialized = true;
-    }
-  });
-  $effect(() => {
-    if (avatarTabsInitialized && !avatarSubTabs.find(tab => tab.id === untrack(() => avatarDetailTab))) {
-      avatarDetailTab = avatarSubTabs[0]?.id || 'Stats';
     }
   });
   let profileSlug = $derived(profile.euName ? encodeURIComponentSafe(profile.euName) : profile.id);
   let displayImageUrl = $derived(imageFailed
     ? profile.discordAvatarUrl
     : (profile.profileImageUrl || profile.discordAvatarUrl));
-  $effect(() => {
-    clothingEntries = (showcaseLoadout?.Gear?.Clothing || []).map(entry => (
-      typeof entry === 'string' ? { Name: entry } : entry
-    ));
-  });
-  $effect(() => {
-    leftRing = clothingEntries.length ? getClothingSlot('Ring', 'Left') : null;
-  });
-  $effect(() => {
-    rightRing = clothingEntries.length ? getClothingSlot('Ring', 'Right') : null;
-  });
-  $effect(() => {
-    selectedClothing = clothingEntries.filter(item => !isRingSlot(item?.Slot));
-  });
   $effect(() => {
     evaluation = showcaseLoadout
       ? evaluateLoadout(
@@ -807,12 +778,6 @@
           { effectsCatalog, effectCaps }
         )
       : null;
-  });
-  $effect(() => {
-    stats = evaluation?.stats || {};
-  });
-  $effect(() => {
-    effectsAll = evaluation?.effects?.all || [];
   });
   let defenseBreakdown = $derived({
     ...(stats.totalDefenseByType || {}),

@@ -53,13 +53,13 @@
   let searchOpen = $state(false);
   let selectedLocation = $state(null);
   let hoveredLocation = $state(null);
-  let lastFocusedId = $state(null);
+  let lastFocusedId = null;
   let pendingDialogOpen = $state(false);
   let selectedMainPlanet = $state('');
   let selectedSubArea = $state('');
   let subAreas = $state([]);
-  let lastPlanetGroup = $state(null);
-  let lastPlanetSlug = $state(null);
+  let lastPlanetGroup = null;
+  let lastPlanetSlug = null;
   let isMobile = $state(false);
   let panelExpanded = $state(false);
   let panelClosing = $state(false);
@@ -73,7 +73,7 @@
   let searchSelectedIndex = $state(-1);
   let panelLoading = $state(false);
   let activatingLeaflet = false;
-  let autoLeafletHandledKey = $state(null);
+  let autoLeafletHandledKey = null;
 
   // --- Leaflet Edit Mode state ---
   let leafletEditMode = $state(false);
@@ -82,7 +82,7 @@
   let editorChangeCount = $state(0);
   let editorDbChangeIdMap = $state(new Map());
   let allMobs = $state([]);
-  let seededChangeId = $state(null);
+  let seededChangeId = null;
   let planetPendingOverride = $state(null);
   let manualEditFocus = $state(null);
   let manualEditFocusKey = $state(null);
@@ -635,7 +635,6 @@
       const modified = convertChangeToModified(data.existingChange.data, tempId);
       if (modified) {
         editorPendingChanges.set(tempId, { action: 'add', original: null, modified });
-        editorPendingChanges = editorPendingChanges;
       }
     }
   });
@@ -1118,10 +1117,9 @@
               dbChangeIdMap={editorDbChangeIdMap}
               onclear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
               onsubmitted={handleChangesSubmitted}
-              onremoved={() => { editorPendingChanges = editorPendingChanges; }}
+              onremoved={() => {}}
               onchangeCreated={(ev) => {
                 editorDbChangeIdMap.set(ev.key, ev.changeId);
-                editorDbChangeIdMap = editorDbChangeIdMap;
               }}
               ondbChangeDeleted={(ev) => {
                 if (planetPendingOverride) {
@@ -1129,7 +1127,6 @@
                 } else if (data.planetPendingChanges) {
                   data.planetPendingChanges = data.planetPendingChanges.filter(c => c.id !== ev.dbId);
                 }
-                editorPendingChanges = editorPendingChanges;
               }}
             />
           
