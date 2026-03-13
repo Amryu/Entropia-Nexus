@@ -2,16 +2,63 @@
 set -euo pipefail
 
 # Database backup script for Entropia Nexus
-# Backs up nexus and nexus_users databases from the PostGIS Docker container.
+# Backs up one or more PostgreSQL databases from a Docker container.
 # Intended to run as a daily cron job with rolling retention.
 #
-# Usage:  ./backup-databases.sh [config-file]
-# Cron:   0 3 * * * /opt/entropia-nexus/deploy/backup-databases.sh >> /var/log/nexus-backup.log 2>&1
+# Usage:
+#   ./backup-databases.sh [config-file]
+#   ./backup-databases.sh --container postgres-db-1 --user postgres --databases nexus,nexus_users
+#   ./backup-databases.sh --config /path/to/env --container postgres-db-1 --databases nexus
+#
+# Cron:
+#   0 3 * * * /opt/entropia-nexus/deploy/backup-databases.sh >> /var/log/nexus-backup.log 2>&1
 
 # --- Configuration (override via env file or environment) ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CFG_FILE="${1:-}"
+CFG_FILE=""
+CLI_DB_CONTAINER=""
+CLI_DB_USER=""
+CLI_DATABASES=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      [[ $# -ge 2 ]] || { echo "Missing value for --config" >&2; exit 1; }
+      CFG_FILE="$2"
+      shift 2
+      ;;
+    --container)
+      [[ $# -ge 2 ]] || { echo "Missing value for --container" >&2; exit 1; }
+      CLI_DB_CONTAINER="$2"
+      shift 2
+      ;;
+    --user)
+      [[ $# -ge 2 ]] || { echo "Missing value for --user" >&2; exit 1; }
+      CLI_DB_USER="$2"
+      shift 2
+      ;;
+    --databases)
+      [[ $# -ge 2 ]] || { echo "Missing value for --databases" >&2; exit 1; }
+      CLI_DATABASES="$2"
+      shift 2
+      ;;
+    --help|-h)
+      sed -n '1,14p' "$0"
+      exit 0
+      ;;
+    *)
+      if [[ -z "${CFG_FILE}" ]]; then
+        CFG_FILE="$1"
+        shift
+      else
+        echo "Unknown argument: $1" >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+
 if [[ -z "${CFG_FILE}" && -f "${SCRIPT_DIR}/env" ]]; then
   CFG_FILE="${SCRIPT_DIR}/env"
 fi
@@ -24,9 +71,41 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/postgres}"
 RETAIN_DAILY_DAYS="${RETAIN_DAILY_DAYS:-30}"      # Keep all dailies for this many days
 RETAIN_WEEKLY_DAYS="${RETAIN_WEEKLY_DAYS:-365}"    # Beyond daily, keep 1/week up to this many days
                                                    # Beyond weekly, keep 1/month forever
-DB_CONTAINER="${DB_CONTAINER:-828a6804235c_postgres-db-1}"
-DB_USER="${DB_USER:-postgres}"
-DATABASES=("nexus" "nexus_users")
+DB_CONTAINER="${CLI_DB_CONTAINER:-${DB_CONTAINER:-828a6804235c_postgres-db-1}}"
+DB_USER="${CLI_DB_USER:-${DB_USER:-postgres}}"
+
+normalize_databases() {
+  local raw="${1:-}"
+  local -n out_ref=$2
+  out_ref=()
+
+  if [[ -z "${raw}" ]]; then
+    return
+  fi
+
+  raw="${raw//,/ }"
+  # shellcheck disable=SC2206
+  local parts=( $raw )
+  local db
+  for db in "${parts[@]}"; do
+    [[ -n "${db}" ]] || continue
+    out_ref+=("${db}")
+  done
+}
+
+if [[ -n "${CLI_DATABASES}" ]]; then
+  normalize_databases "${CLI_DATABASES}" DATABASES
+elif declare -p DATABASES >/dev/null 2>&1; then
+  if [[ "$(declare -p DATABASES 2>/dev/null)" != declare\ -a* ]]; then
+    normalize_databases "${DATABASES}" DATABASES
+  fi
+else
+  DATABASES=("nexus" "nexus_users")
+fi
+
+if [[ ${#DATABASES[@]} -eq 0 ]]; then
+  fail "No databases configured. Use --databases or set DATABASES."
+fi
 
 DATE="$(date +%Y-%m-%d_%H%M%S)"
 LOG_PREFIX="[backup ${DATE}]"
@@ -85,7 +164,8 @@ WEEKLY_CUTOFF=$(( NOW_EPOCH - RETAIN_WEEKLY_DAYS * 86400 ))
 
 PRUNED=0
 
-for PREFIX in nexus nexus_users; do
+for DB_NAME in "${DATABASES[@]}"; do
+  PREFIX="${DB_NAME//-/_}"
   # Collect files for this DB sorted oldest-first
   mapfile -t FILES < <(find "${BACKUP_DIR}" -maxdepth 1 -name "${PREFIX}_*.sql.gz" -type f -printf '%T@ %p\n' 2>/dev/null \
     | sort -n | cut -d' ' -f2-)
