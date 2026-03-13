@@ -99,9 +99,10 @@
   const ITEM_HEIGHT = 36;
   const BUFFER_SIZE = 5;
 
-  // Initialize active filters
+  // Initialize active filters (skip link-based navigation filters that have href instead of key)
   $effect(() => {
     for (const filter of filters) {
+      if (!filter.key) continue;
       if (activeFilters[filter.key] === undefined) {
         // Use array for multi-select filters, null for single-select
         activeFilters[filter.key] = filter.multiSelect ? [] : null;
@@ -353,8 +354,9 @@
         .map(({ item }) => item);
     }
 
-    // Apply category filters (button filters)
+    // Apply category filters (button filters, skip link-based navigation filters)
     for (const filter of filters) {
+      if (!filter.key) continue;
       const value = activeFilters[filter.key];
 
       // Skip if no filter value
@@ -520,6 +522,7 @@
     hasKeyboardInput = false; // Reset keyboard state when clearing filters
     lastSearchQueryForHighlight = ''; // Reset search tracking
     for (const filter of filters) {
+      if (!filter.key) continue;
       // Reset to array for multi-select, null for single-select
       activeFilters[filter.key] = filter.multiSelect ? [] : null;
     }
