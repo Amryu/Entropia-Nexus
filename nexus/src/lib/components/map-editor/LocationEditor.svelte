@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { apiCall } from '$lib/util.js';
-  import { LOCATION_TYPES, AREA_TYPES, SHAPES, isArea, getEffectiveType } from './mapEditorUtils.js';
+  import { LOCATION_TYPES, AREA_TYPES, SHAPES, isArea, getEffectiveType, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import JsonTreeNode from '$lib/components/JsonTreeNode.svelte';
 
@@ -59,7 +59,7 @@
   let locationType = $state('Area');
   let longitude = $state(0);
   let latitude = $state(0);
-  let altitude = $state(100);
+  let altitude = $state(DEFAULT_ALTITUDE);
   let areaType = $state('MobArea');
   let shape = $state('Polygon');
   let shapeDataJson = $state('');
@@ -242,7 +242,7 @@
       locationType,
       longitude: Number(longitude),
       latitude: Number(latitude),
-      altitude: Number(altitude) || null,
+      altitude: altitude != null && altitude !== '' ? Number(altitude) : null,
       areaType: locationType === 'Area' ? areaType : null,
       shape: locationType === 'Area' ? shape : null,
       shapeData: locationType === 'Area' ? buildShapeData(shape) : null,
@@ -259,14 +259,20 @@
 
   function handleDelete() {
     if (!location) return;
-    if (mode === 'public') {
-      // In public mode: copy delete info to clipboard
+    if (mode === 'public' && !isAdmin) {
+      // Non-admin public mode: copy location details for admin review
       const type = getEffectiveType(location);
       const coords = location.Properties?.Coordinates;
       const coordStr = coords ? `${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}` : 'N/A';
       const text = `Location: ${location.Name} (ID: ${location.Id}), Type: ${type}, Coords: ${coordStr}`;
       navigator.clipboard?.writeText(text);
       addToast('Delete info copied to clipboard', { type: 'success' });
+    } else if (mode === 'public' && isAdmin) {
+      // Admin in public mode: copy SQL DELETE query (cascading FKs handle related rows)
+      const id = location.Id;
+      const sql = `-- Delete: ${location.Name} (${getEffectiveType(location)})\nDELETE FROM "Locations" WHERE "Id" = ${Number(id)};`;
+      navigator.clipboard?.writeText(sql);
+      addToast('SQL DELETE query copied to clipboard', { type: 'success' });
     } else {
       ondelete?.(location);
     }
@@ -381,7 +387,7 @@
       locationType = location.Properties?.Type === 'Area' || isArea(location) ? 'Area' : (location.Properties?.Type || 'Area');
       longitude = location.Properties?.Coordinates?.Longitude ?? 0;
       latitude = location.Properties?.Coordinates?.Latitude ?? 0;
-      altitude = location.Properties?.Coordinates?.Altitude ?? 0;
+      altitude = location.Properties?.Coordinates?.Altitude ?? DEFAULT_ALTITUDE;
       areaType = location.Properties?.AreaType || (location.Properties?.Type !== 'Area' ? location.Properties?.Type : null) || 'MobArea';
       shape = location.Properties?.Shape || 'Polygon';
       const existingData = location.Properties?.Data;
@@ -436,7 +442,7 @@
       locationType = drawnShapeData.isMarker ? 'Teleporter' : 'Area';
       longitude = drawnShapeData.center?.x ?? 0;
       latitude = drawnShapeData.center?.y ?? 0;
-      altitude = 100;
+      altitude = DEFAULT_ALTITUDE;
       areaType = 'MobArea';
       shape = drawnShapeData.shape || 'Polygon';
       const drawnData = drawnShapeData.data;
@@ -564,7 +570,7 @@
         Coordinates: {
           Longitude: Number(longitude),
           Latitude: Number(latitude),
-          Altitude: Number(altitude) || null
+          Altitude: altitude != null && altitude !== '' ? Number(altitude) : null
         },
         ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
         ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
@@ -890,9 +896,9 @@
           </button>
         {:else if !isNew}
           <button class="btn btn-danger" onclick={handleDelete} disabled={isLocked}
-            title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
+            title={mode === 'public' && isAdmin ? 'Copies SQL DELETE query to clipboard' : mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
           >
-            {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
+            {mode !== 'public' ? 'Mark for Deletion' : isAdmin ? 'Copy DELETE SQL' : 'Copy Delete Info'}
           </button>
           <button class="btn" onclick={handleRevert}>Revert Changes</button>
         {/if}
