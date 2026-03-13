@@ -128,7 +128,7 @@
   }
 
   function handleCropComplete(event) {
-    croppedAreaPixels = event.detail.pixels;
+    croppedAreaPixels = event.pixels;
   }
 
   async function handleUpload() {
@@ -470,7 +470,7 @@
               bind:crop
               bind:zoom
               {aspect}
-              on:cropcomplete={handleCropComplete}
+              oncropcomplete={handleCropComplete}
             />
           </div>
           <div class="zoom-control">

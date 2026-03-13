@@ -39,7 +39,7 @@
   let croppedAreaPixels = null;
 
   function handleCropComplete(event) {
-    croppedAreaPixels = event.detail.pixels;
+    croppedAreaPixels = event.pixels;
   }
 
   /**
@@ -128,7 +128,7 @@
         {aspect}
         {minZoom}
         {maxZoom}
-        on:cropcomplete={handleCropComplete}
+        oncropcomplete={handleCropComplete}
       />
     {:else}
       <div class="no-image">No image selected</div>

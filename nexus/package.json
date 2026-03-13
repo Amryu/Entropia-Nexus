@@ -53,7 +53,7 @@
 		"pg": "^8.11.5",
 		"sanitize-html": "^2.17.0",
 		"sharp": "^0.34.5",
-		"svelte-easy-crop": "^3.0.1",
+		"svelte-easy-crop": "^5.0.0",
 		"svg-path-to-polygons": "^0.1.0",
 		"uuid": "^9.0.1"
 	},
