@@ -143,15 +143,6 @@
       </section>
     {/if}
 
-    <!-- Globals Feed -->
-    <section class="section">
-      <div class="section-header">
-        <h2 class="section-title">Globals</h2>
-        <a href="/globals" class="section-action">View all</a>
-      </div>
-      <GlobalsFeed initialGlobals={globals} />
-    </section>
-
     <!-- Events -->
     {#if events && events.length > 0}
       <section class="section" id="events">
@@ -200,6 +191,15 @@
         </div>
       </section>
     {/if}
+
+    <!-- Globals Feed -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Globals</h2>
+        <a href="/globals" class="section-action">View all</a>
+      </div>
+      <GlobalsFeed initialGlobals={globals} />
+    </section>
 
     <!-- Streams / Channels -->
     {#if streams && streams.length > 0}

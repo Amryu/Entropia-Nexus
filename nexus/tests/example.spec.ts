@@ -8,6 +8,29 @@ test.describe('Basic navigation', () => {
     await expect(page).toHaveTitle(/Entropia/i);
   });
 
+  test('homepage shows upcoming events above globals', async ({ page }) => {
+    await page.goto('/');
+
+    const eventsSection = page.locator('#events');
+    const globalsHeading = page.getByRole('heading', { name: 'Globals', exact: true }).first();
+
+    if (await eventsSection.count() === 0) {
+      return;
+    }
+
+    await expect(eventsSection).toBeVisible();
+    await expect(globalsHeading).toBeVisible();
+
+    const [eventsBox, globalsBox] = await Promise.all([
+      eventsSection.boundingBox(),
+      globalsHeading.boundingBox()
+    ]);
+
+    expect(eventsBox).not.toBeNull();
+    expect(globalsBox).not.toBeNull();
+    expect(eventsBox!.y).toBeLessThan(globalsBox!.y);
+  });
+
   test('can navigate to tools section', async ({ page }) => {
     await page.goto('/');
 
