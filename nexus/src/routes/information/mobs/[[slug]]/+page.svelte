@@ -32,7 +32,7 @@
 
   // Mob edit components
   import MobMaturitiesEdit from '$lib/components/wiki/mobs/MobMaturitiesEdit.svelte';
-  import MobSpawnsEdit from '$lib/components/wiki/mobs/MobSpawnsEdit.svelte';
+
   import MobLootsEdit from '$lib/components/wiki/mobs/MobLootsEdit.svelte';
   import CreateSpeciesDialog from '$lib/components/wiki/mobs/CreateSpeciesDialog.svelte';
 
@@ -1424,13 +1424,14 @@
             ontoggle={savePanelStates}
           >
             {#if $editMode}
-              <MobSpawnsEdit
-                spawns={activeMob?.Spawns || []}
-                fieldPath="Spawns"
-                mobName={activeMob?.Name || ''}
-                maturities={activeMob?.Maturities || []}
-                allMobs={allItems}
-              />
+              <div class="no-data edit-mode-notice">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="16" x2="12" y2="12"/>
+                  <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/>
+                </svg>
+                <span>Spawn locations are managed via the <a href="/maps">Map Editor</a>.</span>
+              </div>
             {:else}
               <MobLocations mobName={activeMob?.Name} mobSpawns={activeMob.Spawns} />
             {/if}
@@ -1606,6 +1607,24 @@
     color: var(--text-muted, #999);
     font-style: italic;
     font-size: 13px;
+  }
+
+  .no-data.edit-mode-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--text-color);
+  }
+
+  .no-data.edit-mode-notice svg {
+    flex-shrink: 0;
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .no-data.edit-mode-notice a {
+    color: var(--accent-color, #4a9eff);
   }
 
   .maturities-anchor {

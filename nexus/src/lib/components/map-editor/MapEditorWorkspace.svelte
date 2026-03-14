@@ -6,6 +6,7 @@
   import MobAreaEditor from './MobAreaEditor.svelte';
   import WaveEventEditor from './WaveEventEditor.svelte';
   import { isArea, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
+  import { SvelteMap } from 'svelte/reactivity';
 
   
   
@@ -50,11 +51,11 @@
     dbPendingChanges = $bindable([]),
     currentUserId = null,
     isAdmin = false,
-    pendingChanges = $bindable(new Map()),
+    pendingChanges = $bindable(new SvelteMap()),
     rightPanel = $bindable('editor'),
     mapComponent = $bindable(undefined),
     changeCount = $bindable(0), // kept for reset() compat; parent should compute independently
-    dbChangeIdMap = $bindable(new Map()),
+    dbChangeIdMap = $bindable(new SvelteMap()),
     output
   } = $props();
 
@@ -74,8 +75,8 @@
 
   // --- Exported method ---
   export function reset() {
-    pendingChanges = new Map();
-    dbChangeIdMap = new Map();
+    pendingChanges = new SvelteMap();
+    dbChangeIdMap = new SvelteMap();
     modifiedDbChanges = new Set();
     selectedId = null;
     selectedDbChange = null;
@@ -307,7 +308,7 @@
       showAfterimageForOriginal(original.Id);
     }
     // Track that this DB-seeded change was locally modified
-    if (dbChangeIdMap.has(original.Id)) { modifiedDbChanges.add(original.Id); modifiedDbChanges = modifiedDbChanges; }
+    if (dbChangeIdMap.has(original.Id)) { modifiedDbChanges.add(original.Id); }
 
     // Force rebuild so the map reflects the saved state even when _editingActive blocks the reactive
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
@@ -321,7 +322,7 @@
   function handleRevertLocation(loc) {
     if (loc?.Id) {
       pendingChanges.delete(loc.Id);
-      if (modifiedDbChanges.delete(loc.Id)) modifiedDbChanges = modifiedDbChanges;
+      modifiedDbChanges.delete(loc.Id);
     }
 
     previewShape = null; // Clear afterimage
@@ -467,7 +468,7 @@
         modified.shapeData = entropiaData.data;
       }
       delete existing._dbSeeded;
-      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
+      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); }
       pendingChanges.set(locId, existing);
   
     } else if (loc) {
@@ -492,7 +493,7 @@
         modified.altitude = loc.Properties?.Coordinates?.Altitude ?? DEFAULT_ALTITUDE;
       }
 
-      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
+      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); }
       pendingChanges.set(locId, { action: 'edit', original: loc, modified });
   
 

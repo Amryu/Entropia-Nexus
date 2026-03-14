@@ -3,6 +3,7 @@
   import { apiPost, apiPut, apiDelete } from '$lib/util.js';
   import { addToast } from '$lib/stores/toasts.js';
   import { getEffectiveType, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
+  import { SvelteMap } from 'svelte/reactivity';
 
   
   /**
@@ -15,10 +16,10 @@
 
   /** @type {Props} */
   let {
-    pendingChanges = $bindable(new Map()),
+    pendingChanges = $bindable(new SvelteMap()),
     planet = null,
     isAdmin = false,
-    dbChangeIdMap = new Map(),
+    dbChangeIdMap = new SvelteMap(),
     onchangeCreated,
     onsubmitted,
     onclear,
@@ -605,7 +606,7 @@
           {#if hasDbChange}
             <button class="row-delete-btn" title="Delete submitted change" onclick={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
           {:else}
-            <button class="row-remove-btn" title="Revert" onclick={() => { pendingChanges.delete(change.key); pendingChanges = pendingChanges; onremoved?.(change.key); }}>×</button>
+            <button class="row-remove-btn" title="Revert" onclick={() => { pendingChanges.delete(change.key); onremoved?.(change.key); }}>×</button>
           {/if}
         </div>
       {/each}

@@ -5,6 +5,7 @@
   import { page } from '$app/stores';
   import { goto, beforeNavigate } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { loading } from '../../../../stores';
   import { apiCall, getErrorMessage, getLatestPendingUpdate } from '$lib/util';
   import {
@@ -77,10 +78,10 @@
 
   // --- Leaflet Edit Mode state ---
   let leafletEditMode = $state(false);
-  let editorPendingChanges = $state(new Map());
+  let editorPendingChanges = $state(new SvelteMap());
   let editorRightPanel = $state('editor');
   let editorChangeCount = $derived(Array.from(editorPendingChanges.values()).filter(c => !c._dbSeeded).length);
-  let editorDbChangeIdMap = $state(new Map());
+  let editorDbChangeIdMap = $state(new SvelteMap());
   let allMobs = $state([]);
   let seededChangeId = null;
   let planetPendingOverride = $state(null);
@@ -88,8 +89,8 @@
   let manualEditFocusKey = $state(null);
 
   async function handleChangesSubmitted() {
-    editorPendingChanges = new Map();
-    editorDbChangeIdMap = new Map();
+    editorPendingChanges = new SvelteMap();
+    editorDbChangeIdMap = new SvelteMap();
     seededChangeId = null;
     try {
       const res = await fetch(`/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(currentPlanet.Name)}&limit=100`);
@@ -127,7 +128,7 @@
       if (!confirm('You have unsaved changes. Discard and exit edit mode?')) return;
     }
     leafletEditMode = false;
-    editorPendingChanges = new Map();
+    editorPendingChanges = new SvelteMap();
     editorRightPanel = 'editor';
     seededChangeId = null;
     manualEditFocus = null;
@@ -151,8 +152,8 @@
         }
       }
       // Reset editor state — new planet data will load via SvelteKit
-      editorPendingChanges = new Map();
-      editorDbChangeIdMap = new Map();
+      editorPendingChanges = new SvelteMap();
+      editorDbChangeIdMap = new SvelteMap();
       editorRightPanel = 'editor';
       seededChangeId = null;
       manualEditFocus = null;
@@ -178,8 +179,8 @@
       if (!confirm('You have unsaved changes. Discard and switch planet?')) return;
     }
     // Reset editor state before navigating
-    editorPendingChanges = new Map();
-    editorDbChangeIdMap = new Map();
+    editorPendingChanges = new SvelteMap();
+    editorDbChangeIdMap = new SvelteMap();
     editorRightPanel = 'editor';
     seededChangeId = null;
     manualEditFocus = null;
@@ -1195,7 +1196,7 @@
               planet={currentPlanet}
               isAdmin={user?.grants?.includes('admin.panel') || user?.administrator || false}
               dbChangeIdMap={editorDbChangeIdMap}
-              onclear={() => { editorPendingChanges = new Map(); editorDbChangeIdMap = new Map(); }}
+              onclear={() => { editorPendingChanges = new SvelteMap(); editorDbChangeIdMap = new SvelteMap(); }}
               onsubmitted={handleChangesSubmitted}
               onremoved={() => {}}
               onchangeCreated={(ev) => {
