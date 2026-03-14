@@ -215,6 +215,7 @@
           LearningIntervalStart: null,
           LearningIntervalEnd: null
         };
+        base.EffectsOnEquip = [];
         base.Tiers = [];
         break;
       case 'excavators':
@@ -225,6 +226,7 @@
           LearningIntervalStart: null,
           LearningIntervalEnd: null
         };
+        base.EffectsOnEquip = [];
         base.Tiers = [];
         break;
       case 'teleportationchips':
