@@ -13,7 +13,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -1177,7 +1177,7 @@
               showWaypoints={true}
             />
           {:else if activeEntity?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
+            <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeEntity?.Name || 'This tool'} is a {getTypeName(additional.type).toLowerCase()} used in various activities in Entropia Universe.

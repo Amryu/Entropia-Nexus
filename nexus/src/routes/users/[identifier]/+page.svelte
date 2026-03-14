@@ -3,7 +3,6 @@
   import { untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { slide } from 'svelte/transition';
-  import { sanitizeHtml } from '$lib/sanitize';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import DefenseGridEdit from '$lib/components/wiki/DefenseGridEdit.svelte';
   import ImageUploadDialog from '$lib/components/wiki/ImageUploadDialog.svelte';
@@ -920,7 +919,7 @@
         {#if isEditing}
           <RichTextEditor bind:content={form.biographyHtml} placeholder="Write a short bio..." />
         {:else if profile.biographyHtml}
-          <div class="bio-content">{@html sanitizeHtml(profile.biographyHtml)}</div>
+          <div class="bio-content">{@html profile.biographyHtml}</div>
         {:else}
           <div class="empty-state">No biography yet.</div>
         {/if}

@@ -4,7 +4,6 @@
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import { invalidateAll } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   let { data } = $props();
 
@@ -340,7 +339,7 @@
         {#if isEditingDescription}
           <RichTextEditor bind:content={descriptionDraft} placeholder="Society description" />
         {:else if society.description}
-          <div class="society-description">{@html sanitizeHtml(society.description)}</div>
+          <div class="society-description">{@html society.description}</div>
         {:else}
           <div class="empty-state">No description yet.</div>
         {/if}

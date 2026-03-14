@@ -15,7 +15,7 @@
   import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
   import { getTypeLink } from '$lib/util.js';
   import { globalIdToEntityId } from '$lib/common/itemTypes.js';
-  import { sanitizeMarketHtml, containsHtml } from '$lib/sanitize.js';
+  import { containsHtml } from '$lib/sanitize.js';
 
   const MAX_GRID_ITEMS = 10;
 
@@ -313,7 +313,7 @@
             <div class="section">
               <h2 class="section-title">Description</h2>
               {#if containsHtml(auction.description)}
-                <div class="description description-content">{@html sanitizeMarketHtml(auction.description)}</div>
+                <div class="description description-content">{@html auction.description}</div>
               {:else}
                 <p class="description">{auction.description}</p>
               {/if}

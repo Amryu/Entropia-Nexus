@@ -10,7 +10,6 @@
   import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import WikiNavigation from '$lib/components/wiki/WikiNavigation.svelte';
@@ -1508,7 +1507,7 @@
               showWaypoints={true}
             />
           {:else if hasActualText(activeEntity?.Properties?.Description)}
-            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
+            <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeEntity?.Name || (isChainView ? 'This mission chain' : 'This mission')} has no description yet.
@@ -1569,7 +1568,7 @@
                       {/if}
                     </div>
                     {#if step.Description}
-                      <div class="step-description description-content">{@html sanitizeHtml(step.Description)}</div>
+                      <div class="step-description description-content">{@html step.Description}</div>
                     {/if}
                     {#if step.Objectives?.length}
                       <ul class="objective-list">

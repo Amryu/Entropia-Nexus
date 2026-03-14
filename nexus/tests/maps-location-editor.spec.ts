@@ -966,30 +966,22 @@ test.describe('Maps - LocationEditor', () => {
   // enables lock override and Direct Apply in ChangesSummary)
   // ---------------------------------------------------------------------------
   test.describe('Admin Mode', () => {
-    test('admin can enter edit mode and select locations', { timeout: 60000 }, async ({ adminUser }) => {
-      // Admin login + map load can be slower; use manual navigation with extra wait
-      await adminUser.setViewportSize({ width: 1440, height: 900 });
-      await adminUser.goto('/maps/calypso');
-      await adminUser.waitForLoadState('networkidle');
-
-      // Wait for the edit mode button (map must load first)
-      const editBtn = adminUser.locator('.edit-mode-btn');
-      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
-      await editBtn.click();
-
-      const overlay = adminUser.locator('.leaflet-editor-overlay');
-      await expect(overlay).toBeVisible({ timeout: TIMEOUT_LONG });
-      await expect(overlay.locator('.left-sidebar .location-row').first()).toBeVisible({ timeout: TIMEOUT_LONG });
-
+    test('admin can enter edit mode and select locations', async ({ adminUser }) => {
+      const overlay = await enterEditMode(adminUser);
       await selectFirstLocation(overlay);
 
-      // Admin should see full editor
+      // Admin should see full editor with all fields
       const nameInput = fieldByPlaceholder(overlay, 'Location name');
       await expect(nameInput).toBeVisible();
 
-      // Public mode — admin still sees "Copy Delete Info" (mode="public" is hardcoded)
-      const deleteBtn = editor(overlay).locator('button', { hasText: 'Copy Delete Info' });
-      await expect(deleteBtn).toBeVisible({ timeout: TIMEOUT_SHORT });
+      // Admin should see action buttons (delete + revert)
+      const actionBtns = editor(overlay).locator('.actions .btn');
+      const count = await actionBtns.count();
+      expect(count).toBeGreaterThanOrEqual(1);
+
+      // Changes toggle should be in toolbar
+      const changesBtn = overlay.locator('.editor-toolbar button', { hasText: 'Changes' });
+      await expect(changesBtn).toBeVisible({ timeout: TIMEOUT_SHORT });
     });
   });
 

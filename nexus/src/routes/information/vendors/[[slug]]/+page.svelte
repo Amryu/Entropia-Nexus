@@ -11,7 +11,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -485,7 +484,7 @@
               showWaypoints={true}
             />
           {:else if activeVendor?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeVendor.Properties.Description)}</div>
+            <div class="description-content">{@html activeVendor.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeVendor?.Name || 'This vendor'} is a vendor located on {activeVendor?.Planet?.Name || 'Calypso'}.

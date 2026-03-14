@@ -10,7 +10,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, hasItemTag, clampDecimals, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -1335,7 +1335,7 @@
               showWaypoints={true}
             />
           {:else if activeWeapon.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeWeapon.Properties.Description)}</div>
+            <div class="description-content">{@html activeWeapon.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeWeapon.Name} is a {activeWeapon.Properties?.Class?.toLowerCase() || ''} {activeWeapon.Properties?.Type?.toLowerCase() || ''} weapon.

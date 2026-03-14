@@ -10,7 +10,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getItemLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -348,7 +348,7 @@
               showWaypoints={true}
             />
           {:else if activeStrongbox?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeStrongbox.Properties.Description)}</div>
+            <div class="description-content">{@html activeStrongbox.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeStrongbox?.Name || 'This strongbox'} is a strongbox that can be obtained and opened in Entropia Universe.

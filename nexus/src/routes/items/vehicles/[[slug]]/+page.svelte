@@ -11,7 +11,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -679,7 +679,7 @@
               showWaypoints={true}
             />
           {:else if activeVehicle?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeVehicle.Properties.Description)}</div>
+            <div class="description-content">{@html activeVehicle.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeVehicle?.Name || 'This vehicle'} is a {activeVehicle?.Properties?.Type?.toLowerCase() || ''} vehicle in Entropia Universe.

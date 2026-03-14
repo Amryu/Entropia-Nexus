@@ -16,7 +16,6 @@
   import { onMount, onDestroy, untrack } from 'svelte';
   import { getTypeLink, apiPost, encodeURIComponentSafe } from '$lib/util';
   import { addToast } from '$lib/stores/toasts';
-  import { sanitizeMarketHtml } from '$lib/sanitize';
   import {
     canRestoreFlight,
     formatFlightTime,
@@ -1133,7 +1132,7 @@
         {#if selectedService.description}
           <div class="info-section">
             <h3>Description</h3>
-            <div class="description-content">{@html sanitizeMarketHtml(selectedService.description)}</div>
+            <div class="description-content">{@html selectedService.description}</div>
           </div>
         {/if}
 

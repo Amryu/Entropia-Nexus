@@ -12,7 +12,6 @@
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -1381,7 +1380,7 @@
               showWaypoints={true}
             />
           {:else if activeMob?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeMob.Properties.Description)}</div>
+            <div class="description-content">{@html activeMob.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeMob?.Name || 'This mob'} is a {mobType.toLowerCase()} found on {activeMob?.Planet?.Name || 'Calypso'}.

@@ -29,7 +29,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
   import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
 
   // Wiki components
@@ -889,7 +889,7 @@
               showWaypoints={true}
             />
           {:else if activeEntity?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
+            <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeEntity?.Name || 'This blueprint'} is a level {activeEntity?.Properties?.Level ?? '?'} {activeEntity?.Properties?.Type?.toLowerCase() || ''} blueprint.

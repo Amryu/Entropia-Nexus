@@ -10,7 +10,6 @@
   import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import WikiNavigation from '$lib/components/wiki/WikiNavigation.svelte';
@@ -1415,7 +1414,7 @@
                 showWaypoints={true}
               />
             {:else}
-              <div class="description-content">{@html sanitizeHtml(activeLocation.Properties.Description)}</div>
+              <div class="description-content">{@html activeLocation.Properties.Description}</div>
             {/if}
           </DataSection>
         {/if}

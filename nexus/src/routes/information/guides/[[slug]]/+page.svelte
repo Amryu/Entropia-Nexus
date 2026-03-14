@@ -9,7 +9,6 @@
   import '$lib/style.css';
   import GuideNavigation from '$lib/components/guides/GuideNavigation.svelte';
   import GuideEditor from '$lib/components/guides/GuideEditor.svelte';
-  import { sanitizeHtml } from '$lib/sanitize.js';
   import { goto, invalidateAll } from '$app/navigation';
 
   let { data } = $props();
@@ -515,7 +514,7 @@
           {:else}
             {#each paragraphs as paragraph}
               <div class="paragraph-content">
-                {@html sanitizeHtml(paragraph.content_html)}
+                {@html paragraph.content_html}
               </div>
             {/each}
           {/if}

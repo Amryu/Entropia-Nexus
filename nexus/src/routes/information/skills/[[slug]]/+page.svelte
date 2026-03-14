@@ -11,7 +11,6 @@
   import '$lib/style.css';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -574,7 +573,7 @@
               showWaypoints={true}
             />
           {:else if activeSkill?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeSkill.Properties.Description)}</div>
+            <div class="description-content">{@html activeSkill.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeSkill?.Name || 'This skill'} is a {activeSkill?.Category?.Name?.toLowerCase() || ''} skill in Entropia Universe.

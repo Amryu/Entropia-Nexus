@@ -10,7 +10,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { hasItemTag, clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -998,7 +998,7 @@
               showWaypoints={true}
             />
           {:else if activeEntity?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
+            <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeEntity?.Name || 'This medical tool'} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.

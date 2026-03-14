@@ -17,7 +17,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -555,7 +555,7 @@
               showWaypoints={true}
             />
           {:else if activeClothing?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeClothing.Properties.Description)}</div>
+            <div class="description-content">{@html activeClothing.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeClothing?.Name || 'This item'} is a {activeClothing?.Properties?.Type?.toLowerCase() || ''} clothing item worn on the {activeClothing?.Properties?.Slot?.toLowerCase() || 'body'}.

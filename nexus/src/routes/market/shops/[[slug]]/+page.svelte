@@ -13,7 +13,6 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, apiCall, getLatestPendingUpdate } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -871,7 +870,7 @@
               placeholder="Describe this shop..."
             />
           {:else if activeEntity?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeEntity.Description)}</div>
+            <div class="description-content">{@html activeEntity.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeEntity?.Name || 'This shop'} is a player-owned shop located on {getPlanetDisplayName(activeEntity?.Planet?.Name) || 'Calypso'}.

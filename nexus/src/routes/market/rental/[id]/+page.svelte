@@ -12,7 +12,7 @@
   import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
   import { generatePricingPreview, formatPrice } from '$lib/utils/rentalPricing.js';
   import { addToast } from '$lib/stores/toasts';
-  import { sanitizeMarketHtml, containsHtml } from '$lib/sanitize.js';
+  import { containsHtml } from '$lib/sanitize.js';
 
   let { data } = $props();
 
@@ -110,7 +110,7 @@
         {#if offer.description}
           <div class="section">
             {#if containsHtml(offer.description)}
-              <div class="description description-content">{@html sanitizeMarketHtml(offer.description)}</div>
+              <div class="description description-content">{@html offer.description}</div>
             {:else}
               <p class="description">{offer.description}</p>
             {/if}

@@ -12,7 +12,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { sanitizeHtml } from '$lib/sanitize';
+
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -394,7 +394,7 @@
               showWaypoints={true}
             />
           {:else if activeMaterial?.Properties?.Description}
-            <div class="description-content">{@html sanitizeHtml(activeMaterial.Properties.Description)}</div>
+            <div class="description-content">{@html activeMaterial.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
               {activeMaterial?.Name || 'This material'} is a material used in crafting and other activities.
