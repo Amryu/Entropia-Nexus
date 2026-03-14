@@ -147,6 +147,13 @@ export async function setChangeState(id, state) {
   await poolUsers.query(query, values);
 }
 
+export async function setChangeDenied(id, reason = null) {
+  await poolUsers.query(
+    `UPDATE changes SET state = 'Denied', denial_reason = $2 WHERE id = $1`,
+    [id, reason]
+  );
+}
+
 // Reward functions
 export async function getMatchingRewardRules(entity, changeType, dataKeys, subType) {
   const { rows } = await poolUsers.query(

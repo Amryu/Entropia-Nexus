@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { getMatchingRewardRules, assignChangeReward } from '../db.js';
 import { compareJson, validate } from '../change.js';
-import { sendRewardDm } from '../rewards.js';
+import { sendChangeApprovalDm } from '../rewards.js';
 
 // ─── Entity API helpers ─────────────────────────────────────────────────────
 
@@ -97,9 +97,12 @@ function lerpPed(min, max, t) {
 /**
  * Evaluate matching reward rules and post interactive prompts to a thread.
  * Returns true if the thread will be archived by this function (deferred archive),
- * false if the caller should archive.
+ * false if the caller should archive and send the approval DM.
+ *
+ * When rewards are present, a combined approval+rewards DM is sent after all
+ * reward prompts are resolved (approved or skipped).
  */
-export async function handleReward(thread, change, preChangeEntity = null) {
+export async function handleReward(client, thread, change, preChangeEntity = null) {
   try {
     const changedKeys = await getChangedDataKeys(change, preChangeEntity);
     if (change.type === 'Update' && changedKeys.length === 0) {
@@ -126,10 +129,21 @@ export async function handleReward(thread, change, preChangeEntity = null) {
 
     if (!promptRules.length) return false;
 
+    const rewardResults = [];
     let pendingPrompts = promptRules.length;
     const onPromptDone = async () => {
       pendingPrompts -= 1;
       if (pendingPrompts > 0) return;
+      try {
+        await sendChangeApprovalDm(client, change.author_id, {
+          changeName: change.data.Name,
+          changeType: change.type,
+          entity: change.entity,
+          rewards: rewardResults,
+        });
+      } catch (e) {
+        console.error('[rewards] Failed to send approval DM:', e);
+      }
       try {
         await thread.setArchived(true);
       } catch {}
@@ -143,6 +157,7 @@ export async function handleReward(thread, change, preChangeEntity = null) {
           rule,
           amount: minAmount,
           onDone: onPromptDone,
+          rewardResults,
         });
       } else {
         await promptRangeReward({
@@ -152,6 +167,7 @@ export async function handleReward(thread, change, preChangeEntity = null) {
           minAmount,
           maxAmount,
           onDone: onPromptDone,
+          rewardResults,
         });
       }
     }
@@ -163,7 +179,7 @@ export async function handleReward(thread, change, preChangeEntity = null) {
   }
 }
 
-async function promptFixedReward({ thread, change, rule, amount, onDone }) {
+async function promptFixedReward({ thread, change, rule, amount, onDone, rewardResults }) {
   const approveButtonId = `reward_fixed_approve_${change.id}_${rule.id}`;
   const skipButtonId = `reward_fixed_skip_${change.id}_${rule.id}`;
   const actionsRow = new ActionRowBuilder().addComponents(
@@ -221,7 +237,7 @@ async function promptFixedReward({ thread, change, rule, amount, onDone }) {
         return;
       }
 
-      await sendRewardDm(btnInteraction.client, change.author_id, {
+      rewardResults.push({
         amount: roundPed(amount), contribution_score: rule.contribution_score,
         note: `Assigned on approval (${rule.name})`,
       });
@@ -248,7 +264,7 @@ async function promptFixedReward({ thread, change, rule, amount, onDone }) {
   });
 }
 
-async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, onDone }) {
+async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, onDone, rewardResults }) {
   const presets = [
     { key: '0', label: 'Minimum', t: 0 },
     { key: '25', label: 'Low', t: 0.25 },
@@ -343,7 +359,7 @@ async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, o
             return;
           }
 
-          await sendRewardDm(modalSubmit.client, change.author_id, {
+          rewardResults.push({
             amount: roundPed(amount), contribution_score: rule.contribution_score,
             note: `Assigned on approval (${rule.name})`,
           });
@@ -381,7 +397,7 @@ async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, o
         return;
       }
 
-      await sendRewardDm(btnInteraction.client, change.author_id, {
+      rewardResults.push({
         amount, contribution_score: rule.contribution_score,
         note: `Assigned on approval (${rule.name})`,
       });

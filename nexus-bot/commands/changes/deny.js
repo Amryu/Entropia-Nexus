@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
-import { getChangeByThreadId, setChangeState } from '../../db.js';
+import { getChangeByThreadId, setChangeDenied } from '../../db.js';
+import { sendChangeDenialDm } from '../../rewards.js';
 
 const denyRow = new ActionRowBuilder()
   .addComponents(
@@ -16,7 +17,12 @@ const denyRow = new ActionRowBuilder()
 
 export const data = new SlashCommandBuilder()
   .setName('deny')
-  .setDescription('Reviewer/Moderator only - Denies changes.');
+  .setDescription('Reviewer/Moderator only - Denies changes.')
+  .addStringOption(option => option
+    .setName('reason')
+    .setDescription('Reason for denying the change')
+    .setRequired(false)
+    .setMaxLength(500));
 
 export async function execute(interaction) {
   const reviewerRoleId = getConfigValue('reviewerRoleId');
@@ -46,17 +52,29 @@ export async function execute(interaction) {
     return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
   }
 
-  await promptModeratorForConfirmation(interaction, async () => {
-    await setChangeState(change.id, 'Denied');
+  const reason = interaction.options.getString('reason');
+
+  await promptModeratorForConfirmation(interaction, reason, async () => {
+    await setChangeDenied(change.id, reason);
     await thread.setName(`[Denied] ${change.type}: ${change.data.Name.substring(0, 80)}`);
-    await thread.send('The changes were denied!');
+    await thread.send(`The changes were denied!${reason ? ` Reason: ${reason}` : ''}`);
+    await sendChangeDenialDm(interaction.client, change.author_id, {
+      changeName: change.data.Name,
+      changeType: change.type,
+      entity: change.entity,
+      reason,
+    });
     await thread.setArchived(true);
     return true;
   });
 }
 
-async function promptModeratorForConfirmation(interaction, onDeny) {
-  const prompt = { content: `Are you sure you want to deny these changes?`, components: [denyRow], flags: MessageFlags.Ephemeral };
+async function promptModeratorForConfirmation(interaction, reason, onDeny) {
+  const prompt = {
+    content: `Are you sure you want to deny these changes?${reason ? `\nReason: ${reason}` : ''}`,
+    components: [denyRow],
+    flags: MessageFlags.Ephemeral,
+  };
 
   await interaction.reply(prompt);
 

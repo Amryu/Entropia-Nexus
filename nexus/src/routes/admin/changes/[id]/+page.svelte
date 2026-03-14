@@ -922,6 +922,12 @@
                 <span class="info-value">{formatDate(change.reviewed_at)}</span>
               </div>
             {/if}
+            {#if change.denial_reason}
+              <div class="info-row">
+                <span class="info-label">Denial Reason</span>
+                <span class="info-value">{change.denial_reason}</span>
+              </div>
+            {/if}
             {#if change.thread_id && DISCORD_GUILD_ID}
               <div class="info-row">
                 <span class="info-label">Discord</span>

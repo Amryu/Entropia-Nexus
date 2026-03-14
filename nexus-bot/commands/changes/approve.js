@@ -10,6 +10,7 @@ import { applyChange } from '../../changes/util.js';
 import {
   handleReward, fetchEntityForReward,
 } from '../../changes/rewards.js';
+import { sendChangeApprovalDm } from '../../rewards.js';
 
 const approveRow = new ActionRowBuilder()
   .addComponents(
@@ -83,8 +84,16 @@ export async function execute(interaction) {
     await thread.send('The changes were approved!');
 
     // Evaluate reward rules and auto-assign or prompt
-    const archived = await handleReward(thread, change, preChangeEntity);
+    // handleReward sends the combined approval+rewards DM when all prompts resolve
+    const archived = await handleReward(interaction.client, thread, change, preChangeEntity);
     if (!archived) {
+      // No matching reward rules — send approval-only DM
+      await sendChangeApprovalDm(interaction.client, change.author_id, {
+        changeName: change.data.Name,
+        changeType: change.type,
+        entity: change.entity,
+        rewards: [],
+      });
       await thread.setArchived(true);
     }
     return true;

@@ -655,6 +655,7 @@ async function handleDirectApply(change) {
     // Find or create a Discord thread for the closing message and rewards
     const channel = client.channels.cache.find(ch => ch.id === config.pendingChangesChannelId);
     let thread = null;
+    let dmHandledByRewards = false;
 
     if (channel) {
       // Try to fetch existing thread
@@ -693,18 +694,22 @@ async function handleDirectApply(change) {
       }
 
       // Evaluate and prompt for rewards in the thread, then archive
-      const archived = await handleReward(thread, change, preChangeEntity);
-      if (!archived) {
+      // handleReward sends the combined approval+rewards DM when all prompts resolve
+      dmHandledByRewards = await handleReward(client, thread, change, preChangeEntity);
+      if (!dmHandledByRewards) {
         try { await thread.setArchived(true); } catch {}
       }
     }
 
-    // DM the admin confirmation
-    try {
-      const dmUser = await client.users.fetch(String(change.author_id));
-      await dmUser.send(`Your change **${change.data.Name}** (${change.type} ${change.entity}) was directly applied successfully.`);
-    } catch (e) {
-      console.error(`Failed to DM admin ${change.author_id}:`, e.message);
+    // Send approval-only DM if handleReward didn't handle it (no matching rules or no thread)
+    if (!dmHandledByRewards) {
+      const { sendChangeApprovalDm } = await import('./rewards.js');
+      await sendChangeApprovalDm(client, change.author_id, {
+        changeName: change.data.Name,
+        changeType: change.type,
+        entity: change.entity,
+        rewards: [],
+      });
     }
   } else {
     await setChangeState(change.id, 'ApplyFailed');
