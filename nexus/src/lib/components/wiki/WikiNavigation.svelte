@@ -2065,7 +2065,7 @@
     padding: 0 2px;
     text-align: right;
     font-variant-numeric: tabular-nums;
-    color: var(--text-muted, #999);
+    color: var(--text-color);
   }
 
   .cell-name {
