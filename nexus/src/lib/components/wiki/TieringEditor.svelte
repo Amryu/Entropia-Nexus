@@ -20,7 +20,7 @@
     getTierMaterial
   } from '$lib/tieringUtil.js';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup, deleteInventoryMarkup } from '$lib/markupSources.js';
   import MarkupSourceHelp from './MarkupSourceHelp.svelte';
 
   
@@ -174,9 +174,27 @@
   }
 
   function commitEdit(event, idx, matName) {
-    const value = event.target.value;
-    const num = parseFloat(value);
+    const value = event.target.value.trim();
     editingMarkup = null;
+
+    // Empty input → clear the markup so the fallback chain takes over
+    if (value === '') {
+      if (markupSource === 'inventory') {
+        const itemId = nameToIdMap.get(matName);
+        if (itemId == null) return;
+        inventoryMarkupMap.delete(itemId);
+        inventoryMarkupMap = new Map(inventoryMarkupMap);
+        deleteInventoryMarkup(itemId);
+      } else {
+        // Custom mode — reset to null
+        if (!allMarkups[selectedTier]) return;
+        allMarkups[selectedTier][idx] = null;
+        debounceSaveMarkups();
+      }
+      return;
+    }
+
+    const num = parseFloat(value);
     if (isNaN(num) || num < 0) return;
     const clamped = Math.min(100000, num);
 

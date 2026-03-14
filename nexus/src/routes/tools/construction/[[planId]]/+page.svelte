@@ -14,7 +14,7 @@
   import { loading } from '../../../../stores.js';
   import { hasItemTag, getItemLink, getTypeLink, clampDecimals } from '$lib/util.js';
   import { hasCondition } from '$lib/shopUtils.js';
-  import { fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
+  import { fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup, deleteInventoryMarkup } from '$lib/markupSources.js';
   import MarkupSourceHelp from '$lib/components/wiki/MarkupSourceHelp.svelte';
   import {
     buildCraftingTree,
@@ -289,9 +289,24 @@
   }
 
   function commitMarkupEdit(event, key) {
-    const value = event.target.value;
-    const num = parseFloat(value);
+    const value = event.target.value.trim();
     editingMarkupKey = null;
+
+    // Empty input → clear the markup so the fallback chain takes over
+    if (value === '') {
+      if (markupSource === 'inventory') {
+        const itemId = resolveItemIdFromKey(key);
+        if (itemId == null) return;
+        inventoryMarkupMap.delete(itemId);
+        inventoryMarkupMap = new Map(inventoryMarkupMap);
+        deleteInventoryMarkup(itemId);
+      } else {
+        resetMarkup(key);
+      }
+      return;
+    }
+
+    const num = parseFloat(value);
     if (isNaN(num) || num < 0) return;
     const clamped = Math.min(100000, num);
 

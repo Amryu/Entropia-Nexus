@@ -27,7 +27,7 @@
     buildNameToKebabMap,
     computeSkillDiff
   } from '$lib/utils/skillImportUtils.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup, deleteInventoryMarkup } from '$lib/markupSources.js';
   import MarkupSourceHelp from '$lib/components/wiki/MarkupSourceHelp.svelte';
   let { data } = $props();
 
@@ -1144,8 +1144,25 @@
                           class="mu-input"
                           value={markupSource === 'inventory' ? Math.round(mu) : (customMarkups[skill.Name] ?? Math.round(mu))}
                           onblur={(e) => {
-                            const num = Number(e.target.value) || 100;
+                            const val = e.target.value.trim();
                             editingSkillMarkup = null;
+                            if (val === '') {
+                              // Clear → fall back to next source
+                              if (markupSource === 'inventory') {
+                                const implantName = `${skill.Name} Skill Implant (L)`;
+                                const itemId = nameToId.get(implantName);
+                                if (itemId != null) {
+                                  inventoryMarkupMap.delete(itemId);
+                                  inventoryMarkupMap = new Map(inventoryMarkupMap);
+                                  deleteInventoryMarkup(itemId);
+                                }
+                              } else {
+                                const { [skill.Name]: _, ...rest } = customMarkups;
+                                customMarkups = rest;
+                              }
+                              return;
+                            }
+                            const num = Number(val) || 100;
                             if (markupSource === 'inventory') {
                               const implantName = `${skill.Name} Skill Implant (L)`;
                               const itemId = nameToId.get(implantName);
