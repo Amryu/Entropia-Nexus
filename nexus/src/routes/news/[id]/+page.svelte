@@ -1,6 +1,5 @@
 <script>
   // @ts-nocheck
-  import { sanitizeHtml } from '$lib/sanitize';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
 
@@ -91,7 +90,7 @@
 
     {#if announcement.content_html}
       <div class="article-body">
-        {@html sanitizeHtml(announcement.content_html)}
+        {@html announcement.content_html}
       </div>
     {:else if announcement.summary}
       <div class="article-body">

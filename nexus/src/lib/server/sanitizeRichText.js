@@ -101,6 +101,48 @@ const MARKET_SANITIZE_CONFIG = {
 };
 
 /**
+ * Sanitization config for news/announcement content (Steam BBCode conversions).
+ * Unlike wiki content, news allows external images (Steam CDN) and tables.
+ */
+const NEWS_SANITIZE_CONFIG = {
+  allowedTags: [
+    ...SANITIZE_CONFIG.allowedTags,
+    'u', 'table', 'tr', 'th', 'td'
+  ],
+  allowedAttributes: {
+    ...SANITIZE_CONFIG.allowedAttributes,
+    'img': ['src', 'alt', 'class'],
+    'td': ['colspan', 'rowspan'],
+    'th': ['colspan', 'rowspan']
+  },
+  allowedStyles: SANITIZE_CONFIG.allowedStyles,
+  allowedIframeHostnames: SANITIZE_CONFIG.allowedIframeHostnames,
+  transformTags: {
+    'a': SANITIZE_CONFIG.transformTags['a'],
+    // Allow external images for news (Steam CDN, etc.)
+    'img': (tagName, attribs) => {
+      const src = attribs.src || '';
+      if (!src.startsWith('http://') && !src.startsWith('https://') && !src.startsWith('/api/img/')) {
+        return { tagName: '', attribs: {} };
+      }
+      return { tagName: 'img', attribs };
+    }
+  }
+};
+
+/**
+ * Sanitize news/announcement HTML content.
+ * Allows external images (Steam CDN) unlike the wiki sanitizer.
+ *
+ * @param {string} html - The HTML string to sanitize
+ * @returns {string} - Sanitized HTML safe for rendering
+ */
+export function sanitizeNewsHtml(html) {
+  if (typeof html !== 'string') return '';
+  return sanitizeHtml(html, NEWS_SANITIZE_CONFIG);
+}
+
+/**
  * Sanitize HTML for market descriptions (auctions, rentals).
  * Uses a restricted tag allowlist — no images, videos, headings, or code.
  *
