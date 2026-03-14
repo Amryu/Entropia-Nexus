@@ -169,6 +169,10 @@
           dbChangeIdMap.set(tempId, change.id);
 
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
+          // Force immediate rebuild so the pending add layer exists in layerGroup
+          // before updateSelection runs — rebuildDbOverlay already removed the DB
+          // overlay layer, and the RAF-deferred rebuildLayers may not fire in time.
+          if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
         }
         selectedId = tempId;
       } else if (change.type === 'Update' && data?.Id) {
@@ -195,6 +199,7 @@
           dbChangeIdMap.set(data.Id, change.id);
 
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
+          if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
           selectedId = data.Id;
         } else {
           // Location not found locally — fall back to read-only
