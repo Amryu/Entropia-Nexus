@@ -1,7 +1,6 @@
 <script>
   import EditFormControlGroup from './EditFormControlGroup.svelte';
 
-  //@ts-nocheck
   import { writable } from "svelte/store";
 
   /**
@@ -155,7 +154,7 @@
           <span>{field}</span>
         {/each}
         {#each Array.from({ length: control.fields.length }) as _, j}
-          <input type="number" style="width: calc(100% - 8px);" id={control.key} value={stores[i].value[j]} disabled={disabled} oninput={(event) => stores[i].value = stores[i].value.map((x, k) => k === j ? Number(event.target.value) : x)} />
+          <input type="number" style="width: calc(100% - 8px);" id={control.key} value={stores[i].value[j]} disabled={disabled} oninput={(event) => stores[i].value = stores[i].value.map((x, k) => k === j ? Number(/** @type {HTMLInputElement} */ (event.currentTarget).value) : x)} />
         {/each}
       </div>
     {:else if control.type === 'checkbox'}
@@ -172,7 +171,7 @@
       </select>
     {:else if control.type === 'input-select'}
       <div class="select-editable">
-        <select onchange={e => stores[i].value = e.target.value} disabled={disabled}>
+        <select onchange={e => stores[i].value = /** @type {HTMLSelectElement} */ (e.currentTarget).value} disabled={disabled}>
           <option value="" selected></option>
           {#each control.options(object, dependencies, root) as option}
             <option value={option ?? ''}>{option ?? 'None'}</option>
@@ -196,7 +195,7 @@
           value={Array.isArray(stores[i].value) ? stores[i].value[0] || '' : ''}
           onpaste={(event) => {
             event.preventDefault();
-            let paste = (event.clipboardData || window.clipboardData).getData('text');
+            let paste = event.clipboardData?.getData('text') ?? '';
             try {
               let parsed = JSON.parse(paste);
               if (Array.isArray(parsed) && parsed.length >= 4) {
@@ -217,7 +216,7 @@
             }
           }}
           oninput={(event) => {
-            let input = event.target.value.trim();
+            let input = /** @type {HTMLInputElement} */ (event.currentTarget).value.trim();
             // Check if it looks like a waypoint paste
             if (input.includes('[') || input.includes(',')) {
               try {
@@ -240,15 +239,15 @@
             }
             // Single value update
             let newValue = [...(stores[i].value || [0, 0, 0])];
-            newValue[0] = parseFloat(event.target.value) || 0;
+            newValue[0] = parseFloat(/** @type {HTMLInputElement} */ (event.currentTarget).value) || 0;
             stores[i].value = newValue;
-          }} 
+          }}
           disabled={disabled} />
         <input type="number" placeholder="Latitude" step="0.0001"
           value={Array.isArray(stores[i].value) ? stores[i].value[1] || '' : ''}
           onpaste={(event) => {
             event.preventDefault();
-            let paste = (event.clipboardData || window.clipboardData).getData('text');
+            let paste = event.clipboardData?.getData('text') ?? '';
             // Handle waypoint paste format: [ARIS, 34498, 21428, 194, Waypoint]
             try {
               let parsed = JSON.parse(paste);
@@ -270,7 +269,7 @@
             }
           }}
           oninput={(event) => {
-            let input = event.target.value.trim();
+            let input = /** @type {HTMLInputElement} */ (event.currentTarget).value.trim();
             // Check if it looks like a waypoint paste
             if (input.includes('[') || input.includes(',')) {
               try {
@@ -293,15 +292,15 @@
             }
             // Single value update
             let newValue = [...(stores[i].value || [0, 0, 0])];
-            newValue[1] = parseFloat(event.target.value) || 0;
+            newValue[1] = parseFloat(/** @type {HTMLInputElement} */ (event.currentTarget).value) || 0;
             stores[i].value = newValue;
-          }} 
+          }}
           disabled={disabled} />
         <input type="number" placeholder="Altitude" step="0.01"
           value={Array.isArray(stores[i].value) ? stores[i].value[2] || '' : ''}
           onpaste={(event) => {
             event.preventDefault();
-            let paste = (event.clipboardData || window.clipboardData).getData('text');
+            let paste = event.clipboardData?.getData('text') ?? '';
             // Handle waypoint paste format: [ARIS, 34498, 21428, 194, Waypoint]
             try {
               let parsed = JSON.parse(paste);
@@ -323,7 +322,7 @@
             }
           }}
           oninput={(event) => {
-            let input = event.target.value.trim();
+            let input = /** @type {HTMLInputElement} */ (event.currentTarget).value.trim();
             // Check if it looks like a waypoint paste
             if (input.includes('[') || input.includes(',')) {
               try {
@@ -346,16 +345,16 @@
             }
             // Single value update
             let newValue = [...(stores[i].value || [0, 0, 0])];
-            newValue[2] = parseFloat(event.target.value) || 0;
+            newValue[2] = parseFloat(/** @type {HTMLInputElement} */ (event.currentTarget).value) || 0;
             stores[i].value = newValue;
-          }} 
+          }}
           disabled={disabled} />
       </div>
     {:else if control.type === 'range'}
       <span>
-        <input type="number" id={control.key} value={stores[i].value[0]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [Number(event.target.value), stores[i].value[1]]} disabled={disabled} />
+        <input type="number" id={control.key} value={stores[i].value[0]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [Number(/** @type {HTMLInputElement} */ (event.currentTarget).value), stores[i].value[1]]} disabled={disabled} />
         -
-        <input type="number" id={control.key} value={stores[i].value[1]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [stores[i].value[0], Number(event.target.value)]} disabled={disabled} />
+        <input type="number" id={control.key} value={stores[i].value[1]} step={control.step} min={control.min} max={control.max} oninput={(event) => stores[i].value = [stores[i].value[0], Number(/** @type {HTMLInputElement} */ (event.currentTarget).value)]} disabled={disabled} />
       </span>
     {:else if control.type === 'group'}
       <EditFormControlGroup root={root} bind:object={object} controls={control.controls} dependencies={dependencies} disabled={disabled} onchange={() => onchange?.()} />

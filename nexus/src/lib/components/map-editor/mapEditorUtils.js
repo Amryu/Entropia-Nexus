@@ -18,6 +18,8 @@ export const AREA_TYPES = [
 
 export const SHAPES = ['Circle', 'Rectangle', 'Polygon'];
 
+export const DEFAULT_ALTITUDE = 0;
+
 // ─── Type Colors (matches Map.svelte getColorByType) ─────────────────────────
 
 export const TYPE_COLORS = {

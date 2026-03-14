@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { TIMEOUT_INSTANT, TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 
-async function createNewPlan(page) {
+async function createNewPlan(page: import('@playwright/test').Page) {
   // Wait for page to fully load (blueprints, local data, etc.)
   await page.waitForLoadState('networkidle');
 
@@ -23,7 +23,7 @@ async function createNewPlan(page) {
   await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_LONG });
 }
 
-async function addBlueprintToPlan(page, query = 'Basic') {
+async function addBlueprintToPlan(page: import('@playwright/test').Page, query = 'Basic') {
   const searchInput = page.getByPlaceholder('Add blueprint...');
   await searchInput.fill(query);
 

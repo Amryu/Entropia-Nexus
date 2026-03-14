@@ -18,6 +18,75 @@
 import { hasItemTag } from '$lib/util.js';
 import { hasCondition } from '$lib/shopUtils.js';
 
+/**
+ * @typedef {object} CraftNode
+ * @property {object} blueprint - Blueprint object
+ * @property {number} quantityWanted - Desired output quantity
+ * @property {number} estimatedAttempts - Estimated craft attempts needed
+ * @property {number} avgOutput - Average output per success
+ * @property {number} avgOutputPerAttempt - Average output per attempt
+ * @property {number} successRate - Success rate (0-1)
+ * @property {number} nearSuccessRate - Near-success rate (0-1)
+ * @property {number} failRate - Fail rate (0-1)
+ * @property {boolean} isLimited - Whether the blueprint is limited (L)
+ * @property {boolean} isSiB - Whether the blueprint has SiB
+ * @property {boolean} owned - Whether the player owns this blueprint
+ * @property {Array<{item: object, amountPerAttempt: number, totalAmount: number, adjustedAmount: number, multiplier: number, refundFraction: number, hasCraftableBlueprint: boolean, craftableVersions: {hasLimited: boolean, hasUnlimited: boolean}|null}>} materials - Materials with raw and adjusted amounts
+ * @property {CraftNode[]} materialChildren - Child nodes for craftable materials
+ * @property {number} depth - Tree depth level
+ * @property {number} residuePerClick - Residue TT per craft attempt
+ * @property {number} totalResidue - Total residue TT needed (raw)
+ * @property {number} adjustedResidue - Total residue TT needed (adjusted for refunds)
+ * @property {number} nonFailChance - Non-fail chance % (0-100)
+ * @property {number} effectiveNonFailChance - Effective non-fail chance after condition adjustment
+ * @property {number} materialMultiplier - Weighted average material multiplier
+ * @property {number} conditionPercent - Condition slider value (0-100)
+ * @property {number} conditionMultiplier - Condition multiplier
+ * @property {boolean} [circular] - Whether this node was truncated due to circular reference
+ * @property {boolean} [isMaterialChild] - Whether this node is a material child
+ * @property {string} [parentMaterialName] - Name of the parent material (if material child)
+ */
+
+/**
+ * @typedef {object} CraftStep
+ * @property {object} blueprint - Blueprint object
+ * @property {number} quantityWanted - Desired output quantity
+ * @property {number} estimatedAttempts - Estimated craft attempts needed
+ * @property {number} avgOutput - Average output per success
+ * @property {number} avgOutputPerAttempt - Average output per attempt
+ * @property {number} successRate - Success rate (0-1)
+ * @property {number} nearSuccessRate - Near-success rate (0-1)
+ * @property {number} failRate - Fail rate (0-1)
+ * @property {boolean} isLimited - Whether the blueprint is limited (L)
+ * @property {boolean} isSiB - Whether the blueprint has SiB
+ * @property {boolean} owned - Whether the player owns this blueprint
+ * @property {Array<{item: object, amountPerAttempt: number, totalAmount: number, adjustedAmount: number, multiplier: number, refundFraction: number, hasCraftableBlueprint: boolean, craftableVersions: {hasLimited: boolean, hasUnlimited: boolean}|null}>} materials - Materials with raw and adjusted amounts
+ * @property {CraftNode[]} materialChildren - Child nodes for craftable materials
+ * @property {string} action - Either 'craft' or 'buy_product'
+ * @property {number} residuePerClick - Residue TT per craft attempt
+ * @property {number} totalResidue - Total residue TT needed (raw)
+ * @property {number} adjustedResidue - Total residue TT needed (adjusted for refunds)
+ * @property {number} nonFailChance - Non-fail chance % (0-100)
+ * @property {number} effectiveNonFailChance - Effective non-fail chance after condition adjustment
+ * @property {number} materialMultiplier - Weighted average material multiplier
+ * @property {number} conditionPercent - Condition slider value (0-100)
+ * @property {number} conditionMultiplier - Condition multiplier
+ * @property {boolean} isMaterialChild - Whether this node is a material child
+ * @property {string|null} parentMaterialName - Name of the parent material (if material child)
+ */
+
+/**
+ * @typedef {object} ShoppingItem
+ * @property {object} [item] - Item object (for materials and products)
+ * @property {object} [blueprint] - Blueprint object (for limited blueprints)
+ * @property {number} totalAmount - Total quantity needed
+ * @property {number} [adjustedAmount] - Adjusted quantity after refunds (materials only)
+ * @property {number} [ttValue] - Total TT value
+ * @property {number} [adjustedTTValue] - Adjusted TT value after refunds (materials only)
+ * @property {string} reason - Reason for inclusion: 'material', 'unowned_bp_product', or 'limited_blueprint'
+ * @property {string} [blueprintName] - Name of the blueprint (for unowned BP products)
+ */
+
 /** Default configuration values */
 export const DEFAULT_CONFIG = {
   rollChance: 80, // % chance each material wins refund roll (0-100)
@@ -551,7 +620,7 @@ function calculateWeightedIntegerAverage(lowRaw, highRaw) {
  *
  * @param {object} blueprint - Blueprint with Properties.MinimumCraftAmount/MaximumCraftAmount
  * @param {number} quantityWanted - Desired output quantity
- * @param {number} nonFailChance - Non-fail chance % (0-100), defaults to max for blueprint
+ * @param {number|null} nonFailChance - Non-fail chance % (0-100), defaults to max for blueprint
  * @param {number} certainty - Confidence level % (50-99), defaults to 50 (mean estimate)
  * @param {number} conditionPercent - Condition slider value (0-20), defaults to 0
  * @returns {{ estimatedAttempts: number, avgOutput: number, avgOutputPerAttempt: number, successRate: number, nearSuccessRate: number, failRate: number, nonFailChance: number, effectiveNonFailChance: number, conditionMultiplier: number }}

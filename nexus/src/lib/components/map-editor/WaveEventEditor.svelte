@@ -1,7 +1,5 @@
 <script>
   // @ts-nocheck
-  import { apiCall } from '$lib/util.js';
-
   /**
    * @typedef {Object} Props
    * @property {any} [mobs] - All mobs from /mobs (cached by parent)
@@ -53,21 +51,18 @@
     return `Maturity #${maturityId}`;
   }
 
-  async function loadMaturities(mobId) {
+  function loadMaturities(mobId) {
     if (mobMaturityCache[mobId] !== undefined) return;
-    mobMaturityCache[mobId] = []; // Prevent double-fetch
-    try {
-      const mob = await apiCall(fetch, `/mobs/${mobId}`);
-      if (mob?.Maturities) {
-        mobMaturityCache[mobId] = mob.Maturities.map(m => ({
-          Id: m.Id,
-          Name: m.Name,
-          label: `${mob.Name} - ${m.Name}`
-        }));
-      }
-    } catch {
-      // leave empty
+    const mob = mobs.find(m => m.Id === mobId);
+    if (!mob) {
+      mobMaturityCache[mobId] = [];
+      return;
     }
+    mobMaturityCache[mobId] = (mob.Maturities || []).map(m => ({
+      Id: m.Id,
+      Name: m.Name,
+      label: `${mob.Name} - ${m.Name}`
+    }));
   }
 
   // Preload maturities for all mobs referenced in current waves
@@ -124,7 +119,7 @@
     );
   }
 
-  async function handleMaturitySearch(waveIdx) {
+  function handleMaturitySearch(waveIdx) {
     maturitySearchWaveIdx = waveIdx;
     const query = (waveSearchQueries[waveIdx] ?? '').trim().toLowerCase();
     if (query.length < 2) { maturitySearchResults = []; return; }
@@ -133,7 +128,7 @@
     const matchingMobs = mobs.filter(m => m.Name.toLowerCase().includes(query)).slice(0, 8);
     const results = [];
     for (const mob of matchingMobs) {
-      await loadMaturities(mob.Id);
+      loadMaturities(mob.Id);
       for (const mat of (mobMaturityCache[mob.Id] || [])) {
         results.push({ matId: mat.Id, label: mat.label, mobId: mob.Id });
       }

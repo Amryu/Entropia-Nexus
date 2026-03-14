@@ -85,6 +85,7 @@ export async function fetchAllSkillPEDValues(skillValues) {
   const points = entries.map(([, v]) => v);
   const pedValues = await fetchSkillPEDValues(points);
 
+  /** @type {{ [key: string]: number }} */
   const pedBySkill = {};
   let totalValue = 0;
   for (let i = 0; i < names.length; i++) {
@@ -303,7 +304,7 @@ export function findCheapestPath(currentSkills, professionSkills, currentLevel, 
  * HP per skill point = 1 / HPIncrease.
  *
  * @param {Object<string, number>} currentSkills - current skill values
- * @param {Array<{Name: string, HPIncrease: number|null, IsExtractable: boolean}>} skillMetadata
+ * @param {Array<{Name: string, Category: string|null, HPIncrease: number|null, IsExtractable: boolean}>} skillMetadata
  * @param {number} currentHP - current calculated HP
  * @param {number} targetHP - desired HP
  * @param {Object<string, number>} markups - { skillName: markupPercent }
@@ -340,7 +341,7 @@ export function findCheapestHPPath(currentSkills, skillMetadata, currentHP, targ
       }
 
       // HP per raw skill point: 1 / HPIncrease
-      const hpPerPoint = 1 / s.HPIncrease;
+      const hpPerPoint = 1 / /** @type {number} */ (s.HPIncrease);
       const efficiency = cheaperCost > 0 ? hpPerPoint / cheaperCost : 0;
 
       return {
@@ -365,7 +366,7 @@ export function findCheapestHPPath(currentSkills, skillMetadata, currentHP, targ
     if (opt.efficiency <= 0) continue;
 
     // points needed: HP * HPIncrease (inverse of hpPerPoint)
-    const pointsNeeded = remainingHP * opt.hpIncrease;
+    const pointsNeeded = remainingHP * /** @type {number} */ (opt.hpIncrease);
     const cost = pointsNeeded * opt.cheaperCost;
 
     allocations.push({

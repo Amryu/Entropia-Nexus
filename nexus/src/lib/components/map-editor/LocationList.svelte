@@ -49,8 +49,6 @@
   function setAreasOnly() {
     LOCATION_TYPES.forEach(t => typeFilters[t] = false);
     AREA_TYPES.forEach(t => areaTypeFilters[t] = true);
-    // Keep 'Area' type enabled in location types since areas are stored as Type='Area'
-    typeFilters['Estate'] = false;
   }
 
   // Filter locations

@@ -91,7 +91,6 @@
   let isSearching = $state(false);
   let highlightedIndex = $state(-1);
   let searchTimeout;
-  let flatResults = $state([]); // Flattened results for keyboard navigation
   let preventBlurClose = false; // Prevent blur from closing when context menu opens
   let hasUsedArrowKeys = false; // Track if arrow keys were used for selection
 
@@ -171,18 +170,22 @@
 
   // Build flat list for keyboard navigation
   let categorizedResults = $derived(categorizeResults(searchResults));
-  $effect(() => {
-    flatResults = [];
+  let flatResults = $derived.by(() => {
+    const results = [];
     for (const category of Object.keys(categorizedResults)) {
       for (const result of categorizedResults[category]) {
-        flatResults.push({
+        results.push({
           ...result,
           _category: category,
           _url: getResultLink(result)
         });
       }
     }
-    // Don't auto-select — let user explicitly choose with arrow keys
+    return results;
+  });
+  // Reset highlight when results change — don't auto-select
+  $effect(() => {
+    categorizedResults;
     highlightedIndex = -1;
   });
 

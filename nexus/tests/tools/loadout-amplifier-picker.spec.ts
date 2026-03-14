@@ -12,7 +12,7 @@ test.describe('Loadout Amplifier Picker', () => {
     await weaponBtn.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
   });
 
-  async function selectWeapon(page, query: string) {
+  async function selectWeapon(page: import('@playwright/test').Page, query: string) {
     const weaponBtn = page.locator('.form-label:has-text("Weapon") + .control-row .select-button');
     await weaponBtn.click();
 
@@ -30,7 +30,7 @@ test.describe('Loadout Amplifier Picker', () => {
     await page.waitForTimeout(TIMEOUT_INSTANT);
   }
 
-  async function openAmplifierPicker(page) {
+  async function openAmplifierPicker(page: import('@playwright/test').Page) {
     const ampBtn = page.locator('.form-label:has-text("Amplifier") + .control-row .select-button');
     await ampBtn.click();
 

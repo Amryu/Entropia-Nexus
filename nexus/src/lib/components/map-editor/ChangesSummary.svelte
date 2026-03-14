@@ -2,7 +2,7 @@
   // @ts-nocheck
   import { apiPost, apiPut, apiDelete } from '$lib/util.js';
   import { addToast } from '$lib/stores/toasts.js';
-  import { getEffectiveType } from './mapEditorUtils.js';
+  import { getEffectiveType, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
 
   
   /**
@@ -119,7 +119,7 @@
       Coordinates: {
         Longitude: mod.longitude ?? origCoords?.Longitude ?? null,
         Latitude: mod.latitude ?? origCoords?.Latitude ?? null,
-        Altitude: mod.altitude !== undefined ? mod.altitude : (origCoords?.Altitude ?? 100)
+        Altitude: mod.altitude !== undefined ? mod.altitude : (origCoords?.Altitude ?? DEFAULT_ALTITUDE)
       },
       Description: mod.description !== undefined ? (mod.description || null) : (origProps?.Description || null)
     };
@@ -363,7 +363,7 @@
     const effectiveLocationType = mod.locationType ||
       ((origProps?.Shape || origProps?.AreaType || origProps?.Type === 'Area') ? 'Area' : origProps?.Type) ||
       null;
-    return 'Location';
+    return effectiveLocationType === 'Area' ? 'Area' : 'Location';
   }
 
   function getStatusIcon(key) {
@@ -577,7 +577,7 @@
           <span class="badge edit">~{editCount} edit{editCount > 1 ? 's' : ''}</span>
         {/if}
         {#if deleteCount > 0}
-          <span class="badge delete">{deleteCount} info-only</span>
+          <span class="badge delete">{deleteCount} deletion{deleteCount > 1 ? 's' : ''}</span>
         {/if}
       </div>
     </div>

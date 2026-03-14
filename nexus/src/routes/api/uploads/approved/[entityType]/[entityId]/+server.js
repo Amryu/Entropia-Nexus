@@ -35,13 +35,13 @@ export async function GET({ params, url }) {
 
     const imageBuffer = await readFile(imagePath);
 
-    return new Response(imageBuffer, {
+    return new Response(new Uint8Array(imageBuffer), {
       headers: {
         'Content-Type': 'image/webp',
         'Cache-Control': 'public, max-age=86400' // 24 hours
       }
     });
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     if (err.status) {
       throw err;
     }

@@ -25,6 +25,7 @@
 
   let containerEl = $state();
   let containerWidth = $state(0);
+  /** @type {HTMLElement | null} */
   let scrollParent = $state(null);
   let offsetInParent = $state(0);
   let viewportHeight = $state(0);
@@ -71,22 +72,24 @@
     if (!containerEl) return;
 
     scrollParent = findScrollParent(containerEl);
-    viewportHeight = scrollParent.clientHeight;
+    const sp = scrollParent;
+    if (!sp) return;
+    viewportHeight = sp.clientHeight;
     containerWidth = containerEl.clientWidth;
 
     updateOffset();
     handleScroll();
 
-    scrollParent.addEventListener('scroll', scheduleScroll, { passive: true });
+    sp.addEventListener('scroll', scheduleScroll, { passive: true });
 
     resizeObserver = new ResizeObserver(() => {
       containerWidth = containerEl.clientWidth;
-      viewportHeight = scrollParent.clientHeight;
+      if (scrollParent) viewportHeight = scrollParent.clientHeight;
       updateOffset();
     });
     resizeObserver.observe(containerEl);
-    if (scrollParent !== document.documentElement) {
-      resizeObserver.observe(scrollParent);
+    if (sp !== document.documentElement) {
+      resizeObserver.observe(sp);
     }
   });
 

@@ -4,56 +4,38 @@
   Supports expanded table view mode with sortable/filterable columns.
 -->
 <script>
-  // @ts-nocheck
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { encodeURIComponentSafe } from '$lib/util';
   import ColumnConfigDialog from './ColumnConfigDialog.svelte';
 
-  /** @type {Array} Items to display in the list */
-  /** @type {Array} Filter options [{key, label, values: [{value, label}], multiSelect?: boolean, filterFn?: Function}] */
-  /** @type {Array} Link-based navigation buttons [{label, href, active, title}] - shown separately from value filters */
-  /** @type {string} Base path for links */
-  /** @type {string} Navigation title */
-  /** @type {string|null} Currently selected item slug */
-  /** @type {number|string|null} Currently selected item ID (for disambiguation when multiple items have same name) */
-  /** @type {string|null} Currently selected change ID (for pending creates) */
-  /** @type {boolean} Whether sidebar is in expanded table view mode */
-  /** @type {boolean} Whether sidebar is in full-width mode (takes entire page width, content hidden) */
   /**
-   * @type {Array|null} Custom table columns for expanded view
-   * Default: [{ key: 'class', header: 'Class', width: '70px' }, { key: 'maxLvl', header: 'Lvl', width: '40px' }, ...]
-   * Each column: { key: string, header: string, width: string, getValue?: (item) => any, format?: (value, item) => string }
+   * @typedef {Object} Props
+   * @property {Array} [items] - Items to display in the list
+   * @property {Array} [filters] - Filter options [{key, label, values, multiSelect?, filterFn?}]
+   * @property {Array} [linkFilters] - Link-based navigation buttons [{label, href, active, title}]
+   * @property {string} [basePath] - Base path for links
+   * @property {string} [title] - Navigation title
+   * @property {string|null} [currentSlug] - Currently selected item slug
+   * @property {number|string|null} [currentItemId] - Currently selected item ID
+   * @property {string|null} [currentChangeId] - Currently selected change ID (for pending creates)
+   * @property {boolean} [expanded] - Whether sidebar is in expanded table view mode
+   * @property {boolean} [fullWidth] - Whether sidebar is in full-width mode
+   * @property {Array|null} [tableColumns] - Custom table columns for expanded view
+   * @property {Array|null} [fullWidthColumns] - Additional table columns shown only in full-width mode
+   * @property {Array|null} [allAvailableColumns] - All possible columns for column configuration
+   * @property {string} [pageTypeId] - Unique ID for localStorage key
+   * @property {Object|null} [columnFormatters] - Custom column formatters keyed by column key
+   * @property {Function|null} [customGetItemHref] - Custom function to generate item href
+   * @property {Array} [userPendingCreates] - User's pending create changes
+   * @property {Array} [userPendingUpdates] - User's pending update changes
+   * @property {Function} [ontoggleexpand]
+   * @property {Function} [ontogglefullwidth]
+   * @property {import('svelte').Snippet} [afterHeader]
    */
-  /**
-   * @type {Array|null} Additional table columns shown only in full-width mode
-   * Falls back to tableColumns if not provided
-   */
-  /**
-   * @type {Array|null} All possible columns for this page type (superset for column configuration)
-   * When provided, enables column configuration UI (Columns.../Reset buttons)
-   */
-  /**
-   * @type {string} Unique ID for localStorage key (e.g. 'weapons', 'tools-scanners')
-   */
-  /**
-   * @type {Object|null} Custom column formatters keyed by column key
-   * Example: { dps: (item) => calcDps(item)?.toFixed(1) || '-' }
-   */
-  /**
-   * @type {Function|null} Custom function to generate item href
-   * Example: (item, basePath) => `${basePath}/${item._type}/${item.Name}`
-   * If null, defaults to `${basePath}/${item.Name}`
-   */
-  /**
-   * @type {Array} User's pending create changes to show at top of list
-   * Each item should have: { id, data: { Name, ... }, state: 'Draft'|'Pending' }
-   */
-  /**
-   * @type {Array} User's pending update changes to highlight in list
-   * Each item should have: { id, data: { Id|ItemId }, state: 'Draft'|'Pending' }
-   */
+
+  /** @type {Props} */
   let {
     items = [],
     filters = [],
@@ -82,9 +64,11 @@
   let searchQuery = $state('');
   let activeFilters = $state({});
   let columnFilters = $state({ name: '' });
+  /** @type {string | null} */
   let sortColumn = $state(null);
   let sortDirection = $state('asc');
   let showFilterHelp = $state(false);
+  /** @type {string | null} */
   let openFilterHelp = $state(null); // Track which filter's help popover is open
 
   // Keyboard navigation state
@@ -100,11 +84,11 @@
   const BUFFER_SIZE = 5;
 
   // Initialize active filters (skip link-based navigation filters that have href instead of key)
+  // Use untrack for reads to avoid read+write cycle on the same $state
   $effect(() => {
     for (const filter of filters) {
       if (!filter.key) continue;
-      if (activeFilters[filter.key] === undefined) {
-        // Use array for multi-select filters, null for single-select
+      if (untrack(() => activeFilters[filter.key]) === undefined) {
         activeFilters[filter.key] = filter.multiSelect ? [] : null;
       }
     }
@@ -113,7 +97,7 @@
   // Initialize column filter keys from active columns
   $effect(() => {
     for (const column of activeColumns) {
-      if (columnFilters[column.key] === undefined) {
+      if (untrack(() => columnFilters[column.key]) === undefined) {
         columnFilters[column.key] = '';
       }
     }
@@ -153,6 +137,7 @@
 
   // Optimistic click highlighting - immediately highlights clicked item
   // before navigation data loads and props update
+  /** @type {string | null} */
   let clickedItemKey = $state(null);
 
   function handleItemClick(item) {
@@ -429,7 +414,7 @@
           if (column && column.getValue) {
             aVal = column.getValue(a);
             bVal = column.getValue(b);
-          } else {
+          } else if (sortColumn) {
             aVal = a[sortColumn];
             bVal = b[sortColumn];
           }
@@ -713,6 +698,7 @@
   }
 
   // Track last scrolled-to item key to avoid redundant scroll attempts
+  /** @type {string | null} */
   let lastScrolledKey = $state(null);
 
   // Scroll to current item on selection change (initial load or navigation)
@@ -791,7 +777,7 @@
   ];
 
   // Column configuration state
-  let userColumnSelection = $state(null); // null = defaults, string[] = user's ordered column keys
+  let userColumnSelection = $state(/** @type {string[] | null} */ (null)); // null = defaults, string[] = user's ordered column keys
   let showColumnDialog = $state(false);
 
   // localStorage key for column preferences

@@ -38,8 +38,8 @@ function getClient() {
       region: 'auto',
       endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: {
-        accessKeyId: ACCESS_KEY_ID,
-        secretAccessKey: SECRET_ACCESS_KEY
+        accessKeyId: ACCESS_KEY_ID || '',
+        secretAccessKey: SECRET_ACCESS_KEY || ''
       }
     });
   }
@@ -65,7 +65,7 @@ export async function uploadToR2(key, buffer, contentType = 'image/webp') {
       ContentType: contentType
     }));
     return true;
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     console.error(`[R2] Upload failed for ${key}:`, err?.message);
     return false;
   }
@@ -86,12 +86,13 @@ export async function getFromR2(key) {
       Key: key
     }));
     // Convert readable stream to Buffer
+    if (!response.Body) return null;
     const chunks = [];
-    for await (const chunk of response.Body) {
+    for await (const chunk of /** @type {AsyncIterable<Uint8Array>} */ (response.Body)) {
       chunks.push(chunk);
     }
     return Buffer.concat(chunks);
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     if (err?.name === 'NoSuchKey') return null;
     console.error(`[R2] Get failed for ${key}:`, err?.message);
     return null;
@@ -133,7 +134,7 @@ export async function deleteFromR2(key) {
       Key: key
     }));
     return true;
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     console.error(`[R2] Delete failed for ${key}:`, err?.message);
     return false;
   }
@@ -170,7 +171,7 @@ export async function deleteR2Prefix(prefix) {
     }
 
     return deleted;
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     console.error(`[R2] Prefix delete failed for ${prefix}:`, err?.message);
     return 0;
   }
@@ -193,7 +194,7 @@ export async function copyInR2(sourceKey, destKey) {
       Key: destKey
     }));
     return true;
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     console.error(`[R2] Copy failed ${sourceKey} → ${destKey}:`, err?.message);
     return false;
   }
@@ -217,11 +218,11 @@ export async function listR2Objects(prefix, maxKeys = 1000) {
     }));
 
     return (response.Contents || []).map(obj => ({
-      key: obj.Key,
-      size: obj.Size,
-      lastModified: obj.LastModified
+      key: obj.Key || '',
+      size: obj.Size || 0,
+      lastModified: obj.LastModified || new Date()
     }));
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     console.error(`[R2] List failed for prefix ${prefix}:`, err?.message);
     return [];
   }

@@ -1,4 +1,6 @@
-import { test as base, Page, Browser, StorageState } from '@playwright/test';
+import { test as base, type Page, type Browser, type BrowserContext } from '@playwright/test';
+
+type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 // Test user IDs - must match the migration file
 export const TEST_USERS = {
@@ -13,16 +15,21 @@ export const TEST_USERS = {
 
 export type TestUser = keyof typeof TEST_USERS;
 
-export interface AuthFixtures {
+interface TestFixtures {
   loginAs: (user: TestUser) => Promise<void>;
   logout: () => Promise<void>;
   verifiedUser: Page;
   unverifiedUser: Page;
   adminUser: Page;
+}
+
+interface WorkerFixtures {
   verifiedStorageState: StorageState;
   unverifiedStorageState: StorageState;
   adminStorageState: StorageState;
 }
+
+export type AuthFixtures = TestFixtures & WorkerFixtures;
 
 /**
  * Login as a test user via the mock login API
@@ -64,7 +71,7 @@ async function buildStorageState(browser: Browser, userId: TestUser): Promise<St
 /**
  * Extended test with authentication fixtures
  */
-export const test = base.extend<AuthFixtures>({
+export const test = base.extend<TestFixtures, WorkerFixtures>({
   // Function to login as any test user
   loginAs: async ({ page }, use) => {
     await use(async (user: TestUser) => {

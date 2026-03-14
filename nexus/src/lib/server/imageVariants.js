@@ -19,6 +19,7 @@ export const VALID_SIZES = [32, 48, 64, 128];
  */
 export async function generateSizeVariants(iconBuffer, thumbBuffer) {
   const source = thumbBuffer || iconBuffer;
+  /** @type {Record<string, Buffer>} */
   const variants = {};
 
   await Promise.all(VALID_SIZES.map(async (size) => {

@@ -301,6 +301,8 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
     // item-sets fit within 320x480 (portrait), globals preserve aspect ratio (screenshots),
     // others get square
     const iconPath = join(tempEntityPath, 'icon.webp');
+    /** @type {boolean|undefined} */
+    var transparent = undefined;
     if (isGlobal) {
       // Game screenshots — preserve aspect ratio, constrain to max 1920px wide
       await image
@@ -326,7 +328,7 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
         .toFile(iconPath);
     } else {
       // Non-transparent images (photos, screenshots) are saved as-is without resize/crop
-      var transparent = await hasTransparency(imageBuffer);
+      transparent = await hasTransparency(imageBuffer);
       if (transparent) {
         await image
           .resize(ICON_SIZE, ICON_SIZE, {
@@ -561,11 +563,11 @@ async function uploadApprovedToR2(entityType, entityId, approvedPath, metadataJs
   // Generate and include size variants
   if (iconBuffer || thumbBuffer) {
     try {
-      const variants = await generateSizeVariants(iconBuffer || thumbBuffer, thumbBuffer);
+      const variants = await generateSizeVariants(/** @type {Buffer} */ (iconBuffer || thumbBuffer), thumbBuffer);
       for (const [name, buffer] of Object.entries(variants)) {
         files.push({ key: `${prefix}/${name}.webp`, buffer });
       }
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       console.error(`[R2] Variant generation failed for ${prefix}:`, err?.message);
     }
   }

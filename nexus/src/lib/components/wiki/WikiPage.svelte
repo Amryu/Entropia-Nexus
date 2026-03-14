@@ -161,7 +161,7 @@
 
       if (inCreateMode) {
         if (!$editMode) {
-          startEdit(entity);
+          startEdit();
         }
         return;
       }
@@ -176,7 +176,7 @@
       }
 
       if ((hasPendingChange || isEditView) && !$editMode) {
-        startEdit(entity);
+        startEdit();
       } else if (!hasPendingChange && !isEditView && $editMode) {
         cancelEdit();
       }
@@ -220,7 +220,7 @@
 
   function handleEdit() {
     if (entity) {
-      startEdit(entity);
+      startEdit();
     }
   }
 
@@ -295,7 +295,7 @@
     // Handle initial edit mode (afterNavigate doesn't run on initial load)
     if ($isCreateMode) {
       if (!$editMode) {
-        startEdit(entity);
+        startEdit();
       }
       return;
     }
@@ -310,7 +310,7 @@
     }
 
     if ((hasPendingChange || initialMode === 'edit') && !$editMode) {
-      startEdit(entity);
+      startEdit();
     }
   });
 </script>

@@ -43,7 +43,8 @@
   let submitting = $state(false);
 
   // Confirmation state
-  let confirmAction = $state(null); // 'bid' | 'buyout'
+  /** @type {'bid' | 'buyout' | null} */
+  let confirmAction = $state(null);
   let confirmBidAmount = $state(0);
 
   let hasBids = $derived(auction.bid_count > 0);

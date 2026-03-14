@@ -211,7 +211,7 @@ async function cloneDatabase(sourceDb: string, targetDb: string) {
     // psql often returns non-zero for harmless warnings (missing roles, extensions)
     // during restore — only log, don't fail
     if (psqlResult.status !== 0 && psqlResult.stderr) {
-      const serious = psqlResult.stderr.split('\n').filter(l => /ERROR/i.test(l) && !/role|extension|schema "public"/i.test(l));
+      const serious = psqlResult.stderr.split('\n').filter((l: string) => /ERROR/i.test(l) && !/role|extension|schema "public"/i.test(l));
       if (serious.length > 0) {
         console.warn(`   psql warnings:\n${serious.join('\n')}`);
       }
@@ -238,7 +238,7 @@ async function seedMockTestUsers(targetDb: string) {
       [['admin', 'user']]
     );
 
-    const roleByName = new Map<string, number>(roleRows.map((r) => [r.name, r.id]));
+    const roleByName = new Map<string, number>(roleRows.map((r: any) => [r.name, r.id]));
     const adminRoleId = roleByName.get('admin');
     const userRoleId = roleByName.get('user');
 

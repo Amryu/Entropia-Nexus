@@ -1135,8 +1135,8 @@
 
   <!-- Leaflet Editor Layout (replaces canvas view) -->
   {#if leafletEditMode && MapEditorWorkspace}
+    {@const isSubEditor = editorRightPanel === 'mobEditor' || editorRightPanel === 'waveEditor'}
     <div class="leaflet-editor-overlay">
-      {@const isSubEditor = editorRightPanel === 'mobEditor' || editorRightPanel === 'waveEditor'}
       <div class="editor-toolbar">
         <div class="editor-toolbar-left">
           <select

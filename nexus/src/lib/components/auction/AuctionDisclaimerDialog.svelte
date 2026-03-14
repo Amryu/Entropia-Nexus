@@ -68,7 +68,7 @@
 
       onaccepted?.({ role });
       open = false;
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       addToast(err.message, { type: 'error' });
     } finally {
       submitting = false;

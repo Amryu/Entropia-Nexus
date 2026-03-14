@@ -31,7 +31,7 @@ test.describe('Wiki Enumerations', () => {
     expect(res.ok()).toBeTruthy();
 
     const list = await res.json();
-    const custom = (list || []).find((x) => x?.Properties?.Source === 'custom');
+    const custom = (list || []).find((x: any) => x?.Properties?.Source === 'custom');
     if (!custom) {
       test.skip();
       return;
@@ -87,7 +87,7 @@ test.describe('Wiki Enumerations', () => {
     expect(listRes.ok()).toBeTruthy();
     const list = await listRes.json();
 
-    const names = new Set((list || []).map((x) => x?.Name));
+    const names = new Set((list || []).map((x: any) => x?.Name));
     expect(names.has('MobLoots')).toBeTruthy();
     expect(names.has('Planets')).toBeTruthy();
 

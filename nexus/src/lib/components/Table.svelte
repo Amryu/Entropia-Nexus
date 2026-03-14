@@ -190,16 +190,17 @@
   });
   $effect(() => {
     if (data != null && data.length > 0) {
-      filteredData = data;
+      let result = data;
 
       if (options.searchable) {
-        if (searchValues?.length !== header?.values?.length) {
+        if (untrack(() => searchValues?.length) !== header?.values?.length) {
           searchValues = Array(header?.values?.length).fill('');
         }
 
-        filteredData = filteredData.filter((row) => {
-          for (let i = 0; i < searchValues.length; i++) {
-            if (searchValues[i].trim().length !== 0 && !search(row.values[i]?.toString().toLowerCase() ?? '', searchValues[i].toLowerCase())) {
+        const sv = searchValues;
+        result = result.filter((row) => {
+          for (let i = 0; i < sv.length; i++) {
+            if (sv[i].trim().length !== 0 && !search(row.values[i]?.toString().toLowerCase() ?? '', sv[i].toLowerCase())) {
               return false;
             }
           }
@@ -208,7 +209,7 @@
       }
 
       if (options.sortable !== false) {
-        filteredData = filteredData.sort((a, b) => {
+        result = [...result].sort((a, b) => {
           for (let i = 0; i < sortDirections.length; i++) {
             let index = sortDirections[i].index;
 
@@ -236,7 +237,7 @@
               let value = typeof a.values[index] === 'number' && typeof b.values[index] !== 'number'
                 ? a.values[index] - b.values[index]
                 : a.values[index].toString().localeCompare(b.values[index].toString(), undefined, { numeric: true });
-              
+
               if (value !== 0) {
                 return sortDirections[i].asc ? value : -value;
               }
@@ -255,33 +256,38 @@
         });
       }
 
-      count = filteredData.length;
+      filteredData = result;
+      count = result.length;
     }
   });
   $effect(() => {
     if (filteredData && options.virtual !== true) {
       // Map the starting index of every span column. A new span starts once the value of the current row is different from the previous row.
-      spanMap = Array(getColumnCount(header, filteredData)).fill(null);
-      spanLengths = Array(getColumnCount(header, filteredData)).fill(null);
+      const colCount = getColumnCount(header, filteredData);
+      const newSpanMap = Array(colCount).fill(null);
+      const newSpanLengths = Array(colCount).fill(null);
 
-      for (let i = 0; i < getColumnCount(header, filteredData); i++) {
-        spanMap[i] = [0];
+      for (let i = 0; i < colCount; i++) {
+        newSpanMap[i] = [0];
         for (let j = 1; j < filteredData.length; j++) {
           // Start a new span group if this column is not spannable, or if the value changes vs previous row
           if (!spanCellMatches(i, filteredData[j], filteredData[j - 1])) {
-            spanMap[i].push(j);
+            newSpanMap[i].push(j);
           }
         }
         // Compute dynamic span lengths per start index
-        const starts = spanMap[i];
+        const starts = newSpanMap[i];
         const lengthsMap = new Map();
         for (let k = 0; k < starts.length; k++) {
           const start = starts[k];
           const next = (k + 1 < starts.length) ? starts[k + 1] : filteredData.length;
           lengthsMap.set(start, Math.max(1, next - start));
         }
-        spanLengths[i] = lengthsMap;
+        newSpanLengths[i] = lengthsMap;
       }
+
+      spanMap = newSpanMap;
+      spanLengths = newSpanLengths;
     }
   });
 </script>

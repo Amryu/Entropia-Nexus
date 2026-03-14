@@ -26,13 +26,13 @@ export async function GET({ params, url }) {
       throw error(404, 'Image not found');
     }
 
-    return new Response(imageBuffer, {
+    return new Response(new Uint8Array(imageBuffer), {
       headers: {
         'Content-Type': 'image/webp',
         'Cache-Control': 'private, no-store'
       }
     });
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     if (err.status) {
       throw err;
     }

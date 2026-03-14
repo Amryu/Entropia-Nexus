@@ -5,7 +5,7 @@
   import LocationEditor from './LocationEditor.svelte';
   import MobAreaEditor from './MobAreaEditor.svelte';
   import WaveEventEditor from './WaveEventEditor.svelte';
-  import { isArea } from './mapEditorUtils.js';
+  import { isArea, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
 
   
   
@@ -150,6 +150,10 @@
             shapeData: props.Data || null,
             parentLocationName: data?.ParentLocation?.Name || null,
             description: props.Description || null,
+            landAreaOwner: props.LandAreaOwnerName || null,
+            taxRateHunting: props.TaxRateHunting ?? null,
+            taxRateMining: props.TaxRateMining ?? null,
+            taxRateShops: props.TaxRateShops ?? null,
             tempId
           };
           // Restore mob data if persisted in the change
@@ -180,6 +184,11 @@
             shape: props.Shape ?? loc.Properties?.Shape ?? null,
             shapeData: props.Data ?? loc.Properties?.Data ?? null,
             parentLocationName: data.ParentLocation?.Name || loc.ParentLocation?.Name || null,
+            description: props.Description ?? loc.Properties?.Description ?? null,
+            landAreaOwner: props.LandAreaOwnerName || loc.Properties?.LandAreaOwnerName || null,
+            taxRateHunting: props.TaxRateHunting ?? loc.Properties?.TaxRateHunting ?? null,
+            taxRateMining: props.TaxRateMining ?? loc.Properties?.TaxRateMining ?? null,
+            taxRateShops: props.TaxRateShops ?? loc.Properties?.TaxRateShops ?? null,
           };
           pendingChanges.set(data.Id, { action: 'edit', original: loc, modified, _dbSeeded: true });
           dbChangeIdMap.set(data.Id, change.id);
@@ -240,7 +249,7 @@
       locationType: isMarker ? 'Teleporter' : 'Area',
       longitude: entropiaData.center?.x ?? 0,
       latitude: entropiaData.center?.y ?? 0,
-      altitude: 0,
+      altitude: DEFAULT_ALTITUDE,
       areaType: isMarker ? null : 'MobArea',
       shape: entropiaData.shape || null,
       shapeData: entropiaData.data || null,
@@ -480,7 +489,7 @@
       }
       // Preserve altitude from original when not already in modified (drag doesn't change altitude)
       if (modified.altitude === undefined) {
-        modified.altitude = loc.Properties?.Coordinates?.Altitude ?? 100;
+        modified.altitude = loc.Properties?.Coordinates?.Altitude ?? DEFAULT_ALTITUDE;
       }
 
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); modifiedDbChanges = modifiedDbChanges; }
@@ -664,7 +673,7 @@
           _isPendingAdd: true,
           ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
           Properties: {
-            Type: mod.locationType === 'Area' ? (mod.areaType || 'MobArea') : (mod.locationType || 'Area'),
+            Type: mod.locationType === 'Area' ? 'Area' : (mod.locationType || 'Area'),
             AreaType: mod.areaType || null,
             Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
             Shape: mod.shape || null,

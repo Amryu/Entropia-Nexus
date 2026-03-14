@@ -5,6 +5,7 @@
   const WIDTH = 600;
   const HEIGHT = 180;
 
+  /** @type {number | null} */
   let hoveredIndex = $state(null);
   let tooltipX = $state(0);
   let tooltipY = 0;

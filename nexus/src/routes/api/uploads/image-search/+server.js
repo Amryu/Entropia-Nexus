@@ -141,7 +141,7 @@ const MAX_RESULTS = 20;
 
 /** @type {import('./$types').RequestHandler} */
 export async function GET({ url, locals }) {
-  const user = locals.session?.user;
+  const user = /** @type {any} */ (locals.session?.user);
   if (!user) throw error(401, 'Authentication required');
   if (!user.verified) throw error(403, 'Account verification required');
 

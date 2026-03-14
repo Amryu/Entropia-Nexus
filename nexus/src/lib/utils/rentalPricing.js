@@ -148,7 +148,7 @@ export function formatDateDisplay(dateStr) {
  * Generate a pricing preview table for different durations.
  * @param {number} pricePerDay
  * @param {Array} discounts
- * @returns {Array<{days: number, pricePerDay: number, discountPct: number, totalPrice: number}>}
+ * @returns {Array<{totalDays: number, pricePerDay: number, discountPct: number, totalPrice: number}>}
  */
 export function generatePricingPreview(pricePerDay, discounts) {
   const durations = [1, 3, 7, 14, 30, 90, 180, 365];

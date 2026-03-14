@@ -41,6 +41,7 @@ export function buildNameToKebabMap(skills) {
  * @returns {{ skills: Object<string, number>, health: number|null, unrecognized: string[] }}
  */
 export function parseExternalFormat(data, kebabToName) {
+  /** @type {{ [key: string]: number }} */
   const skills = {};
   let health = null;
   const unrecognized = [];
@@ -74,6 +75,7 @@ export function parseExternalFormat(data, kebabToName) {
  */
 export function parseNexusFormat(data, validNames) {
   const raw = data.skills || data;
+  /** @type {{ [key: string]: number }} */
   const skills = {};
   let health = data.health ?? null;
   const unrecognized = [];
@@ -163,7 +165,7 @@ export function exportExternalFormat(skills, nameToKebab, health = null) {
     const kebab = nameToKebab.get(name);
     if (kebab) entries.push([kebab, value]);
   }
-  entries.sort((a, b) => a[0].localeCompare(b[0]));
+  entries.sort((a, b) => /** @type {string} */ (a[0]).localeCompare(/** @type {string} */ (b[0])));
   for (const [k, v] of entries) data[k] = v;
   if (health != null) data.health = health;
   return JSON.stringify(data, null, 2);

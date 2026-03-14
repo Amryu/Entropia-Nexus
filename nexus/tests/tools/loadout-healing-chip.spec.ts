@@ -13,14 +13,14 @@ test.describe('Loadout Healing - Medical Chips', () => {
   });
 
   /** Click the healing tab to make it active. */
-  async function openHealingTab(page) {
+  async function openHealingTab(page: import('@playwright/test').Page) {
     const tab = page.locator('.tab-item:has-text("Healing")');
     await tab.click();
     await page.waitForTimeout(TIMEOUT_INSTANT);
   }
 
   /** Open the healing item picker dialog. */
-  async function openHealingPicker(page) {
+  async function openHealingPicker(page: import('@playwright/test').Page) {
     const btn = page.locator('.form-label:has-text("Healing Tool / Chip") + .control-row .select-button');
     await btn.click();
     const dialog = page.locator('.picker-dialog');
@@ -29,7 +29,7 @@ test.describe('Loadout Healing - Medical Chips', () => {
   }
 
   /** Select a healing item by searching and clicking first match. */
-  async function selectHealingItem(page, query: string) {
+  async function selectHealingItem(page: import('@playwright/test').Page, query: string) {
     const dialog = await openHealingPicker(page);
     const searchInput = dialog.locator('.filter-input').first();
     await searchInput.fill(query);

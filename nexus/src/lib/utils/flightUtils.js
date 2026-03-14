@@ -85,7 +85,7 @@ export function canCheckIn(flight) {
 
   const departureTime = new Date(flight.scheduled_departure);
   const now = new Date();
-  const diffMs = departureTime - now;
+  const diffMs = departureTime.getTime() - now.getTime();
   const diffMinutes = diffMs / (1000 * 60);
   const sevenDaysInMinutes = 7 * 24 * 60;
 

@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/auth';
 
-async function openUserDropdown(page) {
+async function openUserDropdown(page: import('@playwright/test').Page) {
   const userMenu = page.locator('.menu-item.user');
   const userAvatar = userMenu.locator('.user-image');
   await userAvatar.hover();

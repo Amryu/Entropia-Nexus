@@ -16,6 +16,7 @@
    * @property {any} [from] - Custom range start (YYYY-MM-DD string or null)
    * @property {any} [to] - Custom range end (YYYY-MM-DD string or null)
    * @property {boolean} [disabled] - Whether controls should be disabled (e.g. during loading)
+   * @property {(data: {period: string, from: any, to: any}) => void} [onchange] - Called when selection changes
    */
 
   /** @type {Props} */

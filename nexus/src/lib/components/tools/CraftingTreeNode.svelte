@@ -96,7 +96,7 @@
           min="0"
           max={maxNonFail}
           step="any"
-          onchange={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
+          onchange={(e) => setNonFailChance(node.blueprint.Id, /** @type {HTMLInputElement} */ (e.target).value)}
           onclick={(e) => e.stopPropagation()}
         />%
       </span>
@@ -136,7 +136,7 @@
         <select
           class="bp-selector-select"
           value={node.blueprint.Id}
-          onchange={(e) => selectMaterialBlueprint(node.parentMaterialName, parseInt(e.target.value))}
+          onchange={(e) => selectMaterialBlueprint(node.parentMaterialName, parseInt(/** @type {HTMLSelectElement} */ (e.target).value))}
         >
           {#each options as bp}
             <option value={bp.Id}>

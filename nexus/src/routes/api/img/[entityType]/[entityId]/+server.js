@@ -122,23 +122,23 @@ export async function GET({ params, url }) {
     const transparent = getImageTransparency(lowerType, entityId);
     if (transparent !== false) {
       try {
-        outputBuffer = await enhanceEntityImage(imageBuffer, mode, transparent);
+        outputBuffer = await enhanceEntityImage(imageBuffer, /** @type {'dark'|'light'} */ (mode), transparent);
       } catch {
         // Enhancement failed — serve original image
         outputBuffer = imageBuffer;
       }
     }
     // Include mode in ETag so CDN caches dark/light variants separately
-    etag = `${etag.slice(0, -1)}-${mode}"`;
+    etag = `${(etag || '""').slice(0, -1)}-${mode}"`;
   }
 
-  return new Response(outputBuffer, {
+  return new Response(new Uint8Array(outputBuffer), {
     status: 200,
     headers: {
       'Content-Type': 'image/webp',
       'Content-Length': String(outputBuffer.length),
       'Cache-Control': `public, max-age=${CACHE_MAX_AGE}`,
-      'ETag': etag
+      'ETag': etag || ''
     }
   });
 }
@@ -147,7 +147,7 @@ export async function GET({ params, url }) {
  * Serve a Buffer directly with cache headers.
  */
 function serveBuffer(buffer, etag) {
-  return new Response(buffer, {
+  return new Response(new Uint8Array(buffer), {
     status: 200,
     headers: {
       'Content-Type': 'image/webp',
@@ -190,7 +190,7 @@ async function serveFile(filePath, size) {
   try {
     const stats = statSync(filePath);
     const buffer = await readFile(filePath);
-    return new Response(buffer, {
+    return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type': 'image/webp',
