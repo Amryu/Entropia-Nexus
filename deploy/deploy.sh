@@ -132,13 +132,10 @@ EOF
 
 COMPOSE_CMD=(docker compose --env-file "${COMPOSE_ENV_FILE}")
 
-echo "[deploy] Bringing stack down"
-"${COMPOSE_CMD[@]}" down || true
-
 echo "[deploy] Building images"
 "${COMPOSE_CMD[@]}" build
 
-echo "[deploy] Starting stack"
+echo "[deploy] Updating stack"
 "${COMPOSE_CMD[@]}" up -d --remove-orphans
 
 # Reload nginx so the DNS resolves correctly
