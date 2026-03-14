@@ -83,6 +83,7 @@
   let userPendingUpdates = $derived(data.userPendingUpdates || []);
   let isCreateMode = $derived(data.isCreateMode || false);
   let currentChangeId = $derived($page.url.searchParams.get('changeId'));
+  let initialPlanet = $page.url.searchParams.get('planet') || null;
   let activeView = $derived(data.view || 'mobs');
   let isMaturityView = $derived(activeView === 'maturities' && !isCreateMode);
   let selectedMaturityId = $derived(data.selectedMaturityId ?? null);
@@ -1024,6 +1025,7 @@
       <WikiNavigation
         items={activeSidebarItems}
         filters={activeSidebarFilters}
+        initialFilters={initialPlanet ? { 'Planet.Name': initialPlanet, 'Planet': initialPlanet } : {}}
         basePath="/information/mobs"
         title="Mobs"
         currentSlug={isMaturityView ? null : activeMob?.Name}
@@ -1613,8 +1615,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 10px;
     padding: 16px;
+    font-style: normal;
+    font-size: 14px;
+    background-color: var(--info-bg, #0c1929);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
     color: var(--text-color);
   }
 

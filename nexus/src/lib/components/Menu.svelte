@@ -537,33 +537,85 @@
     }
   }
 
+  interface MenuItem {
+    label: string;
+    url: string;
+    disabled?: boolean;
+    highlighted?: boolean;
+    badge?: string;
+    children?: { label: string; url: string }[];
+  }
   interface MenuItems {
-    [key: string]: { label: string; url: string; disabled?: boolean; highlighted?: boolean; badge?: string }[];
+    [key: string]: MenuItem[];
   }
   const menuItemsWiki: MenuItems = {
     'Home': [
       { label: 'News', url: 'news' },
       { label: 'Events', url: 'events' },
+      { label: 'Globals', url: 'globals' },
     ],
     'Items': [
       { label: 'Weapons', url: 'weapons' },
       { label: 'Armor Sets', url: 'armorsets' },
-      { label: 'Medical Tools', url: 'medicaltools' },
-      { label: 'Tools', url: 'tools' },
-      { label: 'Attachments', url: 'attachments' },
+      { label: 'Medical Tools', url: 'medicaltools', children: [
+        { label: 'Tools', url: 'medicaltools/tools' },
+        { label: 'Chips', url: 'medicaltools/chips' },
+      ]},
+      { label: 'Tools', url: 'tools', children: [
+        { label: 'Refiners', url: 'tools/refiners' },
+        { label: 'Scanners', url: 'tools/scanners' },
+        { label: 'Finders', url: 'tools/finders' },
+        { label: 'Excavators', url: 'tools/excavators' },
+        { label: 'TP Chips', url: 'tools/teleportationchips' },
+        { label: 'Effect Chips', url: 'tools/effectchips' },
+        { label: 'Misc. Tools', url: 'tools/misctools' },
+      ]},
+      { label: 'Attachments', url: 'attachments', children: [
+        { label: 'Amplifiers', url: 'attachments/weaponamplifiers' },
+        { label: 'Scopes', url: 'attachments/weaponvisionattachments' },
+        { label: 'Absorbers', url: 'attachments/absorbers' },
+        { label: 'Finder Amps', url: 'attachments/finderamplifiers' },
+        { label: 'Platings', url: 'attachments/armorplatings' },
+        { label: 'Enhancers', url: 'attachments/enhancers' },
+        { label: 'Implants', url: 'attachments/mindforceimplants' },
+      ]},
       { label: 'Blueprints', url: 'blueprints' },
       { label: 'Materials', url: 'materials' },
       { label: 'Pets', url: 'pets' },
-      { label: 'Consumables', url: 'consumables' },
+      { label: 'Consumables', url: 'consumables', children: [
+        { label: 'Stimulants', url: 'consumables/stimulants' },
+        { label: 'Capsules', url: 'consumables/capsules' },
+      ]},
       { label: 'Vehicles', url: 'vehicles' },
-      { label: 'Furnishings', url: 'furnishings' },
+      { label: 'Furnishings', url: 'furnishings', children: [
+        { label: 'Furniture', url: 'furnishings/furniture' },
+        { label: 'Decorations', url: 'furnishings/decorations' },
+        { label: 'Storage', url: 'furnishings/storagecontainers' },
+        { label: 'Signs', url: 'furnishings/signs' },
+      ]},
       { label: 'Clothing', url: 'clothing' },
       { label: 'Strongboxes', url: 'strongboxes' }
     ],
     'Information': [
       { label: 'Guides', url: 'guides', highlighted: true },
-      { label: 'Mobs', url: 'mobs' },
-      { label: 'Missions', url: 'missions' },
+      { label: 'Mobs', url: 'mobs', children: [
+        { label: 'Calypso', url: 'mobs?planet=Calypso' },
+        { label: 'Arkadia', url: 'mobs?planet=Arkadia' },
+        { label: 'Cyrene', url: 'mobs?planet=Cyrene' },
+        { label: 'Rocktropia', url: 'mobs?planet=ROCKtropia' },
+        { label: 'Next Island', url: 'mobs?planet=Next Island' },
+        { label: 'Toulan', url: 'mobs?planet=Toulan' },
+        { label: 'Monria', url: 'mobs?planet=Monria' },
+      ]},
+      { label: 'Missions', url: 'missions', children: [
+        { label: 'Calypso', url: 'missions?planet=Calypso' },
+        { label: 'Arkadia', url: 'missions?planet=Arkadia' },
+        { label: 'Cyrene', url: 'missions?planet=Cyrene' },
+        { label: 'Rocktropia', url: 'missions?planet=ROCKtropia' },
+        { label: 'Next Island', url: 'missions?planet=Next Island' },
+        { label: 'Toulan', url: 'missions?planet=Toulan' },
+        { label: 'Monria', url: 'missions?planet=Monria' },
+      ]},
       { label: 'Professions', url: 'professions' },
       { label: 'Skills', url: 'skills' },
       { label: 'Vendors', url: 'vendors' },
@@ -571,13 +623,29 @@
       { label: 'Enumerations', url: 'enumerations' },
     ],
     'Maps': [
-      { label: 'Calypso', url: 'calypso' },
+      { label: 'Calypso', url: 'calypso', children: [
+        { label: 'Setesh', url: 'setesh' },
+        { label: 'ARIS', url: 'aris' },
+        { label: 'Crystal Palace', url: 'crystalpalace' },
+        { label: 'Asteroid F.O.M.A', url: 'asteroidfoma' },
+      ]},
+      { label: 'Arkadia', url: 'arkadia', children: [
+        { label: 'Arkadia Underground', url: 'arkadiaunderground' },
+        { label: 'Arkadia Moon', url: 'arkadiamoon' },
+      ]},
       { label: 'Cyrene', url: 'cyrene' },
-      { label: 'Arkadia', url: 'arkadia' },
-      { label: 'Monria', url: 'monria' },
+      { label: 'Rocktropia', url: 'rocktropia', children: [
+        { label: 'HELL', url: 'hell' },
+        { label: 'Hunt The THING', url: 'huntthething' },
+        { label: 'Secret Island', url: 'secretisland' },
+      ]},
+      { label: 'Next Island', url: 'nextisland', children: [
+        { label: 'Ancient Greece', url: 'ancientgreece' },
+      ]},
       { label: 'Toulan', url: 'toulan' },
-      { label: 'Rocktropia', url: 'rocktropia' },
-      { label: 'Next Island', url: 'nextisland' },
+      { label: 'Monria', url: 'monria', children: [
+        { label: 'DSEC9', url: 'dsec9' },
+      ]},
       { label: 'Space', url: 'space' },
     ],
     'Tools': [
@@ -662,11 +730,15 @@
     'entropialife': 'http://www.entropialife.com',
     'pcforum': 'https://www.planetcalypsoforum.com',
     'news': '/',
-    'events': '/#events',
+    'events': '/events',
   };
 
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {
     if (customUrls[item.url]) return customUrls[item.url];
+    const qIdx = item.url.indexOf('?');
+    if (qIdx >= 0) {
+      return `/${menu.toLowerCase()}/${item.url.substring(0, qIdx).toLowerCase()}${item.url.substring(qIdx)}`;
+    }
     return `/${menu.toLowerCase()}/${item.url.toLowerCase()}`;
   }
 
@@ -683,7 +755,8 @@
     'Items': '/items',
     'Information': '/information',
     'Tools': '/tools',
-    'Market': '/market'
+    'Market': '/market',
+    'Maps': '/maps'
   };
 
   function getMenuOverviewUrl(menu: string): string | null {
@@ -810,7 +883,6 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 4px 0;
-    overflow: hidden;
   }
 
   .dropdown-content.right {
@@ -869,6 +941,38 @@
 
   .dropdown-content a:last-child {
     margin-bottom: 0;
+  }
+
+  .has-submenu {
+    position: relative;
+  }
+
+  .has-submenu > a > .menu-dropdown-item {
+    justify-content: space-between;
+  }
+
+  .submenu-arrow {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  .submenu {
+    display: none;
+    position: absolute;
+    left: 100%;
+    top: -4px;
+    min-width: 180px;
+    background-color: var(--secondary-color);
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.3);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 0;
+    z-index: 101;
+  }
+
+  .has-submenu:hover > .submenu {
+    display: block;
   }
 
   .menu-dropdown-item.highlighted {
@@ -1895,6 +1999,12 @@
     cursor: default;
   }
 
+  .mobile-sub-item {
+    padding-left: 32px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
   /* Mobile Ko-fi Link */
   .mobile-kofi-link {
     display: flex;
@@ -2195,6 +2305,15 @@
                   <div class="menu-dropdown-item disabled">{item.label} <span class="coming-soon">coming soon</span></div>
                 {:else if isExternalLink(item)}
                   <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
+                {:else if item.children?.length}
+                  <div class="has-submenu">
+                    <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}<span class="submenu-arrow">&#9656;</span></div></a>
+                    <div class="submenu">
+                      {#each item.children as child}
+                        <a use:loading href={getMenuItemUrl(menu, child)}><div class="menu-dropdown-item">{child.label}</div></a>
+                      {/each}
+                    </div>
+                  </div>
                 {:else}
                   <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</div></a>
                 {/if}
@@ -2491,6 +2610,11 @@
                   <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}</a>
                 {:else}
                   <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</a>
+                {/if}
+                {#if item.children?.length}
+                  {#each item.children as child}
+                    <a use:loading href={getMenuItemUrl(menu, child)} class="mobile-menu-item mobile-sub-item" onclick={closeMobileMenu}>{child.label}</a>
+                  {/each}
                 {/if}
               {/each}
             </div>

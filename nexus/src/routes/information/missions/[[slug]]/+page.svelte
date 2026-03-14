@@ -849,6 +849,7 @@
   let isCreateMode = $derived(data.isCreateMode || false);
   let graphData = $derived(isChainView ? data.object?.Graph : data.graph);
   let currentChangeId = $derived($page.url.searchParams.get('changeId'));
+  let initialPlanet = $page.url.searchParams.get('planet') || null;
   let entityType = $derived(isChainView ? 'MissionChain' : 'Mission');
   let entity = $derived(data.object);
   let entityId = $derived(entity?.Id ?? null);
@@ -1154,6 +1155,7 @@
       <WikiNavigation
         items={isChainView ? missionChainsList : missionsList}
         filters={navFilters}
+        initialFilters={initialPlanet ? { 'Planet.Name': initialPlanet } : {}}
         basePath="/information/missions"
         title="Missions"
         currentSlug={activeEntity?.Name}

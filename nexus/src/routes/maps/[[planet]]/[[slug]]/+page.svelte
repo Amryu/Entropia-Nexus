@@ -782,9 +782,13 @@
 </script>
 
 <svelte:head>
-  <title>Entropia Nexus - {currentPlanet?.Name || 'Map'} Map</title>
-  <meta name="description" content="Interactive map for {currentPlanet?.Name || 'Entropia Universe'}." />
-  <link rel="canonical" href="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet?.Name)}" />
+  <title>{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus</title>
+  <meta name="description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
+  {#if currentPlanet}
+    <link rel="canonical" href="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet.Name)}" />
+  {:else}
+    <link rel="canonical" href="https://entropianexus.com/maps" />
+  {/if}
 </svelte:head>
 
 <div class="map-page">
@@ -806,9 +810,37 @@
           searchResults={searchOpen ? searchResults : []}
         />
       {:else}
-        <div class="map-empty">
-          <h2>Select a planet to begin</h2>
-          <p>Use the planet selector to load a map.</p>
+        <div class="maps-overview">
+          <header class="overview-header">
+            <h1>Maps</h1>
+            <p class="overview-subtitle">Interactive maps for Entropia Universe planets and moons</p>
+          </header>
+          <div class="planet-grid">
+            {#each Object.entries(planetGroups) as [groupName, planets]}
+              {@const main = planets[0]}
+              {@const subs = planets.slice(1)}
+              <div class="planet-group">
+                <a href="/maps/{main._type}" class="planet-card main">
+                  <img src="/{main._type}.jpg" alt={main.Name} class="planet-image" loading="lazy" />
+                  <div class="planet-overlay">
+                    <span class="planet-name">{main.Name}</span>
+                  </div>
+                </a>
+                {#if subs.length > 0}
+                  <div class="sub-planets">
+                    {#each subs as sub}
+                      <a href="/maps/{sub._type}" class="planet-card sub">
+                        <img src="/{sub._type}.jpg" alt={sub.Name} class="sub-planet-image" loading="lazy" />
+                        <div class="planet-overlay">
+                          <span class="planet-name">{sub.Name}</span>
+                        </div>
+                      </a>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
         </div>
       {/if}
     {:else}
@@ -816,6 +848,7 @@
     {/if}
   </div>
 
+  {#if currentPlanet}
   <div class="map-controls">
     <div class="control-row">
       <div class="control-group">
@@ -885,6 +918,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 
   {#if activeLocation}
     <aside
@@ -1238,16 +1272,128 @@
     inset: 0;
   }
 
-  .map-empty {
+  .maps-overview {
     width: 100%;
     height: 100%;
+    overflow-y: auto;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .overview-header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .overview-header h1 {
+    margin: 0 0 8px 0;
+    color: var(--text-color);
+    font-size: 2rem;
+  }
+
+  .overview-subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+  }
+
+  .planet-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 24px;
+  }
+
+  .planet-group {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted, #999);
-    text-align: center;
-    padding: 24px;
+    gap: 8px;
+  }
+
+  .planet-card {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    text-decoration: none;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .planet-card:hover {
+    border-color: var(--accent-color);
+    transform: translateY(-2px);
+  }
+
+  .planet-card.main {
+    aspect-ratio: 16 / 10;
+  }
+
+  .planet-image,
+  .sub-planet-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .planet-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, transparent 60%);
+    display: flex;
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .planet-name {
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  }
+
+  .sub-planets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  .planet-card.sub {
+    aspect-ratio: 4 / 3;
+  }
+
+  .planet-card.sub .planet-name {
+    font-size: 0.8rem;
+  }
+
+  .planet-card.sub .planet-overlay {
+    padding: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .maps-overview {
+      padding: 16px;
+    }
+
+    .overview-header h1 {
+      font-size: 1.5rem;
+    }
+
+    .overview-subtitle {
+      font-size: 1rem;
+    }
+
+    .planet-grid {
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .planet-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   .map-controls {

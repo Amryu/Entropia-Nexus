@@ -30,6 +30,7 @@
    * @property {Function|null} [customGetItemHref] - Custom function to generate item href
    * @property {Array} [userPendingCreates] - User's pending create changes
    * @property {Array} [userPendingUpdates] - User's pending update changes
+   * @property {Object} [initialFilters] - Initial filter values keyed by filter key
    * @property {Function} [ontoggleexpand]
    * @property {Function} [ontogglefullwidth]
    * @property {import('svelte').Snippet} [afterHeader]
@@ -58,6 +59,7 @@
     ontoggleexpand = undefined,
     ontogglefullwidth = undefined,
     afterHeader = undefined,
+    initialFilters = {},
   } = $props();
 
   // Search and filter state
@@ -89,7 +91,7 @@
     for (const filter of filters) {
       if (!filter.key) continue;
       if (untrack(() => activeFilters[filter.key]) === undefined) {
-        activeFilters[filter.key] = filter.multiSelect ? [] : null;
+        activeFilters[filter.key] = initialFilters[filter.key] ?? (filter.multiSelect ? [] : null);
       }
     }
   });
