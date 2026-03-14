@@ -61,3 +61,4 @@ client/ocr_dev_samples/
 client/assets/stpk/*_preview.png
 client/assets/stpk/*.orig
 nexus-crash-*.txt
+experiments/

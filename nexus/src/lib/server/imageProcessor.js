@@ -4,7 +4,7 @@
  * Approved images are also uploaded to Cloudflare R2 when configured.
  */
 import sharp from 'sharp';
-import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { randomUUID, createHash } from 'crypto';
 import { r2Enabled, uploadBatchToR2, copyInR2, deleteR2Prefix } from './r2Storage.js';
