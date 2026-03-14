@@ -189,5 +189,5 @@ export const SHORT_PSEUDO_MAP = Object.freeze({
  * Short codes that redirect to full external URLs (not prefixed with canonical origin).
  */
 export const SHORT_EXTERNAL_MAP = Object.freeze({
-  rr: 'TODO_INSERT_URL_HERE'
+  rr: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
 });
