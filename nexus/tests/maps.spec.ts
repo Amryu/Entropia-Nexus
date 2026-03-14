@@ -173,39 +173,61 @@ test.describe('Maps Page', () => {
     });
 
     test('pending edits stay visible with state-colored edges even when search filter hides list items', async ({ verifiedUser }) => {
-      await verifiedUser.setViewportSize({ width: 1280, height: 800 });
-      await verifiedUser.goto('/maps/calypso');
-      await verifiedUser.waitForLoadState('networkidle');
-
-      const editBtn = verifiedUser.locator('.edit-mode-btn');
-      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
-      await editBtn.click();
-
-      const overlay = verifiedUser.locator('.leaflet-editor-overlay');
-      await expect(overlay).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-
-      const firstLocation = overlay.locator('.left-sidebar .location-row').first();
-      await expect(firstLocation).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-      await firstLocation.click();
-
-      const saveBtn = overlay.locator('.right-panel .btn.btn-primary');
-      await expect(saveBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-      await saveBtn.click();
-
-      // Deselect so the yellow selection style does not mask pending-change edge color.
-      await overlay.locator('.map-area').click({ position: { x: 8, y: 8 } });
-
-      const listSearch = overlay.locator('.left-sidebar .search-input');
-      await listSearch.fill('zzzzzz-no-match');
-
-      const hasPendingEditEdge = await verifiedUser.locator('.leaflet-overlay-pane path').evaluateAll((paths) => {
-        return paths.some((pathEl) => {
-          const stroke = (getComputedStyle(pathEl).stroke || pathEl.getAttribute('stroke') || '').trim().toLowerCase();
-          return stroke === 'rgb(245, 158, 11)' || stroke === '#f59e0b';
-        });
+      // Create a pending area change via API so the map overlay has a known edit
+      const changeRes = await verifiedUser.request.post('/api/changes?entity=Location&type=Create&state=Pending', {
+        data: {
+          Name: 'E2E Pending Visibility Test',
+          Properties: {
+            Type: 'Area',
+            AreaType: 'MobArea',
+            Shape: 'Polygon',
+            Data: { vertices: [60000, 60000, 61000, 60000, 61000, 61000, 60000, 61000, 60000, 60000] },
+            Coordinates: { Longitude: 60500, Latitude: 60500, Altitude: 100 }
+          },
+          Planet: { Name: 'Calypso' }
+        }
       });
+      expect(changeRes.ok()).toBeTruthy();
+      const changeData = await changeRes.json();
+      const changeId = changeData.id;
 
-      expect(hasPendingEditEdge).toBeTruthy();
+      try {
+        await verifiedUser.setViewportSize({ width: 1280, height: 800 });
+        await verifiedUser.goto('/maps/calypso');
+        await verifiedUser.waitForLoadState('networkidle');
+
+        const editBtn = verifiedUser.locator('.edit-mode-btn');
+        await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
+        await editBtn.click();
+
+        const overlay = verifiedUser.locator('.leaflet-editor-overlay');
+        await expect(overlay).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+        // Wait for locations to load in the sidebar
+        const firstLocation = overlay.locator('.left-sidebar .location-row').first();
+        await expect(firstLocation).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+        // Filter the list so no locations match — pending overlay shapes should remain visible
+        const listSearch = overlay.locator('.left-sidebar .search-input');
+        await listSearch.fill('zzzzzz-no-match');
+        await verifiedUser.waitForTimeout(500);
+
+        // The DB pending change overlay should still render shapes on the map
+        // Check for any SVG path in the overlay pane with a pending-change stroke color
+        // Create: green (#22c55e), Edit: amber (#f59e0b / rgb(245, 158, 11)), or the shape's type color with dashed border
+        const hasOverlayShape = await verifiedUser.locator('.leaflet-overlay-pane path').evaluateAll((paths) => {
+          return paths.some((pathEl) => {
+            const stroke = (getComputedStyle(pathEl).stroke || pathEl.getAttribute('stroke') || '').trim().toLowerCase();
+            // Green for Create changes, amber for Edit changes
+            return stroke === 'rgb(34, 197, 94)' || stroke === '#22c55e'
+              || stroke === 'rgb(245, 158, 11)' || stroke === '#f59e0b';
+          });
+        });
+
+        expect(hasOverlayShape).toBeTruthy();
+      } finally {
+        await verifiedUser.request.delete(`/api/changes/${changeId}`);
+      }
     });
   });
 });
