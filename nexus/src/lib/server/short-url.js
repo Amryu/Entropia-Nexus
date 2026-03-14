@@ -1,6 +1,6 @@
 //@ts-nocheck
-import { SHORT_ROUTE_MAP, SHORT_PSEUDO_MAP } from '../short-url-routes.js';
-export { SHORT_ROUTE_MAP, SHORT_PSEUDO_MAP };
+import { SHORT_ROUTE_MAP, SHORT_PSEUDO_MAP, SHORT_EXTERNAL_MAP } from '../short-url-routes.js';
+export { SHORT_ROUTE_MAP, SHORT_PSEUDO_MAP, SHORT_EXTERNAL_MAP };
 
 const DEFAULT_CANONICAL_PUBLIC_URL = 'https://entropianexus.com';
 const DEFAULT_SHORT_REDIRECT_HOSTS = 'eunex.us,www.eunex.us';
@@ -120,6 +120,13 @@ export function resolveShortRedirect({ host, path, search = '', env = process.en
   const segments = pathname.split('/').filter(Boolean);
   const code = (segments[0] || '').toLowerCase();
   const tailSegments = segments.slice(1);
+
+  if (SHORT_EXTERNAL_MAP[code]) {
+    return {
+      status: 301,
+      location: SHORT_EXTERNAL_MAP[code]
+    };
+  }
 
   if (SHORT_PSEUDO_MAP[code]) {
     const transformed = applyPseudoTransform(code, tailSegments, search);

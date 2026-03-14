@@ -183,3 +183,11 @@ export const SHORT_PSEUDO_MAP = Object.freeze({
   mc: '/information/missions',
   eq: '/market/exchange'
 });
+
+/**
+ * External redirect map.
+ * Short codes that redirect to full external URLs (not prefixed with canonical origin).
+ */
+export const SHORT_EXTERNAL_MAP = Object.freeze({
+  rr: 'TODO_INSERT_URL_HERE'
+});

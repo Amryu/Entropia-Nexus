@@ -356,6 +356,24 @@
     };
   }
 
+  function estimateShapeArea(loc) {
+    const data = loc.Properties?.Data;
+    const shape = loc.Properties?.Shape;
+    if (!data || !shape) return 0;
+    if (shape === 'Circle') return Math.PI * (data.radius || 0) * (data.radius || 0);
+    if (shape === 'Rectangle') return (data.width || 0) * (data.height || 0);
+    if (shape === 'Polygon' && data.vertices?.length >= 6) {
+      // Shoelace formula
+      let area = 0;
+      const v = data.vertices;
+      for (let i = 0; i < v.length - 2; i += 2) {
+        area += v[i] * v[i + 3] - v[i + 2] * v[i + 1];
+      }
+      return Math.abs(area) / 2;
+    }
+    return 0;
+  }
+
   function rebuildLayers() {
     if (!map || !transforms || !L) return;
     _rebuildDeferred = false;
@@ -369,13 +387,18 @@
     layerGroup.clearLayers();
     layerById.clear();
 
-    // Sort: draw areas first (underneath), then points on top
+    // Sort: largest areas first (underneath), smallest areas next, points on top.
+    // This ensures small child areas remain clickable above their parents.
     const sorted = [...locations].sort((a, b) => {
-      const aIsArea = isArea(a);
-      const bIsArea = isArea(b);
-      if (aIsArea && !bIsArea) return -1;
-      if (!aIsArea && bIsArea) return 1;
-      return 0;
+      const aEff = getEffectiveLocData(a);
+      const bEff = getEffectiveLocData(b);
+      const aIsA = isArea(aEff);
+      const bIsA = isArea(bEff);
+      if (aIsA && !bIsA) return -1;
+      if (!aIsA && bIsA) return 1;
+      if (!aIsA && !bIsA) return 0;
+      // Both areas — larger area drawn first (underneath)
+      return estimateShapeArea(bEff) - estimateShapeArea(aEff);
     });
 
     for (const loc of sorted) {
@@ -400,9 +423,21 @@
       }
     }
 
-    // Also add pending 'add' items as selectable layers
-    for (const [tempId, change] of pendingChanges) {
-      if (change.original || !change.modified) continue;
+    // Also add pending 'add' items as selectable layers (largest areas first)
+    const pendingAdds = [...pendingChanges.entries()]
+      .filter(([, c]) => !c.original && c.modified)
+      .sort(([, a], [, b]) => {
+        const aM = a.modified, bM = b.modified;
+        const aIsA = aM.locationType === 'Area' && aM.shape && aM.shapeData;
+        const bIsA = bM.locationType === 'Area' && bM.shape && bM.shapeData;
+        if (aIsA && !bIsA) return -1;
+        if (!aIsA && bIsA) return 1;
+        if (!aIsA) return 0;
+        const aArea = estimateShapeArea({ Properties: { Shape: aM.shape, Data: aM.shapeData } });
+        const bArea = estimateShapeArea({ Properties: { Shape: bM.shape, Data: bM.shapeData } });
+        return bArea - aArea;
+      });
+    for (const [tempId, change] of pendingAdds) {
       const mod = change.modified;
       const layer = createPendingAddLayer(mod, tempId);
       if (layer) {
