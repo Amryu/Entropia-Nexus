@@ -920,7 +920,7 @@
   </div>
   {/if}
 
-  {#if activeLocation}
+  {#if activeLocation && !($existingPendingChange && !effectiveCreateMode)}
     <aside
       class="map-info-panel"
       class:mobile={isMobile}
@@ -934,13 +934,6 @@
         <div class="panel-loading-overlay">
           <div class="loading-spinner"></div>
         </div>
-      {/if}
-      {#if $existingPendingChange && !effectiveCreateMode}
-        <PendingChangeBanner
-          pendingChange={$existingPendingChange}
-          viewing={$viewingPendingChange}
-          onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
-        />
       {/if}
       <div class="info-header">
         {#if isMobile}
@@ -1087,7 +1080,7 @@
                 {/if}
               {/if}
               {#if activeLocation?.Properties?.Notes}
-                <div class="description-text">{activeLocation.Properties.Notes}</div>
+                <div class="description-text">{@html activeLocation.Properties.Notes}</div>
               {/if}
             </div>
           {/if}
@@ -1119,7 +1112,7 @@
           <div class="info-section">
             <h4>Description</h4>
             {#if activeLocation?.Properties?.Description}
-              <div class="description-text">{activeLocation.Properties.Description}</div>
+              <div class="description-text">{@html activeLocation.Properties.Description}</div>
             {:else}
               <div class="muted">No description available.</div>
             {/if}
@@ -1938,6 +1931,42 @@
     font-size: 13px;
     line-height: 1.5;
     color: var(--text-color);
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .description-text :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+
+  .description-text :global(h1),
+  .description-text :global(h2),
+  .description-text :global(h3),
+  .description-text :global(h4) {
+    font-size: 14px;
+    margin: 8px 0 4px;
+  }
+
+  .description-text :global(p) {
+    margin: 4px 0;
+  }
+
+  .description-text :global(a) {
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .description-text :global(table) {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+  }
+
+  .description-text :global(td),
+  .description-text :global(th) {
+    padding: 2px 4px;
+    border: 1px solid var(--border-color);
   }
 
   .mob-types-list {
