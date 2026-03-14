@@ -53,6 +53,25 @@ const DATABASE_PAIRS = [
   { source: 'nexus_users', target: 'nexus_users_test' },
 ];
 
+// Tables with massive data that should be cloned with only a small subset.
+// Schema is always cloned; only data is excluded from the full dump,
+// then a limited sample is inserted afterwards.
+const LARGE_TABLE_SAMPLES: Record<string, { table: string; sampleQuery: string }[]> = {
+  nexus_users: [
+    { table: 'ingested_globals',            sampleQuery: 'SELECT * FROM ingested_globals ORDER BY event_timestamp DESC LIMIT 500' },
+    { table: 'ingested_global_submissions', sampleQuery: 'SELECT * FROM ingested_global_submissions ORDER BY event_timestamp DESC LIMIT 500' },
+    { table: 'globals_rollup_player',       sampleQuery: 'SELECT * FROM globals_rollup_player ORDER BY period_start DESC LIMIT 500' },
+    { table: 'globals_rollup_target',       sampleQuery: 'SELECT * FROM globals_rollup_target ORDER BY period_start DESC LIMIT 500' },
+    { table: 'globals_ath_leaderboard',     sampleQuery: 'SELECT * FROM globals_ath_leaderboard LIMIT 200' },
+    { table: 'exchange_price_snapshots',    sampleQuery: 'SELECT * FROM exchange_price_snapshots ORDER BY recorded_at DESC LIMIT 500' },
+    { table: 'exchange_price_summaries',    sampleQuery: 'SELECT * FROM exchange_price_summaries ORDER BY period_start DESC LIMIT 200' },
+    { table: 'globals_player_agg',          sampleQuery: 'SELECT * FROM globals_player_agg LIMIT 200' },
+    { table: 'globals_target_agg',          sampleQuery: 'SELECT * FROM globals_target_agg LIMIT 200' },
+    { table: 'ingested_trade_messages',     sampleQuery: 'SELECT * FROM ingested_trade_messages ORDER BY event_timestamp DESC LIMIT 200' },
+    { table: 'ingested_trade_submissions',  sampleQuery: 'SELECT s.* FROM ingested_trade_submissions s INNER JOIN (SELECT id FROM ingested_trade_messages ORDER BY event_timestamp DESC LIMIT 200) m ON s.trade_message_id = m.id' },
+  ]
+};
+
 // Test server ports to kill before setup
 const TEST_PORTS = [3100, 3101]; // API and frontend
 
@@ -167,23 +186,30 @@ async function cloneDatabase(sourceDb: string, targetDb: string) {
     PGPASSWORD: DB_PASSWORD,
   };
 
+  const samples = LARGE_TABLE_SAMPLES[sourceDb] || [];
+
   // Step 1: Recreate target database
   await recreateDatabase(targetDb);
 
-  // Step 2: Dump entire source database (schema + data) to temp file
-  // Use project directory for temp files — system tmpdir (C:) may lack space
+  // Step 2: Dump source database (schema + data) to temp file
+  // For large tables, exclude their data from the dump (schema is still included)
   const tempDir = resolve(__dirname, '..');
   const tempDumpFile = join(tempDir, `dump-${sourceDb}-${Date.now()}.sql`);
-  console.log(`   Dumping ${sourceDb}...`);
+  console.log(`   Dumping ${sourceDb}${samples.length ? ` (excluding data for ${samples.length} large tables)` : ''}...`);
 
   try {
-    const dumpResult = spawnSync('pg_dump', [
+    const pgDumpArgs = [
       '--no-owner',
       '--no-acl',
       '--encoding=UTF8',
       '-f', tempDumpFile,
-      sourceDb
-    ], {
+    ];
+    for (const { table } of samples) {
+      pgDumpArgs.push('--exclude-table-data', table);
+    }
+    pgDumpArgs.push(sourceDb);
+
+    const dumpResult = spawnSync('pg_dump', pgDumpArgs, {
       env: connectionEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
       encoding: 'utf-8'
@@ -217,12 +243,63 @@ async function cloneDatabase(sourceDb: string, targetDb: string) {
       }
     }
 
+    // Step 4: Seed small sample of large tables (copy from source to target)
+    if (samples.length > 0) {
+      await seedLargeTableSamples(sourceDb, targetDb, samples);
+    }
+
     console.log(`✅ ${targetDb} ready!`);
   } finally {
     // Clean up temp file
     if (existsSync(tempDumpFile)) {
       unlinkSync(tempDumpFile);
     }
+  }
+}
+
+/**
+ * Copy a small sample of rows from large source tables into the target database.
+ * Uses a direct connection to each DB — reads from source, inserts into target.
+ */
+async function seedLargeTableSamples(
+  sourceDb: string,
+  targetDb: string,
+  samples: { table: string; sampleQuery: string }[]
+) {
+  console.log(`   Seeding ${samples.length} large table samples...`);
+  const sourcePool = await createPool(sourceDb);
+  const targetPool = await createPool(targetDb);
+
+  try {
+    for (const { table, sampleQuery } of samples) {
+      const { rows } = await sourcePool.query(sampleQuery);
+      if (rows.length === 0) continue;
+
+      // Build a bulk INSERT from the sample rows
+      const columns = Object.keys(rows[0]);
+      const quotedCols = columns.map(c => `"${c}"`).join(', ');
+      const valuePlaceholders: string[] = [];
+      const allValues: any[] = [];
+      let paramIdx = 1;
+
+      for (const row of rows) {
+        const rowPlaceholders: string[] = [];
+        for (const col of columns) {
+          rowPlaceholders.push(`$${paramIdx++}`);
+          allValues.push(row[col]);
+        }
+        valuePlaceholders.push(`(${rowPlaceholders.join(', ')})`);
+      }
+
+      await targetPool.query(
+        `INSERT INTO "${table}" (${quotedCols}) VALUES ${valuePlaceholders.join(', ')} ON CONFLICT DO NOTHING`,
+        allValues
+      );
+      console.log(`   ${table}: ${rows.length} rows`);
+    }
+  } finally {
+    await sourcePool.end();
+    await targetPool.end();
   }
 }
 
