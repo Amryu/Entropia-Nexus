@@ -206,28 +206,26 @@ test.describe('Construction Calculator', () => {
     }
   });
 
-  test('shopping list MU% input accepts custom markup', async ({ page }) => {
+  test('shopping list click-to-edit accepts custom markup', async ({ page }) => {
     await createNewPlan(page);
     await addBlueprintToPlan(page);
 
     await page.getByRole('button', { name: 'Shopping' }).click();
     await expect(page.locator('.shopping-table')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
 
-    // Find a markup input and change its value
+    // Click the editable markup value to enter edit mode
+    const editableValue = page.locator('.shopping-table .markup-value-editable').first();
+    await expect(editableValue).toBeVisible({ timeout: TIMEOUT_SHORT });
+    await editableValue.click();
+
+    // An input should appear — fill it with a custom value
     const markupInput = page.locator('.shopping-table .markup-input-inline').first();
     await expect(markupInput).toBeVisible({ timeout: TIMEOUT_SHORT });
-
-    // Set a custom value and dispatch a native change event
-    await markupInput.evaluate(el => {
-      (el as HTMLInputElement).value = '150';
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await markupInput.fill('150');
+    await markupInput.blur();
     await page.waitForTimeout(TIMEOUT_SHORT);
 
-    // The input should now have the is-custom class
-    await expect(markupInput).toHaveClass(/is-custom/);
-
-    // A reset button should appear
+    // A reset button should appear after saving the custom value
     const resetBtn = page.locator('.shopping-table .markup-reset').first();
     await expect(resetBtn).toBeVisible({ timeout: TIMEOUT_SHORT });
   });
@@ -239,14 +237,15 @@ test.describe('Construction Calculator', () => {
     await page.getByRole('button', { name: 'Shopping' }).click();
     await expect(page.locator('.shopping-table')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
 
+    // Click to edit and set a custom value
+    const editableValue = page.locator('.shopping-table .markup-value-editable').first();
+    await expect(editableValue).toBeVisible({ timeout: TIMEOUT_SHORT });
+    await editableValue.click();
+
     const markupInput = page.locator('.shopping-table .markup-input-inline').first();
     await expect(markupInput).toBeVisible({ timeout: TIMEOUT_SHORT });
-
-    // Set a custom value and dispatch a native change event
-    await markupInput.evaluate(el => {
-      (el as HTMLInputElement).value = '200';
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await markupInput.fill('200');
+    await markupInput.blur();
     await page.waitForTimeout(TIMEOUT_SHORT);
 
     // Click the reset button
@@ -255,8 +254,8 @@ test.describe('Construction Calculator', () => {
     await resetBtn.click();
     await page.waitForTimeout(TIMEOUT_INSTANT);
 
-    // The is-custom class should be removed
-    await expect(markupInput).not.toHaveClass(/is-custom/);
+    // The reset button should disappear after resetting
+    await expect(resetBtn).not.toBeVisible({ timeout: TIMEOUT_SHORT });
   });
 
   test('shopping list checkboxes toggle items', async ({ page }) => {

@@ -14,7 +14,8 @@
   import { loading } from '../../../../stores.js';
   import { hasItemTag, getItemLink, getTypeLink, clampDecimals } from '$lib/util.js';
   import { hasCondition } from '$lib/shopUtils.js';
-  import { fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
+  import { fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
+  import MarkupSourceHelp from '$lib/components/wiki/MarkupSourceHelp.svelte';
   import {
     buildCraftingTree,
     generateCraftingSteps,
@@ -134,6 +135,8 @@
   let markupSource = $state('custom');
   let inventoryMarkupMap = $state(new Map()); // itemId → markup%
   let ingameMarkupMap = $state(new Map()); // itemName → markup%
+  let showMuHelp = $state(false);
+  let editingMarkupKey = $state(null); // key for click-to-edit
 
   // Steps state
   let checkedSteps = $state(new Set());
@@ -251,6 +254,75 @@
 
   function resetMarkup(key) {
     delete markupValues[key];
+  }
+
+  function autofocus(node) { node.focus(); node.select(); }
+
+  function startMarkupEdit(key) {
+    if (markupSource !== 'custom' && markupSource !== 'inventory') return;
+    editingMarkupKey = key;
+  }
+
+  /**
+   * Resolve the item ID from a markup key for inventory saves.
+   */
+  function resolveItemIdFromKey(key) {
+    if (key.startsWith('mat:')) {
+      const name = key.slice(4);
+      for (const step of craftingSteps) {
+        for (const mat of step.materials) {
+          if (mat.item?.Name === name && mat.item?.Id) return mat.item.Id;
+        }
+      }
+    } else if (key.startsWith('bp:')) {
+      const bpId = parseInt(key.slice(3), 10);
+      return bpId + BLUEPRINT_ID_OFFSET;
+    } else if (key.startsWith('prod:')) {
+      const name = key.slice(5);
+      if (shoppingList) {
+        for (const prod of shoppingList.productsToBuy) {
+          if (prod.item?.Name === name && prod.item?.Id) return prod.item.Id;
+        }
+      }
+    }
+    return null;
+  }
+
+  function commitMarkupEdit(event, key) {
+    const value = event.target.value;
+    const num = parseFloat(value);
+    editingMarkupKey = null;
+    if (isNaN(num) || num < 0) return;
+    const clamped = Math.min(100000, num);
+
+    if (markupSource === 'inventory') {
+      const itemId = resolveItemIdFromKey(key);
+      if (itemId == null) return;
+      inventoryMarkupMap.set(itemId, clamped);
+      inventoryMarkupMap = new Map(inventoryMarkupMap);
+      saveInventoryMarkup(itemId, clamped);
+    } else {
+      setMarkup(key, clamped);
+    }
+  }
+
+  function handleMarkupEditKeydown(event) {
+    if (event.key === 'Enter') {
+      event.target.blur();
+    } else if (event.key === 'Escape') {
+      editingMarkupKey = null;
+    }
+  }
+
+  /**
+   * Get fallback source badge for custom mode.
+   */
+  function getCustomSourceBadge(key) {
+    if (markupValues[key] != null) return null;
+    if (shoppingItemInvMap[key] != null) return 'INV';
+    if (shoppingItemIngameMap[key] != null) return 'IGM';
+    if (shoppingItemWapMap[key] != null) return 'EXC';
+    return null;
   }
 
   // Exchange data helpers
@@ -1776,6 +1848,7 @@
                       disabled={Object.keys(shoppingItemWapMap).length === 0}
                       onclick={() => { markupSource = 'exchange'; }}>Exchange</button>
                   </div>
+                  <MarkupSourceHelp bind:show={showMuHelp} />
                 </div>
               </div>
               <p class="markup-info">Set markup % for materials, residue, products, and limited blueprints that need to be purchased.</p>
@@ -1786,34 +1859,39 @@
                   <div class="markup-grid">
                     {#each allMaterialsForMarkup as { name, item }}
                       {@const markupKey = `mat:${name}`}
-                      {@const isCustom = markupValues[markupKey] != null}
-                      {@const wap = shoppingItemWapMap[markupKey] ?? null}
+                      {@const isEditable = markupSource === 'custom' || markupSource === 'inventory'}
+                      {@const isEditing = editingMarkupKey === markupKey}
                       <div class="markup-item">
                         <a href={getItemLink(item)} class="markup-name">{name}</a>
                         <div class="markup-input-wrapper">
-                          <input
-                            type="number"
-                            class="markup-input"
-                            class:is-custom={markupSource === 'custom' && isCustom}
-                            readonly={markupSource !== 'custom'}
-                            value={getMarkup(markupKey)}
-                            onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
-                            min="0"
-                            step="1"
-                          />
+                          {#if isEditing}
+                            <input type="number" class="markup-input" value={getMarkup(markupKey)} min="0" step="1"
+                              onblur={(e) => commitMarkupEdit(e, markupKey)}
+                              onkeydown={handleMarkupEditKeydown}
+                              use:autofocus />
+                          {:else if isEditable}
+                            <span class="markup-value-editable" role="button" tabindex="0"
+                              onclick={() => startMarkupEdit(markupKey)}
+                              onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(markupKey); }}>
+                              {getMarkup(markupKey)}
+                            </span>
+                          {:else}
+                            <span class="markup-value-readonly">{getMarkup(markupKey)}</span>
+                          {/if}
                           <span class="markup-suffix">%</span>
                           {#if markupSource === 'custom'}
-                            {#if isCustom}
+                            {@const badge = getCustomSourceBadge(markupKey)}
+                            {#if markupValues[markupKey] != null}
                               <button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>
-                            {:else if wap != null}
-                              <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
+                            {:else if badge}
+                              <span class="markup-wap-badge" title="Using {badge === 'INV' ? 'inventory' : badge === 'IGM' ? 'in-game' : badge === 'EXC' ? 'exchange' : 'market'} value">{badge}</span>
                             {/if}
-                          {:else}
+                          {:else if markupSource !== 'custom'}
                             {@const sourceMap = markupSource === 'exchange' ? shoppingItemWapMap : markupSource === 'ingame' ? shoppingItemIngameMap : shoppingItemInvMap}
                             {#if sourceMap[markupKey] != null}
                               <span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>
                             {:else}
-                              <span class="markup-fallback-note" title="No data; using custom">*</span>
+                              <span class="markup-fallback-note" title="No data">*</span>
                             {/if}
                           {/if}
                         </div>
@@ -1845,34 +1923,39 @@
                   <div class="markup-grid">
                     {#each limitedBlueprintsForMarkup as bp}
                       {@const markupKey = `bp:${bp.Id}`}
-                      {@const isCustom = markupValues[markupKey] != null}
-                      {@const wap = shoppingItemWapMap[markupKey] ?? null}
+                      {@const isEditable = markupSource === 'custom' || markupSource === 'inventory'}
+                      {@const isEditing = editingMarkupKey === markupKey}
                       <div class="markup-item">
                         <a href={getBlueprintLink(bp)} class="markup-name">{bp.Name}</a>
                         <div class="markup-input-wrapper">
-                          <input
-                            type="number"
-                            class="markup-input"
-                            class:is-custom={markupSource === 'custom' && isCustom}
-                            readonly={markupSource !== 'custom'}
-                            value={getMarkup(markupKey)}
-                            onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
-                            min="0"
-                            step="1"
-                          />
+                          {#if isEditing}
+                            <input type="number" class="markup-input" value={getMarkup(markupKey)} min="0" step="1"
+                              onblur={(e) => commitMarkupEdit(e, markupKey)}
+                              onkeydown={handleMarkupEditKeydown}
+                              use:autofocus />
+                          {:else if isEditable}
+                            <span class="markup-value-editable" role="button" tabindex="0"
+                              onclick={() => startMarkupEdit(markupKey)}
+                              onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(markupKey); }}>
+                              {getMarkup(markupKey)}
+                            </span>
+                          {:else}
+                            <span class="markup-value-readonly">{getMarkup(markupKey)}</span>
+                          {/if}
                           <span class="markup-suffix">%</span>
                           {#if markupSource === 'custom'}
-                            {#if isCustom}
+                            {@const badge = getCustomSourceBadge(markupKey)}
+                            {#if markupValues[markupKey] != null}
                               <button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>
-                            {:else if wap != null}
-                              <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
+                            {:else if badge}
+                              <span class="markup-wap-badge" title="Using {badge === 'INV' ? 'inventory' : badge === 'IGM' ? 'in-game' : badge === 'EXC' ? 'exchange' : 'market'} value">{badge}</span>
                             {/if}
-                          {:else}
+                          {:else if markupSource !== 'custom'}
                             {@const sourceMap = markupSource === 'exchange' ? shoppingItemWapMap : markupSource === 'ingame' ? shoppingItemIngameMap : shoppingItemInvMap}
                             {#if sourceMap[markupKey] != null}
                               <span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>
                             {:else}
-                              <span class="markup-fallback-note" title="No data; using custom">*</span>
+                              <span class="markup-fallback-note" title="No data">*</span>
                             {/if}
                           {/if}
                         </div>
@@ -1888,34 +1971,39 @@
                   <div class="markup-grid">
                     {#each productsToBuyForMarkup as { name, item }}
                       {@const markupKey = `prod:${name}`}
-                      {@const isCustom = markupValues[markupKey] != null}
-                      {@const wap = shoppingItemWapMap[markupKey] ?? null}
+                      {@const isEditable = markupSource === 'custom' || markupSource === 'inventory'}
+                      {@const isEditing = editingMarkupKey === markupKey}
                       <div class="markup-item">
                         <a href={getItemLink(item)} class="markup-name">{name}</a>
                         <div class="markup-input-wrapper">
-                          <input
-                            type="number"
-                            class="markup-input"
-                            class:is-custom={markupSource === 'custom' && isCustom}
-                            readonly={markupSource !== 'custom'}
-                            value={getMarkup(markupKey)}
-                            onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
-                            min="0"
-                            step="1"
-                          />
+                          {#if isEditing}
+                            <input type="number" class="markup-input" value={getMarkup(markupKey)} min="0" step="1"
+                              onblur={(e) => commitMarkupEdit(e, markupKey)}
+                              onkeydown={handleMarkupEditKeydown}
+                              use:autofocus />
+                          {:else if isEditable}
+                            <span class="markup-value-editable" role="button" tabindex="0"
+                              onclick={() => startMarkupEdit(markupKey)}
+                              onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(markupKey); }}>
+                              {getMarkup(markupKey)}
+                            </span>
+                          {:else}
+                            <span class="markup-value-readonly">{getMarkup(markupKey)}</span>
+                          {/if}
                           <span class="markup-suffix">%</span>
                           {#if markupSource === 'custom'}
-                            {#if isCustom}
+                            {@const badge = getCustomSourceBadge(markupKey)}
+                            {#if markupValues[markupKey] != null}
                               <button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>
-                            {:else if wap != null}
-                              <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
+                            {:else if badge}
+                              <span class="markup-wap-badge" title="Using {badge === 'INV' ? 'inventory' : badge === 'IGM' ? 'in-game' : badge === 'EXC' ? 'exchange' : 'market'} value">{badge}</span>
                             {/if}
-                          {:else}
+                          {:else if markupSource !== 'custom'}
                             {@const sourceMap = markupSource === 'exchange' ? shoppingItemWapMap : markupSource === 'ingame' ? shoppingItemIngameMap : shoppingItemInvMap}
                             {#if sourceMap[markupKey] != null}
                               <span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>
                             {:else}
-                              <span class="markup-fallback-note" title="No data; using custom">*</span>
+                              <span class="markup-fallback-note" title="No data">*</span>
                             {/if}
                           {/if}
                         </div>
@@ -2107,7 +2195,7 @@
                                     <td class="text-right refund-cell" title="Expected refund: {expectedRefund} units ({clampDecimals(refundPct, 0, 1)}%)">
                                       {expectedRefund > 0 ? `-${expectedRefund}` : '0'} <span class="refund-pct">({clampDecimals(refundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepMatKey] != null} readonly={markupSource !== 'custom'} value={mu} min="0" step="1" onchange={(e) => { if (markupSource === 'custom') setMarkup(stepMatKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(stepMatKey)}>&times;</button>{:else if shoppingItemWapMap[stepMatKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepMatKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepMatKey] : shoppingItemInvMap[stepMatKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span>{/if}</td>
+                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell">{#if editingMarkupKey === stepMatKey}<input type="number" class="markup-input-inline" value={mu} min="0" step="1" onblur={(e) => commitMarkupEdit(e, stepMatKey)} onkeydown={handleMarkupEditKeydown} use:autofocus />%{:else if markupSource === 'custom' || markupSource === 'inventory'}<span class="markup-value-editable" role="button" tabindex="0" onclick={() => startMarkupEdit(stepMatKey)} onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(stepMatKey); }}>{mu}</span>%{#if markupSource === 'custom'}{@const badge = getCustomSourceBadge(stepMatKey)}{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset" onclick={() => resetMarkup(stepMatKey)}>&times;</button>{:else if badge}<span class="markup-wap-badge">{badge}</span>{/if}{/if}{:else}<span class="markup-value-readonly">{mu}</span>%{#if (markupSource === 'exchange' ? shoppingItemWapMap[stepMatKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepMatKey] : shoppingItemInvMap[stepMatKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}{/if}</span>{/if}</td>
                                     <td class="text-right">{isCrafting ? '—' : `${clampDecimals(lineCost, 2, 4)} PED`}</td>
                                   </tr>
                                 {/each}
@@ -2171,7 +2259,7 @@
                                   <td><a href={getItemLink(product)}>{productName}</a></td>
                                   <td class="text-right">{step.quantityWanted}</td>
                                   <td class="text-right">{clampDecimals(productTotalTT, 2, 4)} PED</td>
-                                  <td class="text-right"><span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepProdKey] != null} readonly={markupSource !== 'custom'} value={productMU} min="0" step="1" onchange={(e) => { if (markupSource === 'custom') setMarkup(stepProdKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(stepProdKey)}>&times;</button>{:else if shoppingItemWapMap[stepProdKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepProdKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepProdKey] : shoppingItemInvMap[stepProdKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span></td>
+                                  <td class="text-right"><span class="markup-cell">{#if editingMarkupKey === stepProdKey}<input type="number" class="markup-input-inline" value={productMU} min="0" step="1" onblur={(e) => commitMarkupEdit(e, stepProdKey)} onkeydown={handleMarkupEditKeydown} use:autofocus />%{:else if markupSource === 'custom' || markupSource === 'inventory'}<span class="markup-value-editable" role="button" tabindex="0" onclick={() => startMarkupEdit(stepProdKey)} onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(stepProdKey); }}>{productMU}</span>%{#if markupSource === 'custom'}{@const badge = getCustomSourceBadge(stepProdKey)}{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset" onclick={() => resetMarkup(stepProdKey)}>&times;</button>{:else if badge}<span class="markup-wap-badge">{badge}</span>{/if}{/if}{:else}<span class="markup-value-readonly">{productMU}</span>%{#if (markupSource === 'exchange' ? shoppingItemWapMap[stepProdKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepProdKey] : shoppingItemInvMap[stepProdKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}{/if}</span></td>
                                   <td class="text-right">{clampDecimals(productCost, 2, 4)} PED</td>
                                 </tr>
                               </tbody>
@@ -2237,6 +2325,7 @@
                     disabled={Object.keys(shoppingItemWapMap).length === 0}
                     onclick={() => { markupSource = 'exchange'; }}>Exchange</button>
                 </div>
+                <MarkupSourceHelp bind:show={showMuHelp} />
               </div>
               {#if isLoggedIn}
                 <select class="inventory-filter-select" value={inventoryFilter} onchange={handleInventoryFilterChange}>
@@ -2317,17 +2406,18 @@
                     <td class="text-right col-have" class:have-sufficient={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.adjustedAmount || item.totalAmount)} class:have-partial={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.adjustedAmount || item.totalAmount)}>{showInventoryColumn ? ((inventoryMap.get(item.item?.Id) || 0) || '—') : '—'}</td>
                     <td class="text-right">{clampDecimals(adjustedTT, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
-                      <input
-                        type="number"
-                        class="markup-input-inline"
-                        class:is-custom={markupSource === 'custom' && isCustomMU}
-                        readonly={markupSource !== 'custom'}
-                        value={mu}
-                        min="0"
-                        step="1"
-                        onchange={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
-                      />%
-                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(markupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[markupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[markupKey] : shoppingItemInvMap[markupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if editingMarkupKey === markupKey}
+                        <input type="number" class="markup-input-inline" value={mu} min="0" step="1"
+                          onblur={(e) => commitMarkupEdit(e, markupKey)} onkeydown={handleMarkupEditKeydown} use:autofocus />%
+                      {:else if markupSource === 'custom' || markupSource === 'inventory'}
+                        <span class="markup-value-editable" role="button" tabindex="0"
+                          onclick={() => startMarkupEdit(markupKey)}
+                          onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(markupKey); }}>{mu}</span>%
+                        {#if markupSource === 'custom'}{@const badge = getCustomSourceBadge(markupKey)}{#if markupValues[markupKey] != null}<button class="markup-reset" title="Reset" onclick={() => resetMarkup(markupKey)}>&times;</button>{:else if badge}<span class="markup-wap-badge">{badge}</span>{/if}{/if}
+                      {:else}
+                        <span class="markup-value-readonly">{mu}</span>%
+                        {#if (markupSource === 'exchange' ? shoppingItemWapMap[markupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[markupKey] : shoppingItemInvMap[markupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
@@ -2388,17 +2478,18 @@
                     <td class="text-right col-have" class:have-sufficient={showInventoryColumn && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={showInventoryColumn && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) > 0 && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) < Math.ceil(item.totalAmount)}>{showInventoryColumn ? ((inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) || '—') : '—'}</td>
                     <td class="text-right">{clampDecimals(ttValue, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
-                      <input
-                        type="number"
-                        class="markup-input-inline"
-                        class:is-custom={markupSource === 'custom' && isCustomMU}
-                        readonly={markupSource !== 'custom'}
-                        value={mu}
-                        min="0"
-                        step="1"
-                        onchange={(e) => { if (markupSource === 'custom') setMarkup(bpMarkupKey, e.target.value); }}
-                      />%
-                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[bpMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[bpMarkupKey] : shoppingItemInvMap[bpMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if editingMarkupKey === bpMarkupKey}
+                        <input type="number" class="markup-input-inline" value={mu} min="0" step="1"
+                          onblur={(e) => commitMarkupEdit(e, bpMarkupKey)} onkeydown={handleMarkupEditKeydown} use:autofocus />%
+                      {:else if markupSource === 'custom' || markupSource === 'inventory'}
+                        <span class="markup-value-editable" role="button" tabindex="0"
+                          onclick={() => startMarkupEdit(bpMarkupKey)}
+                          onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(bpMarkupKey); }}>{mu}</span>%
+                        {#if markupSource === 'custom'}{@const badge = getCustomSourceBadge(bpMarkupKey)}{#if markupValues[bpMarkupKey] != null}<button class="markup-reset" title="Reset" onclick={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if badge}<span class="markup-wap-badge">{badge}</span>{/if}{/if}
+                      {:else}
+                        <span class="markup-value-readonly">{mu}</span>%
+                        {#if (markupSource === 'exchange' ? shoppingItemWapMap[bpMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[bpMarkupKey] : shoppingItemInvMap[bpMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
@@ -2432,17 +2523,18 @@
                     <td class="text-right col-have" class:have-sufficient={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.totalAmount)}>{showInventoryColumn ? ((inventoryMap.get(item.item?.Id) || 0) || '—') : '—'}</td>
                     <td class="text-right">{clampDecimals(prodTT, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
-                      <input
-                        type="number"
-                        class="markup-input-inline"
-                        class:is-custom={markupSource === 'custom' && isCustomProdMU}
-                        readonly={markupSource !== 'custom'}
-                        value={prodMU}
-                        min="0"
-                        step="1"
-                        onchange={(e) => { if (markupSource === 'custom') setMarkup(prodMarkupKey, e.target.value); }}
-                      />%
-                      {#if markupSource === 'custom'}{#if isCustomProdMU}<button class="markup-reset" title="Reset to market value" onclick={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if wapProdMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[prodMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[prodMarkupKey] : shoppingItemInvMap[prodMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if editingMarkupKey === prodMarkupKey}
+                        <input type="number" class="markup-input-inline" value={prodMU} min="0" step="1"
+                          onblur={(e) => commitMarkupEdit(e, prodMarkupKey)} onkeydown={handleMarkupEditKeydown} use:autofocus />%
+                      {:else if markupSource === 'custom' || markupSource === 'inventory'}
+                        <span class="markup-value-editable" role="button" tabindex="0"
+                          onclick={() => startMarkupEdit(prodMarkupKey)}
+                          onkeydown={(e) => { if (e.key === 'Enter') startMarkupEdit(prodMarkupKey); }}>{prodMU}</span>%
+                        {#if markupSource === 'custom'}{@const badge = getCustomSourceBadge(prodMarkupKey)}{#if markupValues[prodMarkupKey] != null}<button class="markup-reset" title="Reset" onclick={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if badge}<span class="markup-wap-badge">{badge}</span>{/if}{/if}
+                      {:else}
+                        <span class="markup-value-readonly">{prodMU}</span>%
+                        {#if (markupSource === 'exchange' ? shoppingItemWapMap[prodMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[prodMarkupKey] : shoppingItemInvMap[prodMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {/if}
                     </td>
                     <td class="text-right">{clampDecimals(prodCost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">

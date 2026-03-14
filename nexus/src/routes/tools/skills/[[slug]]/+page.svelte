@@ -27,7 +27,8 @@
     buildNameToKebabMap,
     computeSkillDiff
   } from '$lib/utils/skillImportUtils.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
+  import MarkupSourceHelp from '$lib/components/wiki/MarkupSourceHelp.svelte';
   let { data } = $props();
 
   let skillsMetadata = $derived(data.skillsMetadata);
@@ -98,6 +99,10 @@
   let nameToId = $state(new Map());
   let inventoryMarkupMap = $state(new Map());
   let ingameByName = $state(new Map());
+  let showMuHelp = $state(false);
+  let editingSkillMarkup = $state(null); // skill name being edited
+
+  function autofocus(node) { node.focus(); node.select(); }
 
   // PED value cache (fetched from server)
   let pedValueCache = $state({});
@@ -1090,6 +1095,7 @@
                 <button class="mu-btn" class:active={markupSource === 'inventory'} disabled={inventoryMarkupMap.size === 0} onclick={() => markupSource = 'inventory'}>Inventory</button>
                 <button class="mu-btn" class:active={markupSource === 'ingame'} disabled={ingameByName.size === 0} onclick={() => markupSource = 'ingame'}>In-Game</button>
                 <button class="mu-btn" class:active={markupSource === 'exchange'} disabled={wapByName.size === 0} onclick={() => markupSource = 'exchange'}>Exchange</button>
+                <MarkupSourceHelp bind:show={showMuHelp} />
               </div>
             </div>
           </div>
@@ -1130,17 +1136,42 @@
                     </span>
                     <span class="col-right method-cell">{formatNumber(skillVal)}</span>
                     <span class="col-right method-cell">
-                      {#if markupSource === 'custom'}
+                      {#if mu === Infinity}
+                        —
+                      {:else if editingSkillMarkup === skill.Name}
                         <input
                           type="number"
                           class="mu-input"
-                          value={customMarkups[skill.Name] ?? Math.round(mu)}
-                          onchange={(e) => { customMarkups = { ...customMarkups, [skill.Name]: Number(e.target.value) || 100 }; }}
+                          value={markupSource === 'inventory' ? Math.round(mu) : (customMarkups[skill.Name] ?? Math.round(mu))}
+                          onblur={(e) => {
+                            const num = Number(e.target.value) || 100;
+                            editingSkillMarkup = null;
+                            if (markupSource === 'inventory') {
+                              const implantName = `${skill.Name} Skill Implant (L)`;
+                              const itemId = nameToId.get(implantName);
+                              if (itemId != null) {
+                                inventoryMarkupMap.set(itemId, num);
+                                inventoryMarkupMap = new Map(inventoryMarkupMap);
+                                saveInventoryMarkup(itemId, num);
+                              }
+                            } else {
+                              customMarkups = { ...customMarkups, [skill.Name]: num };
+                            }
+                          }}
+                          onkeydown={(e) => { if (e.key === 'Enter') e.target.blur(); else if (e.key === 'Escape') editingSkillMarkup = null; }}
                           min="0"
                           step="1"
+                          use:autofocus
                         />
+                      {:else if markupSource === 'custom' || markupSource === 'inventory'}
+                        <span class="markup-value-editable"
+                          role="button" tabindex="0"
+                          onclick={() => { editingSkillMarkup = skill.Name; }}
+                          onkeydown={(e) => { if (e.key === 'Enter') editingSkillMarkup = skill.Name; }}>
+                          {Math.round(mu)}%
+                        </span>
                       {:else}
-                        {mu !== Infinity ? Math.round(mu) + '%' : '—'}
+                        {Math.round(mu)}%
                       {/if}
                     </span>
                     <span class="col-right method-cell">{mu !== Infinity ? formatPED(ttValue * mu / 100) : '—'}</span>
@@ -2194,6 +2225,20 @@
     font-size: 11px;
     text-align: right;
     box-sizing: border-box;
+  }
+
+  .markup-value-editable {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-color);
+    border-bottom: 1px dashed var(--text-muted, #999);
+    cursor: pointer;
+    padding-bottom: 1px;
+  }
+
+  .markup-value-editable:hover {
+    border-bottom-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
   }
 
   .method-buttons {

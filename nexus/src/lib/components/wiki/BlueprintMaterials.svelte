@@ -9,8 +9,9 @@
   import { onMount } from 'svelte';
   import { clampDecimals, getItemLink } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+  import MarkupSourceHelp from './MarkupSourceHelp.svelte';
   import '$lib/style.css';
 
   
@@ -34,18 +35,18 @@
   let nameToIdMap = $state(new Map());
   let inventoryMarkupMap = $state(new Map());
   let ingameMarkupMap = $state(new Map());
+  let showMuHelp = $state(false);
+  let editingMarkupName = $state(null); // material name being edited
 
   // Custom markups keyed by material name (persisted)
   let customMarkups = $state({});
   let saveTimer = null;
   let prefCache = null;
 
-  function getMarkupInputValue(matName) {
-    return String(customMarkups[matName] ?? 100);
-  }
+  function autofocus(node) { node.focus(); node.select(); }
 
   function handleMarkupChange(matName, value) {
-    const trimmed = value.trim();
+    const trimmed = String(value).trim();
     const num = parseFloat(trimmed);
     if (trimmed === '' || isNaN(num)) return;
     const clamped = Math.max(0, Math.min(100000, num));
@@ -55,21 +56,60 @@
 
   /**
    * Resolve the effective markup for a material based on the active source.
-   * Falls back: selected source → custom value → 100
+   * Custom falls back: custom → inventory → in-game → exchange → 100
    */
   function getResolvedMarkup(matName) {
-    if (markupSource === 'exchange') {
-      return nameToWapMap.get(matName) ?? customMarkups[matName] ?? 100;
-    }
-    if (markupSource === 'ingame') {
-      return ingameMarkupMap.get(matName) ?? customMarkups[matName] ?? 100;
-    }
+    const itemId = nameToIdMap.get(matName);
+    const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
+    const igm = ingameMarkupMap.get(matName);
+    const exc = nameToWapMap.get(matName);
+
+    if (markupSource === 'exchange') return exc ?? 100;
+    if (markupSource === 'ingame') return igm ?? 100;
+    if (markupSource === 'inventory') return inv ?? 100;
+    // Custom: custom → inventory → in-game → exchange → 100
+    return customMarkups[matName] ?? inv ?? igm ?? exc ?? 100;
+  }
+
+  function getCustomFallbackSource(matName) {
+    if (customMarkups[matName] != null) return null;
+    const itemId = nameToIdMap.get(matName);
+    const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
+    if (inv != null) return 'INV';
+    if (ingameMarkupMap.get(matName) != null) return 'IGM';
+    if (nameToWapMap.get(matName) != null) return 'EXC';
+    return null;
+  }
+
+  function startEdit(matName) {
+    if (markupSource !== 'custom' && markupSource !== 'inventory') return;
+    editingMarkupName = matName;
+  }
+
+  function commitEdit(event, matName) {
+    const value = event.target.value;
+    const num = parseFloat(value);
+    editingMarkupName = null;
+    if (isNaN(num) || num < 0) return;
+    const clamped = Math.min(100000, num);
+
     if (markupSource === 'inventory') {
       const itemId = nameToIdMap.get(matName);
-      const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
-      return inv ?? customMarkups[matName] ?? 100;
+      if (itemId == null) return;
+      inventoryMarkupMap.set(itemId, clamped);
+      inventoryMarkupMap = new Map(inventoryMarkupMap);
+      saveInventoryMarkup(itemId, clamped);
+    } else {
+      handleMarkupChange(matName, clamped);
     }
-    return customMarkups[matName] ?? 100;
+  }
+
+  function handleEditKeydown(event) {
+    if (event.key === 'Enter') {
+      event.target.blur();
+    } else if (event.key === 'Escape') {
+      editingMarkupName = null;
+    }
   }
 
   // Persistence
@@ -237,6 +277,7 @@
             disabled={nameToWapMap.size === 0}
             onclick={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}>Exchange</button>
         </div>
+        <MarkupSourceHelp bind:show={showMuHelp} />
       </div>
     {/if}
 
@@ -303,11 +344,9 @@
         <div class="table-body">
           {#each blueprint?.Materials ?? [] as material, index}
             {@const matName = material.Item?.Name || ''}
-            {@const isFallback = markupSource !== 'custom' && (
-              markupSource === 'exchange' ? !nameToWapMap.has(matName) :
-              markupSource === 'ingame' ? !ingameMarkupMap.has(matName) :
-              !inventoryMarkupMap.has(nameToIdMap.get(matName))
-            )}
+            {@const resolved = getResolvedMarkup(matName)}
+            {@const isEditable = markupSource === 'custom' || (markupSource === 'inventory' && nameToIdMap.has(matName))}
+            {@const isEditing = editingMarkupName === matName}
             <div class="table-row" class:even={index % 2 === 0} class:odd={index % 2 === 1}>
               <div class="table-cell col-material">
                 <a href="{getItemLink(material.Item)}">{matName || 'Unknown'}</a>
@@ -315,18 +354,38 @@
               <div class="table-cell col-tt mobile-hide">{clampDecimals(material.Item?.Properties?.Economy?.MaxTT || 0, 2, 8)}</div>
               <div class="table-cell col-amount">{material.Amount}</div>
               <div class="table-cell col-markup mobile-hide">
-                {#if markupSource === 'custom'}
-                  <input type="text" class="markup-input" inputmode="decimal"
-                    value={getMarkupInputValue(matName)}
-                    oninput={(e) => handleMarkupChange(matName, e.target.value)}
-                    onblur={(e) => { e.target.value = getMarkupInputValue(matName); }} />
+                {#if isEditing}
+                  <input type="number" class="markup-input" inputmode="decimal"
+                    value={resolved} min="0" step="1"
+                    onblur={(e) => commitEdit(e, matName)}
+                    onkeydown={handleEditKeydown}
+                    use:autofocus />
+                {:else if isEditable}
+                  {@const fallbackSrc = markupSource === 'custom' ? getCustomFallbackSource(matName) : null}
+                  {@const isFallback = markupSource === 'inventory' && !inventoryMarkupMap.has(nameToIdMap.get(matName))}
+                  <span
+                    class="markup-value-editable"
+                    class:is-fallback={isFallback}
+                    role="button"
+                    tabindex="0"
+                    onclick={() => startEdit(matName)}
+                    onkeydown={(e) => { if (e.key === 'Enter') startEdit(matName); }}
+                  >
+                    {resolved}
+                  </span>
+                  {#if fallbackSrc}
+                    <span class="markup-source-badge" title="Using {fallbackSrc === 'INV' ? 'inventory' : fallbackSrc === 'IGM' ? 'in-game' : 'exchange'} value">{fallbackSrc}</span>
+                  {/if}
+                  {#if isFallback}
+                    <span class="markup-fallback-note" title="No inventory data">*</span>
+                  {/if}
                 {:else}
-                  {@const resolved = getResolvedMarkup(matName)}
+                  {@const isFallback = markupSource === 'exchange' ? !nameToWapMap.has(matName) : markupSource === 'ingame' ? !ingameMarkupMap.has(matName) : false}
                   <span class="markup-value-readonly" class:is-fallback={isFallback}>
                     {resolved}
                   </span>
                   {#if isFallback}
-                    <span class="markup-fallback-note" title="No {markupSource} data; using custom value">*</span>
+                    <span class="markup-fallback-note" title="No {markupSource} data">*</span>
                   {/if}
                 {/if}
               </div>
@@ -562,6 +621,34 @@
 
   .markup-value-readonly.is-fallback {
     opacity: 0.6;
+  }
+
+  .markup-value-editable {
+    font-size: 13px;
+    color: var(--text-color);
+    font-family: monospace;
+    border-bottom: 1px dashed var(--text-muted, #999);
+    cursor: pointer;
+    padding-bottom: 1px;
+  }
+
+  .markup-value-editable:hover {
+    border-bottom-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .markup-value-editable.is-fallback {
+    opacity: 0.6;
+  }
+
+  .markup-source-badge {
+    font-size: 9px;
+    color: var(--text-muted, #999);
+    margin-left: 3px;
+    padding: 0 3px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    vertical-align: middle;
   }
 
   .markup-fallback-note {

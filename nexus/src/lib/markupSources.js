@@ -122,3 +122,38 @@ export async function fetchInventoryMarkups() {
   }
   return map;
 }
+
+/**
+ * Save a single inventory markup via the API.
+ * @param {number} itemId
+ * @param {number} markup
+ * @returns {Promise<boolean>} true if saved successfully
+ */
+export async function saveInventoryMarkup(itemId, markup) {
+  try {
+    const res = await fetch('/api/users/inventory/markups', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [{ item_id: itemId, markup }] })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delete a single inventory markup (resets to default).
+ * @param {number} itemId
+ * @returns {Promise<boolean>} true if deleted successfully
+ */
+export async function deleteInventoryMarkup(itemId) {
+  try {
+    const res = await fetch(`/api/users/inventory/markups/${itemId}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

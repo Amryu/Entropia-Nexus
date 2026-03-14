@@ -2089,6 +2089,26 @@
     background: var(--secondary-color);
   }
 
+  & .markup-value-editable {
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--text-color);
+    border-bottom: 1px dashed var(--text-muted, #999);
+    cursor: pointer;
+    padding-bottom: 1px;
+  }
+
+  & .markup-value-editable:hover {
+    border-bottom-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+  }
+
+  & .markup-value-readonly {
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--text-color);
+  }
+
   & .markup-fallback-note {
     font-size: 10px;
     color: var(--text-muted);

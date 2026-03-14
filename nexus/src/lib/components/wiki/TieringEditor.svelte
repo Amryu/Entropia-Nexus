@@ -20,7 +20,8 @@
     getTierMaterial
   } from '$lib/tieringUtil.js';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup } from '$lib/markupSources.js';
+  import MarkupSourceHelp from './MarkupSourceHelp.svelte';
 
   
 
@@ -117,26 +118,42 @@
   let nameToIdMap = $state(new Map());
   let inventoryMarkupMap = $state(new Map());
   let ingameMarkupMap = $state(new Map());
+  let showMuHelp = $state(false);
+  let editingMarkup = $state(null); // { idx, matName } for click-to-edit
 
+  function autofocus(node) { node.focus(); node.select(); }
 
   /**
    * Resolve the effective markup for a material based on the active source.
-   * Falls back: selected source → custom value → 100
+   * Custom falls back: custom → inventory → in-game → exchange → 100
    */
   function getResolvedMarkup(matName, idx, tierMarkups) {
     const mu = tierMarkups || markups;
-    if (markupSource === 'exchange') {
-      return nameToWapMap.get(matName) ?? mu[idx] ?? 100;
-    }
-    if (markupSource === 'ingame') {
-      return ingameMarkupMap.get(matName) ?? mu[idx] ?? 100;
-    }
-    if (markupSource === 'inventory') {
-      const itemId = nameToIdMap.get(matName);
-      const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
-      return inv ?? mu[idx] ?? 100;
-    }
-    return mu[idx] ?? 100;
+    const itemId = nameToIdMap.get(matName);
+    const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
+    const igm = ingameMarkupMap.get(matName);
+    const exc = nameToWapMap.get(matName);
+
+    if (markupSource === 'exchange') return exc ?? 100;
+    if (markupSource === 'ingame') return igm ?? 100;
+    if (markupSource === 'inventory') return inv ?? 100;
+    // Custom: custom → inventory → in-game → exchange → 100
+    return mu[idx] ?? inv ?? igm ?? exc ?? 100;
+  }
+
+  /**
+   * Determine the source badge for a resolved value in custom mode.
+   * Returns null if the value comes from the custom setting itself.
+   */
+  function getCustomFallbackSource(matName, idx, tierMarkups) {
+    const mu = tierMarkups || markups;
+    if (mu[idx] != null) return null;
+    const itemId = nameToIdMap.get(matName);
+    const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
+    if (inv != null) return 'INV';
+    if (ingameMarkupMap.get(matName) != null) return 'IGM';
+    if (nameToWapMap.get(matName) != null) return 'EXC';
+    return null;
   }
 
   function handleMarkupInput(event, idx) {
@@ -148,6 +165,38 @@
       }
       allMarkups[selectedTier][idx] = num;
       debounceSaveMarkups();
+    }
+  }
+
+  function startEdit(idx, matName) {
+    if (markupSource !== 'custom' && markupSource !== 'inventory') return;
+    editingMarkup = { idx, matName };
+  }
+
+  function commitEdit(event, idx, matName) {
+    const value = event.target.value;
+    const num = parseFloat(value);
+    editingMarkup = null;
+    if (isNaN(num) || num < 0) return;
+    const clamped = Math.min(100000, num);
+
+    if (markupSource === 'inventory') {
+      const itemId = nameToIdMap.get(matName);
+      if (itemId == null) return;
+      inventoryMarkupMap.set(itemId, clamped);
+      inventoryMarkupMap = new Map(inventoryMarkupMap);
+      saveInventoryMarkup(itemId, clamped);
+    } else {
+      // Custom mode
+      if (clamped >= 100) handleMarkupInput(event, idx);
+    }
+  }
+
+  function handleEditKeydown(event, idx, matName) {
+    if (event.key === 'Enter') {
+      event.target.blur();
+    } else if (event.key === 'Escape') {
+      editingMarkup = null;
     }
   }
 
@@ -556,6 +605,7 @@
             onclick={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}
           >Exchange</button>
         </div>
+        <MarkupSourceHelp bind:show={showMuHelp} />
       </div>
     {/if}
 
@@ -617,6 +667,9 @@
           <!-- Body -->
           <div class="table-body">
             {#each materialTableData as row, idx}
+              {@const resolved = getResolvedMarkup(row._matName, row._idx)}
+              {@const isEditable = markupSource === 'custom' || (markupSource === 'inventory' && nameToIdMap.has(row._matName))}
+              {@const isEditing = editingMarkup?.idx === row._idx && editingMarkup?.matName === row._matName}
               <div class="table-row" class:even={idx % 2 === 0} class:odd={idx % 2 === 1}>
                 <div class="table-cell col-material">
                   <a href={getTypeLink(row._matName, 'Material')} class="material-link">{row._matName}</a>
@@ -624,23 +677,44 @@
                 <div class="table-cell col-tt mobile-hide">{row.tt}</div>
                 <div class="table-cell col-amount">{row.amount}</div>
                 <div class="table-cell col-markup mobile-hide">
-                  {#if markupSource === 'custom'}
+                  {#if isEditing}
                     <input
-                      type="text"
-                      value={markups[row._idx]}
-                      oninput={(e) => handleMarkupInput(e, row._idx)}
-                      onblur={(e) => handleMarkupInput(e, row._idx)}
+                      type="number"
+                      value={resolved}
                       class="markup-input"
                       inputmode="decimal"
+                      min="0"
+                      step="1"
+                      onblur={(e) => commitEdit(e, row._idx, row._matName)}
+                      onkeydown={(e) => handleEditKeydown(e, row._idx, row._matName)}
+                      use:autofocus
                     />
+                  {:else if isEditable}
+                    {@const fallbackSrc = markupSource === 'custom' ? getCustomFallbackSource(row._matName, row._idx) : null}
+                    {@const isFallback = markupSource === 'inventory' && !inventoryMarkupMap.has(nameToIdMap.get(row._matName))}
+                    <span
+                      class="markup-value-editable"
+                      class:is-fallback={isFallback}
+                      role="button"
+                      tabindex="0"
+                      onclick={() => startEdit(row._idx, row._matName)}
+                      onkeydown={(e) => { if (e.key === 'Enter') startEdit(row._idx, row._matName); }}
+                    >
+                      {resolved}
+                    </span>
+                    {#if fallbackSrc}
+                      <span class="markup-source-badge" title="Using {fallbackSrc === 'INV' ? 'inventory' : fallbackSrc === 'IGM' ? 'in-game' : 'exchange'} value">{fallbackSrc}</span>
+                    {/if}
+                    {#if isFallback}
+                      <span class="markup-fallback-note" title="No inventory data">*</span>
+                    {/if}
                   {:else}
-                    {@const resolved = getResolvedMarkup(row._matName, row._idx)}
-                    {@const isFallback = markupSource === 'exchange' ? !nameToWapMap.has(row._matName) : markupSource === 'ingame' ? !ingameMarkupMap.has(row._matName) : !inventoryMarkupMap.has(nameToIdMap.get(row._matName))}
+                    {@const isFallback = markupSource === 'exchange' ? !nameToWapMap.has(row._matName) : markupSource === 'ingame' ? !ingameMarkupMap.has(row._matName) : false}
                     <span class="markup-value-readonly" class:is-fallback={isFallback}>
                       {resolved}
                     </span>
                     {#if isFallback}
-                      <span class="markup-fallback-note" title="No {markupSource} data; using custom value">*</span>
+                      <span class="markup-fallback-note" title="No {markupSource} data">*</span>
                     {/if}
                   {/if}
                 </div>
@@ -979,6 +1053,34 @@
 
   .markup-value-readonly.is-fallback {
     opacity: 0.6;
+  }
+
+  .markup-value-editable {
+    font-size: 13px;
+    color: var(--text-color);
+    font-family: monospace;
+    border-bottom: 1px dashed var(--text-muted, #999);
+    cursor: pointer;
+    padding-bottom: 1px;
+  }
+
+  .markup-value-editable:hover {
+    border-bottom-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .markup-value-editable.is-fallback {
+    opacity: 0.6;
+  }
+
+  .markup-source-badge {
+    font-size: 9px;
+    color: var(--text-muted, #999);
+    margin-left: 3px;
+    padding: 0 3px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    vertical-align: middle;
   }
 
   .markup-fallback-note {
