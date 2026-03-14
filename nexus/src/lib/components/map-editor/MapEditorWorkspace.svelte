@@ -288,10 +288,9 @@
     }
     const existingChange = pendingChanges.get(original.Id);
     if (existingChange && !existingChange.original) {
-      // Editing a pending add: merge into the existing entry
-      Object.assign(existingChange.modified, modified);
-      delete existingChange._dbSeeded;
-      pendingChanges.set(original.Id, existingChange);
+      // Editing a pending add: merge into existing — new object so SvelteMap signals change
+      const { _dbSeeded, ...rest } = existingChange;
+      pendingChanges.set(original.Id, { ...rest, modified: { ...existingChange.modified, ...modified } });
     } else {
       // Preserve the true original from the first edit — `original` from the editor
       // is the merged selectedLocation, not the raw location from locations[].
@@ -457,19 +456,15 @@
     const existing = pendingChanges.get(locId);
 
     if (!existing?.original && existing?.modified) {
-      // Pending add: update the modified data in place
-      const modified = existing.modified;
-      if (entropiaData.center) {
-        modified.longitude = entropiaData.center.x;
-        modified.latitude = entropiaData.center.y;
-      }
-      if (entropiaData.shape) {
-        modified.shape = entropiaData.shape;
-        modified.shapeData = entropiaData.data;
-      }
-      delete existing._dbSeeded;
+      // Pending add: merge shape edits — new object so SvelteMap signals change
+      const { _dbSeeded, ...rest } = existing;
+      const updatedMod = {
+        ...existing.modified,
+        ...(entropiaData.center ? { longitude: entropiaData.center.x, latitude: entropiaData.center.y } : {}),
+        ...(entropiaData.shape ? { shape: entropiaData.shape, shapeData: entropiaData.data } : {})
+      };
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); }
-      pendingChanges.set(locId, existing);
+      pendingChanges.set(locId, { ...rest, modified: updatedMod });
   
     } else if (loc) {
       // Existing location: create/update edit change
@@ -517,8 +512,11 @@
       const loc = waveEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
       if (existing && !existing.original) {
-        existing.modified.waveData = { waves: waveData.waves };
-        pendingChanges.set(loc.Id, existing);
+        // New object so SvelteMap signals the change
+        pendingChanges.set(loc.Id, {
+          ...existing,
+          modified: { ...existing.modified, waveData: { waves: waveData.waves } }
+        });
       } else {
         const modified = existing?.modified || {};
         modified.waveData = { waves: waveData.waves };
@@ -540,10 +538,11 @@
       const loc = mobEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
       if (existing && !existing.original) {
-        // Pending add: merge mob data into existing entry
-        existing.modified.name = mobData.name;
-        existing.modified.mobData = { density: mobData.density, maturities: mobData.maturities };
-        pendingChanges.set(loc.Id, existing);
+        // Pending add: merge mob data — new object so SvelteMap signals the change
+        pendingChanges.set(loc.Id, {
+          ...existing,
+          modified: { ...existing.modified, name: mobData.name, mobData: { density: mobData.density, maturities: mobData.maturities } }
+        });
       } else {
         const modified = existing?.modified || {};
         modified.name = mobData.name;

@@ -1481,7 +1481,11 @@
   }
   let _rebuildRafId = null;
   $effect(() => {
-    if (mapReady && locations && pendingChanges !== undefined) {
+    // Subscribe to ALL SvelteMap mutations (add, update, delete) via the version signal.
+    // Reading .size only detects add/remove; forEach touches the version counter so value
+    // updates on existing keys (e.g. mob-save updating the name) also trigger a rebuild.
+    pendingChanges?.forEach?.(() => {});
+    if (mapReady && locations && pendingChanges) {
       // Debounce with RAF to coalesce rapid mutations into one rebuild per frame
       if (_rebuildRafId) cancelAnimationFrame(_rebuildRafId);
       _rebuildRafId = requestAnimationFrame(() => {
