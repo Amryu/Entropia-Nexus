@@ -100,7 +100,7 @@
     return result.toFixed(2);
   }
 
-  const DEFAULT_MARKUPS = [100, 100, 100, 100, 100];
+  const DEFAULT_MARKUPS = [null, null, null, null, null];
   const PREF_KEY = 'wiki.tierMarkups';
   const SAVE_DEBOUNCE_MS = 500;
 
