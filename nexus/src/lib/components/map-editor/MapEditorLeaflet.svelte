@@ -1502,10 +1502,16 @@
     if (mapReady && dbPendingChanges) rebuildDbChangesOverlay();
   });
   $effect(() => {
-    if (mapReady && filteredLocationIds !== undefined) updateVisibility();
+    // Only react to filter changes; pendingChanges visibility is handled by rebuildLayers
+    if (mapReady && filteredLocationIds !== undefined) untrack(() => updateVisibility());
   });
   $effect(() => {
-    if (mapReady && selectedId !== undefined) updateSelection();
+    // Only react to selectedId / editMode changes — NOT to every pendingChanges mutation.
+    // updateSelection reads pendingChanges for styling, but rebuildLayers already handles
+    // change-driven rebuilds and calls updateSelection internally.  Without untrack,
+    // every pendingChanges.set() triggers cleanupEditing → enableEditing churn that
+    // disrupts active editing and can cause shapes to flash/disappear via _rebuildDeferred.
+    if (mapReady && selectedId !== undefined && editMode !== undefined) untrack(() => updateSelection());
   });
   $effect(() => {
     if (mapReady && editMode !== undefined) toggleDrawControl();

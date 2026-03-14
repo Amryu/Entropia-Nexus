@@ -731,6 +731,7 @@
     'pcforum': 'https://www.planetcalypsoforum.com',
     'news': '/',
     'events': '/events',
+    'globals': '/globals',
   };
 
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {
