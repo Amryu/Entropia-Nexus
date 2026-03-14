@@ -4,6 +4,7 @@
  * Fetches official news from Steam and persists to the announcements table.
  * Includes BBCode-to-HTML conversion for content storage.
  */
+import https from 'node:https';
 import { getSteamNewsCount, upsertSteamNews } from '$lib/server/db.js';
 
 const STEAM_APP_ID = 3642750;
@@ -129,9 +130,23 @@ async function fetchSteamNewsPage(count = STEAM_FETCH_COUNT, endDate = undefined
   let url = `${STEAM_API_BASE}&count=${count}`;
   if (endDate) url += `&enddate=${endDate}`;
 
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Steam API returned ${response.status}`);
-  const data = await response.json();
+  // Use node:https directly to avoid SvelteKit's patched globalThis.fetch
+  // which warns about eager fetch during SSR
+  const data = await new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume(); // drain response
+        reject(new Error(`Steam API returned ${res.statusCode}`));
+        return;
+      }
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
 
   return (data.appnews?.newsitems || [])
     .filter(item => item.feedlabel === 'Community Announcements');

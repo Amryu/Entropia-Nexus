@@ -3,8 +3,12 @@ import pg from 'pg';
 
 const Pool = pg.Pool;
 
+// Statement timeout per connection so queries fail fast
+const STATEMENT_TIMEOUT_MS = Number(process.env.PG_STATEMENT_TIMEOUT_MS ?? 5000);
+
 export const pool = new Pool({
   connectionString: process.env.POSTGRES_CONNECTION_STRING,
+  statement_timeout: STATEMENT_TIMEOUT_MS,
 });
 
 // Optional read-only pool for the nexus entity database (MUST ONLY BE USED for image cleanup scanning)
@@ -26,15 +30,6 @@ if (!globalThis.__dbErrorHooksRegistered) {
 // Log pool-level errors from idle clients so they don't crash the process
 pool.on('error', (err) => {
   console.error('Postgres pool error (idle client):', err);
-});
-
-// Set a sane statement timeout per connection so queries fail fast
-const STATEMENT_TIMEOUT_MS = Number(process.env.PG_STATEMENT_TIMEOUT_MS ?? 5000);
-pool.on('connect', (client) => {
-  // Best-effort; if it fails, we still keep the connection and log
-  client
-    .query(`SET statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
-    .catch((e) => console.error('Failed to set statement_timeout', e));
 });
 
 // Wrap pool.query to ensure consistent logging on failures
