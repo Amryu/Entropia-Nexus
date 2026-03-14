@@ -390,6 +390,10 @@ class Database:
             ("mob_encounters", "is_open_ended", "INTEGER DEFAULT 0"),
             ("mob_encounters", "merged_into", "TEXT"),
             ("mob_encounters", "merged_from", "TEXT"),  # JSON array of encounter IDs
+            ("mob_encounters", "mob_id", "INTEGER"),
+            ("mob_encounters", "is_shared_loot", "INTEGER"),
+            ("encounter_loot_items", "item_id", "INTEGER"),
+            ("encounter_tool_stats", "tool_id", "INTEGER"),
             ("session_loadouts", "crit_damage", "REAL DEFAULT 1.0"),
             ("parser_state", "file_hash", "TEXT"),
             ("screenshots", "file_hash", "TEXT"),

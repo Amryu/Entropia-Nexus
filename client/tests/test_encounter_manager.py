@@ -9,6 +9,8 @@ from client.hunt.session import HuntSession, MobEncounter, EncounterToolStats
 def _make_config(**overrides):
     config = MagicMock()
     config.encounter_close_timeout_ms = overrides.get("encounter_close_timeout_ms", 15000)
+    config.loot_close_timeout_ms = overrides.get("loot_close_timeout_ms", 3000)
+    config.max_encounter_duration_ms = overrides.get("max_encounter_duration_ms", 600000)
     config.attribution_window_ms = overrides.get("attribution_window_ms", 3000)
     return config
 

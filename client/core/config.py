@@ -35,6 +35,9 @@ class AppConfig:
     ocr_trace_enabled: bool = False
     radar_last_circle: list | None = None  # [cx, cy, r] persisted calibration
     radar_digit_stpk: str = "radar_digits.stpk"
+    radar_origin_offset: tuple[int, int] | None = None          # (dx, dy) circle-center → HUD origin at 1x
+    radar_lon_roi: tuple[int, int, int, int] | None = None      # (x, y, w, h) from origin at 1x
+    radar_lat_roi: tuple[int, int, int, int] | None = None      # (x, y, w, h) from origin at 1x
 
     # OCR - HUD regions (x, y, w, h) for mob/tool name detection
     mob_name_region: tuple[int, int, int, int] | None = None
@@ -75,8 +78,10 @@ class AppConfig:
 
     # Hunt tracking
     encounter_close_timeout_ms: int = 15000
+    loot_close_timeout_ms: int = 3000            # faster timeout after loot received
+    max_encounter_duration_ms: int = 600000      # 10 min hard cap — prevents stuck encounters
     attribution_window_ms: int = 3000
-    session_auto_timeout_ms: int = 3600000      # 1 hour
+    session_auto_timeout_ms: int = 3600000       # 1 hour
     hunt_split_mob_threshold: int = 10           # consecutive kills before confirming mob-type split
     hunt_split_min_remote_kills: int = 5         # kills at new location before confirming split
 
@@ -350,6 +355,8 @@ DEFAULTS = {
     "oauth_client_id": "",
     "oauth_redirect_port": 47832,
     "encounter_close_timeout_ms": 15000,
+    "loot_close_timeout_ms": 3000,
+    "max_encounter_duration_ms": 600000,
     "attribution_window_ms": 3000,
     "session_auto_timeout_ms": 3600000,
     "hunt_split_mob_threshold": 10,
@@ -612,6 +619,7 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         "recording_bar_overlay_position", "gallery_overlay_position",
         "gallery_overlay_size",
         "mob_name_region", "tool_name_region",
+        "radar_origin_offset", "radar_lon_roi", "radar_lat_roi",
     ):
         val = merged.get(key)
         if isinstance(val, list):

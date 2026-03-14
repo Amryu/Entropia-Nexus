@@ -17,6 +17,8 @@ from client.core.constants import (
 def _make_config(**overrides):
     config = MagicMock()
     config.encounter_close_timeout_ms = overrides.get("encounter_close_timeout_ms", 15000)
+    config.loot_close_timeout_ms = overrides.get("loot_close_timeout_ms", 3000)
+    config.max_encounter_duration_ms = overrides.get("max_encounter_duration_ms", 600000)
     config.attribution_window_ms = overrides.get("attribution_window_ms", 3000)
     config.session_auto_timeout_ms = overrides.get("session_auto_timeout_ms", 3600000)
     config.hunt_split_mob_threshold = overrides.get("hunt_split_mob_threshold", 10)

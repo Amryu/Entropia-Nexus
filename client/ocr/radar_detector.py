@@ -157,6 +157,14 @@ RADAR_GATED_DIGIT_SCORE_FLOOR = 0.02
 RADAR_BENCHMARK_LOG_EVERY = 50
 
 # ---------------------------------------------------------------------------
+# Dev-only sample collection
+# ---------------------------------------------------------------------------
+
+DEV_SAMPLE_COLLECT_INTERVAL_S = 5.0
+DEV_SAMPLE_MIN_PIXEL_DIFF = 15.0   # MSE threshold to skip near-identical frames
+DEV_SAMPLE_DIR = Path(__file__).parent.parent / "ocr_dev_samples" / "radar" / "auto_collected"
+
+# ---------------------------------------------------------------------------
 # Detection / timing constants
 # ---------------------------------------------------------------------------
 
@@ -339,6 +347,15 @@ class RadarDetector:
         # Hotkey subscription
         self._cb_hotkey = self._on_hotkey
         event_bus.subscribe(EVENT_HOTKEY_TRIGGERED, self._cb_hotkey)
+
+        # Dev-only sample collection
+        try:
+            from ..core.build_flags import is_dev_build
+            self._dev_collect_enabled = is_dev_build()
+        except ImportError:
+            self._dev_collect_enabled = False
+        self._dev_last_collect_time: float = 0.0
+        self._dev_last_saved_roi: np.ndarray | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -525,6 +542,77 @@ class RadarDetector:
             "avg_subsequent_ms": avg_subsequent_ms,
             **circle_data,
         })
+
+        if self._dev_collect_enabled:
+            self._maybe_collect_sample(frame, lon, lat, conf)
+
+    def _maybe_collect_sample(
+        self, frame: np.ndarray, lon: int, lat: int, conf: float,
+    ) -> None:
+        """Save a radar sample for ML training (dev-only).
+
+        Rate-limited and deduped by MSE to avoid saving near-identical frames.
+        I/O is done on a daemon thread to avoid blocking OCR.
+        """
+        now = time.monotonic()
+        if now - self._dev_last_collect_time < DEV_SAMPLE_COLLECT_INTERVAL_S:
+            return
+
+        if self._circle is None:
+            return
+
+        cx, cy, r = self._circle
+        h, w = frame.shape[:2]
+
+        # Crop radar region: circle + text area below
+        pad = 10
+        x0 = max(0, cx - r - pad)
+        x1 = min(w, cx + r + pad)
+        y0 = max(0, cy - r - pad)
+        y1 = min(h, cy + round(r * 0.35))
+        crop = frame[y0:y1, x0:x1]
+
+        if crop.size == 0:
+            return
+
+        # MSE comparison with last saved crop to skip near-identical
+        gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
+        if self._dev_last_saved_roi is not None:
+            if gray_crop.shape == self._dev_last_saved_roi.shape:
+                mse = float(np.mean((gray_crop.astype(np.float32)
+                                     - self._dev_last_saved_roi.astype(np.float32)) ** 2))
+                if mse < DEV_SAMPLE_MIN_PIXEL_DIFF:
+                    return
+
+        self._dev_last_collect_time = now
+        self._dev_last_saved_roi = gray_crop.copy()
+
+        # Save on a daemon thread to avoid blocking OCR
+        import json
+        from datetime import datetime
+        ts = datetime.now()
+        stem = f"radar_{ts.strftime('%Y%m%d_%H%M%S')}_{ts.microsecond // 1000:03d}"
+        save_dir = DEV_SAMPLE_DIR
+
+        def _save():
+            try:
+                save_dir.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(save_dir / f"{stem}.png"), crop)
+                meta = {
+                    "timestamp": ts.isoformat(),
+                    "circle": {"cx": int(cx), "cy": int(cy), "r": int(r)},
+                    "ocr_result": {"lon": int(lon), "lat": int(lat), "confidence": round(conf, 4)},
+                    "frame_size": [int(w), int(h)],
+                    "scale": round(self._scale, 3),
+                }
+                (save_dir / f"{stem}.json").write_text(
+                    json.dumps(meta, indent=2), encoding="utf-8",
+                )
+            except Exception:
+                log.debug("Dev sample save failed", exc_info=True)
+
+        t = threading.Thread(target=_save, daemon=True)
+        t.start()
 
     def _background_rescan(self, frame):
         """After many consecutive failures, check whether the circle moved."""

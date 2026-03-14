@@ -4,6 +4,7 @@ Detects when the player has moved to a new hunting spot or changed target mob.
 Mixed spawns (multiple mob types interleaving) do NOT trigger splits.
 """
 
+import math
 import uuid
 from collections import deque
 from dataclasses import dataclass
@@ -96,26 +97,60 @@ class MobTypeTracker:
 class LocationTracker:
     """Tracks player location to detect significant movement.
 
-    Placeholder — requires location data from an external source.
-    Currently a no-op that never triggers splits.
+    Uses a rolling centroid of recent kill positions. When the player
+    moves beyond `distance_threshold` coordinate units from the centroid
+    and at least `min_kills` have been recorded, a hunt split is triggered.
+
+    Coordinates come from the radar OCR detector (lon/lat).
     """
+
+    # Rolling window size for centroid calculation
+    POSITION_WINDOW = 20
 
     def __init__(self, distance_threshold: float = 1000.0,
                  min_kills: int = 5):
         self._distance_threshold = distance_threshold
         self._min_kills = min_kills
+        self._positions: deque[tuple[float, float]] = deque(maxlen=self.POSITION_WINDOW)
+        self._centroid: tuple[float, float] | None = None
+        self._kill_count: int = 0
 
-    def observe(self, x: float, y: float) -> HuntBoundaryEvent | None:
+    def observe(self, lon: float, lat: float) -> HuntBoundaryEvent | None:
         """Record a position and check for significant movement.
 
         Returns a HuntBoundaryEvent if the player has moved far enough
         from the hunt centroid and enough kills have occurred there.
         """
-        # No-op until location data source is wired in (Phase 6)
+        if self._centroid is None:
+            self._centroid = (lon, lat)
+            self._positions.append((lon, lat))
+            self._kill_count += 1
+            return None
+
+        dist = math.sqrt(
+            (lon - self._centroid[0]) ** 2 + (lat - self._centroid[1]) ** 2
+        )
+
+        self._positions.append((lon, lat))
+        self._kill_count += 1
+
+        if dist > self._distance_threshold and self._kill_count >= self._min_kills:
+            log.info("Location split: distance %.0f (threshold %.0f) after %d kills",
+                     dist, self._distance_threshold, self._kill_count)
+            return HuntBoundaryEvent(split_reason="location_change")
+
+        # Update rolling centroid
+        n = len(self._positions)
+        self._centroid = (
+            sum(p[0] for p in self._positions) / n,
+            sum(p[1] for p in self._positions) / n,
+        )
         return None
 
     def reset(self):
-        pass
+        self._centroid = None
+        self._positions.clear()
+        self._kill_count = 0
 
 
 class HuntDetector:

@@ -20,9 +20,12 @@ from ..core.constants import (
 )
 from ..core.logger import get_logger
 from .encounter_manager import EncounterManager
+from .entity_resolver import EntityResolver
 from .hunt_detector import HuntDetector
 from .loadout_manager import SessionLoadoutManager
 from .loot_filter import LootFilter
+from .ocr_state import OCRStateTracker
+from .running_stats import SessionRunningStats
 from .session import (
     EncounterLootItem, Hunt, HuntSession, MobEncounter, SessionLoadoutEntry,
 )
@@ -124,6 +127,9 @@ class HuntTracker:
         self._tool_inference: ToolInferenceEngine = ToolInferenceEngine()
         self._loadout_mgr = SessionLoadoutManager(config, db, data_client, self._tool_inference)
         self._loot_filter: LootFilter = LootFilter(config, data_client)
+        self._entity_resolver: EntityResolver = EntityResolver(data_client)
+        self._ocr_state: OCRStateTracker = OCRStateTracker(event_bus)
+        self._running_stats: SessionRunningStats | None = None
         self._timeout_timer: threading.Timer | None = None
         self._persisted_encounter_ids: set[str] = set()
         self._open_encounters: list[MobEncounter] = []  # Unresolved death/timeout encounters
@@ -164,6 +170,7 @@ class HuntTracker:
         # ready before the next session starts, without blocking the watcher.
         self._loadout_mgr.warmup()
         self._loot_filter.warmup()
+        self._entity_resolver.warmup()
         log.info("Catchup complete, hunt tracking active")
 
     def _try_restore_session(self):
@@ -224,9 +231,17 @@ class HuntTracker:
         self._session = session
         self._manager = EncounterManager(self._config, self._session)
         self._hunt_detector = HuntDetector(self._config)
+        self._running_stats = SessionRunningStats()
+        self._tool_inference.reset_timeline()
         self._loot_filter.invalidate_mob_cache()
         self._active = True
         self._last_activity_time = datetime.utcnow()
+
+        # Rebuild running stats from restored encounters
+        for enc in session.encounters:
+            self._running_stats.on_encounter_finalized(enc)
+            # Strip loot items from restored encounters (already in DB)
+            enc.loot_items = []
 
         # 5b. Restore open-ended encounters
         self._open_encounters = [
@@ -285,7 +300,9 @@ class HuntTracker:
         )
         self._manager = EncounterManager(self._config, self._session)
         self._hunt_detector = HuntDetector(self._config)
+        self._running_stats = SessionRunningStats()
         self._loot_filter.invalidate_mob_cache()
+        self._tool_inference.reset_timeline()
         self._active = True  # BEFORE any publish to prevent re-entrance
         self._last_activity_time = now
 
@@ -296,6 +313,10 @@ class HuntTracker:
 
         # Snapshot active loadout for cost tracking
         self._loadout_mgr.start_session(self._session)
+
+        # Set expected DPP from loadout if available
+        if self._running_stats:
+            self._running_stats.set_expected_dpp(self._loadout_mgr.expected_dpp)
 
         self._start_timeout_checker()
         log.info("Session started: %s", session_id)
@@ -350,10 +371,12 @@ class HuntTracker:
         self._active = False
         self._last_activity_time = None
         self._persisted_encounter_ids.clear()
+        self._tool_inference.clear()
         log.info("Session ended: %s", self._session.id)
         self._session = None
         self._manager = None
         self._hunt_detector = None
+        self._running_stats = None
 
     def _on_hunt_end_requested(self, data):
         """Manually end the current hunt without ending the session.
@@ -451,6 +474,10 @@ class HuntTracker:
         if not enc:
             return
 
+        # Resolve mob ID if not yet set
+        if enc.mob_id is None and enc.mob_name != "Unknown":
+            enc.mob_id = self._entity_resolver.resolve_mob(enc.mob_name)
+
         self._ensure_encounter_in_db(enc)
 
         # Tool inference: try to infer weapon from damage value
@@ -484,9 +511,12 @@ class HuntTracker:
             confidence=1.0 if tool_source == "ocr" else 0.0,
         )
 
-        # Buffer for retroactive enrichment if no tool info
+        # Buffer for retroactive enrichment (per-encounter, no time trim)
+        self._tool_inference.buffer_event(
+            enc.id, event.id, now, amount, is_crit, tool_name, tool_source,
+        )
+
         if not tool_name:
-            self._tool_inference.buffer_event(event)
             # Track for auto-detection of unknown weapons
             self._loadout_mgr.on_unmatched_damage(amount)
 
@@ -526,6 +556,7 @@ class HuntTracker:
                 item_name=item_name,
                 quantity=quantity,
                 value_ped=value_ped,
+                item_id=self._entity_resolver.resolve_item(item_name),
                 is_blacklisted=classification["is_blacklisted"],
                 is_refining_output=classification["is_refining_output"],
                 is_in_loot_table=classification["is_in_loot_table"],
@@ -565,13 +596,20 @@ class HuntTracker:
         tool_name = data.get("tool_name", "") if isinstance(data, dict) else str(data)
         self._manager.set_current_tool(tool_name)
 
-        # Retroactive enrichment — back-fill buffered events with OCR tool info
-        enriched = self._tool_inference.enrich_buffered(tool_name, "ocr")
-        for event in enriched:
-            self._db.update_combat_event_tool(
-                event.id, event.tool_name, event.tool_source,
-                event.inferred_confidence
-            )
+        # Record on timeline for retroactive attribution
+        now = datetime.utcnow()
+        self._tool_inference.on_tool_detected(tool_name, now)
+
+        # Retroactive enrichment — re-attribute unattributed events in current encounter
+        enc = self._manager.current_encounter
+        if enc:
+            enriched = self._tool_inference.enrich_encounter(enc.id)
+            for event_id, new_tool, new_source, new_confidence in enriched:
+                self._db.update_combat_event_tool(
+                    event_id, new_tool, new_source, new_confidence
+                )
+            if enriched:
+                self._rebuild_encounter_tool_stats(enc)
 
     def _on_global(self, data):
         """Correlate global events with recent encounters."""
@@ -889,6 +927,9 @@ class HuntTracker:
         if loadout:
             self._loadout_mgr.on_active_loadout_changed(loadout, weapon_name, stats)
         if self._active and self._session:
+            # Update running stats with expected DPP from loadout
+            if self._running_stats:
+                self._running_stats.set_expected_dpp(self._loadout_mgr.expected_dpp)
             self._event_bus.publish(EVENT_SESSION_LOADOUT_UPDATED, {
                 "session_id": self._session.id,
             })
@@ -902,8 +943,31 @@ class HuntTracker:
             li.is_refining_output = c["is_refining_output"]
             li.is_in_loot_table = c["is_in_loot_table"]
 
+    def _rebuild_encounter_tool_stats(self, enc: MobEncounter):
+        """Rebuild tool_stats from the tool_inference event buffer."""
+        events = self._tool_inference.get_encounter_events(enc.id)
+        if not events:
+            return
+        enc.tool_stats.clear()
+        enc.cost = 0.0
+        for ev in events:
+            _event_id, _timestamp, amount, is_crit, tool_name, _tool_source = ev
+            tool = tool_name or "Unknown"
+            if tool not in enc.tool_stats:
+                from .session import EncounterToolStats
+                enc.tool_stats[tool] = EncounterToolStats(tool_name=tool)
+            enc.tool_stats[tool].damage_dealt += amount
+            enc.tool_stats[tool].shots_fired += 1
+            if is_crit:
+                enc.tool_stats[tool].critical_hits += 1
+            enc.cost += self._tool_inference.get_cost_per_shot(tool)
+
     def _persist_encounter(self, encounter):
         """Save a completed encounter and check for hunt boundaries."""
+        # Capture OCR supporting data before persisting
+        if not self._ocr_state.is_stale("target"):
+            encounter.is_shared_loot = self._ocr_state.state.target_is_shared
+
         # Hunt detection — check if this encounter triggers a split
         if self._hunt_detector:
             if not self._hunt_detector.current_hunt:
@@ -943,12 +1007,41 @@ class HuntTracker:
                     })
                     self._event_bus.publish(EVENT_HUNT_STARTED, new_hunt.to_dict())
 
+        # Location-based hunt boundary check (if OCR provides coordinates)
+        if self._hunt_detector and not self._ocr_state.is_stale("location"):
+            ocr = self._ocr_state.state
+            if ocr.lon is not None and ocr.lat is not None:
+                loc_boundary = self._hunt_detector._location_tracker.observe(
+                    ocr.lon, ocr.lat
+                )
+                if loc_boundary and self._hunt_detector.current_hunt:
+                    now = encounter.start_time
+                    old_hunt = self._hunt_detector.end_current_hunt(now)
+                    if old_hunt:
+                        self._db.end_hunt(old_hunt.id, now.isoformat(), old_hunt.total_cost)
+                        self._event_bus.publish(EVENT_HUNT_ENDED, old_hunt.to_dict())
+                    new_hunt = self._hunt_detector.start_hunt(
+                        self._session.id, encounter, now
+                    )
+                    self._session.hunts.append(new_hunt)
+                    self._db.insert_hunt(
+                        new_hunt.id, new_hunt.session_id,
+                        new_hunt.start_time.isoformat(), new_hunt.primary_mob
+                    )
+                    self._event_bus.publish(EVENT_HUNT_SPLIT, {
+                        "reason": loc_boundary.split_reason,
+                        "old_mob": old_hunt.primary_mob if old_hunt else None,
+                        "new_mob": loc_boundary.new_hunt_mob,
+                    })
+                    self._event_bus.publish(EVENT_HUNT_STARTED, new_hunt.to_dict())
+
         # Persist the encounter (row may already exist from _ensure_encounter_in_db)
         self._ensure_encounter_in_db(encounter)
         self._db.update_mob_encounter(
             encounter.id,
             hunt_id=encounter.hunt_id,
             end_time=encounter.end_time.isoformat() if encounter.end_time else None,
+            mob_id=encounter.mob_id,
             damage_dealt=encounter.damage_dealt,
             damage_taken=encounter.damage_taken,
             heals_received=encounter.heals_received,
@@ -966,6 +1059,7 @@ class HuntTracker:
             death_count=encounter.death_count,
             killed_by_mob=encounter.killed_by_mob,
             is_open_ended=1 if encounter.is_open_ended else 0,
+            is_shared_loot=1 if encounter.is_shared_loot else (0 if encounter.is_shared_loot is not None else None),
             merged_into=encounter.merged_into,
             merged_from=json.dumps(encounter.merged_from) if encounter.merged_from else None,
         )
@@ -980,6 +1074,14 @@ class HuntTracker:
         # Persist loot items
         if encounter.loot_items:
             self._db.insert_encounter_loot_items(encounter.id, encounter.loot_items)
+
+        # Update running stats and free memory
+        if self._running_stats:
+            self._running_stats.on_encounter_finalized(encounter)
+        self._tool_inference.clear_encounter(encounter.id)
+        # Strip loot items — already persisted to DB.
+        # Keep tool_stats (small) since merge operations need them.
+        encounter.loot_items = []
 
     def _start_timeout_checker(self):
         """Start periodic timeout checks for encounter closing and session inactivity."""

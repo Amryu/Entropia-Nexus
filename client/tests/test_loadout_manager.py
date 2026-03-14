@@ -18,6 +18,8 @@ def _make_config(**overrides):
     config.active_loadout_id = overrides.get("active_loadout_id", "loadout-1")
     config.js_utils_path = overrides.get("js_utils_path", "")
     config.encounter_close_timeout_ms = 15000
+    config.loot_close_timeout_ms = 3000
+    config.max_encounter_duration_ms = 600000
     config.attribution_window_ms = 3000
     config.session_auto_timeout_ms = 3600000
     config.hunt_split_mob_threshold = 10
@@ -649,11 +651,12 @@ class TestSessionRestore(unittest.TestCase):
         self.assertEqual(len(tracker._hunt_detector.current_hunt.encounters), 2)
 
     def test_restore_loads_loot_items(self):
+        """Loot items are loaded for effective_loot_ped calculation, then
+        stripped from memory after running stats are rebuilt (they stay in DB)."""
         self.db.insert_hunt_session("s1", "2026-02-26T12:00:00")
         self.db.insert_mob_encounter("e1", "s1", "Atrox", "ocr", "2026-02-26T12:01:00")
         self.db.update_mob_encounter("e1", end_time="2026-02-26T12:02:00",
                                      loot_total_ped=10.0)
-        # Insert loot items using raw SQL since insert_encounter_loot_items expects objects
         from client.hunt.session import EncounterLootItem
         items = [EncounterLootItem("Shrapnel", 50, 5.0),
                  EncounterLootItem("Animal Oil Residue", 10, 3.0)]
@@ -663,8 +666,13 @@ class TestSessionRestore(unittest.TestCase):
         tracker._try_restore_session()
 
         enc = tracker._session.encounters[0]
-        self.assertEqual(len(enc.loot_items), 2)
-        self.assertEqual(enc.loot_items[0].item_name, "Shrapnel")
+        # Loot items stripped after running stats rebuild — query DB instead
+        self.assertEqual(len(enc.loot_items), 0)
+        # But loot_total_ped is still on the encounter
+        self.assertAlmostEqual(enc.loot_total_ped, 10.0)
+        # And items remain in the database
+        db_items = self.db.get_encounter_loot_items("e1")
+        self.assertEqual(len(db_items), 2)
 
     def test_restore_closed_session_not_restored(self):
         self.db.insert_hunt_session("s1", "2026-02-26T12:00:00")

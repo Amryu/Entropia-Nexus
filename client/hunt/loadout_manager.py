@@ -51,6 +51,15 @@ class SessionLoadoutManager:
     def active_stats(self):
         return self._active_stats
 
+    @property
+    def expected_dpp(self) -> float | None:
+        """Expected damage per pec from the current loadout evaluation."""
+        stats = self._active_stats
+        if stats and hasattr(stats, 'total_damage') and hasattr(stats, 'cost'):
+            if stats.cost > 0:
+                return stats.total_damage / (stats.cost * 100)
+        return None
+
     def warmup(self):
         """Pre-initialize the calculator in a background thread.
 

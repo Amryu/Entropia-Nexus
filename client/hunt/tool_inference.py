@@ -3,26 +3,40 @@
 When OCR tool detection is unavailable, this engine infers which weapon was
 used based on whether the observed damage falls within a weapon's damage
 interval (min-max range from the loadout calculator).
+
+Supports retroactive correction: when a tool is detected mid-encounter
+(via OCR or other source), all previously-unattributed combat events in
+that encounter are re-attributed using a tool change timeline.
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ..core.logger import get_logger
 from .session import CombatEventDetail, WeaponSignature
 
 log = get_logger("ToolInference")
 
-# How long to buffer events awaiting retroactive tool enrichment
-BUFFER_WINDOW = timedelta(seconds=5)
-
 
 class ToolInferenceEngine:
-    """Infers weapon/tool from observed damage values using loadout signatures."""
+    """Infers weapon/tool from observed damage values using loadout signatures.
+
+    Per-encounter buffering replaces the old fixed-window approach.
+    Events are buffered per encounter and enriched when tool info arrives.
+    The tool change timeline tracks weapon switches within an encounter
+    for accurate retroactive attribution.
+    """
 
     def __init__(self):
         self._signatures: list[WeaponSignature] = []
-        self._pending_events: list[CombatEventDetail] = []
+
+        # Per-encounter event buffer: enc_id -> list of event tuples
+        # Each tuple: (event_id, timestamp, amount, is_crit, tool_name, tool_source)
+        self._encounter_events: dict[str, list[list]] = {}
+
+        # Tool change timeline for the current encounter
+        # list of (timestamp, tool_name) — ordered chronologically
+        self._tool_timeline: list[tuple[datetime, str]] = []
 
     @property
     def has_signatures(self) -> bool:
@@ -106,13 +120,15 @@ class ToolInferenceEngine:
                 return sig.cost_per_shot
         return 0.0
 
+    # -- Event creation & buffering -------------------------------------------
+
     def create_event(self, encounter_id: str, timestamp: datetime,
                      event_type: str, amount: float,
                      tool_name: str | None = None,
                      tool_source: str | None = None,
                      confidence: float = 0.0) -> CombatEventDetail:
-        """Create a CombatEventDetail and optionally buffer it for enrichment."""
-        event = CombatEventDetail(
+        """Create a CombatEventDetail."""
+        return CombatEventDetail(
             id=str(uuid.uuid4()),
             encounter_id=encounter_id,
             timestamp=timestamp,
@@ -122,38 +138,103 @@ class ToolInferenceEngine:
             tool_source=tool_source,
             inferred_confidence=confidence,
         )
-        return event
 
-    def buffer_event(self, event: CombatEventDetail):
-        """Buffer an event for retroactive enrichment when OCR arrives late."""
-        self._pending_events.append(event)
-        self._trim_buffer()
+    def buffer_event(self, encounter_id: str, event_id: str,
+                     timestamp: datetime, amount: float,
+                     is_crit: bool, tool_name: str | None = None,
+                     tool_source: str | None = None):
+        """Buffer a combat event for retroactive tool attribution.
 
-    def enrich_buffered(self, tool_name: str, source: str) -> list[CombatEventDetail]:
-        """Back-fill buffered events with newly-arrived tool info.
+        Events are stored per encounter (no time-based trimming).
+        Cleared when the encounter is finalized.
+        """
+        if encounter_id not in self._encounter_events:
+            self._encounter_events[encounter_id] = []
+        self._encounter_events[encounter_id].append(
+            [event_id, timestamp, amount, is_crit, tool_name, tool_source]
+        )
+
+    # -- Tool timeline --------------------------------------------------------
+
+    def on_tool_detected(self, tool_name: str, timestamp: datetime):
+        """Record a tool change on the timeline.
 
         Called when OCR or another source identifies the active tool.
-        Returns the list of events that were enriched.
         """
-        self._trim_buffer()
+        # Avoid duplicates if same tool detected repeatedly
+        if self._tool_timeline and self._tool_timeline[-1][1] == tool_name:
+            return
+        self._tool_timeline.append((timestamp, tool_name))
+
+    def reset_timeline(self):
+        """Clear the tool timeline (e.g., on new encounter)."""
+        self._tool_timeline.clear()
+
+    # -- Retroactive enrichment -----------------------------------------------
+
+    def enrich_encounter(self, encounter_id: str) -> list[tuple[str, str, str, float]]:
+        """Re-attribute unattributed events in an encounter using the tool timeline.
+
+        Uses the timeline to determine which tool was active at each event's timestamp:
+        - Events before first known tool: backward-fill from first tool
+        - Events between tool A and tool B: attribute to A
+        - Events after last tool change: attribute to last tool
+
+        Returns list of (event_id, tool_name, tool_source, confidence) for
+        events that were updated.
+        """
+        events = self._encounter_events.get(encounter_id)
+        if not events or not self._tool_timeline:
+            return []
+
         enriched = []
-        for event in self._pending_events:
-            if event.tool_name is None:
-                event.tool_name = tool_name
-                event.tool_source = source
-                event.inferred_confidence = 1.0 if source == "ocr" else 0.8
-                enriched.append(event)
-        self._pending_events.clear()
+        for event in events:
+            event_id, timestamp, amount, is_crit, tool_name, tool_source = event
+            if tool_name is not None:
+                continue  # Already attributed
+
+            # Find the active tool at this timestamp using the timeline
+            resolved_tool = self._resolve_tool_at(timestamp)
+            if resolved_tool:
+                event[4] = resolved_tool  # tool_name
+                event[5] = "ocr_timeline"  # tool_source
+                enriched.append((event_id, resolved_tool, "ocr_timeline", 0.9))
+
         if enriched:
-            log.info("Retroactively enriched %d events with tool: %s", len(enriched), tool_name)
+            log.info("Retroactively enriched %d events in encounter %s",
+                     len(enriched), encounter_id[:8])
         return enriched
+
+    def _resolve_tool_at(self, timestamp: datetime) -> str | None:
+        """Find which tool was active at a given timestamp using the timeline."""
+        if not self._tool_timeline:
+            return None
+
+        # If before first tool change, backward-fill from first tool
+        if timestamp <= self._tool_timeline[0][0]:
+            return self._tool_timeline[0][1]
+
+        # Find the last tool change at or before this timestamp
+        active_tool = self._tool_timeline[0][1]
+        for change_time, tool_name in self._tool_timeline:
+            if change_time > timestamp:
+                break
+            active_tool = tool_name
+        return active_tool
+
+    def get_encounter_events(self, encounter_id: str) -> list[list]:
+        """Get all buffered events for an encounter.
+
+        Returns list of [event_id, timestamp, amount, is_crit, tool_name, tool_source].
+        """
+        return self._encounter_events.get(encounter_id, [])
+
+    def clear_encounter(self, encounter_id: str):
+        """Remove buffered events for a finalized encounter."""
+        self._encounter_events.pop(encounter_id, None)
 
     def clear(self):
         """Reset all state."""
         self._signatures.clear()
-        self._pending_events.clear()
-
-    def _trim_buffer(self):
-        """Remove events older than the buffer window."""
-        cutoff = datetime.utcnow() - BUFFER_WINDOW
-        self._pending_events = [e for e in self._pending_events if e.timestamp > cutoff]
+        self._encounter_events.clear()
+        self._tool_timeline.clear()

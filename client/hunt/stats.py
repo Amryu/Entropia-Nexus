@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .running_stats import SessionRunningStats
 from .session import HuntSession, Hunt, MobEncounter
 
 if TYPE_CHECKING:
@@ -179,4 +180,40 @@ def session_economy(session: HuntSession, cost_per_use: float = 0) -> dict:
         "return_pct": (total_loot / total_cost * 100) if total_cost > 0 else 0,
         "cost_per_kill": total_cost / session.kill_count if session.kill_count > 0 else 0,
         "loot_per_kill": total_loot / session.kill_count if session.kill_count > 0 else 0,
+    }
+
+
+def mob_efficiency_report(session_stats: SessionRunningStats) -> list[dict]:
+    """Per-mob efficiency report with min/max/avg and DPP comparison.
+
+    Returns list of dicts sorted by kill count descending.
+    """
+    result = []
+    for mob_name, stats in session_stats.get_all_mob_stats().items():
+        entry = stats.to_dict()
+        result.append(entry)
+    result.sort(key=lambda x: x["kill_count"], reverse=True)
+    return result
+
+
+def session_economy_from_stats(session_stats: SessionRunningStats) -> dict:
+    """Session economy using running stats (no encounter iteration)."""
+    all_stats = session_stats.get_all_mob_stats()
+
+    total_shots = sum(s.total_shots for s in all_stats.values())
+    total_cost = sum(s.total_cost for s in all_stats.values())
+    total_loot = sum(s.total_loot for s in all_stats.values())
+    total_kills = sum(s.kill_count for s in all_stats.values())
+    total_deaths = sum(s.death_count for s in all_stats.values())
+
+    return {
+        "total_shots": total_shots,
+        "total_cost": round(total_cost, 4),
+        "total_loot": round(total_loot, 4),
+        "total_kills": total_kills,
+        "total_deaths": total_deaths,
+        "profit_loss": round(total_loot - total_cost, 4),
+        "return_pct": round((total_loot / total_cost * 100), 2) if total_cost > 0 else 0,
+        "cost_per_kill": round(total_cost / total_kills, 4) if total_kills > 0 else 0,
+        "loot_per_kill": round(total_loot / total_kills, 4) if total_kills > 0 else 0,
     }

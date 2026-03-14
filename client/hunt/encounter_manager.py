@@ -4,7 +4,10 @@ import uuid
 from datetime import datetime, timedelta
 from enum import Enum, auto
 
+from ..core.logger import get_logger
 from .session import MobEncounter, EncounterToolStats, HuntSession
+
+log = get_logger("EncounterMgr")
 
 
 class EncounterState(Enum):
@@ -26,6 +29,9 @@ class EncounterManager:
     - Events within attribution_window of a name change go to the new encounter
     """
 
+    # Loot deduplication: skip identical loot groups arriving within this window
+    LOOT_DEDUP_WINDOW = timedelta(seconds=2)
+
     def __init__(self, config, session: HuntSession):
         self._config = config
         self._session = session
@@ -38,9 +44,19 @@ class EncounterManager:
         self._close_timeout = timedelta(
             milliseconds=config.encounter_close_timeout_ms
         )
+        self._loot_close_timeout = timedelta(
+            milliseconds=getattr(config, 'loot_close_timeout_ms', 3000)
+        )
+        self._max_duration = timedelta(
+            milliseconds=getattr(config, 'max_encounter_duration_ms', 600000)
+        )
         self._attribution_window = timedelta(
             milliseconds=config.attribution_window_ms
         )
+
+        # Loot deduplication state
+        self._last_loot_fingerprint: tuple | None = None
+        self._last_loot_time: datetime | None = None
 
     @property
     def state(self) -> EncounterState:
@@ -149,12 +165,28 @@ class EncounterManager:
     def on_loot_group(self, total_ped: float, loot_items: list | None = None,
                       timestamp: datetime | None = None) -> None:
         """Handle loot drop — attribute to current/most recent encounter."""
-        if self._current_encounter:
-            self._current_encounter.loot_total_ped += total_ped
-            if loot_items:
-                self._current_encounter.loot_items.extend(loot_items)
-            self._current_encounter.outcome = "kill"
-            self._state = EncounterState.CLOSING
+        if not self._current_encounter:
+            return
+
+        now = timestamp or datetime.utcnow()
+
+        # Deduplication: skip if identical loot group arrives within window
+        first_item = (loot_items[0].item_name if loot_items else "")
+        fingerprint = (round(total_ped, 4), len(loot_items) if loot_items else 0, first_item)
+        if (self._last_loot_fingerprint == fingerprint
+                and self._last_loot_time is not None
+                and (now - self._last_loot_time) < self.LOOT_DEDUP_WINDOW):
+            log.debug("Duplicate loot group skipped: %s", fingerprint)
+            return
+        self._last_loot_fingerprint = fingerprint
+        self._last_loot_time = now
+
+        self._current_encounter.loot_total_ped += total_ped
+        if loot_items:
+            self._current_encounter.loot_items.extend(loot_items)
+        self._current_encounter.outcome = "kill"
+        self._state = EncounterState.CLOSING
+        self._last_event_time = now
 
     def on_death(self, mob_name: str, timestamp: datetime | None = None) -> MobEncounter | None:
         """Handle player death — close encounter immediately.
@@ -184,14 +216,28 @@ class EncounterManager:
         Call this periodically (e.g., every second).
         Returns the ended encounter if closed, or None.
         """
+        if not self._current_encounter:
+            return None
+
+        now = datetime.utcnow()
+
+        # Max duration cap: prevent encounters from running forever
+        duration = now - self._current_encounter.start_time
+        if duration > self._max_duration:
+            log.warning("Encounter %s exceeded max duration (%.0fs), force closing",
+                        self._current_encounter.id[:8], duration.total_seconds())
+            return self._close_encounter(now, outcome="timeout")
+
+        # CLOSING state: use faster loot_close_timeout (loot received = kill confirmed)
         if self._state == EncounterState.CLOSING and self._last_event_time:
-            now = datetime.utcnow()
-            if now - self._last_event_time > self._close_timeout:
+            if now - self._last_event_time > self._loot_close_timeout:
                 return self._close_encounter(now, outcome="kill")
+
+        # ACTIVE state: use standard close_timeout (combat without loot)
         if self._state == EncounterState.ACTIVE and self._last_event_time:
-            now = datetime.utcnow()
             if now - self._last_event_time > self._close_timeout:
                 return self._close_encounter(now, outcome="timeout")
+
         return None
 
     def force_close(self) -> MobEncounter | None:

@@ -8,6 +8,7 @@ from datetime import datetime
 class EncounterToolStats:
     """Per-tool damage breakdown within an encounter."""
     tool_name: str
+    tool_id: int | None = None
     shots_fired: int = 0
     damage_dealt: float = 0.0
     critical_hits: int = 0
@@ -32,6 +33,7 @@ class EncounterLootItem:
     item_name: str
     quantity: int
     value_ped: float
+    item_id: int | None = None
     is_blacklisted: bool = False
     is_refining_output: bool = False
     is_in_loot_table: bool = True  # True when mob unknown (assume valid)
@@ -45,6 +47,7 @@ class WeaponSignature:
     damage_max: float
     total_damage: float
     cost_per_shot: float  # decay + ammo burn
+    weapon_id: int | None = None
     crit_damage: float = 1.0  # multiplier: 1 + (BonusCritDamage% / 100)
 
 
@@ -73,6 +76,7 @@ class MobEncounter:
     start_time: datetime
     end_time: datetime | None = None
     hunt_id: str | None = None
+    mob_id: int | None = None
 
     # Combat stats
     damage_dealt: float = 0.0
@@ -98,6 +102,9 @@ class MobEncounter:
     # Global / Hall of Fame
     is_global: bool = False
     is_hof: bool = False
+
+    # OCR supporting data
+    is_shared_loot: bool | None = None  # from target lock OCR
 
     # Attribution
     confidence: float = 1.0
@@ -131,6 +138,7 @@ class MobEncounter:
             "session_id": self.session_id,
             "hunt_id": self.hunt_id,
             "mob_name": self.mob_name,
+            "mob_id": self.mob_id,
             "mob_name_source": self.mob_name_source,
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat() if self.end_time else None,
@@ -167,6 +175,7 @@ class MobEncounter:
             "death_count": self.death_count,
             "killed_by_mob": self.killed_by_mob,
             "is_open_ended": self.is_open_ended,
+            "is_shared_loot": self.is_shared_loot,
             "merged_into": self.merged_into,
             "merged_from": self.merged_from,
         }
