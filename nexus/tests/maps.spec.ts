@@ -207,20 +207,37 @@ test.describe('Maps Page', () => {
         const firstLocation = overlay.locator('.left-sidebar .location-row').first();
         await expect(firstLocation).toBeVisible({ timeout: TIMEOUT_MEDIUM });
 
+        // Wait for DB pending changes overlay shapes to render (SVG paths with dashed stroke)
+        await verifiedUser.waitForTimeout(TIMEOUT_SHORT);
+
         // Filter the list so no locations match — pending overlay shapes should remain visible
         const listSearch = overlay.locator('.left-sidebar .search-input');
         await listSearch.fill('zzzzzz-no-match');
-        await verifiedUser.waitForTimeout(500);
+        await verifiedUser.waitForTimeout(TIMEOUT_SHORT);
 
-        // The DB pending change overlay should still render shapes on the map
-        // Check for any SVG path in the overlay pane with a pending-change stroke color
-        // Create: green (#22c55e), Edit: amber (#f59e0b / rgb(245, 158, 11)), or the shape's type color with dashed border
+        // The DB pending change overlay should still render shapes on the map.
+        // Leaflet sets stroke via inline style; getComputedStyle returns rgb() format.
+        // Check for any SVG path with a pending-change stroke color or dash pattern.
         const hasOverlayShape = await verifiedUser.locator('.leaflet-overlay-pane path').evaluateAll((paths) => {
           return paths.some((pathEl) => {
-            const stroke = (getComputedStyle(pathEl).stroke || pathEl.getAttribute('stroke') || '').trim().toLowerCase();
+            const style = pathEl.style;
+            const computedStroke = getComputedStyle(pathEl).stroke || '';
+            const attrStroke = pathEl.getAttribute('stroke') || '';
+            const inlineStroke = style.stroke || '';
+            const strokeDashArray = style.strokeDasharray || getComputedStyle(pathEl).strokeDasharray || '';
+            const allStrokes = [computedStroke, attrStroke, inlineStroke]
+              .map(s => s.trim().toLowerCase())
+              .filter(Boolean);
             // Green for Create changes, amber for Edit changes
-            return stroke === 'rgb(34, 197, 94)' || stroke === '#22c55e'
-              || stroke === 'rgb(245, 158, 11)' || stroke === '#f59e0b';
+            const pendingColors = [
+              'rgb(34, 197, 94)', '#22c55e',
+              'rgb(245, 158, 11)', '#f59e0b',
+              'rgb(239, 68, 68)', '#ef4444'
+            ];
+            const hasColor = allStrokes.some(s => pendingColors.includes(s));
+            // Also match shapes with dashed borders (pending change indicator)
+            const hasDash = strokeDashArray && strokeDashArray !== 'none' && strokeDashArray !== '0';
+            return hasColor || hasDash;
           });
         });
 

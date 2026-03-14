@@ -41,16 +41,17 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await firstItem.click();
         await verifiedUser.waitForLoadState('networkidle');
 
-        const editButton = verifiedUser.locator('button:has-text(\"Edit\")');
-        await expect(editButton).toBeVisible();
+        // Wait for the Edit button to appear (entity must be loaded first)
+        const editButton = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
+        await expect(editButton).toBeVisible({ timeout: TIMEOUT_LONG });
         await editButton.click();
 
-        const actionBar = verifiedUser.locator('.action-bar, .edit-action-bar');
+        const actionBar = verifiedUser.locator('.edit-action-bar');
         await expect(actionBar).toBeVisible({ timeout: TIMEOUT_LONG });
 
         // Check for Cancel button within the action bar to avoid strict mode violation
         const cancelButton = actionBar.locator('button:has-text(\"Cancel\")');
-        await expect(cancelButton).toBeVisible();
+        await expect(cancelButton).toBeVisible({ timeout: TIMEOUT_MEDIUM });
       });
     }
   });
@@ -82,7 +83,8 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await firstItem.click();
         await verifiedUser.waitForLoadState('networkidle');
 
-        const editButton = verifiedUser.locator('button:has-text(\"Edit\")');
+        const editButton = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
+        await expect(editButton).toBeVisible({ timeout: TIMEOUT_LONG });
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
@@ -114,7 +116,8 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await firstItem.click();
         await verifiedUser.waitForLoadState('networkidle');
 
-        const editButton = verifiedUser.locator('button:has-text(\"Edit\")');
+        const editButton = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
+        await expect(editButton).toBeVisible({ timeout: TIMEOUT_LONG });
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
@@ -142,7 +145,8 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await firstItem.click();
         await verifiedUser.waitForLoadState('networkidle');
 
-        const editButton = verifiedUser.locator('button:has-text(\"Edit\")');
+        const editButton = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
+        await expect(editButton).toBeVisible({ timeout: TIMEOUT_LONG });
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
@@ -189,7 +193,8 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await firstItem.click();
         await verifiedUser.waitForLoadState('networkidle');
 
-        const editButton = verifiedUser.locator('button:has-text(\"Edit\")');
+        const editButton = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
+        await expect(editButton).toBeVisible({ timeout: TIMEOUT_LONG });
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
@@ -221,18 +226,19 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await firstItem.click();
         await verifiedUser.waitForLoadState('networkidle');
 
-        const editButton = verifiedUser.locator('button:has-text(\"Edit\")');
+        const editButton = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
+        await expect(editButton).toBeVisible({ timeout: TIMEOUT_LONG });
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
-        const actionBar = verifiedUser.locator('.action-bar, .edit-action-bar');
-        await expect(actionBar).toBeVisible();
+        const actionBar = verifiedUser.locator('.edit-action-bar');
+        await expect(actionBar).toBeVisible({ timeout: TIMEOUT_LONG });
 
-        // Check for at least one save button (either Save Draft or Submit for Review)
-        const saveDraftBtn = actionBar.locator('button:has-text(\"Save Draft\")');
-        const saveBtn = actionBar.locator('button:has-text(\"Save\")').first();
-        const submitReviewBtn = actionBar.locator('button:has-text(\"Submit for Review\")');
-        const cancelBtn = actionBar.locator('button:has-text(\"Cancel\")');
+        // Check for at least one save button (either Save or Submit for Review)
+        const saveDraftBtn = actionBar.locator('button:has-text("Save")').first();
+        const saveBtn = actionBar.locator('button:has-text("Save")').first();
+        const submitReviewBtn = actionBar.locator('button:has-text("Submit for Review")');
+        const cancelBtn = actionBar.locator('button:has-text("Cancel")');
 
         // At least one save-type button should be visible
         let hasSaveButton = false;

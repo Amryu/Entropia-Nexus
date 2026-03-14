@@ -7,6 +7,10 @@ test.describe('Loadout Amplifier Picker', () => {
     await page.goto('/tools/loadouts');
     await page.waitForLoadState('networkidle');
 
+    // Create a new loadout (empty state shows a "New Loadout" button)
+    const newBtn = page.locator('button:has-text("New Loadout"), .sidebar-btn.create');
+    await newBtn.click({ timeout: TIMEOUT_MEDIUM });
+
     // Wait for entities to load (weapon button becomes enabled once data is ready)
     const weaponBtn = page.locator('.form-label:has-text("Weapon") + .control-row .select-button');
     await weaponBtn.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });

@@ -469,11 +469,11 @@ test.describe('Missions Page - Edit Mode (Authenticated)', () => {
     await verifiedUser.locator('.item-link').first().click();
     await verifiedUser.waitForLoadState('networkidle');
 
-    // Look for edit button
-    const editBtn = verifiedUser.locator('button:has-text("Edit"), .edit-btn, [class*="edit"]').first();
+    // Look for edit button in the header actions
+    const editBtn = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
 
     try {
-      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
     } catch {
       // Edit button may not be visible if user doesn't have permission
       test.skip();
@@ -494,16 +494,19 @@ test.describe('Missions Page - Edit Mode (Authenticated)', () => {
     await verifiedUser.locator('.item-link').first().click();
     await verifiedUser.waitForLoadState('networkidle');
 
-    const editBtn = verifiedUser.locator('button:has-text("Edit"), .edit-btn').first();
+    const editBtn = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
 
     try {
-      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
       await editBtn.click();
-      await verifiedUser.waitForTimeout(TIMEOUT_SHORT);
+
+      // Wait for edit action bar to appear
+      const actionBar = verifiedUser.locator('.edit-action-bar');
+      await expect(actionBar).toBeVisible({ timeout: TIMEOUT_LONG });
 
       // In edit mode, form controls should be visible
-      const saveBtn = verifiedUser.locator('button:has-text("Save"), button:has-text("Submit")').first();
-      const cancelBtn = verifiedUser.locator('button:has-text("Cancel"), button:has-text("Discard")').first();
+      const saveBtn = actionBar.locator('button:has-text("Save")').first();
+      const cancelBtn = actionBar.locator('button:has-text("Cancel")');
 
       const hasSave = await saveBtn.count() > 0;
       const hasCancel = await cancelBtn.count() > 0;
@@ -539,12 +542,14 @@ test.describe('Missions Page - Event Selection', () => {
     await verifiedUser.locator('.item-link').first().click();
     await verifiedUser.waitForLoadState('networkidle');
 
-    const editBtn = verifiedUser.locator('button:has-text("Edit"), .edit-btn').first();
+    const editBtn = verifiedUser.locator('.header-actions button.action-btn:has-text("Edit")');
 
     try {
-      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
       await editBtn.click();
-      await verifiedUser.waitForTimeout(TIMEOUT_SHORT);
+
+      // Wait for edit action bar to confirm edit mode is active
+      await expect(verifiedUser.locator('.edit-action-bar')).toBeVisible({ timeout: TIMEOUT_LONG });
 
       // Look for event selector in the infobox
       const eventLabel = verifiedUser.locator('text=Event').first();

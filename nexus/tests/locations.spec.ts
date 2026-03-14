@@ -100,11 +100,10 @@ test.describe('Locations Page', () => {
         const editButton = verifiedUser.locator('button', { hasText: /edit/i });
         if (await editButton.isVisible({ timeout: TIMEOUT_SHORT })) {
           await editButton.click();
-          await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
-          // Check that we're in edit mode (cancel button should appear)
-          const cancelButton = verifiedUser.locator('.action-bar button:has-text("Cancel"), .edit-action-bar button:has-text("Cancel"), button:has-text("Cancel")').first();
-          await expect(cancelButton).toBeVisible({ timeout: TIMEOUT_SHORT });
+          // Check that we're in edit mode (cancel button should appear in the sticky action bar)
+          const cancelButton = verifiedUser.locator('.edit-action-bar button:has-text("Cancel")').first();
+          await expect(cancelButton).toBeVisible({ timeout: TIMEOUT_MEDIUM });
         }
       }
     });

@@ -94,12 +94,16 @@ test.describe('Exchange Undercut Enforcement', () => {
     const ctx1 = await browser.newContext();
     user1Page = await ctx1.newPage();
     await user1Page.goto('/');
-    await user1Page.request.post('/api/test/login', { data: { userId: 'verified1' } });
+    const login1 = await user1Page.request.post('/api/test/login', { data: { userId: 'verified1' } });
+    if (!login1.ok()) throw new Error(`Login failed for verified1: ${login1.status()}`);
+    await user1Page.reload();
 
     const ctx2 = await browser.newContext();
     user2Page = await ctx2.newPage();
     await user2Page.goto('/');
-    await user2Page.request.post('/api/test/login', { data: { userId: 'verified2' } });
+    const login2 = await user2Page.request.post('/api/test/login', { data: { userId: 'verified2' } });
+    if (!login2.ok()) throw new Error(`Login failed for verified2: ${login2.status()}`);
+    await user2Page.reload();
 
     // Clean up any stale orders from previous runs
     await cleanupOrders(user1Page, TEST_ITEMS);

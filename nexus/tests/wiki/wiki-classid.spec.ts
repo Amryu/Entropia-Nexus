@@ -17,12 +17,12 @@ const API_BASE = 'http://dev.entropianexus.com:3100';
 // Endpoints that should include ClassId in their responses
 const ENTITY_ENDPOINTS = [
   '/weapons', '/armors', '/materials', '/blueprints', '/vehicles',
-  '/clothings', '/consumables', '/capsules', '/pets', '/strongboxes',
+  '/clothings', '/stimulants', '/capsules', '/pets', '/strongboxes',
   '/armorsets', '/medicaltools', '/misctools', '/refiners', '/scanners',
   '/finders', '/excavators', '/blueprintbooks', '/medicalchips',
   '/teleportationchips', '/effectchips', '/weaponamplifiers',
   '/weaponvisionattachments', '/absorbers', '/finderamplifiers',
-  '/armorplatings', '/enhancers', '/mindforce', '/furniture',
+  '/armorplatings', '/enhancers', '/mindforceimplants', '/furniture',
   '/decorations', '/storagecontainers', '/signs',
   '/mobs', '/skills', '/professions',
 ];

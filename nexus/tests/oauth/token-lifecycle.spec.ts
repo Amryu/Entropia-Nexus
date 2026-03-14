@@ -135,7 +135,8 @@ test.describe('OAuth Token Refresh', () => {
     });
     expect(firstRefresh.status()).toBe(200);
 
-    // Second use of the same refresh token - should fail (reuse detection)
+    // Second use of the same refresh token — within the 30s grace window the
+    // server returns the cached successor (200) and atomically clears the cache.
     const secondRefresh = await verifiedUser.request.post(TOKEN_API, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       data: new URLSearchParams({
@@ -145,8 +146,20 @@ test.describe('OAuth Token Refresh', () => {
         client_secret: clientSecret
       }).toString()
     });
-    expect(secondRefresh.status()).toBe(400);
-    const data = await secondRefresh.json();
+    expect(secondRefresh.status()).toBe(200);
+
+    // Third use — grace cache is consumed, so this is genuine reuse → rejected
+    const thirdRefresh = await verifiedUser.request.post(TOKEN_API, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token,
+        client_id: clientId,
+        client_secret: clientSecret
+      }).toString()
+    });
+    expect(thirdRefresh.status()).toBe(400);
+    const data = await thirdRefresh.json();
     expect(data.error).toBe('invalid_grant');
   });
 

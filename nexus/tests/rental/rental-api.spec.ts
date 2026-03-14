@@ -41,9 +41,19 @@ async function createItemSet(page: Page, name = 'Rental Test Set') {
   for (let attempt = 1; attempt <= RATE_LIMIT_MAX_RETRIES; attempt += 1) {
     await loginAsTestUser(page, nextOwnerUser());
 
-    const res = await page.request.post(ITEM_SET_API, {
-      data: { name, data: DEFAULT_ITEM_SET_DATA }
-    });
+    let res;
+    try {
+      res = await page.request.post(ITEM_SET_API, {
+        data: { name, data: DEFAULT_ITEM_SET_DATA }
+      });
+    } catch (err: any) {
+      // Retry on transient network errors (ECONNRESET, etc.)
+      if (attempt < RATE_LIMIT_MAX_RETRIES && /ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {
+        await waitForRetry(attempt);
+        continue;
+      }
+      throw err;
+    }
 
     if (res.status() === 201) {
       return res.json();
@@ -61,12 +71,21 @@ async function createItemSet(page: Page, name = 'Rental Test Set') {
 }
 
 async function postWithRateLimitRetry(page: Page, url: string, data: Record<string, unknown>) {
-  let response = await page.request.post(url, { data });
-  for (let attempt = 1; attempt <= RATE_LIMIT_MAX_RETRIES && response.status() === 429; attempt += 1) {
-    await waitForRetry(attempt);
-    response = await page.request.post(url, { data });
+  let response: Awaited<ReturnType<Page['request']['post']>> | undefined;
+  for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt += 1) {
+    try {
+      response = await page.request.post(url, { data });
+      if (response.status() !== 429) return response;
+    } catch (err: any) {
+      if (attempt < RATE_LIMIT_MAX_RETRIES && /ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {
+        await waitForRetry(attempt + 1);
+        continue;
+      }
+      throw err;
+    }
+    await waitForRetry(attempt + 1);
   }
-  return response;
+  return response!;
 }
 
 // Helper: create a rental offer (draft by default)
@@ -75,17 +94,27 @@ async function createOffer(page: Page, overrides: Record<string, unknown> = {}) 
 
   for (let attempt = 1; attempt <= RATE_LIMIT_MAX_RETRIES; attempt += 1) {
     const itemSet = await createItemSet(page, `Set for ${overrides.title || 'Test Offer'} #${attempt}`);
-    const res = await page.request.post(OFFER_API, {
-      data: {
-        title: 'Test Rental Offer',
-        description: 'A test rental offer',
-        item_set_id: itemSet.id,
-        price_per_day: 5.00,
-        deposit: 50.00,
-        discounts: [{ minDays: 7, percent: 10 }],
-        ...overrides
+    let res;
+    try {
+      res = await page.request.post(OFFER_API, {
+        data: {
+          title: 'Test Rental Offer',
+          description: 'A test rental offer',
+          item_set_id: itemSet.id,
+          price_per_day: 5.00,
+          deposit: 50.00,
+          discounts: [{ minDays: 7, percent: 10 }],
+          ...overrides
+        }
+      });
+    } catch (err: any) {
+      // Retry on transient network errors (ECONNRESET, etc.)
+      if (attempt < RATE_LIMIT_MAX_RETRIES && /ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {
+        await waitForRetry(attempt);
+        continue;
       }
-    });
+      throw err;
+    }
 
     if (res.status() !== 429) {
       return { res, itemSetId: itemSet.id };
@@ -109,9 +138,17 @@ async function createPublishedOffer(page: Page, overrides: Record<string, unknow
   // Publish it
   let publishRes;
   for (let attempt = 1; attempt <= RATE_LIMIT_MAX_RETRIES; attempt += 1) {
-    publishRes = await page.request.put(`${OFFER_API}/${offer.id}`, {
-      data: { status: 'available' }
-    });
+    try {
+      publishRes = await page.request.put(`${OFFER_API}/${offer.id}`, {
+        data: { status: 'available' }
+      });
+    } catch (err: any) {
+      if (attempt < RATE_LIMIT_MAX_RETRIES && /ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {
+        await waitForRetry(attempt);
+        continue;
+      }
+      throw err;
+    }
 
     if (publishRes.status() !== 429) {
       break;

@@ -389,7 +389,7 @@
     }
   });
   // Reactive total items count - updates when localGroups changes
-  let totalItems = $derived(localGroups.reduce((sum, g) => sum + g.Items.length, 0));
+  let totalItems = $derived(localGroups.reduce((sum, g) => sum + (g?.Items?.length ?? 0), 0));
 </script>
 
 {#if open}
@@ -578,7 +578,7 @@
           <div class="items-list">
             {#if localGroups[activeGroupIndex]?.Items?.length === 0}
               <div class="no-items">No items in this group. Use the search above to add items.</div>
-            {:else}
+            {:else if localGroups[activeGroupIndex]?.Items}
               {#each localGroups[activeGroupIndex].Items as item, index}
                 <div class="item-row" class:editing={editingItemIndex === index}>
                   <span class="col-order">

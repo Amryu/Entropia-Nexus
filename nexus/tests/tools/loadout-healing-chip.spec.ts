@@ -7,16 +7,19 @@ test.describe('Loadout Healing - Medical Chips', () => {
     await page.goto('/tools/loadouts');
     await page.waitForLoadState('networkidle');
 
+    // Create a new loadout (empty state shows a "New Loadout" button)
+    const newBtn = page.locator('button:has-text("New Loadout"), .sidebar-btn.create');
+    await newBtn.click({ timeout: TIMEOUT_MEDIUM });
+
     // Wait for entities to load
     const weaponBtn = page.locator('.form-label:has-text("Weapon") + .control-row .select-button');
     await weaponBtn.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
   });
 
-  /** Click the healing tab to make it active. */
+  /** On desktop, all sections are visible - just scroll to healing. */
   async function openHealingTab(page: import('@playwright/test').Page) {
-    const tab = page.locator('.tab-item:has-text("Healing")');
-    await tab.click();
-    await page.waitForTimeout(TIMEOUT_INSTANT);
+    const healingSection = page.locator('.form-label:has-text("Healing Tool")');
+    await healingSection.scrollIntoViewIfNeeded();
   }
 
   /** Open the healing item picker dialog. */
