@@ -94,7 +94,8 @@ export async function renderMapChange(changeData, oldEntity, planet) {
   const padX = Math.max(boundsW * PADDING_FACTOR, 30);
   const padY = Math.max(boundsH * PADDING_FACTOR, 30);
 
-  // Crop region (clamped to image bounds)
+  // Crop region (clamped to image bounds, using integer arithmetic throughout
+  // to prevent rounding from pushing cropX+cropW past imgWidth)
   let cropX = Math.max(0, Math.floor(minX - padX));
   let cropY = Math.max(0, Math.floor(minY - padY));
   let cropW = Math.min(imgWidth - cropX, Math.ceil(boundsW + padX * 2));
@@ -103,12 +104,12 @@ export async function renderMapChange(changeData, oldEntity, planet) {
   // Ensure minimum size
   if (cropW < MIN_RENDER_SIZE) {
     const diff = MIN_RENDER_SIZE - cropW;
-    cropX = Math.max(0, cropX - diff / 2);
+    cropX = Math.max(0, Math.floor(cropX - diff / 2));
     cropW = Math.min(imgWidth - cropX, MIN_RENDER_SIZE);
   }
   if (cropH < MIN_RENDER_SIZE) {
     const diff = MIN_RENDER_SIZE - cropH;
-    cropY = Math.max(0, cropY - diff / 2);
+    cropY = Math.max(0, Math.floor(cropY - diff / 2));
     cropH = Math.min(imgHeight - cropY, MIN_RENDER_SIZE);
   }
 
@@ -116,6 +117,11 @@ export async function renderMapChange(changeData, oldEntity, planet) {
   cropY = Math.round(cropY);
   cropW = Math.round(cropW);
   cropH = Math.round(cropH);
+
+  // Final safety clamp: ensure extract region is within image bounds
+  if (cropX + cropW > imgWidth) cropW = imgWidth - cropX;
+  if (cropY + cropH > imgHeight) cropH = imgHeight - cropY;
+  if (cropW <= 0 || cropH <= 0) return null;
 
   // Scale down if too large
   let scale = 1;
