@@ -92,8 +92,8 @@
     }
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('click', handleWaypointClick);
     }
-    document.removeEventListener('click', handleWaypointClick);
   });
 </script>
 <style global>
