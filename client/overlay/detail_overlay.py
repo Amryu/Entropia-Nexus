@@ -2834,19 +2834,83 @@ class DetailOverlayWidget(OverlayWidget):
         layout.addStretch(1)
         return widget
 
+    _WAYPOINT_SPAN_RE = re.compile(
+        r'<span\b([^>]*?)\bdata-waypoint="([^"]*)"([^>]*)>(.*?)</span>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    _DATA_LABEL_RE = re.compile(r'data-label="([^"]*)"')
+
     def _build_description_content(self, desc: str) -> QWidget:
+        from PyQt6.QtWidgets import QTextBrowser, QApplication, QToolTip
+        from PyQt6.QtGui import QCursor
+
         widget = QWidget()
         widget.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(4)
 
-        lbl = QLabel(desc)
-        lbl.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
-        )
-        lbl.setWordWrap(True)
-        layout.addWidget(lbl)
+        # Check if description contains HTML tags
+        has_html = bool(re.search(r"<[^>]+>", desc))
+
+        if has_html:
+            # Transform waypoint spans into clickable links
+            def _replace_wp(m):
+                waypoint = m.group(2)
+                attrs_rest = m.group(1) + m.group(3)
+                label_m = self._DATA_LABEL_RE.search(attrs_rest)
+                label = label_m.group(1) if label_m else (m.group(4) or waypoint)
+                return (
+                    f'<a href="waypoint:{waypoint}" '
+                    f'style="color: {ACCENT}; background-color: rgba(0,204,255,0.12); '
+                    f'border: 1px solid {ACCENT}; border-radius: 3px; '
+                    f'padding: 0 4px; font-family: Consolas, monospace; '
+                    f'text-decoration: none;" '
+                    f'title="Click to copy waypoint: /wp {waypoint}">'
+                    f'\u29C9 {label}</a>'
+                )
+            processed = self._WAYPOINT_SPAN_RE.sub(_replace_wp, desc)
+
+            browser = QTextBrowser()
+            browser.setOpenExternalLinks(False)
+            browser.setStyleSheet(
+                f"QTextBrowser {{ background: transparent; color: {TEXT_COLOR};"
+                f" font-size: 12px; border: none; }}"
+                f"QTextBrowser a {{ color: {ACCENT}; }}"
+            )
+            browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            browser.setHtml(
+                f'<div style="color: {TEXT_COLOR}; font-size: 12px;">{processed}</div>'
+            )
+
+            def _on_link(url):
+                url_str = url.toString()
+                if url_str.startswith("waypoint:"):
+                    waypoint = url_str[len("waypoint:"):]
+                    clipboard = QApplication.clipboard()
+                    if clipboard:
+                        clipboard.setText(f"/wp {waypoint}")
+                    QToolTip.showText(
+                        QCursor.pos(), "Copied!", browser, browser.rect(), 1500
+                    )
+                else:
+                    webbrowser.open(url_str)
+
+            browser.anchorClicked.connect(_on_link)
+            # Size to content
+            doc = browser.document()
+            doc.setTextWidth(browser.viewport().width() or 280)
+            browser.setFixedHeight(int(doc.size().height()) + 8)
+            layout.addWidget(browser)
+        else:
+            lbl = QLabel(desc)
+            lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            lbl.setWordWrap(True)
+            layout.addWidget(lbl)
+
         layout.addStretch(1)
         return widget
 

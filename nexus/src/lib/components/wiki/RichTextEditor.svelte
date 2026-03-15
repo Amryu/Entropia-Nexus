@@ -296,7 +296,7 @@
         'data-waypoint': waypoint,
         ...(label ? { 'data-label': label } : {}),
         class: 'waypoint-inline',
-        title: `Click to copy: /wp ${waypoint}`
+        title: `Click to copy waypoint: /wp ${waypoint}`
       }), label || waypoint];
     },
 
@@ -507,20 +507,7 @@
     await tick();
     initialized = true;
 
-    // Click-to-copy for inline waypoints
-    if (showWaypoints) {
-      const { copyToClipboard } = await import('$lib/util.js');
-      editorElement.addEventListener('click', (e) => {
-        const wpSpan = e.target.closest('.waypoint-inline');
-        if (!wpSpan) return;
-        const waypoint = wpSpan.getAttribute('data-waypoint');
-        if (waypoint) {
-          copyToClipboard(`/wp ${waypoint}`);
-          wpSpan.classList.add('copied');
-          setTimeout(() => wpSpan.classList.remove('copied'), 1500);
-        }
-      });
-    }
+    // Click-to-copy for inline waypoints is handled by the global handler in +layout.svelte
   });
 
   onDestroy(() => {
@@ -1458,11 +1445,13 @@
 
   /* Inline waypoint chip */
   :global(.tiptap-content .waypoint-inline) {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     background-color: rgba(74, 158, 255, 0.12);
     border: 1px solid var(--accent-color, #4a9eff);
     border-radius: 3px;
-    padding: 0 5px;
+    padding: 1px 5px;
     font-size: 0.85em;
     font-family: 'Cascadia Code', 'Fira Code', monospace;
     color: var(--accent-color, #4a9eff);
@@ -1470,6 +1459,23 @@
     vertical-align: baseline;
     line-height: inherit;
     white-space: nowrap;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  /* Copy icon */
+  :global(.tiptap-content .waypoint-inline::before) {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    background-color: currentColor;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Crect x='9' y='9' width='13' height='13' rx='2' ry='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Crect x='9' y='9' width='13' height='13' rx='2' ry='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/svg%3E");
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
   }
 
   :global(.tiptap-content .waypoint-inline:hover) {
@@ -1480,6 +1486,12 @@
   :global(.tiptap-content .waypoint-inline.ProseMirror-selectednode) {
     outline: 2px solid var(--accent-color, #4a9eff);
     outline-offset: 1px;
+  }
+
+  /* Checkmark icon on copy */
+  :global(.tiptap-content .waypoint-inline.copied::before) {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
   }
 
   :global(.tiptap-content .waypoint-inline.copied) {

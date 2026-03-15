@@ -24,7 +24,7 @@ const SANITIZE_CONFIG = {
     'div': ['data-type', 'data-provider', 'data-src', 'data-width', 'data-pending', 'data-alt', 'data-video-embed', 'class', 'style'],
     'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen', 'class'],
     'img': ['src', 'alt', 'data-width', 'data-pending', 'style'],
-    'span': ['data-waypoint', 'data-label', 'class']
+    'span': ['data-waypoint', 'data-label', 'class', 'title']
   },
   allowedStyles: {
     '*': { 'width': [/^\d+px$/], 'max-width': [/^\d+(%|px)$/] }
@@ -50,12 +50,14 @@ const SANITIZE_CONFIG = {
       if (!attribs['data-waypoint']) {
         return { tagName: '', attribs: {} };
       }
+      const wp = attribs['data-waypoint'];
       return {
         tagName: 'span',
         attribs: {
-          'data-waypoint': attribs['data-waypoint'],
+          'data-waypoint': wp,
           ...(attribs['data-label'] ? { 'data-label': attribs['data-label'] } : {}),
-          class: 'waypoint-inline'
+          class: 'waypoint-inline',
+          title: `Click to copy waypoint: /wp ${wp}`
         }
       };
     }

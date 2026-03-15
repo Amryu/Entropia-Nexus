@@ -1271,7 +1271,8 @@ class WikiDetailView(QWidget):
 
         # --- Description browser (below infobox) ---
         self._description_browser = QTextBrowser()
-        self._description_browser.setOpenExternalLinks(True)
+        self._description_browser.setOpenExternalLinks(False)
+        self._description_browser.anchorClicked.connect(self._on_description_link)
         self._description_browser.setStyleSheet(
             f"QTextBrowser {{"
             f"  background-color: {SECONDARY};"
@@ -1433,6 +1434,31 @@ class WikiDetailView(QWidget):
         """No-op — title is now in the infobox header row."""
         pass
 
+    _WAYPOINT_SPAN_RE = re.compile(
+        r'<span\b([^>]*?)\bdata-waypoint="([^"]*)"([^>]*)>(.*?)</span>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    _DATA_LABEL_RE = re.compile(r'data-label="([^"]*)"')
+
+    @staticmethod
+    def _transform_waypoint_spans(html: str) -> str:
+        """Replace waypoint-inline spans with styled clickable anchors for QTextBrowser."""
+        def _replace(m):
+            waypoint = m.group(2)
+            attrs_rest = m.group(1) + m.group(3)
+            label_m = WikiDetailView._DATA_LABEL_RE.search(attrs_rest)
+            label = label_m.group(1) if label_m else (m.group(4) or waypoint)
+            return (
+                f'<a href="waypoint:{waypoint}" '
+                f'style="color: {ACCENT}; background-color: rgba(74,158,255,0.12); '
+                f'border: 1px solid {ACCENT}; border-radius: 3px; '
+                f'padding: 0 4px; font-family: Consolas, monospace; '
+                f'text-decoration: none;" '
+                f'title="Click to copy waypoint: /wp {waypoint}">'
+                f'\u29C9 {label}</a>'
+            )
+        return WikiDetailView._WAYPOINT_SPAN_RE.sub(_replace, html)
+
     def _set_description_html(self, html: str):
         stripped = html.strip() if html else ""
         # Check for effectively empty HTML (just tags, no visible text)
@@ -1441,15 +1467,34 @@ class WikiDetailView(QWidget):
             self._description_browser.hide()
             return
 
+        # Transform waypoint spans into clickable links
+        processed = self._transform_waypoint_spans(stripped)
+
         self._description_browser.show()
         self._description_browser.setHtml(
-            f'<div style="color: {TEXT}; font-size: 13px;">{stripped}</div>'
+            f'<div style="color: {TEXT}; font-size: 13px;">{processed}</div>'
         )
         # Size exactly to content — no wasted space
         doc = self._description_browser.document()
         doc.setTextWidth(self._description_browser.viewport().width())
         # +20 accounts for QSS padding (8px top + 8px bottom) and border (1px + 1px)
         self._description_browser.setFixedHeight(int(doc.size().height()) + 20)
+
+    def _on_description_link(self, url):
+        """Handle link clicks in the description browser."""
+        url_str = url.toString()
+        if url_str.startswith("waypoint:"):
+            waypoint = url_str[len("waypoint:"):]
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                clipboard.setText(f"/wp {waypoint}")
+            from PyQt6.QtWidgets import QToolTip
+            from PyQt6.QtGui import QCursor
+            QToolTip.showText(QCursor.pos(), "Copied!", self._description_browser, self._description_browser.rect(), 1500)
+        else:
+            # Open external links in the browser
+            import webbrowser
+            webbrowser.open(url_str)
 
     def eventFilter(self, obj, event):
         """Forward wheel events from description browser to parent scroll."""

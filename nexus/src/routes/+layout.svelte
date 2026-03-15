@@ -8,7 +8,7 @@
   import Toasts from "$lib/components/Toasts.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
-  import { decodeURIComponentSafe } from '$lib/util.js';
+  import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
 
   let { data, children } = $props();
   // SvelteKit passes params to all layouts/pages - we use $page.params instead
@@ -57,6 +57,19 @@
     }, VIEWPORT_DEBOUNCE_MS);
   }
 
+  // Global click-to-copy for inline waypoint elements in rendered rich text
+  function handleWaypointClick(e) {
+    const wpSpan = e.target.closest('.waypoint-inline[data-waypoint]');
+    if (!wpSpan) return;
+    const waypoint = wpSpan.getAttribute('data-waypoint');
+    if (!waypoint) return;
+    copyToClipboard(`/wp ${waypoint}`).then(success => {
+      if (!success) return;
+      wpSpan.classList.add('copied');
+      setTimeout(() => wpSpan.classList.remove('copied'), 1500);
+    });
+  }
+
   onMount(() => {
     // Ensure dark mode — remove any leftover light-mode class from previous versions
     document.body.classList.remove('light-mode');
@@ -68,6 +81,9 @@
       // Listen for resize to update the cookie
       window.addEventListener('resize', handleResize);
     }
+
+    // Global waypoint copy handler for all rendered description content
+    document.addEventListener('click', handleWaypointClick);
   });
 
   onDestroy(() => {
@@ -77,6 +93,7 @@
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', handleResize);
     }
+    document.removeEventListener('click', handleWaypointClick);
   });
 </script>
 <style global>
