@@ -146,11 +146,18 @@ const MIN_BROWSER_VERSIONS = [
   { pattern: /SamsungBrowser\/(\d+)/, min: 14 },
 ];
 
+// UAs with Safari/ but no Version/ and no Chrome/ are ancient or fake
+const BARE_SAFARI = /Safari\/\d+/;
+const HAS_VERSION = /Version\//;
+const HAS_CHROME = /Chrome\//;
+
 function hasAncientBrowser(ua) {
   for (const { pattern, min } of MIN_BROWSER_VERSIONS) {
     const m = ua.match(pattern);
     if (m) return parseInt(m[1], 10) < min;
   }
+  // Safari without Version/ header and without Chrome — ancient/fake
+  if (BARE_SAFARI.test(ua) && !HAS_VERSION.test(ua) && !HAS_CHROME.test(ua)) return true;
   return false;
 }
 
