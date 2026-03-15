@@ -1785,7 +1785,9 @@
     color: var(--text-muted);
     font-size: 0.75rem;
     background: rgba(255, 255, 255, 0.02);
-    border-left: 2px solid var(--border-color);
+  }
+  .maturity-row td:first-child {
+    border-left: 2px solid var(--accent-color);
   }
 
   .indent {
