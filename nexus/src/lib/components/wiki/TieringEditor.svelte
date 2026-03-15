@@ -8,6 +8,8 @@
 <script>
   // @ts-nocheck
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { page } from '$app/stores';
   import { clampDecimals, getTypeLink } from '$lib/util';
   import {
     genericMats,
@@ -102,7 +104,10 @@
 
   const DEFAULT_MARKUPS = [null, null, null, null, null];
   const PREF_KEY = 'wiki.tierMarkups';
+  const LS_KEY = `nexus.pref.${PREF_KEY}`;
   const SAVE_DEBOUNCE_MS = 500;
+
+  let isLoggedIn = $derived(!!$page.data?.session?.user);
 
   // Selected tier for material display
   let selectedTier = $state(1);
@@ -218,26 +223,59 @@
     }
   }
 
-  // Persistence: save/load markups to user preferences (keyed by entity type, not individual item)
+  // Persistence — uses API when logged in, localStorage otherwise
+  function loadFromLocalStorage() {
+    if (!browser) return null;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw != null ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function writeToLocalStorage(data) {
+    if (!browser) return;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  function applyLoadedData(data) {
+    prefCache = data || {};
+    const stored = prefCache[entityType];
+    if (stored) {
+      if (stored._source) markupSource = stored._source === 'market' ? 'exchange' : stored._source;
+      const loaded = {};
+      for (const [tier, values] of Object.entries(stored)) {
+        if (tier === '_source') continue;
+        if (Array.isArray(values)) {
+          loaded[Number(tier)] = [...values];
+        }
+      }
+      allMarkups = loaded;
+    }
+  }
+
   async function loadMarkups() {
     if (!entityType) return;
+
+    // Always load from localStorage first (instant)
+    const localData = loadFromLocalStorage();
+    if (localData) applyLoadedData(localData);
+
+    if (!isLoggedIn) return;
+
     try {
       const res = await fetch(`/api/users/preferences/${encodeURIComponent(PREF_KEY)}`);
       if (!res.ok) return;
       const result = await res.json();
-      prefCache = result?.data || {};
-      const stored = prefCache[entityType];
-      if (stored) {
-        // Load markup source preference
-        if (stored._source) markupSource = stored._source === 'market' ? 'exchange' : stored._source;
-        const loaded = {};
-        for (const [tier, values] of Object.entries(stored)) {
-          if (tier === '_source') continue;
-          if (Array.isArray(values)) {
-            loaded[Number(tier)] = [...values];
-          }
-        }
-        allMarkups = loaded;
+      if (result?.data) {
+        applyLoadedData(result.data);
+        writeToLocalStorage(result.data);
+      } else if (localData) {
+        // Migrate localStorage → DB
+        await fetch('/api/users/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: PREF_KEY, data: localData })
+        });
       }
     } catch (e) {
       // Non-critical — use defaults
@@ -262,6 +300,8 @@
       delete data[entityType];
     }
     prefCache = data;
+    writeToLocalStorage(data);
+    if (!isLoggedIn) return;
     try {
       await fetch('/api/users/preferences', {
         method: 'PUT',
@@ -284,9 +324,11 @@
       nameToWapMap = wapByName;
       nameToIdMap = nameToId;
     } catch { /* non-critical */ }
-    try {
-      inventoryMarkupMap = await fetchInventoryMarkups();
-    } catch { /* not logged in or not verified */ }
+    if (isLoggedIn) {
+      try {
+        inventoryMarkupMap = await fetchInventoryMarkups();
+      } catch { /* non-critical */ }
+    }
     try {
       ingameMarkupMap = await fetchInGamePrices();
     } catch { /* non-critical */ }

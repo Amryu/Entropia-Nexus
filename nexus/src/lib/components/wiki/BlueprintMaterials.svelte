@@ -7,6 +7,8 @@
 <script>
   // @ts-nocheck
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { page } from '$app/stores';
   import { clampDecimals, getItemLink } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup, deleteInventoryMarkup } from '$lib/markupSources.js';
@@ -27,7 +29,10 @@
   let { blueprint, availableMaterials = [] } = $props();
 
   const PREF_KEY = 'wiki.blueprintMarkups';
+  const LS_KEY = `nexus.pref.${PREF_KEY}`;
   const SAVE_DEBOUNCE_MS = 500;
+
+  let isLoggedIn = $derived(!!$page.data?.session?.user);
 
   // Markup source toggle: 'custom' | 'inventory' | 'ingame' | 'exchange'
   let markupSource = $state('custom');
@@ -129,20 +134,53 @@
     }
   }
 
-  // Persistence
+  // Persistence — uses API when logged in, localStorage otherwise
+  function loadFromLocalStorage() {
+    if (!browser) return null;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw != null ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function writeToLocalStorage(data) {
+    if (!browser) return;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  function applyLoadedData(data) {
+    prefCache = data || {};
+    if (prefCache._source) markupSource = prefCache._source === 'market' ? 'exchange' : prefCache._source;
+    const loaded = {};
+    for (const [key, value] of Object.entries(prefCache)) {
+      if (key === '_source') continue;
+      if (typeof value === 'number') loaded[key] = value;
+    }
+    customMarkups = loaded;
+  }
+
   async function loadMarkups() {
+    // Always load from localStorage first (instant)
+    const localData = loadFromLocalStorage();
+    if (localData) applyLoadedData(localData);
+
+    if (!isLoggedIn) return;
+
     try {
       const res = await fetch(`/api/users/preferences/${encodeURIComponent(PREF_KEY)}`);
       if (!res.ok) return;
       const result = await res.json();
-      prefCache = result?.data || {};
-      if (prefCache._source) markupSource = prefCache._source === 'market' ? 'exchange' : prefCache._source;
-      const loaded = {};
-      for (const [key, value] of Object.entries(prefCache)) {
-        if (key === '_source') continue;
-        if (typeof value === 'number') loaded[key] = value;
+      if (result?.data) {
+        applyLoadedData(result.data);
+        writeToLocalStorage(result.data);
+      } else if (localData) {
+        // Migrate localStorage → DB
+        await fetch('/api/users/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: PREF_KEY, data: localData })
+        });
       }
-      customMarkups = loaded;
     } catch (e) {
       // Non-critical
     }
@@ -155,6 +193,8 @@
     }
     if (markupSource !== 'custom') toSave._source = markupSource;
     prefCache = toSave;
+    writeToLocalStorage(toSave);
+    if (!isLoggedIn) return;
     try {
       await fetch('/api/users/preferences', {
         method: 'PUT',
@@ -177,9 +217,11 @@
       nameToWapMap = wapByName;
       nameToIdMap = nameToId;
     } catch { /* non-critical */ }
-    try {
-      inventoryMarkupMap = await fetchInventoryMarkups();
-    } catch { /* not logged in or not verified */ }
+    if (isLoggedIn) {
+      try {
+        inventoryMarkupMap = await fetchInventoryMarkups();
+      } catch { /* non-critical */ }
+    }
     try {
       ingameMarkupMap = await fetchInGamePrices();
     } catch { /* non-critical */ }
