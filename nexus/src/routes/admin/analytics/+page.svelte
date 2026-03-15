@@ -20,6 +20,7 @@
   let routeData = $state(null);
   let routeCategory = $state('');
   let routePage = $state(1);
+  let expandedRoutes = $state({});  // pattern → { paths, loading }
 
   // API tab
   let apiRouteData = $state(null);
@@ -131,6 +132,35 @@
     if (!d) return '-';
     const dt = new Date(d);
     return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  // --- Route detail (slug expansion) ---
+  // A route has expandable slug detail if its last segment is parameterized
+  // e.g. /items/[type]/[slug] → yes, /items/[type] → no, /admin/users/[id] → yes
+  function hasSlugParam(pattern) {
+    if (!pattern) return false;
+    const segments = pattern.split('/').filter(Boolean);
+    if (segments.length < 2) return false;
+    const last = segments[segments.length - 1];
+    return last.startsWith('[') && last.endsWith(']');
+  }
+
+  async function toggleRouteDetail(pattern) {
+    if (expandedRoutes[pattern]) {
+      // Collapse
+      const next = { ...expandedRoutes };
+      delete next[pattern];
+      expandedRoutes = next;
+      return;
+    }
+    // Expand — fetch detail
+    expandedRoutes = { ...expandedRoutes, [pattern]: { paths: null, loading: true } };
+    try {
+      const data = await fetchJson(`/api/admin/analytics/routes/detail?pattern=${encodeURIComponent(pattern)}&period=${period}`);
+      expandedRoutes = { ...expandedRoutes, [pattern]: { paths: data.paths, loading: false } };
+    } catch {
+      expandedRoutes = { ...expandedRoutes, [pattern]: { paths: [], loading: false } };
+    }
   }
 
   // --- Data fetching ---
@@ -408,6 +438,7 @@
   function changePeriod(newPeriod) {
     period = newPeriod;
     routePage = 1;
+    expandedRoutes = {};
     loadTab();
   }
 
@@ -556,6 +587,10 @@
   .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
   .data-table .muted { color: var(--text-muted); }
   .data-table .route-pattern { font-family: monospace; font-size: 12px; word-break: break-all; }
+  .expand-icon { margin-left: 6px; font-size: 10px; color: var(--text-muted); }
+  .expandable:hover td { background-color: var(--hover-color); }
+  .detail-row td { background-color: var(--primary-color); }
+  .detail-path { padding-left: 20px; color: var(--text-muted); }
 
   /* Bot management */
   .bot-form {
@@ -833,15 +868,39 @@
           </thead>
           <tbody>
             {#each routeData.routes as route}
-              <tr>
+              <tr class:expandable={hasSlugParam(route.route_pattern)}
+                  onclick={() => hasSlugParam(route.route_pattern) && toggleRouteDetail(route.route_pattern)}
+                  style={hasSlugParam(route.route_pattern) ? 'cursor: pointer' : ''}>
                 <td><span class="category-badge">{route.route_category}</span></td>
-                <td><span class="route-pattern">{route.route_pattern}</span></td>
+                <td>
+                  <span class="route-pattern">{route.route_pattern}</span>
+                  {#if hasSlugParam(route.route_pattern)}
+                    <span class="expand-icon">{expandedRoutes[route.route_pattern] ? '\u25BC' : '\u25B6'}</span>
+                  {/if}
+                </td>
                 <td class="num">{formatNumber(route.requests)}</td>
                 <td class="num">{formatNumber(route.unique_ips)}</td>
                 <td class="num muted">{formatNumber(route.bots)}</td>
                 <td class="num muted">{formatNumber(route.errors)}</td>
                 <td class="num muted">{route.avg_response_ms || '-'}</td>
               </tr>
+              {#if expandedRoutes[route.route_pattern]}
+                {#if expandedRoutes[route.route_pattern].loading}
+                  <tr class="detail-row"><td colspan="7" class="muted" style="padding-left: 40px">Loading...</td></tr>
+                {:else if expandedRoutes[route.route_pattern].paths?.length > 0}
+                  {#each expandedRoutes[route.route_pattern].paths as path}
+                    <tr class="detail-row">
+                      <td></td>
+                      <td><span class="route-pattern detail-path">{path.route_path}</span></td>
+                      <td class="num">{formatNumber(path.requests)}</td>
+                      <td class="num">{formatNumber(path.unique_ips)}</td>
+                      <td colspan="3"></td>
+                    </tr>
+                  {/each}
+                {:else}
+                  <tr class="detail-row"><td colspan="7" class="muted" style="padding-left: 40px">No data in retention window</td></tr>
+                {/if}
+              {/if}
             {/each}
           </tbody>
         </table>
