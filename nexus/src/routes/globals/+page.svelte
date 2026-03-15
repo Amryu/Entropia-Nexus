@@ -894,7 +894,7 @@
                   {#if currentTabConfig.hasValue}
                     <td class="right font-mono">{topLootsTab === 'pvp' ? `${Math.round(loot.value)} Kills` : `${formatPedShort(loot.value)} PED`}</td>
                   {/if}
-                  <td>
+                  <td class="col-badge">
                     {#if loot.ath}
                       <span class="badge-ath">ATH</span>
                     {:else if loot.hof}
@@ -915,7 +915,7 @@
                     {/if}
                   </td>
                   <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
-                  <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                  <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -950,13 +950,13 @@
         <table class="globals-table">
           <thead>
             <tr>
-              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'timestamp')}>Time{sortIcon(liveSort, 'timestamp')}</th>
-              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'type')}>Type{sortIcon(liveSort, 'type')}</th>
+              <th class="sortable col-time" onclick={() => liveSort = toggleSort(liveSort, 'timestamp')}>Time{sortIcon(liveSort, 'timestamp')}</th>
+              <th class="sortable col-type" onclick={() => liveSort = toggleSort(liveSort, 'type')}>Type{sortIcon(liveSort, 'type')}</th>
               <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'player')}>Player{sortIcon(liveSort, 'player')}</th>
               <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'target')}>Target{sortIcon(liveSort, 'target')}</th>
-              <th class="sortable right" onclick={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
-              <th class="sortable" onclick={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
-              <th></th>
+              <th class="sortable right col-value" onclick={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
+              <th class="sortable col-location" onclick={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
+              <th class="col-badges"></th>
               <th class="col-media"></th>
               <th class="col-gz"></th>
             </tr>
@@ -966,7 +966,7 @@
               {@const tc = getTypeConfig(g.type)}
               <tr class:row-new={newIds.has(g.id)}>
                 <td class="col-time" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
-                <td><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
+                <td class="col-type"><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
                 <td>
                   {#if g.type === 'team_kill'}
                     <span class="badge-team">Team</span>
@@ -1450,9 +1450,13 @@
     font-size: 0.8125rem;
     width: 100%;
   }
-  .top-loots-table .col-rank { width: 32px; }
-  .top-loots-table .col-badge { width: 48px; }
-  .top-loots-table .col-target-cell { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-rank { width: 32px; }
+  .col-badge, .col-badges { width: 48px; }
+  .col-target-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-media { width: 20px; text-align: center; padding: 4px 2px !important; }
+  .col-gz { width: 40px; text-align: center; padding: 4px 4px !important; }
+  .col-time { width: 70px; }
+  .col-location { width: 120px; }
   .top-loots-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .loading-fade {
@@ -1533,6 +1537,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.8125rem;
+    table-layout: fixed;
   }
 
   .globals-table th {
@@ -1564,6 +1569,8 @@
     padding: 8px 14px;
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .globals-table tr:last-child td {
@@ -1592,7 +1599,6 @@
 
   .col-time {
     color: var(--text-muted);
-    min-width: 70px;
   }
 
   .type-badge {
@@ -1642,9 +1648,12 @@
   }
 
   .col-value {
+    width: 75px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
+
+  .col-type { width: 65px; }
 
   .right {
     text-align: right;
@@ -1652,13 +1661,6 @@
 
   .col-location {
     color: var(--text-muted);
-    max-width: 150px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .col-badges {
-    min-width: 32px;
   }
 
   .badge-hof, .badge-ath, .badge-team {
@@ -1736,8 +1738,11 @@
   }
 
   @media (max-width: 599px) {
+    .globals-page { padding: 8px; }
+
     .stats-row {
       grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
     }
 
     .stats-row.category-row {
@@ -1749,22 +1754,20 @@
       flex: 1;
     }
 
-    .globals-table th:nth-child(6),
-    .globals-table td:nth-child(6) {
-      display: none;
-    }
+    /* Hide less important columns on mobile */
+    .col-media, .col-gz, .col-time, .col-type, .col-rank, .col-location { display: none; }
+
+    /* Compact table cells */
+    .globals-table th, .globals-table td { padding: 4px 6px; font-size: 0.75rem; }
+    .col-value { width: 80px !important; }
+    .col-badge, .col-badges { width: 32px !important; padding: 0 2px !important; }
+
+    /* Compact badges */
+    .badge-hof, .badge-ath, .badge-team { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
+    .type-badge { padding: 1px 4px; font-size: 0.5625rem; letter-spacing: 0; }
   }
 
   /* Media icon */
-  .col-media {
-    width: 28px;
-    text-align: center;
-  }
-
-  .col-gz {
-    width: 50px;
-    text-align: center;
-  }
 
   .media-icon-btn {
     background: none;

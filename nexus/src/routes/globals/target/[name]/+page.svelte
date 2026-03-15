@@ -509,11 +509,11 @@
               <thead>
                 <tr>
                   <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'player')}>Player{sortIcon(recentSort, 'player')}</th>
-                  <th class="sortable right" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
-                  <th></th>
+                  <th class="sortable right col-value" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
+                  <th class="col-badge"></th>
                   <th class="col-media"></th>
                   <th class="col-gz"></th>
-                  <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                  <th class="sortable col-time" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -524,7 +524,7 @@
                       <a href="/globals/player/{encodeURIComponent(g.player)}" class="player-link">{g.player}</a>
                     </td>
                     <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
-                    <td>
+                    <td class="col-badge">
                       {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
                     </td>
                     <td class="col-media">
@@ -541,7 +541,7 @@
                       {/if}
                     </td>
                     <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
-                    <td class="text-muted">{timeAgo(g.timestamp)}</td>
+                    <td class="text-muted col-time">{timeAgo(g.timestamp)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -570,9 +570,9 @@
               <tr>
                 <th class="col-rank">#</th>
                 <th>Player</th>
-                <th class="right">Count</th>
-                <th class="right">Total Value</th>
-                <th class="right">Best</th>
+                <th class="right col-count">Count</th>
+                <th class="right col-value">Total Value</th>
+                <th class="right col-value col-hide-mobile">Best</th>
               </tr>
             </thead>
             <tbody>
@@ -585,9 +585,9 @@
                     {/if}
                     <a href="/globals/player/{encodeURIComponent(p.player)}" class="player-link">{p.player}</a>
                   </td>
-                  <td class="right">{p.count.toLocaleString()}</td>
+                  <td class="right col-count">{p.count.toLocaleString()}</td>
                   <td class="right font-mono">{formatPed(p.value)} PED</td>
-                  <td class="right font-mono">{formatPed(p.best_value)} PED</td>
+                  <td class="right font-mono col-hide-mobile">{formatPed(p.best_value)} PED</td>
                 </tr>
               {/each}
             </tbody>
@@ -641,6 +641,21 @@
     .globals-search {
       width: 100%;
     }
+
+    .target-page { padding: 8px; }
+    .section-card { padding: 10px; }
+
+    /* Hide less important columns on mobile */
+    .col-media, .col-gz, .col-time, .col-rank, .col-hide-mobile { display: none; }
+
+    /* Compact table cells */
+    .data-table th, .data-table td { padding: 4px 6px; font-size: 0.75rem; }
+    .col-value { width: 80px !important; }
+    .col-count { width: 40px !important; }
+
+    /* Compact badges */
+    .col-badge { width: 32px !important; padding: 0 2px !important; }
+    .badge-hof, .badge-ath, .badge-team { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
   }
 
   .breadcrumbs {
@@ -901,6 +916,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.8125rem;
+    table-layout: fixed;
   }
 
   .data-table th {
@@ -932,6 +948,8 @@
     padding: 8px 12px;
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .data-table tr:last-child td {
@@ -1020,7 +1038,11 @@
     font-weight: 600;
   }
 
-  .col-rank { width: 40px; }
+  .col-rank { width: 32px; }
+  .col-value { width: 75px; }
+  .col-badge { width: 48px; padding-left: 4px !important; padding-right: 4px !important; }
+  .col-time { width: 70px; }
+  .col-count { width: 50px; }
   .font-mono { font-variant-numeric: tabular-nums; }
 
   .table-loading {
@@ -1106,15 +1128,8 @@
     }
   }
 
-  .col-media {
-    width: 28px;
-    text-align: center;
-  }
-
-  .col-gz {
-    width: 50px;
-    text-align: center;
-  }
+  .col-media { width: 20px; text-align: center; padding: 4px 2px !important; }
+  .col-gz { width: 40px; text-align: center; padding: 4px 4px !important; }
 
   .media-icon-btn {
     background: none;
