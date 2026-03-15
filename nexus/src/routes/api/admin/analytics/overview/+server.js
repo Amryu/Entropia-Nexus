@@ -37,9 +37,10 @@ export async function GET({ locals, url }) {
   const rawBotFilter = xBots ? 'AND is_bot = false' : '';
   const rawApiFilter = xApi ? 'AND is_api = false' : '';
 
-  // Geo/referrer rollups lack bot breakdown, so use raw data when filtering by bots
-  const useRawForGeo = xBots;
-  const useRawForReferrers = xBots;
+  // Geo/referrer rollups lack bot and route_category breakdown,
+  // so use raw data when any of these filters are active
+  const useRawForGeo = xBots || xApi;
+  const useRawForReferrers = xBots || xApi;
 
   try {
     const [totals, uniqueResult, topRoutes, topCountries, topReferrers] = await Promise.all([
@@ -146,7 +147,7 @@ export async function GET({ locals, url }) {
       rateLimited: t.rate_limited,
       errors: t.errors,
       avgResponseMs: t.avg_response_ms,
-      botPercent: !xBots && totalReqs > 0 ? Math.round((t.bot_requests / (totalReqs + t.bot_requests)) * 100) : 0,
+      botPercent: !xBots && totalReqs > 0 ? Math.round((t.bot_requests / totalReqs) * 100) : 0,
       topRoutes: topRoutes.rows,
       topCountries: topCountries.rows,
       topReferrers: topReferrers.rows,

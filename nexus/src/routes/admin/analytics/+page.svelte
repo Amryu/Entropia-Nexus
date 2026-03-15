@@ -526,8 +526,8 @@
   }
 
   function changeTab(tab) {
-    // Always clear any existing live interval first
-    if (liveInterval) { clearInterval(liveInterval); liveInterval = null; }
+    // Always clear any existing live refresh timer first
+    if (liveInterval) { clearTimeout(liveInterval); liveInterval = null; }
     activeTab = tab;
     if (tab === 'live') {
       loadLive();

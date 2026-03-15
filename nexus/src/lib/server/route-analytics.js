@@ -135,10 +135,8 @@ export async function reloadBotIpRanges() {
 
 // ---------- bot detection ----------
 
-// Minimum plausible browser versions (roughly 2021 era).
-// Anything older is almost certainly a bot using a stale/randomized UA.
-// All known ways a real browser identifies its version.
-// Each entry: regex to extract version, minimum acceptable version.
+// All known ways a real browser identifies its version (~2021 minimums).
+// Ancient versions → bot. Known browser name with no match → also bot.
 // Order matters — check specific (Edge, Opera, CriOS) before generic (Chrome).
 const BROWSER_VERSION_CHECKS = [
   { pattern: /Edg(?:e|A|iOS)?\/(\d+)/, min: 90 },         // Edge (desktop, Android, iOS)
