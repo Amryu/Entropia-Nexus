@@ -32,8 +32,9 @@ export async function GET({ locals, url }) {
          WHERE visited_at >= now() - $1 * interval '1 day'
            AND ip_address IS NOT NULL
            AND family(ip_address) = 4
+           AND is_api = false
          GROUP BY network(set_masklen(ip_address, 24))
-         HAVING count(*) >= 10
+         HAVING count(*) >= 5
        )
        SELECT
          subnet::text,
@@ -86,6 +87,7 @@ export async function GET({ locals, url }) {
          FROM route_visits
          WHERE visited_at >= now() - $1 * interval '1 day'
            AND ip_address << $2::cidr
+           AND is_api = false
          GROUP BY ip_address, user_agent
          ORDER BY requests DESC
          LIMIT 10`,
