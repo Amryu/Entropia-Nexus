@@ -837,40 +837,22 @@ async function checkChanges() {
       await setChangeThreadId(change.id, thread.id);
       setConfigValue('lastChangeCheck', new Date().toISOString());
 
-      const formatted = formatJsonForDiscord(compareObject);
-      
-      for (const message of formatted) {
-        try {
-          await thread.send(message);
-        } catch (e) {
-          console.error(`Failed to send message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
-          if (e.code === 50083) { // Thread is archived
-            console.log(`Thread ${thread.id} is archived, skipping message.`);
-            break;
-          }
-        }
+      // Post diff, map image, reviewer mention, and edit link
+      const diffMessages = await sendDiffMessages(thread, formatJsonForDiscord(compareObject));
+      // Pin the first diff message
+      if (diffMessages.length > 0) {
+        diffMessages[0].pin().catch(e => console.error(`Failed to pin diff in thread ${thread.id}: ${e.message}`));
       }
+
+      // Send map image for Location/Area changes
+      await sendMapImage(thread, change, entity);
+
       try {
         const reviewerRoleId = getConfigValue('reviewerRoleId');
         const reviewerMention = reviewerRoleId ? ` <@&${reviewerRoleId}>` : '';
         await thread.send(`A new change has been submitted by <@${change.author_id}>.${reviewerMention} Please post proof to validate your changes and await approval.`);
       } catch (e) {
         console.error(`Failed to send submission message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
-      }
-
-      // Render map image for Location/Area changes
-      if ((change.entity === 'Area' || change.entity === 'Location') && change.data?.Properties?.Shape) {
-        try {
-          const planetData = await fetchPlanetData(change.data.Planet?.Name);
-          if (planetData) {
-            const mapImage = await renderMapChange(change.data, entity, planetData);
-            if (mapImage) {
-              await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
-            }
-          }
-        } catch (e) {
-          console.error(`Failed to render map image for thread ${thread.id}: ${e.message}`);
-        }
       }
 
       const entityPath = getTypeLink(change.data.Name, change.entity, change.data.Planet?.Name ?? null);
@@ -894,33 +876,11 @@ async function checkChanges() {
         console.error(`Failed to update thread name ${thread.id} (${change.data.Name}): ${e.message}`);
       }
 
-      const formatted = formatJsonForDiscord(compareObject);
-      
-      for (const message of formatted) {
-        try {
-          await thread.send(message);
-        } catch (e) {
-          console.error(`Failed to send update message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
-          if (e.code === 50083) { // Thread is archived
-            console.log(`Thread ${thread.id} is archived, skipping remaining messages.`);
-            break;
-          }
-        }
-      }
-      // Render map image for Location/Area changes
-      if ((change.entity === 'Area' || change.entity === 'Location') && change.data?.Properties?.Shape) {
-        try {
-          const planetData = await fetchPlanetData(change.data.Planet?.Name);
-          if (planetData) {
-            const mapImage = await renderMapChange(change.data, entity, planetData);
-            if (mapImage) {
-              await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
-            }
-          }
-        } catch (e) {
-          console.error(`Failed to render map image for thread ${thread.id}: ${e.message}`);
-        }
-      }
+      // Edit existing diff messages in-place instead of posting new ones
+      await updateDiffMessages(thread, formatJsonForDiscord(compareObject));
+
+      // Update map image
+      await updateMapImage(thread, change, entity);
 
       try {
         const reviewerRoleId = getConfigValue('reviewerRoleId');
@@ -1216,6 +1176,111 @@ function formatDiffLinesFlat(obj, lines, depth, prefix) {
   }
 }
 
+
+/** Send diff messages to a thread and return the sent Message objects. */
+async function sendDiffMessages(thread, formatted) {
+  const sent = [];
+  for (const content of formatted) {
+    try {
+      sent.push(await thread.send(content));
+    } catch (e) {
+      console.error(`Failed to send diff message to thread ${thread.id}: ${e.message}`);
+      if (e.code === 50083) break;
+    }
+  }
+  return sent;
+}
+
+/**
+ * Edit existing diff messages at the top of a thread instead of posting new ones.
+ * Finds the bot's first consecutive diff code block messages and edits them.
+ * Adds or deletes messages if the new diff has a different chunk count.
+ */
+async function updateDiffMessages(thread, formatted) {
+  try {
+    // Fetch oldest messages in the thread
+    const messages = await thread.messages.fetch({ limit: 20, after: '0' });
+    const sorted = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+    // Find consecutive bot diff messages at the start
+    const botId = thread.client.user.id;
+    const existingDiff = [];
+    for (const msg of sorted) {
+      if (msg.author.id === botId && (msg.content.startsWith('```diff') || msg.content.startsWith('```yaml'))) {
+        existingDiff.push(msg);
+      } else if (existingDiff.length > 0) {
+        break; // Stop at first non-diff bot message
+      }
+    }
+
+    // Edit existing, add new, or delete extras
+    for (let i = 0; i < Math.max(existingDiff.length, formatted.length); i++) {
+      if (i < existingDiff.length && i < formatted.length) {
+        // Edit existing message
+        await existingDiff[i].edit(formatted[i]).catch(e =>
+          console.error(`Failed to edit diff message ${existingDiff[i].id}: ${e.message}`)
+        );
+      } else if (i >= existingDiff.length) {
+        // Need more messages — send after the last diff message
+        try {
+          await thread.send(formatted[i]);
+        } catch (e) {
+          console.error(`Failed to send additional diff message: ${e.message}`);
+        }
+      } else {
+        // Extra old messages — delete them
+        await existingDiff[i].delete().catch(e =>
+          console.error(`Failed to delete extra diff message ${existingDiff[i].id}: ${e.message}`)
+        );
+      }
+    }
+  } catch (e) {
+    console.error(`Failed to update diff messages in thread ${thread.id}: ${e.message}`);
+    // Fallback: just post new messages
+    await sendDiffMessages(thread, formatted);
+  }
+}
+
+/** Send a map image for Location/Area changes. */
+async function sendMapImage(thread, change, entity) {
+  if ((change.entity !== 'Area' && change.entity !== 'Location') || !change.data?.Properties?.Shape) return;
+  try {
+    const planetData = await fetchPlanetData(change.data.Planet?.Name);
+    if (!planetData) return;
+    const mapImage = await renderMapChange(change.data, entity, planetData);
+    if (mapImage) {
+      await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
+    }
+  } catch (e) {
+    console.error(`Failed to render map image for thread ${thread.id}: ${e.message}`);
+  }
+}
+
+/** Find and replace the existing map image message, or send a new one. */
+async function updateMapImage(thread, change, entity) {
+  if ((change.entity !== 'Area' && change.entity !== 'Location') || !change.data?.Properties?.Shape) return;
+  try {
+    const planetData = await fetchPlanetData(change.data.Planet?.Name);
+    if (!planetData) return;
+    const mapImage = await renderMapChange(change.data, entity, planetData);
+    if (!mapImage) return;
+
+    // Find existing map image message from the bot
+    const messages = await thread.messages.fetch({ limit: 20, after: '0' });
+    const botId = thread.client.user.id;
+    const existingMapMsg = [...messages.values()].find(m =>
+      m.author.id === botId && m.attachments.some(a => a.name === 'map-change.png')
+    );
+
+    if (existingMapMsg) {
+      // Edit the message with the new image (delete + re-send, since editing attachments isn't straightforward)
+      await existingMapMsg.delete().catch(() => {});
+    }
+    await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
+  } catch (e) {
+    console.error(`Failed to update map image for thread ${thread.id}: ${e.message}`);
+  }
+}
 
 async function checkFlights() {
   const flightsChannelId = config.flightsChannelId;
