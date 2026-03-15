@@ -1990,8 +1990,12 @@
   }
 
   @media (max-width: 599px) {
+    .player-page { padding: 8px; }
+    .section-card { padding: 10px; }
+
     .stats-row {
       grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
     }
 
     .stats-row.category-row {
@@ -2006,12 +2010,27 @@
 
     .tab-link {
       flex-shrink: 0;
-      padding: 8px 14px;
+      padding: 8px 12px;
       font-size: 0.8125rem;
     }
 
     /* Hide less important columns on mobile to preserve target name space */
     .col-media, .col-gz, .col-time, .col-badge, .col-type { display: none; }
+
+    /* Tighter table cell padding on mobile */
+    .data-table th, .data-table td { padding: 6px 6px; }
+    .col-rank { width: 24px; }
+    .col-value { width: 65px; }
+    .col-count { width: 32px; }
+
+    /* Achievement rows: wrap and hide secondary elements */
+    .achievement-item {
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      padding: 6px 8px;
+      font-size: 0.75rem;
+    }
+    .achievement-actions, .achievement-time { display: none; }
   }
 
   .col-value { width: 75px; }
