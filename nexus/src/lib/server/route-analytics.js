@@ -154,15 +154,21 @@ function hasAncientBrowser(ua) {
   return false;
 }
 
+// Any UA self-identifying with these words is non-human.
+const BOT_KEYWORDS = /bot[\/\s;),.:-]|bot$|crawler|spider/i;
+
 function isBot(userAgent, method) {
   // HEAD requests are almost never from real browsers
   if (method === 'HEAD') return true;
   // Missing user-agent is a strong bot signal
   if (!userAgent) return true;
+  // Catch-all: anything self-identifying as bot/crawler/spider
+  if (BOT_KEYWORDS.test(userAgent)) return true;
   // Ancient browser versions are randomized bot UAs
   if (hasAncientBrowser(userAgent)) return true;
-  if (!botRegex) return false;
-  return botRegex.test(userAgent);
+  // Check against admin-managed patterns
+  if (botRegex && botRegex.test(userAgent)) return true;
+  return false;
 }
 
 // ---------- GeoIP ----------
