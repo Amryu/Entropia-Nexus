@@ -24,6 +24,7 @@ const RATE_LIMIT_DEDUP_MS = 60_000;     // only record one 429 per IP+route per 
 // ---------- state ----------
 let buffer = [];
 let botRegex = null;                    // compiled from DB patterns
+let botIpRanges = [];                   // [{ ipInt, maskInt, cidr }] for CIDR matching
 let geoLookup = null;                   // geoip-lite lookup function
 const rateLimitDedup = new Map();       // key → last-recorded timestamp
 
@@ -86,6 +87,50 @@ function extractCategory(pathname) {
   if (pathname === '/') return 'home';
   const seg = pathname.split('/')[1];
   return seg || 'home';
+}
+
+// ---------- IP-based bot detection ----------
+function ipv4ToInt(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let num = 0;
+  for (let i = 0; i < 4; i++) {
+    const octet = parseInt(parts[i], 10);
+    if (isNaN(octet) || octet < 0 || octet > 255) return null;
+    num = (num * 256) + octet;
+  }
+  return num >>> 0; // unsigned 32-bit
+}
+
+function isBotIp(ip) {
+  if (botIpRanges.length === 0) return false;
+  const ipInt = ipv4ToInt(ip);
+  if (ipInt === null) return false; // skip IPv6 for now
+  for (const range of botIpRanges) {
+    if ((ipInt & range.maskInt) === range.netInt) return true;
+  }
+  return false;
+}
+
+export async function reloadBotIpRanges() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT cidr::text FROM bot_ip_ranges WHERE enabled = true ORDER BY id`
+    );
+    const ranges = [];
+    for (const row of rows) {
+      // cidr comes as e.g. "43.128.0.0/10"
+      const [ipStr, bitsStr] = row.cidr.split('/');
+      const bits = parseInt(bitsStr, 10);
+      const ipInt = ipv4ToInt(ipStr);
+      if (ipInt === null || isNaN(bits)) continue;
+      const maskInt = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+      ranges.push({ netInt: (ipInt & maskInt) >>> 0, maskInt });
+    }
+    botIpRanges = ranges;
+  } catch (e) {
+    console.error('[route-analytics] Failed to load bot IP ranges:', e.message);
+  }
 }
 
 // ---------- bot detection ----------
@@ -269,7 +314,7 @@ export function recordVisit(event, response, startTime) {
   const routePattern = routeId || pathname;
   const routeCategory = extractCategory(pathname);
   const isApiRoute = pathname.startsWith('/api/');
-  const botFlag = isBot(userAgent, method);
+  const botFlag = isBot(userAgent, method) || isBotIp(ip);
   const countryCode = lookupCountry(ip);
   const externalReferrer = parseExternalReferrer(referrerHeader);
 
@@ -326,8 +371,9 @@ export async function initRouteAnalytics() {
     siteHosts.add('www.eunex.us');
   } catch { /* ignore */ }
 
-  // Load bot patterns
+  // Load bot patterns and IP ranges
   await reloadBotPatterns();
+  await reloadBotIpRanges();
 
   // Start flush timer
   setInterval(() => {
@@ -359,7 +405,7 @@ export async function reevaluateBotFlags() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const { rows } = await pool.query(
-      `SELECT id, user_agent, method FROM route_visits WHERE id > $1 ORDER BY id LIMIT ${BATCH}`,
+      `SELECT id, user_agent, method, ip_address::text AS ip FROM route_visits WHERE id > $1 ORDER BY id LIMIT ${BATCH}`,
       [lastId]
     );
     if (rows.length === 0) break;
@@ -367,7 +413,7 @@ export async function reevaluateBotFlags() {
     const toTrue = [];
     const toFalse = [];
     for (const row of rows) {
-      const shouldBeBot = isBot(row.user_agent, row.method);
+      const shouldBeBot = isBot(row.user_agent, row.method) || isBotIp(row.ip);
       if (shouldBeBot) toTrue.push(row.id);
       else toFalse.push(row.id);
     }

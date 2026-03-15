@@ -85,13 +85,14 @@ test.describe('Admin Analytics', () => {
 
       // Click Bots tab and wait for bot data to render
       const botsResponsePromise = adminUser.waitForResponse(resp =>
-        resp.url().includes('/api/admin/analytics/bots'), { timeout: TIMEOUT_LONG }
+        resp.url().includes('/api/admin/analytics/bots') && !resp.url().includes('ip-ranges'),
+        { timeout: TIMEOUT_LONG }
       );
       await adminUser.locator('.tab', { hasText: 'Bots' }).click();
       await botsResponsePromise;
 
       // Bot pattern table should be visible
-      const patternTable = adminUser.locator('.data-table');
+      const patternTable = adminUser.locator('.data-table').first();
       await expect(patternTable).toBeVisible();
     });
 

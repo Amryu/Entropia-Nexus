@@ -40,6 +40,10 @@
   let newBotDescription = $state('');
   let botTestInput = $state('');
   let botTestResult = $state(null);
+  let ipRanges = $state(null);
+  let newIpCidr = $state('');
+  let newIpDescription = $state('');
+  let ipError = $state('');
   let botError = $state('');
 
   // Live
@@ -256,8 +260,12 @@
     isLoading = true;
     error = null;
     try {
-      const data = await fetchJson('/api/admin/analytics/bots');
-      botPatterns = data.patterns;
+      const [pats, ips] = await Promise.all([
+        fetchJson('/api/admin/analytics/bots'),
+        fetchJson('/api/admin/analytics/bots/ip-ranges')
+      ]);
+      botPatterns = pats.patterns;
+      ipRanges = ips.ranges;
     } catch (e) {
       error = e.message;
     } finally {
@@ -404,6 +412,52 @@
       await loadBots();
     } catch (e) {
       console.error('Failed to delete pattern:', e);
+    }
+  }
+
+  // --- IP range actions ---
+  async function addIpRange() {
+    if (!newIpCidr.trim()) return;
+    ipError = '';
+    try {
+      const res = await fetch('/api/admin/analytics/bots/ip-ranges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cidr: newIpCidr.trim(), description: newIpDescription.trim() || null })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        ipError = data.error || 'Failed to add range';
+        return;
+      }
+      newIpCidr = '';
+      newIpDescription = '';
+      await loadBots();
+    } catch (e) {
+      ipError = 'Network error';
+    }
+  }
+
+  async function toggleIpRange(id, enabled) {
+    try {
+      await fetch(`/api/admin/analytics/bots/ip-ranges/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      await loadBots();
+    } catch (e) {
+      console.error('Failed to toggle range:', e);
+    }
+  }
+
+  async function deleteIpRange(id) {
+    if (!confirm('Delete this IP range?')) return;
+    try {
+      await fetch(`/api/admin/analytics/bots/ip-ranges/${id}`, { method: 'DELETE' });
+      await loadBots();
+    } catch (e) {
+      console.error('Failed to delete range:', e);
     }
   }
 
@@ -1178,11 +1232,57 @@
             {#if reevalResult}
               {reevalResult}
             {:else}
-              Applies current patterns + version thresholds to all stored visits
+              Applies current patterns, version thresholds, and IP ranges to all stored visits
             {/if}
           </span>
         </div>
       </div>
+
+      {#if ipRanges}
+        <div class="section" style="margin-top: 16px">
+          <h3>Bot IP Ranges (Datacenter / Cloud)</h3>
+          <p class="subtitle" style="margin-bottom: 16px">
+            Requests from these CIDR ranges are flagged as bot traffic. Only add ranges that cannot be consumer IPs.
+          </p>
+
+          <div class="bot-form">
+            <input type="text" bind:value={newIpCidr} placeholder="CIDR (e.g. 43.128.0.0/10)" style="flex: 1; min-width: 180px" />
+            <input type="text" bind:value={newIpDescription} placeholder="Description (optional)" style="flex: 1; min-width: 180px" />
+            <button onclick={addIpRange}>Add Range</button>
+          </div>
+          {#if ipError}
+            <div class="error-msg">{ipError}</div>
+          {/if}
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>CIDR</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each ipRanges as r}
+                <tr>
+                  <td><code>{r.cidr}</code></td>
+                  <td class="muted">{r.description || '-'}</td>
+                  <td>
+                    <button class="toggle-btn" class:enabled={r.enabled}
+                      onclick={() => toggleIpRange(r.id, !r.enabled)}>
+                      {r.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                  </td>
+                  <td>
+                    <button class="delete-btn" onclick={() => deleteIpRange(r.id)}>Delete</button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
 
     <!-- ===== LIVE TAB ===== -->
     {:else if activeTab === 'live'}
