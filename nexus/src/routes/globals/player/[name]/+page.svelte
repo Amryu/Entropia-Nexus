@@ -1784,10 +1784,12 @@
   .maturity-row td {
     color: var(--text-muted);
     font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-left: 2px solid var(--border-color);
   }
 
   .indent {
-    padding-left: 28px !important;
+    padding-left: 26px !important;
   }
 
   .target-link {
