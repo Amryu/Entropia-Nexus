@@ -10,12 +10,14 @@
   "author": "",
   "license": "ISC",
   "type": "module",
-"dependencies": {
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.96",
     "ajv": "^8.12.0",
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5",
     "js-yaml": "^4.1.0",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "sharp": "^0.33.5"
   },
   "overrides": {
     "undici": "6.23.0"

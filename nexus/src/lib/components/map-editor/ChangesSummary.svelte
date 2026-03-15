@@ -164,11 +164,20 @@
     // MobArea maturities (stored at body level, not in Properties)
     if (mod.maturities) {
       body.Maturities = mod.maturities;
+    } else if (orig?.Maturities?.length) {
+      body.Maturities = orig.Maturities;
     }
 
     // WaveEvent wave data (stored at body level, not in Properties)
-    if (props.AreaType === 'WaveEventArea' && mod.waves) {
+    if (mod.waves) {
       body.Waves = mod.waves;
+    } else if (orig?.Waves?.length) {
+      body.Waves = orig.Waves;
+    }
+
+    // Preserve facilities from original
+    if (orig?.Facilities?.length) {
+      body.Facilities = orig.Facilities;
     }
 
     const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : orig?.ParentLocation?.Name;

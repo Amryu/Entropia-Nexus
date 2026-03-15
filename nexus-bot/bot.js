@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { dump } from 'js-yaml';
+// js-yaml no longer needed — diff format replaced YAML output
 import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
 import { handleReward, fetchEntityForReward } from './changes/rewards.js';
 import { getTypeLink, getStateLabel } from './util.js';
+import { renderMapChange } from './mapRenderer.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 import { checkAuctions, refreshAuctionColors } from './auctions.js';
 import { collectEuName } from './commands/verification/setEuName.js';
@@ -71,6 +72,23 @@ function getPlanetName(planetId) {
     fetchPlanets(); // Non-blocking refresh
   }
   return planetCache?.[planetId] || `Planet #${planetId}`;
+}
+
+// Full planet data cache (with Map properties for map rendering)
+let planetDataCache = {};
+
+async function fetchPlanetData(planetName) {
+  if (!planetName) return null;
+  if (planetDataCache[planetName]) return planetDataCache[planetName];
+  try {
+    const res = await fetch(`${process.env.API_URL}/planets/${encodeURIComponent(planetName)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    planetDataCache[planetName] = data;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 function getEntityApiCollection(entityType) {
@@ -840,6 +858,21 @@ async function checkChanges() {
         console.error(`Failed to send submission message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
       }
 
+      // Render map image for Location/Area changes
+      if ((change.entity === 'Area' || change.entity === 'Location') && change.data?.Properties?.Shape) {
+        try {
+          const planetData = await fetchPlanetData(change.data.Planet?.Name);
+          if (planetData) {
+            const mapImage = await renderMapChange(change.data, entity, planetData);
+            if (mapImage) {
+              await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to render map image for thread ${thread.id}: ${e.message}`);
+        }
+      }
+
       const entityPath = getTypeLink(change.data.Name, change.entity, change.data.Planet?.Name ?? null);
       if (entityPath) {
         try {
@@ -874,6 +907,21 @@ async function checkChanges() {
           }
         }
       }
+      // Render map image for Location/Area changes
+      if ((change.entity === 'Area' || change.entity === 'Location') && change.data?.Properties?.Shape) {
+        try {
+          const planetData = await fetchPlanetData(change.data.Planet?.Name);
+          if (planetData) {
+            const mapImage = await renderMapChange(change.data, entity, planetData);
+            if (mapImage) {
+              await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to render map image for thread ${thread.id}: ${e.message}`);
+        }
+      }
+
       try {
         const reviewerRoleId = getConfigValue('reviewerRoleId');
         const reviewerMention = reviewerRoleId ? ` <@&${reviewerRoleId}>` : '';
@@ -1064,17 +1112,19 @@ async function syncVerifiedRole() {
 
 function formatJsonForDiscord(json) {
   if (json === null) {
-    return ['```yaml\nNo changes detected\n```'];
+    return ['```\nNo changes detected\n```'];
   }
-  
-  let formatted = dump(json, { indent: 2 }).replace(/^( +)/g, '\t');
 
-  // Split the formatted string into chunks at line breaks
-  let chunks = [];
-  let lines = formatted.split('\n');
+  const lines = [];
+  formatDiffLines(json, lines, 0);
+  const formatted = lines.join('\n');
+
+  // Split into chunks respecting Discord's 2000 char limit
+  const chunks = [];
+  const allLines = formatted.split('\n');
   let currentChunk = '';
-  for (let line of lines) {
-    if (currentChunk.length + line.length + 12 > 2000) { // 7 is the length of '```yaml\n'
+  for (const line of allLines) {
+    if (currentChunk.length + line.length + 12 > 2000) {
       chunks.push(currentChunk);
       currentChunk = '';
     }
@@ -1084,8 +1134,86 @@ function formatJsonForDiscord(json) {
     chunks.push(currentChunk);
   }
 
-  // Wrap each chunk in a code block with YAML syntax highlighting
-  return chunks.map(chunk => '```yaml\n' + chunk + '```');
+  return chunks.map(chunk => '```diff\n' + chunk + '```');
+}
+
+/**
+ * Recursively format a compareJson result into diff-style lines.
+ * - Context keys (unchanged): "  key: value"
+ * - Changed primitives ("old -> new"): "- key: old" / "+ key: new"
+ * - Nested objects: header line + indented children
+ * - Array items: prefixed with _status indicator
+ */
+function formatDiffLines(obj, lines, depth) {
+  const pad = '  '.repeat(depth);
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      if (typeof item === 'string') {
+        // Primitive change in array: "old -> new"
+        const arrow = item.indexOf(' -> ');
+        if (arrow >= 0) {
+          lines.push(`- ${pad}${item.substring(0, arrow)}`);
+          lines.push(`+ ${pad}${item.substring(arrow + 4)}`);
+        } else {
+          lines.push(`  ${pad}${item}`);
+        }
+      } else if (typeof item === 'object' && item !== null) {
+        const status = item._status;
+        const label = item.Name || item.Tier || '';
+        const prefix = status === 'added' ? '+' : status === 'removed' ? '-' : ' ';
+
+        if (status === 'added' || status === 'removed') {
+          // Show the whole sub-object with +/- prefix
+          if (label) lines.push(`${prefix} ${pad}${label}:`);
+          formatDiffLinesFlat(item, lines, depth + 1, prefix);
+        } else {
+          // Changed item — show label as context, diff the fields
+          if (label) lines.push(`  ${pad}${label}:`);
+          formatDiffLines(item, lines, depth + 1);
+        }
+      }
+    }
+    return;
+  }
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === '_status') continue;
+
+    if (typeof value === 'string') {
+      const arrow = value.indexOf(' -> ');
+      if (arrow >= 0) {
+        // Changed value
+        lines.push(`- ${pad}${key}: ${value.substring(0, arrow)}`);
+        lines.push(`+ ${pad}${key}: ${value.substring(arrow + 4)}`);
+      } else {
+        // Context key (unchanged)
+        lines.push(`  ${pad}${key}: ${value}`);
+      }
+    } else if (Array.isArray(value)) {
+      lines.push(`  ${pad}${key}:`);
+      formatDiffLines(value, lines, depth + 1);
+    } else if (typeof value === 'object' && value !== null) {
+      lines.push(`  ${pad}${key}:`);
+      formatDiffLines(value, lines, depth + 1);
+    } else if (value != null) {
+      lines.push(`  ${pad}${key}: ${value}`);
+    }
+  }
+}
+
+/** Format all fields of an object with a fixed prefix (+/-) for added/removed items. */
+function formatDiffLinesFlat(obj, lines, depth, prefix) {
+  const pad = '  '.repeat(depth);
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === '_status' || key === 'Name' || key === 'Tier') continue;
+    if (typeof value === 'object' && value !== null) {
+      lines.push(`${prefix} ${pad}${key}:`);
+      formatDiffLinesFlat(value, lines, depth + 1, prefix);
+    } else if (value != null) {
+      lines.push(`${prefix} ${pad}${key}: ${value}`);
+    }
+  }
 }
 
 
