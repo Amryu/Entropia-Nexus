@@ -1261,9 +1261,15 @@ async function sendMapImage(thread, change, entity) {
   }
 }
 
-/** Find and replace the existing map image message, or send a new one. */
+/** Find and replace the existing map image message, but only if shape/data changed. */
 async function updateMapImage(thread, change, entity) {
   if ((change.entity !== 'Area' && change.entity !== 'Location') || !change.data?.Properties?.Shape) return;
+
+  // Only re-render if the shape type or shape data actually changed
+  const newProps = change.data?.Properties;
+  const oldProps = entity?.Properties;
+  if (oldProps?.Shape === newProps?.Shape && JSON.stringify(oldProps?.Data) === JSON.stringify(newProps?.Data)) return;
+
   try {
     const planetData = await fetchPlanetData(change.data.Planet?.Name);
     if (!planetData) return;
@@ -1278,7 +1284,6 @@ async function updateMapImage(thread, change, entity) {
     );
 
     if (existingMapMsg) {
-      // Edit the message with the new image (delete + re-send, since editing attachments isn't straightforward)
       await existingMapMsg.delete().catch(() => {});
     }
     await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
