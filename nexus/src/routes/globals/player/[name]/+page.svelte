@@ -1040,11 +1040,11 @@
                 <thead>
                   <tr>
                     <th class="sortable" onclick={() => rareFindSort = toggleSort(rareFindSort, 'target')}>Item{sortIcon(rareFindSort, 'target')}</th>
-                    <th class="sortable right" onclick={() => rareFindSort = toggleSort(rareFindSort, 'value')}>Value{sortIcon(rareFindSort, 'value')}</th>
-                    <th class="sortable" onclick={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
-                    <th></th>
+                    <th class="sortable right col-value" onclick={() => rareFindSort = toggleSort(rareFindSort, 'value')}>Value{sortIcon(rareFindSort, 'value')}</th>
+                    <th class="col-badge"></th>
                     <th class="col-media"></th>
                     <th class="col-gz"></th>
+                    <th class="sortable col-time" onclick={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1052,10 +1052,7 @@
                     <tr>
                       <td>{item.target}</td>
                       <td class="right font-weight-bold">{formatPed(item.value)} PED</td>
-                      <td class="text-muted" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
-                      <td>
-                        {#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}
-                      </td>
+                      <td>{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
                       <td class="col-media">
                         {#if item.media_image || item.media_video}
                           <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
@@ -1070,6 +1067,7 @@
                         {/if}
                       </td>
                       <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
+                      <td class="text-muted" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -2019,7 +2017,7 @@
     text-align: center;
     padding: 4px 4px !important;
   }
-  .col-time { width: 50px; }
+  .col-time { width: 45px; }
   .col-type { width: 65px; }
 
   .media-icon-btn {
