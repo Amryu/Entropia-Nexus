@@ -209,7 +209,7 @@ export async function getContributorBalance(userId) {
     ),
     poolUsers.query(
       `SELECT COALESCE(SUM(amount), 0) as total_paid
-       FROM contributor_payouts WHERE user_id = $1`,
+       FROM contributor_payouts WHERE user_id = $1 AND NOT is_bonus`,
       [userId]
     ),
   ]);

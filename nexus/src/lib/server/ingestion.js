@@ -314,8 +314,13 @@ export async function ingestGlobals(userId, events) {
   const weight = await getSubmissionWeight(userId);
   let accepted = 0, duplicates = 0;
 
+  // Single transaction for the entire batch — saves N-1 WAL syncs vs per-event commits.
+  // Advisory locks are held until COMMIT but contention is rare (different users process
+  // different events, same-user batches are sequential anyway).
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     for (const event of deduped) {
       const contentHash = computeGlobalContentHash(event);
       const occurrence = event.occurrence ?? 1;
@@ -324,7 +329,7 @@ export async function ingestGlobals(userId, events) {
       const dedupHi = new Date(eventTs.getTime() + GLOBAL_DEDUP_WINDOW_MS);
 
       try {
-        await client.query('BEGIN');
+        await client.query('SAVEPOINT sp');
         // Serialize concurrent processing of the same content hash + occurrence
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [contentHash + '|' + occurrence]);
 
@@ -370,7 +375,7 @@ export async function ingestGlobals(userId, events) {
                 [delta, GLOBAL_CONFIRM_THRESHOLD, match.id]
               );
             }
-            await client.query('COMMIT');
+            await client.query('RELEASE SAVEPOINT sp');
             duplicates++;
             continue;
           }
@@ -391,7 +396,7 @@ export async function ingestGlobals(userId, events) {
             [weight, GLOBAL_CONFIRM_THRESHOLD, match.id]
           );
 
-          await client.query('COMMIT');
+          await client.query('RELEASE SAVEPOINT sp');
           accepted++;
           continue;
         }
@@ -430,17 +435,24 @@ export async function ingestGlobals(userId, events) {
           [inserted[0].id, userId, weight, eventTs.toISOString()]
         );
 
-        await client.query('COMMIT');
+        await client.query('RELEASE SAVEPOINT sp');
         accepted++;
       } catch (e) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK TO SAVEPOINT sp').catch(() => {});
         if (e.code === '23505') { // unique_violation
           duplicates++;
         } else {
+          // Abort the entire transaction on unexpected errors
+          await client.query('ROLLBACK').catch(() => {});
           throw e;
         }
       }
     }
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
   } finally {
     client.release();
   }
@@ -479,8 +491,11 @@ export async function ingestTrades(userId, messages) {
   const weight = await getSubmissionWeight(userId);
   let accepted = 0, duplicates = 0;
 
+  // Single transaction for the entire batch — saves N-1 WAL syncs.
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     for (const msg of deduped) {
       const contentHash = computeTradeContentHash(msg);
       const eventTs = new Date(msg.timestamp);
@@ -488,7 +503,7 @@ export async function ingestTrades(userId, messages) {
       const windowHi = new Date(eventTs.getTime() + TIMESTAMP_WINDOW_MS);
 
       try {
-        await client.query('BEGIN');
+        await client.query('SAVEPOINT sp');
         // Serialize concurrent processing of the same content hash
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [contentHash]);
 
@@ -527,7 +542,7 @@ export async function ingestTrades(userId, messages) {
                 [delta, existing.id]
               );
             }
-            await client.query('COMMIT');
+            await client.query('RELEASE SAVEPOINT sp');
             duplicates++;
             continue;
           }
@@ -544,7 +559,7 @@ export async function ingestTrades(userId, messages) {
             [weight, existing.id]
           );
 
-          await client.query('COMMIT');
+          await client.query('RELEASE SAVEPOINT sp');
           accepted++;
           continue;
         }
@@ -567,7 +582,7 @@ export async function ingestTrades(userId, messages) {
             return levenshteinBounded(msgNorm, existing, maxDist) <= maxDist;
           });
           if (isRepost) {
-            await client.query('COMMIT');
+            await client.query('RELEASE SAVEPOINT sp');
             duplicates++;
             continue;
           }
@@ -588,17 +603,23 @@ export async function ingestTrades(userId, messages) {
           [inserted[0].id, userId, weight, eventTs.toISOString()]
         );
 
-        await client.query('COMMIT');
+        await client.query('RELEASE SAVEPOINT sp');
         accepted++;
       } catch (e) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK TO SAVEPOINT sp').catch(() => {});
         if (e.code === '23505') { // unique_violation
           duplicates++;
         } else {
+          await client.query('ROLLBACK').catch(() => {});
           throw e;
         }
       }
     }
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
   } finally {
     client.release();
   }

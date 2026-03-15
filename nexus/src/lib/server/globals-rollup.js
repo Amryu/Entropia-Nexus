@@ -42,18 +42,23 @@ const COARSE_GRANULARITIES = [
  * Rebuild daily rollup rows for the given date range.
  * Runs DELETE + INSERT within a transaction for each table.
  */
-async function rebuildDailyRange(startDate, endDate) {
+async function rebuildDailyRange(startDate, endDate, { skipDelete = false } = {}) {
   const client = await pool.connect();
   try {
     await client.query('SET statement_timeout = 120000'); // 2 min for heavy rebuild
     await client.query('BEGIN');
 
     // globals_rollup (global-level)
-    await client.query(
-      `DELETE FROM globals_rollup
-       WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
-      [startDate, endDate]
-    );
+    // Incremental rebuilds skip DELETE — events are only added, never removed,
+    // and ON CONFLICT DO UPDATE handles existing rows. Full rebuilds (startup)
+    // still DELETE to clean up any stale data.
+    if (!skipDelete) {
+      await client.query(
+        `DELETE FROM globals_rollup
+         WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
+        [startDate, endDate]
+      );
+    }
     await client.query(
       `INSERT INTO globals_rollup (granularity, period_start, global_type, event_count, sum_value, max_value, hof_count, ath_count)
        SELECT 'daily', date_trunc('day', event_timestamp), global_type,
@@ -69,11 +74,13 @@ async function rebuildDailyRange(startDate, endDate) {
     );
 
     // globals_rollup_player (per-player)
-    await client.query(
-      `DELETE FROM globals_rollup_player
-       WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
-      [startDate, endDate]
-    );
+    if (!skipDelete) {
+      await client.query(
+        `DELETE FROM globals_rollup_player
+         WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
+        [startDate, endDate]
+      );
+    }
     await client.query(
       `INSERT INTO globals_rollup_player (granularity, period_start, player_name, global_type, event_count, sum_value, max_value, hof_count, ath_count)
        SELECT 'daily', date_trunc('day', event_timestamp), player_name, global_type,
@@ -89,11 +96,13 @@ async function rebuildDailyRange(startDate, endDate) {
     );
 
     // globals_rollup_target (per-target)
-    await client.query(
-      `DELETE FROM globals_rollup_target
-       WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
-      [startDate, endDate]
-    );
+    if (!skipDelete) {
+      await client.query(
+        `DELETE FROM globals_rollup_target
+         WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
+        [startDate, endDate]
+      );
+    }
     await client.query(
       `INSERT INTO globals_rollup_target (granularity, period_start, target_name, mob_id, global_type, event_count, sum_value, max_value, hof_count, ath_count)
        SELECT 'daily', date_trunc('day', event_timestamp), target_name, MAX(mob_id), global_type,
@@ -276,7 +285,7 @@ async function incrementalRebuild(oldestEventTs) {
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   tomorrow.setUTCHours(0, 0, 0, 0);
 
-  await rebuildDailyRange(startDate, tomorrow);
+  await rebuildDailyRange(startDate, tomorrow, { skipDelete: true });
 
   // Rebuild coarse granularities for the affected range
   for (const { granularity, truncUnit } of COARSE_GRANULARITIES) {
