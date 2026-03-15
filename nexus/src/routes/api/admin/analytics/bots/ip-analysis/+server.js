@@ -7,15 +7,8 @@ import { pool } from '$lib/server/db.js';
  * GET /api/admin/analytics/bots/ip-analysis
  *
  * Analyzes IP patterns in route_visits to detect potential crawler networks.
- * Groups IPs by /24 subnet and scores based on:
- *   - Request volume from the subnet
- *   - Number of distinct IPs (distributed crawling signal)
- *   - Number of distinct user agents (UA rotation signal)
- *   - Bot ratio already flagged
- *   - Request rate (requests per IP — high = automated)
- *   - Diversity of routes hit (crawlers tend to hit many different pages)
- *
- * Returns subnets ranked by suspicion score, excluding already-blocked ranges.
+ * Groups IPs by /24 subnet and scores by request rate, UA rotation,
+ * distributed IPs, existing bot ratio, and route diversity.
  */
 export async function GET({ locals, url }) {
   requireAdminAPI(locals);
@@ -23,19 +16,10 @@ export async function GET({ locals, url }) {
   const days = Math.min(30, Math.max(1, parseInt(url.searchParams.get('days') || '7', 10)));
 
   try {
-    // Get existing blocked ranges to exclude
-    const { rows: blocked } = await pool.query(
-      `SELECT cidr::text FROM bot_ip_ranges WHERE enabled = true`
-    );
-    const blockedCidrs = blocked.map(r => r.cidr);
-
-    // Analyze /24 subnets (IPv4 only)
-    // network(ip::cidr) truncates to the subnet, but we need /24 specifically
     const { rows: subnets } = await pool.query(
       `WITH subnet_stats AS (
          SELECT
-           -- Extract /24 subnet: set last octet to 0
-           set_masklen(ip_address, 24) AS subnet,
+           network(set_masklen(ip_address, 24)) AS subnet,
            count(*)::integer AS total_requests,
            count(DISTINCT ip_address)::integer AS distinct_ips,
            count(DISTINCT user_agent)::integer AS distinct_uas,
@@ -45,11 +29,11 @@ export async function GET({ locals, url }) {
            min(visited_at) AS first_seen,
            max(visited_at) AS last_seen
          FROM route_visits
-         WHERE visited_at >= now() - interval '${days} days'
+         WHERE visited_at >= now() - $1 * interval '1 day'
            AND ip_address IS NOT NULL
            AND family(ip_address) = 4
-         GROUP BY set_masklen(ip_address, 24)
-         HAVING count(*) >= 10  -- minimum activity threshold
+         GROUP BY network(set_masklen(ip_address, 24))
+         HAVING count(*) >= 10
        )
        SELECT
          subnet::text,
@@ -61,55 +45,45 @@ export async function GET({ locals, url }) {
          non_bot_ips,
          first_seen,
          last_seen,
-         -- Suspicion score: higher = more likely a crawler network
          (
-           -- High request volume per IP suggests automation
            CASE WHEN distinct_ips > 0 THEN least(total_requests::float / distinct_ips, 100) ELSE 0 END * 2
-           -- Many distinct UAs from same subnet = UA rotation
-           + CASE WHEN distinct_uas > distinct_ips * 2 THEN 30 ELSE
-               CASE WHEN distinct_uas > distinct_ips THEN 15 ELSE 0 END END
-           -- Many IPs in same /24 hitting the site = distributed crawling
+           + CASE WHEN distinct_uas > distinct_ips * 2 THEN 30
+               WHEN distinct_uas > distinct_ips THEN 15 ELSE 0 END
            + least(distinct_ips, 50) * 1.5
-           -- High existing bot ratio
            + CASE WHEN total_requests > 0 THEN (bot_count::float / total_requests * 40) ELSE 0 END
-           -- Hitting many distinct routes = systematic crawling
            + CASE WHEN distinct_routes > 50 THEN 20
                WHEN distinct_routes > 20 THEN 10 ELSE 0 END
-         )::integer AS suspicion_score
+         )::integer AS suspicion_score,
+         -- Check if this subnet is already covered by an enabled bot_ip_range
+         EXISTS(
+           SELECT 1 FROM bot_ip_ranges br
+           WHERE br.enabled = true AND subnet << br.cidr
+         ) AS already_blocked
        FROM subnet_stats
        ORDER BY suspicion_score DESC
-       LIMIT 50`
+       LIMIT 50`,
+      [days]
     );
 
     // Filter out already-blocked subnets
-    const results = subnets.filter(s => {
-      const subnetStr = s.subnet;
-      return !blockedCidrs.some(cidr => {
-        // Simple check: if the blocked CIDR covers this /24
-        // This is approximate — for exact matching we'd use PG's >> operator
-        return subnetStr.startsWith(cidr.split('/')[0].split('.').slice(0, 2).join('.'));
-      });
-    });
+    const results = subnets.filter(s => !s.already_blocked);
 
-    // For the top suspicious subnets, fetch sample IPs + UAs
-    const topSubnets = results.slice(0, 20);
+    // Fetch sample IPs for the top 5 suspicious subnets
     const samples = {};
-    if (topSubnets.length > 0) {
-      for (const subnet of topSubnets.slice(0, 5)) {
-        const subnetBase = subnet.subnet.split('/')[0];
-        const { rows: ips } = await pool.query(
-          `SELECT ip_address::text AS ip, user_agent, count(*)::integer AS requests,
-                  bool_or(is_bot) AS flagged_bot
-           FROM route_visits
-           WHERE visited_at >= now() - interval '${days} days'
-             AND ip_address << $1::cidr
-           GROUP BY ip_address, user_agent
-           ORDER BY requests DESC
-           LIMIT 10`,
-          [subnet.subnet]
-        );
-        samples[subnetBase] = ips;
-      }
+    for (const subnet of results.slice(0, 5)) {
+      const { rows: ips } = await pool.query(
+        `SELECT ip_address::text AS ip, user_agent, count(*)::integer AS requests,
+                bool_or(is_bot) AS flagged_bot
+         FROM route_visits
+         WHERE visited_at >= now() - $1 * interval '1 day'
+           AND ip_address << $2::cidr
+         GROUP BY ip_address, user_agent
+         ORDER BY requests DESC
+         LIMIT 10`,
+        [days, subnet.subnet]
+      );
+      const subnetBase = subnet.subnet.split('/')[0];
+      samples[subnetBase] = ips;
     }
 
     return json({ subnets: results, samples, days });
