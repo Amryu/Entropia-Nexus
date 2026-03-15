@@ -1246,6 +1246,8 @@ class SettingsPage(QWidget):
                 self._capture_enabled_cb.setChecked(False)
                 self._capture_enabled_cb.blockSignals(False)
                 return
+            # FFmpeg may have just been downloaded — refresh status label
+            self._update_ffmpeg_status()
         self._update_capture_ui_state()
         self._schedule_save()
 

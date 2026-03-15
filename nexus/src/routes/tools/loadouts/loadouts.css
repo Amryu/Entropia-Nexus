@@ -2465,6 +2465,7 @@
 
     & .compare-table-wrap :global(.fancy-table-container) {
       height: calc(100vh - 260px);
+      height: calc(100dvh - 260px);
       min-height: 260px;
     }
 

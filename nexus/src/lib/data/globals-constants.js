@@ -18,15 +18,14 @@ export const TYPE_CONFIG = {
 /** Type filter buttons for the filter bar. */
 export const TYPE_FILTERS = [
   { value: '', label: 'All' },
-  { value: 'kill,team_kill', label: 'Hunting' },
+  { value: 'kill,team_kill,examine', label: 'Hunting' },
   { value: 'deposit', label: 'Mining' },
   { value: 'craft', label: 'Crafting' },
-  { value: 'examine', label: 'Instance' },
 ];
 
 /** Top loots tab definitions. */
 export const TOP_LOOTS_TABS = [
-  { value: 'hunting',   label: 'Hunting',     types: "('kill', 'team_kill')", hasValue: true },
+  { value: 'hunting',   label: 'Hunting',     types: "('kill', 'team_kill', 'examine')", hasValue: true },
   { value: 'mining',    label: 'Mining',       types: "('deposit')",          hasValue: true },
   { value: 'crafting',  label: 'Crafting',     types: "('craft')",            hasValue: true },
   { value: 'rare_item', label: 'Rare Find',    types: "('rare_item')",        hasValue: true,  isSpecial: true },

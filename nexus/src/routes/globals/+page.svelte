@@ -253,9 +253,24 @@
     }, 300);
   }
 
+  // Map type filter values to their matching top loots tab
+  const TYPE_TO_TAB = {
+    'kill,team_kill,examine': 'hunting',
+    'deposit': 'mining',
+    'craft': 'crafting',
+  };
+
   function onTypeFilter(val) {
     typeFilter = val;
-    if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill')) {
+    // Auto-select matching top loots tab
+    const matchedTab = TYPE_TO_TAB[val];
+    if (matchedTab && !filtersDisabled) {
+      topLootsTab = matchedTab;
+      topLootsPage = 1;
+      topLootsSort = { col: '', asc: false };
+    }
+    // Mob grouping only applies to hunting
+    if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill' || t === 'examine')) {
       targetsGroupBy = 'maturity';
     }
     onFilterChange();
@@ -324,8 +339,8 @@
     return qs ? `${basePath}?${qs}` : basePath;
   }
 
-  // Filter relevance helpers
-  let showTopTargets = $derived(!typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill'));
+  // Filter relevance helpers — top targets works for hunting, mining, and crafting
+  let isHuntingFilter = $derived(!typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill' || t === 'examine'));
 
   // Get index of Y-axis label clicked (for horizontal bar charts)
   function getClickedLabelIndex(evt, chart) {
@@ -352,12 +367,7 @@
     buildActivityChart(textMuted, borderColor);
     buildTopPlayersChart(textMuted, borderColor);
 
-    if (showTopTargets) {
-      buildTopTargetsChart(textMuted, borderColor);
-    } else if (topTargetsChart) {
-      topTargetsChart.destroy();
-      topTargetsChart = null;
-    }
+    buildTopTargetsChart(textMuted, borderColor);
   }
 
   function buildActivityChart(textMuted, borderColor) {
@@ -489,7 +499,9 @@
     if (topTargetsChart) topTargetsChart.destroy();
 
     const targets = stats.top_targets.slice(0, 8);
-    const label = targetsSortBy === 'value' ? 'Total Value (PED)' : 'Kill Count';
+    const countLabel = typeFilter === 'deposit' ? 'Count' : typeFilter === 'craft' ? 'Count' : 'Count';
+    const label = targetsSortBy === 'value' ? 'Total Value (PED)' : countLabel;
+    const chartColor = typeFilter === 'deposit' ? '#60b0ff' : typeFilter === 'craft' ? '#f97316' : '#ef4444';
 
     topTargetsChart = new Chart(topTargetsCanvas, {
       type: 'bar',
@@ -498,8 +510,8 @@
         datasets: [{
           label,
           data: targets.map(t => t[targetsSortBy]),
-          backgroundColor: '#ef444440',
-          borderColor: '#ef4444',
+          backgroundColor: chartColor + '40',
+          borderColor: chartColor,
           borderWidth: 1,
         }],
       },
@@ -819,7 +831,7 @@
         <div class="chart-card-header">
           <h3>Top Targets</h3>
           <div class="chart-controls">
-            {#if showTopTargets}
+            {#if isHuntingFilter}
               <div class="sort-toggle">
                 <button class="sort-btn" class:active={targetsGroupBy === 'maturity'} onclick={() => onTargetsGroupChange('maturity')}>Maturities</button>
                 <button class="sort-btn" class:active={targetsGroupBy === 'mob'} onclick={() => onTargetsGroupChange('mob')}>Mobs</button>
@@ -833,9 +845,7 @@
           </div>
         </div>
         <div class="chart-container">
-          {#if !showTopTargets}
-            <div class="chart-placeholder">Top targets is available for hunting globals</div>
-          {:else if statsLoading && !stats}
+          {#if statsLoading && !stats}
             <div class="chart-loading"><span class="spinner"></span></div>
           {:else}
             <canvas bind:this={topTargetsCanvas}></canvas>

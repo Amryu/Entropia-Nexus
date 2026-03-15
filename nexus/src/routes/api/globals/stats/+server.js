@@ -103,8 +103,8 @@ export async function GET({ url, request }) {
                   MAX(max_value) AS max_value,
                   SUM(hof_count) AS hof_count,
                   SUM(ath_count) AS ath_count,
-                  SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_count,
-                  SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_value,
+                  SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
+                  SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
                   SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
                   SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
                   SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count,
@@ -144,19 +144,19 @@ export async function GET({ url, request }) {
                LIMIT 10`,
               baseParams
             ),
-        // Top targets (from agg table or rollup, kill/team_kill only)
+        // Top targets (from agg table or rollup, respects type filter)
         useAggTables
           ? pool.query(
               groupByMob
                 ? `SELECT min(target_name) AS target, mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
                    FROM globals_target_agg
-                   WHERE period = $1 AND primary_type IN ('kill', 'team_kill')
+                   WHERE period = $1
                    GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
                    ORDER BY ${targetsSortAgg === 'event_count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
                    LIMIT 10`
                 : `SELECT target_name AS target, mob_id, event_count AS count, sum_value AS value
                    FROM globals_target_agg
-                   WHERE period = $1 AND primary_type IN ('kill', 'team_kill')
+                   WHERE period = $1
                    ORDER BY ${targetsSortAgg} DESC
                    LIMIT 10`,
               [period]
@@ -165,17 +165,17 @@ export async function GET({ url, request }) {
               groupByMob
                 ? `SELECT min(target_name) AS target, mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
                    FROM globals_rollup_target
-                   WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
+                   WHERE granularity = $1${periodWhere}${typeCond}
                    GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
                    ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
                    LIMIT 10`
                 : `SELECT target_name AS target, MAX(mob_id) AS mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
                    FROM globals_rollup_target
-                   WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
+                   WHERE granularity = $1${periodWhere}${typeCond}
                    GROUP BY target_name
                    ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
                    LIMIT 10`,
-              [rollupGranularity, ...periodParams]
+              baseParams
             ),
         // Activity timeline
         pool.query(
@@ -255,8 +255,8 @@ export async function GET({ url, request }) {
                 COALESCE(max(value), 0) AS max_value,
                 count(*) FILTER (WHERE is_hof) AS hof_count,
                 count(*) FILTER (WHERE is_ath) AS ath_count,
-                count(*) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_count,
-                COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
+                count(*) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
+                COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
                 count(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
                 COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
                 count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
@@ -289,18 +289,18 @@ export async function GET({ url, request }) {
         params
       ),
 
-      // Top targets (kill/team_kill only)
+      // Top targets (respects type filter)
       client.query(
         groupByMob
           ? `SELECT min(target_name) AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
              FROM ingested_globals
-             ${whereClause} AND global_type IN ('kill', 'team_kill')
+             ${whereClause}
              GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
              ORDER BY ${targetsSortCol} DESC
              LIMIT 10`
           : `SELECT target_name AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
              FROM ingested_globals
-             ${whereClause} AND global_type IN ('kill', 'team_kill')
+             ${whereClause}
              GROUP BY target_name, mob_id
              ORDER BY ${targetsSortCol} DESC
              LIMIT 10`,

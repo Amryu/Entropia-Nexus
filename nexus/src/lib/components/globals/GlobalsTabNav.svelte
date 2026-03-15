@@ -63,6 +63,14 @@
     gap: 2px;
     margin-bottom: 20px;
     border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    scrollbar-width: none;
+  }
+
+  .globals-tab-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .tab-link {
@@ -74,6 +82,8 @@
     border-bottom: 2px solid transparent;
     transition: all 0.15s ease;
     margin-bottom: -1px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .tab-link:hover {

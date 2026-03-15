@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QRect, QPointF
-from PyQt6.QtGui import QColor, QCursor, QFontMetrics, QPainter, QPixmap, QPolygonF, QTextDocument
+from PyQt6.QtGui import QColor, QCursor, QFontMetrics, QPainter, QPixmap, QPolygonF, QTextCursor, QTextDocument
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from ..theme import (
@@ -30,6 +30,7 @@ MAX_TICKER_LINES = 200
 _TRIM_BUFFER = 30  # let ticker grow this far before bulk trim
 _MAX_GLOBAL_FINGERPRINTS = 500
 _GLOBAL_INGEST_BATCH_WINDOW_MS = 50
+_GLOBAL_INGEST_MAX_AGE = timedelta(minutes=10)  # Ignore ingested globals older than this
 _GLOBAL_PLAYER_WIDTH_RATIO = 0.27
 _GLOBAL_TARGET_WIDTH_RATIO = 0.35
 _GLOBAL_TEXT_WIDTH_FUDGE = 0.95
@@ -1171,6 +1172,10 @@ class DashboardPage(QWidget):
             is_hof=bool(data.get("hof")),
             is_ath=bool(data.get("ath")),
         )
+        # Skip historical globals that were recently ingested but happened long ago
+        now = datetime.now(event.timestamp.tzinfo)
+        if now - event.timestamp > _GLOBAL_INGEST_MAX_AGE:
+            return
         self._pending_ingested_globals.append(event)
         if not self._ingested_flush_timer.isActive():
             self._ingested_flush_timer.start()
@@ -1284,12 +1289,20 @@ class DashboardPage(QWidget):
             rows = rows[-MAX_TICKER_LINES:]
         self._global_log.setHtml("".join(rows))
         self._global_lines = len(rows)
+        # Keep scroll at bottom so newest globals are visible
+        cursor = self._global_log.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self._global_log.setTextCursor(cursor)
 
     def _rebuild_trades(self):
         """Bulk-replace trade ticker HTML from the stored deque."""
         rows = list(self._trade_html)
         self._trade_log.setHtml("".join(rows))
         self._trade_lines = len(rows)
+        # Keep scroll at bottom so newest trades are visible
+        cursor = self._trade_log.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self._trade_log.setTextCursor(cursor)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

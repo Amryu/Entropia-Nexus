@@ -175,6 +175,7 @@
   .users-page {
     max-width: 1400px;
     height: calc(100vh - 140px);
+    height: calc(100dvh - 140px);
     display: flex;
     flex-direction: column;
   }
@@ -298,6 +299,7 @@
     .users-page {
       height: auto;
       min-height: calc(100vh - 140px);
+      min-height: calc(100dvh - 140px);
     }
 
     .breadcrumb {

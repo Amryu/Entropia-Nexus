@@ -77,8 +77,8 @@ async function buildStatsCache() {
               COALESCE(max(value), 0) AS max_value,
               count(*) FILTER (WHERE is_hof) AS hof_count,
               count(*) FILTER (WHERE is_ath) AS ath_count,
-              count(*) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_count,
-              COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
+              count(*) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
+              COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
               count(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
               COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
               count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
@@ -254,7 +254,7 @@ async function buildTargetsPage1Cache() {
 // ------------------------------------------------------------------
 
 const ATH_CATEGORIES = [
-  { category: 'hunting', typeFilter: "global_type IN ('kill', 'team_kill')", useMobKey: true },
+  { category: 'hunting', typeFilter: "global_type IN ('kill', 'team_kill', 'examine')", useMobKey: true },
   { category: 'mining', typeFilter: "global_type = 'deposit'", useMobKey: false },
   { category: 'crafting', typeFilter: "global_type = 'craft'", useMobKey: false },
   { category: 'pvp', typeFilter: "global_type = 'pvp'", useMobKey: false },

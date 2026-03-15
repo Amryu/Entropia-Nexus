@@ -78,7 +78,7 @@
   function onTypeFilter(val) {
     typeFilter = val;
     // Reset mob grouping when switching away from hunting
-    if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill')) {
+    if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill' || t === 'examine')) {
       groupBy = 'maturity';
     }
     onFilterChange();
@@ -103,7 +103,7 @@
     fetchData();
   }
 
-  let isHuntingFilter = $derived(!typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill'));
+  let isHuntingFilter = $derived(!typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill' || t === 'examine'));
 
   function goToPage(p) {
     currentPage = p;
