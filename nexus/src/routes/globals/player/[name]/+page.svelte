@@ -2046,6 +2046,10 @@
     .achievement-item { flex-wrap: wrap; gap: 4px 8px; padding: 6px 8px; font-size: 0.75rem; }
     .achievement-actions, .achievement-time { display: none; }
 
+    /* Top loot rows: hide rank, actions on mobile */
+    .top-loot-rank, .top-loot-actions { display: none; }
+    .top-loot-item { padding: 4px 6px; font-size: 0.75rem; }
+
     /* Section titles */
     .section-card h2, .section-title-icon { font-size: 0.875rem; }
     .section-subtitle { font-size: 0.8125rem; }
