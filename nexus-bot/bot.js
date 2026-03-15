@@ -1246,6 +1246,9 @@ async function updateDiffMessages(thread, formatted) {
   }
 }
 
+// In-memory cache of last-rendered shape per change ID (lost on restart, which is fine)
+const lastRenderedShapes = new Map();
+
 /** Send a map image for Location/Area changes. */
 async function sendMapImage(thread, change, entity) {
   if ((change.entity !== 'Area' && change.entity !== 'Location') || !change.data?.Properties?.Shape) return;
@@ -1255,20 +1258,27 @@ async function sendMapImage(thread, change, entity) {
     const mapImage = await renderMapChange(change.data, entity, planetData);
     if (mapImage) {
       await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
+      // Cache the rendered shape so we can skip re-renders on update
+      lastRenderedShapes.set(change.id, {
+        Shape: change.data.Properties.Shape,
+        Data: JSON.stringify(change.data.Properties.Data)
+      });
     }
   } catch (e) {
     console.error(`Failed to render map image for thread ${thread.id}: ${e.message}`);
   }
 }
 
-/** Find and replace the existing map image message, but only if shape/data changed. */
+/** Find and replace the existing map image message, but only if shape/data changed since last render. */
 async function updateMapImage(thread, change, entity) {
   if ((change.entity !== 'Area' && change.entity !== 'Location') || !change.data?.Properties?.Shape) return;
 
-  // Only re-render if the shape type or shape data actually changed
-  const newProps = change.data?.Properties;
-  const oldProps = entity?.Properties;
-  if (oldProps?.Shape === newProps?.Shape && JSON.stringify(oldProps?.Data) === JSON.stringify(newProps?.Data)) return;
+  const newShape = change.data.Properties.Shape;
+  const newData = JSON.stringify(change.data.Properties.Data);
+  const prev = lastRenderedShapes.get(change.id);
+
+  // Skip re-render if shape hasn't changed since last render
+  if (prev && prev.Shape === newShape && prev.Data === newData) return;
 
   try {
     const planetData = await fetchPlanetData(change.data.Planet?.Name);
@@ -1287,6 +1297,8 @@ async function updateMapImage(thread, change, entity) {
       await existingMapMsg.delete().catch(() => {});
     }
     await thread.send({ files: [{ attachment: mapImage, name: 'map-change.png' }] });
+
+    lastRenderedShapes.set(change.id, { Shape: newShape, Data: newData });
   } catch (e) {
     console.error(`Failed to update map image for thread ${thread.id}: ${e.message}`);
   }
