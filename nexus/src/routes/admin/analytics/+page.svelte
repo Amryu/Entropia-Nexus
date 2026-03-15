@@ -827,6 +827,15 @@
   .status-5xx { background-color: rgba(239, 68, 68, 0.2); color: var(--error-color); }
   .bot-badge { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
   .blocked-badge { background-color: rgba(16, 185, 129, 0.15); color: var(--success-color); padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 6px; }
+  .score-breakdown {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    margin-bottom: 10px; font-size: 12px;
+  }
+  .score-chip {
+    padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    background-color: var(--hover-color); color: var(--text-muted);
+  }
+  .score-chip.score-high { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); }
   .ua-label { font-size: 12px; white-space: nowrap; }
 
   /* Live table: fixed layout with ellipsis */
@@ -1463,6 +1472,18 @@
                   <tr class="detail-row">
                     <td colspan="9">
                       <div style="padding: 8px 12px; font-size: 12px">
+                        {#if s.breakdown}
+                          <div class="score-breakdown">
+                            <strong>Score breakdown ({s.suspicion_score}):</strong>
+                            {#each Object.entries(s.breakdown) as [key, val]}
+                              {#if val > 0}
+                                <span class="score-chip" class:score-high={val >= 20}>
+                                  {key.replace(/_/g, ' ')}: +{val}
+                                </span>
+                              {/if}
+                            {/each}
+                          </div>
+                        {/if}
                         <strong>Sample IPs + User Agents:</strong>
                         <table class="data-table" style="margin-top: 6px">
                           <thead>
