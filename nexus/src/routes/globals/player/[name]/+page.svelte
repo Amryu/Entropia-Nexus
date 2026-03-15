@@ -444,7 +444,7 @@
                     <span class="top-loot-rank">{i + 1}</span>
                     <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link top-loot-target" title={loot.target}>{loot.target}</a>
                     <span class="top-loot-value">{formatPed(loot.value)} PED</span>
-                    {#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}
+                    <span class="badge-slot">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</span>
                     <span class="top-loot-actions">
                       {#if loot.media_image || loot.media_video}
                         <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
@@ -479,7 +479,7 @@
                     <span class="top-loot-rank">{i + 1}</span>
                     <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link top-loot-target" title={loot.target}>{loot.target}</a>
                     <span class="top-loot-value">{formatPed(loot.value)} PED</span>
-                    {#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}
+                    <span class="badge-slot">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</span>
                     <span class="top-loot-actions">
                       {#if loot.media_image || loot.media_video}
                         <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
@@ -514,7 +514,7 @@
                     <span class="top-loot-rank">{i + 1}</span>
                     <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link top-loot-target" title={loot.target}>{loot.target}</a>
                     <span class="top-loot-value">{formatPed(loot.value)} PED</span>
-                    {#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}
+                    <span class="badge-slot">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</span>
                     <span class="top-loot-actions">
                       {#if loot.media_image || loot.media_video}
                         <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
@@ -1921,6 +1921,12 @@
   .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
   .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
 
+  .badge-slot {
+    display: inline-block;
+    min-width: 28px;
+    flex-shrink: 0;
+  }
+
   .badge-hof, .badge-ath {
     padding: 1px 6px;
     border-radius: 3px;
@@ -2036,7 +2042,7 @@
     .col-count { width: 24px; }
 
     /* Compact badge on mobile */
-    .col-badge { width: 32px; padding: 0 2px !important; }
+    .col-badge { width: 24px !important; padding: 0 2px !important; }
     .badge-hof, .badge-ath { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
 
     /* Compact type badge */
