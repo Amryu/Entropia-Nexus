@@ -49,14 +49,18 @@ function shouldSkip(pathname, method) {
 const IP_PATTERN = /^[\d.:a-fA-F]+$/;
 
 function getClientIp(event) {
-  // Prefer headers set by reverse proxy / CDN
-  const xff = event.request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0].trim();
-    if (first && IP_PATTERN.test(first)) return first;
-  }
+  // CF-Connecting-IP is set by Cloudflare and cannot be spoofed — check first.
+  // X-Forwarded-For can be spoofed by clients (Cloudflare appends to it, so the
+  // first entry may be attacker-controlled).
   const cfIp = event.request.headers.get('cf-connecting-ip');
   if (cfIp && IP_PATTERN.test(cfIp)) return cfIp;
+  const xff = event.request.headers.get('x-forwarded-for');
+  if (xff) {
+    // Take the last entry — that's what the nearest trusted proxy (Cloudflare/nginx) added.
+    const parts = xff.split(',');
+    const last = parts[parts.length - 1].trim();
+    if (last && IP_PATTERN.test(last)) return last;
+  }
   try {
     return event.getClientAddress();
   } catch {
