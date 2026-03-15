@@ -531,7 +531,10 @@
     }
   }
 
+  let blockFeedback = $state('');
+
   async function blockSubnet(subnet, description) {
+    blockFeedback = '';
     try {
       const res = await fetch('/api/admin/analytics/bots/ip-ranges', {
         method: 'POST',
@@ -539,9 +542,10 @@
         body: JSON.stringify({ cidr: subnet, description })
       });
       if (res.ok) {
+        const data = await res.json();
+        if (data.message) blockFeedback = data.message;
         await loadBots();
-        // Re-run analysis to update the list
-        await runIpAnalysis();
+        if (ipAnalysis) await runIpAnalysis();
       }
     } catch (e) {
       console.error('Failed to block subnet:', e);
@@ -1412,6 +1416,9 @@
           <button class="rebuild-btn" onclick={runIpAnalysis} disabled={ipAnalysisLoading}>
             {ipAnalysisLoading ? 'Analyzing...' : 'Analyze'}
           </button>
+          {#if blockFeedback}
+            <span style="font-size: 12px; color: var(--success-color)">{blockFeedback}</span>
+          {/if}
         </div>
 
         {#if ipAnalysis?.subnets?.length > 0}
@@ -1541,12 +1548,15 @@
 
         {#if ipAnalysis?.supernets?.length > 0}
           <div style="margin-top: 16px; padding: 12px; background-color: var(--primary-color); border-radius: 6px">
-            <strong style="font-size: 13px">Suggested larger blocks:</strong>
-            <span class="muted" style="font-size: 12px">Multiple suspicious /24s share these /16 ranges</span>
+            <strong style="font-size: 13px">Suggested merged blocks:</strong>
+            <span class="muted" style="font-size: 12px">Multiple suspicious /24s covered by a single tighter range</span>
+            {#if blockFeedback}
+              <span style="font-size: 12px; color: var(--success-color); margin-left: 8px">{blockFeedback}</span>
+            {/if}
             <table class="data-table" style="margin-top: 8px">
               <thead>
                 <tr>
-                  <th>/16 Range</th>
+                  <th>Range</th>
                   <th class="num">Suspicious /24s</th>
                   <th class="num">Total Requests</th>
                   <th class="num">Total IPs</th>
@@ -1564,8 +1574,8 @@
                     <td class="muted" style="font-size: 11px">{sn.subnets.join(', ')}</td>
                     <td>
                       <button class="toggle-btn" style="font-size: 11px"
-                        onclick={() => blockSubnet(sn.cidr, `Auto-detected /16 (${sn.subnets.length} suspicious /24s)`)}>
-                        Block /16
+                        onclick={() => blockSubnet(sn.cidr, `Auto-detected (${sn.subnets.length} suspicious /24s)`)}>
+                        Block {sn.cidr.split('/')[1] ? `/${sn.cidr.split('/')[1]}` : ''}
                       </button>
                     </td>
                   </tr>

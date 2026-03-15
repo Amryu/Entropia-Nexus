@@ -124,22 +124,55 @@ export async function GET({ locals, url }) {
       samples[subnetBase] = ips;
     }
 
-    // Detect /16 supernets
-    const supernetMap = {};
-    for (const s of results) {
-      if (s.already_blocked) continue;
-      const parts = s.subnet.split('.');
-      const slash16 = `${parts[0]}.${parts[1]}.0.0/16`;
-      if (!supernetMap[slash16]) supernetMap[slash16] = { subnets: [], totalRequests: 0, totalIps: 0, totalScore: 0 };
-      supernetMap[slash16].subnets.push(s.subnet);
-      supernetMap[slash16].totalRequests += s.total_requests;
-      supernetMap[slash16].totalIps += s.distinct_ips;
-      supernetMap[slash16].totalScore += s.suspicion_score;
+    // Find smallest CIDR covering groups of suspicious /24s.
+    // Group by progressively wider prefixes (/23, /22, ... /16) and pick
+    // the tightest grouping that contains 2+ suspicious subnets.
+    function ipToInt(ip) {
+      const p = ip.split('.').map(Number);
+      return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
     }
-    const supernets = Object.entries(supernetMap)
-      .filter(([, v]) => v.subnets.length >= 2)
-      .map(([cidr, v]) => ({ cidr, ...v }))
-      .sort((a, b) => b.subnets.length - a.subnets.length);
+    function intToIp(n) {
+      return `${(n >>> 24) & 0xFF}.${(n >>> 16) & 0xFF}.${(n >>> 8) & 0xFF}.${n & 0xFF}`;
+    }
+    function smallestCovering(subnetCidrs) {
+      const ips = subnetCidrs.map(s => ipToInt(s.split('/')[0]));
+      let diff = 0;
+      for (let i = 1; i < ips.length; i++) diff |= (ips[0] ^ ips[i]);
+      const prefixLen = diff === 0 ? 24 : Math.min(24, 31 - Math.floor(Math.log2(diff)));
+      const mask = prefixLen === 0 ? 0 : (~0 << (32 - prefixLen)) >>> 0;
+      return `${intToIp((ips[0] & mask) >>> 0)}/${prefixLen}`;
+    }
+
+    const unblockedSubnets = results.filter(s => !s.already_blocked);
+    // Try grouping at each prefix length from /23 down to /16
+    const supernets = [];
+    const used = new Set();
+    for (let bits = 23; bits >= 16; bits--) {
+      const groups = {};
+      for (const s of unblockedSubnets) {
+        if (used.has(s.subnet)) continue;
+        const ip = ipToInt(s.subnet.split('/')[0]);
+        const mask = (~0 << (32 - bits)) >>> 0;
+        const key = `${intToIp((ip & mask) >>> 0)}/${bits}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(s);
+      }
+      for (const [, group] of Object.entries(groups)) {
+        if (group.length >= 2) {
+          const cidrs = group.map(g => g.subnet);
+          const covering = smallestCovering(cidrs);
+          supernets.push({
+            cidr: covering,
+            subnets: cidrs,
+            totalRequests: group.reduce((a, g) => a + g.total_requests, 0),
+            totalIps: group.reduce((a, g) => a + g.distinct_ips, 0),
+            totalScore: group.reduce((a, g) => a + g.suspicion_score, 0),
+          });
+          cidrs.forEach(c => used.add(c));
+        }
+      }
+    }
+    supernets.sort((a, b) => b.subnets.length - a.subnets.length);
 
     return json({ subnets: results, samples, supernets, days });
   } catch (e) {
