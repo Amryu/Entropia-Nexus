@@ -41,11 +41,11 @@
   let payoutForm = $state({ user_id: '', amount: '', is_bonus: false, note: '' });
 
   function getEmptyRuleForm() {
-    return { name: '', description: '', category: '', entities: '', change_type: '', data_fields: '', min_amount: '', max_amount: '', contribution_score: '', sort_order: '0' };
+    return { name: '', description: '', category: '', entities: '', change_type: '', data_fields: '', min_amount: '', max_amount: '', sort_order: '0' };
   }
 
   function getEmptyRetroRewardForm() {
-    return { rule_id: '', amount: '', contribution_score: '', note: '' };
+    return { rule_id: '', amount: '', note: '' };
   }
 
   onMount(() => {
@@ -145,7 +145,6 @@
       data_fields: (rule.data_fields || []).join(', '),
       min_amount: rule.min_amount,
       max_amount: rule.max_amount,
-      contribution_score: rule.contribution_score ?? '',
       sort_order: String(rule.sort_order || 0)
     };
     showRuleForm = true;
@@ -166,7 +165,6 @@
       data_fields: parseArrayField(ruleForm.data_fields),
       min_amount: parseFloat(ruleForm.min_amount),
       max_amount: parseFloat(ruleForm.max_amount),
-      contribution_score: ruleForm.contribution_score !== '' ? parseFloat(ruleForm.contribution_score) : null,
       sort_order: parseInt(ruleForm.sort_order || '0')
     };
 
@@ -293,7 +291,6 @@
           const rule = retroMatchingRules[0];
           retroRewardForm.rule_id = String(rule.id);
           retroRewardForm.amount = rule.min_amount === rule.max_amount ? String(rule.min_amount) : '';
-          retroRewardForm.contribution_score = rule.contribution_score != null ? String(rule.contribution_score) : '';
         }
       }
     } catch {
@@ -309,7 +306,6 @@
     if (rule.min_amount === rule.max_amount) {
       retroRewardForm.amount = String(rule.min_amount);
     }
-    retroRewardForm.contribution_score = rule.contribution_score != null ? String(rule.contribution_score) : '';
   }
 
   async function assignRetroReward() {
@@ -332,7 +328,6 @@
           user_id: String(userId),
           rule_id: retroRewardForm.rule_id ? parseInt(retroRewardForm.rule_id) : null,
           amount: parseFloat(retroRewardForm.amount),
-          contribution_score: retroRewardForm.contribution_score !== '' ? parseFloat(retroRewardForm.contribution_score) : null,
           note: retroRewardForm.note?.trim() || null
         })
       });
@@ -743,7 +738,6 @@
             <th>Type</th>
             <th>Data Fields</th>
             <th class="amount-cell">Amount</th>
-            <th class="amount-cell">Score</th>
             <th>Status</th>
             <th></th>
           </tr>
@@ -766,7 +760,6 @@
                   {formatAmount(rule.min_amount)} - {formatAmount(rule.max_amount)}
                 {/if}
               </td>
-              <td class="amount-cell">{rule.contribution_score != null ? formatAmount(rule.contribution_score) : '-'}</td>
               <td>
                 <button class="badge {rule.active ? 'badge-active' : 'badge-inactive'}" style="cursor:pointer; border: none;" onclick={() => toggleRuleActive(rule)}>
                   {rule.active ? 'Active' : 'Inactive'}
@@ -913,11 +906,6 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Contribution Score
-            <input type="number" step="0.01" min="0" bind:value={ruleForm.contribution_score} placeholder="Optional" />
-          </label>
-        </div>
-        <div class="form-group">
           <label>Sort Order
             <input type="number" bind:value={ruleForm.sort_order} />
           </label>
@@ -1009,11 +997,6 @@
         <div class="form-group">
           <label>Amount (PED) *
             <input type="number" step="0.01" min="0.01" bind:value={retroRewardForm.amount} />
-          </label>
-        </div>
-        <div class="form-group">
-          <label>Score
-            <input type="number" step="0.01" min="0" bind:value={retroRewardForm.contribution_score} placeholder="Optional" />
           </label>
         </div>
       </div>
