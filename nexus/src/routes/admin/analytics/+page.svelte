@@ -44,6 +44,10 @@
   let newIpCidr = $state('');
   let newIpDescription = $state('');
   let ipError = $state('');
+  let ipAnalysis = $state(null);
+  let ipAnalysisLoading = $state(false);
+  let ipAnalysisDays = $state(7);
+  let expandedSubnet = $state(null);
 
   // Errors
   let errorData = $state(null);
@@ -291,6 +295,17 @@
     }
   }
 
+  function downloadErrors() {
+    if (!errorData?.errors?.length) return;
+    const blob = new Blob([JSON.stringify(errorData.errors, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `errors-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function clearErrors(route, status) {
     if (!confirm(`Clear ${route ? route + ' ' : ''}${status || 'all'} errors?`)) return;
     try {
@@ -490,6 +505,34 @@
       await loadBots();
     } catch (e) {
       console.error('Failed to delete range:', e);
+    }
+  }
+
+  async function runIpAnalysis() {
+    ipAnalysisLoading = true;
+    try {
+      ipAnalysis = await fetchJson(`/api/admin/analytics/bots/ip-analysis?days=${ipAnalysisDays}`);
+    } catch (e) {
+      console.error('IP analysis failed:', e);
+    } finally {
+      ipAnalysisLoading = false;
+    }
+  }
+
+  async function blockSubnet(subnet, description) {
+    try {
+      const res = await fetch('/api/admin/analytics/bots/ip-ranges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cidr: subnet, description })
+      });
+      if (res.ok) {
+        await loadBots();
+        // Re-run analysis to update the list
+        await runIpAnalysis();
+      }
+    } catch (e) {
+      console.error('Failed to block subnet:', e);
     }
   }
 
@@ -1328,6 +1371,110 @@
         </div>
       {/if}
 
+      <div class="section" style="margin-top: 16px">
+        <h3>Suspicious IP Ranges (Auto-Detection)</h3>
+        <p class="subtitle" style="margin-bottom: 12px">
+          Analyzes /24 subnets for crawler-like patterns: high request rates, UA rotation, distributed IPs.
+        </p>
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px">
+          <select bind:value={ipAnalysisDays} style="padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 6px; background-color: var(--primary-color); color: var(--text-color); font-size: 13px">
+            <option value={1}>Last 24h</option>
+            <option value={3}>Last 3 days</option>
+            <option value={7}>Last 7 days</option>
+            <option value={14}>Last 14 days</option>
+            <option value={30}>Last 30 days</option>
+          </select>
+          <button class="rebuild-btn" onclick={runIpAnalysis} disabled={ipAnalysisLoading}>
+            {ipAnalysisLoading ? 'Analyzing...' : 'Analyze'}
+          </button>
+        </div>
+
+        {#if ipAnalysis?.subnets?.length > 0}
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Subnet</th>
+                <th class="num">Score</th>
+                <th class="num">Requests</th>
+                <th class="num">IPs</th>
+                <th class="num">UAs</th>
+                <th class="num">Routes</th>
+                <th class="num">Bot %</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each ipAnalysis.subnets as s}
+                {@const subnetBase = s.subnet.split('/')[0]}
+                <tr onclick={() => expandedSubnet = expandedSubnet === s.subnet ? null : s.subnet}
+                  style="cursor: pointer"
+                  class:expandable={true}>
+                  <td><code>{s.subnet}</code></td>
+                  <td class="num">
+                    <span class="status-badge"
+                      class:status-5xx={s.suspicion_score >= 80}
+                      class:status-4xx={s.suspicion_score >= 40 && s.suspicion_score < 80}
+                      class:status-2xx={s.suspicion_score < 40}>
+                      {s.suspicion_score}
+                    </span>
+                  </td>
+                  <td class="num">{formatNumber(s.total_requests)}</td>
+                  <td class="num">{s.distinct_ips}</td>
+                  <td class="num" style={s.distinct_uas > s.distinct_ips * 2 ? 'color: var(--error-color); font-weight: bold' : ''}>
+                    {s.distinct_uas}
+                  </td>
+                  <td class="num">{s.distinct_routes}</td>
+                  <td class="num">{s.total_requests > 0 ? Math.round(s.bot_count / s.total_requests * 100) : 0}%</td>
+                  <td>
+                    <button class="toggle-btn" style="font-size: 11px"
+                      onclick={(e) => { e.stopPropagation(); blockSubnet(s.subnet, `Auto-detected (score ${s.suspicion_score})`); }}>
+                      Block
+                    </button>
+                  </td>
+                </tr>
+                {#if expandedSubnet === s.subnet && ipAnalysis.samples?.[subnetBase]}
+                  <tr class="detail-row">
+                    <td colspan="8">
+                      <div style="padding: 8px 12px; font-size: 12px">
+                        <strong>Sample IPs + User Agents:</strong>
+                        <table class="data-table" style="margin-top: 6px">
+                          <thead>
+                            <tr>
+                              <th>IP</th>
+                              <th>User-Agent</th>
+                              <th class="num">Reqs</th>
+                              <th>Bot?</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {#each ipAnalysis.samples[subnetBase] as sample}
+                              <tr>
+                                <td style="font-family: monospace">{sample.ip}</td>
+                                <td class="muted cell-ellipsis" style="max-width: 350px" title={sample.user_agent}>{parseUserAgent(sample.user_agent)}</td>
+                                <td class="num">{sample.requests}</td>
+                                <td>{sample.flagged_bot ? 'Yes' : 'No'}</td>
+                              </tr>
+                            {/each}
+                          </tbody>
+                        </table>
+                        <div class="muted" style="margin-top: 6px">
+                          Active: {formatDate(s.first_seen)} &ndash; {formatDate(s.last_seen)}
+                          {#if s.non_bot_ips > 0}
+                            &middot; {s.non_bot_ips} non-bot IP{s.non_bot_ips > 1 ? 's' : ''}
+                          {/if}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                {/if}
+              {/each}
+            </tbody>
+          </table>
+        {:else if ipAnalysis}
+          <div class="empty-state">No suspicious subnets detected in the last {ipAnalysisDays} day{ipAnalysisDays > 1 ? 's' : ''}</div>
+        {/if}
+      </div>
+
     <!-- ===== ERRORS TAB ===== -->
     {:else if activeTab === 'errors' && errorData}
       <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
@@ -1336,7 +1483,8 @@
         <button class="period-btn" class:active={errorStatusFilter === '5xx'} onclick={() => { errorStatusFilter = '5xx'; loadErrors(); }}>5xx</button>
         <button class="period-btn" class:active={errorStatusFilter === '404'} onclick={() => { errorStatusFilter = '404'; loadErrors(); }}>404</button>
         <button class="period-btn" class:active={errorStatusFilter === '500'} onclick={() => { errorStatusFilter = '500'; loadErrors(); }}>500</button>
-        <button class="rebuild-btn" style="margin-left: auto" onclick={() => clearErrors(null, null)}>Clear all</button>
+        <button class="rebuild-btn" style="margin-left: auto" onclick={downloadErrors}>Download JSON</button>
+        <button class="rebuild-btn" onclick={() => clearErrors(null, null)}>Clear all</button>
       </div>
 
       {#if errorData.summary?.length > 0}
