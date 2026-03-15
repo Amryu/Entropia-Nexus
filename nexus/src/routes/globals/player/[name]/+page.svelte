@@ -2018,22 +2018,39 @@
     .col-media, .col-gz, .col-time, .col-type, .col-rank { display: none; }
 
     /* Compact table cells */
-    .data-table th, .data-table td { padding: 5px 4px; font-size: 0.75rem; }
-    .col-value { width: 60px; }
-    .col-count { width: 30px; }
+    .data-table th, .data-table td { padding: 4px 3px; font-size: 0.75rem; }
+    .col-value { width: 55px; }
+    .col-count { width: 24px; }
 
     /* Compact badge on mobile */
-    .col-badge { width: 30px; padding: 2px !important; }
-    .badge-hof, .badge-ath { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
+    .col-badge { width: 26px; padding: 1px !important; }
+    .badge-hof, .badge-ath { padding: 0 2px; font-size: 0.5rem; letter-spacing: 0; border-radius: 2px; }
 
-    /* Achievement rows: compact, hide secondary elements */
+    /* Compact type badge */
+    .type-badge { padding: 1px 4px; font-size: 0.5625rem; letter-spacing: 0; }
+
+    /* Achievement rows: compact single-line, hide secondary elements */
+    .achievements-list { gap: 2px; }
     .achievement-item {
-      flex-wrap: wrap;
-      gap: 4px 6px;
-      padding: 5px 6px;
+      gap: 4px;
+      padding: 4px 6px;
       font-size: 0.75rem;
+      border: none;
+      border-bottom: 1px solid var(--border-color);
+      border-radius: 0;
     }
+    .achievement-target {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .achievement-detail { font-size: 0.625rem; }
     .achievement-actions, .achievement-time { display: none; }
+
+    /* Section titles */
+    .section-card h2, .section-title-icon { font-size: 0.875rem; }
+    .section-subtitle { font-size: 0.8125rem; }
   }
 
   .col-value { width: 75px; }
