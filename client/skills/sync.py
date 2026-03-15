@@ -171,6 +171,17 @@ class SkillDataManager:
                     for name, value in dirty_local.items():
                         merged_values[name] = float(value)
 
+                    # Guard: don't wipe existing in-memory skills with an
+                    # empty merge result (e.g. server has no data yet and
+                    # local DB was cleared).  Keep current values instead.
+                    if not merged_values and self._skill_values:
+                        log.warning(
+                            "Merge produced empty skills but %d in-memory values exist — keeping current",
+                            len(self._skill_values),
+                        )
+                        self._synced = True
+                        return True
+
                     self._skill_values = merged_values
 
                     if dirty_local:

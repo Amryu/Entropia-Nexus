@@ -3439,15 +3439,21 @@ class SkillsPage(QWidget):
             # Reset sync flag so skills re-sync on next login
             self._synced = False
             return
-        if not self._synced:
+        if not self._synced and not self._syncing:
             # Sync skills on first auth (or re-auth after logout)
             threading.Thread(target=self._sync_on_auth, daemon=True, name="skills-sync").start()
 
     def _sync_on_auth(self):
-        self._synced = self._manager.sync_from_nexus()
-        if not self._synced:
-            self._manager.load_from_local()
-        QTimer.singleShot(0, self._on_data_loaded)
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            self._synced = self._manager.sync_from_nexus()
+            if not self._synced:
+                self._manager.load_from_local()
+            QTimer.singleShot(0, self._on_data_loaded)
+        finally:
+            self._syncing = False
 
     # ── Live Skill Gains ─────────────────────────────────────────────────
 
