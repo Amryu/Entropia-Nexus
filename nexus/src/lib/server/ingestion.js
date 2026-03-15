@@ -611,7 +611,11 @@ export async function ingestTrades(userId, messages) {
 /**
  * Fetch global events newer than `since` for distribution.
  * Returns all entries with a confirmed flag.
+ * Excludes historical globals (event_timestamp older than 10 minutes)
+ * to prevent flooding feeds when someone ingests old chat logs.
  */
+const DISTRIBUTION_MAX_EVENT_AGE = '10 minutes';
+
 export async function getGlobalsSince(since, limit = 200) {
   const { rows } = await pool.query(
     `SELECT id, global_type, player_name, target_name, value, value_unit,
@@ -619,6 +623,7 @@ export async function getGlobalsSince(since, limit = 200) {
             first_seen_at, occurrence
      FROM ingested_globals
      WHERE first_seen_at > $1
+       AND event_timestamp > NOW() - INTERVAL '${DISTRIBUTION_MAX_EVENT_AGE}'
      ORDER BY first_seen_at ASC
      LIMIT $2`,
     [since, Math.min(limit, 1000)]
