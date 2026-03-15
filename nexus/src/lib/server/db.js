@@ -4725,14 +4725,22 @@ export async function getChangeReward(changeId) {
 }
 
 export async function assignReward({ change_id, user_id, rule_id, amount, contribution_score, note, assigned_by }) {
+  // Auto-calculate contribution score: 2x PED amount, minimum 1, probabilistic rounding
+  let score = contribution_score;
+  if (score == null || score === 0) {
+    const raw = Math.max(1, amount * 2);
+    const base = Math.floor(raw);
+    const decimal = raw - base;
+    score = decimal > 0 && Math.random() < decimal ? base + 1 : base;
+  }
+
   const result = await pool.query(
     `INSERT INTO contributor_rewards (change_id, user_id, rule_id, amount, contribution_score, note, assigned_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [change_id, user_id, rule_id || null, amount, contribution_score || null, note || null, assigned_by]
+    [change_id, user_id, rule_id || null, amount, score, note || null, assigned_by]
   );
   // Update pre-calculated reward_score on user
-  const score = parseFloat(contribution_score) || 0;
   if (score > 0) {
     await pool.query('UPDATE ONLY users SET reward_score = reward_score + $1 WHERE id = $2', [score, user_id]);
   }

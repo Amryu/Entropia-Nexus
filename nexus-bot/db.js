@@ -173,15 +173,23 @@ export async function getMatchingRewardRules(entity, changeType, dataKeys, subTy
 }
 
 export async function assignChangeReward({ change_id, user_id, rule_id, amount, contribution_score, assigned_by, note = null }) {
+  // Auto-calculate contribution score: 2x PED amount, minimum 1, probabilistic rounding
+  let score = contribution_score;
+  if (score == null || score === 0) {
+    const raw = Math.max(1, amount * 2);
+    const base = Math.floor(raw);
+    const decimal = raw - base;
+    score = decimal > 0 && Math.random() < decimal ? base + 1 : base;
+  }
+
   const { rows } = await poolUsers.query(
     `INSERT INTO contributor_rewards (change_id, user_id, rule_id, amount, contribution_score, note, assigned_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (change_id, rule_id) DO NOTHING
      RETURNING *`,
-    [change_id, user_id, rule_id, amount, contribution_score || null, note || 'Auto-assigned on approval', assigned_by]
+    [change_id, user_id, rule_id, amount, score, note || 'Auto-assigned on approval', assigned_by]
   );
   if (!rows[0]) return null;
-  const score = parseFloat(contribution_score) || 0;
   if (score > 0) {
     await poolUsers.query(
       'UPDATE users SET reward_score = reward_score + $1 WHERE id = $2',
