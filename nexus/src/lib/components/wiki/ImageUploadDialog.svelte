@@ -500,6 +500,17 @@
             {mode === 'existing' ? 'Linking image for:' : 'Uploading image for:'} <strong>{entityName}</strong>
           </p>
         {/if}
+
+        {#if entityType !== 'user'}
+          <div class="approval-note">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <circle cx="12" cy="8" r="0.5" fill="currentColor" />
+            </svg>
+            <span>Image uploads are reviewed separately and do not require submitting a change.</span>
+          </div>
+        {/if}
       </div>
 
       <div class="dialog-footer">
@@ -850,6 +861,23 @@
 
   .entity-info strong {
     color: var(--text-color);
+  }
+
+  .approval-note {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--info-color, #3b82f6);
+    background-color: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 6px;
+  }
+
+  .approval-note svg {
+    flex-shrink: 0;
   }
 
   .dialog-footer {
