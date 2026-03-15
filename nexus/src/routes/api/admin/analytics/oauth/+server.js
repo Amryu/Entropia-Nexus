@@ -5,7 +5,7 @@ import { pool } from '$lib/server/db.js';
 
 function periodConfig(period) {
   switch (period) {
-    case '1h':     return { granularity: 'daily',   startSql: "now() - interval '1 hour'" };
+    case '1h':     return { granularity: 'raw',     startSql: "now() - interval '1 hour'" };
     case 'today':  return { granularity: 'daily',   startSql: "date_trunc('day', now())" };
     case '7d':     return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '6 days')" };
     case '30d':    return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '29 days')" };
@@ -18,46 +18,74 @@ function periodConfig(period) {
 
 /**
  * GET /api/admin/analytics/oauth
- * OAuth client usage breakdown.
  */
 export async function GET({ locals, url }) {
   requireAdminAPI(locals);
 
   const period = url.searchParams.get('period') || '7d';
   const { granularity, startSql } = periodConfig(period);
-  const whereClause = startSql ? `AND r.period_start >= ${startSql}` : '';
+  const useRaw = granularity === 'raw';
 
   try {
-    // Per-client summary
-    const { rows: clients } = await pool.query(
-      `SELECT r.oauth_client_id,
-              c.name AS client_name,
-              SUM(r.request_count)::integer AS requests,
-              SUM(r.rate_limited_count)::integer AS rate_limited,
-              count(DISTINCT r.route_pattern)::integer AS routes_used
-       FROM route_analytics_oauth_rollup r
-       LEFT JOIN oauth_clients c ON c.id::text = r.oauth_client_id
-       WHERE r.granularity = $1 ${whereClause}
-       GROUP BY r.oauth_client_id, c.name
-       ORDER BY requests DESC`,
-      [granularity]
-    );
+    let clients, details;
 
-    // Per-client per-route breakdown (top 50)
-    const { rows: details } = await pool.query(
-      `SELECT r.oauth_client_id,
-              c.name AS client_name,
-              r.route_pattern,
-              SUM(r.request_count)::integer AS requests,
-              SUM(r.rate_limited_count)::integer AS rate_limited
-       FROM route_analytics_oauth_rollup r
-       LEFT JOIN oauth_clients c ON c.id::text = r.oauth_client_id
-       WHERE r.granularity = $1 ${whereClause}
-       GROUP BY r.oauth_client_id, c.name, r.route_pattern
-       ORDER BY requests DESC
-       LIMIT 50`,
-      [granularity]
-    );
+    if (useRaw) {
+      const rawWhere = `AND visited_at >= ${startSql}`;
+      ({ rows: clients } = await pool.query(
+        `SELECT v.oauth_client_id,
+                c.name AS client_name,
+                count(*)::integer AS requests,
+                count(*) FILTER (WHERE v.rate_limited)::integer AS rate_limited,
+                count(DISTINCT v.route_pattern)::integer AS routes_used
+         FROM route_visits v
+         LEFT JOIN oauth_clients c ON c.id::text = v.oauth_client_id
+         WHERE v.oauth_client_id IS NOT NULL ${rawWhere}
+         GROUP BY v.oauth_client_id, c.name
+         ORDER BY requests DESC`
+      ));
+      ({ rows: details } = await pool.query(
+        `SELECT v.oauth_client_id,
+                c.name AS client_name,
+                v.route_pattern,
+                count(*)::integer AS requests,
+                count(*) FILTER (WHERE v.rate_limited)::integer AS rate_limited
+         FROM route_visits v
+         LEFT JOIN oauth_clients c ON c.id::text = v.oauth_client_id
+         WHERE v.oauth_client_id IS NOT NULL ${rawWhere}
+         GROUP BY v.oauth_client_id, c.name, v.route_pattern
+         ORDER BY requests DESC
+         LIMIT 50`
+      ));
+    } else {
+      const rollupWhere = startSql ? `AND r.period_start >= ${startSql}` : '';
+      ({ rows: clients } = await pool.query(
+        `SELECT r.oauth_client_id,
+                c.name AS client_name,
+                SUM(r.request_count)::integer AS requests,
+                SUM(r.rate_limited_count)::integer AS rate_limited,
+                count(DISTINCT r.route_pattern)::integer AS routes_used
+         FROM route_analytics_oauth_rollup r
+         LEFT JOIN oauth_clients c ON c.id::text = r.oauth_client_id
+         WHERE r.granularity = $1 ${rollupWhere}
+         GROUP BY r.oauth_client_id, c.name
+         ORDER BY requests DESC`,
+        [granularity]
+      ));
+      ({ rows: details } = await pool.query(
+        `SELECT r.oauth_client_id,
+                c.name AS client_name,
+                r.route_pattern,
+                SUM(r.request_count)::integer AS requests,
+                SUM(r.rate_limited_count)::integer AS rate_limited
+         FROM route_analytics_oauth_rollup r
+         LEFT JOIN oauth_clients c ON c.id::text = r.oauth_client_id
+         WHERE r.granularity = $1 ${rollupWhere}
+         GROUP BY r.oauth_client_id, c.name, r.route_pattern
+         ORDER BY requests DESC
+         LIMIT 50`,
+        [granularity]
+      ));
+    }
 
     return json({ clients, details });
   } catch (e) {

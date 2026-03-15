@@ -30,8 +30,8 @@ export async function GET({ locals, url }) {
   try {
     let rows;
 
-    if (xBots || xApi) {
-      // Geo rollup lacks bot/api breakdown — query raw data (bounded by 30-day retention)
+    if (period === '1h' || xBots || xApi) {
+      // Raw query: 1h has no rollup row; bot/api filters need row-level access
       const rawWhere = startSql ? `AND visited_at >= ${startSql}` : '';
       const botFilter = xBots ? 'AND is_bot = false' : '';
       const apiFilter = xApi ? 'AND is_api = false' : '';
