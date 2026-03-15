@@ -6,7 +6,7 @@ function getSimplePlanetName(planetName) {
 }
 
 export async function getAllLinks(fetch) {
-  const [items, weapons, armorSets, mobs, planets, professions, skills, vendors] = await Promise.all([
+  const [items, weapons, armorSets, mobs, planets, professions, skills, vendors, missions, missionChains, enumerations, locations, guides, shops, services] = await Promise.all([
     apiCall(fetch, `/items`),
     apiCall(fetch, `/weapons`),
     apiCall(fetch, `/armorsets`),
@@ -15,6 +15,13 @@ export async function getAllLinks(fetch) {
     apiCall(fetch, `/professions`),
     apiCall(fetch, `/skills`),
     apiCall(fetch, `/vendors`),
+    apiCall(fetch, `/missions`),
+    apiCall(fetch, `/missionchains`),
+    apiCall(fetch, `/enumerations`),
+    apiCall(fetch, `/locations`),
+    apiCall(fetch, `/api/guides`),
+    apiCall(fetch, `/shops`),
+    apiCall(fetch, `/api/services`),
   ]);
   
   const MEDICAL_TOOL_TYPES = ['MedicalTool', 'MedicalChip'];
@@ -103,8 +110,81 @@ export async function getAllLinks(fetch) {
   let skillsXML = skills.map(skill => `/information/skills/${encodeURIComponentSafe(skill.Name)}`);
   let vendorsXML = vendors.map(vendor => `/information/vendors/${encodeURIComponentSafe(vendor.Name)}`);
 
+  let missionsXML = (missions || []).map(m => `/information/missions/${encodeURIComponentSafe(m.Name)}`);
+  let missionChainsXML = (missionChains || []).map(mc => `/information/missions/${encodeURIComponentSafe(mc.Name)}?view=chains`);
+  let enumerationsXML = (enumerations || []).map(e => `/information/enumerations/${encodeURIComponentSafe(e.Name)}`);
+
+  let locationsXML = (locations || [])
+    .filter(loc => loc.Properties?.AreaType !== 'MobArea')
+    .filter(loc => loc.Properties?.Type)
+    .map(loc => {
+      const typeSlug = loc.Properties.AreaType === 'WaveEventArea'
+        ? 'waveevents'
+        : loc.Properties.Type.toLowerCase();
+      return `/information/locations/${typeSlug}/${encodeURIComponentSafe(loc.Name)}`;
+    });
+
+  let guidesXML = [];
+  for (const cat of (guides || [])) {
+    for (const ch of (cat.chapters || [])) {
+      for (const lesson of (ch.lessons || [])) {
+        if (lesson.slug) guidesXML.push(`/information/guides/${lesson.slug}`);
+      }
+    }
+  }
+
+  let shopsXML = (shops || []).map(s => `/market/shops/${encodeURIComponentSafe(s.Name)}`);
+  let servicesXML = (services || []).filter(s => s.id).map(s => `/market/services/${s.id}`);
+
   return {
-    general: ['/tools/loadouts'],
+    general: [
+      '/search',
+      '/legal/privacy',
+      '/legal/terms',
+      '/information',
+      '/information/enumerations',
+      '/information/guides',
+      '/information/locations',
+      '/information/missions',
+      '/information/mobs',
+      '/information/professions',
+      '/information/skills',
+      '/information/vendors',
+      '/items',
+      '/items/weapons',
+      '/items/armorsets',
+      '/items/attachments',
+      '/items/blueprints',
+      '/items/clothing',
+      '/items/consumables',
+      '/items/furnishings',
+      '/items/materials',
+      '/items/medicaltools',
+      '/items/pets',
+      '/items/strongboxes',
+      '/items/tools',
+      '/items/vehicles',
+      '/tools',
+      '/tools/loadouts',
+      '/tools/construction',
+      '/tools/skills',
+      '/maps',
+      '/market',
+      '/market/auction',
+      '/market/exchange',
+      '/market/rental',
+      '/market/services',
+      '/market/shops',
+      '/globals',
+      '/globals/players',
+      '/globals/targets',
+      '/news',
+      '/events',
+      '/events/submit',
+      '/streams',
+      '/bounties',
+      '/videos',
+    ],
     items: itemsXML,
     armorSets: armorSetsXML,
     mobs: mobsXML,
@@ -112,5 +192,12 @@ export async function getAllLinks(fetch) {
     professions: professionsXML,
     skills: skillsXML,
     vendors: vendorsXML,
+    missions: missionsXML,
+    missionChains: missionChainsXML,
+    enumerations: enumerationsXML,
+    locations: locationsXML,
+    guides: guidesXML,
+    shops: shopsXML,
+    services: servicesXML,
   };
 }

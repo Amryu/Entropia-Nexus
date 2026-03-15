@@ -1,5 +1,6 @@
 //@ts-nocheck
 import { getAllLinks } from '$lib/sitemapUtil.js';
+import { getPublishedAnnouncements } from '$lib/server/db.js';
 
 function generateSitemapEntry(url, priority = '0.9') {
   return `<url>
@@ -10,9 +11,17 @@ function generateSitemapEntry(url, priority = '0.9') {
 };
 
 export async function GET({ url }) {
-  let links = await getAllLinks(fetch);
+  const [links, announcements] = await Promise.all([
+    getAllLinks(fetch),
+    getPublishedAnnouncements(500),
+  ]);
 
-  let xmlString = Object.values(links).flat().map(x => generateSitemapEntry(x)).join('\n');
+  const newsUrls = (announcements || [])
+    .filter(a => a.has_content)
+    .map(a => `/news/${a.id}`);
+
+  let xmlString = [...Object.values(links).flat(), ...newsUrls]
+    .map(x => generateSitemapEntry(x)).join('\n');
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
