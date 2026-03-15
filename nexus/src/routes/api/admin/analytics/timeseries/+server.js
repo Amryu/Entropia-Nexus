@@ -5,7 +5,7 @@ import { pool } from '$lib/server/db.js';
 
 function periodConfig(period) {
   switch (period) {
-    case 'today':  return { granularity: 'daily',   startSql: "date_trunc('day', now())" };
+    case 'today':  return { granularity: 'hourly',  startSql: "date_trunc('day', now())" };
     case '7d':     return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '6 days')" };
     case '30d':    return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '29 days')" };
     case '90d':    return { granularity: 'weekly',  startSql: "date_trunc('day', now() - interval '89 days')" };
@@ -26,28 +26,54 @@ export async function GET({ locals, url }) {
   const xBots = url.searchParams.get('excludeBots') === 'true';
   const xApi = url.searchParams.get('excludeApi') === 'true';
   const { granularity, startSql } = periodConfig(period);
-  const whereClause = startSql ? `AND period_start >= ${startSql}` : '';
-  const categoryFilter = category ? `AND route_category = $2` : '';
-  const apiFilter = !category && xApi ? `AND route_category != 'api'` : '';
-  const params = category ? [granularity, category] : [granularity];
-  const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
 
   try {
-    const { rows } = await pool.query(
-      `SELECT period_start AS date,
-              SUM(${reqExpr})::integer AS requests,
-              SUM(unique_ips)::integer AS unique_ips,
-              SUM(bot_count)::integer AS bots,
-              SUM(error_count)::integer AS errors,
-              CASE WHEN SUM(${reqExpr}) > 0
-                THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * ${reqExpr}) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN ${reqExpr} ELSE 0 END), 0))::integer
-                ELSE 0 END AS avg_response_ms
-       FROM route_analytics_rollup
-       WHERE granularity = $1 ${whereClause} ${categoryFilter} ${apiFilter}
-       GROUP BY period_start
-       ORDER BY period_start ASC`,
-      params
-    );
+    let rows;
+
+    if (granularity === 'hourly') {
+      // Query raw table for hourly resolution (today only, bounded)
+      const botFilter = xBots ? 'AND is_bot = false' : '';
+      const apiFilter = xApi ? 'AND is_api = false' : '';
+      const catFilter = category ? `AND route_category = $1` : '';
+      const params = category ? [category] : [];
+
+      ({ rows } = await pool.query(
+        `SELECT date_trunc('hour', visited_at) AS date,
+                count(*)::integer AS requests,
+                count(DISTINCT ip_address)::integer AS unique_ips,
+                count(*) FILTER (WHERE is_bot)::integer AS bots,
+                count(*) FILTER (WHERE status_code >= 400)::integer AS errors,
+                avg(response_time_ms)::integer AS avg_response_ms
+         FROM route_visits
+         WHERE visited_at >= ${startSql} ${botFilter} ${apiFilter} ${catFilter}
+         GROUP BY date_trunc('hour', visited_at)
+         ORDER BY date ASC`,
+        params
+      ));
+    } else {
+      // Use rollup tables for daily/weekly/monthly
+      const whereClause = startSql ? `AND period_start >= ${startSql}` : '';
+      const categoryFilter = category ? `AND route_category = $2` : '';
+      const apiFilter = !category && xApi ? `AND route_category != 'api'` : '';
+      const params = category ? [granularity, category] : [granularity];
+      const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
+
+      ({ rows } = await pool.query(
+        `SELECT period_start AS date,
+                SUM(${reqExpr})::integer AS requests,
+                SUM(unique_ips)::integer AS unique_ips,
+                SUM(bot_count)::integer AS bots,
+                SUM(error_count)::integer AS errors,
+                CASE WHEN SUM(${reqExpr}) > 0
+                  THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * ${reqExpr}) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN ${reqExpr} ELSE 0 END), 0))::integer
+                  ELSE 0 END AS avg_response_ms
+         FROM route_analytics_rollup
+         WHERE granularity = $1 ${whereClause} ${categoryFilter} ${apiFilter}
+         GROUP BY period_start
+         ORDER BY period_start ASC`,
+        params
+      ));
+    }
 
     return json({ points: rows, granularity });
   } catch (e) {

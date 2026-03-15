@@ -350,8 +350,8 @@
           x: {
             type: 'time',
             time: {
-              tooltipFormat: 'MMM d, yyyy',
-              unit: timeseries.granularity === 'daily' ? 'day' : timeseries.granularity === 'weekly' ? 'week' : 'month'
+              tooltipFormat: timeseries.granularity === 'hourly' ? 'MMM d, HH:mm' : 'MMM d, yyyy',
+              unit: timeseries.granularity === 'hourly' ? 'hour' : timeseries.granularity === 'daily' ? 'day' : timeseries.granularity === 'weekly' ? 'week' : 'month'
             },
             grid: { color: borderColor + '40' },
             ticks: { color: mutedColor }
