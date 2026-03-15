@@ -1023,7 +1023,7 @@
         <MarketPriceSection
           itemId={activeEntity?.ItemId}
           itemName={activeEntity?.Name}
-          entityType="MedicalTool"
+          entityType={getEntityType(additional.type)}
           bind:expanded={panelStates.marketPrices}
           ontoggle={savePanelStates}
         />
