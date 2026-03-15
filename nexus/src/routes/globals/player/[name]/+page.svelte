@@ -560,7 +560,7 @@
                       <tr>
                         <td>{item.target}</td>
                         <td class="right">{formatPed(item.value)} PED</td>
-                        <td class="text-muted" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
+                        <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                         <td>
                           {#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}
                         </td>
@@ -653,11 +653,11 @@
                   {#each sortedRecent as g}
                     {@const tc = TYPE_CONFIG[g.type] || { label: g.type, cssClass: '' }}
                     <tr>
-                      <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
-                      <td><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
+                      <td class="text-muted col-time" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
+                      <td class="col-type"><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
                       <td><a href="/globals/target/{encodeURIComponent(g.target)}" class="target-link">{g.target}</a></td>
                       <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
-                      <td>
+                      <td class="col-badge">
                         {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
                       </td>
                       <td class="col-media">
@@ -780,7 +780,7 @@
                         <td class="col-rank text-muted">{huntLootPage * PAGE_SIZE + i + 1}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                        <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
                             <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
@@ -795,7 +795,7 @@
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
-                        <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                        <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -888,7 +888,7 @@
                         <td class="col-rank text-muted">{miningLootPage * PAGE_SIZE + i + 1}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                        <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
                             <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
@@ -903,7 +903,7 @@
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
-                        <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                        <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -996,7 +996,7 @@
                         <td class="col-rank text-muted">{craftLootPage * PAGE_SIZE + i + 1}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                        <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
                             <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
@@ -1011,7 +1011,7 @@
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
-                        <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                        <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -1052,7 +1052,7 @@
                     <tr>
                       <td>{item.target}</td>
                       <td class="right font-weight-bold">{formatPed(item.value)} PED</td>
-                      <td>{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                      <td class="col-badge">{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
                       <td class="col-media">
                         {#if item.media_image || item.media_video}
                           <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
@@ -1067,7 +1067,7 @@
                         {/if}
                       </td>
                       <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
-                      <td class="text-muted" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
+                      <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -1187,7 +1187,7 @@
                         {/if}
                       </td>
                       <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
-                      <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
+                      <td class="text-muted col-time" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -1234,7 +1234,7 @@
                       <tr>
                         <td class="col-rank"><span class="rank-badge" class:rank-top3={entry.rank <= 3}>#{entry.rank}</span></td>
                         <td class="right font-weight-bold">{Math.round(entry.value)} Kills</td>
-                        <td>{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-badge">{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if entry.media_image || entry.media_video}
                             <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(entry)}>
@@ -1249,7 +1249,7 @@
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={entry.id} count={entry.gz_count || 0} {user} compact /></td>
-                        <td class="text-muted" title={new Date(entry.timestamp).toLocaleString()}>{timeAgo(entry.timestamp)}</td>
+                        <td class="text-muted col-time" title={new Date(entry.timestamp).toLocaleString()}>{timeAgo(entry.timestamp)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -2002,7 +2002,18 @@
 
     .player-tab-nav {
       overflow-x: auto;
+      scrollbar-width: none;
     }
+    .player-tab-nav::-webkit-scrollbar { display: none; }
+
+    .tab-link {
+      flex-shrink: 0;
+      padding: 8px 14px;
+      font-size: 0.8125rem;
+    }
+
+    /* Hide less important columns on mobile to preserve target name space */
+    .col-media, .col-gz, .col-time, .col-badge, .col-type { display: none; }
   }
 
   .col-value { width: 75px; }
