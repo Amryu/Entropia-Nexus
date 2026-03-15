@@ -36,10 +36,10 @@ export async function renderMapChange(changeData, oldEntity, planet) {
   if (!props?.Shape || !props?.Data) return null;
   if (!planet?.Properties?.Map) return null;
 
-  let sharp, createCanvas;
+  let sharp, createCanvas, loadImage;
   try {
     sharp = (await import('sharp')).default;
-    ({ createCanvas } = await import('@napi-rs/canvas'));
+    ({ createCanvas, loadImage } = await import('@napi-rs/canvas'));
   } catch {
     console.error('Map rendering unavailable: sharp or @napi-rs/canvas not installed');
     return null;
@@ -138,9 +138,7 @@ export async function renderMapChange(changeData, oldEntity, planet) {
   const ctx = canvas.getContext('2d');
 
   // Draw map background
-  const { Image } = await import('@napi-rs/canvas');
-  const bgImage = new Image();
-  bgImage.src = croppedBuffer;
+  const bgImage = await loadImage(croppedBuffer);
   ctx.drawImage(bgImage, 0, 0, canvasW, canvasH);
 
   // Transform for drawing: convert pixel coords to canvas coords
