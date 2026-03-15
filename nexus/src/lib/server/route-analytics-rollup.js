@@ -128,6 +128,24 @@ async function rebuildDailyRange(startDate, endDate) {
       [startDate, endDate]
     );
 
+    // IP sets — store distinct IPs per day for accurate unique counts in coarse rollups
+    await client.query(
+      `DELETE FROM route_analytics_ip_sets
+       WHERE granularity = 'daily' AND period_start >= $1 AND period_start < $2`,
+      [startDate, endDate]
+    );
+    await client.query(
+      `INSERT INTO route_analytics_ip_sets (granularity, period_start, ip_set)
+       SELECT 'daily', date_trunc('day', visited_at),
+              array_agg(DISTINCT ip_address)
+       FROM route_visits
+       WHERE visited_at >= $1 AND visited_at < $2 AND ip_address IS NOT NULL
+       GROUP BY date_trunc('day', visited_at)
+       ON CONFLICT (granularity, period_start) DO UPDATE SET
+         ip_set = EXCLUDED.ip_set`,
+      [startDate, endDate]
+    );
+
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -230,6 +248,23 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
        GROUP BY date_trunc('${truncUnit}', period_start), referrer_domain
        ON CONFLICT (granularity, period_start, referrer_domain) DO UPDATE SET
          request_count = EXCLUDED.request_count`,
+      [granularity]
+    );
+
+    // IP sets — union daily ip_sets into coarse period
+    await client.query(
+      `DELETE FROM route_analytics_ip_sets WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2::timestamptz) AND period_start <= date_trunc('${truncUnit}', $3::timestamptz)` : ''}`,
+      startDate ? [granularity, startDate, endDate] : [granularity]
+    );
+    await client.query(
+      `INSERT INTO route_analytics_ip_sets (granularity, period_start, ip_set)
+       SELECT $1, date_trunc('${truncUnit}', period_start),
+              array_agg(DISTINCT ip) -- union all daily IP sets
+       FROM route_analytics_ip_sets, unnest(ip_set) AS ip
+       WHERE granularity = 'daily'${rangeFilter}
+       GROUP BY date_trunc('${truncUnit}', period_start)
+       ON CONFLICT (granularity, period_start) DO UPDATE SET
+         ip_set = EXCLUDED.ip_set`,
       [granularity]
     );
 

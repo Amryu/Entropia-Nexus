@@ -33,8 +33,9 @@ export async function GET({ locals, url }) {
   // For requests: use rollup math (subtract bot_count when excluding bots)
   const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
 
-  // Unique visitors always from raw for short periods; add bot/api filters
-  const useRawForUniques = ['1h', 'today', '7d', '30d'].includes(period);
+  // Unique visitors: use raw table when bot/api filters are active (need row-level filtering),
+  // otherwise use ip_sets for accurate counts at any granularity.
+  const useRawForUniques = xBots || xApi;
   const rawBotFilter = xBots ? 'AND is_bot = false' : '';
   const rawApiFilter = xApi ? 'AND is_api = false' : '';
 
@@ -59,7 +60,7 @@ export async function GET({ locals, url }) {
         [granularity]
       ),
 
-      // Unique visitors
+      // Unique visitors — raw table when filters active, ip_sets for accurate counts otherwise
       useRawForUniques
         ? pool.query(
             `SELECT count(DISTINCT ip_address)::integer AS unique_visitors
@@ -67,8 +68,8 @@ export async function GET({ locals, url }) {
              WHERE true ${rawWhere} ${rawBotFilter} ${rawApiFilter}`
           )
         : pool.query(
-            `SELECT COALESCE(SUM(unique_ips), 0)::integer AS unique_visitors
-             FROM route_analytics_geo_rollup
+            `SELECT count(DISTINCT ip)::integer AS unique_visitors
+             FROM route_analytics_ip_sets, unnest(ip_set) AS ip
              WHERE granularity = $1 ${rollupWhere}`,
             [granularity]
           ),
