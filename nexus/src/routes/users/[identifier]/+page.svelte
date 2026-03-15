@@ -157,7 +157,7 @@
   let globalsTypeFilter = $state('');
   let globalsSort = $state({ col: 'total_value', asc: false });
   let globalsPage = $state(0);
-  let globalsAthMode = $state('best'); // 'best' | 'total' | 'byTarget'
+  let globalsAthMode = $state('best'); // 'best' | 'total' | 'bestTarget' | 'totalTarget'
   const GLOBALS_PAGE_SIZE = 10;
   const GLOBALS_TYPE_FILTERS = TYPE_FILTERS.filter(tf => tf.value !== 'examine');
 
@@ -1510,7 +1510,8 @@
               <div class="globals-ath-toggle">
                 <button class="globals-ath-btn" class:active={globalsAthMode === 'best'} onclick={() => globalsAthMode = 'best'}>Best</button>
                 <button class="globals-ath-btn" class:active={globalsAthMode === 'total'} onclick={() => globalsAthMode = 'total'}>Total</button>
-                <button class="globals-ath-btn" class:active={globalsAthMode === 'byTarget'} onclick={() => globalsAthMode = 'byTarget'}>By Target</button>
+                <button class="globals-ath-btn" class:active={globalsAthMode === 'bestTarget'} onclick={() => globalsAthMode = 'bestTarget'}>Best (Target)</button>
+                <button class="globals-ath-btn" class:active={globalsAthMode === 'totalTarget'} onclick={() => globalsAthMode = 'totalTarget'}>Total (Target)</button>
               </div>
             </div>
             <div class="globals-rankings-grid">
@@ -1520,26 +1521,26 @@
                 { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' }
               ] as category}
                 {@const entries = (globalsAthRankings[category.key] || [])
-                  .filter(e => globalsAthMode === 'best' ? e.best_rank <= 10
-                    : globalsAthMode === 'total' ? e.total_rank <= 10
-                    : true)
-                  .sort((a, b) => globalsAthMode === 'best' ? a.best_rank - b.best_rank
-                    : globalsAthMode === 'total' ? a.total_rank - b.total_rank
-                    : b.count - a.count)
+                  .filter(e => globalsAthMode === 'best' || globalsAthMode === 'bestTarget' ? e.best_rank <= 10
+                    : e.total_rank <= 10)
+                  .sort((a, b) => {
+                    if (globalsAthMode === 'best' || globalsAthMode === 'bestTarget') {
+                      return a.best_rank - b.best_rank || b.best_value - a.best_value;
+                    }
+                    return a.total_rank - b.total_rank || b.total_value - a.total_value;
+                  })
                   .slice(0, 10)}
                 <div class="globals-ranking-card">
                   <div class="ranking-card-header {category.colorClass}">{category.label}</div>
                   {#each entries as entry}
                     <div class="ranking-entry">
                       <span class="ranking-target">{entry.target}</span>
-                      {#if globalsAthMode === 'best'}
+                      {#if globalsAthMode === 'best' || globalsAthMode === 'bestTarget'}
                         <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
                         <span class="ranking-badge">#{entry.best_rank}</span>
-                      {:else if globalsAthMode === 'total'}
+                      {:else}
                         <span class="ranking-value">{formatPedShort(entry.total_value)} PED</span>
                         <span class="ranking-badge">#{entry.total_rank}</span>
-                      {:else}
-                        <span class="ranking-value">{entry.count} globals</span>
                       {/if}
                     </div>
                   {:else}
