@@ -2014,20 +2014,23 @@
       font-size: 0.8125rem;
     }
 
-    /* Hide less important columns on mobile to preserve target name space */
-    .col-media, .col-gz, .col-time, .col-badge, .col-type { display: none; }
+    /* Hide less important columns on mobile — keep target + value + badge */
+    .col-media, .col-gz, .col-time, .col-type, .col-rank { display: none; }
 
-    /* Tighter table cell padding on mobile */
-    .data-table th, .data-table td { padding: 6px 6px; }
-    .col-rank { width: 24px; }
-    .col-value { width: 65px; }
-    .col-count { width: 32px; }
+    /* Compact table cells */
+    .data-table th, .data-table td { padding: 5px 4px; font-size: 0.75rem; }
+    .col-value { width: 60px; }
+    .col-count { width: 30px; }
 
-    /* Achievement rows: wrap and hide secondary elements */
+    /* Compact badge on mobile */
+    .col-badge { width: 30px; padding: 2px !important; }
+    .badge-hof, .badge-ath { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
+
+    /* Achievement rows: compact, hide secondary elements */
     .achievement-item {
       flex-wrap: wrap;
-      gap: 4px 8px;
-      padding: 6px 8px;
+      gap: 4px 6px;
+      padding: 5px 6px;
       font-size: 0.75rem;
     }
     .achievement-actions, .achievement-time { display: none; }
