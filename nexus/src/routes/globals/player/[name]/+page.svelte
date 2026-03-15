@@ -2038,7 +2038,7 @@
 
     /* Compact table cells — keep 6px horizontal padding so text doesn't touch edges */
     .data-table th, .data-table td { padding: 4px 6px; font-size: 0.75rem; }
-    .col-value { width: 55px; }
+    .col-value { width: 80px !important; }
     .col-count { width: 24px; }
 
     /* Compact badge on mobile */
