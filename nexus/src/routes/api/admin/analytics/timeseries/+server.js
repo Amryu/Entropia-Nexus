@@ -17,30 +17,33 @@ function periodConfig(period) {
 
 /**
  * GET /api/admin/analytics/timeseries
- * Time-series data points for charting.
  */
 export async function GET({ locals, url }) {
   requireAdminAPI(locals);
 
   const period = url.searchParams.get('period') || '7d';
   const category = url.searchParams.get('category') || null;
+  const xBots = url.searchParams.get('excludeBots') === 'true';
+  const xApi = url.searchParams.get('excludeApi') === 'true';
   const { granularity, startSql } = periodConfig(period);
   const whereClause = startSql ? `AND period_start >= ${startSql}` : '';
   const categoryFilter = category ? `AND route_category = $2` : '';
+  const apiFilter = !category && xApi ? `AND route_category != 'api'` : '';
   const params = category ? [granularity, category] : [granularity];
+  const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
 
   try {
     const { rows } = await pool.query(
       `SELECT period_start AS date,
-              SUM(request_count)::integer AS requests,
+              SUM(${reqExpr})::integer AS requests,
               SUM(unique_ips)::integer AS unique_ips,
               SUM(bot_count)::integer AS bots,
               SUM(error_count)::integer AS errors,
-              CASE WHEN SUM(request_count) > 0
-                THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * request_count) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN request_count ELSE 0 END), 0))::integer
+              CASE WHEN SUM(${reqExpr}) > 0
+                THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * ${reqExpr}) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN ${reqExpr} ELSE 0 END), 0))::integer
                 ELSE 0 END AS avg_response_ms
        FROM route_analytics_rollup
-       WHERE granularity = $1 ${whereClause} ${categoryFilter}
+       WHERE granularity = $1 ${whereClause} ${categoryFilter} ${apiFilter}
        GROUP BY period_start
        ORDER BY period_start ASC`,
       params

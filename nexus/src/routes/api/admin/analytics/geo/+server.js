@@ -17,26 +17,45 @@ function periodConfig(period) {
 
 /**
  * GET /api/admin/analytics/geo
- * Geographic breakdown by country.
  */
 export async function GET({ locals, url }) {
   requireAdminAPI(locals);
 
   const period = url.searchParams.get('period') || '7d';
+  const xBots = url.searchParams.get('excludeBots') === 'true';
+  const xApi = url.searchParams.get('excludeApi') === 'true';
   const { granularity, startSql } = periodConfig(period);
-  const whereClause = startSql ? `AND period_start >= ${startSql}` : '';
 
   try {
-    const { rows } = await pool.query(
-      `SELECT country_code,
-              SUM(request_count)::integer AS requests,
-              SUM(unique_ips)::integer AS unique_ips
-       FROM route_analytics_geo_rollup
-       WHERE granularity = $1 ${whereClause}
-       GROUP BY country_code
-       ORDER BY requests DESC`,
-      [granularity]
-    );
+    let rows;
+
+    if (xBots || xApi) {
+      // Geo rollup lacks bot/api breakdown — query raw data (bounded by 30-day retention)
+      const rawWhere = startSql ? `AND visited_at >= ${startSql}` : '';
+      const botFilter = xBots ? 'AND is_bot = false' : '';
+      const apiFilter = xApi ? 'AND is_api = false' : '';
+      ({ rows } = await pool.query(
+        `SELECT country_code,
+                count(*)::integer AS requests,
+                count(DISTINCT ip_address)::integer AS unique_ips
+         FROM route_visits
+         WHERE country_code IS NOT NULL ${rawWhere} ${botFilter} ${apiFilter}
+         GROUP BY country_code
+         ORDER BY requests DESC`
+      ));
+    } else {
+      const rollupWhere = startSql ? `AND period_start >= ${startSql}` : '';
+      ({ rows } = await pool.query(
+        `SELECT country_code,
+                SUM(request_count)::integer AS requests,
+                SUM(unique_ips)::integer AS unique_ips
+         FROM route_analytics_geo_rollup
+         WHERE granularity = $1 ${rollupWhere}
+         GROUP BY country_code
+         ORDER BY requests DESC`,
+        [granularity]
+      ));
+    }
 
     return json({ countries: rows });
   } catch (e) {

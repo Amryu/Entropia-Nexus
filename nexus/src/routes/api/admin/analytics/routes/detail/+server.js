@@ -28,8 +28,10 @@ export async function GET({ locals, url }) {
   if (!pattern) return json({ error: 'pattern parameter required' }, { status: 400 });
 
   const period = url.searchParams.get('period') || '7d';
+  const xBots = url.searchParams.get('excludeBots') === 'true';
   const startSql = periodStartSql(period);
   const whereClause = startSql ? `AND visited_at >= ${startSql}` : '';
+  const botFilter = xBots ? 'AND is_bot = false' : '';
 
   try {
     const { rows } = await pool.query(
@@ -37,7 +39,7 @@ export async function GET({ locals, url }) {
               count(*)::integer AS requests,
               count(DISTINCT ip_address)::integer AS unique_ips
        FROM route_visits
-       WHERE route_pattern = $1 ${whereClause}
+       WHERE route_pattern = $1 ${whereClause} ${botFilter}
        GROUP BY route_path
        ORDER BY requests DESC
        LIMIT 50`,

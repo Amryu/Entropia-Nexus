@@ -17,13 +17,14 @@ function periodConfig(period) {
 
 /**
  * GET /api/admin/analytics/routes
- * Route breakdown, grouped by category.
  */
 export async function GET({ locals, url }) {
   requireAdminAPI(locals);
 
   const period = url.searchParams.get('period') || '7d';
   const category = url.searchParams.get('category') || null;
+  const xBots = url.searchParams.get('excludeBots') === 'true';
+  const xApi = url.searchParams.get('excludeApi') === 'true';
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10)));
   const offset = (page - 1) * limit;
@@ -31,42 +32,48 @@ export async function GET({ locals, url }) {
   const { granularity, startSql } = periodConfig(period);
   const whereClause = startSql ? `AND period_start >= ${startSql}` : '';
   const categoryFilter = category ? 'AND route_category = $2' : '';
+  const apiFilter = !category && xApi ? `AND route_category != 'api'` : '';
   const params = category ? [granularity, category] : [granularity];
+  const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
 
   try {
     const [routes, countResult, categories] = await Promise.all([
       pool.query(
         `SELECT route_category, route_pattern,
-                SUM(request_count)::integer AS requests,
+                SUM(${reqExpr})::integer AS requests,
                 SUM(unique_ips)::integer AS unique_ips,
                 SUM(bot_count)::integer AS bots,
                 SUM(rate_limited_count)::integer AS rate_limited,
                 SUM(error_count)::integer AS errors,
-                CASE WHEN SUM(request_count) > 0
-                  THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * request_count) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN request_count ELSE 0 END), 0))::integer
+                CASE WHEN SUM(${reqExpr}) > 0
+                  THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * ${reqExpr}) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN ${reqExpr} ELSE 0 END), 0))::integer
                   ELSE 0 END AS avg_response_ms
          FROM route_analytics_rollup
-         WHERE granularity = $1 ${whereClause} ${categoryFilter}
+         WHERE granularity = $1 ${whereClause} ${categoryFilter} ${apiFilter}
          GROUP BY route_category, route_pattern
+         HAVING SUM(${reqExpr}) > 0
          ORDER BY requests DESC
          LIMIT ${limit} OFFSET ${offset}`,
         params
       ),
       pool.query(
-        `SELECT count(DISTINCT (route_category, route_pattern))::integer AS total
-         FROM route_analytics_rollup
-         WHERE granularity = $1 ${whereClause} ${categoryFilter}`,
+        `SELECT count(*)::integer AS total FROM (
+           SELECT 1 FROM route_analytics_rollup
+           WHERE granularity = $1 ${whereClause} ${categoryFilter} ${apiFilter}
+           GROUP BY route_category, route_pattern
+           HAVING SUM(${reqExpr}) > 0
+         ) sub`,
         params
       ),
-      // Category summary
       pool.query(
         `SELECT route_category,
-                SUM(request_count)::integer AS requests,
+                SUM(${reqExpr})::integer AS requests,
                 SUM(unique_ips)::integer AS unique_ips,
                 SUM(bot_count)::integer AS bots
          FROM route_analytics_rollup
-         WHERE granularity = $1 ${whereClause}
+         WHERE granularity = $1 ${whereClause} ${apiFilter}
          GROUP BY route_category
+         HAVING SUM(${reqExpr}) > 0
          ORDER BY requests DESC`,
         [granularity]
       )

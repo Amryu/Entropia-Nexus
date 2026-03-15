@@ -9,6 +9,8 @@
   // --- State ---
   let activeTab = $state('overview');
   let period = $state('7d');
+  let excludeBots = $state(true);
+  let excludeApi = $state(false);
   let isLoading = $state(true);
   let error = $state(null);
 
@@ -156,7 +158,7 @@
     // Expand — fetch detail
     expandedRoutes = { ...expandedRoutes, [pattern]: { paths: null, loading: true } };
     try {
-      const data = await fetchJson(`/api/admin/analytics/routes/detail?pattern=${encodeURIComponent(pattern)}&period=${period}`);
+      const data = await fetchJson(`/api/admin/analytics/routes/detail?pattern=${encodeURIComponent(pattern)}&period=${period}${filterParams()}`);
       expandedRoutes = { ...expandedRoutes, [pattern]: { paths: data.paths, loading: false } };
     } catch {
       expandedRoutes = { ...expandedRoutes, [pattern]: { paths: [], loading: false } };
@@ -164,6 +166,14 @@
   }
 
   // --- Data fetching ---
+  /** Build query string with common filter params */
+  function filterParams() {
+    let p = '';
+    if (excludeBots) p += '&excludeBots=true';
+    if (excludeApi) p += '&excludeApi=true';
+    return p;
+  }
+
   async function fetchJson(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -175,8 +185,8 @@
     error = null;
     try {
       const [ov, ts] = await Promise.all([
-        fetchJson(`/api/admin/analytics/overview?period=${period}`),
-        fetchJson(`/api/admin/analytics/timeseries?period=${period}`)
+        fetchJson(`/api/admin/analytics/overview?period=${period}${filterParams()}`),
+        fetchJson(`/api/admin/analytics/timeseries?period=${period}${filterParams()}`)
       ]);
       overview = ov;
       timeseries = ts;
@@ -193,7 +203,7 @@
     error = null;
     try {
       const categoryParam = routeCategory ? `&category=${encodeURIComponent(routeCategory)}` : '';
-      routeData = await fetchJson(`/api/admin/analytics/routes?period=${period}&page=${routePage}&limit=50${categoryParam}`);
+      routeData = await fetchJson(`/api/admin/analytics/routes?period=${period}&page=${routePage}&limit=50${categoryParam}${filterParams()}`);
     } catch (e) {
       error = e.message;
     } finally {
@@ -222,7 +232,7 @@
     isLoading = true;
     error = null;
     try {
-      geoData = await fetchJson(`/api/admin/analytics/geo?period=${period}`);
+      geoData = await fetchJson(`/api/admin/analytics/geo?period=${period}${filterParams()}`);
     } catch (e) {
       error = e.message;
     } finally {
@@ -234,7 +244,7 @@
     isLoading = true;
     error = null;
     try {
-      referrerData = await fetchJson(`/api/admin/analytics/referrers?period=${period}`);
+      referrerData = await fetchJson(`/api/admin/analytics/referrers?period=${period}${filterParams()}`);
     } catch (e) {
       error = e.message;
     } finally {
@@ -510,6 +520,11 @@
     background-color: var(--accent-color); color: white;
     border-color: var(--accent-color);
   }
+  .filter-toggle {
+    display: flex; align-items: center; gap: 4px; font-size: 13px;
+    color: var(--text-muted); cursor: pointer; margin-left: 8px; white-space: nowrap;
+  }
+  .filter-toggle input { cursor: pointer; }
   .rebuild-btn {
     margin-left: auto; padding: 6px 14px; border: 1px solid var(--border-color);
     border-radius: 6px; background: none; color: var(--text-muted);
@@ -704,7 +719,7 @@
   <h1>Route Analytics</h1>
   <p class="subtitle">Monitor traffic, API usage, geographic distribution, and bot activity</p>
 
-  <!-- Period picker (shown for all tabs except bots) -->
+  <!-- Period picker (shown for all tabs except bots and live) -->
   {#if activeTab !== 'bots' && activeTab !== 'live'}
     <div class="period-picker">
       {#each PERIODS as p}
@@ -712,6 +727,16 @@
           {p.label}
         </button>
       {/each}
+      {#if activeTab !== 'api'}
+        <label class="filter-toggle">
+          <input type="checkbox" bind:checked={excludeBots} onchange={() => loadTab()} />
+          Exclude bots
+        </label>
+        <label class="filter-toggle">
+          <input type="checkbox" bind:checked={excludeApi} onchange={() => loadTab()} />
+          Exclude API
+        </label>
+      {/if}
       <button class="rebuild-btn" onclick={triggerRebuild} disabled={rebuilding}>
         {rebuilding ? 'Rebuilding...' : 'Rebuild rollups'}
       </button>

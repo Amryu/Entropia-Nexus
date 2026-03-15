@@ -17,26 +17,45 @@ function periodConfig(period) {
 
 /**
  * GET /api/admin/analytics/referrers
- * External referrer domain breakdown.
  */
 export async function GET({ locals, url }) {
   requireAdminAPI(locals);
 
   const period = url.searchParams.get('period') || '7d';
+  const xBots = url.searchParams.get('excludeBots') === 'true';
+  const xApi = url.searchParams.get('excludeApi') === 'true';
   const { granularity, startSql } = periodConfig(period);
-  const whereClause = startSql ? `AND period_start >= ${startSql}` : '';
 
   try {
-    const { rows } = await pool.query(
-      `SELECT referrer_domain,
-              SUM(request_count)::integer AS requests
-       FROM route_analytics_referrer_rollup
-       WHERE granularity = $1 ${whereClause}
-       GROUP BY referrer_domain
-       ORDER BY requests DESC
-       LIMIT 50`,
-      [granularity]
-    );
+    let rows;
+
+    if (xBots || xApi) {
+      // Referrer rollup lacks bot/api breakdown — query raw data
+      const rawWhere = startSql ? `AND visited_at >= ${startSql}` : '';
+      const botFilter = xBots ? 'AND is_bot = false' : '';
+      const apiFilter = xApi ? 'AND is_api = false' : '';
+      ({ rows } = await pool.query(
+        `SELECT referrer AS referrer_domain,
+                count(*)::integer AS requests
+         FROM route_visits
+         WHERE referrer IS NOT NULL ${rawWhere} ${botFilter} ${apiFilter}
+         GROUP BY referrer
+         ORDER BY requests DESC
+         LIMIT 50`
+      ));
+    } else {
+      const rollupWhere = startSql ? `AND period_start >= ${startSql}` : '';
+      ({ rows } = await pool.query(
+        `SELECT referrer_domain,
+                SUM(request_count)::integer AS requests
+         FROM route_analytics_referrer_rollup
+         WHERE granularity = $1 ${rollupWhere}
+         GROUP BY referrer_domain
+         ORDER BY requests DESC
+         LIMIT 50`,
+        [granularity]
+      ));
+    }
 
     return json({ referrers: rows });
   } catch (e) {
