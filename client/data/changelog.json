@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.3.7",
+    "date": "2026-03-15",
+    "changes": [
+      {"type": "feat", "text": "Hunt tracker rework: per-mob running stats, entity ID resolution, retroactive tool correction, and loot deduplication"},
+      {"type": "feat", "text": "Radar OCR detector with calibration dialog (disabled by default)"},
+      {"type": "feat", "text": "Waypoint copy button with icon, tooltip, and click-to-copy feedback in wiki detail and overlay"},
+      {"type": "fix", "text": "Skills dashboard chart baselines no longer drop accumulated live gains on periodic refresh"},
+      {"type": "fix", "text": "Dashboard globals feed filters out historical events and auto-scrolls to newest"},
+      {"type": "fix", "text": "'Hide overcapped' unchecked by default in loadout manager"},
+      {"type": "fix", "text": "API requests now identify as NexusClient/{version} instead of default Python user-agent"}
+    ]
+  },
+  {
     "version": "0.3.6",
     "date": "2026-03-12",
     "changes": [
