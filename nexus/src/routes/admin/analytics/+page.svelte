@@ -431,6 +431,8 @@
 
   // --- Rebuild ---
   let rebuilding = $state(false);
+  let reevaluating = $state(false);
+  let reevalResult = $state(null);
 
   async function triggerRebuild() {
     rebuilding = true;
@@ -441,6 +443,23 @@
       console.error('Rebuild failed:', e);
     } finally {
       rebuilding = false;
+    }
+  }
+
+  async function triggerBotReevaluation() {
+    reevaluating = true;
+    reevalResult = null;
+    try {
+      const res = await fetch('/api/admin/analytics/rebuild?bots=true', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        reevalResult = `${data.botsUpdated} rows updated`;
+        loadTab();
+      }
+    } catch (e) {
+      reevalResult = 'Failed';
+    } finally {
+      reevaluating = false;
     }
   }
 
@@ -1149,6 +1168,19 @@
               {/if}
             </div>
           {/if}
+        </div>
+
+        <div style="margin-top: 16px; display: flex; align-items: center; gap: 12px">
+          <button class="rebuild-btn" onclick={triggerBotReevaluation} disabled={reevaluating}>
+            {reevaluating ? 'Re-evaluating...' : 'Re-evaluate existing entries'}
+          </button>
+          <span class="muted" style="font-size: 12px">
+            {#if reevalResult}
+              {reevalResult}
+            {:else}
+              Applies current patterns + version thresholds to all stored visits
+            {/if}
+          </span>
         </div>
       </div>
 

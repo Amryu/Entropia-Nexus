@@ -344,3 +344,53 @@ export async function initRouteAnalytics() {
 
   console.log('[route-analytics] Initialized (bot patterns: ' + (botRegex ? 'loaded' : 'none') + ', geoip: ' + (geoLookup ? 'ready' : 'disabled') + ')');
 }
+
+/**
+ * Re-evaluate is_bot on all existing route_visits rows using current
+ * bot patterns and version thresholds. Processes in batches to avoid
+ * long-running locks.
+ * @returns {{ updated: number }} count of rows whose is_bot flag changed
+ */
+export async function reevaluateBotFlags() {
+  const BATCH = 5000;
+  let totalUpdated = 0;
+  let lastId = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { rows } = await pool.query(
+      `SELECT id, user_agent, method FROM route_visits WHERE id > $1 ORDER BY id LIMIT ${BATCH}`,
+      [lastId]
+    );
+    if (rows.length === 0) break;
+
+    const toTrue = [];
+    const toFalse = [];
+    for (const row of rows) {
+      const shouldBeBot = isBot(row.user_agent, row.method);
+      if (shouldBeBot) toTrue.push(row.id);
+      else toFalse.push(row.id);
+    }
+
+    // Batch update rows that should be true but might not be
+    if (toTrue.length > 0) {
+      const { rowCount } = await pool.query(
+        `UPDATE route_visits SET is_bot = true WHERE id = ANY($1) AND is_bot = false`,
+        [toTrue]
+      );
+      totalUpdated += rowCount || 0;
+    }
+    if (toFalse.length > 0) {
+      const { rowCount } = await pool.query(
+        `UPDATE route_visits SET is_bot = false WHERE id = ANY($1) AND is_bot = true`,
+        [toFalse]
+      );
+      totalUpdated += rowCount || 0;
+    }
+
+    lastId = rows[rows.length - 1].id;
+  }
+
+  console.log(`[route-analytics] Re-evaluated bot flags: ${totalUpdated} rows changed`);
+  return { updated: totalUpdated };
+}
