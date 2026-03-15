@@ -1,4 +1,5 @@
 User-Agent: *
 Allow: /
+Disallow: /globals/
 
 Sitemap: https://entropianexus.com/sitemap.xml
