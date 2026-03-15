@@ -29,36 +29,48 @@ export async function GET({ locals, url }) {
   const rollupWhere = startSql ? `AND period_start >= ${startSql}` : '';
   const rawWhere = startSql ? `AND visited_at >= ${startSql}` : '';
   const apiFilter = xApi ? `AND route_category != 'api'` : '';
+  const rawBotFilter = xBots ? 'AND is_bot = false' : '';
+  const rawApiFilter = xApi ? 'AND is_api = false' : '';
 
   // For requests: use rollup math (subtract bot_count when excluding bots)
   const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
 
-  // Unique visitors: use raw table when bot/api filters are active (need row-level filtering),
-  // otherwise use ip_sets for accurate counts at any granularity.
-  const useRawForUniques = xBots || xApi;
-  const rawBotFilter = xBots ? 'AND is_bot = false' : '';
-  const rawApiFilter = xApi ? 'AND is_api = false' : '';
+  // 1h period has no matching rollup row (daily period_start is at midnight),
+  // so all queries must use raw data
+  const useRaw = period === '1h';
 
-  // Geo/referrer rollups lack bot and route_category breakdown,
-  // so use raw data when any of these filters are active
-  const useRawForGeo = xBots || xApi;
-  const useRawForReferrers = xBots || xApi;
+  // Also use raw for uniques when filters are active (need row-level is_bot/is_api filtering)
+  const useRawForUniques = useRaw || xBots || xApi;
+
+  // Geo/referrer rollups lack bot and route_category breakdown
+  const useRawForGeo = useRaw || xBots || xApi;
+  const useRawForReferrers = useRaw || xBots || xApi;
 
   try {
     const [totals, uniqueResult, topRoutes, topCountries, topReferrers] = await Promise.all([
-      // Totals from rollup
-      pool.query(
-        `SELECT COALESCE(SUM(${reqExpr}), 0)::integer AS total_requests,
-                COALESCE(SUM(bot_count), 0)::integer AS bot_requests,
-                COALESCE(SUM(rate_limited_count), 0)::integer AS rate_limited,
-                COALESCE(SUM(error_count), 0)::integer AS errors,
-                CASE WHEN SUM(${reqExpr}) > 0
-                  THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * ${reqExpr}) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN ${reqExpr} ELSE 0 END), 0))::integer
-                  ELSE 0 END AS avg_response_ms
-         FROM route_analytics_rollup
-         WHERE granularity = $1 ${rollupWhere} ${apiFilter}`,
-        [granularity]
-      ),
+      // Totals
+      useRaw
+        ? pool.query(
+            `SELECT count(*)::integer AS total_requests,
+                    count(*) FILTER (WHERE is_bot)::integer AS bot_requests,
+                    count(*) FILTER (WHERE rate_limited)::integer AS rate_limited,
+                    count(*) FILTER (WHERE status_code >= 400)::integer AS errors,
+                    avg(response_time_ms)::integer AS avg_response_ms
+             FROM route_visits
+             WHERE true ${rawWhere} ${rawBotFilter} ${rawApiFilter}`
+          )
+        : pool.query(
+            `SELECT COALESCE(SUM(${reqExpr}), 0)::integer AS total_requests,
+                    COALESCE(SUM(bot_count), 0)::integer AS bot_requests,
+                    COALESCE(SUM(rate_limited_count), 0)::integer AS rate_limited,
+                    COALESCE(SUM(error_count), 0)::integer AS errors,
+                    CASE WHEN SUM(${reqExpr}) > 0
+                      THEN (SUM(COALESCE(avg_response_ms, 0)::bigint * ${reqExpr}) / NULLIF(SUM(CASE WHEN avg_response_ms IS NOT NULL THEN ${reqExpr} ELSE 0 END), 0))::integer
+                      ELSE 0 END AS avg_response_ms
+             FROM route_analytics_rollup
+             WHERE granularity = $1 ${rollupWhere} ${apiFilter}`,
+            [granularity]
+          ),
 
       // Unique visitors — raw table when filters active, ip_sets for accurate counts otherwise
       useRawForUniques
@@ -74,21 +86,34 @@ export async function GET({ locals, url }) {
             [granularity]
           ),
 
-      // Top 10 routes from rollup
-      pool.query(
-        `SELECT route_category, route_pattern,
-                SUM(${reqExpr})::integer AS requests,
-                SUM(unique_ips)::integer AS unique_ips,
-                SUM(bot_count)::integer AS bots,
-                SUM(error_count)::integer AS errors
-         FROM route_analytics_rollup
-         WHERE granularity = $1 ${rollupWhere} ${apiFilter}
-         GROUP BY route_category, route_pattern
-         HAVING SUM(${reqExpr}) > 0
-         ORDER BY requests DESC
-         LIMIT 10`,
-        [granularity]
-      ),
+      // Top 10 routes
+      useRaw
+        ? pool.query(
+            `SELECT route_category, route_pattern,
+                    count(*)::integer AS requests,
+                    count(DISTINCT ip_address)::integer AS unique_ips,
+                    count(*) FILTER (WHERE is_bot)::integer AS bots,
+                    count(*) FILTER (WHERE status_code >= 400)::integer AS errors
+             FROM route_visits
+             WHERE true ${rawWhere} ${rawBotFilter} ${rawApiFilter}
+             GROUP BY route_category, route_pattern
+             ORDER BY requests DESC
+             LIMIT 10`
+          )
+        : pool.query(
+            `SELECT route_category, route_pattern,
+                    SUM(${reqExpr})::integer AS requests,
+                    SUM(unique_ips)::integer AS unique_ips,
+                    SUM(bot_count)::integer AS bots,
+                    SUM(error_count)::integer AS errors
+             FROM route_analytics_rollup
+             WHERE granularity = $1 ${rollupWhere} ${apiFilter}
+             GROUP BY route_category, route_pattern
+             HAVING SUM(${reqExpr}) > 0
+             ORDER BY requests DESC
+             LIMIT 10`,
+            [granularity]
+          ),
 
       // Top 10 countries
       useRawForGeo
