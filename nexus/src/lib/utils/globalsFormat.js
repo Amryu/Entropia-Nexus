@@ -36,6 +36,10 @@ export function timeAgo(dateStr) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
+  if (days > 365) {
+    const years = (days / 365).toFixed(1);
+    return `${years}y ago`;
+  }
   return `${days}d ago`;
 }
 

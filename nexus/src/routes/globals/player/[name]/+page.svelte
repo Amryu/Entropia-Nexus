@@ -548,11 +548,11 @@
                   <thead>
                     <tr>
                       <th>Item</th>
-                      <th class="right">Value</th>
-                      <th>Time</th>
-                      <th></th>
+                      <th class="right col-value">Value</th>
+                      <th class="col-badge"></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
+                      <th class="col-time">Time</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -560,10 +560,7 @@
                       <tr>
                         <td>{item.target}</td>
                         <td class="right">{formatPed(item.value)} PED</td>
-                        <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
-                        <td>
-                          {#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}
-                        </td>
+                        <td class="col-badge">{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if item.media_image || item.media_video}
                             <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
@@ -578,6 +575,7 @@
                           {/if}
                         </td>
                         <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
+                        <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -1159,18 +1157,18 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th class="sortable right" onclick={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
-                    <th></th>
+                    <th class="sortable right col-value" onclick={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
+                    <th class="col-badge"></th>
                     <th class="col-media"></th>
                     <th class="col-gz"></th>
-                    <th class="sortable" onclick={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
+                    <th class="sortable col-time" onclick={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each sortedPvpEvents as g}
                     <tr>
                       <td class="right font-weight-bold">{Math.round(g.value)} Kills</td>
-                      <td>
+                      <td class="col-badge">
                         {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
                       </td>
                       <td class="col-media">
@@ -2029,7 +2027,7 @@
     text-align: center;
     padding: 4px 4px !important;
   }
-  .col-time { width: 45px; }
+  .col-time { width: 55px; }
   .col-type { width: 65px; }
 
   .media-icon-btn {
