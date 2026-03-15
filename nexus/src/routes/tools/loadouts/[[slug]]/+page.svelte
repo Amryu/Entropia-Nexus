@@ -108,7 +108,7 @@
   }
 
   let settings = $state({
-    onlyShowReasonableAmplifiers: true,
+    onlyShowReasonableAmplifiers: false,
   })
 
   const OVERAMP_MODE_KEY = 'loadout-overamp-mode';

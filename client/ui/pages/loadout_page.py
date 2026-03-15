@@ -1614,7 +1614,7 @@ class LoadoutPage(QWidget):
             weapon_dmg = self._total_damage(weapon) if weapon else 0
             cap = weapon_dmg / 2
 
-            hide_overcapped = [True]  # mutable for closure
+            hide_overcapped = [False]  # mutable for closure
             overamp_mode = [self._overamp_mode]  # 'percent' or 'delta'
 
             def build_amp_rows():
@@ -1720,7 +1720,7 @@ class LoadoutPage(QWidget):
             header_layout.setSpacing(8)
             cb_widget = QCheckBox("Hide overcapped")
             cb_widget.setObjectName("hideOvercapped")
-            cb_widget.setChecked(True)
+            cb_widget.setChecked(False)
             header_layout.addWidget(cb_widget)
             toggle_btn = QPushButton("Δ / %" if overamp_mode[0] == "percent" else "% / Δ")
             toggle_btn.setObjectName("overampToggle")

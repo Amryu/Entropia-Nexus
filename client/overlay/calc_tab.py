@@ -412,12 +412,12 @@ class CalcTab(QScrollArea):
             )
 
         self._amp_input = self._add_search(
-            "Amplifier", ent["filtered_amplifiers"], color_fn=amp_color_fn,
+            "Amplifier", ent["all_compatible_amplifiers"], color_fn=amp_color_fn,
         )
 
         # Checkbox to toggle overcap filtering
         self._overcap_cb = QCheckBox("Hide overcapped amps")
-        self._overcap_cb.setChecked(True)
+        self._overcap_cb.setChecked(False)
         self._overcap_cb.setStyleSheet(
             f"QCheckBox {{ color: {TEXT_DIM}; font-size: 11px;"
             f" background: transparent; spacing: 4px; }}"

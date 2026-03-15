@@ -60,7 +60,7 @@ test.describe('Loadout Amplifier Picker', () => {
 
     const checkbox = dialog.locator('.picker-header-checkbox input[type="checkbox"]');
     await expect(checkbox).toBeVisible({ timeout: TIMEOUT_SHORT });
-    await expect(checkbox).toBeChecked();
+    await expect(checkbox).not.toBeChecked();
   });
 
   test('Hide overcapped checkbox filters amplifiers', async ({ page }) => {
@@ -68,16 +68,16 @@ test.describe('Loadout Amplifier Picker', () => {
 
     const dialog = await openAmplifierPicker(page);
 
-    // Count rows with filter on
-    const rowsFiltered = await dialog.locator('.table-row:not(.empty)').count();
+    // Count rows with filter off (default)
+    const rowsUnfiltered = await dialog.locator('.table-row:not(.empty)').count();
 
-    // Uncheck "Hide overcapped"
+    // Check "Hide overcapped"
     const checkbox = dialog.locator('.picker-header-checkbox input[type="checkbox"]');
-    await checkbox.uncheck();
+    await checkbox.check();
     await page.waitForTimeout(TIMEOUT_SHORT);
 
-    // Should show more (or equal) rows with the filter off
-    const rowsUnfiltered = await dialog.locator('.table-row:not(.empty)').count();
+    // Should show fewer (or equal) rows with the filter on
+    const rowsFiltered = await dialog.locator('.table-row:not(.empty)').count();
     expect(rowsUnfiltered).toBeGreaterThanOrEqual(rowsFiltered);
   });
 
@@ -86,11 +86,7 @@ test.describe('Loadout Amplifier Picker', () => {
 
     const dialog = await openAmplifierPicker(page);
 
-    // Uncheck to show overcapped amps
-    const checkbox = dialog.locator('.picker-header-checkbox input[type="checkbox"]');
-    await checkbox.uncheck();
-    await page.waitForTimeout(TIMEOUT_SHORT);
-
+    // Overcapped amps are visible by default (checkbox unchecked)
     // Check that at least one row has the overamp-warn or overamp-danger class
     const warnRows = dialog.locator('.table-row.overamp-warn');
     const dangerRows = dialog.locator('.table-row.overamp-danger');
