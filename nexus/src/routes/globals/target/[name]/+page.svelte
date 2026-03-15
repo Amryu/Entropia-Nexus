@@ -63,7 +63,11 @@
   let activity = $state([]);
   let recent = $state([]);
   let recentSort = $state({ col: 'timestamp', asc: false });
+  let recentPage = $state(0);
+  const RECENT_PAGE_SIZE = 5;
   let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
+  let recentTotalPages = $derived(Math.ceil(sortedRecent.length / RECENT_PAGE_SIZE));
+  let pagedRecent = $derived(sortedRecent.slice(recentPage * RECENT_PAGE_SIZE, (recentPage + 1) * RECENT_PAGE_SIZE));
   let primaryType = $state(null);
   let maturities = $state([]);
   let wikiUrl = $state(null);
@@ -502,22 +506,22 @@
       {/if}
 
       {#if recent.length > 0}
-        <div class="section-card recent-compact">
+        <div class="section-card">
           <h2>Recent Globals</h2>
           <div class="table-wrapper">
-            <table class="data-table compact-table">
+            <table class="data-table">
               <thead>
                 <tr>
-                  <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'player')}>Player{sortIcon(recentSort, 'player')}</th>
-                  <th class="sortable right col-value" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
+                  <th class="sortable" onclick={() => { recentSort = toggleSort(recentSort, 'player'); recentPage = 0; }}>Player{sortIcon(recentSort, 'player')}</th>
+                  <th class="sortable right col-value" onclick={() => { recentSort = toggleSort(recentSort, 'value'); recentPage = 0; }}>Value{sortIcon(recentSort, 'value')}</th>
                   <th class="col-badge"></th>
                   <th class="col-media"></th>
                   <th class="col-gz"></th>
-                  <th class="sortable col-time" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                  <th class="sortable col-time" onclick={() => { recentSort = toggleSort(recentSort, 'timestamp'); recentPage = 0; }}>Time{sortIcon(recentSort, 'timestamp')}</th>
                 </tr>
               </thead>
               <tbody>
-                {#each sortedRecent as g}
+                {#each pagedRecent as g}
                   <tr>
                     <td>
                       {#if g.type === 'team_kill'}<span class="badge-team">T</span>{/if}
@@ -540,13 +544,20 @@
                         <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} onuploaded={onMediaUploaded} />
                       {/if}
                     </td>
-                    <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
+                    <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} userGz={g.user_gz || false} {user} compact /></td>
                     <td class="text-muted col-time">{timeAgo(g.timestamp)}</td>
                   </tr>
                 {/each}
               </tbody>
             </table>
           </div>
+          {#if recentTotalPages > 1}
+            <div class="pagination">
+              <button class="page-btn" disabled={recentPage <= 0} onclick={() => recentPage--}>Previous</button>
+              <span class="page-info">Page {recentPage + 1} of {recentTotalPages}</span>
+              <button class="page-btn" disabled={recentPage >= recentTotalPages - 1} onclick={() => recentPage++}>Next</button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -869,23 +880,6 @@
   }
 
   /* Compact recent table */
-  .compact-table th,
-  .compact-table td {
-    padding: 5px 8px;
-    font-size: 0.75rem;
-  }
-
-  .recent-compact {
-    display: flex;
-    flex-direction: column;
-    max-height: 400px;
-  }
-
-  .recent-compact .table-wrapper {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-  }
 
   /* Section cards */
   .section-card {
