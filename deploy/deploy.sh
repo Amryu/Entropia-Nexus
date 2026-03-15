@@ -67,6 +67,22 @@ if [[ "${GIT_PULL}" == "true" ]]; then
   git pull --ff-only "${GIT_REMOTE}" ${GIT_BRANCH:-}
 fi
 
+# Audit all packages — refuse to deploy if any vulnerabilities are found
+AUDIT_FAILED=false
+for pkg_dir in api nexus nexus-bot; do
+  echo "[deploy] Running npm audit in ${pkg_dir}"
+  pushd "${pkg_dir}" >/dev/null
+  if ! npm audit --omit=dev 2>&1; then
+    echo "[deploy] ERROR: npm audit found vulnerabilities in ${pkg_dir}." >&2
+    AUDIT_FAILED=true
+  fi
+  popd >/dev/null
+done
+if [[ "${AUDIT_FAILED}" == "true" ]]; then
+  echo "[deploy] ERROR: Aborting deploy due to npm audit vulnerabilities. Fix them before deploying." >&2
+  exit 1
+fi
+
 echo "[deploy] Building Nexus (${BUILD_MODE})"
 
 # Stage Nexus .env for build-time Vite variables, unless already present in repo
