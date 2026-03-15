@@ -2036,8 +2036,8 @@
     /* Hide less important columns on mobile — keep target + value + badge */
     .col-media, .col-gz, .col-time, .col-type, .col-rank { display: none; }
 
-    /* Compact table cells */
-    .data-table th, .data-table td { padding: 4px 3px; font-size: 0.75rem; }
+    /* Compact table cells — keep 6px horizontal padding so text doesn't touch edges */
+    .data-table th, .data-table td { padding: 4px 6px; font-size: 0.75rem; }
     .col-value { width: 55px; }
     .col-count { width: 24px; }
 
