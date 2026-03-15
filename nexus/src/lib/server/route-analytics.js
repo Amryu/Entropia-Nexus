@@ -180,11 +180,16 @@ function hasAncientOrUnparseableBrowser(ua) {
 // Any UA self-identifying with these words is non-human.
 const BOT_KEYWORDS = /bot[\/\s;),.:-]|bot$|crawler|spider/i;
 
+// Known first-party client UAs that should never be flagged
+const WHITELISTED_UAS = /^NexusClient\/|^python-requests\/2\.32\.5$/;
+
 function isBot(userAgent, method) {
   // HEAD requests are almost never from real browsers
   if (method === 'HEAD') return true;
   // Missing user-agent is a strong bot signal
   if (!userAgent) return true;
+  // Whitelist known first-party clients
+  if (WHITELISTED_UAS.test(userAgent)) return false;
   // Catch-all: anything self-identifying as bot/crawler/spider
   if (BOT_KEYWORDS.test(userAgent)) return true;
   // Ancient versions or known browser name with no parseable version

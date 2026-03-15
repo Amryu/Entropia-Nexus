@@ -71,11 +71,9 @@ export async function GET({ locals, url }) {
       ...subnets.filter(s => s.already_blocked)
     ];
 
-    // Fetch sample IPs for the top unblocked + top blocked subnets
+    // Fetch sample IPs for ALL detected subnets
     const samples = {};
-    const unblockedTop = results.filter(s => !s.already_blocked).slice(0, 5);
-    const blockedTop = results.filter(s => s.already_blocked).slice(0, 3);
-    for (const subnet of [...unblockedTop, ...blockedTop]) {
+    for (const subnet of results) {
       const { rows: ips } = await pool.query(
         `SELECT ip_address::text AS ip, user_agent, count(*)::integer AS requests,
                 bool_or(is_bot) AS flagged_bot
