@@ -28,12 +28,26 @@ export async function POST({ request, locals }) {
   }
 
   try {
+    const amount = parseFloat(body.amount);
+
+    // Auto-calculate contribution score: 2x PED amount, minimum 1,
+    // with probabilistic rounding on the decimal part
+    let contributionScore;
+    if (body.contribution_score != null) {
+      contributionScore = parseFloat(body.contribution_score);
+    } else {
+      const raw = Math.max(1, amount * 2);
+      const base = Math.floor(raw);
+      const decimal = raw - base;
+      contributionScore = decimal > 0 && Math.random() < decimal ? base + 1 : base;
+    }
+
     const reward = await assignReward({
       change_id: parseInt(body.change_id),
       user_id: body.user_id,
       rule_id: body.rule_id ? parseInt(body.rule_id) : null,
-      amount: parseFloat(body.amount),
-      contribution_score: body.contribution_score != null ? parseFloat(body.contribution_score) : null,
+      amount,
+      contribution_score: contributionScore,
       note: body.note?.trim() || null,
       assigned_by: user.id
     });
