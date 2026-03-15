@@ -2007,11 +2007,15 @@
   .col-media {
     width: 28px;
     text-align: center;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
   }
 
   .col-gz {
     width: 50px;
     text-align: center;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
   }
 
   .media-icon-btn {
