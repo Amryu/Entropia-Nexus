@@ -667,6 +667,18 @@
     /* Compact badges */
     .col-badge { width: 32px !important; padding: 0 2px !important; }
     .badge-hof, .badge-ath, .badge-team { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
+
+    /* Compact charts */
+    .chart-container { height: 160px; }
+
+    /* Compact sort toggle */
+    .sort-btn { padding: 3px 8px; font-size: 0.625rem; }
+
+    /* Compact leaderboard header */
+    .leaderboard-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+    /* Section titles */
+    .section-card h2 { font-size: 0.875rem; }
   }
 
   .breadcrumbs {
@@ -899,6 +911,7 @@
   .chart-container {
     position: relative;
     height: 200px;
+    overflow: hidden;
   }
 
   /* Tables */
