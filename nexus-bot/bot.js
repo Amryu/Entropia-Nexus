@@ -1111,13 +1111,7 @@ function formatDiffLines(obj, lines, depth) {
     for (const item of obj) {
       if (typeof item === 'string') {
         // Primitive change in array: "old -> new"
-        const arrow = item.indexOf(' -> ');
-        if (arrow >= 0) {
-          lines.push(`- ${pad}${item.substring(0, arrow)}`);
-          lines.push(`+ ${pad}${item.substring(arrow + 4)}`);
-        } else {
-          lines.push(`  ${pad}${item}`);
-        }
+        formatChangedValue(item, null, pad, lines);
       } else if (typeof item === 'object' && item !== null) {
         const status = item._status;
         const label = item.Name || item.Tier || '';
@@ -1141,15 +1135,7 @@ function formatDiffLines(obj, lines, depth) {
     if (key === '_status') continue;
 
     if (typeof value === 'string') {
-      const arrow = value.indexOf(' -> ');
-      if (arrow >= 0) {
-        // Changed value
-        lines.push(`- ${pad}${key}: ${value.substring(0, arrow)}`);
-        lines.push(`+ ${pad}${key}: ${value.substring(arrow + 4)}`);
-      } else {
-        // Context key (unchanged)
-        lines.push(`  ${pad}${key}: ${value}`);
-      }
+      formatChangedValue(value, key, pad, lines);
     } else if (Array.isArray(value)) {
       lines.push(`  ${pad}${key}:`);
       formatDiffLines(value, lines, depth + 1);
@@ -1159,6 +1145,25 @@ function formatDiffLines(obj, lines, depth) {
     } else if (value != null) {
       lines.push(`  ${pad}${key}: ${value}`);
     }
+  }
+}
+
+/**
+ * Format a changed value string ("old -> new") into diff lines.
+ * Skips the - line when old is <empty> (initial create),
+ * and skips the + line when new is <empty> (deletion).
+ */
+function formatChangedValue(value, key, pad, lines) {
+  const arrow = value.indexOf(' -> ');
+  if (arrow >= 0) {
+    const oldPart = value.substring(0, arrow);
+    const newPart = value.substring(arrow + 4);
+    const label = key ? `${key}: ` : '';
+    if (oldPart !== '<empty>') lines.push(`- ${pad}${label}${oldPart}`);
+    if (newPart !== '<empty>') lines.push(`+ ${pad}${label}${newPart}`);
+  } else {
+    // Context key (unchanged)
+    lines.push(`  ${pad}${key ? `${key}: ` : ''}${value}`);
   }
 }
 
