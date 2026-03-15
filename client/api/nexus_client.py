@@ -2,10 +2,25 @@
 
 import gzip
 import json
+import sys
+from pathlib import Path
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+
+def _get_client_version() -> str:
+    """Read version from manifest.json next to the executable/script."""
+    for base in [Path(sys.executable).parent, Path(__file__).resolve().parent.parent]:
+        manifest = base / "manifest.json"
+        if manifest.exists():
+            try:
+                with open(manifest) as f:
+                    return json.load(f).get("version", "0.0.0")
+            except Exception:
+                pass
+    return "0.0.0"
 
 from ..core.constants import EVENT_API_SCOPE_ERROR
 from ..core.logger import get_logger
@@ -33,6 +48,7 @@ class NexusClient:
         self._config = config
         self._oauth = oauth
         self._session = requests.Session()
+        self._session.headers["User-Agent"] = f"NexusClient/{_get_client_version()}"
         retry = Retry(
             total=3,
             backoff_factor=0.5,

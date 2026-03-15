@@ -62,7 +62,7 @@ class SkillMatcher:
             log_skills.info("Fetching skills from %s", SKILLS_API_URL)
             req = urllib.request.Request(SKILLS_API_URL, headers={
                 "Accept": "application/json",
-                "User-Agent": "EntropiaNexusClient/1.0",
+                "User-Agent": "NexusClient/1.0",
             })
             with urllib.request.urlopen(req, timeout=10) as resp:
                 raw = json.loads(resp.read().decode("utf-8"))
@@ -181,7 +181,7 @@ class RankVerifier:
             log_ranks.info("Fetching ranks from %s", RANKS_API_URL)
             req = urllib.request.Request(RANKS_API_URL, headers={
                 "Accept": "application/json",
-                "User-Agent": "EntropiaNexusClient/1.0",
+                "User-Agent": "NexusClient/1.0",
             })
             with urllib.request.urlopen(req, timeout=10) as resp:
                 raw = json.loads(resp.read().decode("utf-8"))

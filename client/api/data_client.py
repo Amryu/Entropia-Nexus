@@ -42,6 +42,8 @@ class DataClient:
         self._base_url = config.api_base_url
         self._frontend_url = config.nexus_base_url
         self._session = requests.Session()
+        from .nexus_client import _get_client_version
+        self._session.headers["User-Agent"] = f"NexusClient/{_get_client_version()}"
         adapter = HTTPAdapter(max_retries=_RETRY_STRATEGY)
         self._session.mount("https://", adapter)
         self._session.mount("http://", adapter)
