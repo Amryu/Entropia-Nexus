@@ -831,6 +831,7 @@
   .status-5xx { background-color: rgba(239, 68, 68, 0.2); color: var(--error-color); }
   .bot-badge { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
   .blocked-badge { background-color: rgba(16, 185, 129, 0.15); color: var(--success-color); padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 6px; }
+  .residential-badge { background-color: rgba(59, 130, 246, 0.15); color: var(--accent-color); padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 6px; }
   .score-breakdown {
     display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
     margin-bottom: 10px; font-size: 12px;
@@ -840,6 +841,7 @@
     background-color: var(--hover-color); color: var(--text-muted);
   }
   .score-chip.score-high { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); }
+  .score-chip.score-discount { background-color: rgba(16, 185, 129, 0.15); color: var(--success-color); }
   .ua-label { font-size: 12px; white-space: nowrap; }
 
   /* Live table: fixed layout with ellipsis */
@@ -1447,6 +1449,9 @@
                     {#if s.already_blocked}
                       <span class="blocked-badge" title={s.blocked_by ? `Covered by ${s.blocked_by}` : ''}>BLOCKED{#if s.blocked_by && s.blocked_by !== s.subnet} by {s.blocked_by}{/if}</span>
                     {/if}
+                    {#if s.likely_residential}
+                      <span class="residential-badge">RESIDENTIAL</span>
+                    {/if}
                   </td>
                   <td class="num">
                     <span class="status-badge"
@@ -1484,7 +1489,7 @@
                             <strong>Score breakdown ({s.suspicion_score}):</strong>
                             {#each Object.entries(s.breakdown) as [key, val]}
                               {#if val > 0}
-                                <span class="score-chip" class:score-high={val >= 20}>
+                                <span class="score-chip" class:score-high={val >= 20} class:score-discount={val < 0}>
                                   {key.replace(/_/g, ' ')}: +{val}
                                 </span>
                               {/if}

@@ -86,14 +86,18 @@ export async function GET({ locals, url }) {
       else breakdown.route_diversity = 0;
 
       // Active hours — exponential: 2^(hours/4) capped at 100
-      // 1h=1, 2h=1, 4h=2, 8h=4, 12h=8, 16h=16, 20h=32, 24h=64
-      // This means even 30min of constant activity (1 active hour) contributes
-      // minimally, but 12+ hours ramps up fast
       breakdown.active_hours = Math.min(Math.round(Math.pow(2, s.active_hours / 4)), 100);
 
-      const suspicion_score = Object.values(breakdown).reduce((a, b) => a + b, 0);
+      // Residential discount: few IPs from the same /24 visiting a niche site
+      // is almost certainly residential (ISP neighbors). Datacenters have many IPs.
+      const likelyResidential = s.distinct_ips <= 5;
+      if (s.distinct_ips <= 2) breakdown.residential = -25;
+      else if (s.distinct_ips <= 5) breakdown.residential = -15;
+      else breakdown.residential = 0;
 
-      return { ...s, suspicion_score, breakdown };
+      const suspicion_score = Math.max(0, Object.values(breakdown).reduce((a, b) => a + b, 0));
+
+      return { ...s, suspicion_score, breakdown, likely_residential: likelyResidential };
     });
 
     // Sort: unblocked by score desc, then blocked
