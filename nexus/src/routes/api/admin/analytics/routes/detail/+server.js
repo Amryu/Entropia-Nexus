@@ -5,6 +5,7 @@ import { pool } from '$lib/server/db.js';
 
 function periodStartSql(period) {
   switch (period) {
+    case '1h':     return "now() - interval '1 hour'";
     case 'today':  return "date_trunc('day', now())";
     case '7d':     return "date_trunc('day', now() - interval '6 days')";
     case '30d':    return "date_trunc('day', now() - interval '29 days')";

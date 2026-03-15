@@ -5,6 +5,7 @@ import { pool } from '$lib/server/db.js';
 
 function periodConfig(period) {
   switch (period) {
+    case '1h':     return { granularity: 'minute',  startSql: "now() - interval '1 hour'" };
     case 'today':  return { granularity: 'hourly',  startSql: "date_trunc('day', now())" };
     case '7d':     return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '6 days')" };
     case '30d':    return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '29 days')" };
@@ -30,15 +31,16 @@ export async function GET({ locals, url }) {
   try {
     let rows;
 
-    if (granularity === 'hourly') {
-      // Query raw table for hourly resolution (today only, bounded)
+    if (granularity === 'minute' || granularity === 'hourly') {
+      // Query raw table for minute/hourly resolution (bounded by raw data)
+      const truncUnit = granularity === 'minute' ? 'minute' : 'hour';
       const botFilter = xBots ? 'AND is_bot = false' : '';
       const apiFilter = xApi ? 'AND is_api = false' : '';
       const catFilter = category ? `AND route_category = $1` : '';
       const params = category ? [category] : [];
 
       ({ rows } = await pool.query(
-        `SELECT date_trunc('hour', visited_at) AS date,
+        `SELECT date_trunc('${truncUnit}', visited_at) AS date,
                 count(*)::integer AS requests,
                 count(DISTINCT ip_address)::integer AS unique_ips,
                 count(*) FILTER (WHERE is_bot)::integer AS bots,
@@ -46,7 +48,7 @@ export async function GET({ locals, url }) {
                 avg(response_time_ms)::integer AS avg_response_ms
          FROM route_visits
          WHERE visited_at >= ${startSql} ${botFilter} ${apiFilter} ${catFilter}
-         GROUP BY date_trunc('hour', visited_at)
+         GROUP BY date_trunc('${truncUnit}', visited_at)
          ORDER BY date ASC`,
         params
       ));

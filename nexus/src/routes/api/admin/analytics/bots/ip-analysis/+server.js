@@ -26,6 +26,7 @@ export async function GET({ locals, url }) {
            count(DISTINCT route_path)::integer AS distinct_routes,
            count(*) FILTER (WHERE is_bot)::integer AS bot_count,
            count(DISTINCT CASE WHEN NOT is_bot THEN ip_address END)::integer AS non_bot_ips,
+           count(DISTINCT date_trunc('hour', visited_at))::integer AS active_hours,
            min(visited_at) AS first_seen,
            max(visited_at) AS last_seen
          FROM route_visits
@@ -34,7 +35,7 @@ export async function GET({ locals, url }) {
            AND family(ip_address) = 4
            AND is_api = false
          GROUP BY network(set_masklen(ip_address, 24))
-         HAVING count(*) >= 5
+         HAVING count(*) >= 50
        )
        SELECT
          subnet::text,
@@ -44,16 +45,26 @@ export async function GET({ locals, url }) {
          distinct_routes,
          bot_count,
          non_bot_ips,
+         active_hours,
          first_seen,
          last_seen,
          (
+           -- High request volume per IP = automation
            CASE WHEN distinct_ips > 0 THEN least(total_requests::float / distinct_ips, 100) ELSE 0 END * 2
+           -- UA rotation (more UAs than IPs)
            + CASE WHEN distinct_uas > distinct_ips * 2 THEN 30
                WHEN distinct_uas > distinct_ips THEN 15 ELSE 0 END
+           -- Many IPs in same /24 = distributed crawling
            + least(distinct_ips, 50) * 1.5
+           -- Already flagged as bots
            + CASE WHEN total_requests > 0 THEN (bot_count::float / total_requests * 40) ELSE 0 END
+           -- Hitting many routes = systematic crawling
            + CASE WHEN distinct_routes > 50 THEN 20
                WHEN distinct_routes > 20 THEN 10 ELSE 0 END
+           -- Constant activity across many hours = automated (humans sleep/work)
+           + CASE WHEN active_hours > 20 THEN 30
+               WHEN active_hours > 12 THEN 20
+               WHEN active_hours > 6 THEN 10 ELSE 0 END
          )::integer AS suspicion_score,
          -- Check if this subnet is already covered by an enabled bot_ip_range
          -- <<= means "contained within or equal" (so /24 matches itself or a wider range)

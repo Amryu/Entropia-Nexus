@@ -5,6 +5,7 @@ import { pool } from '$lib/server/db.js';
 
 function periodConfig(period) {
   switch (period) {
+    case '1h':     return { granularity: 'daily',   startSql: "now() - interval '1 hour'" };
     case 'today':  return { granularity: 'daily',   startSql: "date_trunc('day', now())" };
     case '7d':     return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '6 days')" };
     case '30d':    return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '29 days')" };
@@ -33,7 +34,7 @@ export async function GET({ locals, url }) {
   const reqExpr = xBots ? 'request_count - bot_count' : 'request_count';
 
   // Unique visitors always from raw for short periods; add bot/api filters
-  const useRawForUniques = ['today', '7d', '30d'].includes(period);
+  const useRawForUniques = ['1h', 'today', '7d', '30d'].includes(period);
   const rawBotFilter = xBots ? 'AND is_bot = false' : '';
   const rawApiFilter = xApi ? 'AND is_api = false' : '';
 

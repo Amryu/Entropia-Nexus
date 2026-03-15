@@ -67,6 +67,7 @@
   let chartInstance = null;
 
   const PERIODS = [
+    { value: '1h', label: 'Hourly' },
     { value: 'today', label: 'Today' },
     { value: '7d', label: '7 Days' },
     { value: '30d', label: '30 Days' },
@@ -74,6 +75,8 @@
     { value: '1y', label: '1 Year' },
     { value: 'all', label: 'All Time' }
   ];
+
+  let overviewRefreshTimer = null;
 
   const COUNTRY_NAMES = {
     US: 'United States', GB: 'United Kingdom', DE: 'Germany', FR: 'France', CA: 'Canada',
@@ -193,9 +196,14 @@
     return res.json();
   }
 
+  function stopOverviewRefresh() {
+    if (overviewRefreshTimer) { clearTimeout(overviewRefreshTimer); overviewRefreshTimer = null; }
+  }
+
   async function loadOverview() {
     isLoading = true;
     error = null;
+    stopOverviewRefresh();
     try {
       const [ov, ts] = await Promise.all([
         fetchJson(`/api/admin/analytics/overview?period=${period}${filterParams()}`),
@@ -208,6 +216,10 @@
       error = e.message;
     } finally {
       isLoading = false;
+    }
+    // Auto-refresh every 60s for the hourly view
+    if (period === '1h' && activeTab === 'overview') {
+      overviewRefreshTimer = setTimeout(() => loadOverview(), 60_000);
     }
   }
 
@@ -397,8 +409,8 @@
           x: {
             type: 'time',
             time: {
-              tooltipFormat: timeseries.granularity === 'hourly' ? 'MMM d, HH:mm' : 'MMM d, yyyy',
-              unit: timeseries.granularity === 'hourly' ? 'hour' : timeseries.granularity === 'daily' ? 'day' : timeseries.granularity === 'weekly' ? 'week' : 'month'
+              tooltipFormat: (timeseries.granularity === 'minute' || timeseries.granularity === 'hourly') ? 'HH:mm' : 'MMM d, yyyy',
+              unit: timeseries.granularity === 'minute' ? 'minute' : timeseries.granularity === 'hourly' ? 'hour' : timeseries.granularity === 'daily' ? 'day' : timeseries.granularity === 'weekly' ? 'week' : 'month'
             },
             grid: { color: borderColor + '40' },
             ticks: { color: mutedColor }
@@ -597,12 +609,14 @@
     period = newPeriod;
     routePage = 1;
     expandedRoutes = {};
+    stopOverviewRefresh();
     loadTab();
   }
 
   function changeTab(tab) {
-    // Always clear any existing live refresh timer first
+    // Clear any auto-refresh timers
     if (liveInterval) { clearTimeout(liveInterval); liveInterval = null; }
+    stopOverviewRefresh();
     activeTab = tab;
     if (tab === 'live') {
       loadLive();
@@ -628,6 +642,7 @@
   onDestroy(() => {
     if (chartInstance) chartInstance.destroy();
     if (liveInterval) clearTimeout(liveInterval);
+    stopOverviewRefresh();
   });
 
   // Reactively update chart when canvas ref changes
@@ -1400,6 +1415,7 @@
                 <th class="num">IPs</th>
                 <th class="num">UAs</th>
                 <th class="num">Routes</th>
+                <th class="num">Hours</th>
                 <th class="num">Bot %</th>
                 <th></th>
               </tr>
@@ -1430,6 +1446,7 @@
                     {s.distinct_uas}
                   </td>
                   <td class="num">{s.distinct_routes}</td>
+                  <td class="num" style={s.active_hours > 12 ? 'color: var(--error-color); font-weight: bold' : ''}>{s.active_hours}</td>
                   <td class="num">{s.total_requests > 0 ? Math.round(s.bot_count / s.total_requests * 100) : 0}%</td>
                   <td>
                     {#if s.already_blocked}
@@ -1444,7 +1461,7 @@
                 </tr>
                 {#if expandedSubnet === s.subnet && ipAnalysis.samples?.[subnetBase]}
                   <tr class="detail-row">
-                    <td colspan="8">
+                    <td colspan="9">
                       <div style="padding: 8px 12px; font-size: 12px">
                         <strong>Sample IPs + User Agents:</strong>
                         <table class="data-table" style="margin-top: 6px">

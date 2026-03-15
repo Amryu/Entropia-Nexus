@@ -45,7 +45,7 @@ test.describe('Admin Analytics', () => {
       await expect(periodPicker).toBeVisible();
 
       // Should have period buttons
-      await expect(adminUser.locator('.period-btn')).toHaveCount(6);
+      await expect(adminUser.locator('.period-btn')).toHaveCount(7);
     });
 
     test('analytics page has tabs', async ({ adminUser }) => {

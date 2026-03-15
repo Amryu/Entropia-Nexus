@@ -5,6 +5,7 @@ import { pool } from '$lib/server/db.js';
 
 function periodConfig(period) {
   switch (period) {
+    case '1h':     return { granularity: 'daily',   startSql: "now() - interval '1 hour'" };
     case 'today':  return { granularity: 'daily',   startSql: "date_trunc('day', now())" };
     case '7d':     return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '6 days')" };
     case '30d':    return { granularity: 'daily',   startSql: "date_trunc('day', now() - interval '29 days')" };
