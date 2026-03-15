@@ -137,27 +137,44 @@ export async function reloadBotIpRanges() {
 
 // Minimum plausible browser versions (roughly 2021 era).
 // Anything older is almost certainly a bot using a stale/randomized UA.
-const MIN_BROWSER_VERSIONS = [
-  { pattern: /Chrome\/(\d+)/, min: 90 },    // Chrome 90 = Apr 2021
-  { pattern: /Firefox\/(\d+)/, min: 90 },    // Firefox 90 = Jul 2021
-  { pattern: /Version\/(\d+).*Safari/, min: 14 }, // Safari 14 = Sep 2020
-  { pattern: /Edg(?:e|A|iOS)?\/(\d+)/, min: 90 },
-  { pattern: /OPR\/(\d+)/, min: 77 },        // Opera 77 ≈ Chrome 91
-  { pattern: /SamsungBrowser\/(\d+)/, min: 14 },
+// All known ways a real browser identifies its version.
+// Each entry: regex to extract version, minimum acceptable version.
+// Order matters — check specific (Edge, Opera, CriOS) before generic (Chrome).
+const BROWSER_VERSION_CHECKS = [
+  { pattern: /Edg(?:e|A|iOS)?\/(\d+)/, min: 90 },         // Edge (desktop, Android, iOS)
+  { pattern: /OPR\/(\d+)/, min: 77 },                      // Opera (Chromium-based)
+  { pattern: /Vivaldi\/(\d+)/, min: 4 },                   // Vivaldi
+  { pattern: /SamsungBrowser\/(\d+)/, min: 14 },            // Samsung Internet
+  { pattern: /UCBrowser\/(\d+)/, min: 13 },                 // UC Browser
+  { pattern: /CriOS\/(\d+)/, min: 90 },                    // Chrome on iOS
+  { pattern: /FxiOS\/(\d+)/, min: 90 },                    // Firefox on iOS
+  { pattern: /Chrome\/(\d+)/, min: 90 },                   // Chrome / Chromium
+  { pattern: /Firefox\/(\d+)/, min: 90 },                  // Firefox
+  { pattern: /Version\/(\d+)(?:\.\d+)* (?:Mobile\/\w+ )?Safari/, min: 14 }, // Safari (macOS + iOS)
 ];
 
-// UAs with Safari/ but no Version/ and no Chrome/ are ancient or fake
-const BARE_SAFARI = /Safari\/\d+/;
-const HAS_VERSION = /Version\//;
-const HAS_CHROME = /Chrome\//;
+// Known browser names — if present in UA but NO version pattern matched above,
+// flag as suspicious (real browsers always include a parseable version).
+const KNOWN_BROWSER_NAMES = /Chrome|Firefox|Safari|Edge|Opera|Vivaldi|SamsungBrowser|UCBrowser/i;
 
-function hasAncientBrowser(ua) {
-  for (const { pattern, min } of MIN_BROWSER_VERSIONS) {
+function hasAncientOrUnparseableBrowser(ua) {
+  let anyMatched = false;
+
+  for (const { pattern, min } of BROWSER_VERSION_CHECKS) {
     const m = ua.match(pattern);
-    if (m) return parseInt(m[1], 10) < min;
+    if (m) {
+      anyMatched = true;
+      // Matched a known version pattern — check if ancient
+      if (parseInt(m[1], 10) < min) return true;
+      // Version is acceptable — not ancient
+      return false;
+    }
   }
-  // Safari without Version/ header and without Chrome — ancient/fake
-  if (BARE_SAFARI.test(ua) && !HAS_VERSION.test(ua) && !HAS_CHROME.test(ua)) return true;
+
+  // No version pattern matched. If UA claims to be a known browser,
+  // it's missing its version string — suspicious/fake.
+  if (!anyMatched && KNOWN_BROWSER_NAMES.test(ua)) return true;
+
   return false;
 }
 
@@ -171,8 +188,8 @@ function isBot(userAgent, method) {
   if (!userAgent) return true;
   // Catch-all: anything self-identifying as bot/crawler/spider
   if (BOT_KEYWORDS.test(userAgent)) return true;
-  // Ancient browser versions are randomized bot UAs
-  if (hasAncientBrowser(userAgent)) return true;
+  // Ancient versions or known browser name with no parseable version
+  if (hasAncientOrUnparseableBrowser(userAgent)) return true;
   // Check against admin-managed patterns
   if (botRegex && botRegex.test(userAgent)) return true;
   return false;
