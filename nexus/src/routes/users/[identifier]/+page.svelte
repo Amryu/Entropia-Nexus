@@ -157,6 +157,7 @@
   let globalsTypeFilter = $state('');
   let globalsSort = $state({ col: 'total_value', asc: false });
   let globalsPage = $state(0);
+  let globalsAthMode = $state('best'); // 'best' | 'total' | 'byTarget'
   const GLOBALS_PAGE_SIZE = 10;
   const GLOBALS_TYPE_FILTERS = TYPE_FILTERS.filter(tf => tf.value !== 'examine');
 
@@ -1504,44 +1505,48 @@
 
           <!-- Category rankings -->
           <div class="globals-rankings">
-            <h3>Personal All Time High Rankings</h3>
+            <div class="globals-rankings-header">
+              <h3>Personal All Time High Rankings</h3>
+              <div class="globals-ath-toggle">
+                <button class="globals-ath-btn" class:active={globalsAthMode === 'best'} onclick={() => globalsAthMode = 'best'}>Best</button>
+                <button class="globals-ath-btn" class:active={globalsAthMode === 'total'} onclick={() => globalsAthMode = 'total'}>Total</button>
+                <button class="globals-ath-btn" class:active={globalsAthMode === 'byTarget'} onclick={() => globalsAthMode = 'byTarget'}>By Target</button>
+              </div>
+            </div>
             <div class="globals-rankings-grid">
-              <div class="globals-ranking-card">
-                <div class="ranking-card-header hunting-color">Hunting</div>
-                {#each globalsAthRankings.hunting.filter(e => e.best_rank <= 10).slice(0, 10) as entry}
-                  <div class="ranking-entry">
-                    <span class="ranking-target">{entry.target}</span>
-                    <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
-                    <span class="ranking-badge">#{entry.best_rank}</span>
-                  </div>
-                {:else}
-                  <div class="ranking-empty">No rankings yet</div>
-                {/each}
-              </div>
-              <div class="globals-ranking-card">
-                <div class="ranking-card-header mining-color">Mining</div>
-                {#each globalsAthRankings.mining.filter(e => e.best_rank <= 10).slice(0, 10) as entry}
-                  <div class="ranking-entry">
-                    <span class="ranking-target">{entry.target}</span>
-                    <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
-                    <span class="ranking-badge">#{entry.best_rank}</span>
-                  </div>
-                {:else}
-                  <div class="ranking-empty">No rankings yet</div>
-                {/each}
-              </div>
-              <div class="globals-ranking-card">
-                <div class="ranking-card-header crafting-color">Crafting</div>
-                {#each globalsAthRankings.crafting.filter(e => e.best_rank <= 10).slice(0, 10) as entry}
-                  <div class="ranking-entry">
-                    <span class="ranking-target">{entry.target}</span>
-                    <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
-                    <span class="ranking-badge">#{entry.best_rank}</span>
-                  </div>
-                {:else}
-                  <div class="ranking-empty">No rankings yet</div>
-                {/each}
-              </div>
+              {#each [
+                { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color' },
+                { key: 'mining', label: 'Mining', colorClass: 'mining-color' },
+                { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' }
+              ] as category}
+                {@const entries = (globalsAthRankings[category.key] || [])
+                  .filter(e => globalsAthMode === 'best' ? e.best_rank <= 10
+                    : globalsAthMode === 'total' ? e.total_rank <= 10
+                    : true)
+                  .sort((a, b) => globalsAthMode === 'best' ? a.best_rank - b.best_rank
+                    : globalsAthMode === 'total' ? a.total_rank - b.total_rank
+                    : b.count - a.count)
+                  .slice(0, 10)}
+                <div class="globals-ranking-card">
+                  <div class="ranking-card-header {category.colorClass}">{category.label}</div>
+                  {#each entries as entry}
+                    <div class="ranking-entry">
+                      <span class="ranking-target">{entry.target}</span>
+                      {#if globalsAthMode === 'best'}
+                        <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
+                        <span class="ranking-badge">#{entry.best_rank}</span>
+                      {:else if globalsAthMode === 'total'}
+                        <span class="ranking-value">{formatPedShort(entry.total_value)} PED</span>
+                        <span class="ranking-badge">#{entry.total_rank}</span>
+                      {:else}
+                        <span class="ranking-value">{entry.count} globals</span>
+                      {/if}
+                    </div>
+                  {:else}
+                    <div class="ranking-empty">No rankings yet</div>
+                  {/each}
+                </div>
+              {/each}
             </div>
           </div>
 
@@ -2871,10 +2876,40 @@
     margin-bottom: 16px;
   }
 
-  .globals-rankings h3 {
-    margin: 0 0 10px 0;
+  .globals-rankings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 12px;
+  }
+  .globals-rankings-header h3 {
+    margin: 0;
     font-size: 0.9375rem;
     font-weight: 600;
+  }
+  .globals-ath-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--secondary-color);
+    border-radius: 4px;
+    padding: 2px;
+  }
+  .globals-ath-btn {
+    padding: 3px 10px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .globals-ath-btn:hover { color: var(--text-color); }
+  .globals-ath-btn.active {
+    background: var(--accent-color);
+    color: white;
   }
 
   .globals-rankings-grid {
