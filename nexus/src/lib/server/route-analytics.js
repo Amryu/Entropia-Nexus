@@ -89,11 +89,33 @@ function extractCategory(pathname) {
 }
 
 // ---------- bot detection ----------
+
+// Minimum plausible browser versions (roughly 2021 era).
+// Anything older is almost certainly a bot using a stale/randomized UA.
+const MIN_BROWSER_VERSIONS = [
+  { pattern: /Chrome\/(\d+)/, min: 90 },    // Chrome 90 = Apr 2021
+  { pattern: /Firefox\/(\d+)/, min: 90 },    // Firefox 90 = Jul 2021
+  { pattern: /Version\/(\d+).*Safari/, min: 14 }, // Safari 14 = Sep 2020
+  { pattern: /Edg(?:e|A|iOS)?\/(\d+)/, min: 90 },
+  { pattern: /OPR\/(\d+)/, min: 77 },        // Opera 77 ≈ Chrome 91
+  { pattern: /SamsungBrowser\/(\d+)/, min: 14 },
+];
+
+function hasAncientBrowser(ua) {
+  for (const { pattern, min } of MIN_BROWSER_VERSIONS) {
+    const m = ua.match(pattern);
+    if (m) return parseInt(m[1], 10) < min;
+  }
+  return false;
+}
+
 function isBot(userAgent, method) {
   // HEAD requests are almost never from real browsers
   if (method === 'HEAD') return true;
   // Missing user-agent is a strong bot signal
   if (!userAgent) return true;
+  // Ancient browser versions are randomized bot UAs
+  if (hasAncientBrowser(userAgent)) return true;
   if (!botRegex) return false;
   return botRegex.test(userAgent);
 }

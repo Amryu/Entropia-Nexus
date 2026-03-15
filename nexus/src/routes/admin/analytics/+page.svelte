@@ -665,6 +665,18 @@
   .bot-badge { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
   .ua-label { font-size: 12px; white-space: nowrap; }
 
+  /* Live table: fixed layout with ellipsis */
+  .live-table { table-layout: fixed; }
+  .live-table .col-time { width: 170px; }
+  .live-table .col-ip { width: 130px; }
+  .live-table .col-country { width: 36px; }
+  .live-table .col-browser { width: 130px; }
+  .live-table .col-route { width: auto; }
+  .live-table .col-status { width: 52px; }
+  .live-table .col-bot { width: 40px; }
+  .live-table .col-ms { width: 50px; }
+  .cell-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* Category badges */
   .category-badge {
     display: inline-block; padding: 2px 8px; border-radius: 4px;
@@ -1170,27 +1182,27 @@
 
       <div class="section" style="overflow-x: auto">
         {#if liveVisits?.length > 0}
-          <table class="data-table">
+          <table class="data-table live-table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>IP</th>
-                <th>Country</th>
-                <th>Browser</th>
-                <th>Route</th>
-                <th>Status</th>
-                <th>Bot</th>
-                <th class="num">ms</th>
+                <th class="col-time">Time</th>
+                <th class="col-ip">IP</th>
+                <th class="col-country">CC</th>
+                <th class="col-browser">Browser</th>
+                <th class="col-route">Route</th>
+                <th class="col-status">Status</th>
+                <th class="col-bot">Bot</th>
+                <th class="col-ms num">ms</th>
               </tr>
             </thead>
             <tbody>
               {#each liveVisits as v}
                 <tr>
-                  <td class="muted" style="white-space: nowrap; font-size: 12px">{formatDate(v.visited_at)}</td>
-                  <td style="font-family: monospace; font-size: 12px">{v.ip_address}</td>
-                  <td>{v.country_code || '-'}</td>
-                  <td title={v.user_agent || ''}><span class="ua-label">{parseUserAgent(v.user_agent)}</span></td>
-                  <td><span class="route-pattern">{v.method !== 'GET' ? v.method + ' ' : ''}{v.route_path}</span></td>
+                  <td class="muted cell-ellipsis col-time" style="font-size: 12px">{formatDate(v.visited_at)}</td>
+                  <td class="cell-ellipsis col-ip" title={v.ip_address} style="font-family: monospace; font-size: 12px">{v.ip_address}</td>
+                  <td class="col-country">{v.country_code || '-'}</td>
+                  <td class="col-browser" title={v.user_agent || ''}><span class="ua-label">{parseUserAgent(v.user_agent)}</span></td>
+                  <td class="cell-ellipsis col-route" title={v.route_path}><span class="route-pattern">{v.method !== 'GET' ? v.method + ' ' : ''}{v.route_path}</span></td>
                   <td>
                     <span class="status-badge"
                       class:status-2xx={v.status_code >= 200 && v.status_code < 300}
