@@ -1524,9 +1524,9 @@
                   .filter(e => globalsAthMode === 'best' || globalsAthMode === 'bestTarget' ? e.best_rank <= 10
                     : e.total_rank <= 10)
                   .sort((a, b) => {
-                    if (globalsAthMode === 'best' || globalsAthMode === 'bestTarget') {
-                      return a.best_rank - b.best_rank || b.best_value - a.best_value;
-                    }
+                    if (globalsAthMode === 'best') return b.best_value - a.best_value;
+                    if (globalsAthMode === 'total') return b.total_value - a.total_value;
+                    if (globalsAthMode === 'bestTarget') return a.best_rank - b.best_rank || b.best_value - a.best_value;
                     return a.total_rank - b.total_rank || b.total_value - a.total_value;
                   })
                   .slice(0, 10)}
