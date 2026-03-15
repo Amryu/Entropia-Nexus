@@ -317,9 +317,9 @@ export function isRollupReady() {
   return rollupReady;
 }
 
-export async function rebuildRollups() {
+export async function rebuildRollups({ force = false } = {}) {
   const now = Date.now();
-  if (now - rollupLastRebuiltAt < ROLLUP_MIN_GAP_MS) return;
+  if (!force && now - rollupLastRebuiltAt < ROLLUP_MIN_GAP_MS) return;
   if (rollupPromise) return rollupPromise;
 
   rollupPromise = (async () => {

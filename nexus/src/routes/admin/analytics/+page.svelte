@@ -78,6 +78,46 @@
     return COUNTRY_NAMES[code] || code;
   }
 
+  /**
+   * Parse a user-agent string into a short readable label.
+   * e.g. "Chrome 120 (Win)", "Safari 17 (iPhone)", "Firefox 121 (Linux)"
+   */
+  function parseUserAgent(ua) {
+    if (!ua) return '-';
+
+    // Mobile detection
+    const isMobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua);
+
+    // OS detection
+    let os = '';
+    if (/iPhone|iPad|iPod/.test(ua)) os = /iPad/.test(ua) ? 'iPad' : 'iPhone';
+    else if (/Android/.test(ua)) os = 'Android';
+    else if (/Windows/.test(ua)) os = 'Win';
+    else if (/Mac OS X|Macintosh/.test(ua)) os = 'Mac';
+    else if (/Linux/.test(ua)) os = 'Linux';
+    else if (/CrOS/.test(ua)) os = 'ChromeOS';
+
+    // Browser detection (order matters — check specific before generic)
+    let browser = '';
+    let m;
+    if ((m = ua.match(/Edg(?:e|A|iOS)?\/(\d+)/))) browser = `Edge ${m[1]}`;
+    else if ((m = ua.match(/OPR\/(\d+)/))) browser = `Opera ${m[1]}`;
+    else if ((m = ua.match(/Vivaldi\/(\d+\.\d+)/))) browser = `Vivaldi ${m[1]}`;
+    else if ((m = ua.match(/SamsungBrowser\/(\d+)/))) browser = `Samsung ${m[1]}`;
+    else if ((m = ua.match(/Firefox\/(\d+)/))) browser = `Firefox ${m[1]}`;
+    else if ((m = ua.match(/CriOS\/(\d+)/))) browser = `Chrome ${m[1]}`;
+    else if ((m = ua.match(/FxiOS\/(\d+)/))) browser = `Firefox ${m[1]}`;
+    else if ((m = ua.match(/Chrome\/(\d+)/)) && !/Edg/.test(ua)) browser = `Chrome ${m[1]}`;
+    else if ((m = ua.match(/Version\/(\d+).*Safari/))) browser = `Safari ${m[1]}`;
+    else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+    else browser = 'Other';
+
+    if (!browser && !os) return ua.substring(0, 30);
+    const label = browser || 'Unknown';
+    const suffix = os ? ` (${os})` : '';
+    return label + suffix;
+  }
+
   function formatNumber(n) {
     return parseInt(n || 0).toLocaleString();
   }
@@ -349,6 +389,21 @@
     botTestResult = { match: false, pattern: null };
   }
 
+  // --- Rebuild ---
+  let rebuilding = $state(false);
+
+  async function triggerRebuild() {
+    rebuilding = true;
+    try {
+      const res = await fetch('/api/admin/analytics/rebuild', { method: 'POST' });
+      if (res.ok) loadTab();
+    } catch (e) {
+      console.error('Rebuild failed:', e);
+    } finally {
+      rebuilding = false;
+    }
+  }
+
   // --- Period change ---
   function changePeriod(newPeriod) {
     period = newPeriod;
@@ -424,6 +479,13 @@
     background-color: var(--accent-color); color: white;
     border-color: var(--accent-color);
   }
+  .rebuild-btn {
+    margin-left: auto; padding: 6px 14px; border: 1px solid var(--border-color);
+    border-radius: 6px; background: none; color: var(--text-muted);
+    cursor: pointer; font-size: 13px; transition: all 0.15s ease;
+  }
+  .rebuild-btn:hover { color: var(--text-color); border-color: var(--text-muted); }
+  .rebuild-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* Tabs */
   .tabs {
@@ -551,6 +613,7 @@
   .status-4xx { background-color: rgba(245, 158, 11, 0.2); color: var(--warning-color); }
   .status-5xx { background-color: rgba(239, 68, 68, 0.2); color: var(--error-color); }
   .bot-badge { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+  .ua-label { font-size: 12px; white-space: nowrap; }
 
   /* Category badges */
   .category-badge {
@@ -614,6 +677,9 @@
           {p.label}
         </button>
       {/each}
+      <button class="rebuild-btn" onclick={triggerRebuild} disabled={rebuilding}>
+        {rebuilding ? 'Rebuilding...' : 'Rebuild rollups'}
+      </button>
     </div>
   {/if}
 
@@ -1026,8 +1092,8 @@
                 <th>Time</th>
                 <th>IP</th>
                 <th>Country</th>
+                <th>Browser</th>
                 <th>Route</th>
-                <th>Method</th>
                 <th>Status</th>
                 <th>Bot</th>
                 <th class="num">ms</th>
@@ -1039,8 +1105,8 @@
                   <td class="muted" style="white-space: nowrap; font-size: 12px">{formatDate(v.visited_at)}</td>
                   <td style="font-family: monospace; font-size: 12px">{v.ip_address}</td>
                   <td>{v.country_code || '-'}</td>
-                  <td><span class="route-pattern">{v.route_path}</span></td>
-                  <td>{v.method}</td>
+                  <td title={v.user_agent || ''}><span class="ua-label">{parseUserAgent(v.user_agent)}</span></td>
+                  <td><span class="route-pattern">{v.method !== 'GET' ? v.method + ' ' : ''}{v.route_path}</span></td>
                   <td>
                     <span class="status-badge"
                       class:status-2xx={v.status_code >= 200 && v.status_code < 300}
