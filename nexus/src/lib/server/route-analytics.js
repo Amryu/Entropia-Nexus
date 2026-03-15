@@ -89,8 +89,12 @@ function extractCategory(pathname) {
 }
 
 // ---------- bot detection ----------
-function isBot(userAgent) {
-  if (!userAgent || !botRegex) return false;
+function isBot(userAgent, method) {
+  // HEAD requests are almost never from real browsers
+  if (method === 'HEAD') return true;
+  // Missing user-agent is a strong bot signal
+  if (!userAgent) return true;
+  if (!botRegex) return false;
   return botRegex.test(userAgent);
 }
 
@@ -243,7 +247,7 @@ export function recordVisit(event, response, startTime) {
   const routePattern = routeId || pathname;
   const routeCategory = extractCategory(pathname);
   const isApiRoute = pathname.startsWith('/api/');
-  const botFlag = isBot(userAgent);
+  const botFlag = isBot(userAgent, method);
   const countryCode = lookupCountry(ip);
   const externalReferrer = parseExternalReferrer(referrerHeader);
 
