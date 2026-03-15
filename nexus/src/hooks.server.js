@@ -73,6 +73,13 @@ if (import.meta.env.SSR) {
   initGlobalsRollups()
     .then(() => initGlobalsCache())
     .catch(err => console.error('[globals] Error initializing rollup/cache:', err));
+
+  // Route analytics: page view tracking, GeoIP, bot detection, rollups
+  const routeAnalytics = await import('$lib/server/route-analytics.js');
+  const routeAnalyticsRollup = await import('$lib/server/route-analytics-rollup.js');
+  var _recordVisit = routeAnalytics.recordVisit;
+  routeAnalytics.initRouteAnalytics().catch(err => console.error('[route-analytics] Init error:', err));
+  routeAnalyticsRollup.initRouteAnalyticsRollups().catch(err => console.error('[route-analytics-rollup] Init error:', err));
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';
@@ -285,7 +292,11 @@ export async function handle({ event, resolve }) {
   event.locals.initialViewportWidth = initialViewportWidth;
   event.locals.isMobileDevice = isMobileDevice;
 
+  const _requestStart = Date.now();
   const response = await resolve(event);
+
+  // Fire-and-forget: record route analytics (non-blocking)
+  if (_recordVisit) { try { _recordVisit(event, response, _requestStart); } catch (_) {} }
 
   // Refresh session cookie for cookie-based auth
   if (!isOAuthRequest && cookieSessionId) {
