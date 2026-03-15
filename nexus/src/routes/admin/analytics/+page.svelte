@@ -44,6 +44,11 @@
   let newIpCidr = $state('');
   let newIpDescription = $state('');
   let ipError = $state('');
+
+  // Errors
+  let errorData = $state(null);
+  let errorStatusFilter = $state('');
+  let expandedError = $state(null);
   let botError = $state('');
 
   // Live
@@ -273,6 +278,32 @@
     }
   }
 
+  async function loadErrors() {
+    isLoading = true;
+    error = null;
+    try {
+      const statusParam = errorStatusFilter ? `&status=${errorStatusFilter}` : '';
+      errorData = await fetchJson(`/api/admin/analytics/errors?_=${Date.now()}${statusParam}`);
+    } catch (e) {
+      error = e.message;
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  async function clearErrors(route, status) {
+    if (!confirm(`Clear ${route ? route + ' ' : ''}${status || 'all'} errors?`)) return;
+    try {
+      const params = new URLSearchParams();
+      if (route) params.set('route', route);
+      if (status) params.set('status', status);
+      await fetch(`/api/admin/analytics/errors?${params}`, { method: 'DELETE' });
+      await loadErrors();
+    } catch (e) {
+      console.error('Failed to clear errors:', e);
+    }
+  }
+
   async function loadLive() {
     try {
       const excludeParam = liveExcludeBots ? '&excludeBots=true' : '';
@@ -293,6 +324,7 @@
       case 'geo': loadGeo(); break;
       case 'referrers': loadReferrers(); break;
       case 'bots': loadBots(); break;
+      case 'errors': loadErrors(); break;
       case 'live': loadLive(); break;
     }
   }
@@ -775,6 +807,17 @@
 
   .empty-state { text-align: center; padding: 24px; color: var(--text-muted); font-size: 14px; }
 
+  /* Error detail */
+  .error-detail { padding: 8px 12px; }
+  .error-detail-section { margin-bottom: 10px; font-size: 13px; }
+  .error-detail-section strong { color: var(--text-color); }
+  .error-pre {
+    margin: 4px 0 0 0; padding: 8px 10px; border-radius: 4px;
+    background-color: var(--primary-color); color: var(--text-muted);
+    font-size: 12px; font-family: monospace; white-space: pre-wrap;
+    word-break: break-all; max-height: 300px; overflow-y: auto;
+  }
+
   /* Responsive */
   @media (max-width: 768px) {
     h1 { font-size: 22px; }
@@ -836,6 +879,7 @@
     <button class="tab" class:active={activeTab === 'geo'} onclick={() => changeTab('geo')}>Geography</button>
     <button class="tab" class:active={activeTab === 'referrers'} onclick={() => changeTab('referrers')}>Referrers</button>
     <button class="tab" class:active={activeTab === 'bots'} onclick={() => changeTab('bots')}>Bots</button>
+    <button class="tab" class:active={activeTab === 'errors'} onclick={() => changeTab('errors')}>Errors</button>
     <button class="tab" class:active={activeTab === 'live'} onclick={() => changeTab('live')}>Live</button>
   </div>
 
@@ -1281,6 +1325,127 @@
               {/each}
             </tbody>
           </table>
+        </div>
+      {/if}
+
+    <!-- ===== ERRORS TAB ===== -->
+    {:else if activeTab === 'errors' && errorData}
+      <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+        <button class="period-btn" class:active={!errorStatusFilter} onclick={() => { errorStatusFilter = ''; loadErrors(); }}>All</button>
+        <button class="period-btn" class:active={errorStatusFilter === '4xx'} onclick={() => { errorStatusFilter = '4xx'; loadErrors(); }}>4xx</button>
+        <button class="period-btn" class:active={errorStatusFilter === '5xx'} onclick={() => { errorStatusFilter = '5xx'; loadErrors(); }}>5xx</button>
+        <button class="period-btn" class:active={errorStatusFilter === '404'} onclick={() => { errorStatusFilter = '404'; loadErrors(); }}>404</button>
+        <button class="period-btn" class:active={errorStatusFilter === '500'} onclick={() => { errorStatusFilter = '500'; loadErrors(); }}>500</button>
+        <button class="rebuild-btn" style="margin-left: auto" onclick={() => clearErrors(null, null)}>Clear all</button>
+      </div>
+
+      {#if errorData.summary?.length > 0}
+        <div class="section" style="margin-bottom: 16px">
+          <h3>Error Summary</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Status</th>
+                <th class="num">Count</th>
+                <th>Last Seen</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each errorData.summary as s}
+                <tr>
+                  <td><span class="route-pattern">{s.route_pattern}</span></td>
+                  <td>
+                    <span class="status-badge"
+                      class:status-4xx={s.status_code >= 400 && s.status_code < 500}
+                      class:status-5xx={s.status_code >= 500}>
+                      {s.status_code}
+                    </span>
+                  </td>
+                  <td class="num">{s.count}</td>
+                  <td class="muted" style="font-size: 12px">{formatDate(s.last_seen)}</td>
+                  <td>
+                    <button class="delete-btn" onclick={() => clearErrors(s.route_pattern, s.status_code)}>Clear</button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h3>Error Details</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-time">Time</th>
+                <th>Status</th>
+                <th>Route</th>
+                <th>Method</th>
+                <th>IP</th>
+                <th class="num">ms</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each errorData.errors as e}
+                <tr onclick={() => expandedError = expandedError === e.id ? null : e.id}
+                  style="cursor: pointer">
+                  <td class="muted" style="font-size: 12px; white-space: nowrap">{formatDate(e.created_at)}</td>
+                  <td>
+                    <span class="status-badge"
+                      class:status-4xx={e.status_code >= 400 && e.status_code < 500}
+                      class:status-5xx={e.status_code >= 500}>
+                      {e.status_code}
+                    </span>
+                  </td>
+                  <td><span class="route-pattern">{e.route_path}</span></td>
+                  <td>{e.method}</td>
+                  <td style="font-family: monospace; font-size: 12px">{e.ip_address || '-'}</td>
+                  <td class="num muted">{e.response_time_ms ?? '-'}</td>
+                  <td style="font-size: 10px; color: var(--text-muted)">{expandedError === e.id ? '\u25BC' : '\u25B6'}</td>
+                </tr>
+                {#if expandedError === e.id}
+                  <tr class="detail-row">
+                    <td colspan="7">
+                      <div class="error-detail">
+                        <div class="error-detail-section">
+                          <strong>User-Agent:</strong>
+                          <span class="muted">{e.user_agent || '-'}</span>
+                        </div>
+                        {#if e.error_message}
+                          <div class="error-detail-section">
+                            <strong>Error:</strong>
+                            <pre class="error-pre">{e.error_message}</pre>
+                          </div>
+                        {/if}
+                        {#if e.response_body}
+                          <div class="error-detail-section">
+                            <strong>Response Body:</strong>
+                            <pre class="error-pre">{e.response_body}</pre>
+                          </div>
+                        {/if}
+                        <div class="error-detail-section">
+                          <strong>Request Headers:</strong>
+                          <pre class="error-pre">{JSON.stringify(e.request_headers, null, 2)}</pre>
+                        </div>
+                        <div class="error-detail-section">
+                          <strong>Country:</strong> {e.country_code || '-'}
+                          &nbsp;&middot;&nbsp;
+                          <strong>Route Pattern:</strong> <code>{e.route_pattern}</code>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                {/if}
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <div class="section">
+          <div class="empty-state">No errors recorded{errorStatusFilter ? ` (filter: ${errorStatusFilter})` : ''}</div>
         </div>
       {/if}
 

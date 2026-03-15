@@ -80,6 +80,12 @@ if (import.meta.env.SSR) {
   var _recordVisit = routeAnalytics.recordVisit;
   routeAnalytics.initRouteAnalytics().catch(err => console.error('[route-analytics] Init error:', err));
   routeAnalyticsRollup.initRouteAnalyticsRollups().catch(err => console.error('[route-analytics-rollup] Init error:', err));
+
+  // Error log: captures 4xx/5xx responses with diagnostics
+  const errorLog = await import('$lib/server/error-log.js');
+  var _recordError = errorLog.recordError;
+  var _recordErrorMessage = errorLog.recordErrorMessage;
+  errorLog.initErrorLog();
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';
@@ -298,6 +304,19 @@ export async function handle({ event, resolve }) {
   // Fire-and-forget: record route analytics (non-blocking)
   if (_recordVisit) { try { _recordVisit(event, response, _requestStart); } catch (_) {} }
 
+  // Record error responses (4xx/5xx) with diagnostics
+  if (_recordError && response.status >= 400) {
+    try {
+      // Clone response to read body without consuming the original
+      const cloned = response.clone();
+      cloned.text().then(body => {
+        _recordError(event, response, _requestStart, body);
+      }).catch(() => {
+        _recordError(event, response, _requestStart, null);
+      });
+    } catch (_) {}
+  }
+
   // Refresh session cookie for cookie-based auth
   if (!isOAuthRequest && cookieSessionId) {
     response.headers['set-cookie'] = `${import.meta.env.VITE_SESSION_COOKIE_NAME}=${cookieSessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_COOKIE_MAX_AGE}; Domain=${import.meta.env.VITE_DOMAIN}; Secure=${import.meta.env.MODE === 'development' ? false : true};`;
@@ -326,6 +345,12 @@ export function handleError({ error, event }) {
       const pathname = event?.url?.pathname ?? 'unknown-path';
       const href = event?.url?.href ?? event?.request?.url ?? 'unknown-url';
       console.error(`[${status}] route: ${routeId} path: ${pathname} url: ${href}`, error);
+
+      // Store error message/stack in error_log for the matching row
+      if (_recordErrorMessage) {
+        const msg = error?.stack || error?.message || String(error);
+        _recordErrorMessage(routeId, pathname, msg).catch(() => {});
+      }
     } catch (e) {
       console.error(`[${status}] error while logging route for error`, e, error);
     }

@@ -53,7 +53,7 @@ test.describe('Admin Analytics', () => {
       await adminUser.waitForLoadState('networkidle');
 
       const tabs = adminUser.locator('.tabs .tab');
-      await expect(tabs).toHaveCount(7); // Overview, Routes, API, Geography, Referrers, Bots, Live
+      await expect(tabs).toHaveCount(8); // Overview, Routes, API, Geography, Referrers, Bots, Errors, Live
     });
 
     test('analytics page has stat cards', async ({ adminUser }) => {
