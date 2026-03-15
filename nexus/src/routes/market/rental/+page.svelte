@@ -44,6 +44,7 @@
 <svelte:head>
   <title>Item Rentals - Market - Entropia Nexus</title>
   <meta name="description" content="Rent equipment from other players in Entropia Universe. Browse available items for rent." />
+  <link rel="canonical" href="https://entropianexus.com/market/rental" />
 </svelte:head>
 
 <div class="scroll-container">

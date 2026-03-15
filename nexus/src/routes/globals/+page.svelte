@@ -607,6 +607,17 @@
 <svelte:head>
   <title>Globals - Entropia Nexus</title>
   <meta name="description" content="Live global events from Entropia Universe. Track hunting, mining, crafting globals, HoF and ATH records." />
+  <link rel="canonical" href="https://entropianexus.com/globals" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://entropianexus.com/globals" />
+  <meta property="og:title" content="Globals - Entropia Nexus" />
+  <meta property="og:description" content="Live global events from Entropia Universe. Track hunting, mining, crafting globals, HoF and ATH records." />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Globals - Entropia Nexus" />
+  <meta name="twitter:description" content="Live global events from Entropia Universe. Track hunting, mining, crafting globals, HoF and ATH records." />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="globals-page">

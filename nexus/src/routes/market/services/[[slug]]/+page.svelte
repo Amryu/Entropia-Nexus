@@ -930,6 +930,7 @@
 <svelte:head>
   <title>{selectedService ? `${selectedService.title} - ` : ''}Services - Market - Entropia Nexus</title>
   <meta name="description" content="Find healing, DPS, and transportation services from other players in Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/market/services" />
 </svelte:head>
 
 <div class="scroll-container">

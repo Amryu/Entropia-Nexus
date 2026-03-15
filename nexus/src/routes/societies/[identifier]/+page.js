@@ -16,7 +16,7 @@ export async function load({ fetch, params, parent }) {
   const isNumeric = /^\d+$/.test(rawIdentifier);
   const name = societyData?.society?.name;
   if (isNumeric && name) {
-    throw redirect(302, `/societies/${encodeURIComponentSafe(name)}`);
+    throw redirect(301, `/societies/${encodeURIComponentSafe(name)}`);
   }
 
   return {

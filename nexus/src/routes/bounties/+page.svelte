@@ -42,6 +42,16 @@
   <title>Bounties - Entropia Nexus</title>
   <meta name="description" content="Earn PED by contributing to the Entropia Nexus wiki. View bounty rates for mapping, item data, and mob data contributions." />
   <link rel="canonical" href="https://entropianexus.com/bounties" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://entropianexus.com/bounties" />
+  <meta property="og:title" content="Bounties - Entropia Nexus" />
+  <meta property="og:description" content="Earn PED by contributing to the Entropia Nexus wiki. View bounty rates for mapping, item data, and mob data contributions." />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Bounties - Entropia Nexus" />
+  <meta name="twitter:description" content="Earn PED by contributing to the Entropia Nexus wiki. View bounty rates for mapping, item data, and mob data contributions." />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <style>

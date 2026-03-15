@@ -801,6 +801,7 @@
 <svelte:head>
   <title>{profile.euName || profile.discordName} | User Profile</title>
   <meta name="description" content="User profile for {profile.euName || profile.discordName} on Entropia Nexus." />
+  <link rel="canonical" href="https://entropianexus.com/users/{encodeURIComponentSafe(profile?.euName || profile?.discordName || '')}" />
 </svelte:head>
 
 <div class="profile-page">

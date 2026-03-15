@@ -145,6 +145,7 @@
 <svelte:head>
   <title>Top Players - Globals - Entropia Nexus</title>
   <meta name="description" content="Top players ranked by global events in Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/globals/players" />
 </svelte:head>
 
 <div class="ranking-page">

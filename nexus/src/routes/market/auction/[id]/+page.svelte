@@ -246,6 +246,7 @@
 
 <svelte:head>
   <title>{auction?.title || 'Auction'} - Entropia Nexus</title>
+  <meta name="description" content="{auction?.description ? auction.description.slice(0, 160) : 'View auction listing on Entropia Nexus.'}" />
 </svelte:head>
 
 <div class="scroll-container">

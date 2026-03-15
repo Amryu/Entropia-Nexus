@@ -380,6 +380,7 @@
 <svelte:head>
   <title>{targetName} - Globals - Entropia Nexus</title>
   <meta name="description" content="Global event statistics for {targetName} in Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/globals/target/{encodeURIComponent(targetName)}" />
 </svelte:head>
 
 <div class="target-page">

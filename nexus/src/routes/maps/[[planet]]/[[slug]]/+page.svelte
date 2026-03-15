@@ -789,6 +789,20 @@
   {:else}
     <link rel="canonical" href="https://entropianexus.com/maps" />
   {/if}
+  <meta property="og:type" content="website" />
+  {#if currentPlanet}
+    <meta property="og:url" content="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet.Name)}" />
+  {:else}
+    <meta property="og:url" content="https://entropianexus.com/maps" />
+  {/if}
+  <meta property="og:title" content="{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus" />
+  <meta property="og:description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus" />
+  <meta name="twitter:description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="map-page">

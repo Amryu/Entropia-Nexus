@@ -55,6 +55,16 @@
   <title>Information - Entropia Nexus</title>
   <meta name="description" content="Browse Entropia Universe reference data: missions, mobs, professions, skills, vendors, locations, and enumerations." />
   <link rel="canonical" href="https://entropianexus.com/information" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://entropianexus.com/information" />
+  <meta property="og:title" content="Information - Entropia Nexus" />
+  <meta property="og:description" content="Browse Entropia Universe reference data: missions, mobs, professions, skills, vendors, locations, and enumerations." />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Information - Entropia Nexus" />
+  <meta name="twitter:description" content="Browse Entropia Universe reference data: missions, mobs, professions, skills, vendors, locations, and enumerations." />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="information-overview">

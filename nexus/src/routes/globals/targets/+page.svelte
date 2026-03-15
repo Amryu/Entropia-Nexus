@@ -157,6 +157,7 @@
 <svelte:head>
   <title>Top Targets - Globals - Entropia Nexus</title>
   <meta name="description" content="Top targets ranked by global events in Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/globals/targets" />
 </svelte:head>
 
 <div class="ranking-page">

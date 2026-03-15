@@ -324,6 +324,7 @@
 <svelte:head>
   <title>{playerName} - Globals - Entropia Nexus</title>
   <meta name="description" content="Global event statistics for {playerName} in Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/globals/player/{encodeURIComponent(playerName)}" />
 </svelte:head>
 
 <div class="player-page">

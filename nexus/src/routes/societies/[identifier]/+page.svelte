@@ -263,6 +263,7 @@
 <svelte:head>
   <title>{society?.name || 'Society'} | Society | Entropia Nexus</title>
   <meta name="description" content="Society profile for {society?.name || 'a society'} on Entropia Nexus." />
+  <link rel="canonical" href="https://entropianexus.com/societies/{encodeURIComponentSafe(society?.name || '')}" />
 </svelte:head>
 
 <div class="society-page">

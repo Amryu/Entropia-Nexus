@@ -59,6 +59,8 @@
 
 <svelte:head>
   <title>Submit Event - Entropia Nexus</title>
+  <meta name="description" content="Submit a community or player-run event for Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/events/submit" />
 </svelte:head>
 
 <div class="page-container">

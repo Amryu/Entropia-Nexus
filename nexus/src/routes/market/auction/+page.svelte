@@ -62,6 +62,7 @@
 <svelte:head>
   <title>Auctions - Market - Entropia Nexus</title>
   <meta name="description" content="Browse and bid on item auctions in Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/market/auction" />
 </svelte:head>
 
 <div class="scroll-container">

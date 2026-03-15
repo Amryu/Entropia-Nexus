@@ -69,6 +69,16 @@
   <title>Market - Entropia Nexus</title>
   <meta name="description" content="Trade, buy, and sell in Entropia Universe: browse the exchange, hire services, find shops, bid on auctions, and rent equipment." />
   <link rel="canonical" href="https://entropianexus.com/market" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://entropianexus.com/market" />
+  <meta property="og:title" content="Market - Entropia Nexus" />
+  <meta property="og:description" content="Trade, buy, and sell in Entropia Universe: browse the exchange, hire services, find shops, bid on auctions, and rent equipment." />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Market - Entropia Nexus" />
+  <meta name="twitter:description" content="Trade, buy, and sell in Entropia Universe: browse the exchange, hire services, find shops, bid on auctions, and rent equipment." />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="market-dashboard">

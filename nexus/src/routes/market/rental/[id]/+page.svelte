@@ -62,6 +62,7 @@
 
 <svelte:head>
   <title>{offer?.title || 'Rental Offer'} - Market - Entropia Nexus</title>
+  <meta name="description" content="{offer?.description ? offer.description.slice(0, 160) : 'View rental offer on Entropia Nexus.'}" />
 </svelte:head>
 
 <div class="scroll-container">

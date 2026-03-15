@@ -16,7 +16,7 @@ export async function load({ fetch, params, parent }) {
   const euName = profileData?.profile?.euName;
   const isNumeric = /^\d+$/.test(rawIdentifier);
   if (isNumeric && euName) {
-    throw redirect(302, `/user/${encodeURIComponentSafe(euName)}`);
+    throw redirect(301, `/users/${encodeURIComponentSafe(euName)}`);
   }
 
   return {

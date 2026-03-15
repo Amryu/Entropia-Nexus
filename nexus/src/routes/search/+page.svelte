@@ -183,6 +183,8 @@
 
 <svelte:head>
   <title>{currentQuery ? `Search: ${currentQuery}` : 'Search'} - Entropia Nexus</title>
+  <meta name="description" content="Search items, mobs, locations, professions, skills, and more across Entropia Universe." />
+  <link rel="canonical" href="https://entropianexus.com/search" />
 </svelte:head>
 
 <div class="search-page">

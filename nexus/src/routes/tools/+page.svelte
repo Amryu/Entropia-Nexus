@@ -47,6 +47,16 @@
   <title>Tools - Entropia Nexus</title>
   <meta name="description" content="Utilities and tools for Entropia Nexus, including loadout management and API access." />
   <link rel="canonical" href="https://entropianexus.com/tools" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://entropianexus.com/tools" />
+  <meta property="og:title" content="Tools - Entropia Nexus" />
+  <meta property="og:description" content="Utilities and tools for Entropia Nexus, including loadout management and API access." />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Tools - Entropia Nexus" />
+  <meta name="twitter:description" content="Utilities and tools for Entropia Nexus, including loadout management and API access." />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="tools-overview">

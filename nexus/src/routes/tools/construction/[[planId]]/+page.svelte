@@ -1570,6 +1570,7 @@
 <svelte:head>
   <title>Entropia Nexus - Construction Calculator</title>
   <meta name="description" content="Plan and calculate crafting requirements for blueprints. Build crafting trees, generate shopping lists, and track blueprint ownership.">
+  <link rel="canonical" href="https://entropianexus.com/tools/construction" />
 </svelte:head>
 
 <svelte:window bind:innerWidth={windowWidth} />
