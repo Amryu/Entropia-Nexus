@@ -1752,6 +1752,8 @@
     padding: 8px 12px;
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .data-table tr:last-child td {
@@ -2005,7 +2007,7 @@
     }
   }
 
-  .col-value { width: 100px; }
+  .col-value { width: 75px; }
   .col-badge { width: 44px; padding-left: 4px !important; padding-right: 4px !important; }
   .col-media {
     width: 20px;
