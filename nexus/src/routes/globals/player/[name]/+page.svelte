@@ -1273,9 +1273,9 @@
                           <tr>
                             <th class="col-rank">Rank</th>
                             <th>Target</th>
-                            <th class="right">Globals</th>
-                            <th class="right">Best Loot</th>
-                            <th class="right">Total Value</th>
+                            <th class="right col-count">#</th>
+                            <th class="right col-value">Best Loot</th>
+                            <th class="right col-value">Total Value</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1283,7 +1283,7 @@
                             <tr>
                               <td class="col-rank"><span class="rank-badge" class:rank-top3={t.best_rank <= 3}>#{t.best_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
-                              <td class="right">{t.count}</td>
+                              <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
                               <td class="right">{formatPed(t.total_value)} PED</td>
                             </tr>
@@ -1305,9 +1305,9 @@
                           <tr>
                             <th class="col-rank">Rank</th>
                             <th>Target</th>
-                            <th class="right">Globals</th>
-                            <th class="right">Total Value</th>
-                            <th class="right">Best Loot</th>
+                            <th class="right col-count">#</th>
+                            <th class="right col-value">Total Value</th>
+                            <th class="right col-value">Best Loot</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1315,7 +1315,7 @@
                             <tr>
                               <td class="col-rank"><span class="rank-badge" class:rank-top3={t.total_rank <= 3}>#{t.total_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
-                              <td class="right">{t.count}</td>
+                              <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
                               <td class="right">{formatPed(t.best_value)} PED</td>
                             </tr>
@@ -2006,6 +2006,7 @@
   }
 
   .col-value { width: 75px; }
+  .col-count { width: 40px; }
   .col-badge { width: 48px; padding-left: 4px !important; padding-right: 4px !important; }
   .col-media {
     width: 20px;
