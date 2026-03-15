@@ -2006,7 +2006,7 @@
   }
 
   .col-value { width: 100px; }
-  .col-badge { width: 34px; padding-left: 0 !important; padding-right: 0 !important; }
+  .col-badge { width: 44px; padding-left: 4px !important; padding-right: 4px !important; }
   .col-media {
     width: 20px;
     text-align: center;
