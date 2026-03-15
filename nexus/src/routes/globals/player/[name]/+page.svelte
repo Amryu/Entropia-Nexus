@@ -704,7 +704,7 @@
                       <th class="sortable right col-value" onclick={() => { huntSort = toggleSort(huntSort, 'total_value'); huntTargetPage = 0; }}>
                         Total{sortIcon(huntSort, 'total_value')}
                       </th>
-                      <th class="right col-value">Best</th>
+                      <th class="right col-value col-hide-mobile">Best</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -725,7 +725,7 @@
                         </td>
                         <td class="right">{mob.kills}</td>
                         <td class="right">{formatPed(mob.total_value)}</td>
-                        <td class="right">{formatPed(mob.best_value)}</td>
+                        <td class="right col-hide-mobile">{formatPed(mob.best_value)}</td>
                       </tr>
                       {#if hasDetails && expandedMobs.has(mobKey)}
                         {#each mob.maturities as mat}
@@ -733,7 +733,7 @@
                             <td class="indent"><a href="/globals/target/{encodeURIComponent(mat.target)}" class="target-link">{mat.target}</a></td>
                             <td class="right">{mat.kills}</td>
                             <td class="right">{formatPed(mat.total_value)}</td>
-                            <td class="right">{formatPed(mat.best_value)}</td>
+                            <td class="right col-hide-mobile">{formatPed(mat.best_value)}</td>
                           </tr>
                         {/each}
                       {/if}
@@ -834,7 +834,7 @@
                       <th class="sortable right col-value" onclick={() => { miningSort = toggleSort(miningSort, 'total_value'); miningTargetPage = 0; }}>
                         Total{sortIcon(miningSort, 'total_value')}
                       </th>
-                      <th class="right col-value">Best</th>
+                      <th class="right col-value col-hide-mobile">Best</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -843,7 +843,7 @@
                         <td><a href="/globals/target/{encodeURIComponent(res.target)}" class="target-link">{res.target}</a></td>
                         <td class="right">{res.finds}</td>
                         <td class="right">{formatPed(res.total_value)}</td>
-                        <td class="right">{formatPed(res.best_value)}</td>
+                        <td class="right col-hide-mobile">{formatPed(res.best_value)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -942,7 +942,7 @@
                       <th class="sortable right col-value" onclick={() => { craftSort = toggleSort(craftSort, 'total_value'); craftTargetPage = 0; }}>
                         Total{sortIcon(craftSort, 'total_value')}
                       </th>
-                      <th class="right col-value">Best</th>
+                      <th class="right col-value col-hide-mobile">Best</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -951,7 +951,7 @@
                         <td><a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a></td>
                         <td class="right">{item.crafts}</td>
                         <td class="right">{formatPed(item.total_value)}</td>
-                        <td class="right">{formatPed(item.best_value)}</td>
+                        <td class="right col-hide-mobile">{formatPed(item.best_value)}</td>
                       </tr>
                     {/each}
                   </tbody>
@@ -2034,7 +2034,7 @@
     }
 
     /* Hide less important columns on mobile — keep target + value + badge */
-    .col-media, .col-gz, .col-time, .col-type, .col-rank { display: none; }
+    .col-media, .col-gz, .col-time, .col-type, .col-rank, .col-hide-mobile { display: none; }
 
     /* Compact table cells — keep 6px horizontal padding so text doesn't touch edges */
     .data-table th, .data-table td { padding: 4px 6px; font-size: 0.75rem; }
