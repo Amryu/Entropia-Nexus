@@ -1205,11 +1205,16 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
               Personal ATH Rankings
             </h2>
-            <div class="sort-toggle">
+            <div class="sort-toggle desktop-only">
               {#each ATH_CATEGORIES as cat}
                 <button class="sort-btn" class:active={activeAthCategory === cat.value} onclick={() => { athCategoryOverride = cat.value; }}>{cat.label}</button>
               {/each}
             </div>
+            <select class="sort-select mobile-only" value={activeAthCategory} onchange={(e) => { athCategoryOverride = e.target.value; }}>
+              {#each ATH_CATEGORIES as cat}
+                <option value={cat.value}>{cat.label}</option>
+              {/each}
+            </select>
           </div>
 
           {#if activeAthCategory === 'pvp'}
@@ -1273,7 +1278,6 @@
                             <th>Target</th>
                             <th class="right col-count">#</th>
                             <th class="right col-value">Best Loot</th>
-                            <th class="right col-value">Total Value</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1283,7 +1287,6 @@
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
-                              <td class="right">{formatPed(t.total_value)} PED</td>
                             </tr>
                           {/each}
                         </tbody>
@@ -1305,7 +1308,6 @@
                             <th>Target</th>
                             <th class="right col-count">#</th>
                             <th class="right col-value">Total Value</th>
-                            <th class="right col-value">Best Loot</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1315,7 +1317,6 @@
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
-                              <td class="right">{formatPed(t.best_value)} PED</td>
                             </tr>
                           {/each}
                         </tbody>
@@ -1840,6 +1841,18 @@
     color: var(--text-color);
   }
 
+  .mobile-only { display: none; }
+
+  .sort-select {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    cursor: pointer;
+  }
+
   /* ATH header */
   .ath-header {
     display: flex;
@@ -2029,28 +2042,16 @@
     /* Compact type badge */
     .type-badge { padding: 1px 4px; font-size: 0.5625rem; letter-spacing: 0; }
 
-    /* Achievement rows: compact single-line, hide secondary elements */
-    .achievements-list { gap: 2px; }
-    .achievement-item {
-      gap: 4px;
-      padding: 4px 6px;
-      font-size: 0.75rem;
-      border: none;
-      border-bottom: 1px solid var(--border-color);
-      border-radius: 0;
-    }
-    .achievement-target {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      min-width: 0;
-    }
-    .achievement-detail { font-size: 0.625rem; }
+    /* Achievement rows: hide secondary elements on mobile */
+    .achievement-item { flex-wrap: wrap; gap: 4px 8px; padding: 6px 8px; font-size: 0.75rem; }
     .achievement-actions, .achievement-time { display: none; }
 
     /* Section titles */
     .section-card h2, .section-title-icon { font-size: 0.875rem; }
     .section-subtitle { font-size: 0.8125rem; }
+
+    .desktop-only { display: none !important; }
+    .mobile-only { display: block !important; }
   }
 
   .col-value { width: 75px; }
