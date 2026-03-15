@@ -135,43 +135,44 @@ export async function reloadBotIpRanges() {
 
 // ---------- bot detection ----------
 
-// All known ways a real browser identifies its version (~2021 minimums).
-// Ancient versions → bot. Known browser name with no match → also bot.
+// Browser version checks with separate desktop/mobile thresholds.
+// Desktop: ~6 months behind (Sep 2025). Mobile: ~3 years (2022-2023).
 // Order matters — check specific (Edge, Opera, CriOS) before generic (Chrome).
+//                                                      desktop    mobile
 const BROWSER_VERSION_CHECKS = [
-  { pattern: /Edg(?:e|A|iOS)?\/(\d+)/, min: 90 },         // Edge (desktop, Android, iOS)
-  { pattern: /OPR\/(\d+)/, min: 77 },                      // Opera (Chromium-based)
-  { pattern: /Vivaldi\/(\d+)/, min: 4 },                   // Vivaldi
-  { pattern: /SamsungBrowser\/(\d+)/, min: 14 },            // Samsung Internet
-  { pattern: /UCBrowser\/(\d+)/, min: 13 },                 // UC Browser
-  { pattern: /CriOS\/(\d+)/, min: 90 },                    // Chrome on iOS
-  { pattern: /FxiOS\/(\d+)/, min: 90 },                    // Firefox on iOS
-  { pattern: /Chrome\/(\d+)/, min: 90 },                   // Chrome / Chromium
-  { pattern: /Firefox\/(\d+)/, min: 90 },                  // Firefox
-  { pattern: /Version\/(\d+)(?:\.\d+)* (?:Mobile\/\w+ )?Safari/, min: 14 }, // Safari (macOS + iOS)
+  { pattern: /Edg(?:e|A|iOS)?\/(\d+)/, minD: 128, minM: 100 },  // Edge 128 = Aug 2025
+  { pattern: /OPR\/(\d+)/,             minD: 114, minM: 90 },   // Opera 114 ≈ Chrome 128
+  { pattern: /Vivaldi\/(\d+)/,          minD: 6,   minM: 5 },    // Vivaldi 6 = 2024
+  { pattern: /SamsungBrowser\/(\d+)/,   minD: 25,  minM: 18 },   // Samsung 25 ≈ mid-2025
+  { pattern: /UCBrowser\/(\d+)/,        minD: 15,  minM: 13 },   // UC Browser
+  { pattern: /CriOS\/(\d+)/,           minD: 128, minM: 100 },  // Chrome iOS
+  { pattern: /FxiOS\/(\d+)/,           minD: 128, minM: 100 },  // Firefox iOS
+  { pattern: /Chrome\/(\d+)/,          minD: 128, minM: 100 },  // Chrome 128 = Aug 2025
+  { pattern: /Firefox\/(\d+)/,         minD: 128, minM: 100 },  // Firefox 128 = Jul 2025
+  { pattern: /Version\/(\d+)(?:\.\d+)* (?:Mobile\/\w+ )?Safari/, minD: 17, minM: 15 }, // Safari 17 = Sep 2024
 ];
+
+const IS_MOBILE_UA = /Mobile|Android|iPhone|iPad|iPod/i;
 
 // Known browser names — if present in UA but NO version pattern matched above,
 // flag as suspicious (real browsers always include a parseable version).
 const KNOWN_BROWSER_NAMES = /Chrome|Firefox|Safari|Edge|Opera|Vivaldi|SamsungBrowser|UCBrowser/i;
 
 function hasAncientOrUnparseableBrowser(ua) {
-  let anyMatched = false;
+  const isMobile = IS_MOBILE_UA.test(ua);
 
-  for (const { pattern, min } of BROWSER_VERSION_CHECKS) {
+  for (const { pattern, minD, minM } of BROWSER_VERSION_CHECKS) {
     const m = ua.match(pattern);
     if (m) {
-      anyMatched = true;
-      // Matched a known version pattern — check if ancient
-      if (parseInt(m[1], 10) < min) return true;
-      // Version is acceptable — not ancient
-      return false;
+      const ver = parseInt(m[1], 10);
+      const min = isMobile ? minM : minD;
+      return ver < min;
     }
   }
 
   // No version pattern matched. If UA claims to be a known browser,
   // it's missing its version string — suspicious/fake.
-  if (!anyMatched && KNOWN_BROWSER_NAMES.test(ua)) return true;
+  if (KNOWN_BROWSER_NAMES.test(ua)) return true;
 
   return false;
 }
