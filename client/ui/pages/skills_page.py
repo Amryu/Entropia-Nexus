@@ -2307,6 +2307,10 @@ class SkillsPage(QWidget):
 
         self._apply_dashboard_view()
 
+        # Re-apply accumulated live gains so cards don't visually reset
+        if self._skill_gains:
+            self._refresh_dashboard_live()
+
     def _apply_dashboard_view(self):
         """Show goals, top-gains, or custom view based on current mode."""
         # Hide everything first

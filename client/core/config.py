@@ -33,6 +33,7 @@ class AppConfig:
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
     scan_roi_version: int = 0  # Tracks DEFAULT_ROI_PIXELS version; reset overrides when outdated
     ocr_trace_enabled: bool = False
+    radar_enabled: bool = False
     radar_last_circle: list | None = None  # [cx, cy, r] persisted calibration
     radar_digit_stpk: str = "radar_digits.stpk"
     radar_origin_offset: tuple[int, int] | None = None          # (dx, dy) circle-center → HUD origin at 1x
@@ -322,6 +323,7 @@ DEFAULTS = {
     "hdr_compatibility_mode": False,
     "ocr_auto_scan_enabled": True,
     "ocr_trace_enabled": False,
+    "radar_enabled": False,
     "radar_last_circle": None,
     "radar_digit_stpk": "radar_digits.stpk",
     "scan_overlay_debug": False,
