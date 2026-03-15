@@ -596,6 +596,7 @@ class SkillsPage(QWidget):
         self._prof_filter_skill = None        # filter professions by skill name
         self._last_scan_result = None
         self._synced = False
+        self._syncing = False  # guard against concurrent sync calls
 
         # Skill gains since last baseline (scan/import)
         self._skill_gains: dict[str, float] = {}  # {skill_name: accumulated_gain}
@@ -1107,9 +1108,12 @@ class SkillsPage(QWidget):
             return
 
         # Slow: network sync in background (merges remote + uploads dirty)
-        if self._oauth.is_authenticated():
+        if self._oauth.is_authenticated() and not self._syncing:
             import threading
             def _bg_sync():
+                if self._syncing:
+                    return
+                self._syncing = True
                 try:
                     synced = self._manager.sync_from_nexus()
                     self._synced = synced
@@ -1117,6 +1121,8 @@ class SkillsPage(QWidget):
                         QTimer.singleShot(0, self._on_data_loaded)
                 except Exception:
                     log.exception("Background skills sync failed")
+                finally:
+                    self._syncing = False
             threading.Thread(target=_bg_sync, daemon=True, name="skills-sync").start()
 
     def flush_prewarm(self):
@@ -2281,6 +2287,17 @@ class SkillsPage(QWidget):
         self._dash_last_custom_timeseries = custom_timeseries
         self._dash_last_baselines = baselines
 
+        # Merge accumulated live gains into baselines so the chart Y-axis
+        # stays correct (baselines from DB are scan-only values).
+        if self._skill_gains:
+            nm = name_to_id_map()
+            for name, gain in self._skill_gains.items():
+                sid = nm.get(name)
+                if sid is not None:
+                    self._dash_last_baselines[sid] = (
+                        self._dash_last_baselines.get(sid, 0) + gain
+                    )
+
         # Store pre-scan gains (id-based → name-based)
         id_names = id_to_name_map()
         self._pre_scan_gains = {}
@@ -3418,8 +3435,12 @@ class SkillsPage(QWidget):
     # ── Auth ──────────────────────────────────────────────────────────────
 
     def _on_auth_changed(self, state):
-        if state.authenticated and not self._synced:
-            # Sync skills on first auth
+        if not state.authenticated:
+            # Reset sync flag so skills re-sync on next login
+            self._synced = False
+            return
+        if not self._synced:
+            # Sync skills on first auth (or re-auth after logout)
             threading.Thread(target=self._sync_on_auth, daemon=True, name="skills-sync").start()
 
     def _sync_on_auth(self):
