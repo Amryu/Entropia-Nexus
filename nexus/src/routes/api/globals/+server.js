@@ -15,7 +15,7 @@ function escapeLike(str) {
   return str.replace(/[%_\\]/g, '\\$&');
 }
 
-export async function GET({ url }) {
+export async function GET({ url, locals }) {
   const params = [];
   const conditions = ['confirmed = true'];
   let paramIdx = 1;
@@ -127,8 +127,21 @@ export async function GET({ url }) {
   );
   params.push(limit);
   const limitIdx = paramIdx;
+  paramIdx++;
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const userId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
+
+  // If authenticated, include per-row user_gz flag via LEFT JOIN
+  let userGzSelect = '';
+  let userGzJoin = '';
+  if (userId) {
+    params.push(userId);
+    const userIdIdx = paramIdx;
+    paramIdx++;
+    userGzSelect = `, (ugz.user_id IS NOT NULL) AS user_gz`;
+    userGzJoin = `LEFT JOIN globals_gz ugz ON ugz.global_id = ingested_globals.id AND ugz.user_id = $${userIdIdx}`;
+  }
 
   try {
     const { rows } = await pool.query(
@@ -137,7 +150,9 @@ export async function GET({ url }) {
               mob_id, maturity_id, extra,
               media_image_key, media_video_url,
               (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+              ${userGzSelect}
        FROM ingested_globals
+       ${userGzJoin}
        ${whereClause}
        ORDER BY event_timestamp DESC
        LIMIT $${limitIdx}`,
@@ -161,6 +176,7 @@ export async function GET({ url }) {
       media_image: r.media_image_key || null,
       media_video: r.media_video_url || null,
       gz_count: r.gz_count || 0,
+      ...(userId != null && { user_gz: r.user_gz || false }),
     }));
 
     const cursor = rows.length > 0
@@ -175,7 +191,7 @@ export async function GET({ url }) {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=5',
+        'Cache-Control': userId ? 'private, max-age=5' : 'public, max-age=5',
       },
     });
     return response;

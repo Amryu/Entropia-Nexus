@@ -48,6 +48,7 @@ client/dist/
 client/release/
 client/entropia-nexus.spec
 client/.wsl-build-tmp.sh
+.venv/
 .venv-linux/
 /build/
 /dist/

@@ -26,7 +26,7 @@ function safeQuery(queryPromise) {
   });
 }
 
-export async function GET({ params, url }) {
+export async function GET({ params, url, locals }) {
   const playerName = decodeURIComponentSafe(params.name);
 
   if (!playerName || playerName.length > 200) {
@@ -482,6 +482,24 @@ export async function GET({ params, url }) {
       maturities: m.maturities.sort((a, b) => b.total_value - a.total_value),
     }));
 
+    // Batch lookup: which globals has the current user GZ'd?
+    const userId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
+    const userGzSet = new Set();
+    if (userId) {
+      const allIds = [
+        ...recentResult.rows, ...discoveryResult.rows,
+        ...rareItemsResult.rows, ...pvpResult.rows,
+        ...topHuntingResult.rows, ...topMiningResult.rows, ...topCraftingResult.rows,
+      ].map(r => r.id).filter(Boolean);
+      if (allIds.length > 0) {
+        const { rows: gzRows } = await pool.query(
+          `SELECT global_id FROM globals_gz WHERE user_id = $1 AND global_id = ANY($2)`,
+          [userId, allIds]
+        );
+        for (const r of gzRows) userGzSet.add(r.global_id);
+      }
+    }
+
     function mapLootRows(rows) {
       return rows.map(r => ({
         id: r.id,
@@ -494,6 +512,7 @@ export async function GET({ params, url }) {
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
         gz_count: r.gz_count || 0,
+        ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       }));
     }
 
@@ -580,6 +599,7 @@ export async function GET({ params, url }) {
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
         gz_count: r.gz_count || 0,
+        ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       achievements: discoveryResult.rows.map(r => ({
         id: r.id,
@@ -593,6 +613,7 @@ export async function GET({ params, url }) {
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
         gz_count: r.gz_count || 0,
+        ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       rare_items: rareItemsResult.rows.map(r => ({
         id: r.id,
@@ -604,6 +625,7 @@ export async function GET({ params, url }) {
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
         gz_count: r.gz_count || 0,
+        ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       pvp_events: pvpResult.rows.map(r => ({
         id: r.id,
@@ -614,6 +636,7 @@ export async function GET({ params, url }) {
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
         gz_count: r.gz_count || 0,
+        ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       top_loots: {
         hunting: mapLootRows(topHuntingResult.rows),
@@ -654,7 +677,7 @@ export async function GET({ params, url }) {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=60',
+        'Cache-Control': userId ? 'private, max-age=60' : 'public, max-age=60',
       },
     });
     return response;

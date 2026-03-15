@@ -30,7 +30,7 @@ function extractMobName(targetName) {
   return parts.slice(0, -1).join(' ');
 }
 
-export async function GET({ params, url }) {
+export async function GET({ params, url, locals }) {
   const targetName = decodeURIComponentSafe(params.name);
 
   if (!targetName || targetName.length > 300) {
@@ -279,6 +279,20 @@ export async function GET({ params, url }) {
         }))
       : [];
 
+    // Batch lookup: which globals has the current user GZ'd?
+    const targetUserId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
+    const targetUserGzSet = new Set();
+    if (targetUserId) {
+      const ids = recentResult.rows.map(r => r.id).filter(Boolean);
+      if (ids.length > 0) {
+        const { rows: gzRows } = await pool.query(
+          `SELECT global_id FROM globals_gz WHERE user_id = $1 AND global_id = ANY($2)`,
+          [targetUserId, ids]
+        );
+        for (const r of gzRows) targetUserGzSet.add(r.global_id);
+      }
+    }
+
     return new Response(JSON.stringify({
       target: targetName,
       primary_type: summary.primary_type,
@@ -314,29 +328,32 @@ export async function GET({ params, url }) {
         activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count), value: parseFloat(r.total_value || 0) })),
         bucketUnit, from, to, period
       ),
-      recent: recentResult.rows.map(r => ({
-        id: r.id,
-        type: r.global_type,
-        player: r.player_name,
-        target: r.target_name,
-        value: parseFloat(r.value),
-        unit: r.value_unit,
-        location: r.location,
-        hof: r.is_hof,
-        ath: r.is_ath,
-        timestamp: r.event_timestamp,
-        mob_id: r.mob_id,
-        maturity_id: r.maturity_id,
-        extra: r.extra,
-        media_image: r.media_image_key || null,
-        media_video: r.media_video_url || null,
-        gz_count: r.gz_count || 0,
-      })),
+      recent: (() => {
+        return recentResult.rows.map(r => ({
+          id: r.id,
+          type: r.global_type,
+          player: r.player_name,
+          target: r.target_name,
+          value: parseFloat(r.value),
+          unit: r.value_unit,
+          location: r.location,
+          hof: r.is_hof,
+          ath: r.is_ath,
+          timestamp: r.event_timestamp,
+          mob_id: r.mob_id,
+          maturity_id: r.maturity_id,
+          extra: r.extra,
+          media_image: r.media_image_key || null,
+          media_video: r.media_video_url || null,
+          gz_count: r.gz_count || 0,
+          ...(targetUserId != null && { user_gz: targetUserGzSet.has(r.id) }),
+        }));
+      })(),
     }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=60',
+        'Cache-Control': targetUserId ? 'private, max-age=60' : 'public, max-age=60',
       },
     });
   } catch (e) {

@@ -457,7 +457,7 @@
                       {:else if user}
                         <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
-                      <GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact />
+                      <GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact />
                     </span>
                   </div>
                 {/each}
@@ -492,7 +492,7 @@
                       {:else if user}
                         <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
-                      <GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact />
+                      <GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact />
                     </span>
                   </div>
                 {/each}
@@ -527,7 +527,7 @@
                       {:else if user}
                         <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
-                      <GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact />
+                      <GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact />
                     </span>
                   </div>
                 {/each}
@@ -574,7 +574,7 @@
                             <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
-                        <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
+                        <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact /></td>
                         <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                       </tr>
                     {/each}
@@ -606,7 +606,7 @@
                       {:else if user}
                         <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
                       {/if}
-                      <GzButton globalId={ach.id} count={ach.gz_count || 0} {user} compact />
+                      <GzButton globalId={ach.id} count={ach.gz_count || 0} userGz={ach.user_gz || false} {user} compact />
                     </span>
                     <span class="achievement-time">{timeAgo(ach.timestamp)}</span>
                   </div>
@@ -671,7 +671,7 @@
                           <GlobalMediaUpload globalId={g.id} {playerName} {user} onuploaded={onMediaUploaded} />
                         {/if}
                       </td>
-                      <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
+                      <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} userGz={g.user_gz || false} {user} compact /></td>
                     </tr>
                   {/each}
                 </tbody>
@@ -792,7 +792,7 @@
                             <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
-                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact /></td>
                         <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -900,7 +900,7 @@
                             <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
-                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact /></td>
                         <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -1008,7 +1008,7 @@
                             <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
-                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact /></td>
                         <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                       </tr>
                     {/each}
@@ -1064,7 +1064,7 @@
                           <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
                         {/if}
                       </td>
-                      <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} {user} compact /></td>
+                      <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact /></td>
                       <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
                     </tr>
                   {/each}
@@ -1100,7 +1100,7 @@
                     {:else if user}
                       <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
                     {/if}
-                    <GzButton globalId={ach.id} count={ach.gz_count || 0} {user} compact />
+                    <GzButton globalId={ach.id} count={ach.gz_count || 0} userGz={ach.user_gz || false} {user} compact />
                   </span>
                   <span class="achievement-time">{timeAgo(ach.timestamp)}</span>
                 </div>
@@ -1137,7 +1137,7 @@
                     {:else if user}
                       <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
                     {/if}
-                    <GzButton globalId={ach.id} count={ach.gz_count || 0} {user} compact />
+                    <GzButton globalId={ach.id} count={ach.gz_count || 0} userGz={ach.user_gz || false} {user} compact />
                   </span>
                   <span class="achievement-time">{timeAgo(ach.timestamp)}</span>
                 </div>
@@ -1184,7 +1184,7 @@
                           <GlobalMediaUpload globalId={g.id} {playerName} {user} onuploaded={onMediaUploaded} />
                         {/if}
                       </td>
-                      <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
+                      <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} userGz={g.user_gz || false} {user} compact /></td>
                       <td class="text-muted col-time" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                     </tr>
                   {/each}
@@ -1251,7 +1251,7 @@
                             <GlobalMediaUpload globalId={entry.id} {playerName} {user} onuploaded={onMediaUploaded} />
                           {/if}
                         </td>
-                        <td class="col-gz"><GzButton globalId={entry.id} count={entry.gz_count || 0} {user} compact /></td>
+                        <td class="col-gz"><GzButton globalId={entry.id} count={entry.gz_count || 0} userGz={entry.user_gz || false} {user} compact /></td>
                         <td class="text-muted col-time" title={new Date(entry.timestamp).toLocaleString()}>{timeAgo(entry.timestamp)}</td>
                       </tr>
                     {/each}

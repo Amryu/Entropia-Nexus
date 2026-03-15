@@ -21,7 +21,7 @@ const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 const MAX_PAGE = 500;
 
-export async function GET({ url }) {
+export async function GET({ url, locals }) {
   const category = url.searchParams.get('category') || 'hunting';
   const tabConfig = TOP_LOOTS_TABS.find(t => t.value === category);
   if (!tabConfig) {
@@ -51,11 +51,23 @@ export async function GET({ url }) {
   const defaultOrder = tabConfig.hasValue ? 'value DESC, event_timestamp DESC' : 'event_timestamp DESC';
   const orderBy = sortCol ? `${sortCol} ${dir}, event_timestamp DESC` : defaultOrder;
 
-  try {
-    const countIdx = params.length + 1;
-    const limitIdx = params.length + 1;
-    const offsetIdx = params.length + 2;
+  const userId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
 
+  // If authenticated, include per-row user_gz flag via LEFT JOIN
+  let userGzSelect = '';
+  let userGzJoin = '';
+  const dataParams = [...params];
+  if (userId) {
+    dataParams.push(userId);
+    const userIdIdx = dataParams.length;
+    userGzSelect = `, (ugz.user_id IS NOT NULL) AS user_gz`;
+    userGzJoin = `LEFT JOIN globals_gz ugz ON ugz.global_id = ingested_globals.id AND ugz.user_id = $${userIdIdx}`;
+  }
+
+  const limitIdx = dataParams.length + 1;
+  const offsetIdx = dataParams.length + 2;
+
+  try {
     const [countResult, dataResult] = await Promise.all([
       pool.query(
         `SELECT count(*) AS total
@@ -68,11 +80,13 @@ export async function GET({ url }) {
                 is_hof AS hof, is_ath AS ath, event_timestamp AS timestamp,
                 media_image_key, media_video_url,
                 (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+                ${userGzSelect}
          FROM ingested_globals
+         ${userGzJoin}
          ${whereClause} AND global_type IN ${tabConfig.types}
          ORDER BY ${orderBy}
          LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
-        [...params, limit, offset]
+        [...dataParams, limit, offset]
       ),
     ]);
 
@@ -91,13 +105,14 @@ export async function GET({ url }) {
       media_image: r.media_image_key || null,
       media_video: r.media_video_url || null,
       gz_count: r.gz_count || 0,
+      ...(userId != null && { user_gz: r.user_gz || false }),
     }));
 
     return new Response(JSON.stringify({ items, page, pages, total }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=60',
+        'Cache-Control': userId ? 'private, max-age=60' : 'public, max-age=60',
       },
     });
   } catch (e) {

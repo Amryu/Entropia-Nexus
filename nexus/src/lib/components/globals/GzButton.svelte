@@ -120,5 +120,10 @@
 
   .gz-count {
     font-variant-numeric: tabular-nums;
+    display: none;
+  }
+
+  .gz-btn:hover .gz-count {
+    display: inline;
   }
 </style>
