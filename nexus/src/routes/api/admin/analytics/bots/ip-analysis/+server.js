@@ -55,10 +55,16 @@ export async function GET({ locals, url }) {
                WHEN distinct_routes > 20 THEN 10 ELSE 0 END
          )::integer AS suspicion_score,
          -- Check if this subnet is already covered by an enabled bot_ip_range
+         -- <<= means "contained within or equal" (so /24 matches itself or a wider range)
          EXISTS(
            SELECT 1 FROM bot_ip_ranges br
-           WHERE br.enabled = true AND subnet << br.cidr
-         ) AS already_blocked
+           WHERE br.enabled = true AND subnet <<= br.cidr
+         ) AS already_blocked,
+         -- If blocked, show which range covers it
+         (SELECT br.cidr::text FROM bot_ip_ranges br
+          WHERE br.enabled = true AND subnet <<= br.cidr
+          ORDER BY masklen(br.cidr) DESC LIMIT 1
+         ) AS blocked_by
        FROM subnet_stats
        ORDER BY suspicion_score DESC
        LIMIT 50`,
@@ -89,7 +95,26 @@ export async function GET({ locals, url }) {
       samples[subnetBase] = ips;
     }
 
-    return json({ subnets: results, samples, days });
+    // Detect larger subnets: group /24s by their /16 prefix and flag
+    // when multiple suspicious /24s share the same /16
+    const supernetMap = {};
+    for (const s of results) {
+      if (s.already_blocked) continue;
+      const parts = s.subnet.split('.');
+      const slash16 = `${parts[0]}.${parts[1]}.0.0/16`;
+      if (!supernetMap[slash16]) supernetMap[slash16] = { subnets: [], totalRequests: 0, totalIps: 0, totalScore: 0 };
+      supernetMap[slash16].subnets.push(s.subnet);
+      supernetMap[slash16].totalRequests += s.total_requests;
+      supernetMap[slash16].totalIps += s.distinct_ips;
+      supernetMap[slash16].totalScore += s.suspicion_score;
+    }
+    // Only report /16s with 2+ suspicious /24s
+    const supernets = Object.entries(supernetMap)
+      .filter(([, v]) => v.subnets.length >= 2)
+      .map(([cidr, v]) => ({ cidr, ...v }))
+      .sort((a, b) => b.subnets.length - a.subnets.length);
+
+    return json({ subnets: results, samples, supernets, days });
   } catch (e) {
     console.error('[analytics] IP analysis error:', e);
     return json({ error: 'Failed to analyze IP patterns' }, { status: 500 });

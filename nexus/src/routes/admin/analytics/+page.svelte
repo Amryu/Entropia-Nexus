@@ -1413,7 +1413,7 @@
                   <td>
                     <code>{s.subnet}</code>
                     {#if s.already_blocked}
-                      <span class="blocked-badge">BLOCKED</span>
+                      <span class="blocked-badge" title={s.blocked_by ? `Covered by ${s.blocked_by}` : ''}>BLOCKED{#if s.blocked_by && s.blocked_by !== s.subnet} by {s.blocked_by}{/if}</span>
                     {/if}
                   </td>
                   <td class="num">
@@ -1499,6 +1499,42 @@
           </table>
         {:else if ipAnalysis}
           <div class="empty-state">No suspicious subnets detected in the last {ipAnalysisDays} day{ipAnalysisDays > 1 ? 's' : ''}</div>
+        {/if}
+
+        {#if ipAnalysis?.supernets?.length > 0}
+          <div style="margin-top: 16px; padding: 12px; background-color: var(--primary-color); border-radius: 6px">
+            <strong style="font-size: 13px">Suggested larger blocks:</strong>
+            <span class="muted" style="font-size: 12px">Multiple suspicious /24s share these /16 ranges</span>
+            <table class="data-table" style="margin-top: 8px">
+              <thead>
+                <tr>
+                  <th>/16 Range</th>
+                  <th class="num">Suspicious /24s</th>
+                  <th class="num">Total Requests</th>
+                  <th class="num">Total IPs</th>
+                  <th>Subnets</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each ipAnalysis.supernets as sn}
+                  <tr>
+                    <td><code>{sn.cidr}</code></td>
+                    <td class="num" style="font-weight: bold">{sn.subnets.length}</td>
+                    <td class="num">{formatNumber(sn.totalRequests)}</td>
+                    <td class="num">{sn.totalIps}</td>
+                    <td class="muted" style="font-size: 11px">{sn.subnets.join(', ')}</td>
+                    <td>
+                      <button class="toggle-btn" style="font-size: 11px"
+                        onclick={() => blockSubnet(sn.cidr, `Auto-detected /16 (${sn.subnets.length} suspicious /24s)`)}>
+                        Block /16
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
         {/if}
       </div>
 
