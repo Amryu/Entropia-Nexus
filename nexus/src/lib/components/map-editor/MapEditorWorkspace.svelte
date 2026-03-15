@@ -94,6 +94,18 @@
   }
 
 
+  /** Extract pending mob data ({ density, maturities }) from a modified object, or null. */
+  function getPendingMobData(id) {
+    const m = pendingChanges.get(id)?.modified;
+    return m?.density != null || m?.maturities ? { density: m.density, maturities: m.maturities } : null;
+  }
+
+  /** Extract pending wave data ({ waves }) from a modified object, or null. */
+  function getPendingWaveData(id) {
+    const m = pendingChanges.get(id)?.modified;
+    return m?.waves ? { waves: m.waves } : null;
+  }
+
   // Show cyan afterimage of the ORIGINAL shape for a given location
   function showAfterimageForOriginal(locId) {
     const loc = locations.find(l => l.Id === locId);
@@ -159,11 +171,12 @@
           };
           // Restore mob data if persisted in the change
           if (data?.Maturities?.length || props.Density != null) {
-            modified.mobData = { density: props.Density ?? 4, maturities: data.Maturities || [] };
+            modified.density = props.Density ?? 4;
+            modified.maturities = data.Maturities || [];
           }
           // Restore wave data if persisted in the change
           if (data?.Waves) {
-            modified.waveData = { waves: data.Waves };
+            modified.waves = data.Waves;
           }
           pendingChanges.set(tempId, { action: 'edit', original: null, modified, _dbSeeded: true });
           dbChangeIdMap.set(tempId, change.id);
@@ -175,6 +188,12 @@
           if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
         }
         selectedId = tempId;
+        isNewLocation = false;
+        drawnShapeData = null;
+        previewShape = null;
+        rightPanel = 'editor';
+        if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
+        return;
       } else if (change.type === 'Update' && data?.Id) {
         // Seed as a pending edit for the existing location
         const loc = locations.find(l => l.Id === data.Id);
@@ -201,6 +220,12 @@
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
           if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
           selectedId = data.Id;
+          isNewLocation = false;
+          drawnShapeData = null;
+          rightPanel = 'editor';
+          if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
+          showAfterimageForOriginal(data.Id);
+          return;
         } else {
           // Location not found locally — fall back to read-only
           selectedDbChange = change;
@@ -217,6 +242,7 @@
       selectedId = `db-${change.id}`;
     }
 
+    // Read-only fallback cleanup
     isNewLocation = false;
     drawnShapeData = null;
     previewShape = null;
@@ -300,12 +326,15 @@
       // Preserve the true original from the first edit — `original` from the editor
       // is the merged selectedLocation, not the raw location from locations[].
       const trueOriginal = existingChange?.original || locations.find(l => l.Id === original.Id) || original;
-      // Preserve mobData/waveData set by the mob/wave editors (auto-save doesn't include them)
-      if (existingChange?.modified?.mobData && !modified.mobData) {
-        modified.mobData = existingChange.modified.mobData;
+      // Preserve density/maturities/waves set by the mob/wave editors (auto-save doesn't include them)
+      if (existingChange?.modified?.density != null && modified.density == null) {
+        modified.density = existingChange.modified.density;
       }
-      if (existingChange?.modified?.waveData && !modified.waveData) {
-        modified.waveData = existingChange.modified.waveData;
+      if (existingChange?.modified?.maturities && !modified.maturities) {
+        modified.maturities = existingChange.modified.maturities;
+      }
+      if (existingChange?.modified?.waves && !modified.waves) {
+        modified.waves = existingChange.modified.waves;
       }
       pendingChanges.set(original.Id, { action: 'edit', original: trueOriginal, modified });
       // Show afterimage of original for committed edits
@@ -520,11 +549,11 @@
         // New object so SvelteMap signals the change
         pendingChanges.set(loc.Id, {
           ...existing,
-          modified: { ...existing.modified, waveData: { waves: waveData.waves } }
+          modified: { ...existing.modified, waves: waveData.waves }
         });
       } else {
         const modified = existing?.modified || {};
-        modified.waveData = { waves: waveData.waves };
+        modified.waves = waveData.waves;
         pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
       }
     }
@@ -546,12 +575,13 @@
         // Pending add: merge mob data — new object so SvelteMap signals the change
         pendingChanges.set(loc.Id, {
           ...existing,
-          modified: { ...existing.modified, name: mobData.name, mobData: { density: mobData.density, maturities: mobData.maturities } }
+          modified: { ...existing.modified, name: mobData.name, density: mobData.density, maturities: mobData.maturities }
         });
       } else {
         const modified = existing?.modified || {};
         modified.name = mobData.name;
-        modified.mobData = { density: mobData.density, maturities: mobData.maturities };
+        modified.density = mobData.density;
+        modified.maturities = mobData.maturities;
         pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
       }
     }
@@ -648,7 +678,7 @@
           ...loc,
           Name: mod.name ?? loc.Name,
           _hasPendingEdit: true,
-          ...(mod.waveData ? { Waves: mod.waveData.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
+          ...(mod.waves ? { Waves: mod.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
           ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
           Properties: {
             ...loc.Properties,
@@ -657,6 +687,10 @@
             Shape: mod.shape ?? loc.Properties?.Shape,
             Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
             Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
+            LandAreaOwnerName: mod.landAreaOwner !== undefined ? mod.landAreaOwner : loc.Properties?.LandAreaOwnerName,
+            TaxRateHunting: mod.taxRateHunting !== undefined ? mod.taxRateHunting : loc.Properties?.TaxRateHunting,
+            TaxRateMining: mod.taxRateMining !== undefined ? mod.taxRateMining : loc.Properties?.TaxRateMining,
+            TaxRateShops: mod.taxRateShops !== undefined ? mod.taxRateShops : loc.Properties?.TaxRateShops,
             Coordinates: {
               ...loc.Properties?.Coordinates,
               ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
@@ -676,7 +710,7 @@
           Id: selectedId,
           Name: mod.name || '',
           _isPendingAdd: true,
-          ...(mod.waveData ? { Waves: mod.waveData.waves } : {}),
+          ...(mod.waves ? { Waves: mod.waves } : {}),
           Properties: {
             Type: mod.locationType === 'Area' ? 'Area' : (mod.locationType || 'Area'),
             AreaType: mod.areaType || null,
@@ -684,6 +718,10 @@
             Shape: mod.shape || null,
             Data: mod.shapeData || null,
             Description: mod.description || null,
+            LandAreaOwnerName: mod.landAreaOwner || null,
+            TaxRateHunting: mod.taxRateHunting ?? null,
+            TaxRateMining: mod.taxRateMining ?? null,
+            TaxRateShops: mod.taxRateShops ?? null,
           }
         };
       } else if (selectedDbChange) {
@@ -827,7 +865,7 @@
         mobs={allMobs}
         location={mobEditorContext?.location}
         isNew={mobEditorContext?.isNew || false}
-        pendingMobData={mobEditorContext?.location ? pendingChanges.get(mobEditorContext.location.Id)?.modified?.mobData : null}
+        pendingMobData={mobEditorContext?.location ? getPendingMobData(mobEditorContext.location.Id) : null}
         onsave={handleMobSave}
         oncancel={handleMobCancel}
       />
@@ -836,7 +874,7 @@
         mobs={allMobs}
         location={waveEditorContext?.location}
         isNew={waveEditorContext?.isNew || false}
-        pendingWaveData={waveEditorContext?.location ? pendingChanges.get(waveEditorContext.location.Id)?.modified?.waveData : null}
+        pendingWaveData={waveEditorContext?.location ? getPendingWaveData(waveEditorContext.location.Id) : null}
         onsave={handleWaveSave}
         oncancel={handleWaveCancel}
       />
@@ -851,8 +889,8 @@
         lockedBy={selectedLocation?.Id ? lockedLocationMap.get(selectedLocation.Id) : null}
         allLocations={locations}
         isDbChange={selectedId != null && dbChangeIdMap.has(selectedId)}
-        pendingMobData={selectedLocation?.Id ? pendingChanges.get(selectedLocation.Id)?.modified?.mobData : (selectedId != null ? pendingChanges.get(selectedId)?.modified?.mobData : null)}
-        pendingWaveData={selectedLocation?.Id ? pendingChanges.get(selectedLocation.Id)?.modified?.waveData : (selectedId != null ? pendingChanges.get(selectedId)?.modified?.waveData : null)}
+        pendingMobData={getPendingMobData(selectedLocation?.Id ?? selectedId)}
+        pendingWaveData={getPendingWaveData(selectedLocation?.Id ?? selectedId)}
         onedit={handleEditLocation}
         ondelete={handleDeleteLocation}
         onrevert={handleRevertLocation}

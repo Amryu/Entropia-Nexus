@@ -401,7 +401,18 @@
       return estimateShapeArea(bEff) - estimateShapeArea(aEff);
     });
 
+    // Build set of location IDs that have non-seeded DB Update changes.
+    // These are already rendered by the DB changes overlay, so skip them here
+    // to avoid showing both the original shape and the change overlay.
+    const dbUpdateIds = new Set();
+    for (const change of dbPendingChanges) {
+      if (change.type === 'Update' && change.data?.Id && !pendingChanges.has(change.data.Id)) {
+        dbUpdateIds.add(change.data.Id);
+      }
+    }
+
     for (const loc of sorted) {
+      if (dbUpdateIds.has(loc.Id)) continue;
       const effectiveLoc = getEffectiveLocData(loc);
       const layer = createLocationLayer(effectiveLoc);
       if (layer) {

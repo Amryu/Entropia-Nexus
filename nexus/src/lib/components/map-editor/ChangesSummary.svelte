@@ -55,13 +55,13 @@
 
     if (effectiveLocationType === 'Area' && effectiveAreaType === 'MobArea') {
       // Check pending mob data, or fall back to original location's maturities
-      const hasMobs = mod.mobData?.maturities?.length || change.original?.Maturities?.length;
+      const hasMobs = mod.maturities?.length || change.original?.Maturities?.length;
       if (!hasMobs) return 'Mob area requires at least one mob maturity';
     }
 
     if (effectiveLocationType === 'Area' && effectiveAreaType === 'WaveEventArea') {
       // Check pending wave data, or fall back to original location's waves
-      const waves = mod.waveData?.waves ?? change.original?.Waves;
+      const waves = mod.waves ?? change.original?.Waves;
       if (!waves?.length) return 'Wave event area requires at least one wave';
       for (const wave of waves) {
         if (!wave.MobMaturities?.length) return `Wave ${wave.WaveIndex} has no maturities`;
@@ -140,10 +140,18 @@
         if (ownerName) props.LandAreaOwnerName = ownerName;
       }
 
-      // MobArea mob data (density + maturity selections)
-      if (mod.mobData) {
-        props.Density = mod.mobData.density ?? null;
+      // Density: use pending value if set, otherwise preserve original
+      if (mod.density != null) {
+        props.Density = mod.density;
+      } else if (origProps?.Density != null) {
+        props.Density = origProps.Density;
       }
+
+      // MobArea boolean flags
+      if (mod.isEvent != null) props.IsEvent = mod.isEvent;
+      else if (origProps?.IsEvent != null) props.IsEvent = origProps.IsEvent;
+      if (mod.isShared != null) props.IsShared = mod.isShared;
+      else if (origProps?.IsShared != null) props.IsShared = origProps.IsShared;
     }
 
     const body = {
@@ -154,13 +162,13 @@
     };
 
     // MobArea maturities (stored at body level, not in Properties)
-    if (mod.mobData?.maturities) {
-      body.Maturities = mod.mobData.maturities;
+    if (mod.maturities) {
+      body.Maturities = mod.maturities;
     }
 
     // WaveEvent wave data (stored at body level, not in Properties)
-    if (props.AreaType === 'WaveEventArea' && mod.waveData) {
-      body.Waves = mod.waveData.waves ?? [];
+    if (props.AreaType === 'WaveEventArea' && mod.waves) {
+      body.Waves = mod.waves;
     }
 
     const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : orig?.ParentLocation?.Name;

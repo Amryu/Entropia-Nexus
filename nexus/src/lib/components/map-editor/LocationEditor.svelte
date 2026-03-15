@@ -79,6 +79,10 @@
   // Parent location state
   let parentLocationName = $state('');
 
+  // MobArea state
+  let isEvent = $state(false);
+  let isShared = $state(false);
+
   // LandArea state
   let landAreaOwner = $state('');
   let taxRateHunting = $state(null);
@@ -248,6 +252,8 @@
       shapeData: locationType === 'Area' ? buildShapeData(shape) : null,
       parentLocationName: parentLocationName || null,
       description: description || null,
+      isEvent: isMobArea ? isEvent : null,
+      isShared: isMobArea ? isShared : null,
       landAreaOwner: (isLandArea && landAreaOwner) ? landAreaOwner : null,
       taxRateHunting: isLandArea ? taxRateHunting : null,
       taxRateMining: isLandArea ? taxRateMining : null,
@@ -407,6 +413,8 @@
       }
       parentLocationName = location.ParentLocation?.Name || '';
       description = location.Properties?.Description || '';
+      isEvent = location.Properties?.IsEvent ?? false;
+      isShared = location.Properties?.IsShared ?? false;
       landAreaOwner = location.Properties?.LandAreaOwnerName || '';
       taxRateHunting = location.Properties?.TaxRateHunting ?? null;
       taxRateMining = location.Properties?.TaxRateMining ?? null;
@@ -575,6 +583,7 @@
         ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
         ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
         ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {}),
+        ...(isMobArea ? { IsEvent: isEvent, IsShared: isShared } : {}),
         ...(pendingMobData ? { Density: pendingMobData.density } : {})
       },
       ...(location?.Planet ? { Planet: location.Planet } : {}),
@@ -706,6 +715,20 @@
     color: #eab308;
   }
   .btn-mob:hover { background: rgba(234, 179, 8, 0.15); }
+
+  .toggle-row {
+    display: flex;
+    gap: 16px;
+  }
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--text-color);
+    cursor: pointer;
+  }
+  .toggle-label input[type="checkbox"] { cursor: pointer; }
 
   .description-editor :global(.rich-text-editor) {
     font-size: 13px;
@@ -998,6 +1021,16 @@
             Edit Mob Spawns
           </button>
         {/if}
+        <div class="toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" bind:checked={isEvent} disabled={readOnly} onchange={scheduleAutoSave} />
+            Event
+          </label>
+          <label class="toggle-label">
+            <input type="checkbox" bind:checked={isShared} disabled={readOnly} onchange={scheduleAutoSave} />
+            Shared
+          </label>
+        </div>
       {/if}
 
       {#if isWaveEvent}
