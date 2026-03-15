@@ -914,7 +914,7 @@
                       <GlobalMediaUpload globalId={loot.id} playerName={loot.player} {user} onuploaded={onMediaUploaded} />
                     {/if}
                   </td>
-                  <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} {user} compact /></td>
+                  <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact /></td>
                   <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                 </tr>
               {/each}
@@ -1000,7 +1000,7 @@
                     <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} onuploaded={onMediaUploaded} />
                   {/if}
                 </td>
-                <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} {user} compact /></td>
+                <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} userGz={g.user_gz || false} {user} compact /></td>
               </tr>
             {/each}
           </tbody>
@@ -1297,6 +1297,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 16px;
+    min-width: 0;
   }
 
   .chart-card.chart-wide {
@@ -1369,6 +1370,7 @@
   .chart-container {
     position: relative;
     height: 200px;
+    overflow: hidden;
   }
 
   .chart-loading, .table-loading {
@@ -1765,6 +1767,10 @@
     /* Compact badges */
     .badge-hof, .badge-ath, .badge-team { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
     .type-badge { padding: 1px 4px; font-size: 0.5625rem; letter-spacing: 0; }
+
+    /* Compact charts on mobile */
+    .chart-card { padding: 10px; }
+    .chart-container { height: 160px; }
   }
 
   /* Media icon */

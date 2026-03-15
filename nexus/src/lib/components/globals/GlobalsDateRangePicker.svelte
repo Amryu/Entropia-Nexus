@@ -51,7 +51,7 @@
 </script>
 
 <div class="date-range-picker">
-  <div class="presets">
+  <div class="presets desktop-only">
     {#each PERIOD_OPTIONS as p}
       <button
         class="period-btn"
@@ -71,6 +71,12 @@
       Custom
     </button>
   </div>
+  <select class="period-select mobile-only" value={showCustom ? 'custom' : period} {disabled} onchange={(e) => e.target.value === 'custom' ? openCustom() : selectPreset(e.target.value)}>
+    {#each PERIOD_OPTIONS as p}
+      <option value={p.value}>{p.label}</option>
+    {/each}
+    <option value="custom">Custom</option>
+  </select>
   {#if showCustom}
     <div class="custom-range">
       <input
@@ -159,10 +165,20 @@
     color: var(--text-muted);
   }
 
+  .mobile-only { display: none; }
+
+  .period-select {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    cursor: pointer;
+  }
+
   @media (max-width: 599px) {
-    .date-range-picker {
-      flex-direction: column;
-      align-items: flex-start;
-    }
+    .desktop-only { display: none !important; }
+    .mobile-only { display: block !important; }
   }
 </style>
