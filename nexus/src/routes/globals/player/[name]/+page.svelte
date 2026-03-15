@@ -1224,11 +1224,11 @@
                   <thead>
                     <tr>
                       <th class="col-rank">Rank</th>
-                      <th class="right">Value</th>
-                      <th></th>
+                      <th class="right col-value">Value</th>
+                      <th class="col-badge"></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th>Time</th>
+                      <th class="col-time">Time</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2008,7 +2008,7 @@
   }
 
   .col-value { width: 75px; }
-  .col-badge { width: 44px; padding-left: 4px !important; padding-right: 4px !important; }
+  .col-badge { width: 48px; padding-left: 4px !important; padding-right: 4px !important; }
   .col-media {
     width: 20px;
     text-align: center;
@@ -2019,7 +2019,7 @@
     text-align: center;
     padding: 4px 4px !important;
   }
-  .col-time { width: 80px; }
+  .col-time { width: 50px; }
   .col-type { width: 65px; }
 
   .media-icon-btn {
