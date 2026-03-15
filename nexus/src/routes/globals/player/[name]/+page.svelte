@@ -640,11 +640,11 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
-                    <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'type')}>Type{sortIcon(recentSort, 'type')}</th>
+                    <th class="sortable col-time" onclick={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                    <th class="sortable col-type" onclick={() => recentSort = toggleSort(recentSort, 'type')}>Type{sortIcon(recentSort, 'type')}</th>
                     <th class="sortable" onclick={() => recentSort = toggleSort(recentSort, 'target')}>Target{sortIcon(recentSort, 'target')}</th>
-                    <th class="sortable right" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
-                    <th></th>
+                    <th class="sortable right col-value" onclick={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
+                    <th class="col-badge"></th>
                     <th class="col-media"></th>
                     <th class="col-gz"></th>
                   </tr>
@@ -700,13 +700,13 @@
                       <th class="sortable" onclick={() => { huntSort = toggleSort(huntSort, 'target'); huntTargetPage = 0; }}>
                         Target{sortIcon(huntSort, 'target')}
                       </th>
-                      <th class="sortable right" onclick={() => { huntSort = toggleSort(huntSort, 'kills'); huntTargetPage = 0; }}>
+                      <th class="sortable right col-value" onclick={() => { huntSort = toggleSort(huntSort, 'kills'); huntTargetPage = 0; }}>
                         Kills{sortIcon(huntSort, 'kills')}
                       </th>
-                      <th class="sortable right" onclick={() => { huntSort = toggleSort(huntSort, 'total_value'); huntTargetPage = 0; }}>
+                      <th class="sortable right col-value" onclick={() => { huntSort = toggleSort(huntSort, 'total_value'); huntTargetPage = 0; }}>
                         Total{sortIcon(huntSort, 'total_value')}
                       </th>
-                      <th class="right">Best</th>
+                      <th class="right col-value">Best</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -765,13 +765,13 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="col-rank">#</th>
+                      <th class="col-rank right">#</th>
                       <th class="sortable" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
-                      <th class="sortable right" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
-                      <th></th>
+                      <th class="sortable right col-value" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
+                      <th class="col-badge"></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th class="sortable" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
+                      <th class="sortable col-time" onclick={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -830,13 +830,13 @@
                       <th class="sortable" onclick={() => { miningSort = toggleSort(miningSort, 'target'); miningTargetPage = 0; }}>
                         Resource{sortIcon(miningSort, 'target')}
                       </th>
-                      <th class="sortable right" onclick={() => { miningSort = toggleSort(miningSort, 'finds'); miningTargetPage = 0; }}>
+                      <th class="sortable right col-value" onclick={() => { miningSort = toggleSort(miningSort, 'finds'); miningTargetPage = 0; }}>
                         Finds{sortIcon(miningSort, 'finds')}
                       </th>
-                      <th class="sortable right" onclick={() => { miningSort = toggleSort(miningSort, 'total_value'); miningTargetPage = 0; }}>
+                      <th class="sortable right col-value" onclick={() => { miningSort = toggleSort(miningSort, 'total_value'); miningTargetPage = 0; }}>
                         Total{sortIcon(miningSort, 'total_value')}
                       </th>
-                      <th class="right">Best</th>
+                      <th class="right col-value">Best</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -873,13 +873,13 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="col-rank">#</th>
+                      <th class="col-rank right">#</th>
                       <th class="sortable" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
-                      <th class="sortable right" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
-                      <th></th>
+                      <th class="sortable right col-value" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
+                      <th class="col-badge"></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th class="sortable" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
+                      <th class="sortable col-time" onclick={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -938,13 +938,13 @@
                       <th class="sortable" onclick={() => { craftSort = toggleSort(craftSort, 'target'); craftTargetPage = 0; }}>
                         Item{sortIcon(craftSort, 'target')}
                       </th>
-                      <th class="sortable right" onclick={() => { craftSort = toggleSort(craftSort, 'crafts'); craftTargetPage = 0; }}>
+                      <th class="sortable right col-value" onclick={() => { craftSort = toggleSort(craftSort, 'crafts'); craftTargetPage = 0; }}>
                         Crafts{sortIcon(craftSort, 'crafts')}
                       </th>
-                      <th class="sortable right" onclick={() => { craftSort = toggleSort(craftSort, 'total_value'); craftTargetPage = 0; }}>
+                      <th class="sortable right col-value" onclick={() => { craftSort = toggleSort(craftSort, 'total_value'); craftTargetPage = 0; }}>
                         Total{sortIcon(craftSort, 'total_value')}
                       </th>
-                      <th class="right">Best</th>
+                      <th class="right col-value">Best</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -981,13 +981,13 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="col-rank">#</th>
+                      <th class="col-rank right">#</th>
                       <th class="sortable" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
-                      <th class="sortable right" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
-                      <th></th>
+                      <th class="sortable right col-value" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
+                      <th class="col-badge"></th>
                       <th class="col-media"></th>
                       <th class="col-gz"></th>
-                      <th class="sortable" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
+                      <th class="sortable col-time" onclick={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1720,6 +1720,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.8125rem;
+    table-layout: fixed;
   }
 
   .data-table th {
@@ -2004,19 +2005,20 @@
     }
   }
 
+  .col-value { width: 100px; }
+  .col-badge { width: 34px; padding-left: 0 !important; padding-right: 0 !important; }
   .col-media {
-    width: 28px;
+    width: 20px;
     text-align: center;
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding: 4px 2px !important;
   }
-
   .col-gz {
-    width: 50px;
+    width: 40px;
     text-align: center;
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding: 4px 4px !important;
   }
+  .col-time { width: 80px; }
+  .col-type { width: 65px; }
 
   .media-icon-btn {
     background: none;
