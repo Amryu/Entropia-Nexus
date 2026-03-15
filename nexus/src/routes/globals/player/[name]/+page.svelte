@@ -2036,8 +2036,8 @@
     .col-count { width: 24px; }
 
     /* Compact badge on mobile */
-    .col-badge { width: 26px; padding: 1px !important; }
-    .badge-hof, .badge-ath { padding: 0 2px; font-size: 0.5rem; letter-spacing: 0; border-radius: 2px; }
+    .col-badge { width: 32px; padding: 0 2px !important; }
+    .badge-hof, .badge-ath { padding: 1px 3px; font-size: 0.5625rem; letter-spacing: 0; }
 
     /* Compact type badge */
     .type-badge { padding: 1px 4px; font-size: 0.5625rem; letter-spacing: 0; }
