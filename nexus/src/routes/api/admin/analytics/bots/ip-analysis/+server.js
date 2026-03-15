@@ -65,12 +65,17 @@ export async function GET({ locals, url }) {
       [days]
     );
 
-    // Filter out already-blocked subnets
-    const results = subnets.filter(s => !s.already_blocked);
+    // Keep all subnets, sort: unblocked first (by score), then blocked
+    const results = [
+      ...subnets.filter(s => !s.already_blocked),
+      ...subnets.filter(s => s.already_blocked)
+    ];
 
-    // Fetch sample IPs for the top 5 suspicious subnets
+    // Fetch sample IPs for the top unblocked + top blocked subnets
     const samples = {};
-    for (const subnet of results.slice(0, 5)) {
+    const unblockedTop = results.filter(s => !s.already_blocked).slice(0, 5);
+    const blockedTop = results.filter(s => s.already_blocked).slice(0, 3);
+    for (const subnet of [...unblockedTop, ...blockedTop]) {
       const { rows: ips } = await pool.query(
         `SELECT ip_address::text AS ip, user_agent, count(*)::integer AS requests,
                 bool_or(is_bot) AS flagged_bot

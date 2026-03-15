@@ -811,6 +811,7 @@
   .status-4xx { background-color: rgba(245, 158, 11, 0.2); color: var(--warning-color); }
   .status-5xx { background-color: rgba(239, 68, 68, 0.2); color: var(--error-color); }
   .bot-badge { background-color: rgba(239, 68, 68, 0.15); color: var(--error-color); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+  .blocked-badge { background-color: rgba(16, 185, 129, 0.15); color: var(--success-color); padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 6px; }
   .ua-label { font-size: 12px; white-space: nowrap; }
 
   /* Live table: fixed layout with ellipsis */
@@ -1407,14 +1408,19 @@
               {#each ipAnalysis.subnets as s}
                 {@const subnetBase = s.subnet.split('/')[0]}
                 <tr onclick={() => expandedSubnet = expandedSubnet === s.subnet ? null : s.subnet}
-                  style="cursor: pointer"
+                  style="cursor: pointer{s.already_blocked ? '; opacity: 0.6' : ''}"
                   class:expandable={true}>
-                  <td><code>{s.subnet}</code></td>
+                  <td>
+                    <code>{s.subnet}</code>
+                    {#if s.already_blocked}
+                      <span class="blocked-badge">BLOCKED</span>
+                    {/if}
+                  </td>
                   <td class="num">
                     <span class="status-badge"
-                      class:status-5xx={s.suspicion_score >= 80}
-                      class:status-4xx={s.suspicion_score >= 40 && s.suspicion_score < 80}
-                      class:status-2xx={s.suspicion_score < 40}>
+                      class:status-5xx={!s.already_blocked && s.suspicion_score >= 80}
+                      class:status-4xx={!s.already_blocked && s.suspicion_score >= 40 && s.suspicion_score < 80}
+                      class:status-2xx={s.already_blocked || s.suspicion_score < 40}>
                       {s.suspicion_score}
                     </span>
                   </td>
@@ -1426,10 +1432,14 @@
                   <td class="num">{s.distinct_routes}</td>
                   <td class="num">{s.total_requests > 0 ? Math.round(s.bot_count / s.total_requests * 100) : 0}%</td>
                   <td>
-                    <button class="toggle-btn" style="font-size: 11px"
-                      onclick={(e) => { e.stopPropagation(); blockSubnet(s.subnet, `Auto-detected (score ${s.suspicion_score})`); }}>
-                      Block
-                    </button>
+                    {#if s.already_blocked}
+                      <span class="muted" style="font-size: 11px">Blocked</span>
+                    {:else}
+                      <button class="toggle-btn" style="font-size: 11px"
+                        onclick={(e) => { e.stopPropagation(); blockSubnet(s.subnet, `Auto-detected (score ${s.suspicion_score})`); }}>
+                        Block
+                      </button>
+                    {/if}
                   </td>
                 </tr>
                 {#if expandedSubnet === s.subnet && ipAnalysis.samples?.[subnetBase]}
@@ -1444,6 +1454,7 @@
                               <th>User-Agent</th>
                               <th class="num">Reqs</th>
                               <th>Bot?</th>
+                              <th></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1453,15 +1464,31 @@
                                 <td class="muted cell-ellipsis" style="max-width: 350px" title={sample.user_agent}>{parseUserAgent(sample.user_agent)}</td>
                                 <td class="num">{sample.requests}</td>
                                 <td>{sample.flagged_bot ? 'Yes' : 'No'}</td>
+                                <td>
+                                  {#if !s.already_blocked}
+                                    <button class="toggle-btn" style="font-size: 10px"
+                                      onclick={(e) => { e.stopPropagation(); blockSubnet(sample.ip + '/32', `Single IP (from ${s.subnet})`); }}>
+                                      Block IP
+                                    </button>
+                                  {/if}
+                                </td>
                               </tr>
                             {/each}
                           </tbody>
                         </table>
-                        <div class="muted" style="margin-top: 6px">
-                          Active: {formatDate(s.first_seen)} &ndash; {formatDate(s.last_seen)}
-                          {#if s.non_bot_ips > 0}
-                            &middot; {s.non_bot_ips} non-bot IP{s.non_bot_ips > 1 ? 's' : ''}
+                        <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center">
+                          {#if !s.already_blocked}
+                            <button class="toggle-btn" style="font-size: 11px"
+                              onclick={(e) => { e.stopPropagation(); blockSubnet(s.subnet, `Auto-detected /24 (score ${s.suspicion_score})`); }}>
+                              Block /24
+                            </button>
                           {/if}
+                          <span class="muted" style="font-size: 12px">
+                            Active: {formatDate(s.first_seen)} &ndash; {formatDate(s.last_seen)}
+                            {#if s.non_bot_ips > 0}
+                              &middot; {s.non_bot_ips} non-bot IP{s.non_bot_ips > 1 ? 's' : ''}
+                            {/if}
+                          </span>
                         </div>
                       </div>
                     </td>
