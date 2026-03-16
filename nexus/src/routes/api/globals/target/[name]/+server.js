@@ -173,7 +173,10 @@ export async function GET({ params, url, locals }) {
   if (!targetUserId) {
     const cached = responseCache.get(cacheKey);
     if (cached && Date.now() - cached.cachedAt < RESPONSE_CACHE_TTL) {
-      return cached.response.clone();
+      return new Response(cached.json, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' },
+      });
     }
   }
 
@@ -356,7 +359,7 @@ export async function GET({ params, url, locals }) {
       }
     }
 
-    const response = new Response(JSON.stringify({
+    const responseJson = JSON.stringify({
       target: targetName,
       primary_type: summary.primary_type,
       mob_id: mobId,
@@ -412,15 +415,9 @@ export async function GET({ params, url, locals }) {
           ...(targetUserId != null && { user_gz: targetUserGzSet.has(r.id) }),
         }));
       })(),
-    }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': targetUserId ? 'private, max-age=60' : 'public, max-age=60',
-      },
     });
 
-    // Cache response for anonymous users
+    // Cache JSON for anonymous users
     if (!targetUserId) {
       if (responseCache.size >= RESPONSE_CACHE_MAX) {
         const cutoff = Date.now() - RESPONSE_CACHE_TTL;
@@ -428,9 +425,15 @@ export async function GET({ params, url, locals }) {
           if (v.cachedAt < cutoff) responseCache.delete(k);
         }
       }
-      responseCache.set(cacheKey, { response: response.clone(), cachedAt: Date.now() });
+      responseCache.set(cacheKey, { json: responseJson, cachedAt: Date.now() });
     }
-    return response;
+    return new Response(responseJson, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': targetUserId ? 'private, max-age=60' : 'public, max-age=60',
+      },
+    });
   } catch (e) {
     console.error('[api/globals/target] Error fetching target globals:', e);
     return getResponse({ error: 'Internal server error' }, 500);
