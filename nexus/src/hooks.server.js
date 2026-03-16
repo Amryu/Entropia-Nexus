@@ -59,7 +59,7 @@ if (import.meta.env.SSR) {
 
   // Periodically index Planet Calypso Forum trading threads
   const { syncForumTrading } = await import('$lib/server/forum-indexer.js');
-  const FORUM_SYNC_INTERVAL_MS = 15 * 60_000; // 15 minutes
+  const FORUM_SYNC_INTERVAL_MS = 5 * 60_000; // 15 minutes
   syncForumTrading().catch(err => console.error('[forum-indexer] Error syncing forum:', err));
   setInterval(() => {
     syncForumTrading().catch(err => console.error('[forum-indexer] Error syncing forum:', err));

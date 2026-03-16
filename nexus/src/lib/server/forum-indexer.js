@@ -438,16 +438,25 @@ function generateSnippet(contentHtml) {
 /**
  * Main sync function. Fetches RSS feeds and upserts threads + item matches.
  */
+let retryTimer = null;
+
 export async function syncForumTrading() {
   if (syncing) return;
 
   // Don't sync until the market cache is built — item matching depends on it.
-  // The cache builds lazily on the first exchange-related request.
   const lookup = getSlimNameLookup();
   if (!lookup) {
-    console.log('[forum-indexer] Market cache not ready yet, deferring sync');
+    // Retry every 30s until the cache is ready
+    if (!retryTimer) {
+      console.log('[forum-indexer] Market cache not ready yet, retrying every 30s');
+      retryTimer = setInterval(() => {
+        syncForumTrading().catch(err => console.error('[forum-indexer] Retry error:', err));
+      }, 30_000);
+      retryTimer.unref();
+    }
     return;
   }
+  if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
 
   syncing = true;
   try {
