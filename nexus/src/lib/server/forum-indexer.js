@@ -224,20 +224,22 @@ function hasWordBoundaries(text, start, end) {
  * Matched regions are masked to prevent shorter substring items from
  * matching inside already-matched names.
  *
+ * Returns { matched, mask } so the mask can be reused by fuzzy matching.
+ *
  * @param {string} text - Text to search in
  * @param {string} source - 'title' or 'content'
- * @returns {Array<{ itemId: number, itemName: string, matchSource: string }>}
+ * @returns {{ matched: Array<{ itemId: number, itemName: string, matchSource: string }>, mask: Uint8Array }}
  */
 function matchItems(text, source) {
+  const lower = text.toLowerCase();
+  const mask = new Uint8Array(lower.length);
+
   if (!sortedNames) {
     sortedNames = buildSortedNames();
-    if (!sortedNames) return [];
+    if (!sortedNames) return { matched: [], mask };
   }
 
-  const lower = text.toLowerCase();
   const matched = [];
-  // Mask array to prevent sub-matches in already-matched regions
-  const mask = new Uint8Array(lower.length);
 
   for (const entry of sortedNames) {
     const nameLen = entry.lower.length;
@@ -275,13 +277,13 @@ function matchItems(text, source) {
     }
   }
 
-  return matched;
+  return { matched, mask };
 }
 
 // ── Fuzzy Matching (misspellings) ──────────────────────────────────
 
-const MIN_FUZZY_NAME_LENGTH = 8;
-const MAX_EDIT_DISTANCE = 2;
+const MIN_FUZZY_NAME_LENGTH = 10; // Only fuzzy-match longer names to reduce noise
+const MAX_EDIT_DISTANCE = 1;     // Single character typos only
 
 /**
  * Compute Levenshtein edit distance between two strings.
@@ -328,38 +330,52 @@ function buildFuzzyIndex() {
 
 /**
  * Fuzzy match item names in text after exact matching has been done.
- * Only matches names >= 8 chars with edit distance <= 2.
- * @param {string} text - The text to search (already lowercased)
+ * Only matches names >= 8 chars with edit distance <= 1.
+ * Skips text regions already covered by exact matches (via mask).
+ *
+ * @param {string} text - The original text
+ * @param {Uint8Array} mask - Mask from exact matching (1 = already matched)
  * @param {string} source - 'title' or 'content'
  * @param {Set<number>} alreadyMatched - Item IDs already matched exactly
  * @returns {Array<{ itemId: number, itemName: string, matchSource: string }>}
  */
-function fuzzyMatchItems(text, source, alreadyMatched) {
+function fuzzyMatchItems(text, mask, source, alreadyMatched) {
   if (!fuzzyIndex) {
     fuzzyIndex = buildFuzzyIndex();
     if (!fuzzyIndex) return [];
   }
 
   const lower = text.toLowerCase();
-  const words = lower.split(/[\s,;:!?|/+()]+/).filter(w => w.length >= 3);
+  // Split into words with their positions so we can check the mask
+  const wordRegex = /[^\s,;:!?|/+()\[\]]+/g;
+  const wordEntries = [];
+  let wm;
+  while ((wm = wordRegex.exec(lower)) !== null) {
+    // Skip words that fall inside a masked (already-matched) region
+    let inMask = false;
+    for (let k = wm.index; k < wm.index + wm[0].length; k++) {
+      if (mask[k]) { inMask = true; break; }
+    }
+    if (!inMask) wordEntries.push(wm[0]);
+  }
+
   const matched = [];
   const seen = new Set();
 
-  for (let wi = 0; wi < words.length; wi++) {
-    const word = words[wi];
+  for (let wi = 0; wi < wordEntries.length; wi++) {
+    const word = wordEntries[wi];
+    if (word.length < 3) continue;
 
-    // Check each fuzzy index entry whose first word is close to this word
     for (const [firstWord, entries] of fuzzyIndex) {
       if (editDistance(word, firstWord, MAX_EDIT_DISTANCE) > MAX_EDIT_DISTANCE) continue;
 
       for (const entry of entries) {
         if (alreadyMatched.has(entry.item.i) || seen.has(entry.item.i)) continue;
 
-        // Build the candidate substring from text starting at this word position
         const nameWords = entry.lower.split(/[\s,]+/);
-        if (wi + nameWords.length > words.length) continue;
+        if (wi + nameWords.length > wordEntries.length) continue;
 
-        const candidateWords = words.slice(wi, wi + nameWords.length);
+        const candidateWords = wordEntries.slice(wi, wi + nameWords.length);
         let totalDist = 0;
         let valid = true;
         for (let k = 0; k < nameWords.length; k++) {
@@ -368,7 +384,7 @@ function fuzzyMatchItems(text, source, alreadyMatched) {
           if (d > MAX_EDIT_DISTANCE || totalDist > MAX_EDIT_DISTANCE) { valid = false; break; }
         }
 
-        if (valid && totalDist > 0) { // totalDist > 0 means it's actually fuzzy (not exact, which was already handled)
+        if (valid && totalDist > 0) {
           seen.add(entry.item.i);
           matched.push({
             itemId: entry.item.i,
@@ -389,12 +405,12 @@ function fuzzyMatchItems(text, source, alreadyMatched) {
 function matchThreadItems(title, contentHtml) {
   // Clean and normalize the title
   const cleanedTitle = normalizeForMatching(title.replace(TITLE_NOISE, ''));
-  const titleMatches = matchItems(cleanedTitle, 'title');
+  const { matched: titleMatches, mask: titleMask } = matchItems(cleanedTitle, 'title');
 
   // Normalize content: strip HTML, decode entities/URLs, strip brackets
   const rawContent = stripHtml(contentHtml).substring(0, CONTENT_MATCH_LENGTH);
   const contentText = normalizeForMatching(rawContent);
-  const contentMatches = matchItems(contentText, 'content');
+  const { matched: contentMatches, mask: contentMask } = matchItems(contentText, 'content');
 
   // Merge: title matches take priority, content adds new items only
   const seen = new Set(titleMatches.map(m => m.itemId));
@@ -406,12 +422,12 @@ function matchThreadItems(title, contentHtml) {
     }
   }
 
-  // Fuzzy matching pass for misspellings (title + content)
-  const fuzzyTitle = fuzzyMatchItems(cleanedTitle, 'title', seen);
+  // Fuzzy matching pass — only on unmasked (unmatched) text regions
+  const fuzzyTitle = fuzzyMatchItems(cleanedTitle, titleMask, 'title', seen);
   for (const fm of fuzzyTitle) {
     if (!seen.has(fm.itemId)) { seen.add(fm.itemId); merged.push(fm); }
   }
-  const fuzzyContent = fuzzyMatchItems(contentText, 'content', seen);
+  const fuzzyContent = fuzzyMatchItems(contentText, contentMask, 'content', seen);
   for (const fm of fuzzyContent) {
     if (!seen.has(fm.itemId)) { seen.add(fm.itemId); merged.push(fm); }
   }
