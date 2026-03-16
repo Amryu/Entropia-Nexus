@@ -1522,8 +1522,8 @@
                 { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' }
               ] as category}
                 {@const entries = (globalsAthRankings[category.key] || [])
-                  .filter(e => globalsAthMode === 'best' || globalsAthMode === 'bestTarget' ? e.best_rank <= 10
-                    : e.total_rank <= 10)
+                  .filter(e => globalsAthMode === 'best' || globalsAthMode === 'bestTarget' ? e.best_rank <= 500
+                    : e.total_rank <= 500)
                   .sort((a, b) => {
                     if (globalsAthMode === 'best') return b.best_value - a.best_value;
                     if (globalsAthMode === 'total') return b.total_value - a.total_value;

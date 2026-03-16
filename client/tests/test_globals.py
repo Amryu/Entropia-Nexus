@@ -181,6 +181,16 @@ class TestGlobalsHandler(unittest.TestCase):
         self.assertEqual(event.location, "Mayhem Annihilation 06")
         self.assertAlmostEqual(event.value, 0)
 
+    def test_discovery_with_location_and_hof(self):
+        line = _make_global_line("Hexos Taifoon Saigan is the first colonist to discover Bronze Skull Face-Guard (M). Item discovered in Mayhem Annihilation 06! A record has been added to the Hall of Fame!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.DISCOVERY)
+        self.assertEqual(event.player_name, "Hexos Taifoon Saigan")
+        self.assertEqual(event.target_name, "Bronze Skull Face-Guard (M)")
+        self.assertEqual(event.location, "Mayhem Annihilation 06")
+        self.assertTrue(event.is_hof)
+
     def test_tier_record(self):
         line = _make_global_line("Geir MrGersh Mathiesen is the first colonist to reach tier 7 for A.R.C. Adept Leg Guards (M,L)!")
         self.handler.handle(line)

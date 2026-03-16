@@ -200,7 +200,21 @@
   // PvP sorting
   let pvpSort = $state({ col: 'value', asc: false });
 
-  // (ATH tab uses no pagination — entries limited to top 10 per target)
+  // ATH pagination
+  const ATH_PAGE_SIZE = 25;
+  let athTotalPage = $state(0);
+  let athBestPage = $state(0);
+  let pagedAthByTotal = $derived(athByTotal.slice(athTotalPage * ATH_PAGE_SIZE, (athTotalPage + 1) * ATH_PAGE_SIZE));
+  let pagedAthByBest = $derived(athByBest.slice(athBestPage * ATH_PAGE_SIZE, (athBestPage + 1) * ATH_PAGE_SIZE));
+  let athTotalPages = $derived(Math.ceil(athByTotal.length / ATH_PAGE_SIZE));
+  let athBestPages = $derived(Math.ceil(athByBest.length / ATH_PAGE_SIZE));
+
+  // Reset ATH pagination when category changes
+  $effect(() => {
+    activeAthCategory;
+    athTotalPage = 0;
+    athBestPage = 0;
+  });
 
   // Activity chart
   let activityCanvas = $state();
@@ -330,10 +344,10 @@
   let athEntries = $derived(athRankings[activeAthCategory] || []);
   // ATH split into by_total and by_best (for hunting/mining/crafting)
   let athByTotal = $derived(activeAthCategory !== 'pvp'
-    ? athEntries.filter(e => e.total_rank <= 10).sort((a, b) => a.total_rank - b.total_rank)
+    ? athEntries.filter(e => e.total_rank <= 500).sort((a, b) => a.total_rank - b.total_rank)
     : []);
   let athByBest = $derived(activeAthCategory !== 'pvp'
-    ? athEntries.filter(e => e.best_rank <= 10).sort((a, b) => a.best_rank - b.best_rank)
+    ? athEntries.filter(e => e.best_rank <= 500).sort((a, b) => a.best_rank - b.best_rank)
     : []);
   let sortedRareItems = $derived(sortedData(rareItems, rareFindSort));
   let pvpEvents = $derived(playerData?.pvp_events || []);
@@ -1244,7 +1258,7 @@
 
       <!-- === ATHS TAB === -->
       {:else if activeTab === 'aths'}
-        <!-- ATH Rankings — show targets where this player ranks in top 10 -->
+        <!-- ATH Rankings — show targets where this player ranks in top 500 -->
         <div class="section-card">
           <div class="ath-header">
             <h2 class="section-title-icon">
@@ -1310,12 +1324,13 @@
           {:else}
             <!-- Hunting / Mining / Crafting rankings -->
             {#if athByTotal.length === 0 && athByBest.length === 0}
-              <p class="empty-state-sm">No top 10 rankings for {activeAthCategory} targets</p>
+              <p class="empty-state-sm">No top 500 rankings for {activeAthCategory} targets</p>
             {:else}
               <div class="ath-targets-grid">
                 <div class="section-card-inner">
                   <h3 class="section-subtitle">By Single Loot</h3>
                   {#if athByBest.length > 0}
+                    <div class="ath-count">{athByBest.length} target{athByBest.length !== 1 ? 's' : ''} ranked</div>
                     <div class="table-wrapper">
                       <table class="data-table">
                         <thead>
@@ -1327,7 +1342,7 @@
                           </tr>
                         </thead>
                         <tbody>
-                          {#each athByBest as t}
+                          {#each pagedAthByBest as t}
                             <tr>
                               <td class="col-rank"><span class="rank-badge" class:rank-top3={t.best_rank <= 3}>#{t.best_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
@@ -1338,6 +1353,13 @@
                         </tbody>
                       </table>
                     </div>
+                    {#if athBestPages > 1}
+                      <div class="pagination">
+                        <button class="page-btn" disabled={athBestPage === 0} onclick={() => athBestPage--}>&laquo; Prev</button>
+                        <span class="page-info">{athBestPage + 1} / {athBestPages}</span>
+                        <button class="page-btn" disabled={athBestPage >= athBestPages - 1} onclick={() => athBestPage++}>Next &raquo;</button>
+                      </div>
+                    {/if}
                   {:else}
                     <p class="empty-state-sm">No single loot rankings</p>
                   {/if}
@@ -1346,6 +1368,7 @@
                 <div class="section-card-inner">
                   <h3 class="section-subtitle">By Total Value</h3>
                   {#if athByTotal.length > 0}
+                    <div class="ath-count">{athByTotal.length} target{athByTotal.length !== 1 ? 's' : ''} ranked</div>
                     <div class="table-wrapper">
                       <table class="data-table">
                         <thead>
@@ -1357,7 +1380,7 @@
                           </tr>
                         </thead>
                         <tbody>
-                          {#each athByTotal as t}
+                          {#each pagedAthByTotal as t}
                             <tr>
                               <td class="col-rank"><span class="rank-badge" class:rank-top3={t.total_rank <= 3}>#{t.total_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
@@ -1368,6 +1391,13 @@
                         </tbody>
                       </table>
                     </div>
+                    {#if athTotalPages > 1}
+                      <div class="pagination">
+                        <button class="page-btn" disabled={athTotalPage === 0} onclick={() => athTotalPage--}>&laquo; Prev</button>
+                        <span class="page-info">{athTotalPage + 1} / {athTotalPages}</span>
+                        <button class="page-btn" disabled={athTotalPage >= athTotalPages - 1} onclick={() => athTotalPage++}>Next &raquo;</button>
+                      </div>
+                    {/if}
                   {:else}
                     <p class="empty-state-sm">No total value rankings</p>
                   {/if}
@@ -2037,6 +2067,12 @@
     font-weight: 400;
     color: var(--text-muted);
     font-size: 0.8125rem;
+  }
+
+  .ath-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
   }
 
   .achievement-detail {
