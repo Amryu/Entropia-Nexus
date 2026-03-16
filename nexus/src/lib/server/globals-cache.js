@@ -373,8 +373,14 @@ async function rebuildAthLeaderboard() {
             params
           );
 
-          // Only recompute ranks if there were changes
-          if (rowCount === 0) continue;
+          // Recompute ranks if there were changes, or if previous rank computation failed (rank=0)
+          if (rowCount === 0) {
+            const { rows: zeroCheck } = await client.query(
+              `SELECT 1 FROM globals_ath_leaderboard WHERE category = $1 AND total_rank = 0 LIMIT 1`,
+              [category]
+            );
+            if (zeroCheck.length === 0) continue;
+          }
         } else {
           // Full rebuild: DELETE + INSERT is much faster than mass upsert
           // (avoids PK conflict checking on every row)
@@ -403,7 +409,9 @@ async function rebuildAthLeaderboard() {
         }
 
         // Compute ranks (wrapped so one category failing doesn't block the rest)
+        // Hunting has 500k+ rows — give the rank UPDATE a generous timeout
         try {
+          await client.query('SET statement_timeout = 14400000'); // 4h for rank computation
           await client.query(
             `UPDATE globals_ath_leaderboard a
              SET total_rank = sub.total_rank, best_rank = sub.best_rank, count_rank = sub.count_rank
