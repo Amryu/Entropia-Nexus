@@ -198,9 +198,8 @@
   let rareFindSort = $state({ col: 'timestamp', asc: false });
 
   // Highlights panel (Overview tab)
-  let highlightTab = $state('hunting');
-  let highlightPage = $state(0);
-  const HIGHLIGHT_PAGE_SIZE = 10;
+  // Overview ATH ranking mode
+  let overviewAthMode = $state('total');
 
   // PvP sorting
   let pvpSort = $state({ col: 'value', asc: false });
@@ -364,22 +363,6 @@
   // Tab-specific data
   let discoveries = $derived(achievements.filter(a => a.type === 'discovery'));
   let tierRecords = $derived(achievements.filter(a => a.type === 'tier'));
-  // Highlights panel derived data
-  let highlightItems = $derived((() => {
-    switch (highlightTab) {
-      case 'hunting': return topLoots.hunting;
-      case 'mining': return topLoots.mining;
-      case 'crafting': return topLoots.crafting;
-      case 'rare': return rareItems;
-      case 'discoveries': return discoveries;
-      default: return [];
-    }
-  })());
-  let highlightTotalPages = $derived(Math.ceil(highlightItems.length / HIGHLIGHT_PAGE_SIZE));
-  let pagedHighlightItems = $derived(highlightItems.slice(highlightPage * HIGHLIGHT_PAGE_SIZE, (highlightPage + 1) * HIGHLIGHT_PAGE_SIZE));
-
-  // Reset page when highlight tab changes
-  $effect(() => { highlightTab; highlightPage = 0; });
 </script>
 
 <svelte:head>
@@ -504,66 +487,104 @@
     <div class="tab-content" class:loading-fade={loading}>
       <!-- === OVERVIEW TAB === -->
       {#if activeTab === 'overview'}
-        <!-- Highlights -->
-        <div class="section-card">
-          <div class="highlights-header">
-            <h2>Highlights</h2>
-            <div class="sort-toggle">
-              <button class="sort-btn" class:active={highlightTab === 'hunting'} onclick={() => highlightTab = 'hunting'}>Hunting</button>
-              <button class="sort-btn" class:active={highlightTab === 'mining'} onclick={() => highlightTab = 'mining'}>Mining</button>
-              <button class="sort-btn" class:active={highlightTab === 'crafting'} onclick={() => highlightTab = 'crafting'}>Crafting</button>
-              <button class="sort-btn" class:active={highlightTab === 'rare'} onclick={() => highlightTab = 'rare'}>Rare Finds</button>
-              <button class="sort-btn" class:active={highlightTab === 'discoveries'} onclick={() => highlightTab = 'discoveries'}>Discoveries</button>
-            </div>
+        <!-- ATH Rankings (top 10 per category, matching user profile layout) -->
+        <div class="overview-rankings-header">
+          <h2>All Time High Rankings</h2>
+          <div class="sort-toggle">
+            <button class="sort-btn" class:active={overviewAthMode === 'best'} onclick={() => overviewAthMode = 'best'}>Best</button>
+            <button class="sort-btn" class:active={overviewAthMode === 'total'} onclick={() => overviewAthMode = 'total'}>Total</button>
+            <button class="sort-btn" class:active={overviewAthMode === 'bestTarget'} onclick={() => overviewAthMode = 'bestTarget'}>Best (Target)</button>
+            <button class="sort-btn" class:active={overviewAthMode === 'totalTarget'} onclick={() => overviewAthMode = 'totalTarget'}>Total (Target)</button>
           </div>
-          {#if highlightItems.length > 0}
-            <div class="highlight-list">
-              {#each pagedHighlightItems as item, i}
-                {@const isLoot = highlightTab !== 'discoveries' && highlightTab !== 'rare'}
+        </div>
+        <div class="overview-rankings-grid">
+          {#each [
+            { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color' },
+            { key: 'mining', label: 'Mining', colorClass: 'mining-color' },
+            { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' },
+          ] as category}
+            {@const useBest = overviewAthMode === 'best' || overviewAthMode === 'bestTarget'}
+            {@const entries = (athRankings[category.key] || [])
+              .filter(e => useBest ? e.best_rank <= 500 : e.total_rank <= 500)
+              .sort((a, b) => {
+                if (overviewAthMode === 'best') return b.best_value - a.best_value;
+                if (overviewAthMode === 'total') return b.total_value - a.total_value;
+                if (overviewAthMode === 'bestTarget') return a.best_rank - b.best_rank || b.best_value - a.best_value;
+                return a.total_rank - b.total_rank || b.total_value - a.total_value;
+              })
+              .slice(0, 10)}
+            <div class="overview-ranking-card">
+              <div class="ranking-card-header {category.colorClass}">{category.label}</div>
+              {#each entries as entry}
+                {@const r = useBest ? entry.best_rank : entry.total_rank}
+                {@const v = useBest ? entry.best_value : entry.total_value}
                 <div class="highlight-row">
-                  {#if isLoot}
-                    {@const rank = highlightPage * HIGHLIGHT_PAGE_SIZE + i + 1}
-                    <span class="rank-badge" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span>
-                  {/if}
-                  <span class="highlight-name">
-                    {#if highlightTab === 'discoveries'}
-                      {item.target}{#if item.location}&nbsp;<span class="achievement-location">in {item.location}</span>{/if}
-                    {:else}
-                      <a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a>
-                    {/if}
-                  </span>
-                  {#if highlightTab !== 'discoveries'}
-                    <span class="highlight-value">{formatPed(item.value)} PED</span>
-                  {/if}
-                  {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
-                  <span class="highlight-actions">
-                    {#if item.media_image || item.media_video}
-                      <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
-                        {#if item.media_image}
-                          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                        {:else}
-                          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                        {/if}
-                      </button>
-                    {:else if user}
-                      <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
-                    {/if}
-                    <GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact />
-                  </span>
-                  <span class="highlight-time">{timeAgo(item.timestamp)}</span>
+                  <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
+                  <span class="highlight-name"><a href="/globals/target/{encodeURIComponent(entry.target)}" class="target-link">{entry.target}</a></span>
+                  <span class="highlight-value">{formatPed(v)} PED</span>
                 </div>
+              {:else}
+                <div class="empty-state-sm">No rankings yet</div>
               {/each}
             </div>
-            {#if highlightTotalPages > 1}
-              <div class="pagination">
-                <button disabled={highlightPage === 0} onclick={() => highlightPage--}>&laquo; Prev</button>
-                <span>{highlightPage + 1} / {highlightTotalPages}</span>
-                <button disabled={highlightPage >= highlightTotalPages - 1} onclick={() => highlightPage++}>Next &raquo;</button>
+          {/each}
+        </div>
+
+        <!-- Rare Items & Discoveries -->
+        <div class="overview-highlights-grid">
+          <div class="overview-ranking-card">
+            <div class="ranking-card-header rare-color">Rare Finds</div>
+            {#each rareItems.slice(0, 10) as item}
+              <div class="highlight-row">
+                <span class="highlight-name">{item.target}</span>
+                <span class="highlight-value">{formatPed(item.value)} PED</span>
+                {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                <span class="highlight-actions">
+                  {#if item.media_image || item.media_video}
+                    <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
+                      {#if item.media_image}
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                      {:else}
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      {/if}
+                    </button>
+                  {:else if user}
+                    <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
+                  {/if}
+                  <GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact />
+                </span>
+                <span class="highlight-time">{timeAgo(item.timestamp)}</span>
               </div>
-            {/if}
-          {:else}
-            <p class="empty-state-sm">No {highlightTab === 'rare' ? 'rare finds' : highlightTab === 'discoveries' ? 'discoveries' : highlightTab + ' globals'} recorded</p>
-          {/if}
+            {:else}
+              <div class="empty-state-sm">No rare finds recorded</div>
+            {/each}
+          </div>
+          <div class="overview-ranking-card">
+            <div class="ranking-card-header discovery-color">Discoveries</div>
+            {#each discoveries.slice(0, 10) as ach}
+              <div class="highlight-row">
+                <span class="highlight-name">{ach.target}{#if ach.location}&nbsp;<span class="achievement-location">in {ach.location}</span>{/if}</span>
+                {#if ach.ath}<span class="highlight-badge ath">ATH</span>{:else if ach.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                <span class="highlight-actions">
+                  {#if ach.media_image || ach.media_video}
+                    <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(ach)}>
+                      {#if ach.media_image}
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                      {:else}
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      {/if}
+                    </button>
+                  {:else if user}
+                    <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
+                  {/if}
+                  <GzButton globalId={ach.id} count={ach.gz_count || 0} userGz={ach.user_gz || false} {user} compact />
+                </span>
+                <span class="highlight-time">{timeAgo(ach.timestamp)}</span>
+              </div>
+            {:else}
+              <div class="empty-state-sm">No discoveries recorded</div>
+            {/each}
+          </div>
         </div>
 
         <!-- Activity Chart -->
@@ -1521,7 +1542,7 @@
   }
 
   /* Highlights panel */
-  .highlights-header {
+  .overview-rankings-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1530,8 +1551,89 @@
     flex-wrap: wrap;
   }
 
-  .highlights-header h2 {
+  .overview-rankings-header h2 {
     margin: 0;
+    font-size: 1rem;
+  }
+
+  .overview-rankings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .overview-highlights-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .overview-ranking-card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--secondary-color);
+    padding: 12px;
+  }
+
+  .ranking-card-header {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .ranking-card-header.hunting-color { color: #ef4444; }
+  .ranking-card-header.mining-color { color: #60b0ff; }
+  .ranking-card-header.crafting-color { color: #f97316; }
+  .ranking-card-header.rare-color { color: #9b59b6; }
+  .ranking-card-header.discovery-color { color: #2ecc71; }
+
+  .ranking-badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    background: rgba(128, 128, 128, 0.15);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .ranking-badge.rank-ruby { background: rgba(224, 17, 95, 0.15); color: #e0115f; }
+  .ranking-badge.rank-diamond { background: rgba(185, 242, 255, 0.15); color: #b9f2ff; }
+  .ranking-badge.rank-gold { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .ranking-badge.rank-silver { background: rgba(192, 192, 192, 0.15); color: #c0c0c0; }
+  .ranking-badge.rank-bronze { background: rgba(205, 127, 50, 0.15); color: #cd7f32; }
+
+  .ranking-badge.rank-ruby,
+  .ranking-badge.rank-diamond {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ranking-badge.rank-ruby::after,
+  .ranking-badge.rank-diamond::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -100%;
+    width: 40%;
+    height: 200%;
+    transform: rotate(25deg);
+    pointer-events: none;
+  }
+
+  .ranking-badge.rank-ruby::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 77, 141, 0.5), transparent);
+    animation: rank-swipe 3s ease-in-out infinite;
+  }
+
+  .ranking-badge.rank-diamond::after {
+    background: linear-gradient(90deg, transparent, rgba(224, 249, 255, 0.5), transparent);
+    animation: rank-swipe 3s ease-in-out infinite 0.5s;
   }
 
   .highlight-list {
@@ -2019,9 +2121,17 @@
       grid-template-columns: repeat(3, 1fr);
     }
 
-    .highlights-header {
+    .overview-rankings-header {
       flex-direction: column;
       align-items: flex-start;
+    }
+
+    .overview-rankings-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .overview-highlights-grid {
+      grid-template-columns: 1fr;
     }
 
     .ath-targets-grid {
