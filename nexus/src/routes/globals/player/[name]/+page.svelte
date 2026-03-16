@@ -1623,6 +1623,7 @@
   .ranking-card-header.discovery-color { color: #2ecc71; }
 
   .ranking-badge {
+    display: inline-block;
     flex-shrink: 0;
     padding: 1px 6px;
     border-radius: 3px;
