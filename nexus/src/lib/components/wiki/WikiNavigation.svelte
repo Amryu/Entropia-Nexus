@@ -976,7 +976,7 @@
   }
 
   // Generate grid template from active columns
-  let gridTemplateColumns = $derived(`1fr ${activeColumns.map(c => c.width).join(' ')}`);
+  let gridTemplateColumns = $derived(`minmax(120px, 1fr) ${activeColumns.map(c => c.width).join(' ')}`);
 
   // Format a cell value for display
   function formatCell(item, column) {
@@ -1081,7 +1081,7 @@
 
   // Generate grid template from active columns with calculated widths
   let dynamicGridTemplateColumns = $derived(widthsCalculated
-    ? `1fr ${activeColumns.map(c => getColumnWidth(c)).join(' ')}`
+    ? `minmax(120px, 1fr) ${activeColumns.map(c => getColumnWidth(c)).join(' ')}`
     : gridTemplateColumns);
 
   // Recalculate column widths when columns change (e.g. switching between expanded and full-width)
