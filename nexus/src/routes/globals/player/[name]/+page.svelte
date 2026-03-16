@@ -347,11 +347,21 @@
   let athEntries = $derived(athRankings[activeAthCategory] || []);
   // ATH split into by_total and by_best (for hunting/mining/crafting)
   let athByTotal = $derived(activeAthCategory !== 'pvp'
-    ? athEntries.filter(e => e.total_rank <= 500).sort((a, b) => a.total_rank - b.total_rank)
+    ? [...athEntries].sort((a, b) => a.total_rank - b.total_rank)
     : []);
   let athByBest = $derived(activeAthCategory !== 'pvp'
-    ? athEntries.filter(e => e.best_rank <= 500).sort((a, b) => a.best_rank - b.best_rank)
+    ? [...athEntries].sort((a, b) => a.best_rank - b.best_rank)
     : []);
+  // ATH rank lookup by target name for breakdown tables
+  let athRankByTarget = $derived((() => {
+    const map = new Map();
+    for (const cat of ['hunting', 'mining', 'crafting']) {
+      for (const e of athRankings[cat] || []) {
+        map.set(`${cat}:${e.target?.toLowerCase()}`, { total: e.total_rank, best: e.best_rank });
+      }
+    }
+    return map;
+  })());
   let sortedRareItems = $derived(sortedData(rareItems, rareFindSort));
   let pvpEvents = $derived(playerData?.pvp_events || []);
   let sortedPvpEvents = $derived(sortedData(pvpEvents, pvpSort));
@@ -504,8 +514,7 @@
             { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' },
           ] as category}
             {@const useBest = overviewAthMode === 'best' || overviewAthMode === 'bestTarget'}
-            {@const entries = (athRankings[category.key] || [])
-              .filter(e => useBest ? e.best_rank <= 500 : e.total_rank <= 500)
+            {@const entries = [...(athRankings[category.key] || [])]
               .sort((a, b) => {
                 if (overviewAthMode === 'best') return b.best_value - a.best_value;
                 if (overviewAthMode === 'total') return b.total_value - a.total_value;
@@ -664,6 +673,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
+                      <th class="col-rank">Rank</th>
                       <th class="sortable" onclick={() => { huntSort = toggleSort(huntSort, 'target'); huntTargetPage = 0; }}>
                         Target{sortIcon(huntSort, 'target')}
                       </th>
@@ -681,11 +691,17 @@
                       {@const mobKey = mob.mob_id || mob.target || (huntTargetPage * PAGE_SIZE + i)}
                       {@const hasDetails = mob.maturities && mob.maturities.length > 1}
                       {@const displayName = hasDetails ? mob.target : (mob.maturities?.[0]?.target || mob.target)}
+                      {@const athRank = athRankByTarget.get('hunting:' + mob.target?.toLowerCase())}
                       <tr
                         class="mob-row"
                         class:expandable={hasDetails}
                         onclick={() => hasDetails && toggleMob(mobKey)}
                       >
+                        <td class="col-rank">
+                          {#if athRank}
+                            <span class="ranking-badge" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                          {/if}
+                        </td>
                         <td>
                           {#if hasDetails}
                             <span class="expand-icon">{expandedMobs.has(mobKey) ? '\u25BC' : '\u25B6'}</span>
@@ -699,6 +715,7 @@
                       {#if hasDetails && expandedMobs.has(mobKey)}
                         {#each mob.maturities as mat}
                           <tr class="maturity-row">
+                            <td></td>
                             <td class="indent"><a href="/globals/target/{encodeURIComponent(mat.target)}" class="target-link">{mat.target}</a></td>
                             <td class="right">{mat.kills}</td>
                             <td class="right">{formatPed(mat.total_value)}</td>
@@ -745,7 +762,7 @@
                     {#each pagedHuntingLoots as loot, i}
                       {@const rank = huntLootPage * PAGE_SIZE + i + 1}
                       <tr>
-                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
+                        <td class="col-rank"><span class="ranking-badge" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -795,6 +812,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
+                      <th class="col-rank">Rank</th>
                       <th class="sortable" onclick={() => { miningSort = toggleSort(miningSort, 'target'); miningTargetPage = 0; }}>
                         Resource{sortIcon(miningSort, 'target')}
                       </th>
@@ -809,7 +827,13 @@
                   </thead>
                   <tbody>
                     {#each pagedMining as res}
+                      {@const athRank = athRankByTarget.get('mining:' + res.target?.toLowerCase())}
                       <tr>
+                        <td class="col-rank">
+                          {#if athRank}
+                            <span class="ranking-badge" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                          {/if}
+                        </td>
                         <td><a href="/globals/target/{encodeURIComponent(res.target)}" class="target-link">{res.target}</a></td>
                         <td class="right">{res.finds}</td>
                         <td class="right">{formatPed(res.total_value)}</td>
@@ -854,7 +878,7 @@
                     {#each pagedMiningLoots as loot, i}
                       {@const rank = miningLootPage * PAGE_SIZE + i + 1}
                       <tr>
-                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
+                        <td class="col-rank"><span class="ranking-badge" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -904,6 +928,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
+                      <th class="col-rank">Rank</th>
                       <th class="sortable" onclick={() => { craftSort = toggleSort(craftSort, 'target'); craftTargetPage = 0; }}>
                         Item{sortIcon(craftSort, 'target')}
                       </th>
@@ -918,7 +943,13 @@
                   </thead>
                   <tbody>
                     {#each pagedCrafting as item}
+                      {@const athRank = athRankByTarget.get('crafting:' + item.target?.toLowerCase())}
                       <tr>
+                        <td class="col-rank">
+                          {#if athRank}
+                            <span class="ranking-badge" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                          {/if}
+                        </td>
                         <td><a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a></td>
                         <td class="right">{item.crafts}</td>
                         <td class="right">{formatPed(item.total_value)}</td>
@@ -963,7 +994,7 @@
                     {#each pagedCraftingLoots as loot, i}
                       {@const rank = craftLootPage * PAGE_SIZE + i + 1}
                       <tr>
-                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
+                        <td class="col-rank"><span class="ranking-badge" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -1207,7 +1238,7 @@
                   <tbody>
                     {#each athRankings.pvp as entry}
                       <tr>
-                        <td class="col-rank"><span class="rank-badge" class:rank-ruby={entry.rank <= 1} class:rank-diamond={entry.rank > 1 && entry.rank <= 10} class:rank-gold={entry.rank > 10 && entry.rank <= 50} class:rank-silver={entry.rank > 50 && entry.rank <= 200} class:rank-bronze={entry.rank > 200 && entry.rank <= 500}>#{entry.rank}</span></td>
+                        <td class="col-rank"><span class="ranking-badge" class:rank-ruby={entry.rank <= 1} class:rank-diamond={entry.rank > 1 && entry.rank <= 10} class:rank-gold={entry.rank > 10 && entry.rank <= 50} class:rank-silver={entry.rank > 50 && entry.rank <= 200} class:rank-bronze={entry.rank > 200 && entry.rank <= 500}>#{entry.rank}</span></td>
                         <td class="right font-weight-bold">{Math.round(entry.value)} Kills</td>
                         <td class="col-badge">{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
@@ -1236,7 +1267,7 @@
           {:else}
             <!-- Hunting / Mining / Crafting rankings -->
             {#if athByTotal.length === 0 && athByBest.length === 0}
-              <p class="empty-state-sm">No top 500 rankings for {activeAthCategory} targets</p>
+              <p class="empty-state-sm">No rankings for {activeAthCategory} targets</p>
             {:else}
               <div class="ath-targets-grid">
                 <div class="section-card-inner">
@@ -1256,7 +1287,7 @@
                         <tbody>
                           {#each pagedAthByBest as t}
                             <tr>
-                              <td class="col-rank"><span class="rank-badge" class:rank-ruby={t.best_rank <= 1} class:rank-diamond={t.best_rank > 1 && t.best_rank <= 10} class:rank-gold={t.best_rank > 10 && t.best_rank <= 50} class:rank-silver={t.best_rank > 50 && t.best_rank <= 200} class:rank-bronze={t.best_rank > 200 && t.best_rank <= 500}>#{t.best_rank}</span></td>
+                              <td class="col-rank"><span class="ranking-badge" class:rank-ruby={t.best_rank <= 1} class:rank-diamond={t.best_rank > 1 && t.best_rank <= 10} class:rank-gold={t.best_rank > 10 && t.best_rank <= 50} class:rank-silver={t.best_rank > 50 && t.best_rank <= 200} class:rank-bronze={t.best_rank > 200 && t.best_rank <= 500}>#{t.best_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
@@ -1294,7 +1325,7 @@
                         <tbody>
                           {#each pagedAthByTotal as t}
                             <tr>
-                              <td class="col-rank"><span class="rank-badge" class:rank-ruby={t.total_rank <= 1} class:rank-diamond={t.total_rank > 1 && t.total_rank <= 10} class:rank-gold={t.total_rank > 10 && t.total_rank <= 50} class:rank-silver={t.total_rank > 50 && t.total_rank <= 200} class:rank-bronze={t.total_rank > 200 && t.total_rank <= 500}>#{t.total_rank}</span></td>
+                              <td class="col-rank"><span class="ranking-badge" class:rank-ruby={t.total_rank <= 1} class:rank-diamond={t.total_rank > 1 && t.total_rank <= 10} class:rank-gold={t.total_rank > 10 && t.total_rank <= 50} class:rank-silver={t.total_rank > 50 && t.total_rank <= 200} class:rank-bronze={t.total_rank > 200 && t.total_rank <= 500}>#{t.total_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
@@ -1962,62 +1993,10 @@
     margin: 0 0 12px 0;
   }
 
-  .rank-badge {
-    font-weight: 700;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-  }
-
-  .rank-badge.rank-ruby,
-  .rank-badge.rank-diamond {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .rank-badge.rank-ruby {
-    color: #e0115f;
-    text-shadow: 0 0 4px rgba(224, 17, 95, 0.3);
-  }
-
-  .rank-badge.rank-diamond {
-    color: #b9f2ff;
-    text-shadow: 0 0 4px rgba(185, 242, 255, 0.3);
-  }
-
-  .rank-badge.rank-ruby::after,
-  .rank-badge.rank-diamond::after {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: -100%;
-    width: 40%;
-    height: 200%;
-    transform: rotate(25deg);
-    animation: rank-swipe 3s ease-in-out infinite;
-    pointer-events: none;
-  }
-
-  .rank-badge.rank-ruby::after {
-    background: linear-gradient(90deg, transparent, rgba(255, 77, 141, 0.5), transparent);
-  }
-
-  .rank-badge.rank-diamond::after {
-    background: linear-gradient(90deg, transparent, rgba(224, 249, 255, 0.5), transparent);
-    animation-delay: 0.5s;
-  }
-
   @keyframes rank-swipe {
     0%, 100% { left: -100%; }
     40%, 60% { left: 200%; }
   }
-
-  .rank-badge.rank-lg {
-    font-size: 1rem;
-  }
-
-  .rank-badge.rank-gold { color: #eab308; }
-  .rank-badge.rank-silver { color: #c0c0c0; }
-  .rank-badge.rank-bronze { color: #cd7f32; }
 
   /* Type badges */
   .type-badge {
