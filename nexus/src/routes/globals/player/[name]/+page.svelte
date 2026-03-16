@@ -1638,8 +1638,10 @@
   }
 
   .ranking-badge-lg {
-    font-size: 0.8125rem;
-    padding: 2px 8px;
+    font-size: 0.75rem;
+    padding: 1px 7px;
+    line-height: 1.2;
+    vertical-align: middle;
   }
 
   .ranking-badge.rank-ruby { background: rgba(224, 17, 95, 0.15); color: #e0115f; }
