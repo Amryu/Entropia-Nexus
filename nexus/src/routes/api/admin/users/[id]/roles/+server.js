@@ -2,6 +2,7 @@
 import { json } from '@sveltejs/kit';
 import { getUserRoles, setUserRoles } from '$lib/server/db.js';
 import { requireGrant } from '$lib/server/auth.js';
+import { clearGrantsCache } from '$lib/server/grants.js';
 
 export async function GET({ params, locals }) {
   requireGrant(locals, 'admin.users');
@@ -19,6 +20,7 @@ export async function PUT({ params, request, locals }) {
 
   const realUser = locals.session?.realUser || locals.session?.user;
   await setUserRoles(BigInt(params.id), body.roleIds, realUser.id);
+  clearGrantsCache();
   const updated = await getUserRoles(BigInt(params.id));
   return json(updated);
 }

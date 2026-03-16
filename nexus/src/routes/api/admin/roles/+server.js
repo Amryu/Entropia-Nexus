@@ -2,6 +2,7 @@
 import { json } from '@sveltejs/kit';
 import { getAllRoles, createRole } from '$lib/server/db.js';
 import { requireGrant } from '$lib/server/auth.js';
+import { clearGrantsCache } from '$lib/server/grants.js';
 
 export async function GET({ locals }) {
   requireGrant(locals, 'admin.users');
@@ -23,6 +24,7 @@ export async function POST({ request, locals }) {
       description: body.description?.trim() || null,
       parent_id: body.parent_id || null
     });
+    clearGrantsCache();
     return json(role, { status: 201 });
   } catch (e) {
     if (e.code === '23505') {

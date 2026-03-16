@@ -15,6 +15,7 @@ if (import.meta.env.SSR) {
 
   const grants = await import('$lib/server/grants');
   resolveUserGrants = grants.resolveUserGrants;
+  grants.startGrantsPoller();
 
   const discord = await import('$lib/server/discord');
   getUserInfo = discord.getUserInfo;

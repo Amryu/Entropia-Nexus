@@ -67,29 +67,36 @@ function extractMobName(targetName) {
 // ------------------------------------------------------------------
 
 async function buildStatsCache() {
-  const { sqlUnit: bucketUnit, chartUnit } = getActivityBucket('all', null, null);
+  const { chartUnit } = getActivityBucket('all', null, null);
 
+  // Use rollup tables instead of scanning 6.6M raw rows.
+  // globals_rollup has ~21K daily rows grouped by global_type with
+  // event_count, sum_value, max_value, hof_count, ath_count.
   const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
+    // Summary stats from rollup — replaces full-table aggregate (~920ms → <10ms)
     pool.query(
-      `SELECT count(*) AS total_count,
-              COALESCE(sum(value), 0) AS total_value,
-              COALESCE(avg(value), 0) AS avg_value,
-              COALESCE(max(value), 0) AS max_value,
-              count(*) FILTER (WHERE is_hof) AS hof_count,
-              count(*) FILTER (WHERE is_ath) AS ath_count,
-              count(*) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
-              COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
-              count(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
-              COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
-              count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
-              COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
-       FROM ingested_globals
-       WHERE confirmed = true`
+      `SELECT COALESCE(SUM(event_count), 0) AS total_count,
+              COALESCE(SUM(sum_value), 0) AS total_value,
+              CASE WHEN SUM(event_count) > 0 THEN SUM(sum_value) / SUM(event_count) ELSE 0 END AS avg_value,
+              COALESCE(MAX(max_value), 0) AS max_value,
+              COALESCE(SUM(hof_count), 0) AS hof_count,
+              COALESCE(SUM(ath_count), 0) AS ath_count,
+              COALESCE(SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_count,
+              COALESCE(SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
+              COALESCE(SUM(event_count) FILTER (WHERE global_type = 'deposit'), 0) AS mining_count,
+              COALESCE(SUM(sum_value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
+              COALESCE(SUM(event_count) FILTER (WHERE global_type = 'craft'), 0) AS crafting_count,
+              COALESCE(SUM(sum_value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
+       FROM globals_rollup
+       WHERE granularity = 'daily'`
     ),
+    // By-type breakdown from rollup — replaces full-table GROUP BY (~985ms → <5ms)
     pool.query(
-      `SELECT global_type AS type, count(*) AS count, COALESCE(sum(value), 0) AS value
-       FROM ingested_globals
-       WHERE confirmed = true
+      `SELECT global_type AS type,
+              SUM(event_count)::bigint AS count,
+              COALESCE(SUM(sum_value), 0) AS value
+       FROM globals_rollup
+       WHERE granularity = 'daily'
        GROUP BY global_type
        ORDER BY count DESC`
     ),
@@ -110,13 +117,15 @@ async function buildStatsCache() {
        ORDER BY event_count DESC
        LIMIT 10`
     ),
+    // Activity timeline from monthly rollup — replaces date_trunc on 6.6M rows (~1900ms → <5ms)
     pool.query(
-      `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count,
-              COALESCE(sum(value), 0) AS total_value
-       FROM ingested_globals
-       WHERE confirmed = true
-       GROUP BY bucket
-       ORDER BY bucket
+      `SELECT period_start AS bucket,
+              SUM(event_count)::bigint AS count,
+              COALESCE(SUM(sum_value), 0) AS total_value
+       FROM globals_rollup
+       WHERE granularity = 'monthly'
+       GROUP BY period_start
+       ORDER BY period_start
        LIMIT 2555`
     ),
   ]);

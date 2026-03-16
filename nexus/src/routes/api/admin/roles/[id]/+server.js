@@ -2,6 +2,7 @@
 import { json } from '@sveltejs/kit';
 import { getRoleById, updateRole, deleteRole } from '$lib/server/db.js';
 import { requireGrant } from '$lib/server/auth.js';
+import { clearGrantsCache } from '$lib/server/grants.js';
 
 export async function GET({ params, locals }) {
   requireGrant(locals, 'admin.users');
@@ -25,6 +26,7 @@ export async function PUT({ params, request, locals }) {
       parent_id: body.parent_id || null
     });
     if (!role) return json({ error: 'Role not found' }, { status: 404 });
+    clearGrantsCache();
     return json(role);
   } catch (e) {
     if (e.code === '23505') {
@@ -46,5 +48,6 @@ export async function DELETE({ params, locals }) {
   }
 
   await deleteRole(params.id);
+  clearGrantsCache();
   return json({ success: true });
 }

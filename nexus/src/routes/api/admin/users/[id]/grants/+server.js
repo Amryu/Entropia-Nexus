@@ -2,6 +2,7 @@
 import { json } from '@sveltejs/kit';
 import { getUserGrantOverrides, setUserGrantOverrides } from '$lib/server/db.js';
 import { requireGrant } from '$lib/server/auth.js';
+import { clearGrantsCache } from '$lib/server/grants.js';
 
 export async function GET({ params, locals }) {
   requireGrant(locals, 'admin.users');
@@ -19,6 +20,7 @@ export async function PUT({ params, request, locals }) {
 
   const realUser = locals.session?.realUser || locals.session?.user;
   await setUserGrantOverrides(BigInt(params.id), body.grants, realUser.id);
+  clearGrantsCache();
   const updated = await getUserGrantOverrides(BigInt(params.id));
   return json(updated);
 }
