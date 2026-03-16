@@ -305,6 +305,16 @@
   let mining = $derived(playerData?.mining?.resources || []);
   let crafting = $derived(playerData?.crafting?.items || []);
   let activity = $derived(playerData?.activity || []);
+  let activityByType = $derived(playerData?.activity_by_type || { hunting: [], mining: [], crafting: [] });
+
+  /** Generate an SVG path for a sparkline from an array of numbers. */
+  function sparklinePath(data, width, height) {
+    if (!data || data.length < 2) return '';
+    const max = Math.max(...data) || 1;
+    const step = width / (data.length - 1);
+    const points = data.map((v, i) => `${i * step},${height - (v / max) * height * 0.85}`);
+    return `M${points.join(' L')} L${width},${height} L0,${height} Z`;
+  }
   let recent = $derived(playerData?.recent || []);
   let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
   let achievements = $derived(playerData?.achievements || []);
@@ -472,7 +482,13 @@
         { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: summary.craft_count, value: summary.crafting_value, tab: 'crafting' },
       ] as cat}
         {@const cr = categoryRanks?.[cat.key]}
+        {@const sparkData = activityByType[cat.key] || []}
         <button class="stat-card category-card clickable" onclick={() => activeTab = cat.tab}>
+          {#if sparkData.length >= 2}
+            <svg class="category-sparkline" viewBox="0 0 200 60" preserveAspectRatio="none">
+              <path d={sparklinePath(sparkData, 200, 60)} />
+            </svg>
+          {/if}
           <div class="category-card-inner">
             <div class="category-card-stats">
               <span class="stat-value {cat.colorClass}">{cat.count.toLocaleString()}</span>
@@ -1524,6 +1540,23 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .category-sparkline {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .category-sparkline path {
+    fill: currentColor;
+    opacity: 0.06;
   }
 
   .stat-icon {
@@ -1572,6 +1605,8 @@
     align-items: center;
     gap: 12px;
     width: 100%;
+    position: relative;
+    z-index: 1;
   }
 
   .category-card-stats {

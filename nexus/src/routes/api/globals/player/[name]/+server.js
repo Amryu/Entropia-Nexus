@@ -644,6 +644,19 @@ export async function GET({ params, url, locals }) {
         })(),
         bucketUnit, from, to, period
       ),
+      activity_by_type: (() => {
+        const HUNTING_TYPES = new Set(['kill', 'team_kill', 'examine']);
+        const types = { hunting: new Map(), mining: new Map(), crafting: new Map() };
+        for (const r of activityResult.rows) {
+          const key = new Date(r.bucket).toISOString();
+          const count = parseInt(r.count);
+          if (HUNTING_TYPES.has(r.type)) types.hunting.set(key, (types.hunting.get(key) || 0) + count);
+          else if (r.type === 'deposit') types.mining.set(key, (types.mining.get(key) || 0) + count);
+          else if (r.type === 'craft') types.crafting.set(key, (types.crafting.get(key) || 0) + count);
+        }
+        const toArr = (m) => [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, count]) => count);
+        return { hunting: toArr(types.hunting), mining: toArr(types.mining), crafting: toArr(types.crafting) };
+      })(),
       recent: recentResult.rows.map(r => ({
         id: r.id,
         type: r.global_type,
