@@ -93,6 +93,7 @@
 
   function updateSpawnField(spawnIndex, field, value) {
     const newList = [...spawns];
+    newList[spawnIndex] = JSON.parse(JSON.stringify(newList[spawnIndex]));
     const parts = field.split('.');
     let target = newList[spawnIndex];
 
@@ -126,7 +127,8 @@
 
     if (parsed) {
       const newList = [...spawns];
-      const spawn = newList[spawnIndex];
+      const spawn = JSON.parse(JSON.stringify(newList[spawnIndex]));
+      newList[spawnIndex] = spawn;
 
       // Parse existing data safely
       let data = spawn.Properties?.Data;
@@ -322,7 +324,8 @@
     if (!maturityDialog) return;
     const { spawnIndex, mobName: targetMobName } = maturityDialog;
     const newList = [...spawns];
-    const spawn = newList[spawnIndex];
+    const spawn = JSON.parse(JSON.stringify(newList[spawnIndex]));
+    newList[spawnIndex] = spawn;
     const mats = spawn.Maturities || [];
 
     const existingIdx = mats.findIndex(
@@ -330,10 +333,8 @@
     );
 
     if (existingIdx >= 0) {
-      // Remove
       mats.splice(existingIdx, 1);
     } else {
-      // Add
       mats.push({
         IsRare: false,
         Maturity: { Name: matName, Mob: { Name: targetMobName } }
@@ -347,7 +348,8 @@
     if (!maturityDialog) return;
     const { spawnIndex, mobName: targetMobName } = maturityDialog;
     const newList = [...spawns];
-    const spawn = newList[spawnIndex];
+    const spawn = JSON.parse(JSON.stringify(newList[spawnIndex]));
+    newList[spawnIndex] = spawn;
     const mat = (spawn.Maturities || []).find(
       m => (m.Maturity?.Mob?.Name || mobName) === targetMobName && m.Maturity?.Name === matName
     );
@@ -362,16 +364,15 @@
     const { spawnIndex, mobName: targetMobName } = maturityDialog;
     const fullMats = getFullMaturitiesForMob(targetMobName);
     const newList = [...spawns];
-    const spawn = newList[spawnIndex];
+    const spawn = JSON.parse(JSON.stringify(newList[spawnIndex]));
+    newList[spawnIndex] = spawn;
     const mats = spawn.Maturities || [];
 
-    // Find existing selected names for this mob
     const existingNames = new Set(
       mats.filter(m => (m.Maturity?.Mob?.Name || mobName) === targetMobName)
         .map(m => m.Maturity?.Name)
     );
 
-    // Add any missing
     for (const m of fullMats) {
       if (!existingNames.has(m.Name)) {
         mats.push({
@@ -388,7 +389,8 @@
     if (!maturityDialog) return;
     const { spawnIndex, mobName: targetMobName } = maturityDialog;
     const newList = [...spawns];
-    const spawn = newList[spawnIndex];
+    const spawn = JSON.parse(JSON.stringify(newList[spawnIndex]));
+    newList[spawnIndex] = spawn;
     spawn.Maturities = (spawn.Maturities || []).filter(
       m => (m.Maturity?.Mob?.Name || mobName) !== targetMobName
     );

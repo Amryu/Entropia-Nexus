@@ -47,7 +47,8 @@
 
   function updateOfferField(index, field, value) {
     const newList = [...offers];
-    const offer = newList[index];
+    const offer = JSON.parse(JSON.stringify(newList[index]));
+    newList[index] = offer;
 
     if (field === 'Item.Name') {
       if (!offer.Item) offer.Item = {};
@@ -62,20 +63,26 @@
   // === Price CRUD (nested within offer) ===
   function addPrice(offerIndex) {
     const newList = [...offers];
-    if (!newList[offerIndex].Prices) newList[offerIndex].Prices = [];
-    newList[offerIndex].Prices = [...newList[offerIndex].Prices, createPrice()];
+    const offer = JSON.parse(JSON.stringify(newList[offerIndex]));
+    newList[offerIndex] = offer;
+    if (!offer.Prices) offer.Prices = [];
+    offer.Prices = [...offer.Prices, createPrice()];
     updateField(fieldPath, newList);
   }
 
   function removePrice(offerIndex, priceIndex) {
     const newList = [...offers];
-    newList[offerIndex].Prices = newList[offerIndex].Prices.filter((_, i) => i !== priceIndex);
+    const offer = JSON.parse(JSON.stringify(newList[offerIndex]));
+    newList[offerIndex] = offer;
+    offer.Prices = offer.Prices.filter((_, i) => i !== priceIndex);
     updateField(fieldPath, newList);
   }
 
   function updatePriceField(offerIndex, priceIndex, field, value) {
     const newList = [...offers];
-    const price = newList[offerIndex].Prices[priceIndex];
+    const offer = JSON.parse(JSON.stringify(newList[offerIndex]));
+    newList[offerIndex] = offer;
+    const price = offer.Prices[priceIndex];
 
     if (field === 'Item.Name') {
       if (!price.Item) price.Item = {};

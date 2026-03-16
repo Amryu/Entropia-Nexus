@@ -101,7 +101,7 @@ export const Mob = {
                 "default": null
               },
               "Attributes": {
-                "type": "object",
+                "type": ["object", "null"],
                 "additionalProperties": false,
                 "properties": {
                   "Strength": {
@@ -134,7 +134,7 @@ export const Mob = {
                 ]
               },
               "Defense": {
-                "type": "object",
+                "type": ["object", "null"],
                 "additionalProperties": false,
                 "properties": {
                   "Stab": {

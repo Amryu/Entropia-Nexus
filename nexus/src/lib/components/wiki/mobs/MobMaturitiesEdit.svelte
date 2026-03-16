@@ -84,6 +84,14 @@
     return uidMap.get(obj);
   }
 
+  // Clone a maturity object, preserving its UID for stable keyed {#each} identity
+  function cloneMaturity(mat) {
+    const uid = getUid(mat);
+    const clone = JSON.parse(JSON.stringify(mat));
+    uidMap.set(clone, uid);
+    return clone;
+  }
+
   // Track which maturity panels are expanded (by UID)
   let expandedMaturities = $state({});
 
@@ -136,6 +144,7 @@
   function createMaturity() {
     const template = {
       Name: '',
+      NameMode: 'Suffix',
       Properties: {
         Description: null,
         Level: null,
@@ -248,7 +257,9 @@
 
   function updateMaturityField(matIndex, field, value) {
     const newList = [...maturities];
-    const editedMat = newList[matIndex];
+    const editedMat = cloneMaturity(newList[matIndex]);
+    newList[matIndex] = editedMat;
+
     const parts = field.split('.');
     let target = editedMat;
 
@@ -271,21 +282,27 @@
 
   function addAttack(matIndex) {
     const newList = [...maturities];
-    const attacks = newList[matIndex].Attacks || [];
+    const editedMat = cloneMaturity(newList[matIndex]);
+    newList[matIndex] = editedMat;
+    const attacks = editedMat.Attacks || [];
     const newAttack = createAttack(attacks.length, maturities.slice(0, matIndex));
-    newList[matIndex].Attacks = [...attacks, newAttack];
+    editedMat.Attacks = [...attacks, newAttack];
     updateField(fieldPath, newList);
   }
 
   function removeAttack(matIndex, attackIndex) {
     const newList = [...maturities];
-    newList[matIndex].Attacks = newList[matIndex].Attacks.filter((_, i) => i !== attackIndex);
+    const editedMat = cloneMaturity(newList[matIndex]);
+    newList[matIndex] = editedMat;
+    editedMat.Attacks = editedMat.Attacks.filter((_, i) => i !== attackIndex);
     updateField(fieldPath, newList);
   }
 
   function updateAttackField(matIndex, attackIndex, field, value) {
     const newList = [...maturities];
-    const attack = newList[matIndex].Attacks[attackIndex];
+    const editedMat = cloneMaturity(newList[matIndex]);
+    newList[matIndex] = editedMat;
+    const attack = editedMat.Attacks[attackIndex];
 
     if (field.startsWith('Damage.')) {
       const damageType = field.split('.')[1];
@@ -354,12 +371,13 @@
     if (!sourceAttack?.Damage) return;
 
     const newList = [...maturities];
+    const editedMat = cloneMaturity(newList[toMatIndex]);
+    newList[toMatIndex] = editedMat;
 
     // Ensure target maturity has attacks up to the target index
-    ensureAttacksUpToIndex(newList[toMatIndex], toAttackIndex);
+    ensureAttacksUpToIndex(editedMat, toAttackIndex);
 
-    const targetAttack = newList[toMatIndex].Attacks[toAttackIndex];
-    targetAttack.Damage = { ...sourceAttack.Damage };
+    editedMat.Attacks[toAttackIndex].Damage = { ...sourceAttack.Damage };
     updateField(fieldPath, newList);
     openCopyMenu = null;
   }
@@ -373,11 +391,13 @@
     for (let i = 0; i < newList.length; i++) {
       if (i === fromMatIndex) continue;
 
-      // Ensure each maturity has attacks up to the target index
-      ensureAttacksUpToIndex(newList[i], attackIndex);
+      const editedMat = cloneMaturity(newList[i]);
+      newList[i] = editedMat;
 
-      const targetAttack = newList[i].Attacks[attackIndex];
-      targetAttack.Damage = { ...sourceAttack.Damage };
+      // Ensure each maturity has attacks up to the target index
+      ensureAttacksUpToIndex(editedMat, attackIndex);
+
+      editedMat.Attacks[attackIndex].Damage = { ...sourceAttack.Damage };
     }
     updateField(fieldPath, newList);
     openCopyMenu = null;

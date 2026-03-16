@@ -87,7 +87,8 @@
 
   function updateLootField(index, field, value) {
     const newList = [...loots];
-    const loot = newList[index];
+    const loot = JSON.parse(JSON.stringify(newList[index]));
+    newList[index] = loot;
 
     if (field === 'Item.Name') {
       if (!loot.Item) loot.Item = {};
