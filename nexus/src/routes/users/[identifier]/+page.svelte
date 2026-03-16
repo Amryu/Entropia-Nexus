@@ -788,14 +788,7 @@
   let globalsCategoryRanks = $derived(globalsData?.category_ranks || null);
   let globalsActivityByType = $derived(globalsData?.activity_by_type || { hunting: [], mining: [], crafting: [], space_mining: [] });
   let globalsSpaceMining = $derived(globalsData?.space_mining || []);
-  let globalsSparkStart = $derived((() => {
-    let earliest = Infinity;
-    for (const arr of Object.values(globalsActivityByType)) {
-      const idx = arr.findIndex(v => v > 0);
-      if (idx >= 0 && idx < earliest) earliest = idx;
-    }
-    return earliest === Infinity ? 0 : earliest;
-  })());
+  const SPARK_MONTHS = 12; // last 365 days ≈ 12 monthly buckets
   let globalsSummary = $derived(globalsData?.summary || null);
 
   /** Smoothed SVG sparkline path from an array of numbers. */
@@ -1613,7 +1606,10 @@
                   { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: globalsSummary.craft_count || 0, value: globalsSummary.crafting_value || 0 },
                 ] as cat}
                   {@const cr = globalsCategoryRanks?.[cat.key]}
-                  {@const sparkData = (globalsActivityByType[cat.key] || []).slice(globalsSparkStart)}
+                  {@const rawSpark = globalsActivityByType[cat.key] || []}
+                  {@const sparkData = rawSpark.length >= SPARK_MONTHS
+                    ? rawSpark.slice(-SPARK_MONTHS)
+                    : [...Array(SPARK_MONTHS - rawSpark.length).fill(0), ...rawSpark]}
                   <div class="globals-category-card {cat.colorClass}">
                     {#if sparkData.length >= 2}
                       <svg class="globals-cat-sparkline" viewBox="0 0 200 60" preserveAspectRatio="none">
