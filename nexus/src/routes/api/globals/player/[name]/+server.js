@@ -16,7 +16,7 @@ import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 const TOP_LOOTS_LIMIT = 100;
 const OVERVIEW_TOP_LIMIT = 10;
-const ATH_RANK_CUTOFF = 10;
+const ATH_RANK_CUTOFF = 500;
 
 // Server-side response cache (anonymous users only)
 const RESPONSE_CACHE_TTL = 60_000; // 60 seconds
