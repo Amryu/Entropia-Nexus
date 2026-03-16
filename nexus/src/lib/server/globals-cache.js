@@ -163,7 +163,7 @@ async function buildStatsCache() {
     bucket_unit: chartUnit,
     activity: fillActivityGaps(
       activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count), value: parseFloat(r.total_value || 0) })),
-      bucketUnit, null, null, 'all'
+      'month', null, null, 'all'
     ),
   };
 
