@@ -116,6 +116,7 @@ export async function GET({ params, url, locals }) {
       topHuntingResult,
       topMiningResult,
       topCraftingResult,
+      categoryRanksResult,
       athHuntingResult,
       athMiningResult,
       athCraftingResult,
@@ -271,6 +272,38 @@ export async function GET({ params, url, locals }) {
 
       // Top individual crafting loots
       topLootsQuery("global_type = 'craft'"),
+
+      // Category-level player rankings (how this player ranks among ALL players per category)
+      safeQuery(pool.query(
+        `WITH category_totals AS (
+          SELECT player_name,
+            SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
+            SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
+            SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
+            SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
+            SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value,
+            SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count
+          FROM globals_rollup_player
+          WHERE granularity = 'monthly'
+          GROUP BY player_name
+        ),
+        ranked AS (
+          SELECT player_name,
+            RANK() OVER (ORDER BY hunting_value DESC NULLS LAST) AS hunting_value_rank,
+            RANK() OVER (ORDER BY hunting_count DESC NULLS LAST) AS hunting_count_rank,
+            RANK() OVER (ORDER BY mining_value DESC NULLS LAST) AS mining_value_rank,
+            RANK() OVER (ORDER BY mining_count DESC NULLS LAST) AS mining_count_rank,
+            RANK() OVER (ORDER BY crafting_value DESC NULLS LAST) AS crafting_value_rank,
+            RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank
+          FROM category_totals
+        )
+        SELECT hunting_value_rank, hunting_count_rank,
+               mining_value_rank, mining_count_rank,
+               crafting_value_rank, crafting_count_rank
+        FROM ranked
+        WHERE lower(player_name) = lower($1)`,
+        [playerName]
+      )),
 
       // ATH rankings — use pre-aggregated leaderboard for all-time, fall back to live CTEs for period filters
       // Wrapped with safeQuery so timeouts don't crash the entire endpoint
@@ -569,6 +602,15 @@ export async function GET({ params, url, locals }) {
         pvp_count: parseInt(summary.pvp_count),
         pvp_value: parseFloat(summary.pvp_value),
       },
+      category_ranks: (() => {
+        const cr = categoryRanksResult.rows[0];
+        if (!cr) return null;
+        return {
+          hunting: { value_rank: parseInt(cr.hunting_value_rank), count_rank: parseInt(cr.hunting_count_rank) },
+          mining: { value_rank: parseInt(cr.mining_value_rank), count_rank: parseInt(cr.mining_count_rank) },
+          crafting: { value_rank: parseInt(cr.crafting_value_rank), count_rank: parseInt(cr.crafting_count_rank) },
+        };
+      })(),
       hunting,
       mining: {
         resources: miningResult.rows.map(r => ({

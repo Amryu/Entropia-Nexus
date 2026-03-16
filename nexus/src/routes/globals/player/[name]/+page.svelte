@@ -311,6 +311,7 @@
   let rareItems = $derived(playerData?.rare_items || []);
   let topLoots = $derived(playerData?.top_loots || { hunting: [], mining: [], crafting: [] });
   let athRankings = $derived(playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] });
+  let categoryRanks = $derived(playerData?.category_ranks || null);
   let isTeam = $derived(summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count);
   let tabs = $derived([
     ...BASE_TABS,
@@ -465,21 +466,24 @@
 
     <!-- Category Breakdown (clickable to switch tabs) -->
     <div class="stats-row category-row">
-      <button class="stat-card category-card clickable" onclick={() => activeTab = 'hunting'}>
-        <span class="stat-value hunting-color">{(summary.kill_count + summary.team_kill_count).toLocaleString()}</span>
-        <span class="stat-label">Hunting</span>
-        <span class="stat-sub">{formatPed(summary.hunting_value)} PED</span>
-      </button>
-      <button class="stat-card category-card clickable" onclick={() => activeTab = 'mining'}>
-        <span class="stat-value mining-color">{summary.deposit_count.toLocaleString()}</span>
-        <span class="stat-label">Mining</span>
-        <span class="stat-sub">{formatPed(summary.mining_value)} PED</span>
-      </button>
-      <button class="stat-card category-card clickable" onclick={() => activeTab = 'crafting'}>
-        <span class="stat-value crafting-color">{summary.craft_count.toLocaleString()}</span>
-        <span class="stat-label">Crafting</span>
-        <span class="stat-sub">{formatPed(summary.crafting_value)} PED</span>
-      </button>
+      {#each [
+        { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color', count: summary.kill_count + summary.team_kill_count, value: summary.hunting_value, tab: 'hunting' },
+        { key: 'mining', label: 'Mining', colorClass: 'mining-color', count: summary.deposit_count, value: summary.mining_value, tab: 'mining' },
+        { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: summary.craft_count, value: summary.crafting_value, tab: 'crafting' },
+      ] as cat}
+        {@const cr = categoryRanks?.[cat.key]}
+        <button class="stat-card category-card clickable" onclick={() => activeTab = cat.tab}>
+          <span class="stat-value {cat.colorClass}">{cat.count.toLocaleString()}</span>
+          <span class="stat-label">{cat.label}</span>
+          <span class="stat-sub">{formatPed(cat.value)} PED</span>
+          {#if cr}
+            <span class="stat-ranks">
+              <span class="ranking-badge" class:rank-ruby={cr.value_rank <= 1} class:rank-diamond={cr.value_rank > 1 && cr.value_rank <= 10} class:rank-gold={cr.value_rank > 10 && cr.value_rank <= 50} class:rank-silver={cr.value_rank > 50 && cr.value_rank <= 200} class:rank-bronze={cr.value_rank > 200 && cr.value_rank <= 500} title="Value rank">#{cr.value_rank}</span>
+              <span class="ranking-badge ranking-badge-count" class:rank-ruby={cr.count_rank <= 1} class:rank-diamond={cr.count_rank > 1 && cr.count_rank <= 10} class:rank-gold={cr.count_rank > 10 && cr.count_rank <= 50} class:rank-silver={cr.count_rank > 50 && cr.count_rank <= 200} class:rank-bronze={cr.count_rank > 200 && cr.count_rank <= 500} title="Count rank">#{cr.count_rank}</span>
+            </span>
+          {/if}
+        </button>
+      {/each}
     </div>
 
     <!-- Tab Navigation -->
@@ -1551,6 +1555,13 @@
     color: var(--text-muted);
     margin-top: 2px;
     font-variant-numeric: tabular-nums;
+  }
+
+  .stat-ranks {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 4px;
   }
 
   .hunting-color { color: #ef4444; }
