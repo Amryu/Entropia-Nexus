@@ -538,7 +538,8 @@
                   {#each pagedHighlightItems as item, i}
                     <tr>
                       {#if highlightTab !== 'discoveries' && highlightTab !== 'rare'}
-                        <td class="text-muted col-rank">{highlightPage * HIGHLIGHT_PAGE_SIZE + i + 1}</td>
+                        {@const rank = highlightPage * HIGHLIGHT_PAGE_SIZE + i + 1}
+                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                       {/if}
                       <td>
                         {#if highlightTab === 'discoveries'}
@@ -740,7 +741,8 @@
                   <tbody>
                     {#each pagedHuntingLoots as loot, i}
                       <tr>
-                        <td class="col-rank text-muted">{huntLootPage * PAGE_SIZE + i + 1}</td>
+                        {@const rank = huntLootPage * PAGE_SIZE + i + 1}
+                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -848,7 +850,8 @@
                   <tbody>
                     {#each pagedMiningLoots as loot, i}
                       <tr>
-                        <td class="col-rank text-muted">{miningLootPage * PAGE_SIZE + i + 1}</td>
+                        {@const rank = miningLootPage * PAGE_SIZE + i + 1}
+                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -956,7 +959,8 @@
                   <tbody>
                     {#each pagedCraftingLoots as loot, i}
                       <tr>
-                        <td class="col-rank text-muted">{craftLootPage * PAGE_SIZE + i + 1}</td>
+                        {@const rank = craftLootPage * PAGE_SIZE + i + 1}
+                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -1859,6 +1863,10 @@
   @keyframes rank-swipe {
     0%, 100% { left: -100%; }
     40%, 60% { left: 200%; }
+  }
+
+  .rank-badge.rank-lg {
+    font-size: 1rem;
   }
 
   .rank-badge.rank-gold { color: #eab308; }
