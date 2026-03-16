@@ -324,8 +324,10 @@ async function refreshSummaryTables() {
     await client.query('SET statement_timeout = 120000');
     await client.query('BEGIN');
 
-    await client.query('DELETE FROM globals_player_agg');
-    await client.query('DELETE FROM globals_target_agg');
+    // Only delete+rebuild 'all' period; time-limited periods use UPSERT
+    // which handles new data without wiping existing rows.
+    await client.query(`DELETE FROM globals_player_agg WHERE period = 'all'`);
+    await client.query(`DELETE FROM globals_target_agg WHERE period = 'all'`);
 
     for (const { period, granularity, intervalSql } of SUMMARY_PERIODS) {
       const periodFilter = intervalSql
@@ -434,16 +436,34 @@ export async function rebuildRollups(oldestEventTs) {
 
 /**
  * Initialize rollup tables on server start.
- * Performs a full rebuild from historical data.
+ * Skips full rebuild if rollup data already exists (just does incremental).
  */
 export async function initGlobalsRollups() {
   try {
-    await fullRebuild();
+    // Check if rollup tables already have data
+    const { rows } = await pool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = 'globals_rollup' LIMIT 1`
+    );
+    if (rows.length === 0) return;
+
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*) AS cnt FROM globals_rollup WHERE granularity = 'daily' LIMIT 1`
+    );
+    const hasData = parseInt(countRows[0]?.cnt || '0') > 0;
+
+    if (hasData) {
+      // Rollup data exists — just do incremental (today + yesterday)
+      await incrementalRebuild();
+      console.log('[globals-rollup] Incremental startup rebuild complete');
+    } else {
+      // Fresh setup — full rebuild from history
+      await fullRebuild();
+      console.log('[globals-rollup] Full rebuild complete');
+    }
     rollupReady = true;
     rollupLastRebuiltAt = Date.now();
-    console.log('[globals-rollup] Full rebuild complete');
   } catch (e) {
-    console.error('[globals-rollup] Full rebuild failed:', e);
+    console.error('[globals-rollup] Init failed:', e);
   }
 
   // Scheduled safety-net refresh

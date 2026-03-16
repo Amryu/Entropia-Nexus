@@ -315,7 +315,7 @@
     const max = Math.max(...data) || 1;
     const step = width / (data.length - 1);
     const y = (v) => height - (v / max) * height * 0.85;
-    const t = 0.3; // Catmull-Rom tension
+    const t = 0.5; // Catmull-Rom tension
 
     let d = `M0,${height}`;
     let inCurve = false;
