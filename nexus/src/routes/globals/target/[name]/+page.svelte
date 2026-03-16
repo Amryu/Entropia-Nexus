@@ -61,9 +61,10 @@
   let initialData = $state(null);
   let initialLoading = $state(true);
 
-  // Resolve streamed promise from server load function
+  // Resolve streamed promise from server load function.
+  // data.streamed.targetData is a promise (nested → not awaited during SSR).
   $effect(() => {
-    const incoming = data.targetData;
+    const incoming = data.streamed.targetData;
     if (incoming && typeof incoming.then === 'function') {
       initialLoading = true;
       incoming.then(d => { initialData = d; initialLoading = false; });

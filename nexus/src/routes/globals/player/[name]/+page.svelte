@@ -73,9 +73,10 @@
   let playerName = $derived(data.playerName);
   let recentSort = $state({ col: 'timestamp', asc: false });
 
-  // Resolve streamed promise from server load function
+  // Resolve streamed promise from server load function.
+  // data.streamed.playerData is a promise (nested → not awaited during SSR).
   $effect(() => {
-    const incoming = data.playerData;
+    const incoming = data.streamed.playerData;
     if (incoming && typeof incoming.then === 'function') {
       initialLoading = true;
       incoming.then(d => { playerData = d; initialLoading = false; });
