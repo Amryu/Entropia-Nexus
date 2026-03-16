@@ -33,7 +33,7 @@ let siteHosts = new Set();
 
 // ---------- skip patterns ----------
 const SKIP_PREFIXES = ['/_app/', '/static/', '/node_modules/', '/api/admin/analytics/'];
-const SKIP_EXACT = new Set(['/favicon.ico', '/robots.txt', '/sitemap.xml']);
+const SKIP_EXACT = new Set(['/favicon.ico', '/robots.txt', '/sitemap.xml', '/api/beacon']);
 
 function shouldSkip(pathname, method) {
   if (method === 'OPTIONS') return true;
@@ -49,7 +49,7 @@ function shouldSkip(pathname, method) {
 // that would cause the PostgreSQL inet type to throw and kill the entire batch).
 const IP_PATTERN = /^[\d.:a-fA-F]+$/;
 
-function getClientIp(event) {
+export function getClientIp(event) {
   // CF-Connecting-IP is set by Cloudflare and cannot be spoofed — check first.
   // X-Forwarded-For can be spoofed by clients (Cloudflare appends to it, so the
   // first entry may be attacker-controlled).
@@ -183,7 +183,7 @@ const BOT_KEYWORDS = /bot[\/\s;),.:-]|bot$|crawler|spider/i;
 // Known first-party client UAs that should never be flagged
 const WHITELISTED_UAS = /^NexusClient\/|^python-requests\/2\.32\.5$/;
 
-function isBot(userAgent, method) {
+export function isBot(userAgent, method) {
   // HEAD requests are almost never from real browsers
   if (method === 'HEAD') return true;
   // Missing user-agent is a strong bot signal
@@ -196,6 +196,22 @@ function isBot(userAgent, method) {
   if (hasAncientOrUnparseableBrowser(userAgent)) return true;
   // Check against admin-managed patterns
   if (botRegex && botRegex.test(userAgent)) return true;
+  return false;
+}
+
+// ---------- suspect header detection ----------
+// Detects requests missing headers that all real browsers send.
+// Chrome/Firefox/Edge: Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site.
+// All browsers: Accept-Language.
+const SHOULD_HAVE_SEC_FETCH = /Chrome\/|Firefox\/|Edg\//;
+
+function hasSuspectHeaders(request, userAgent) {
+  // All real browsers send Accept-Language
+  if (!request.headers.get('accept-language')) return true;
+  // Chromium-based and Firefox always send Sec-Fetch-Dest; Safari does not
+  if (userAgent && SHOULD_HAVE_SEC_FETCH.test(userAgent)) {
+    if (!request.headers.get('sec-fetch-dest')) return true;
+  }
   return false;
 }
 
@@ -229,7 +245,7 @@ async function flushBuffer() {
     let idx = 1;
 
     for (const row of chunk) {
-      values.push(`($${idx},$${idx + 1},$${idx + 2},$${idx + 3},$${idx + 4},$${idx + 5},$${idx + 6},$${idx + 7},$${idx + 8},$${idx + 9},$${idx + 10},$${idx + 11},$${idx + 12},$${idx + 13},$${idx + 14})`);
+      values.push(`($${idx},$${idx + 1},$${idx + 2},$${idx + 3},$${idx + 4},$${idx + 5},$${idx + 6},$${idx + 7},$${idx + 8},$${idx + 9},$${idx + 10},$${idx + 11},$${idx + 12},$${idx + 13},$${idx + 14},$${idx + 15})`);
       params.push(
         row.visited_at,
         row.ip_address,
@@ -245,14 +261,15 @@ async function flushBuffer() {
         row.is_api,
         row.oauth_client_id,
         row.rate_limited,
-        row.response_time_ms
+        row.response_time_ms,
+        row.suspect_headers
       );
-      idx += 15;
+      idx += 16;
     }
 
     try {
       await pool.query(
-        `INSERT INTO route_visits (visited_at, ip_address, country_code, user_agent, route_category, route_pattern, route_path, method, status_code, referrer, is_bot, is_api, oauth_client_id, rate_limited, response_time_ms)
+        `INSERT INTO route_visits (visited_at, ip_address, country_code, user_agent, route_category, route_pattern, route_path, method, status_code, referrer, is_bot, is_api, oauth_client_id, rate_limited, response_time_ms, suspect_headers)
          VALUES ${values.join(',')}`,
         params
       );
@@ -288,6 +305,13 @@ async function pruneOldRows() {
     }
   } catch (e) {
     console.error('[route-analytics] Prune error:', e.message);
+  }
+
+  // Prune old beacon hits
+  try {
+    await pool.query(`DELETE FROM beacon_hits WHERE last_seen < now() - interval '${RETENTION_DAYS} days'`);
+  } catch (e) {
+    // beacon_hits table may not exist yet
   }
 
   // Also clean up stale dedup entries
@@ -349,6 +373,7 @@ export function recordVisit(event, response, startTime) {
   const routeCategory = extractCategory(pathname);
   const isApiRoute = pathname.startsWith('/api/');
   const botFlag = isBot(userAgent, method) || isBotIp(ip);
+  const suspectHeaders = hasSuspectHeaders(event.request, userAgent);
   const countryCode = lookupCountry(ip);
   const externalReferrer = parseExternalReferrer(referrerHeader);
 
@@ -370,7 +395,8 @@ export function recordVisit(event, response, startTime) {
     is_api: isApiRoute,
     oauth_client_id: event.locals?.oauthClientId || null,
     rate_limited: isRateLimited,
-    response_time_ms: startTime ? (Date.now() - startTime) : null
+    response_time_ms: startTime ? (Date.now() - startTime) : null,
+    suspect_headers: suspectHeaders
   });
 }
 

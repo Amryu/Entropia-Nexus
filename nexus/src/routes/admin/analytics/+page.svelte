@@ -47,6 +47,9 @@
   let ipAnalysis = $state(null);
   let ipAnalysisLoading = $state(false);
   let ipAnalysisDays = $state(7);
+  let ipAnalysisHideRedundant = $state(true);
+  let displayedSubnets = $derived(ipAnalysis?.subnets ? (ipAnalysisHideRedundant ? ipAnalysis.subnets.filter(s => !s.redundant) : ipAnalysis.subnets) : []);
+  let displayedSupernets = $derived(ipAnalysis?.supernets ? (ipAnalysisHideRedundant ? ipAnalysis.supernets.filter(sn => !sn.redundant) : ipAnalysis.supernets) : []);
   let expandedSubnet = $state(null);
 
   // Errors
@@ -1418,12 +1421,16 @@
           <button class="rebuild-btn" onclick={runIpAnalysis} disabled={ipAnalysisLoading}>
             {ipAnalysisLoading ? 'Analyzing...' : 'Analyze'}
           </button>
+          <label class="filter-toggle">
+            <input type="checkbox" bind:checked={ipAnalysisHideRedundant} />
+            Hide redundant
+          </label>
           {#if blockFeedback}
             <span style="font-size: 12px; color: var(--success-color)">{blockFeedback}</span>
           {/if}
         </div>
 
-        {#if ipAnalysis?.subnets?.length > 0}
+        {#if displayedSubnets.length > 0}
           <table class="data-table">
             <thead>
               <tr>
@@ -1439,7 +1446,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each ipAnalysis.subnets as s}
+              {#each displayedSubnets as s}
                 {@const subnetBase = s.subnet.split('/')[0]}
                 <tr onclick={() => expandedSubnet = expandedSubnet === s.subnet ? null : s.subnet}
                   style="cursor: pointer{s.already_blocked ? '; opacity: 0.6' : ''}"
@@ -1547,11 +1554,13 @@
               {/each}
             </tbody>
           </table>
+        {:else if ipAnalysis && ipAnalysisHideRedundant && ipAnalysis.subnets?.length > 0}
+          <div class="empty-state">All {ipAnalysis.subnets.length} suspicious subnet{ipAnalysis.subnets.length > 1 ? 's' : ''} already caught by other rules</div>
         {:else if ipAnalysis}
           <div class="empty-state">No suspicious subnets detected in the last {ipAnalysisDays} day{ipAnalysisDays > 1 ? 's' : ''}</div>
         {/if}
 
-        {#if ipAnalysis?.supernets?.length > 0}
+        {#if displayedSupernets.length > 0}
           <div style="margin-top: 16px; padding: 12px; background-color: var(--primary-color); border-radius: 6px">
             <strong style="font-size: 13px">Suggested merged blocks:</strong>
             <span class="muted" style="font-size: 12px">Multiple suspicious /24s covered by a single tighter range</span>
@@ -1570,7 +1579,7 @@
                 </tr>
               </thead>
               <tbody>
-                {#each ipAnalysis.supernets as sn}
+                {#each displayedSupernets as sn}
                   <tr>
                     <td><code>{sn.cidr}</code></td>
                     <td class="num" style="font-weight: bold">{sn.subnets.length}</td>

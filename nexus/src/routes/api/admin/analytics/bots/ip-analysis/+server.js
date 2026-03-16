@@ -2,6 +2,7 @@
 import { json } from '@sveltejs/kit';
 import { requireAdminAPI } from '$lib/server/auth.js';
 import { pool } from '$lib/server/db.js';
+import { isBot } from '$lib/server/route-analytics.js';
 
 /**
  * GET /api/admin/analytics/bots/ip-analysis
@@ -26,6 +27,7 @@ export async function GET({ locals, url }) {
            count(*) FILTER (WHERE is_bot)::integer AS bot_count,
            count(DISTINCT CASE WHEN NOT is_bot THEN ip_address END)::integer AS non_bot_ips,
            count(DISTINCT date_trunc('hour', visited_at))::integer AS active_hours,
+           count(*) FILTER (WHERE suspect_headers)::integer AS suspect_header_count,
            min(visited_at) AS first_seen,
            max(visited_at) AS last_seen
          FROM route_visits
@@ -45,6 +47,7 @@ export async function GET({ locals, url }) {
          bot_count,
          non_bot_ips,
          active_hours,
+         suspect_header_count,
          first_seen,
          last_seen,
          EXISTS(
@@ -60,6 +63,82 @@ export async function GET({ locals, url }) {
        LIMIT 100`,
       [days]
     );
+
+    // Fetch behavioral signals for all candidate subnets in parallel
+    const allCidrs = subnets.map(s => s.subnet);
+    const [singlePageRes, timingRes, beaconRes, beaconCountRes] = allCidrs.length > 0
+      ? await Promise.all([
+          // IPs that visited only a single route (single-page visitors)
+          pool.query(
+            `WITH single_page AS (
+               SELECT network(set_masklen(ip_address, 24))::text AS subnet, ip_address
+               FROM route_visits
+               WHERE visited_at >= now() - $1 * interval '1 day'
+                 AND family(ip_address) = 4 AND is_api = false
+                 AND ip_address << ANY($2::cidr[])
+               GROUP BY 1, ip_address
+               HAVING count(DISTINCT route_path) = 1
+             )
+             SELECT subnet, count(*)::integer AS single_page_ips
+             FROM single_page GROUP BY subnet`,
+            [days, allCidrs]
+          ),
+          // IPs with suspiciously regular request intervals (low coefficient of variation)
+          pool.query(
+            `WITH visit_gaps AS (
+               SELECT
+                 network(set_masklen(ip_address, 24))::text AS subnet,
+                 ip_address,
+                 EXTRACT(EPOCH FROM visited_at - lag(visited_at)
+                   OVER (PARTITION BY ip_address ORDER BY visited_at)) AS gap
+               FROM route_visits
+               WHERE visited_at >= now() - $1 * interval '1 day'
+                 AND family(ip_address) = 4 AND is_api = false
+                 AND ip_address << ANY($2::cidr[])
+             ),
+             ip_regularity AS (
+               SELECT subnet, ip_address,
+                      stddev(gap) / NULLIF(avg(gap), 0) AS cv
+               FROM visit_gaps
+               WHERE gap IS NOT NULL AND gap > 0
+               GROUP BY 1, 2
+               HAVING count(*) >= 4
+             )
+             SELECT subnet,
+                    count(*)::integer AS measured_ips,
+                    count(*) FILTER (WHERE cv < 0.15)::integer AS regular_ips
+             FROM ip_regularity GROUP BY subnet`,
+            [days, allCidrs]
+          ),
+          // IPs that never fired the JS beacon (no JS execution)
+          pool.query(
+            `SELECT
+               network(set_masklen(rv.ip_address, 24))::text AS subnet,
+               count(DISTINCT rv.ip_address)::integer AS total_ips,
+               count(DISTINCT rv.ip_address) FILTER (WHERE bh.ip_address IS NULL)::integer AS no_beacon_ips
+             FROM route_visits rv
+             LEFT JOIN beacon_hits bh ON rv.ip_address = bh.ip_address
+               AND bh.last_seen >= now() - $1 * interval '1 day'
+             WHERE rv.visited_at >= now() - $1 * interval '1 day'
+               AND family(rv.ip_address) = 4 AND rv.is_api = false
+               AND rv.ip_address << ANY($2::cidr[])
+             GROUP BY network(set_masklen(rv.ip_address, 24))`,
+            [days, allCidrs]
+          ),
+          // Check if beacon infrastructure has enough data to be meaningful
+          pool.query(
+            `SELECT count(*)::integer AS cnt FROM beacon_hits
+             WHERE last_seen >= now() - $1 * interval '1 day'`,
+            [days]
+          ),
+        ])
+      : [{ rows: [] }, { rows: [] }, { rows: [] }, { rows: [{ cnt: 0 }] }];
+
+    // Build lookup maps
+    const singlePageMap = new Map(singlePageRes.rows.map(r => [r.subnet, r.single_page_ips]));
+    const timingMap = new Map(timingRes.rows.map(r => [r.subnet, r]));
+    const beaconMap = new Map(beaconRes.rows.map(r => [r.subnet, r]));
+    const beaconActive = (beaconCountRes.rows[0]?.cnt ?? 0) >= 5;
 
     // Compute score breakdown in JS for transparency
     const scored = subnets.map(s => {
@@ -88,6 +167,31 @@ export async function GET({ locals, url }) {
       // Active hours — exponential: 2^(hours/4) capped at 100
       breakdown.active_hours = Math.min(Math.round(Math.pow(2, s.active_hours / 4)), 100);
 
+      // Suspect headers: ratio of visits missing Accept-Language or expected Sec-Fetch-*
+      const suspectRatio = s.total_requests > 0 ? s.suspect_header_count / s.total_requests : 0;
+      breakdown.suspect_headers = Math.round(suspectRatio * 30);
+
+      // Single-page IPs: IPs that visited only 1 route (crawlers often hit one page and leave)
+      const singlePage = singlePageMap.get(s.subnet) || 0;
+      const singlePageRatio = s.distinct_ips > 0 ? singlePage / s.distinct_ips : 0;
+      breakdown.single_page = Math.round(singlePageRatio * 20);
+
+      // Timing regularity: IPs with very regular request intervals (CV < 0.15)
+      const timing = timingMap.get(s.subnet);
+      if (timing && timing.measured_ips > 0) {
+        breakdown.timing_regularity = Math.round((timing.regular_ips / timing.measured_ips) * 25);
+      } else {
+        breakdown.timing_regularity = 0;
+      }
+
+      // No beacon: IPs that never executed the JS beacon (only scored when beacon has data)
+      const beacon = beaconMap.get(s.subnet);
+      if (beaconActive && beacon && beacon.total_ips > 0) {
+        breakdown.no_beacon = Math.round((beacon.no_beacon_ips / beacon.total_ips) * 35);
+      } else {
+        breakdown.no_beacon = 0;
+      }
+
       // Residential discount: few IPs from the same /24 visiting a niche site
       // is almost certainly residential (ISP neighbors). Datacenters have many IPs.
       const likelyResidential = s.distinct_ips <= 5;
@@ -108,6 +212,34 @@ export async function GET({ locals, url }) {
 
     // Filter out very low scores (< 10) unless blocked
     const results = scored.filter(s => s.already_blocked || s.suspicion_score >= 10);
+
+    // Determine which subnets are fully caught by UA/method rules (IP ranges not needed)
+    const redundantSubnets = new Set();
+    const subnetCidrs = results.map(s => s.subnet);
+    if (subnetCidrs.length > 0) {
+      const { rows: uaRows } = await pool.query(
+        `SELECT network(set_masklen(ip_address, 24))::text AS subnet,
+                user_agent, method
+         FROM route_visits
+         WHERE visited_at >= now() - $1 * interval '1 day'
+           AND family(ip_address) = 4
+           AND is_api = false
+           AND ip_address << ANY($2::cidr[])
+         GROUP BY 1, 2, 3`,
+        [days, subnetCidrs]
+      );
+      const hasUncaught = new Set();
+      for (const row of uaRows) {
+        if (hasUncaught.has(row.subnet)) continue;
+        if (!isBot(row.user_agent, row.method)) {
+          hasUncaught.add(row.subnet);
+        }
+      }
+      for (const s of results) {
+        s.redundant = !hasUncaught.has(s.subnet);
+        if (s.redundant) redundantSubnets.add(s.subnet);
+      }
+    }
 
     // Fetch sample IPs for all results
     const samples = {};
@@ -177,6 +309,11 @@ export async function GET({ locals, url }) {
       }
     }
     supernets.sort((a, b) => b.subnets.length - a.subnets.length);
+
+    // Mark supernets as redundant if all constituent subnets are redundant
+    for (const sn of supernets) {
+      sn.redundant = sn.subnets.every(cidr => redundantSubnets.has(cidr));
+    }
 
     return json({ subnets: results, samples, supernets, days });
   } catch (e) {

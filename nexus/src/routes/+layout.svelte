@@ -84,6 +84,9 @@
 
     // Global waypoint copy handler for all rendered description content
     document.addEventListener('click', handleWaypointClick);
+
+    // Analytics beacon: proves JS execution for bot detection (no cookies, no tracking)
+    if (navigator.sendBeacon) navigator.sendBeacon('/api/beacon');
   });
 
   onDestroy(() => {
