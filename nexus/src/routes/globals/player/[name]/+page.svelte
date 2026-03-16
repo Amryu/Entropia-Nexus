@@ -137,6 +137,9 @@
       const res = await fetch(`/api/globals/player/${encodeURIComponent(playerName)}${qs ? '?' + qs : ''}`);
       if (res.ok) {
         playerData = await res.json();
+      } else if (res.status === 404) {
+        // No data for this period — show empty summary
+        playerData = { player: playerName, summary: { total_count: 0, total_value: 0, avg_value: 0, max_value: 0, hof_count: 0, ath_count: 0, kill_count: 0, team_kill_count: 0, hunting_value: 0, deposit_count: 0, mining_value: 0, craft_count: 0, crafting_value: 0, rare_count: 0, discovery_count: 0, tier_count: 0, pvp_count: 0, pvp_value: 0 }, hunting: [], mining: { resources: [] }, crafting: { items: [] }, activity: [], recent: [], achievements: [], rare_items: [], pvp_events: [], top_loots: { hunting: [], mining: [], crafting: [] }, ath_rankings: { hunting: [], mining: [], crafting: [], pvp: [] } };
       }
     } catch { /* ignore */ }
     loading = false;
@@ -383,7 +386,7 @@
     </div>
   </div>
 
-  {#if initialLoading || loading}
+  {#if initialLoading}
     <div class="skeleton-container">
       <div class="skeleton-stats">
         <Skeleton variant="rect" height="80px" />
@@ -397,6 +400,7 @@
   {:else if !playerData || !summary}
     <p class="empty-state">No globals recorded for this player</p>
   {:else}
+  <div class:loading-fade={loading}>
     <!-- Period Selector -->
     <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} disabled={loading} onchange={onDateRangeChange} />
 
@@ -1374,6 +1378,7 @@
         </div>
       {/if}
     </div>
+  </div>
   {/if}
 </div>
 
@@ -1469,6 +1474,12 @@
     .skeleton-stats {
       grid-template-columns: repeat(2, 1fr);
     }
+  }
+
+  .loading-fade {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
   }
 
   .empty-state {

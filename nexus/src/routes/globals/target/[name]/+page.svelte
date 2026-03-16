@@ -193,7 +193,13 @@
         params.set('period', period);
       }
       const res = await fetch(`/api/globals/target/${encodeURIComponent(targetName)}?${params}`);
-      if (!res.ok) return;
+      if (res.status === 404) {
+        // No data for this period — show empty state
+        applyData({ summary: { total_count: 0, total_value: 0, avg_value: 0, max_value: 0, hof_count: 0, ath_count: 0 }, top_players: [], activity: [], recent: [] });
+        loading = false;
+        return;
+      }
+      if (!res.ok) { loading = false; return; }
       const d = await res.json();
       // Preserve the full maturities list and wiki URL from initial load
       const fullMaturities = maturities;
@@ -444,7 +450,7 @@
     </div>
   </div>
 
-  {#if initialLoading || loading}
+  {#if initialLoading}
     <div class="skeleton-container">
       <div class="skeleton-stats">
         <Skeleton variant="rect" height="80px" />
@@ -457,6 +463,7 @@
   {:else if !initialData || !summary}
     <p class="empty-state">No globals recorded for this target</p>
   {:else}
+  <div class:loading-fade={loading}>
     <!-- Maturity Filter -->
     {#if maturities.length > 0}
       <div class="maturity-filter">
@@ -655,6 +662,7 @@
         <p class="empty-state-sm">No player data available</p>
       {/if}
     </div>
+  </div>
   {/if}
 </div>
 
@@ -889,6 +897,12 @@
     .skeleton-stats {
       grid-template-columns: 1fr;
     }
+  }
+
+  .loading-fade {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
   }
 
   .empty-state {
