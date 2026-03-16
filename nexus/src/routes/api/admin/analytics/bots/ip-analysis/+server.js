@@ -126,13 +126,13 @@ export async function GET({ locals, url }) {
                AND rv.ip_address << ANY($2::cidr[])
              GROUP BY network(set_masklen(rv.ip_address, 24))`,
             [days, allCidrs]
-          ),
+          ).catch(() => ({ rows: [] })),
           // Check if beacon infrastructure has enough data to be meaningful
           pool.query(
             `SELECT count(*)::integer AS cnt FROM beacon_hits
              WHERE last_seen >= now() - $1 * interval '1 day'`,
             [days]
-          ),
+          ).catch(() => ({ rows: [{ cnt: 0 }] })),
         ])
       : [{ rows: [] }, { rows: [] }, { rows: [] }, { rows: [{ cnt: 0 }] }];
 
@@ -140,7 +140,11 @@ export async function GET({ locals, url }) {
     const singlePageMap = new Map(singlePageRes.rows.map(r => [r.subnet, r.single_page_ips]));
     const timingMap = new Map(timingRes.rows.map(r => [r.subnet, r]));
     const beaconMap = new Map(beaconRes.rows.map(r => [r.subnet, r]));
-    const beaconActive = (beaconCountRes.rows[0]?.cnt ?? 0) >= 5;
+    // Only score beacon absence when coverage is meaningful: at least 100 beacon
+    // hits AND at least 10% of non-bot IPs have fired the beacon.
+    const beaconCount = beaconCountRes.rows[0]?.cnt ?? 0;
+    const totalNonBotIps = subnets.reduce((a, s) => a + s.non_bot_ips, 0);
+    const beaconActive = beaconCount >= 100 && (totalNonBotIps === 0 || beaconCount / totalNonBotIps >= 0.10);
 
     // Compute score breakdown in JS for transparency
     const scored = subnets.map(s => {
