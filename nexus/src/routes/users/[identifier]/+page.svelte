@@ -1583,11 +1583,11 @@
                       {#if globalsAthMode === 'best' || globalsAthMode === 'bestTarget'}
                         {@const r = entry.best_rank}
                         <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
-                        <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
+                        <span class="ranking-badge" title="Rank by best loot" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
                       {:else}
                         {@const r = entry.total_rank}
                         <span class="ranking-value">{formatPedShort(entry.total_value)} PED</span>
-                        <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
+                        <span class="ranking-badge" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
                       {/if}
                     </div>
                   {:else}

@@ -521,11 +521,11 @@
               <div class="category-card-ranks">
                 <div class="category-rank-item">
                   <span class="category-rank-label">Value</span>
-                  <span class="ranking-badge ranking-badge-lg" class:rank-ruby={cr.value_rank <= 1} class:rank-diamond={cr.value_rank > 1 && cr.value_rank <= 10} class:rank-gold={cr.value_rank > 10 && cr.value_rank <= 50} class:rank-silver={cr.value_rank > 50 && cr.value_rank <= 200} class:rank-bronze={cr.value_rank > 200 && cr.value_rank <= 500}>#{cr.value_rank}</span>
+                  <span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={cr.value_rank <= 1} class:rank-diamond={cr.value_rank > 1 && cr.value_rank <= 10} class:rank-gold={cr.value_rank > 10 && cr.value_rank <= 50} class:rank-silver={cr.value_rank > 50 && cr.value_rank <= 200} class:rank-bronze={cr.value_rank > 200 && cr.value_rank <= 500}>#{cr.value_rank}</span>
                 </div>
                 <div class="category-rank-item">
                   <span class="category-rank-label">Count</span>
-                  <span class="ranking-badge ranking-badge-lg ranking-badge-count" class:rank-ruby={cr.count_rank <= 1} class:rank-diamond={cr.count_rank > 1 && cr.count_rank <= 10} class:rank-gold={cr.count_rank > 10 && cr.count_rank <= 50} class:rank-silver={cr.count_rank > 50 && cr.count_rank <= 200} class:rank-bronze={cr.count_rank > 200 && cr.count_rank <= 500}>#{cr.count_rank}</span>
+                  <span class="ranking-badge ranking-badge-lg ranking-badge-count" title="Rank by global count" class:rank-ruby={cr.count_rank <= 1} class:rank-diamond={cr.count_rank > 1 && cr.count_rank <= 10} class:rank-gold={cr.count_rank > 10 && cr.count_rank <= 50} class:rank-silver={cr.count_rank > 50 && cr.count_rank <= 200} class:rank-bronze={cr.count_rank > 200 && cr.count_rank <= 500}>#{cr.count_rank}</span>
                 </div>
               </div>
             {/if}
@@ -599,9 +599,9 @@
                 {@const cr = entry.count_rank || 0}
                 {@const v = useBest ? entry.best_value : entry.total_value}
                 <div class="highlight-row">
-                  <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
+                  <span class="ranking-badge" title={useBest ? "Rank by best loot" : "Rank by total value"} class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
                   {#if cr > 0}
-                    <span class="ranking-badge ranking-badge-count" class:rank-ruby={cr <= 1} class:rank-diamond={cr > 1 && cr <= 10} class:rank-gold={cr > 10 && cr <= 50} class:rank-silver={cr > 50 && cr <= 200} class:rank-bronze={cr > 200 && cr <= 500}>#{cr}</span>
+                    <span class="ranking-badge ranking-badge-count" title="Rank by global count" class:rank-ruby={cr <= 1} class:rank-diamond={cr > 1 && cr <= 10} class:rank-gold={cr > 10 && cr <= 50} class:rank-silver={cr > 50 && cr <= 200} class:rank-bronze={cr > 200 && cr <= 500}>#{cr}</span>
                   {/if}
                   <span class="highlight-name"><a href="/globals/target/{encodeURIComponent(entry.target)}" class="target-link">{entry.target}</a></span>
                   <span class="highlight-value">{formatPed(v)} PED</span>
@@ -773,7 +773,7 @@
                       >
                         <td class="col-rank">
                           {#if athRank}
-                            <span class="ranking-badge ranking-badge-lg" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                            <span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
                           {/if}
                         </td>
                         <td>
@@ -836,7 +836,7 @@
                     {#each pagedHuntingLoots as loot, i}
                       {@const athRank = athRankByTarget.get('hunting:mob:' + loot.mob_id) || athRankByTarget.get('hunting:' + loot.target?.toLowerCase())}
                       <tr>
-                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
+                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -905,7 +905,7 @@
                       <tr>
                         <td class="col-rank">
                           {#if athRank}
-                            <span class="ranking-badge ranking-badge-lg" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                            <span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
                           {/if}
                         </td>
                         <td><a href="/globals/target/{encodeURIComponent(res.target)}" class="target-link">{res.target}</a></td>
@@ -952,7 +952,7 @@
                     {#each pagedMiningLoots as loot, i}
                       {@const athRank = athRankByTarget.get('mining:' + loot.target?.toLowerCase())}
                       <tr>
-                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
+                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -1021,7 +1021,7 @@
                       <tr>
                         <td class="col-rank">
                           {#if athRank}
-                            <span class="ranking-badge ranking-badge-lg" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                            <span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
                           {/if}
                         </td>
                         <td><a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a></td>
@@ -1068,7 +1068,7 @@
                     {#each pagedCraftingLoots as loot, i}
                       {@const athRank = athRankByTarget.get('crafting:' + loot.target?.toLowerCase())}
                       <tr>
-                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
+                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
@@ -1312,7 +1312,7 @@
                   <tbody>
                     {#each athRankings.pvp as entry}
                       <tr>
-                        <td class="col-rank"><span class="ranking-badge ranking-badge-lg" class:rank-ruby={entry.rank <= 1} class:rank-diamond={entry.rank > 1 && entry.rank <= 10} class:rank-gold={entry.rank > 10 && entry.rank <= 50} class:rank-silver={entry.rank > 50 && entry.rank <= 200} class:rank-bronze={entry.rank > 200 && entry.rank <= 500}>#{entry.rank}</span></td>
+                        <td class="col-rank"><span class="ranking-badge ranking-badge-lg" title="PvP rank" class:rank-ruby={entry.rank <= 1} class:rank-diamond={entry.rank > 1 && entry.rank <= 10} class:rank-gold={entry.rank > 10 && entry.rank <= 50} class:rank-silver={entry.rank > 50 && entry.rank <= 200} class:rank-bronze={entry.rank > 200 && entry.rank <= 500}>#{entry.rank}</span></td>
                         <td class="right font-weight-bold">{Math.round(entry.value)} Kills</td>
                         <td class="col-badge">{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
@@ -1361,7 +1361,7 @@
                         <tbody>
                           {#each pagedAthByBest as t}
                             <tr>
-                              <td class="col-rank"><span class="ranking-badge ranking-badge-lg" class:rank-ruby={t.best_rank <= 1} class:rank-diamond={t.best_rank > 1 && t.best_rank <= 10} class:rank-gold={t.best_rank > 10 && t.best_rank <= 50} class:rank-silver={t.best_rank > 50 && t.best_rank <= 200} class:rank-bronze={t.best_rank > 200 && t.best_rank <= 500}>#{t.best_rank}</span></td>
+                              <td class="col-rank"><span class="ranking-badge ranking-badge-lg" title="Rank by best loot" class:rank-ruby={t.best_rank <= 1} class:rank-diamond={t.best_rank > 1 && t.best_rank <= 10} class:rank-gold={t.best_rank > 10 && t.best_rank <= 50} class:rank-silver={t.best_rank > 50 && t.best_rank <= 200} class:rank-bronze={t.best_rank > 200 && t.best_rank <= 500}>#{t.best_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
@@ -1399,7 +1399,7 @@
                         <tbody>
                           {#each pagedAthByTotal as t}
                             <tr>
-                              <td class="col-rank"><span class="ranking-badge ranking-badge-lg" class:rank-ruby={t.total_rank <= 1} class:rank-diamond={t.total_rank > 1 && t.total_rank <= 10} class:rank-gold={t.total_rank > 10 && t.total_rank <= 50} class:rank-silver={t.total_rank > 50 && t.total_rank <= 200} class:rank-bronze={t.total_rank > 200 && t.total_rank <= 500}>#{t.total_rank}</span></td>
+                              <td class="col-rank"><span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={t.total_rank <= 1} class:rank-diamond={t.total_rank > 1 && t.total_rank <= 10} class:rank-gold={t.total_rank > 10 && t.total_rank <= 50} class:rank-silver={t.total_rank > 50 && t.total_rank <= 200} class:rank-bronze={t.total_rank > 200 && t.total_rank <= 500}>#{t.total_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
