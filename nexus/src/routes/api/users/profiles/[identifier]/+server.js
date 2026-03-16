@@ -308,7 +308,7 @@ export async function PATCH({ params, request, locals }) {
     social_twitch: extractTwitch(body.socialTwitch, profileUser.social_twitch)
   };
 
-  if (next.default_profile_tab && !['General', 'Avatar', 'Services', 'Shops', 'Orders', 'Rentals'].includes(next.default_profile_tab)) {
+  if (next.default_profile_tab && !['General', 'Avatar', 'Globals', 'Services', 'Shops', 'Orders', 'Rentals'].includes(next.default_profile_tab)) {
     return getResponse({ error: 'Invalid default tab.' }, 400);
   }
 
