@@ -1698,6 +1698,7 @@
 
   .overview-category {
     margin-bottom: 0;
+    min-width: 0;
   }
 
   .overview-specials .section-card {
