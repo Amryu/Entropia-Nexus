@@ -1447,7 +1447,7 @@ class ExchangePage(QWidget):
         if not slim:
             return
         trade_side = 'buy' if side == 'sell' else 'sell'
-        from ..overlay.exchange_overlay import _QuickTradeDialog
+        from ...overlay.exchange_overlay import _QuickTradeDialog
         dialog = _QuickTradeDialog(
             slim=slim, order=order, side=trade_side,
             store=self._store, parent=self,

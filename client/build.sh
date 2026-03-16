@@ -39,6 +39,20 @@ HIDDEN_IMPORTS=(
     sounddevice
     _sounddevice_data
     obsws_python
+    client.overlay.custom_grid.builtin._common
+    client.overlay.custom_grid.builtin.button_widget
+    client.overlay.custom_grid.builtin.clock_widget
+    client.overlay.custom_grid.builtin.event_log
+    client.overlay.custom_grid.builtin.exchange_price
+    client.overlay.custom_grid.builtin.graph_widget
+    client.overlay.custom_grid.builtin.hunt_stats
+    client.overlay.custom_grid.builtin.label_widget
+    client.overlay.custom_grid.builtin.loot_list
+    client.overlay.custom_grid.builtin.mob_info
+    client.overlay.custom_grid.builtin.player_status
+    client.overlay.custom_grid.builtin.skill_gain
+    client.overlay.custom_grid.builtin.stat_label
+    client.overlay.custom_grid.builtin.timer_widget
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -171,6 +185,17 @@ python -m PyInstaller \
     --specpath "${ROOT}/client" \
     --collect-all py_mini_racer \
     --collect-all sounddevice \
+    --collect-all onnxruntime \
+    --collect-all numpy \
+    --exclude-module onnxruntime.transformers \
+    --exclude-module onnxruntime.quantization \
+    --exclude-module onnxruntime.tools \
+    --exclude-module onnxruntime.datasets \
+    --exclude-module sympy \
+    --exclude-module mpmath \
+    --exclude-module onnxtr \
+    --exclude-module scipy \
+    --exclude-module pyautogui \
     "${DATA_ARGS[@]}" \
     "${IMPORT_ARGS[@]}" \
     "${PLATFORM_ARGS[@]}" \
@@ -272,6 +297,16 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
 
     # 14. OpenCV Qt platform plugins — not using cv2.imshow()
     find "$INTERNAL_CHECK" -path '*/cv2/qt*' -type d | strip_dirs
+
+    # 15. onnxruntime offline tools — only inference (capi) is used
+    find "$INTERNAL_CHECK" -path '*/onnxruntime/transformers' -type d | strip_dirs
+    find "$INTERNAL_CHECK" -path '*/onnxruntime/quantization' -type d | strip_dirs
+    find "$INTERNAL_CHECK" -path '*/onnxruntime/tools' -type d | strip_dirs
+    find "$INTERNAL_CHECK" -path '*/onnxruntime/datasets' -type d | strip_dirs
+
+    # 16. sympy/mpmath — transitive onnxruntime deps, only for symbolic shape inference
+    find "$INTERNAL_CHECK" -path '*/sympy' -type d | strip_dirs
+    find "$INTERNAL_CHECK" -path '*/mpmath' -type d | strip_dirs
 
     SAVED_MB=$((SAVED / 1048576))
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."
