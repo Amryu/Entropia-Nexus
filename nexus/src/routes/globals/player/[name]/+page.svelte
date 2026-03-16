@@ -20,6 +20,7 @@
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
   import GzButton from '$lib/components/globals/GzButton.svelte';
+  import Skeleton from '$lib/components/Skeleton.svelte';
 
   let { data } = $props();
 
@@ -67,9 +68,22 @@
     mediaDialogGlobal = null;
   }
 
-  let playerData = $state((() => data.playerData)());
+  let playerData = $state(null);
+  let initialLoading = $state(true);
   let playerName = $derived(data.playerName);
   let recentSort = $state({ col: 'timestamp', asc: false });
+
+  // Resolve streamed promise from server load function
+  $effect(() => {
+    const incoming = data.playerData;
+    if (incoming && typeof incoming.then === 'function') {
+      initialLoading = true;
+      incoming.then(d => { playerData = d; initialLoading = false; });
+    } else {
+      playerData = incoming;
+      initialLoading = false;
+    }
+  });
 
   // Tabs - base tabs always shown, extra tabs conditional on data
   const BASE_TABS = [
@@ -353,7 +367,18 @@
     </div>
   </div>
 
-  {#if !playerData || !summary}
+  {#if initialLoading || loading}
+    <div class="skeleton-container">
+      <div class="skeleton-stats">
+        <Skeleton variant="rect" height="80px" />
+        <Skeleton variant="rect" height="80px" />
+        <Skeleton variant="rect" height="80px" />
+        <Skeleton variant="rect" height="80px" />
+      </div>
+      <Skeleton variant="rect" height="200px" />
+      <Skeleton variant="rect" height="300px" />
+    </div>
+  {:else if !playerData || !summary}
     <p class="empty-state">No globals recorded for this player</p>
   {:else}
     <!-- Period Selector -->
@@ -1409,6 +1434,25 @@
     text-transform: uppercase;
     background: rgba(96, 176, 255, 0.15);
     color: var(--accent-color);
+  }
+
+  .skeleton-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 0;
+  }
+
+  .skeleton-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .skeleton-stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
   .empty-state {

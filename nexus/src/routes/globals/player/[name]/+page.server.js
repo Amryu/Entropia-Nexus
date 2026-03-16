@@ -1,17 +1,14 @@
 // @ts-nocheck
 import { decodeURIComponentSafe } from '$lib/util.js';
 
-export async function load({ params, fetch }) {
+export function load({ params, fetch }) {
   const playerName = decodeURIComponentSafe(params.name);
 
-  try {
-    const res = await fetch(`/api/globals/player/${encodeURIComponent(playerName)}`);
-    if (!res.ok) {
-      return { playerData: null, playerName };
-    }
-    const playerData = await res.json();
-    return { playerData, playerName };
-  } catch {
-    return { playerData: null, playerName };
-  }
+  // Return promise without awaiting — SvelteKit streams it so the
+  // page shell (header, search, skeleton) renders immediately.
+  const playerData = fetch(`/api/globals/player/${encodeURIComponent(playerName)}`)
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+
+  return { playerData, playerName };
 }

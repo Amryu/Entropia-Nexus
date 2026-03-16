@@ -21,6 +21,7 @@
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
   import GzButton from '$lib/components/globals/GzButton.svelte';
+  import Skeleton from '$lib/components/Skeleton.svelte';
 
   let { data } = $props();
 
@@ -56,7 +57,21 @@
     mediaDialogGlobal = null;
   }
 
-  let { targetData: initialData, targetName } = $derived(data);
+  let targetName = $derived(data.targetName);
+  let initialData = $state(null);
+  let initialLoading = $state(true);
+
+  // Resolve streamed promise from server load function
+  $effect(() => {
+    const incoming = data.targetData;
+    if (incoming && typeof incoming.then === 'function') {
+      initialLoading = true;
+      incoming.then(d => { initialData = d; initialLoading = false; });
+    } else {
+      initialData = incoming;
+      initialLoading = false;
+    }
+  });
 
   let summary = $state(null);
   let topPlayers = $state([]);
@@ -415,7 +430,17 @@
     </div>
   </div>
 
-  {#if !initialData || !summary}
+  {#if initialLoading || loading}
+    <div class="skeleton-container">
+      <div class="skeleton-stats">
+        <Skeleton variant="rect" height="80px" />
+        <Skeleton variant="rect" height="80px" />
+        <Skeleton variant="rect" height="80px" />
+      </div>
+      <Skeleton variant="rect" height="200px" />
+      <Skeleton variant="rect" height="300px" />
+    </div>
+  {:else if !initialData || !summary}
     <p class="empty-state">No globals recorded for this target</p>
   {:else}
     <!-- Maturity Filter -->
@@ -831,6 +856,25 @@
 
   .sort-btn:hover:not(.active) {
     color: var(--text-color);
+  }
+
+  .skeleton-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 0;
+  }
+
+  .skeleton-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .skeleton-stats {
+      grid-template-columns: 1fr;
+    }
   }
 
   .empty-state {
