@@ -740,8 +740,8 @@
                   </thead>
                   <tbody>
                     {#each pagedHuntingLoots as loot, i}
+                      {@const rank = huntLootPage * PAGE_SIZE + i + 1}
                       <tr>
-                        {@const rank = huntLootPage * PAGE_SIZE + i + 1}
                         <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
@@ -849,8 +849,8 @@
                   </thead>
                   <tbody>
                     {#each pagedMiningLoots as loot, i}
+                      {@const rank = miningLootPage * PAGE_SIZE + i + 1}
                       <tr>
-                        {@const rank = miningLootPage * PAGE_SIZE + i + 1}
                         <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
@@ -958,8 +958,8 @@
                   </thead>
                   <tbody>
                     {#each pagedCraftingLoots as loot, i}
+                      {@const rank = craftLootPage * PAGE_SIZE + i + 1}
                       <tr>
-                        {@const rank = craftLootPage * PAGE_SIZE + i + 1}
                         <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
                         <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
