@@ -31,7 +31,7 @@ const CLOSED_PATTERNS = /\b(CLOSED|SOLD|EXPIRED|BOUGHT|COMPLETE|COMPLETED)\b|\[C
 const TITLE_NOISE = /\b(WTS|WTB|WTT|WTS\/T|WTB\/T|WTS\/WTT|SELLING|BUYING|PRICE\s*CHECK|PC|P\/C)\b/gi;
 
 // Word boundary characters for item name matching
-const BOUNDARY_CHARS = new Set([' ', ',', '/', '+', '|', '(', ')', '.', ':', ';', '-', '!', '?', '\t', '\n']);
+const BOUNDARY_CHARS = new Set([' ', ',', '/', '+', '|', '(', ')', '[', ']', '.', ':', ';', '-', '!', '?', '\t', '\n']);
 
 // Common words that happen to be item names but cause false positives in forum context
 const BLOCKLIST = new Set([
@@ -90,13 +90,47 @@ function decodeEntities(text) {
 
 /**
  * Strip HTML tags from content to produce plain text.
+ * Extracts link text and decodes href URLs so item names
+ * embedded in links (e.g. entropianexus.com/items/weapons/Omegaton%20A204) are preserved.
  */
 function stripHtml(html) {
-  return html
+  // Replace links with their text + decoded href path for extra matching surface
+  let text = html.replace(/<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, linkText) => {
+    let extra = '';
+    try {
+      const url = new URL(href, 'http://x');
+      const path = decodeURIComponent(url.pathname);
+      // Extract last path segment which often contains the item name (with ~ for spaces)
+      const seg = path.split('/').pop() || '';
+      extra = seg.replace(/~/g, ' ').replace(/[_-]/g, ' ');
+    } catch (_) {}
+    return ` ${linkText} ${extra} `;
+  });
+  text = text
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<\/?[^>]+(>|$)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\s+/g, ' ');
+  return text.trim();
+}
+
+/**
+ * Normalize text for item matching:
+ * - Decode HTML entities
+ * - Decode URL-encoded characters (%20, %2C, etc.)
+ * - Strip square brackets (game copy-paste format: [Item Name])
+ * - Normalize unicode whitespace and dashes
+ */
+function normalizeForMatching(text) {
+  let s = decodeEntities(text);
+  // Decode URL-encoded sequences (e.g. from links: Omegaton%20A204)
+  try { s = decodeURIComponent(s); } catch (_) { /* ignore malformed */ }
+  // Strip square brackets: [Item Name] → Item Name
+  s = s.replace(/\[([^\]]*)\]/g, ' $1 ');
+  // Normalize dashes and special whitespace
+  s = s.replace(/\u2013|\u2014/g, '-'); // en/em dash
+  s = s.replace(/\u00a0/g, ' '); // nbsp
+  s = s.replace(/\s+/g, ' ');
+  return s.trim();
 }
 
 /**
@@ -353,12 +387,13 @@ function fuzzyMatchItems(text, source, alreadyMatched) {
  * Match items in a thread's title and content.
  */
 function matchThreadItems(title, contentHtml) {
-  // Clean the title of trade prefixes
-  const cleanedTitle = title.replace(TITLE_NOISE, '').trim();
+  // Clean and normalize the title
+  const cleanedTitle = normalizeForMatching(title.replace(TITLE_NOISE, ''));
   const titleMatches = matchItems(cleanedTitle, 'title');
 
-  // Also match in content (plain text, first N chars)
-  const contentText = stripHtml(contentHtml).substring(0, CONTENT_MATCH_LENGTH);
+  // Normalize content: strip HTML, decode entities/URLs, strip brackets
+  const rawContent = stripHtml(contentHtml).substring(0, CONTENT_MATCH_LENGTH);
+  const contentText = normalizeForMatching(rawContent);
   const contentMatches = matchItems(contentText, 'content');
 
   // Merge: title matches take priority, content adds new items only
