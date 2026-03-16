@@ -248,8 +248,13 @@
     });
   }
 
-  onMount(() => {
-    if (playerData) buildActivityChart();
+  // Build chart when data first becomes available (after streaming resolves)
+  let chartBuilt = false;
+  $effect(() => {
+    if (playerData && !chartBuilt) {
+      chartBuilt = true;
+      tick().then(buildActivityChart);
+    }
   });
 
   onDestroy(() => {

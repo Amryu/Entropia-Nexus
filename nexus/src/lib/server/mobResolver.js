@@ -219,6 +219,20 @@ export function resolveMob(targetName) {
 }
 
 /**
+ * Resolve a base mob name (e.g. "Atrox") into a mob_id, even if the mob
+ * has no Default maturity. Used by the target page to find all maturities.
+ *
+ * @param {string} name - The base mob name.
+ * @returns {{ mobId: number, mobName: string } | null}
+ */
+export function resolveMobByName(name) {
+  if (!initialized || !name) return null;
+  const mob = mobsByName.get(name.toLowerCase().trim());
+  if (mob) return { mobId: mob.id, mobName: mob.name };
+  return null;
+}
+
+/**
  * Get the count of loaded mobs (for diagnostics).
  */
 export function getMobCount() {

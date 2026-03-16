@@ -377,8 +377,11 @@
     buildTopPlayersChart();
   }
 
-  onMount(() => {
-    if (initialData) {
+  // Build charts when data first becomes available (after streaming resolves)
+  let chartsBuilt = false;
+  $effect(() => {
+    if (initialData && !chartsBuilt) {
+      chartsBuilt = true;
       buildCharts();
       fetchLeaderboard();
     }

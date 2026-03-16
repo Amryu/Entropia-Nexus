@@ -13,7 +13,7 @@ import { pool } from '$lib/server/db.js';
 import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util.js';
 import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
-import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
+import { initMobResolver, resolveMob, resolveMobByName } from '$lib/server/mobResolver.js';
 
 // In-memory mob target resolution cache
 const MOB_TARGET_CACHE_TTL = 5 * 60_000; // 5 min — mob associations rarely change
@@ -104,28 +104,14 @@ export async function GET({ params, url, locals }) {
       resolvedTargets = cached.targets;
     } else {
       await initMobResolver();
-      const resolved = resolveMob(targetName);
+      // Try exact target name first (e.g. "Atrox Young"), then base mob name (e.g. "Atrox")
+      const resolved = resolveMob(targetName) || resolveMobByName(targetName);
       if (resolved) {
         // Got mob_id from in-memory resolver — just fetch sibling target names (indexed by mob_id)
         const mobLookup = await pool.query(
           `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
            WHERE confirmed = true AND mob_id = $1`,
           [resolved.mobId]
-        );
-        if (mobLookup.rows.length > 0) {
-          resolvedMobId = mobLookup.rows[0].mob_id;
-          resolvedTargets = mobLookup.rows.map(r => r.name);
-        }
-      } else {
-        // Not a known mob — try direct target name match (non-mob targets like resources)
-        const mobLookup = await pool.query(
-          `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
-           WHERE confirmed = true AND mob_id IS NOT NULL AND mob_id = (
-             SELECT mob_id FROM ingested_globals
-             WHERE confirmed = true AND mob_id IS NOT NULL AND lower(target_name) = lower($1)
-             LIMIT 1
-           )`,
-          [targetName]
         );
         if (mobLookup.rows.length > 0) {
           resolvedMobId = mobLookup.rows[0].mob_id;
@@ -191,12 +177,9 @@ export async function GET({ params, url, locals }) {
     }
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('SET LOCAL statement_timeout = 15000');
+  const q = pool.query.bind(pool);
 
-    const q = client.query.bind(client);
+  try {
 
     const [
       summaryResult,
@@ -324,8 +307,6 @@ export async function GET({ params, url, locals }) {
       ),
     ]);
 
-    await client.query('COMMIT');
-
     const summary = summaryResult.rows[0];
 
     if (parseInt(summary.total_count) === 0) {
@@ -451,14 +432,7 @@ export async function GET({ params, url, locals }) {
     }
     return response;
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
-    if (e.message?.includes('statement timeout')) {
-      console.warn('[api/globals/target] Query timed out for:', targetName);
-      return getResponse({ error: 'Query too complex, try a narrower filter' }, 503);
-    }
     console.error('[api/globals/target] Error fetching target globals:', e);
     return getResponse({ error: 'Internal server error' }, 500);
-  } finally {
-    client.release();
   }
 }
