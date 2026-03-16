@@ -2000,27 +2000,52 @@
     color: var(--text-muted);
   }
 
+  .rank-badge.rank-ruby,
+  .rank-badge.rank-diamond {
+    position: relative;
+    overflow: hidden;
+  }
+
   .rank-badge.rank-ruby {
     color: #e0115f;
-    animation: shimmer-ruby 2s ease-in-out infinite;
+    text-shadow: 0 0 4px rgba(224, 17, 95, 0.3);
   }
+
   .rank-badge.rank-diamond {
     color: #b9f2ff;
-    animation: shimmer-diamond 2.5s ease-in-out infinite;
+    text-shadow: 0 0 4px rgba(185, 242, 255, 0.3);
   }
+
+  .rank-badge.rank-ruby::after,
+  .rank-badge.rank-diamond::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -100%;
+    width: 40%;
+    height: 200%;
+    transform: rotate(25deg);
+    animation: rank-swipe 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .rank-badge.rank-ruby::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 77, 141, 0.5), transparent);
+  }
+
+  .rank-badge.rank-diamond::after {
+    background: linear-gradient(90deg, transparent, rgba(224, 249, 255, 0.5), transparent);
+    animation-delay: 0.5s;
+  }
+
+  @keyframes rank-swipe {
+    0%, 100% { left: -100%; }
+    40%, 60% { left: 200%; }
+  }
+
   .rank-badge.rank-gold { color: #eab308; }
   .rank-badge.rank-silver { color: #c0c0c0; }
   .rank-badge.rank-bronze { color: #cd7f32; }
-
-  @keyframes shimmer-ruby {
-    0%, 100% { color: #e0115f; text-shadow: 0 0 4px rgba(224, 17, 95, 0.3); }
-    50% { color: #ff4d8d; text-shadow: 0 0 8px rgba(224, 17, 95, 0.6); }
-  }
-
-  @keyframes shimmer-diamond {
-    0%, 100% { color: #b9f2ff; text-shadow: 0 0 4px rgba(185, 242, 255, 0.3); }
-    50% { color: #e0f9ff; text-shadow: 0 0 8px rgba(185, 242, 255, 0.6); }
-  }
 
   /* Type badges */
   .type-badge {

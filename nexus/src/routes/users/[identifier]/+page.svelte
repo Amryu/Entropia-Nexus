@@ -2986,27 +2986,52 @@
     white-space: nowrap;
   }
 
+  .ranking-badge.rank-ruby,
+  .ranking-badge.rank-diamond {
+    position: relative;
+    overflow: hidden;
+  }
+
   .ranking-badge.rank-ruby {
     background: rgba(224, 17, 95, 0.15); color: #e0115f;
-    animation: shimmer-ruby 2s ease-in-out infinite;
+    text-shadow: 0 0 4px rgba(224, 17, 95, 0.3);
   }
+
   .ranking-badge.rank-diamond {
     background: rgba(185, 242, 255, 0.15); color: #b9f2ff;
-    animation: shimmer-diamond 2.5s ease-in-out infinite;
+    text-shadow: 0 0 4px rgba(185, 242, 255, 0.3);
   }
+
+  .ranking-badge.rank-ruby::after,
+  .ranking-badge.rank-diamond::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -100%;
+    width: 40%;
+    height: 200%;
+    transform: rotate(25deg);
+    pointer-events: none;
+  }
+
+  .ranking-badge.rank-ruby::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 77, 141, 0.5), transparent);
+    animation: rank-swipe 3s ease-in-out infinite;
+  }
+
+  .ranking-badge.rank-diamond::after {
+    background: linear-gradient(90deg, transparent, rgba(224, 249, 255, 0.5), transparent);
+    animation: rank-swipe 3s ease-in-out infinite 0.5s;
+  }
+
+  @keyframes rank-swipe {
+    0%, 100% { left: -100%; }
+    40%, 60% { left: 200%; }
+  }
+
   .ranking-badge.rank-gold { background: rgba(234, 179, 8, 0.15); color: #eab308; }
   .ranking-badge.rank-silver { background: rgba(192, 192, 192, 0.15); color: #c0c0c0; }
   .ranking-badge.rank-bronze { background: rgba(205, 127, 50, 0.15); color: #cd7f32; }
-
-  @keyframes shimmer-ruby {
-    0%, 100% { color: #e0115f; text-shadow: 0 0 4px rgba(224, 17, 95, 0.3); }
-    50% { color: #ff4d8d; text-shadow: 0 0 8px rgba(224, 17, 95, 0.6); }
-  }
-
-  @keyframes shimmer-diamond {
-    0%, 100% { color: #b9f2ff; text-shadow: 0 0 4px rgba(185, 242, 255, 0.3); }
-    50% { color: #e0f9ff; text-shadow: 0 0 8px rgba(185, 242, 255, 0.6); }
-  }
 
   /* Globals tab — rare items & discoveries */
   .globals-highlights {
