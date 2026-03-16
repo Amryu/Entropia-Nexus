@@ -960,7 +960,29 @@
   <!-- Live Table -->
   {#if isLiveView}
   <div class="table-section">
-    <h2>Recent Globals</h2>
+    <div class="live-header">
+      <h2>Recent Globals</h2>
+      <div class="live-type-filters">
+        {#each [
+          { value: '', label: 'All' },
+          { value: 'kill,team_kill,examine', label: 'Hunting' },
+          { value: 'deposit', label: 'Mining' },
+          { value: 'craft', label: 'Crafting' },
+          { value: 'rare_item', label: 'Rare Finds' },
+          { value: 'discovery', label: 'Discoveries' },
+          { value: 'tier', label: 'Tier Records' },
+          { value: 'pvp', label: 'PvP' },
+        ] as tf}
+          <button
+            class="type-btn"
+            class:active={typeFilter === tf.value}
+            onclick={() => onTypeFilter(tf.value)}
+          >
+            {tf.label}
+          </button>
+        {/each}
+      </div>
+    </div>
 
     {#if tableLoading}
       <div class="table-loading"><span class="spinner"></span></div>
@@ -1540,6 +1562,25 @@
     margin: 0 0 12px 0;
     font-size: 1.125rem;
     font-weight: 600;
+  }
+
+  .live-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .live-header h2 {
+    margin: 0;
+  }
+
+  .live-type-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
   }
 
   .empty-state {
