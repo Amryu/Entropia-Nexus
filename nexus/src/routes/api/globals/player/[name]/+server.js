@@ -18,6 +18,11 @@ const TOP_LOOTS_LIMIT = 100;
 const OVERVIEW_TOP_LIMIT = 10;
 const ATH_RANK_CUTOFF = 10;
 
+// Server-side response cache (anonymous users only)
+const RESPONSE_CACHE_TTL = 60_000; // 60 seconds
+const RESPONSE_CACHE_MAX = 500;
+const responseCache = new Map(); // key → { response, cachedAt }
+
 /** Wrap a query promise so timeout/errors return empty rows instead of crashing Promise.all */
 function safeQuery(queryPromise) {
   return queryPromise.catch(e => {
@@ -57,7 +62,7 @@ export async function GET({ params, url, locals }) {
 
   // Determine if rollup tables can serve summary/activity queries
   const rollupGranularity = chooseRollupGranularity(period, from, to);
-  const useRollup = rollupGranularity && isRollupReady() && periodCond;
+  const useRollup = rollupGranularity && isRollupReady() && (periodCond || period === 'all');
 
   // Build rollup period filter if applicable
   let rollupPeriodWhere = '';
@@ -72,8 +77,7 @@ export async function GET({ params, url, locals }) {
   function topLootsQuery(typeCondition) {
     return pool.query(
       `SELECT id, target_name, value, mob_id, is_hof, is_ath, event_timestamp,
-              media_image_key, media_video_url,
-              (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+              media_image_key, media_video_url
        FROM ingested_globals
        WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          AND ${typeCondition}
@@ -85,6 +89,16 @@ export async function GET({ params, url, locals }) {
 
   // Use pre-aggregated leaderboard table for all-time requests (no period/date filter)
   const useLeaderboard = isAthLeaderboardReady() && !periodCond;
+
+  // Server-side response cache (anonymous users only — logged-in users get personalized gz data)
+  const userId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
+  const cacheKey = `${playerName}|${period}|${from || ''}|${to || ''}`;
+  if (!userId) {
+    const cached = responseCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < RESPONSE_CACHE_TTL) {
+      return cached.response.clone();
+    }
+  }
 
   try {
     // Run all queries in parallel
@@ -207,8 +221,7 @@ export async function GET({ params, url, locals }) {
         `SELECT id, global_type, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
                 mob_id, maturity_id, extra,
-                media_image_key, media_video_url,
-                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          ORDER BY event_timestamp DESC
@@ -219,8 +232,7 @@ export async function GET({ params, url, locals }) {
       // Discovery + tier achievements
       pool.query(
         `SELECT id, global_type, target_name, value, extra, event_timestamp, is_hof, is_ath,
-                media_image_key, media_video_url,
-                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('discovery', 'tier')
@@ -231,8 +243,7 @@ export async function GET({ params, url, locals }) {
       // Rare items
       pool.query(
         `SELECT id, target_name, value, event_timestamp, is_hof, is_ath,
-                media_image_key, media_video_url,
-                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'rare_item'
@@ -243,8 +254,7 @@ export async function GET({ params, url, locals }) {
       // PvP events
       pool.query(
         `SELECT id, value, event_timestamp, is_hof, is_ath,
-                media_image_key, media_video_url,
-                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'pvp'
@@ -482,22 +492,29 @@ export async function GET({ params, url, locals }) {
       maturities: m.maturities.sort((a, b) => b.total_value - a.total_value),
     }));
 
+    // Batch lookup: gz counts for all globals (replaces per-row correlated subqueries)
+    const allGlobalIds = [
+      ...recentResult.rows, ...discoveryResult.rows, ...rareItemsResult.rows,
+      ...pvpResult.rows, ...topHuntingResult.rows, ...topMiningResult.rows, ...topCraftingResult.rows,
+    ].map(r => r.id).filter(Boolean);
+
+    const gzCountMap = new Map();
+    if (allGlobalIds.length > 0) {
+      const { rows: gzCountRows } = await pool.query(
+        `SELECT global_id, COUNT(*)::int AS gz_count FROM globals_gz WHERE global_id = ANY($1) GROUP BY global_id`,
+        [allGlobalIds]
+      );
+      for (const r of gzCountRows) gzCountMap.set(r.global_id, r.gz_count);
+    }
+
     // Batch lookup: which globals has the current user GZ'd?
-    const userId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
     const userGzSet = new Set();
-    if (userId) {
-      const allIds = [
-        ...recentResult.rows, ...discoveryResult.rows,
-        ...rareItemsResult.rows, ...pvpResult.rows,
-        ...topHuntingResult.rows, ...topMiningResult.rows, ...topCraftingResult.rows,
-      ].map(r => r.id).filter(Boolean);
-      if (allIds.length > 0) {
-        const { rows: gzRows } = await pool.query(
-          `SELECT global_id FROM globals_gz WHERE user_id = $1 AND global_id = ANY($2)`,
-          [userId, allIds]
-        );
-        for (const r of gzRows) userGzSet.add(r.global_id);
-      }
+    if (userId && allGlobalIds.length > 0) {
+      const { rows: gzRows } = await pool.query(
+        `SELECT global_id FROM globals_gz WHERE user_id = $1 AND global_id = ANY($2)`,
+        [userId, allGlobalIds]
+      );
+      for (const r of gzRows) userGzSet.add(r.global_id);
     }
 
     function mapLootRows(rows) {
@@ -511,7 +528,7 @@ export async function GET({ params, url, locals }) {
         timestamp: r.event_timestamp,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
-        gz_count: r.gz_count || 0,
+        gz_count: gzCountMap.get(r.id) || 0,
         ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       }));
     }
@@ -598,7 +615,7 @@ export async function GET({ params, url, locals }) {
         extra: r.extra,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
-        gz_count: r.gz_count || 0,
+        gz_count: gzCountMap.get(r.id) || 0,
         ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       achievements: discoveryResult.rows.map(r => ({
@@ -612,7 +629,7 @@ export async function GET({ params, url, locals }) {
         ath: r.is_ath,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
-        gz_count: r.gz_count || 0,
+        gz_count: gzCountMap.get(r.id) || 0,
         ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       rare_items: rareItemsResult.rows.map(r => ({
@@ -624,7 +641,7 @@ export async function GET({ params, url, locals }) {
         ath: r.is_ath,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
-        gz_count: r.gz_count || 0,
+        gz_count: gzCountMap.get(r.id) || 0,
         ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       pvp_events: pvpResult.rows.map(r => ({
@@ -635,7 +652,7 @@ export async function GET({ params, url, locals }) {
         ath: r.is_ath,
         media_image: r.media_image_key || null,
         media_video: r.media_video_url || null,
-        gz_count: r.gz_count || 0,
+        gz_count: gzCountMap.get(r.id) || 0,
         ...(userId != null && { user_gz: userGzSet.has(r.id) }),
       })),
       top_loots: {
@@ -680,6 +697,17 @@ export async function GET({ params, url, locals }) {
         'Cache-Control': userId ? 'private, max-age=60' : 'public, max-age=60',
       },
     });
+
+    // Cache response for anonymous users
+    if (!userId) {
+      if (responseCache.size >= RESPONSE_CACHE_MAX) {
+        const cutoff = Date.now() - RESPONSE_CACHE_TTL;
+        for (const [k, v] of responseCache) {
+          if (v.cachedAt < cutoff) responseCache.delete(k);
+        }
+      }
+      responseCache.set(cacheKey, { response: response.clone(), cachedAt: Date.now() });
+    }
     return response;
   } catch (e) {
     console.error('[api/globals/player] Error fetching player globals:', e);

@@ -14,6 +14,47 @@ import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$li
 import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 
+// In-memory mob target resolution cache
+const MOB_TARGET_CACHE_TTL = 5 * 60_000; // 5 min — mob associations rarely change
+const MOB_TARGET_CACHE_MAX = 2000;
+const mobTargetCache = new Map(); // key → { mobId, targets, cachedAt }
+
+function getCachedMobTargets(targetName) {
+  const key = targetName.toLowerCase();
+  const entry = mobTargetCache.get(key);
+  if (entry && Date.now() - entry.cachedAt < MOB_TARGET_CACHE_TTL) return entry;
+  return null;
+}
+
+function cacheMobTargets(targetName, mobId, targets) {
+  if (mobTargetCache.size >= MOB_TARGET_CACHE_MAX) {
+    // Evict expired entries
+    const cutoff = Date.now() - MOB_TARGET_CACHE_TTL;
+    for (const [k, v] of mobTargetCache) {
+      if (v.cachedAt < cutoff) mobTargetCache.delete(k);
+    }
+    // If still full, clear half
+    if (mobTargetCache.size >= MOB_TARGET_CACHE_MAX) {
+      const entries = [...mobTargetCache.keys()];
+      for (let i = 0; i < entries.length / 2; i++) mobTargetCache.delete(entries[i]);
+    }
+  }
+  const key = targetName.toLowerCase();
+  const entry = { mobId, targets, cachedAt: Date.now() };
+  mobTargetCache.set(key, entry);
+  // Also cache each individual target name pointing to the same entry
+  if (targets) {
+    for (const t of targets) {
+      mobTargetCache.set(t, entry);
+    }
+  }
+}
+
+// Server-side response cache (anonymous users only)
+const RESPONSE_CACHE_TTL = 60_000; // 60 seconds
+const RESPONSE_CACHE_MAX = 500;
+const responseCache = new Map(); // key → { response, cachedAt }
+
 /**
  * Extract the mob base name by stripping the maturity suffix.
  */
@@ -56,20 +97,27 @@ export async function GET({ params, url, locals }) {
   let resolvedMobId = null;
   let resolvedTargets = null;
   if (!maturityFilter) {
-    const mobLookup = await pool.query(
-      `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
-       WHERE confirmed = true AND mob_id IS NOT NULL
-         AND mob_id = (
-           SELECT mob_id FROM ingested_globals
-           WHERE confirmed = true AND mob_id IS NOT NULL
-             AND (lower(target_name) = lower($1) OR lower(target_name) LIKE lower($1) || ' %')
-           LIMIT 1
-         )`,
-      [targetName]
-    );
-    if (mobLookup.rows.length > 0) {
-      resolvedMobId = mobLookup.rows[0].mob_id;
-      resolvedTargets = mobLookup.rows.map(r => r.name);
+    const cached = getCachedMobTargets(targetName);
+    if (cached) {
+      resolvedMobId = cached.mobId;
+      resolvedTargets = cached.targets;
+    } else {
+      const mobLookup = await pool.query(
+        `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
+         WHERE confirmed = true AND mob_id IS NOT NULL
+           AND mob_id = (
+             SELECT mob_id FROM ingested_globals
+             WHERE confirmed = true AND mob_id IS NOT NULL
+               AND (lower(target_name) = lower($1) OR lower(target_name) LIKE lower($1) || ' %')
+             LIMIT 1
+           )`,
+        [targetName]
+      );
+      if (mobLookup.rows.length > 0) {
+        resolvedMobId = mobLookup.rows[0].mob_id;
+        resolvedTargets = mobLookup.rows.map(r => r.name);
+      }
+      cacheMobTargets(targetName, resolvedMobId, resolvedTargets);
     }
   }
 
@@ -101,7 +149,7 @@ export async function GET({ params, url, locals }) {
 
   // Determine if rollup tables can serve summary/activity queries
   const rollupGranularity = chooseRollupGranularity(period, from, to);
-  const useRollup = rollupGranularity && isRollupReady() && periodCond && !maturityFilter;
+  const useRollup = rollupGranularity && isRollupReady() && (periodCond || period === 'all') && !maturityFilter;
 
   // Build rollup query for summary+activity (uses target_name from resolvedTargets or exact match)
   let rollupTargetCond, rollupTargetParams;
@@ -116,6 +164,16 @@ export async function GET({ params, url, locals }) {
     const rpf = buildRollupPeriodFilter(rollupGranularity, period, from, to, 3);
     rollupTargetParams = [...rollupTargetParams, rollupGranularity, ...rpf.periodParams];
     var rollupPeriodWhere = rpf.periodWhere;
+  }
+
+  // Server-side response cache (anonymous users only — logged-in users get personalized gz data)
+  const targetUserId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
+  const cacheKey = `${targetName}|${period}|${from || ''}|${to || ''}|${maturityParam || ''}`;
+  if (!targetUserId) {
+    const cached = responseCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < RESPONSE_CACHE_TTL) {
+      return cached.response.clone();
+    }
   }
 
   const client = await pool.connect();
@@ -205,13 +263,12 @@ export async function GET({ params, url, locals }) {
             targetParams
           ),
 
-      // Recent globals (last 20)
+      // Recent globals (last 50)
       q(
         `SELECT id, global_type, player_name, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
                 mob_id, maturity_id, extra,
-                media_image_key, media_video_url,
-                (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
+                media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}${periodCond}
          ORDER BY event_timestamp DESC
@@ -279,21 +336,30 @@ export async function GET({ params, url, locals }) {
         }))
       : [];
 
+    // Batch lookup: gz counts for recent globals (replaces per-row correlated subqueries)
+    const recentGlobalIds = recentResult.rows.map(r => r.id).filter(Boolean);
+    const gzCountMap = new Map();
+    if (recentGlobalIds.length > 0) {
+      const { rows: gzCountRows } = await pool.query(
+        `SELECT global_id, COUNT(*)::int AS gz_count FROM globals_gz WHERE global_id = ANY($1) GROUP BY global_id`,
+        [recentGlobalIds]
+      );
+      for (const r of gzCountRows) gzCountMap.set(r.global_id, r.gz_count);
+    }
+
     // Batch lookup: which globals has the current user GZ'd?
-    const targetUserId = locals.session?.user ? String(locals.session.user.Id || locals.session.user.id) : null;
     const targetUserGzSet = new Set();
     if (targetUserId) {
-      const ids = recentResult.rows.map(r => r.id).filter(Boolean);
-      if (ids.length > 0) {
+      if (recentGlobalIds.length > 0) {
         const { rows: gzRows } = await pool.query(
           `SELECT global_id FROM globals_gz WHERE user_id = $1 AND global_id = ANY($2)`,
-          [targetUserId, ids]
+          [targetUserId, recentGlobalIds]
         );
         for (const r of gzRows) targetUserGzSet.add(r.global_id);
       }
     }
 
-    return new Response(JSON.stringify({
+    const response = new Response(JSON.stringify({
       target: targetName,
       primary_type: summary.primary_type,
       mob_id: mobId,
@@ -345,7 +411,7 @@ export async function GET({ params, url, locals }) {
           extra: r.extra,
           media_image: r.media_image_key || null,
           media_video: r.media_video_url || null,
-          gz_count: r.gz_count || 0,
+          gz_count: gzCountMap.get(r.id) || 0,
           ...(targetUserId != null && { user_gz: targetUserGzSet.has(r.id) }),
         }));
       })(),
@@ -356,6 +422,18 @@ export async function GET({ params, url, locals }) {
         'Cache-Control': targetUserId ? 'private, max-age=60' : 'public, max-age=60',
       },
     });
+
+    // Cache response for anonymous users
+    if (!targetUserId) {
+      if (responseCache.size >= RESPONSE_CACHE_MAX) {
+        const cutoff = Date.now() - RESPONSE_CACHE_TTL;
+        for (const [k, v] of responseCache) {
+          if (v.cachedAt < cutoff) responseCache.delete(k);
+        }
+      }
+      responseCache.set(cacheKey, { response: response.clone(), cachedAt: Date.now() });
+    }
+    return response;
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     if (e.message?.includes('statement timeout')) {
