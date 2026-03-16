@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getResponse, apiCall } from '$lib/util.js';
+import { PROFILE_TABS } from '$lib/constants.js';
 import {
   getUserProfileById,
   getUserProfileByEntropiaName,
@@ -308,7 +309,7 @@ export async function PATCH({ params, request, locals }) {
     social_twitch: extractTwitch(body.socialTwitch, profileUser.social_twitch)
   };
 
-  if (next.default_profile_tab && !['General', 'Avatar', 'Globals', 'Services', 'Shops', 'Orders', 'Rentals'].includes(next.default_profile_tab)) {
+  if (next.default_profile_tab && !PROFILE_TABS.includes(next.default_profile_tab)) {
     return getResponse({ error: 'Invalid default tab.' }, 400);
   }
 

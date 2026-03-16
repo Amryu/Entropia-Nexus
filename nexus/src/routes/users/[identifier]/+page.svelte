@@ -10,6 +10,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
   import { isPercentMarkupType, PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
+  import { PROFILE_TABS } from '$lib/constants.js';
   import { formatMarkupValue } from '../../market/exchange/orderUtils';
   import { getItemCategoryPath } from '$lib/market/categorize.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
@@ -723,15 +724,17 @@
   let hasShops = $derived(shops.length > 0);
   let hasOrders = $derived(orders.length > 0);
   let hasRentals = $derived(rentals.length > 0);
-  let availableTabs = $derived([
-    { id: 'General', label: 'General', available: true },
-    { id: 'Avatar', label: 'Avatar', available: hasAvatarData || (isOwner && isEditing) },
-    { id: 'Globals', label: 'Globals', available: !!profile.euName },
-    { id: 'Services', label: 'Services', available: hasServices },
-    { id: 'Rentals', label: 'Rentals', available: hasRentals },
-    { id: 'Shops', label: 'Shops', available: hasShops },
-    { id: 'Orders', label: 'Orders', available: hasOrders }
-  ].filter(tab => tab.available));
+  const tabAvailability = {
+    Avatar: () => hasAvatarData || (isOwner && isEditing),
+    Globals: () => !!profile.euName,
+    Services: () => hasServices,
+    Rentals: () => hasRentals,
+    Shops: () => hasShops,
+    Orders: () => hasOrders
+  };
+  let availableTabs = $derived(PROFILE_TABS
+    .map(id => ({ id, label: id, available: tabAvailability[id]?.() ?? true }))
+    .filter(tab => tab.available));
   $effect(() => {
     if (!untrack(() => tabInitialized) && availableTabs.length > 0) {
       const desired = profile.defaultTab || 'General';
