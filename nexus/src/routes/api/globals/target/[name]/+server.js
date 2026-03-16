@@ -13,6 +13,7 @@ import { pool } from '$lib/server/db.js';
 import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util.js';
 import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
+import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
 
 // In-memory mob target resolution cache
 const MOB_TARGET_CACHE_TTL = 5 * 60_000; // 5 min — mob associations rarely change
@@ -92,8 +93,8 @@ export async function GET({ params, url, locals }) {
   const { sqlUnit: bucketUnit } = getActivityBucket(period, from, to);
 
   // Resolve mob: find all maturity target names sharing the same mob_id.
-  // This allows base mob names (e.g. "Atrox") to load all maturities,
-  // and maturity names (e.g. "Atrox Young") to also show the full mob.
+  // Uses the in-memory mobResolver for instant mob_id lookup (no DB subquery),
+  // then queries by mob_id (indexed) for the actual target names in globals.
   let resolvedMobId = null;
   let resolvedTargets = null;
   if (!maturityFilter) {
@@ -102,20 +103,34 @@ export async function GET({ params, url, locals }) {
       resolvedMobId = cached.mobId;
       resolvedTargets = cached.targets;
     } else {
-      const mobLookup = await pool.query(
-        `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
-         WHERE confirmed = true AND mob_id IS NOT NULL
-           AND mob_id = (
+      await initMobResolver();
+      const resolved = resolveMob(targetName);
+      if (resolved) {
+        // Got mob_id from in-memory resolver — just fetch sibling target names (indexed by mob_id)
+        const mobLookup = await pool.query(
+          `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
+           WHERE confirmed = true AND mob_id = $1`,
+          [resolved.mobId]
+        );
+        if (mobLookup.rows.length > 0) {
+          resolvedMobId = mobLookup.rows[0].mob_id;
+          resolvedTargets = mobLookup.rows.map(r => r.name);
+        }
+      } else {
+        // Not a known mob — try direct target name match (non-mob targets like resources)
+        const mobLookup = await pool.query(
+          `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
+           WHERE confirmed = true AND mob_id IS NOT NULL AND mob_id = (
              SELECT mob_id FROM ingested_globals
-             WHERE confirmed = true AND mob_id IS NOT NULL
-               AND (lower(target_name) = lower($1) OR lower(target_name) LIKE lower($1) || ' %')
+             WHERE confirmed = true AND mob_id IS NOT NULL AND lower(target_name) = lower($1)
              LIMIT 1
            )`,
-        [targetName]
-      );
-      if (mobLookup.rows.length > 0) {
-        resolvedMobId = mobLookup.rows[0].mob_id;
-        resolvedTargets = mobLookup.rows.map(r => r.name);
+          [targetName]
+        );
+        if (mobLookup.rows.length > 0) {
+          resolvedMobId = mobLookup.rows[0].mob_id;
+          resolvedTargets = mobLookup.rows.map(r => r.name);
+        }
       }
       cacheMobTargets(targetName, resolvedMobId, resolvedTargets);
     }
@@ -277,12 +292,14 @@ export async function GET({ params, url, locals }) {
       ),
 
       // Available maturities for this target (find all variants sharing the same mob_id)
+      // Uses raw table — mob_id in rollup/agg tables has incomplete coverage
       resolvedMobId
         ? q(
-            `SELECT target_name, event_count AS count, sum_value AS value
-             FROM globals_target_agg
-             WHERE period = 'all' AND mob_id = $1
-             ORDER BY event_count DESC`,
+            `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
+             FROM ingested_globals
+             WHERE confirmed = true AND mob_id = $1
+             GROUP BY target_name
+             ORDER BY count(*) DESC`,
             [resolvedMobId]
           )
         : q(
