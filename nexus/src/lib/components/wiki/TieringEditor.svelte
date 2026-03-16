@@ -482,6 +482,9 @@
       tierIdx = newTiers.length - 1;
     }
 
+    // Clone the tier to avoid in-place mutation (Svelte 5 reactivity)
+    newTiers[tierIdx] = JSON.parse(JSON.stringify(newTiers[tierIdx]));
+
     // Ensure Materials array exists and has enough entries
     if (!newTiers[tierIdx].Materials) {
       newTiers[tierIdx].Materials = [];
