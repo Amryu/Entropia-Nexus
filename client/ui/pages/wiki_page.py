@@ -1289,6 +1289,9 @@ class WikiPage(QWidget):
             detail_view = MobDetailView(
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
+                nexus_client=self._nexus_client,
+                config=self._config,
+                config_path=self._config_path,
             )
         elif page_type_id == "skills":
             from ..widgets.skill_detail import SkillDetailView

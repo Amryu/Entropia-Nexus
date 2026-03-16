@@ -15,6 +15,7 @@
   import { buildEffectCaps, getEffectUnit as getEffectUnitFromCatalog } from '$lib/utils/loadoutEffects.js';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
+  import { buildEvalContext } from '$lib/utils/loadoutContext.js';
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
@@ -442,26 +443,23 @@
   }
 
   function processEntityData(entities) {
-    const rawWeapons = entities.weapons || [];
-    const rawAmplifiers = entities.weaponAmplifiers || [];
-    const rawVisionAttachments = entities.weaponVisionAttachments || [];
-
-    weapons = rawWeapons.filter(x => x.Properties?.Class !== 'Attached' && x.Properties?.Class !== 'Stationary').sort(alphabeticalSort);
-    amplifiers = rawAmplifiers.filter(x => x.Properties?.Type !== 'Matrix').sort(alphabeticalSort);
-    scopes = rawVisionAttachments.filter(x => x.Properties?.Type === 'Scope').sort(alphabeticalSort);
-    sights = rawVisionAttachments.filter(x => x.Properties?.Type === 'Sight').sort(alphabeticalSort);
-    absorbers = (entities.absorbers || []).sort(alphabeticalSort);
-    matrices = rawAmplifiers.filter(x => x.Properties?.Type === 'Matrix').sort(alphabeticalSort);
-    implants = (entities.mindforceImplants || []).sort(alphabeticalSort);
-    armorsets = (entities.armorSets || []).sort(alphabeticalSort);
-    armors = (entities.armors || []).sort(alphabeticalSort);
-    armorplatings = (entities.armorPlatings || []).sort(alphabeticalSort);
+    const ctx = buildEvalContext(entities);
+    weapons = ctx.weapons;
+    amplifiers = ctx.amplifiers;
+    scopes = ctx.scopes;
+    sights = ctx.sights;
+    absorbers = ctx.absorbers;
+    matrices = ctx.matrices;
+    implants = ctx.implants;
+    armorsets = ctx.armorSets;
+    armors = ctx.armors;
+    armorplatings = ctx.armorPlatings;
+    clothing = ctx.clothing;
+    pets = ctx.pets;
+    medicalTools = ctx.medicalTools;
+    medicalChips = ctx.medicalChips;
+    stimulants = ctx.stimulants;
     enhancers = (entities.enhancers || []).sort(alphabeticalSort);
-    clothing = (entities.clothings || []).sort(alphabeticalSort);
-    pets = (entities.pets || []).sort(alphabeticalSort);
-    medicalTools = (entities.medicalTools || []).sort(alphabeticalSort);
-    medicalChips = (entities.medicalChips || []).sort(alphabeticalSort);
-    stimulants = (entities.consumables || []).sort(alphabeticalSort);
     entitiesVersion += 1;
     if (loadout) {
       loadoutVersion += 1;

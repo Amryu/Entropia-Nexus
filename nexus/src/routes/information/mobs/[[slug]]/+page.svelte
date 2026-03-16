@@ -10,7 +10,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
-  import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps, hasItemTag } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
 
   // Wiki components
@@ -38,6 +38,14 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+
+  // Loadout evaluation (for cost-to-kill columns)
+  import { browser } from '$app/environment';
+  import { evaluateLoadout } from '$lib/utils/loadoutEvaluator.js';
+  import { loadLoadoutEntities } from '$lib/utils/entityLoader.js';
+  import { buildEvalContext } from '$lib/utils/loadoutContext.js';
+  import { buildEffectCaps } from '$lib/utils/loadoutEffects.js';
+  import { createPreference } from '$lib/preferences.js';
 
   // Wiki edit state
   import {
@@ -187,6 +195,137 @@
   // Cleanup on destroy
   onDestroy(() => {
     resetEditState();
+  });
+
+  // --- Loadout-based kill stats ---
+  const LOADOUT_LS_KEY = 'loadouts';
+  const isLimitedName = (name) => !!name && hasItemTag(name, 'L');
+  const getApiBase = () => browser ? (import.meta.env.VITE_API_URL || 'https://api.entropianexus.com') : '';
+  const selectedLoadoutPref = createPreference('wiki.mob.selectedLoadout', null);
+  let userLoadouts = $state([]);          // { id, name, data } for each loadout
+  let selectedLoadoutId = $state(null);
+  let loadoutStats = $state(null);        // { dpp, effectiveDamage, reload } or null
+  let loadoutEvalContext = null;          // cached entity context (not reactive)
+  let loadoutEffectsCatalog = null;       // cached effects catalog
+  let loadoutEffectCaps = null;           // cached effect caps
+
+  function readLocalLoadouts() {
+    if (!browser) return [];
+    try {
+      const raw = localStorage.getItem(LOADOUT_LS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return (Array.isArray(parsed) ? parsed : []).map(lo => ({
+        id: lo.Id || lo.id,
+        name: lo.Name || lo.name || 'Unnamed',
+        data: lo
+      }));
+    } catch { return []; }
+  }
+
+  async function fetchLoadouts() {
+    // Start with local loadouts (available to all users)
+    const local = readLocalLoadouts();
+
+    if (user) {
+      // Logged-in users: fetch online loadouts too
+      try {
+        const res = await fetch('/api/tools/loadout');
+        if (res.ok) {
+          const rows = await res.json();
+          const online = (rows || []).map(r => ({
+            id: r.id,
+            name: r.name || 'Unnamed',
+            data: r.data
+          }));
+          // Online loadouts first, then local (dedupe by name)
+          const onlineNames = new Set(online.map(l => l.name));
+          userLoadouts = [
+            ...online,
+            ...local.filter(l => !onlineNames.has(l.name))
+          ];
+          return;
+        }
+      } catch {}
+    }
+    userLoadouts = local;
+  }
+
+  async function evaluateSelectedLoadout() {
+    const lo = userLoadouts.find(l => l.id === selectedLoadoutId);
+    if (!lo?.data) {
+      loadoutStats = null;
+      return;
+    }
+
+    // Lazy-load entities
+    if (!loadoutEvalContext) {
+      try {
+        const rawEntities = await loadLoadoutEntities();
+        loadoutEvalContext = buildEvalContext(rawEntities);
+      } catch (e) {
+        console.error('Failed to load loadout entities:', e);
+        loadoutStats = null;
+        return;
+      }
+    }
+
+    // Lazy-load effects catalog
+    if (!loadoutEffectsCatalog) {
+      try {
+        const res = await fetch(`${getApiBase()}/effects`);
+        if (res.ok) {
+          loadoutEffectsCatalog = await res.json();
+          loadoutEffectCaps = buildEffectCaps(loadoutEffectsCatalog);
+        }
+      } catch {}
+    }
+
+    try {
+      const evaluation = evaluateLoadout(
+        lo.data,
+        loadoutEvalContext,
+        { effectsCatalog: loadoutEffectsCatalog || [], effectCaps: loadoutEffectCaps || {}, isLimitedName }
+      );
+      const s = evaluation?.stats;
+      if (s) {
+        loadoutStats = {
+          dpp: s.dpp ?? 0,
+          effectiveDamage: s.effectiveDamage ?? 0,
+          reload: s.reload ?? 0
+        };
+      } else {
+        loadoutStats = null;
+      }
+    } catch (e) {
+      console.error('Failed to evaluate loadout:', e);
+      loadoutStats = null;
+    }
+  }
+
+  function handleLoadoutChange(e) {
+    const val = e.target.value;
+    selectedLoadoutId = val || null;
+    selectedLoadoutPref.set(val || null);
+    evaluateSelectedLoadout();
+  }
+
+  onMount(async () => {
+    await selectedLoadoutPref.load(user?.id ?? null);
+    let storedId = null;
+    selectedLoadoutPref.subscribe(v => storedId = v)();
+    selectedLoadoutId = storedId;
+
+    await fetchLoadouts();
+
+    // If saved loadout no longer exists, clear
+    if (selectedLoadoutId && !userLoadouts.find(l => l.id === selectedLoadoutId)) {
+      selectedLoadoutId = null;
+      selectedLoadoutPref.set(null);
+    }
+
+    if (selectedLoadoutId) {
+      evaluateSelectedLoadout();
+    }
   });
 
   // Sidebar expanded/full-width state
@@ -1399,6 +1538,16 @@
             subtitle="{activeMob?.Maturities?.length || 0} maturities"
             ontoggle={savePanelStates}
           >
+            {#snippet actions()}
+              {#if !$editMode && userLoadouts.length > 0}
+                <select class="loadout-select" value={selectedLoadoutId || ''} onchange={handleLoadoutChange}>
+                  <option value="">No loadout</option>
+                  {#each userLoadouts as lo}
+                    <option value={lo.id}>{lo.name}</option>
+                  {/each}
+                </select>
+              {/if}
+            {/snippet}
             {#if $editMode}
               <MobMaturitiesEdit
                 maturities={activeMob?.Maturities || []}
@@ -1411,6 +1560,7 @@
                 maturities={activeMob?.Maturities}
                 type={activeMob?.Type}
                 selectedMaturityId={selectedMaturityIdForActiveMob}
+                {loadoutStats}
               />
             {/if}
           </DataSection>
@@ -1517,6 +1667,21 @@
 {/if}
 
 <style>
+  .loadout-select {
+    padding: 4px 8px;
+    font-size: 12px;
+    background-color: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    max-width: 180px;
+  }
+
+  .loadout-select:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
   .pending-change-banner {
     display: flex;
     justify-content: space-between;

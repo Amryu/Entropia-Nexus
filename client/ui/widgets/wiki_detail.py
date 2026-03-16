@@ -1192,6 +1192,11 @@ class DataSection(QWidget):
         """Add a widget to the content area."""
         self._content_layout.addWidget(widget)
 
+    def add_header_widget(self, widget: QWidget):
+        """Insert a widget into the header, before the chevron."""
+        header_layout = self._header.layout()
+        header_layout.insertWidget(header_layout.count() - 1, widget)
+
     def _update_state(self):
         self._content.setVisible(self._expanded)
         self._separator.setVisible(self._expanded)

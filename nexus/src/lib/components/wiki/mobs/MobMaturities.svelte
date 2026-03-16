@@ -16,7 +16,7 @@
    */
 
   /** @type {Props} */
-  let { maturities = [], type = null, selectedMaturityId = null } = $props();
+  let { maturities = [], type = null, selectedMaturityId = null, loadoutStats = null } = $props();
   let tableContainer = $state();
   let lastSelectedKey = null;
 
@@ -89,13 +89,32 @@
     const secondaryAttack = maturity.Attacks?.find(a => a.Name === 'Secondary') || maturity.Attacks?.[1];
     const tertiaryAttack = maturity.Attacks?.find(a => a.Name === 'Tertiary') || maturity.Attacks?.[2];
 
+    // Loadout-based kill stats
+    const hp = maturity.Properties?.Health;
+    let costToKill = null;
+    let shotsToKill = null;
+    let timeToKill = null;
+
+    if (loadoutStats && hp != null) {
+      const { dpp, effectiveDamage, reload } = loadoutStats;
+      if (effectiveDamage > 0) {
+        shotsToKill = Math.ceil(hp / effectiveDamage);
+        if (reload > 0) {
+          timeToKill = (shotsToKill - 1) * reload;
+        }
+      }
+      if (dpp > 0) {
+        costToKill = (hp / dpp) / 100; // PEC → PED
+      }
+    }
+
     return {
       id: maturity?.Id ?? null,
       name: sortedMaturities.length === 1 && (!maturity.Name || maturity.Name.trim().length === 0)
         ? 'Single Maturity'
         : maturity.Name || 'Unknown',
       level: maturity.Properties?.Level,
-      hp: maturity.Properties?.Health,
+      hp,
       hpPerLevel: hpPerLevel,
       boss: maturity.Properties?.Boss === true,
       primaryDamage: getTotalDamage(primaryAttack),
@@ -106,7 +125,10 @@
       tertiaryTooltip: getDamageComposition(tertiaryAttack),
       defense: getTotalDefense(maturity),
       tameable: maturity.Properties?.Taming?.IsTameable || maturity.Properties?.TamingLevel > 0,
-      tamingLevel: maturity.Properties?.Taming?.TamingLevel || maturity.Properties?.TamingLevel
+      tamingLevel: maturity.Properties?.Taming?.TamingLevel || maturity.Properties?.TamingLevel,
+      costToKill,
+      shotsToKill,
+      timeToKill,
     };
   }));
 
@@ -215,7 +237,37 @@
     }
   ];
 
-  let columns = $derived(isAsteroid ? baseColumns : [...baseColumns, ...mobColumns]);
+  let loadoutColumns = $derived(loadoutStats ? [
+    {
+      key: 'costToKill',
+      header: 'Cost/kill',
+      sortable: true,
+      formatter: (value) => value != null
+        ? `<span style="font-family: monospace;">${value.toFixed(2)}</span>`
+        : 'N/A'
+    },
+    {
+      key: 'shotsToKill',
+      header: 'Shots/kill',
+      sortable: true,
+      formatter: (value) => value != null
+        ? `<span style="font-family: monospace;">${value}</span>`
+        : 'N/A'
+    },
+    {
+      key: 'timeToKill',
+      header: 'Time/kill',
+      sortable: true,
+      formatter: (value) => value != null
+        ? `<span style="font-family: monospace;">${value.toFixed(1)}s</span>`
+        : 'N/A'
+    }
+  ] : []);
+
+  let columns = $derived(isAsteroid
+    ? [...baseColumns, ...loadoutColumns]
+    : [...baseColumns, ...mobColumns, ...loadoutColumns]
+  );
 </script>
 
 <div class="maturities-table-container" bind:this={tableContainer}>

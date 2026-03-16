@@ -115,6 +115,7 @@ class AppConfig:
     main_window_screen_center: list | None = None
     active_loadout_id: str | None = None
     overamp_mode: str = "percent"  # 'percent' or 'delta'
+    mob_maturity_loadout_id: str | None = None
 
     # Wiki
     wiki_column_prefs: dict = field(default_factory=dict)
@@ -383,6 +384,7 @@ DEFAULTS = {
     "main_window_screen_center": None,
     "active_loadout_id": None,
     "overamp_mode": "percent",
+    "mob_maturity_loadout_id": None,
     "wiki_column_prefs": {},
     "inventory_prefs": {},
     "js_utils_path": "",

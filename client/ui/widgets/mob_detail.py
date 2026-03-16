@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QLabel, QPushButton, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
 )
 
 from ..icons import svg_icon, MAPS as MAPS_ICON, COPY as COPY_ICON, CHECK as CHECK_ICON
@@ -447,9 +447,20 @@ class MobDetailView(WikiDetailView):
 
     _globals_loaded = pyqtSignal(object)    # globals data dict from background thread
     _globals_refreshed = pyqtSignal(object)  # refresh update (partial)
+    _loadouts_loaded = pyqtSignal(object)   # list of loadout dicts
+    _loadout_evaluated = pyqtSignal(object) # LoadoutStats or None
 
     def __init__(self, item: dict, *, nexus_base_url: str = "",
-                 data_client=None, parent=None):
+                 data_client=None, nexus_client=None,
+                 config=None, config_path=None, parent=None):
+        self._nexus_client = nexus_client
+        self._mob_config = config
+        self._mob_config_path = config_path
+        self._loadouts: list[dict] = []
+        self._loadout_stats = None
+        self._mat_section = None
+        self._mat_flat_data: list[dict] = []
+        self._loadout_combo = None
         super().__init__(
             item, nexus_base_url=nexus_base_url,
             data_client=data_client, parent=parent,
@@ -595,6 +606,25 @@ class MobDetailView(WikiDetailView):
         if maturities:
             mat_section = DataSection("Maturities", expanded=True)
             mat_section.set_subtitle(f"{len(maturities)} maturities")
+            self._mat_section = mat_section
+
+            # Loadout dropdown
+            combo = QComboBox()
+            combo.setFixedWidth(170)
+            combo.setStyleSheet(
+                f"QComboBox {{ background-color: {PRIMARY}; color: {TEXT};"
+                f" border: 1px solid {BORDER}; border-radius: 4px;"
+                f" padding: 2px 6px; font-size: 12px; }}"
+                f"QComboBox:focus {{ border-color: {ACCENT}; }}"
+                f"QComboBox QAbstractItemView {{ background-color: {PRIMARY};"
+                f" color: {TEXT}; selection-background-color: {HOVER}; }}"
+            )
+            combo.addItem("No loadout", None)
+            combo.currentIndexChanged.connect(self._on_maturity_loadout_changed)
+            mat_section.add_header_widget(combo)
+            self._loadout_combo = combo
+
+            # Build flat maturity data
             flat = []
             for m in maturities:
                 m_name = m.get("Name") or "Single Maturity"
@@ -622,6 +652,7 @@ class MobDetailView(WikiDetailView):
                     "damage": primary,
                     "defense": total_def if total_def > 0 else None,
                 })
+            self._mat_flat_data = flat
             mat_section.set_content(make_section_table(
                 [
                     ColumnDef("name", "Name", main=True),
@@ -635,6 +666,17 @@ class MobDetailView(WikiDetailView):
                 default_sort=("level", "ASC"),
             ))
             self._add_article_section(mat_section)
+
+            # Async: fetch loadouts
+            self._loadouts_loaded.connect(self._on_loadouts_loaded)
+            self._loadout_evaluated.connect(self._on_loadout_evaluated)
+            if self._nexus_client:
+                threading.Thread(
+                    target=lambda: self._loadouts_loaded.emit(
+                        self._nexus_client.get_loadouts() or []
+                    ),
+                    daemon=True, name="mob-loadouts",
+                ).start()
 
         # --- Locations / Spawns table ---
         spawns = item.get("Spawns") or []
@@ -1338,3 +1380,148 @@ class MobDetailView(WikiDetailView):
             lbl = getattr(self, "_globals_top_page_lbl", None)
             if lbl:
                 lbl.setText(f"{page} / {total_pages}")
+
+    # --- Loadout-based kill stats ---
+
+    def _on_loadouts_loaded(self, loadouts: list):
+        """Populate the loadout combo box with fetched loadouts."""
+        if not loadouts or not self._loadout_combo:
+            return
+        self._loadouts = loadouts
+        combo = self._loadout_combo
+        combo.blockSignals(True)
+        for lo in loadouts:
+            name = lo.get("name") or lo.get("Name") or "Unnamed"
+            lo_id = lo.get("id") or lo.get("Id") or ""
+            combo.addItem(name, str(lo_id))
+
+        # Restore saved selection
+        saved_id = (
+            self._mob_config.mob_maturity_loadout_id
+            if self._mob_config else None
+        )
+        if saved_id:
+            for i in range(combo.count()):
+                if combo.itemData(i) == saved_id:
+                    combo.setCurrentIndex(i)
+                    break
+        combo.blockSignals(False)
+
+        # Evaluate if there's a saved selection
+        if saved_id and combo.currentData() == saved_id:
+            self._evaluate_loadout(saved_id)
+
+    def _on_maturity_loadout_changed(self, index: int):
+        """Handle loadout combo selection change."""
+        if not self._loadout_combo:
+            return
+        lo_id = self._loadout_combo.itemData(index)
+
+        # Persist preference
+        if self._mob_config and self._mob_config_path:
+            from ...core.config import save_config
+            self._mob_config.mob_maturity_loadout_id = lo_id
+            save_config(self._mob_config, self._mob_config_path)
+
+        if not lo_id:
+            self._loadout_stats = None
+            self._rebuild_maturity_table()
+            return
+
+        self._evaluate_loadout(lo_id)
+
+    def _evaluate_loadout(self, lo_id: str):
+        """Evaluate loadout stats in a background thread."""
+        lo_data = None
+        for lo in self._loadouts:
+            lid = str(lo.get("id") or lo.get("Id") or "")
+            if lid == lo_id:
+                lo_data = lo.get("data") or lo
+                break
+        if not lo_data:
+            self._loadout_stats = None
+            self._rebuild_maturity_table()
+            return
+
+        dc = self._data_client
+
+        def work():
+            try:
+                from ...loadout.calculator import LoadoutCalculator
+                calc = LoadoutCalculator()
+                entities = {
+                    "weapons": dc.get_weapons() if dc else [],
+                    "amplifiers": dc.get_amplifiers() if dc else [],
+                    "scopes_sights": dc.get_scopes_and_sights() if dc else [],
+                    "absorbers": dc.get_absorbers() if dc else [],
+                    "implants": dc.get_implants() if dc else [],
+                    "armor_sets": dc.get_armor_sets() if dc else [],
+                    "armors": dc.get_armors() if dc else [],
+                    "armor_platings": dc.get_armor_platings() if dc else [],
+                    "medical_tools": dc.get_medical_tools() if dc else [],
+                    "medical_chips": dc.get_medical_chips() if dc else [],
+                    "clothing": dc.get_clothing() if dc else [],
+                    "pets": dc.get_pets() if dc else [],
+                    "stimulants": dc.get_stimulants() if dc else [],
+                    "effects": dc.get_effects() if dc else [],
+                }
+                stats = calc.evaluate(lo_data, entities)
+                self._loadout_evaluated.emit(stats)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                self._loadout_evaluated.emit(None)
+
+        threading.Thread(target=work, daemon=True, name="mob-loadout-eval").start()
+
+    def _on_loadout_evaluated(self, stats):
+        """Handle loadout evaluation result — rebuild maturity table."""
+        self._loadout_stats = stats
+        self._rebuild_maturity_table()
+
+    def _rebuild_maturity_table(self):
+        """Rebuild the maturity table with or without kill stat columns."""
+        if not self._mat_section or not self._mat_flat_data:
+            return
+
+        import math
+        stats = self._loadout_stats
+        flat = self._mat_flat_data
+
+        columns = [
+            ColumnDef("name", "Name", main=True),
+            ColumnDef("level", "Level", format=lambda v: fmt_int(v)),
+            ColumnDef("hp", "HP", format=lambda v: fmt_int(v)),
+            ColumnDef("hpl", "HP/Lvl", format=lambda v: f"{v:.2f}" if v else "-"),
+            ColumnDef("damage", "Damage", format=lambda v: _fv(v, 1) if v else "-"),
+            ColumnDef("defense", "Defense", format=lambda v: _fv(v, 1) if v else "-"),
+        ]
+
+        dpp = (getattr(stats, "dpp", 0) or 0) if stats else 0
+        eff_dmg = (getattr(stats, "effective_damage", 0) or 0) if stats else 0
+        reload_time = (getattr(stats, "reload", 0) or 0) if stats else 0
+
+        if stats and (dpp > 0 or eff_dmg > 0):
+            columns.extend([
+                ColumnDef("ctk", "Cost/kill", format=lambda v: f"{v:.2f}" if v else "-"),
+                ColumnDef("stk", "Shots/kill", format=lambda v: str(int(v)) if v else "-"),
+                ColumnDef("ttk", "Time/kill", format=lambda v: f"{v:.1f}s" if v else "-"),
+            ])
+            augmented = []
+            for row in flat:
+                new_row = dict(row)
+                hp = row.get("hp")
+                if hp and eff_dmg > 0:
+                    stk = math.ceil(hp / eff_dmg)
+                    new_row["stk"] = stk
+                    new_row["ttk"] = (stk - 1) * reload_time if reload_time > 0 else None
+                else:
+                    new_row["stk"] = None
+                    new_row["ttk"] = None
+                new_row["ctk"] = (hp / dpp) / 100 if hp and dpp > 0 else None
+                augmented.append(new_row)
+            flat = augmented
+
+        self._mat_section.set_content(make_section_table(
+            columns, flat, default_sort=("level", "ASC"),
+        ))
