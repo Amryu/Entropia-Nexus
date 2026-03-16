@@ -75,14 +75,24 @@
 
   // Resolve streamed promise from server load function.
   // data.streamed.playerData is a promise (nested → not awaited during SSR).
+  // Guard against overwriting data from fetchData() (period changes).
+  let streamedResolved = false;
   $effect(() => {
     const incoming = data.streamed.playerData;
     if (incoming && typeof incoming.then === 'function') {
       initialLoading = true;
-      incoming.then(d => { playerData = d; initialLoading = false; });
-    } else {
+      streamedResolved = false;
+      incoming.then(d => {
+        if (!streamedResolved) {
+          playerData = d;
+          initialLoading = false;
+          streamedResolved = true;
+        }
+      });
+    } else if (!streamedResolved) {
       playerData = incoming;
       initialLoading = false;
+      streamedResolved = true;
     }
   });
 
