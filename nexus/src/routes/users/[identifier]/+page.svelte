@@ -1537,11 +1537,13 @@
                     <div class="ranking-entry">
                       <span class="ranking-target">{entry.target}</span>
                       {#if globalsAthMode === 'best' || globalsAthMode === 'bestTarget'}
+                        {@const r = entry.best_rank}
                         <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
-                        <span class="ranking-badge">#{entry.best_rank}</span>
+                        <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
                       {:else}
+                        {@const r = entry.total_rank}
                         <span class="ranking-value">{formatPedShort(entry.total_value)} PED</span>
-                        <span class="ranking-badge">#{entry.total_rank}</span>
+                        <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
                       {/if}
                     </div>
                   {:else}
@@ -2979,9 +2981,31 @@
     border-radius: 3px;
     font-size: 0.625rem;
     font-weight: 700;
-    background: rgba(234, 179, 8, 0.15);
-    color: #eab308;
+    background: rgba(128, 128, 128, 0.15);
+    color: var(--text-muted);
     white-space: nowrap;
+  }
+
+  .ranking-badge.rank-ruby {
+    background: rgba(224, 17, 95, 0.15); color: #e0115f;
+    animation: shimmer-ruby 2s ease-in-out infinite;
+  }
+  .ranking-badge.rank-diamond {
+    background: rgba(185, 242, 255, 0.15); color: #b9f2ff;
+    animation: shimmer-diamond 2.5s ease-in-out infinite;
+  }
+  .ranking-badge.rank-gold { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .ranking-badge.rank-silver { background: rgba(192, 192, 192, 0.15); color: #c0c0c0; }
+  .ranking-badge.rank-bronze { background: rgba(205, 127, 50, 0.15); color: #cd7f32; }
+
+  @keyframes shimmer-ruby {
+    0%, 100% { color: #e0115f; text-shadow: 0 0 4px rgba(224, 17, 95, 0.3); }
+    50% { color: #ff4d8d; text-shadow: 0 0 8px rgba(224, 17, 95, 0.6); }
+  }
+
+  @keyframes shimmer-diamond {
+    0%, 100% { color: #b9f2ff; text-shadow: 0 0 4px rgba(185, 242, 255, 0.3); }
+    50% { color: #e0f9ff; text-shadow: 0 0 8px rgba(185, 242, 255, 0.6); }
   }
 
   /* Globals tab — rare items & discoveries */

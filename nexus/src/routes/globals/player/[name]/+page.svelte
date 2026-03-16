@@ -1295,7 +1295,7 @@
                   <tbody>
                     {#each athRankings.pvp as entry}
                       <tr>
-                        <td class="col-rank"><span class="rank-badge" class:rank-top3={entry.rank <= 3}>#{entry.rank}</span></td>
+                        <td class="col-rank"><span class="rank-badge" class:rank-ruby={entry.rank <= 1} class:rank-diamond={entry.rank > 1 && entry.rank <= 10} class:rank-gold={entry.rank > 10 && entry.rank <= 50} class:rank-silver={entry.rank > 50 && entry.rank <= 200} class:rank-bronze={entry.rank > 200 && entry.rank <= 500}>#{entry.rank}</span></td>
                         <td class="right font-weight-bold">{Math.round(entry.value)} Kills</td>
                         <td class="col-badge">{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
@@ -1344,7 +1344,7 @@
                         <tbody>
                           {#each pagedAthByBest as t}
                             <tr>
-                              <td class="col-rank"><span class="rank-badge" class:rank-top3={t.best_rank <= 3}>#{t.best_rank}</span></td>
+                              <td class="col-rank"><span class="rank-badge" class:rank-ruby={t.best_rank <= 1} class:rank-diamond={t.best_rank > 1 && t.best_rank <= 10} class:rank-gold={t.best_rank > 10 && t.best_rank <= 50} class:rank-silver={t.best_rank > 50 && t.best_rank <= 200} class:rank-bronze={t.best_rank > 200 && t.best_rank <= 500}>#{t.best_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
@@ -1382,7 +1382,7 @@
                         <tbody>
                           {#each pagedAthByTotal as t}
                             <tr>
-                              <td class="col-rank"><span class="rank-badge" class:rank-top3={t.total_rank <= 3}>#{t.total_rank}</span></td>
+                              <td class="col-rank"><span class="rank-badge" class:rank-ruby={t.total_rank <= 1} class:rank-diamond={t.total_rank > 1 && t.total_rank <= 10} class:rank-gold={t.total_rank > 10 && t.total_rank <= 50} class:rank-silver={t.total_rank > 50 && t.total_rank <= 200} class:rank-bronze={t.total_rank > 200 && t.total_rank <= 500}>#{t.total_rank}</span></td>
                               <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
                               <td class="right col-count">{t.count}</td>
                               <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
@@ -2000,8 +2000,26 @@
     color: var(--text-muted);
   }
 
-  .rank-badge.rank-top3 {
-    color: #eab308;
+  .rank-badge.rank-ruby {
+    color: #e0115f;
+    animation: shimmer-ruby 2s ease-in-out infinite;
+  }
+  .rank-badge.rank-diamond {
+    color: #b9f2ff;
+    animation: shimmer-diamond 2.5s ease-in-out infinite;
+  }
+  .rank-badge.rank-gold { color: #eab308; }
+  .rank-badge.rank-silver { color: #c0c0c0; }
+  .rank-badge.rank-bronze { color: #cd7f32; }
+
+  @keyframes shimmer-ruby {
+    0%, 100% { color: #e0115f; text-shadow: 0 0 4px rgba(224, 17, 95, 0.3); }
+    50% { color: #ff4d8d; text-shadow: 0 0 8px rgba(224, 17, 95, 0.6); }
+  }
+
+  @keyframes shimmer-diamond {
+    0%, 100% { color: #b9f2ff; text-shadow: 0 0 4px rgba(185, 242, 255, 0.3); }
+    50% { color: #e0f9ff; text-shadow: 0 0 8px rgba(185, 242, 255, 0.6); }
   }
 
   /* Type badges */
