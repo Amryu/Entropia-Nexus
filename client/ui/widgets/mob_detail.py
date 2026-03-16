@@ -610,7 +610,7 @@ class MobDetailView(WikiDetailView):
 
             # Loadout dropdown
             combo = QComboBox()
-            combo.setFixedWidth(170)
+            combo.setFixedWidth(255)
             combo.setStyleSheet(
                 f"QComboBox {{ background-color: {PRIMARY}; color: {TEXT};"
                 f" border: 1px solid {BORDER}; border-radius: 4px;"

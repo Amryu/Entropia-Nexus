@@ -281,8 +281,19 @@
     }
 
     try {
+      // Normalize loadout data (fill missing defaults like the loadout page does)
+      const loadoutData = lo.data;
+      if (!loadoutData.Skill) loadoutData.Skill = { Hit: 200, Dmg: 200, Heal: 200 };
+      if (loadoutData.Skill.Heal == null) loadoutData.Skill.Heal = 200;
+      if (!loadoutData.Markup) loadoutData.Markup = {};
+      if (loadoutData.Markup.HealingTool == null) loadoutData.Markup.HealingTool = 100;
+      if (!loadoutData.Gear) loadoutData.Gear = {};
+      if (!loadoutData.Gear.Healing) loadoutData.Gear.Healing = { Name: null, Enhancers: { Heal: 0, Economy: 0, SkillMod: 0 } };
+      if (!loadoutData.Gear.Clothing) loadoutData.Gear.Clothing = [];
+      if (!loadoutData.Gear.Pet) loadoutData.Gear.Pet = { Name: null, Effect: null };
+
       const evaluation = evaluateLoadout(
-        lo.data,
+        loadoutData,
         loadoutEvalContext,
         { effectsCatalog: loadoutEffectsCatalog || [], effectCaps: loadoutEffectCaps || {}, isLimitedName }
       );
@@ -1726,7 +1737,7 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     color: var(--text-color);
-    max-width: 180px;
+    max-width: 270px;
   }
 
   .loadout-select:focus {
