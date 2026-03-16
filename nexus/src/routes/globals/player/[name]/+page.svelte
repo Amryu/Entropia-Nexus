@@ -653,7 +653,7 @@
                 {#each overviewDiscoveries as ach}
                   <div class="achievement-item">
                     <span class="type-badge type-discovery">Discovery</span>
-                    <span class="achievement-target">{ach.target}{#if ach.location}<span class="achievement-location"> in {ach.location}</span>{/if}</span>
+                    <span class="achievement-target">{ach.target}{#if ach.location}&nbsp;<span class="achievement-location">in {ach.location}</span>{/if}</span>
                     <span class="achievement-actions">
                       {#if ach.media_image || ach.media_video}
                         <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(ach)}>
@@ -1145,7 +1145,7 @@
               {#each discoveries as ach}
                 <div class="achievement-item">
                   <span class="type-badge type-discovery">Discovery</span>
-                  <span class="achievement-target">{ach.target}{#if ach.location}<span class="achievement-location"> in {ach.location}</span>{/if}</span>
+                  <span class="achievement-target">{ach.target}{#if ach.location}&nbsp;<span class="achievement-location">in {ach.location}</span>{/if}</span>
                   {#if ach.hof}<span class="badge-hof">HoF</span>{/if}
                   {#if ach.ath}<span class="badge-ath">ATH</span>{/if}
                   <span class="achievement-actions">
