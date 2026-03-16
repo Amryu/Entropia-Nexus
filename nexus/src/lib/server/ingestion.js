@@ -214,6 +214,20 @@ export function validateGlobalEvent(event) {
 }
 
 /**
+ * Normalize a global event after validation. Fixes known client issues:
+ * - Old clients embed location in discovery target_name as "Item. Item discovered in Location"
+ */
+export function normalizeGlobalEvent(event) {
+  if (event.type === 'discovery' && event.target) {
+    const match = event.target.match(/^(.+?)\. Item discovered in (.+)$/);
+    if (match) {
+      event.target = match[1];
+      event.location = match[2];
+    }
+  }
+}
+
+/**
  * Validate a single trade message object from a client submission.
  * Async because channel validation uses an in-memory cache loaded on demand.
  */

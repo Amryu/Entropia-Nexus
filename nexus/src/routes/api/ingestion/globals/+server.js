@@ -6,6 +6,7 @@ import {
   isIngestionAllowed,
   isIngestionBanned,
   validateGlobalEvent,
+  normalizeGlobalEvent,
   ingestGlobals,
   getGlobalsSince,
   parseRequestBody,
@@ -77,6 +78,7 @@ export async function POST({ request, locals }) {
       if (err) {
         errors.push({ index: i, error: err });
       } else {
+        normalizeGlobalEvent(events[i]);
         validEvents.push(events[i]);
       }
     }

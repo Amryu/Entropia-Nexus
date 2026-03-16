@@ -16,7 +16,8 @@ import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 const TOP_LOOTS_LIMIT = 100;
 const OVERVIEW_TOP_LIMIT = 10;
-const ATH_RANK_CUTOFF = 500;
+const ATH_RANK_CUTOFF = 500;           // Used for leaderboard table (pre-built, fast)
+const ATH_RANK_CUTOFF_LIVE = 50;       // Used for fallback CTE queries (period-filtered, expensive)
 
 // Server-side response cache (anonymous users only)
 const RESPONSE_CACHE_TTL = 60_000; // 60 seconds
@@ -312,7 +313,7 @@ export async function GET({ params, url, locals }) {
           [playerName]
         )),
       ] : [
-        // Fallback: live CTE queries for period-filtered requests
+        // Fallback: live CTE queries for period-filtered requests (capped to lower rank to avoid timeouts)
         safeQuery(pool.query(
           `WITH target_totals AS (
              SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
@@ -337,7 +338,7 @@ export async function GET({ params, url, locals }) {
            )
            SELECT target_name, best_target_name, total_value, best_value, count, mob_id, total_rank, best_rank
            FROM ranked
-           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF_LIVE} OR best_rank <= ${ATH_RANK_CUTOFF_LIVE})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
@@ -363,7 +364,7 @@ export async function GET({ params, url, locals }) {
            )
            SELECT target_name, total_value, best_value, count, total_rank, best_rank
            FROM ranked
-           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF_LIVE} OR best_rank <= ${ATH_RANK_CUTOFF_LIVE})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
@@ -389,7 +390,7 @@ export async function GET({ params, url, locals }) {
            )
            SELECT target_name, total_value, best_value, count, total_rank, best_rank
            FROM ranked
-           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF_LIVE} OR best_rank <= ${ATH_RANK_CUTOFF_LIVE})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
@@ -402,7 +403,7 @@ export async function GET({ params, url, locals }) {
            )
            SELECT value, event_timestamp, is_hof, is_ath, rank
            FROM pvp_ranked
-           WHERE lower(player_name) = lower($1) AND rank <= ${ATH_RANK_CUTOFF}
+           WHERE lower(player_name) = lower($1) AND rank <= ${ATH_RANK_CUTOFF_LIVE}
            ORDER BY rank`,
           [playerName, ...extraParams]
         )),
