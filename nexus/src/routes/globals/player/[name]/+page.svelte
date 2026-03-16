@@ -307,13 +307,28 @@
   let activity = $derived(playerData?.activity || []);
   let activityByType = $derived(playerData?.activity_by_type || { hunting: [], mining: [], crafting: [] });
 
-  /** Generate an SVG path for a sparkline from an array of numbers. */
+  /** Generate a smoothed SVG path for a sparkline from an array of numbers. */
   function sparklinePath(data, width, height) {
     if (!data || data.length < 2) return '';
     const max = Math.max(...data) || 1;
     const step = width / (data.length - 1);
-    const points = data.map((v, i) => `${i * step},${height - (v / max) * height * 0.85}`);
-    return `M${points.join(' L')} L${width},${height} L0,${height} Z`;
+    const pts = data.map((v, i) => [i * step, height - (v / max) * height * 0.85]);
+    // Catmull-Rom → cubic bezier with light tension (0.3)
+    const t = 0.3;
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(i - 1, 0)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(i + 2, pts.length - 1)];
+      const cp1x = p1[0] + (p2[0] - p0[0]) * t / 3;
+      const cp1y = p1[1] + (p2[1] - p0[1]) * t / 3;
+      const cp2x = p2[0] - (p3[0] - p1[0]) * t / 3;
+      const cp2y = p2[1] - (p3[1] - p1[1]) * t / 3;
+      d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]}`;
+    }
+    d += ` L${width},${height} L0,${height} Z`;
+    return d;
   }
   let recent = $derived(playerData?.recent || []);
   let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
