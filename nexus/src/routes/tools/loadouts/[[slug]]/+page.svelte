@@ -15,7 +15,7 @@
   import { buildEffectCaps, getEffectUnit as getEffectUnitFromCatalog } from '$lib/utils/loadoutEffects.js';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
-  import { buildEvalContext } from '$lib/utils/loadoutContext.js';
+  import { buildEvalContext, getLoadoutDisplayName } from '$lib/utils/loadoutContext.js';
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
@@ -1896,13 +1896,7 @@
 
 
   function getLoadoutListLabel(item) {
-    if (!item) return 'Untitled';
-    if (item.Name && item.Name !== 'New Loadout') return item.Name;
-    const weaponName = item.Gear?.Weapon?.Name;
-    const armorName = item.Gear?.Armor?.SetName;
-    if (weaponName && armorName) return `${weaponName} (${armorName})`;
-    if (weaponName) return weaponName;
-    return item.Name || 'New Loadout';
+    return getLoadoutDisplayName(item);
   }
 
   function handleNewLoadout() {

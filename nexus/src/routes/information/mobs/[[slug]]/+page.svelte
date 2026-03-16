@@ -43,7 +43,7 @@
   import { browser } from '$app/environment';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader.js';
-  import { buildEvalContext } from '$lib/utils/loadoutContext.js';
+  import { buildEvalContext, getLoadoutDisplayName } from '$lib/utils/loadoutContext.js';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects.js';
   import { createPreference } from '$lib/preferences.js';
 
@@ -216,7 +216,7 @@
       const parsed = raw ? JSON.parse(raw) : [];
       return (Array.isArray(parsed) ? parsed : []).map(lo => ({
         id: lo.Id || lo.id,
-        name: lo.Name || lo.name || 'Unnamed',
+        name: getLoadoutDisplayName(lo),
         data: lo
       }));
     } catch { return []; }
@@ -234,7 +234,7 @@
           const rows = await res.json();
           const online = (rows || []).map(r => ({
             id: r.id,
-            name: r.name || 'Unnamed',
+            name: (r.name && r.name !== 'New Loadout') ? r.name : getLoadoutDisplayName(r.data || {}),
             data: r.data
           }));
           // Online loadouts first, then local (dedupe by name)
@@ -1187,6 +1187,16 @@
             <button class:active={!isMaturityView} onclick={() => switchSidebar('mobs')}>Mobs</button>
             <button class:active={isMaturityView} onclick={() => switchSidebar('maturities')}>Maturities</button>
           </div>
+        {/snippet}
+        {#snippet beforeColumnConfig()}
+          {#if isMaturityView && userLoadouts.length > 0}
+            <select class="loadout-select" value={selectedLoadoutId || ''} onchange={handleLoadoutChange}>
+              <option value="">No loadout</option>
+              {#each userLoadouts as lo}
+                <option value={lo.id}>{lo.name}</option>
+              {/each}
+            </select>
+          {/if}
         {/snippet}
       </WikiNavigation>
     </div>

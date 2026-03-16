@@ -1391,9 +1391,20 @@ class MobDetailView(WikiDetailView):
         combo = self._loadout_combo
         combo.blockSignals(True)
         for lo in loadouts:
-            name = lo.get("name") or lo.get("Name") or "Unnamed"
+            data = lo.get("data") or lo
+            raw_name = lo.get("name") or data.get("Name") or ""
+            # Auto-generate name from weapon/armor when using default name
+            if not raw_name or raw_name == "New Loadout":
+                weapon = (data.get("Gear") or {}).get("Weapon", {}).get("Name")
+                armor = (data.get("Gear") or {}).get("Armor", {}).get("SetName")
+                if weapon and armor:
+                    raw_name = f"{weapon} ({armor})"
+                elif weapon:
+                    raw_name = weapon
+                else:
+                    raw_name = raw_name or "New Loadout"
             lo_id = lo.get("id") or lo.get("Id") or ""
-            combo.addItem(name, str(lo_id))
+            combo.addItem(raw_name, str(lo_id))
 
         # Restore saved selection
         saved_id = (

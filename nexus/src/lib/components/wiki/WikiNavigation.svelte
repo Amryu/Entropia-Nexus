@@ -34,6 +34,7 @@
    * @property {Function} [ontoggleexpand]
    * @property {Function} [ontogglefullwidth]
    * @property {import('svelte').Snippet} [afterHeader]
+   * @property {import('svelte').Snippet} [beforeColumnConfig]
    */
 
   /** @type {Props} */
@@ -59,6 +60,7 @@
     ontoggleexpand = undefined,
     ontogglefullwidth = undefined,
     afterHeader = undefined,
+    beforeColumnConfig = undefined,
     initialFilters = {},
   } = $props();
 
@@ -1199,6 +1201,7 @@
             </a>
           {/each}
           {#if showTableView && allAvailableColumns}
+            {@render beforeColumnConfig?.()}
             <span class="column-config-inline">
               <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
               {#if hasCustomColumns}
@@ -1221,6 +1224,7 @@
             </a>
           {/each}
           {#if showTableView && allAvailableColumns}
+            {@render beforeColumnConfig?.()}
             <span class="column-config-inline">
               <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
               {#if hasCustomColumns}
@@ -1232,6 +1236,7 @@
       {:else if showTableView && allAvailableColumns && filters.length === 0}
         <!-- Column config only (no filter buttons on this page) -->
         <div class="column-config-actions">
+          {@render beforeColumnConfig?.()}
           <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
           {#if hasCustomColumns}
             <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
@@ -1283,6 +1288,7 @@
           </div>
         {/each}
         {#if showTableView && allAvailableColumns && linkFilters.length === 0}
+          {@render beforeColumnConfig?.()}
           <span class="column-config-inline">
             <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
             {#if hasCustomColumns}

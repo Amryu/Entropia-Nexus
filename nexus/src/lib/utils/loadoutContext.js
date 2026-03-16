@@ -13,6 +13,24 @@ function alphabeticalSort(a, b) {
 }
 
 /**
+ * Get a display name for a loadout, using weapon/armor names when the
+ * loadout still has the default "New Loadout" name.
+ *
+ * @param {object} loadout - Loadout data object
+ * @returns {string}
+ */
+export function getLoadoutDisplayName(loadout) {
+  if (!loadout) return 'Untitled';
+  const name = loadout.Name || loadout.name;
+  if (name && name !== 'New Loadout') return name;
+  const weaponName = loadout.Gear?.Weapon?.Name;
+  const armorName = loadout.Gear?.Armor?.SetName;
+  if (weaponName && armorName) return `${weaponName} (${armorName})`;
+  if (weaponName) return weaponName;
+  return name || 'New Loadout';
+}
+
+/**
  * Process raw entity data (from loadLoadoutEntities) into the context shape
  * required by evaluateLoadout().
  *
