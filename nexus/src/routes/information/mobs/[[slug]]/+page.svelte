@@ -400,6 +400,17 @@
         const primaryAttack = maturity?.Attacks?.find(a => a.Name === 'Primary') || maturity?.Attacks?.[0];
         const secondaryAttack = maturity?.Attacks?.find(a => a.Name === 'Secondary') || maturity?.Attacks?.[1];
         const tertiaryAttack = maturity?.Attacks?.find(a => a.Name === 'Tertiary') || maturity?.Attacks?.[2];
+        // Loadout kill stats
+        let costToKill = null, shotsToKill = null, timeToKill = null;
+        if (loadoutStats && hp != null) {
+          const { dpp, effectiveDamage, reload } = loadoutStats;
+          if (effectiveDamage > 0) {
+            shotsToKill = Math.ceil(hp / effectiveDamage);
+            if (reload > 0) timeToKill = (shotsToKill - 1) * reload;
+          }
+          if (dpp > 0) costToKill = (hp / dpp) / 100;
+        }
+
         return {
           Id: maturityId,
           Name: `${mobName} - ${maturityName}`,
@@ -424,7 +435,10 @@
           AttackRange: mobItem?.Properties?.AttackRange ?? null,
           AggressionRange: mobItem?.Properties?.AggressionRange ?? null,
           AggressionTimer: mobItem?.Properties?.AggressionTimer || null,
-          Cat4: mobItem?.Species?.Properties?.CodexType === 'MobLooter'
+          Cat4: mobItem?.Species?.Properties?.CodexType === 'MobLooter',
+          CostToKill: costToKill,
+          ShotsToKill: shotsToKill,
+          TimeToKill: timeToKill
         };
       })
       .filter(Boolean);
@@ -790,6 +804,30 @@
     }
   };
 
+  const loadoutKillColumnDefs = {
+    costToKill: {
+      key: 'costToKill',
+      header: 'Cost/kill',
+      width: '80px',
+      getValue: (item) => item.CostToKill,
+      format: (v) => v != null ? `${v.toFixed(2)} PED` : '-'
+    },
+    shotsToKill: {
+      key: 'shotsToKill',
+      header: 'Shots/kill',
+      width: '75px',
+      getValue: (item) => item.ShotsToKill,
+      format: (v) => v != null ? v : '-'
+    },
+    timeToKill: {
+      key: 'timeToKill',
+      header: 'Time/kill',
+      width: '75px',
+      getValue: (item) => item.TimeToKill,
+      format: (v) => v != null ? `${v.toFixed(1)}s` : '-'
+    }
+  };
+
   const maturityNavTableColumns = [
     maturityColumnDefs.mob,
     maturityColumnDefs.maturity,
@@ -797,17 +835,21 @@
     maturityColumnDefs.hp
   ];
 
-  const maturityNavFullWidthColumns = [
+  let maturityNavFullWidthColumns = $derived([
     ...maturityNavTableColumns,
     maturityColumnDefs.hpPerLevel,
     maturityColumnDefs.damage,
     maturityColumnDefs.primaryDamage,
     maturityColumnDefs.defense,
+    ...(loadoutStats ? [loadoutKillColumnDefs.costToKill, loadoutKillColumnDefs.shotsToKill, loadoutKillColumnDefs.timeToKill] : []),
     maturityColumnDefs.type,
     maturityColumnDefs.planet
-  ];
+  ]);
 
-  const maturityAllAvailableColumns = Object.values(maturityColumnDefs);
+  let maturityAllAvailableColumns = $derived([
+    ...Object.values(maturityColumnDefs),
+    ...(loadoutStats ? Object.values(loadoutKillColumnDefs) : [])
+  ]);
 
   let activeSidebarItems = $derived(isMaturityView ? maturityNavItems : navItems);
   let activeSidebarFilters = $derived(isMaturityView ? maturityNavFilters : navFilters);

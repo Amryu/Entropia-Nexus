@@ -1201,8 +1201,8 @@
             </a>
           {/each}
           {#if showTableView && allAvailableColumns}
-            {@render beforeColumnConfig?.()}
             <span class="column-config-inline">
+              {@render beforeColumnConfig?.()}
               <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
               {#if hasCustomColumns}
                 <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
@@ -1224,8 +1224,8 @@
             </a>
           {/each}
           {#if showTableView && allAvailableColumns}
-            {@render beforeColumnConfig?.()}
             <span class="column-config-inline">
+              {@render beforeColumnConfig?.()}
               <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
               {#if hasCustomColumns}
                 <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
@@ -1238,6 +1238,7 @@
         <div class="column-config-actions">
           {@render beforeColumnConfig?.()}
           <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+
           {#if hasCustomColumns}
             <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
           {/if}
@@ -1288,8 +1289,8 @@
           </div>
         {/each}
         {#if showTableView && allAvailableColumns && linkFilters.length === 0}
-          {@render beforeColumnConfig?.()}
           <span class="column-config-inline">
+            {@render beforeColumnConfig?.()}
             <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
             {#if hasCustomColumns}
               <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
@@ -1738,6 +1739,7 @@
   /* Column config buttons inline with type nav buttons */
   .column-config-inline {
     display: inline-flex;
+    align-items: center;
     gap: 4px;
     margin-left: auto;
   }

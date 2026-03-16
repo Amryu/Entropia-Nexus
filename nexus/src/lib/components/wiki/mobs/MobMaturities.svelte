@@ -243,7 +243,7 @@
       header: 'Cost/kill',
       sortable: true,
       formatter: (value) => value != null
-        ? `<span style="font-family: monospace;">${value.toFixed(2)}</span>`
+        ? `<span style="font-family: monospace;">${value.toFixed(2)} PED</span>`
         : 'N/A'
     },
     {

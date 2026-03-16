@@ -1514,7 +1514,7 @@ class MobDetailView(WikiDetailView):
 
         if stats and (dpp > 0 or eff_dmg > 0):
             columns.extend([
-                ColumnDef("ctk", "Cost/kill", format=lambda v: f"{v:.2f}" if v else "-"),
+                ColumnDef("ctk", "Cost/kill", format=lambda v: f"{v:.2f} PED" if v else "-"),
                 ColumnDef("stk", "Shots/kill", format=lambda v: str(int(v)) if v else "-"),
                 ColumnDef("ttk", "Time/kill", format=lambda v: f"{v:.1f}s" if v else "-"),
             ])
