@@ -17,7 +17,7 @@
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects';
   import { TYPE_FILTERS } from '$lib/data/globals-constants.js';
-  import { formatPedShort, timeAgo, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
+  import { formatPed, formatPedShort, timeAgo, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
   import GzButton from '$lib/components/globals/GzButton.svelte';
@@ -142,6 +142,7 @@
     showGlobalsMediaDialog = false;
     globalsMediaDialogItem = null;
     globalsTypeFilter = '';
+    globalsSpaceFilter = '';
     globalsSort = { col: 'total_value', asc: false };
     globalsPage = 0;
     // Reset form to new profile data
@@ -197,6 +198,7 @@
   let globalsLoading = $state(false);
   let globalsLoaded = $state(false);
   let globalsTypeFilter = $state('');
+  let globalsSpaceFilter = $state('');
   let globalsSort = $state({ col: 'total_value', asc: false });
   let globalsPage = $state(0);
   let globalsAthMode = $state('best'); // 'best' | 'total' | 'bestTarget' | 'totalTarget'
@@ -762,6 +764,9 @@
     for (const res of (globalsData.mining?.resources || [])) {
       rows.push({ target: res.target, type: 'mining', typeLabel: 'Mining', count: res.finds, total_value: res.total_value, avg_value: res.avg_value || 0, best_value: res.best_value });
     }
+    for (const mob of (globalsData.space_mining || [])) {
+      rows.push({ target: mob.target, type: 'space_mining', typeLabel: 'Space Mining', count: mob.finds, total_value: mob.total_value, avg_value: mob.avg_value || 0, best_value: mob.best_value });
+    }
     for (const item of (globalsData.crafting?.items || [])) {
       rows.push({ target: item.target, type: 'crafting', typeLabel: 'Crafting', count: item.crafts, total_value: item.total_value, avg_value: item.avg_value || 0, best_value: item.best_value });
     }
@@ -770,6 +775,7 @@
   let globalsFilteredRows = $derived((() => {
     if (!globalsTypeFilter) return globalsUnifiedRows;
     if (globalsTypeFilter === 'kill,team_kill') return globalsUnifiedRows.filter(r => r.type === 'hunting');
+    if (globalsTypeFilter === 'deposit' && globalsSpaceFilter === 'only') return globalsUnifiedRows.filter(r => r.type === 'space_mining');
     if (globalsTypeFilter === 'deposit') return globalsUnifiedRows.filter(r => r.type === 'mining');
     if (globalsTypeFilter === 'craft') return globalsUnifiedRows.filter(r => r.type === 'crafting');
     return globalsUnifiedRows;
@@ -778,7 +784,46 @@
   let globalsTotalPages = $derived(Math.ceil(globalsSortedRows.length / GLOBALS_PAGE_SIZE));
   let globalsDisplayRows = $derived(globalsSortedRows.slice(globalsPage * GLOBALS_PAGE_SIZE, (globalsPage + 1) * GLOBALS_PAGE_SIZE));
   // ATH rankings data
-  let globalsAthRankings = $derived(globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] });
+  let globalsAthRankings = $derived(globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], space_mining: [], pvp: [] });
+  let globalsCategoryRanks = $derived(globalsData?.category_ranks || null);
+  let globalsActivityByType = $derived(globalsData?.activity_by_type || { hunting: [], mining: [], crafting: [], space_mining: [] });
+  let globalsSpaceMining = $derived(globalsData?.space_mining || []);
+  let globalsSparkStart = $derived((() => {
+    let earliest = Infinity;
+    for (const arr of Object.values(globalsActivityByType)) {
+      const idx = arr.findIndex(v => v > 0);
+      if (idx >= 0 && idx < earliest) earliest = idx;
+    }
+    return earliest === Infinity ? 0 : earliest;
+  })());
+  let globalsSummary = $derived(globalsData?.summary || null);
+
+  /** Smoothed SVG sparkline path from an array of numbers. */
+  function sparklinePath(data, width, height) {
+    if (!data || data.length < 2) return '';
+    const max = Math.max(...data) || 1;
+    const step = width / (data.length - 1);
+    const y = (v) => height - (v / max) * height * 0.85;
+    const t = 0.5;
+    let d = `M0,${height}`;
+    let inCurve = false;
+    for (let i = 0; i < data.length; i++) {
+      const x = i * step;
+      if (data[i] === 0) {
+        if (inCurve) { d += ` L${x},${height}`; inCurve = false; }
+        continue;
+      }
+      if (!inCurve) { d += ` L${x},${height} L${x},${y(data[i])}`; inCurve = true; continue; }
+      const i0 = Math.max(i - 2, 0), i1 = i - 1, i2 = i, i3 = Math.min(i + 1, data.length - 1);
+      const p1 = [i1 * step, y(data[i1])], p2 = [x, y(data[i])];
+      const p0 = [i0 * step, y(data[i0])], p3 = [i3 * step, y(data[i3])];
+      d += ` C${p1[0] + (p2[0] - p0[0]) * t / 3},${p1[1] + (p2[1] - p0[1]) * t / 3} ${p2[0] - (p3[0] - p1[0]) * t / 3},${p2[1] - (p3[1] - p1[1]) * t / 3} ${p2[0]},${p2[1]}`;
+    }
+    if (inCurve) d += ` L${(data.length - 1) * step},${height}`;
+    d += ` Z`;
+    return d;
+  }
+
   // Rare items and discoveries
   let globalsRareItems = $derived((globalsData?.rare_items || []).slice(0, 5));
   let globalsDiscoveries = $derived((globalsData?.achievements || []).filter(a => a.type === 'discovery').slice(0, 5));
@@ -1559,10 +1604,50 @@
                 <button class="globals-ath-btn" class:active={globalsAthMode === 'totalTarget'} onclick={() => globalsAthMode = 'totalTarget'}>Total (Target)</button>
               </div>
             </div>
+            {#if globalsSummary}
+              <div class="globals-category-cards">
+                {#each [
+                  { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color', count: (globalsSummary.kill_count || 0) + (globalsSummary.team_kill_count || 0), value: globalsSummary.hunting_value || 0 },
+                  { key: 'mining', label: 'Mining', colorClass: 'mining-color', count: globalsSummary.deposit_count || 0, value: globalsSummary.mining_value || 0 },
+                  { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color', count: globalsSpaceMining.reduce((s, m) => s + m.finds, 0), value: globalsSpaceMining.reduce((s, m) => s + m.total_value, 0) },
+                  { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: globalsSummary.craft_count || 0, value: globalsSummary.crafting_value || 0 },
+                ] as cat}
+                  {@const cr = globalsCategoryRanks?.[cat.key]}
+                  {@const sparkData = (globalsActivityByType[cat.key] || []).slice(globalsSparkStart)}
+                  <div class="globals-category-card {cat.colorClass}">
+                    {#if sparkData.length >= 2}
+                      <svg class="globals-cat-sparkline" viewBox="0 0 200 60" preserveAspectRatio="none">
+                        <path d={sparklinePath(sparkData, 200, 60)} />
+                      </svg>
+                    {/if}
+                    <div class="globals-cat-card-inner">
+                      <div class="globals-cat-card-stats">
+                        <span class="globals-cat-value {cat.colorClass}">{cat.count.toLocaleString()}</span>
+                        <span class="globals-cat-label">{cat.label}</span>
+                        <span class="globals-cat-sub">{formatPed(cat.value)} PED</span>
+                      </div>
+                      {#if cr}
+                        <div class="globals-cat-card-ranks">
+                          <div class="globals-cat-rank-item">
+                            <span class="globals-cat-rank-label">Value</span>
+                            <span class="ranking-badge" title="Rank by total value" class:rank-ruby={cr.value_rank <= 1} class:rank-diamond={cr.value_rank > 1 && cr.value_rank <= 10} class:rank-gold={cr.value_rank > 10 && cr.value_rank <= 50} class:rank-silver={cr.value_rank > 50 && cr.value_rank <= 200} class:rank-bronze={cr.value_rank > 200 && cr.value_rank <= 500}>#{cr.value_rank}</span>
+                          </div>
+                          <div class="globals-cat-rank-item">
+                            <span class="globals-cat-rank-label">Count</span>
+                            <span class="ranking-badge ranking-badge-count" title="Rank by global count" class:rank-ruby={cr.count_rank <= 1} class:rank-diamond={cr.count_rank > 1 && cr.count_rank <= 10} class:rank-gold={cr.count_rank > 10 && cr.count_rank <= 50} class:rank-silver={cr.count_rank > 50 && cr.count_rank <= 200} class:rank-bronze={cr.count_rank > 200 && cr.count_rank <= 500}>#{cr.count_rank}</span>
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
             <div class="globals-rankings-grid">
               {#each [
                 { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color' },
                 { key: 'mining', label: 'Mining', colorClass: 'mining-color' },
+                { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color' },
                 { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' }
               ] as category}
                 {@const entries = (globalsAthRankings[category.key] || [])
@@ -1664,8 +1749,8 @@
             {#each GLOBALS_TYPE_FILTERS as tf}
               <button
                 class="globals-type-btn"
-                class:active={globalsTypeFilter === tf.value}
-                onclick={() => { globalsTypeFilter = tf.value; globalsPage = 0; }}
+                class:active={globalsTypeFilter === tf.value && globalsSpaceFilter === (tf.space || '')}
+                onclick={() => { globalsTypeFilter = tf.value; globalsSpaceFilter = tf.space || ''; globalsPage = 0; }}
               >
                 {tf.label}
               </button>
@@ -2998,7 +3083,7 @@
 
   .globals-rankings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 10px;
   }
 
@@ -3020,6 +3105,7 @@
   .ranking-card-header.hunting-color { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
   .ranking-card-header.mining-color  { background: rgba(96, 176, 255, 0.12); color: #60b0ff; }
   .ranking-card-header.crafting-color { background: rgba(249, 115, 22, 0.12); color: #f97316; }
+  .ranking-card-header.space-mining-color { background: rgba(167, 139, 250, 0.12); color: #a78bfa; }
 
   .ranking-entry {
     display: flex;
@@ -3331,9 +3417,10 @@
     letter-spacing: 0.3px;
   }
 
-  .globals-type-hunting  { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-  .globals-type-mining   { background: rgba(96, 176, 255, 0.15); color: #60b0ff; }
-  .globals-type-crafting { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+  .globals-type-hunting       { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+  .globals-type-mining        { background: rgba(96, 176, 255, 0.15); color: #60b0ff; }
+  .globals-type-space_mining  { background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
+  .globals-type-crafting      { background: rgba(249, 115, 22, 0.15); color: #f97316; }
 
   /* Globals tab — pagination */
   .globals-pagination {
@@ -3382,13 +3469,123 @@
     text-decoration: underline;
   }
 
+  .hunting-color { color: #ef4444; }
+  .mining-color { color: #60b0ff; }
+  .space-mining-color { color: #a78bfa; }
+  .crafting-color { color: #f97316; }
+
+  .globals-category-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .globals-category-card {
+    position: relative;
+    overflow: hidden;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid currentColor;
+  }
+
+  .globals-category-card.hunting-color { background: rgba(239, 68, 68, 0.06); }
+  .globals-category-card.mining-color { background: rgba(96, 176, 255, 0.06); }
+  .globals-category-card.space-mining-color { background: rgba(167, 139, 250, 0.06); }
+  .globals-category-card.crafting-color { background: rgba(249, 115, 22, 0.06); }
+
+  .globals-cat-sparkline {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .globals-cat-sparkline path {
+    fill: currentColor;
+    opacity: 0.15;
+  }
+
+  .globals-cat-card-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+  }
+
+  .globals-cat-card-stats { flex: 1; min-width: 0; }
+
+  .globals-cat-value {
+    display: block;
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .globals-cat-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-weight: 600;
+  }
+
+  .globals-cat-sub {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .globals-cat-card-ranks {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .globals-cat-rank-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .globals-cat-rank-item .ranking-badge {
+    font-size: 0.75rem;
+    padding: 2px 7px;
+  }
+
+  .globals-cat-rank-label {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    width: 36px;
+  }
+
+  .ranking-badge-count {
+    opacity: 0.7;
+  }
+
   @media (max-width: 599px) {
     .globals-compact-stats { gap: 8px; }
     .globals-compact-stat { min-width: 80px; padding: 8px 10px; }
     .globals-compact-stat strong { font-size: 1rem; }
     .globals-compact-table th,
     .globals-compact-table td { padding: 6px 8px; }
-    .globals-rankings-grid { grid-template-columns: 1fr; }
+    .globals-rankings-grid { grid-template-columns: repeat(2, 1fr); }
+    .globals-category-cards { grid-template-columns: repeat(2, 1fr); }
     .globals-highlights { grid-template-columns: 1fr; }
   }
 </style>
