@@ -440,6 +440,15 @@ function generateSnippet(contentHtml) {
  */
 export async function syncForumTrading() {
   if (syncing) return;
+
+  // Don't sync until the market cache is built — item matching depends on it.
+  // The cache builds lazily on the first exchange-related request.
+  const lookup = getSlimNameLookup();
+  if (!lookup) {
+    console.log('[forum-indexer] Market cache not ready yet, deferring sync');
+    return;
+  }
+
   syncing = true;
   try {
     // Rebuild name list each sync in case market cache was updated
