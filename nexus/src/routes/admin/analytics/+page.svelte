@@ -1438,6 +1438,7 @@
                 <th class="num">Score</th>
                 <th class="num">Requests</th>
                 <th class="num">IPs</th>
+                <th>Country</th>
                 <th class="num">UAs</th>
                 <th class="num">Routes</th>
                 <th class="num">Hours</th>
@@ -1470,6 +1471,7 @@
                   </td>
                   <td class="num">{formatNumber(s.total_requests)}</td>
                   <td class="num">{s.distinct_ips}</td>
+                  <td class="muted">{s.country_code || '—'}</td>
                   <td class="num" style={s.distinct_uas > s.distinct_ips * 2 ? 'color: var(--error-color); font-weight: bold' : ''}>
                     {s.distinct_uas}
                   </td>
@@ -1489,7 +1491,7 @@
                 </tr>
                 {#if expandedSubnet === s.subnet && ipAnalysis.samples?.[subnetBase]}
                   <tr class="detail-row">
-                    <td colspan="9">
+                    <td colspan="10">
                       <div style="padding: 8px 12px; font-size: 12px">
                         {#if s.breakdown}
                           <div class="score-breakdown">

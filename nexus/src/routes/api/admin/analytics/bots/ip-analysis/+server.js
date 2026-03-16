@@ -28,6 +28,7 @@ export async function GET({ locals, url }) {
            count(DISTINCT CASE WHEN NOT is_bot THEN ip_address END)::integer AS non_bot_ips,
            count(DISTINCT date_trunc('hour', visited_at))::integer AS active_hours,
            count(*) FILTER (WHERE suspect_headers)::integer AS suspect_header_count,
+           mode() WITHIN GROUP (ORDER BY country_code) AS country_code,
            min(visited_at) AS first_seen,
            max(visited_at) AS last_seen
          FROM route_visits
@@ -48,6 +49,7 @@ export async function GET({ locals, url }) {
          non_bot_ips,
          active_hours,
          suspect_header_count,
+         country_code,
          first_seen,
          last_seen,
          EXISTS(

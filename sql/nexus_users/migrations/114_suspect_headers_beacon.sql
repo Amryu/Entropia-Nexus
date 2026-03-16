@@ -6,3 +6,5 @@ CREATE TABLE IF NOT EXISTS beacon_hits (
   ip_address inet PRIMARY KEY,
   last_seen timestamptz NOT NULL DEFAULT now()
 );
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON beacon_hits TO nexus_users;
