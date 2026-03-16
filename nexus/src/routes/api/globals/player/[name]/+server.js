@@ -32,6 +32,23 @@ function safeQuery(queryPromise) {
   });
 }
 
+/** Run a query with an explicit statement timeout (ms). Returns { rows: [] } on timeout/error. */
+function timedQuery(queryFn, timeoutMs = 15000) {
+  return (async () => {
+    const client = await pool.connect();
+    try {
+      await client.query(`SET statement_timeout = ${timeoutMs}`);
+      return await queryFn(client);
+    } catch (e) {
+      console.warn('[api/globals/player] Timed query failed:', e.message);
+      return { rows: [] };
+    } finally {
+      await client.query('RESET statement_timeout').catch(() => {});
+      client.release();
+    }
+  })();
+}
+
 export async function GET({ params, url, locals }) {
   const playerName = decodeURIComponentSafe(params.name);
 
@@ -410,7 +427,8 @@ export async function GET({ params, url, locals }) {
         )),
       ] : [
         // Fallback: live CTE queries for period-filtered requests (capped to lower rank to avoid timeouts)
-        safeQuery(pool.query(
+        // Each uses timedQuery with 15s timeout so slow queries don't block the response
+        timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
                     MAX(target_name) AS target_name,
@@ -438,7 +456,7 @@ export async function GET({ params, url, locals }) {
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
-        safeQuery(pool.query(
+        timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
                     sum(value) AS total_value, max(value) AS best_value,
@@ -465,7 +483,7 @@ export async function GET({ params, url, locals }) {
           [playerName, ...extraParams]
         )),
         // Space mining ATH fallback CTE
-        safeQuery(pool.query(
+        timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
                     sum(value) AS total_value, max(value) AS best_value,
@@ -491,7 +509,7 @@ export async function GET({ params, url, locals }) {
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
-        safeQuery(pool.query(
+        timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
                     sum(value) AS total_value, max(value) AS best_value,
@@ -517,7 +535,7 @@ export async function GET({ params, url, locals }) {
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
-        safeQuery(pool.query(
+        timedQuery(c => c.query(
           `WITH pvp_ranked AS (
              SELECT player_name, value, event_timestamp, is_hof, is_ath,
                     RANK() OVER (ORDER BY value DESC) AS rank

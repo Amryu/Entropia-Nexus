@@ -273,12 +273,14 @@ async function buildTargetsPage1Cache() {
 // ATH leaderboard rebuild
 // ------------------------------------------------------------------
 
+// Order matters: hunting is slowest (most rows), process it last so faster
+// categories are not blocked if hunting times out mid-rebuild.
 const ATH_CATEGORIES = [
-  { category: 'hunting', typeFilter: "global_type IN ('kill', 'team_kill', 'examine')", useMobKey: true },
   { category: 'mining', typeFilter: "global_type = 'deposit' AND target_name !~* 'asteroid'", useMobKey: false },
   { category: 'space_mining', typeFilter: "global_type = 'deposit' AND target_name ~* 'asteroid'", useMobKey: false },
   { category: 'crafting', typeFilter: "global_type = 'craft'", useMobKey: false },
   { category: 'pvp', typeFilter: "global_type = 'pvp'", useMobKey: false },
+  { category: 'hunting', typeFilter: "global_type IN ('kill', 'team_kill', 'examine')", useMobKey: true },
 ];
 
 async function rebuildAthLeaderboard() {
@@ -306,6 +308,17 @@ async function rebuildAthLeaderboard() {
         );
         if (rows[0]?.last_updated) {
           cutoff = rows[0].last_updated;
+        }
+      }
+
+      // If in-memory cutoff exists but categories are missing (e.g. table was
+      // manually cleared while server was running), force a full rebuild.
+      if (cutoff) {
+        const { rows: catCheck } = await client.query(
+          `SELECT COUNT(DISTINCT category) AS cnt FROM globals_ath_leaderboard`
+        );
+        if (parseInt(catCheck[0]?.cnt || '0') < ATH_CATEGORIES.length) {
+          cutoff = null;
         }
       }
 
@@ -389,21 +402,25 @@ async function rebuildAthLeaderboard() {
           }
         }
 
-        // Compute ranks
-        await client.query(
-          `UPDATE globals_ath_leaderboard a
-           SET total_rank = sub.total_rank, best_rank = sub.best_rank, count_rank = sub.count_rank
-           FROM (
-             SELECT target_key, player_name,
-                    RANK() OVER (PARTITION BY target_key ORDER BY total_value DESC) AS total_rank,
-                    RANK() OVER (PARTITION BY target_key ORDER BY best_value DESC) AS best_rank,
-                    RANK() OVER (PARTITION BY target_key ORDER BY count DESC) AS count_rank
-             FROM globals_ath_leaderboard
-             WHERE category = $1
-           ) sub
-           WHERE a.category = $1 AND a.target_key = sub.target_key AND a.player_name = sub.player_name`,
-          [category]
-        );
+        // Compute ranks (wrapped so one category failing doesn't block the rest)
+        try {
+          await client.query(
+            `UPDATE globals_ath_leaderboard a
+             SET total_rank = sub.total_rank, best_rank = sub.best_rank, count_rank = sub.count_rank
+             FROM (
+               SELECT target_key, player_name,
+                      RANK() OVER (PARTITION BY target_key ORDER BY total_value DESC) AS total_rank,
+                      RANK() OVER (PARTITION BY target_key ORDER BY best_value DESC) AS best_rank,
+                      RANK() OVER (PARTITION BY target_key ORDER BY count DESC) AS count_rank
+               FROM globals_ath_leaderboard
+               WHERE category = $1
+             ) sub
+             WHERE a.category = $1 AND a.target_key = sub.target_key AND a.player_name = sub.player_name`,
+            [category]
+          );
+        } catch (rankErr) {
+          console.error(`[globals-cache] ATH rank UPDATE failed for ${category}:`, rankErr.message);
+        }
       }
 
       athLastCutoff = new Date();
