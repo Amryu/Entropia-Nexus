@@ -197,6 +197,11 @@
   // Rare finds sorting
   let rareFindSort = $state({ col: 'timestamp', asc: false });
 
+  // Highlights panel (Overview tab)
+  let highlightTab = $state('hunting');
+  let highlightPage = $state(0);
+  const HIGHLIGHT_PAGE_SIZE = 10;
+
   // PvP sorting
   let pvpSort = $state({ col: 'value', asc: false });
 
@@ -294,7 +299,6 @@
 
 
 
-  const OVERVIEW_TOP_LIMIT = 10;
   let user = $derived(data?.session?.user || null);
   let summary = $derived(playerData?.summary);
   let hunting = $derived(playerData?.hunting || []);
@@ -360,12 +364,22 @@
   // Tab-specific data
   let discoveries = $derived(achievements.filter(a => a.type === 'discovery'));
   let tierRecords = $derived(achievements.filter(a => a.type === 'tier'));
-  // Overview helpers
-  let overviewRareItems = $derived(rareItems.slice(0, 5));
-  let overviewDiscoveries = $derived(discoveries.slice(0, 5));
-  let overviewTopHunting = $derived(topLoots.hunting.slice(0, OVERVIEW_TOP_LIMIT));
-  let overviewTopMining = $derived(topLoots.mining.slice(0, OVERVIEW_TOP_LIMIT));
-  let overviewTopCrafting = $derived(topLoots.crafting.slice(0, OVERVIEW_TOP_LIMIT));
+  // Highlights panel derived data
+  let highlightItems = $derived((() => {
+    switch (highlightTab) {
+      case 'hunting': return topLoots.hunting;
+      case 'mining': return topLoots.mining;
+      case 'crafting': return topLoots.crafting;
+      case 'rare': return rareItems;
+      case 'discoveries': return discoveries;
+      default: return [];
+    }
+  })());
+  let highlightTotalPages = $derived(Math.ceil(highlightItems.length / HIGHLIGHT_PAGE_SIZE));
+  let pagedHighlightItems = $derived(highlightItems.slice(highlightPage * HIGHLIGHT_PAGE_SIZE, (highlightPage + 1) * HIGHLIGHT_PAGE_SIZE));
+
+  // Reset page when highlight tab changes
+  $effect(() => { highlightTab; highlightPage = 0; });
 </script>
 
 <svelte:head>
@@ -490,192 +504,83 @@
     <div class="tab-content" class:loading-fade={loading}>
       <!-- === OVERVIEW TAB === -->
       {#if activeTab === 'overview'}
-        <!-- Top 3 per category -->
-        <div class="overview-categories">
-          <div class="section-card overview-category">
-            <div class="overview-cat-header">
-              <h2>Top Hunting Loots</h2>
-              <button class="view-all-btn" onclick={() => activeTab = 'hunting'}>View all &rarr;</button>
+        <!-- Highlights -->
+        <div class="section-card">
+          <div class="highlights-header">
+            <h2>Highlights</h2>
+            <div class="sort-toggle">
+              <button class="sort-btn" class:active={highlightTab === 'hunting'} onclick={() => highlightTab = 'hunting'}>Hunting</button>
+              <button class="sort-btn" class:active={highlightTab === 'mining'} onclick={() => highlightTab = 'mining'}>Mining</button>
+              <button class="sort-btn" class:active={highlightTab === 'crafting'} onclick={() => highlightTab = 'crafting'}>Crafting</button>
+              <button class="sort-btn" class:active={highlightTab === 'rare'} onclick={() => highlightTab = 'rare'}>Rare Finds</button>
+              <button class="sort-btn" class:active={highlightTab === 'discoveries'} onclick={() => highlightTab = 'discoveries'}>Discoveries</button>
             </div>
-            {#if overviewTopHunting.length > 0}
-              <div class="top-loots-list">
-                {#each overviewTopHunting as loot, i}
-                  <div class="top-loot-item">
-                    <span class="top-loot-rank">{i + 1}</span>
-                    <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link top-loot-target" title={loot.target}>{loot.target}</a>
-                    <span class="top-loot-value">{formatPed(loot.value)} PED</span>
-                    <span class="badge-slot">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</span>
-                    <span class="top-loot-actions">
-                      {#if loot.media_image || loot.media_video}
-                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
-                          {#if loot.media_image}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                          {:else}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          {/if}
-                        </button>
-                      {:else if user}
-                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
-                      {/if}
-                      <GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact />
-                    </span>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <p class="empty-state-sm">No hunting globals recorded</p>
-            {/if}
           </div>
-
-          <div class="section-card overview-category">
-            <div class="overview-cat-header">
-              <h2>Top Mining Loots</h2>
-              <button class="view-all-btn" onclick={() => activeTab = 'mining'}>View all &rarr;</button>
-            </div>
-            {#if overviewTopMining.length > 0}
-              <div class="top-loots-list">
-                {#each overviewTopMining as loot, i}
-                  <div class="top-loot-item">
-                    <span class="top-loot-rank">{i + 1}</span>
-                    <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link top-loot-target" title={loot.target}>{loot.target}</a>
-                    <span class="top-loot-value">{formatPed(loot.value)} PED</span>
-                    <span class="badge-slot">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</span>
-                    <span class="top-loot-actions">
-                      {#if loot.media_image || loot.media_video}
-                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
-                          {#if loot.media_image}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                          {:else}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          {/if}
-                        </button>
-                      {:else if user}
-                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
-                      {/if}
-                      <GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact />
-                    </span>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <p class="empty-state-sm">No mining globals recorded</p>
-            {/if}
-          </div>
-
-          <div class="section-card overview-category">
-            <div class="overview-cat-header">
-              <h2>Top Crafting Loots</h2>
-              <button class="view-all-btn" onclick={() => activeTab = 'crafting'}>View all &rarr;</button>
-            </div>
-            {#if overviewTopCrafting.length > 0}
-              <div class="top-loots-list">
-                {#each overviewTopCrafting as loot, i}
-                  <div class="top-loot-item">
-                    <span class="top-loot-rank">{i + 1}</span>
-                    <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link top-loot-target" title={loot.target}>{loot.target}</a>
-                    <span class="top-loot-value">{formatPed(loot.value)} PED</span>
-                    <span class="badge-slot">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</span>
-                    <span class="top-loot-actions">
-                      {#if loot.media_image || loot.media_video}
-                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
-                          {#if loot.media_image}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                          {:else}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          {/if}
-                        </button>
-                      {:else if user}
-                        <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
-                      {/if}
-                      <GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact />
-                    </span>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <p class="empty-state-sm">No crafting globals recorded</p>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Rare Finds + Discoveries -->
-        <div class="overview-specials">
-          <div class="section-card">
-            <h2>Recent Rare Finds</h2>
-            {#if overviewRareItems.length > 0}
-              <div class="table-wrapper">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
+          {#if highlightItems.length > 0}
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    {#if highlightTab !== 'discoveries' && highlightTab !== 'rare'}
+                      <th class="col-rank">#</th>
+                    {/if}
+                    <th>Target</th>
+                    {#if highlightTab !== 'discoveries'}
                       <th class="right col-value">Value</th>
-                      <th class="col-badge"></th>
-                      <th class="col-media"></th>
-                      <th class="col-gz"></th>
-                      <th class="col-time">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each overviewRareItems as item}
-                      <tr>
-                        <td>{item.target}</td>
-                        <td class="right">{formatPed(item.value)} PED</td>
-                        <td class="col-badge">{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
-                        <td class="col-media">
-                          {#if item.media_image || item.media_video}
-                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
-                              {#if item.media_image}
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                              {:else}
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                              {/if}
-                            </button>
-                          {:else if user}
-                            <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
-                          {/if}
-                        </td>
-                        <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact /></td>
-                        <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-            {:else}
-              <p class="empty-state-sm">No rare finds recorded</p>
-            {/if}
-          </div>
-
-          <div class="section-card">
-            <h2>Recent Discoveries</h2>
-            {#if overviewDiscoveries.length > 0}
-              <div class="achievements-list">
-                {#each overviewDiscoveries as ach}
-                  <div class="achievement-item">
-                    <span class="type-badge type-discovery">Discovery</span>
-                    <span class="achievement-target">{ach.target}{#if ach.location}&nbsp;<span class="achievement-location">in {ach.location}</span>{/if}</span>
-                    <span class="achievement-actions">
-                      {#if ach.media_image || ach.media_video}
-                        <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(ach)}>
-                          {#if ach.media_image}
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                          {:else}
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          {/if}
-                        </button>
-                      {:else if user}
-                        <GlobalMediaUpload globalId={ach.id} {playerName} {user} onuploaded={onMediaUploaded} />
+                    {/if}
+                    <th class="col-badge"></th>
+                    <th class="col-media"></th>
+                    <th class="col-gz"></th>
+                    <th class="col-time">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each pagedHighlightItems as item, i}
+                    <tr>
+                      {#if highlightTab !== 'discoveries' && highlightTab !== 'rare'}
+                        <td class="text-muted col-rank">{highlightPage * HIGHLIGHT_PAGE_SIZE + i + 1}</td>
                       {/if}
-                      <GzButton globalId={ach.id} count={ach.gz_count || 0} userGz={ach.user_gz || false} {user} compact />
-                    </span>
-                    <span class="achievement-time">{timeAgo(ach.timestamp)}</span>
-                  </div>
-                {/each}
+                      <td>
+                        {#if highlightTab === 'discoveries'}
+                          {item.target}{#if item.location}&nbsp;<span class="text-muted" style="font-size:0.75rem">in {item.location}</span>{/if}
+                        {:else}
+                          <a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a>
+                        {/if}
+                      </td>
+                      {#if highlightTab !== 'discoveries'}
+                        <td class="right font-weight-bold">{formatPed(item.value)} PED</td>
+                      {/if}
+                      <td class="col-badge">{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                      <td class="col-media">
+                        {#if item.media_image || item.media_video}
+                          <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
+                            {#if item.media_image}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                            {:else}
+                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            {/if}
+                          </button>
+                        {:else if user}
+                          <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
+                        {/if}
+                      </td>
+                      <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact /></td>
+                      <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            {#if highlightTotalPages > 1}
+              <div class="pagination">
+                <button disabled={highlightPage === 0} onclick={() => highlightPage--}>&laquo; Prev</button>
+                <span>{highlightPage + 1} / {highlightTotalPages}</span>
+                <button disabled={highlightPage >= highlightTotalPages - 1} onclick={() => highlightPage++}>Next &raquo;</button>
               </div>
-            {:else}
-              <p class="empty-state-sm">No discoveries recorded</p>
             {/if}
-          </div>
+          {:else}
+            <p class="empty-state-sm">No {highlightTab === 'rare' ? 'rare finds' : highlightTab === 'discoveries' ? 'discoveries' : highlightTab + ' globals'} recorded</p>
+          {/if}
         </div>
 
         <!-- Activity Chart -->
@@ -1629,96 +1534,18 @@
     transition: opacity 0.15s ease;
   }
 
-  /* Overview categories */
-  .overview-categories {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
-  .overview-cat-header {
+  /* Highlights panel */
+  .highlights-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
-    gap: 8px;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 
-  .overview-cat-header h2 {
+  .highlights-header h2 {
     margin: 0;
-    font-size: 0.875rem;
-  }
-
-  .view-all-btn {
-    font-size: 0.75rem;
-    color: var(--accent-color);
-    background: none;
-    border: none;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .view-all-btn:hover {
-    text-decoration: underline;
-  }
-
-  .top-loots-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .top-loot-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 0.8125rem;
-    border: 1px solid var(--border-color);
-  }
-
-  .top-loot-rank {
-    font-size: 0.6875rem;
-    color: var(--text-muted);
-    min-width: 14px;
-    text-align: center;
-  }
-
-  .top-loot-target {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 1;
-  }
-
-  .top-loot-value {
-    flex-shrink: 0;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .top-loot-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .top-loot-time {
-    font-size: 0.6875rem;
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-
-  .overview-specials {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-    margin-bottom: 16px;
   }
 
   /* Side-by-side tab layout */
@@ -1795,15 +1622,6 @@
     margin: 0 0 12px 0;
     font-size: 1.125rem;
     font-weight: 600;
-  }
-
-  .overview-category {
-    margin-bottom: 0;
-    min-width: 0;
-  }
-
-  .overview-specials .section-card {
-    margin-bottom: 0;
   }
 
   .chart-container {
@@ -2149,12 +1967,9 @@
       grid-template-columns: repeat(3, 1fr);
     }
 
-    .overview-categories {
-      grid-template-columns: 1fr;
-    }
-
-    .overview-specials {
-      grid-template-columns: 1fr;
+    .highlights-header {
+      flex-direction: column;
+      align-items: flex-start;
     }
 
     .ath-targets-grid {
@@ -2209,10 +2024,6 @@
     /* Achievement rows: hide secondary elements on mobile */
     .achievement-item { flex-wrap: wrap; gap: 4px 8px; padding: 6px 8px; font-size: 0.75rem; }
     .achievement-actions, .achievement-time { display: none; }
-
-    /* Top loot rows: hide rank, actions on mobile */
-    .top-loot-rank, .top-loot-actions { display: none; }
-    .top-loot-item { padding: 4px 6px; font-size: 0.75rem; }
 
     /* Section titles */
     .section-card h2, .section-title-icon { font-size: 0.875rem; }
