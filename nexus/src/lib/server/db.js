@@ -5146,9 +5146,14 @@ export async function upsertForumThread({ thread_id, forum_type, title, author, 
   return result.rows[0];
 }
 
-export async function upsertForumThreadItems(threadDbId, items) {
+/**
+ * Replace all item matches for a thread — deletes old matches first,
+ * then inserts the new set. This ensures stale/false-positive matches
+ * are cleaned up on every sync.
+ */
+export async function replaceForumThreadItems(threadDbId, items) {
+  await pool.query('DELETE FROM forum_thread_items WHERE thread_id = $1', [threadDbId]);
   if (!items || items.length === 0) return;
-  // Build a multi-row VALUES clause
   const values = [];
   const params = [];
   let idx = 1;
@@ -5159,9 +5164,7 @@ export async function upsertForumThreadItems(threadDbId, items) {
   }
   await pool.query(
     `INSERT INTO forum_thread_items (thread_id, item_id, item_name, match_source)
-     VALUES ${values.join(', ')}
-     ON CONFLICT (thread_id, item_id) DO UPDATE SET
-       match_source = CASE WHEN EXCLUDED.match_source = 'title' THEN 'title' ELSE forum_thread_items.match_source END`,
+     VALUES ${values.join(', ')}`,
     params
   );
 }

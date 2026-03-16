@@ -9,7 +9,7 @@ import https from 'node:https';
 import { getSlimNameLookup } from '$lib/market/cache.js';
 import {
   upsertForumThread,
-  upsertForumThreadItems,
+  replaceForumThreadItems,
   markStaleForumThreads
 } from '$lib/server/db.js';
 
@@ -508,10 +508,8 @@ export async function syncForumTrading() {
 
           if (row && sortedNames) {
             const matches = matchThreadItems(item.title, item.content);
-            if (matches.length > 0) {
-              await upsertForumThreadItems(row.id, matches);
-              totalMatches += matches.length;
-            }
+            await replaceForumThreadItems(row.id, matches);
+            totalMatches += matches.length;
           }
 
           totalUpserted++;
