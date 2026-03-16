@@ -152,35 +152,137 @@
   let initialPositionDone = $state(false);
 
   // Smart filter function (supports >, <, >=, <=, !, =)
+  /**
+   * Evaluate a single filter term against a value.
+   * Supports: >=, <=, >, <, !, =, /regex/, plain text contains.
+   */
+  function evalFilterTerm(strValue, numValue, term) {
+    if (term.startsWith('>=')) {
+      const target = parseFloat(term.slice(2));
+      return !isNaN(numValue) && !isNaN(target) && numValue >= target;
+    }
+    if (term.startsWith('<=')) {
+      const target = parseFloat(term.slice(2));
+      return !isNaN(numValue) && !isNaN(target) && numValue <= target;
+    }
+    if (term.startsWith('>')) {
+      const target = parseFloat(term.slice(1));
+      return !isNaN(numValue) && !isNaN(target) && numValue > target;
+    }
+    if (term.startsWith('<')) {
+      const target = parseFloat(term.slice(1));
+      return !isNaN(numValue) && !isNaN(target) && numValue < target;
+    }
+    if (term.startsWith('!')) {
+      return !strValue.includes(term.slice(1));
+    }
+    if (term.startsWith('=')) {
+      return strValue === term.slice(1);
+    }
+    // Regex: /pattern/ or /pattern/flags
+    const rxMatch = term.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (rxMatch) {
+      try {
+        const rx = new RegExp(rxMatch[1], rxMatch[2] || 'i');
+        return rx.test(String(strValue));
+      } catch {
+        return false;
+      }
+    }
+    return strValue.includes(term);
+  }
+
+  /**
+   * Tokenize a filter string into tokens: terms, '&', 'and', '|', 'or', '(', ')'.
+   * Regex literals (/.../) are treated as single tokens.
+   */
+  function tokenizeFilter(str) {
+    const tokens = [];
+    let i = 0;
+    while (i < str.length) {
+      if (str[i] === ' ') { i++; continue; }
+      if (str[i] === '(') { tokens.push('('); i++; continue; }
+      if (str[i] === ')') { tokens.push(')'); i++; continue; }
+      if (str[i] === '&') { tokens.push('&'); i++; continue; }
+      if (str[i] === '|') { tokens.push('|'); i++; continue; }
+      // Regex literal
+      if (str[i] === '/') {
+        let j = i + 1;
+        while (j < str.length && str[j] !== '/') j++;
+        j++; // skip closing /
+        while (j < str.length && /[gimsuy]/.test(str[j])) j++; // flags
+        tokens.push(str.slice(i, j));
+        i = j;
+        continue;
+      }
+      // Word token (and/or are operators, everything else is a term)
+      let j = i;
+      while (j < str.length && !' &|()'.includes(str[j])) j++;
+      const word = str.slice(i, j);
+      if (word === 'and' || word === 'AND') tokens.push('&');
+      else if (word === 'or' || word === 'OR') tokens.push('|');
+      else tokens.push(word);
+      i = j;
+    }
+    return tokens;
+  }
+
+  /**
+   * Parse and evaluate a filter expression with &, |, parentheses.
+   * Precedence: () > & > |
+   */
+  function evalFilterExpr(strValue, numValue, tokens, pos) {
+    let result = evalFilterAnd(strValue, numValue, tokens, pos);
+    let val = result.val;
+    pos = result.pos;
+    while (pos < tokens.length && tokens[pos] === '|') {
+      pos++;
+      result = evalFilterAnd(strValue, numValue, tokens, pos);
+      val = val || result.val;
+      pos = result.pos;
+    }
+    return { val, pos };
+  }
+
+  function evalFilterAnd(strValue, numValue, tokens, pos) {
+    let result = evalFilterAtom(strValue, numValue, tokens, pos);
+    let val = result.val;
+    pos = result.pos;
+    while (pos < tokens.length && tokens[pos] === '&') {
+      pos++;
+      result = evalFilterAtom(strValue, numValue, tokens, pos);
+      val = val && result.val;
+      pos = result.pos;
+    }
+    return { val, pos };
+  }
+
+  function evalFilterAtom(strValue, numValue, tokens, pos) {
+    if (pos >= tokens.length) return { val: true, pos };
+    if (tokens[pos] === '(') {
+      pos++;
+      const result = evalFilterExpr(strValue, numValue, tokens, pos);
+      pos = result.pos;
+      if (pos < tokens.length && tokens[pos] === ')') pos++;
+      return { val: result.val, pos };
+    }
+    const term = tokens[pos];
+    return { val: evalFilterTerm(strValue, numValue, term), pos: pos + 1 };
+  }
+
   function smartFilter(value, filterStr) {
     if (!filterStr || !filterStr.trim()) return true;
-    const filter = filterStr.trim().toLowerCase();
+    const filter = filterStr.trim();
     const strValue = String(value ?? '').toLowerCase();
     const numValue = parseFloat(value);
 
-    if (filter.startsWith('>=')) {
-      const target = parseFloat(filter.slice(2));
-      return !isNaN(numValue) && !isNaN(target) && numValue >= target;
+    // Fast path: no operators or parens — single term
+    if (!/[&|()]/.test(filter) && !/\band\b|\bor\b/i.test(filter)) {
+      return evalFilterTerm(strValue, numValue, filter.toLowerCase());
     }
-    if (filter.startsWith('<=')) {
-      const target = parseFloat(filter.slice(2));
-      return !isNaN(numValue) && !isNaN(target) && numValue <= target;
-    }
-    if (filter.startsWith('>')) {
-      const target = parseFloat(filter.slice(1));
-      return !isNaN(numValue) && !isNaN(target) && numValue > target;
-    }
-    if (filter.startsWith('<')) {
-      const target = parseFloat(filter.slice(1));
-      return !isNaN(numValue) && !isNaN(target) && numValue < target;
-    }
-    if (filter.startsWith('!')) {
-      return !strValue.includes(filter.slice(1));
-    }
-    if (filter.startsWith('=')) {
-      return strValue === filter.slice(1);
-    }
-    return strValue.includes(filter);
+
+    const tokens = tokenizeFilter(filter.toLowerCase());
+    return evalFilterExpr(strValue, numValue, tokens, 0).val;
   }
 
   // Calculate effective damage for an item
@@ -1341,7 +1443,12 @@
         <div class="help-item"><code>&lt;=20</code> Less or equal</div>
         <div class="help-item"><code>!melee</code> Does not contain</div>
         <div class="help-item"><code>=ranged</code> Exact match</div>
+        <div class="help-item"><code>/atrox|drone/</code> Regex</div>
         <div class="help-item"><code>sword</code> Contains text</div>
+        <div class="help-title" style="margin-top: 6px;">Combining Filters</div>
+        <div class="help-item"><code>&gt;10 &amp; &lt;50</code> AND</div>
+        <div class="help-item"><code>atrox | drone</code> OR</div>
+        <div class="help-item"><code>(a | b) &amp; &gt;10</code> Group</div>
       </div>
     {/if}
 
