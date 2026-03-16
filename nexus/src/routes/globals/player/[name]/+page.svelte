@@ -2016,6 +2016,14 @@
     text-overflow: ellipsis;
   }
 
+  .data-table td.col-rank,
+  .data-table td.col-badge,
+  .data-table td.col-media,
+  .data-table td.col-gz {
+    overflow: visible;
+    text-overflow: clip;
+  }
+
   .data-table tr:last-child td {
     border-bottom: none;
   }
