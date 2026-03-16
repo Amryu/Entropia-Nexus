@@ -517,60 +517,42 @@
             </div>
           </div>
           {#if highlightItems.length > 0}
-            <div class="table-wrapper">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    {#if highlightTab !== 'discoveries' && highlightTab !== 'rare'}
-                      <th class="col-rank">#</th>
+            <div class="highlight-list">
+              {#each pagedHighlightItems as item, i}
+                {@const isLoot = highlightTab !== 'discoveries' && highlightTab !== 'rare'}
+                <div class="highlight-row">
+                  {#if isLoot}
+                    {@const rank = highlightPage * HIGHLIGHT_PAGE_SIZE + i + 1}
+                    <span class="rank-badge" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span>
+                  {/if}
+                  <span class="highlight-name">
+                    {#if highlightTab === 'discoveries'}
+                      {item.target}{#if item.location}&nbsp;<span class="achievement-location">in {item.location}</span>{/if}
+                    {:else}
+                      <a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a>
                     {/if}
-                    <th>Target</th>
-                    {#if highlightTab !== 'discoveries'}
-                      <th class="right col-value">Value</th>
-                    {/if}
-                    <th class="col-badge"></th>
-                    <th class="col-media"></th>
-                    <th class="col-gz"></th>
-                    <th class="col-time">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each pagedHighlightItems as item, i}
-                    <tr>
-                      {#if highlightTab !== 'discoveries' && highlightTab !== 'rare'}
-                        {@const rank = highlightPage * HIGHLIGHT_PAGE_SIZE + i + 1}
-                        <td class="col-rank"><span class="rank-badge rank-lg" class:rank-ruby={rank <= 1} class:rank-diamond={rank > 1 && rank <= 10} class:rank-gold={rank > 10 && rank <= 50} class:rank-silver={rank > 50 && rank <= 200} class:rank-bronze={rank > 200 && rank <= 500}>#{rank}</span></td>
-                      {/if}
-                      <td>
-                        {#if highlightTab === 'discoveries'}
-                          {item.target}{#if item.location}&nbsp;<span class="text-muted" style="font-size:0.75rem">in {item.location}</span>{/if}
+                  </span>
+                  {#if highlightTab !== 'discoveries'}
+                    <span class="highlight-value">{formatPed(item.value)} PED</span>
+                  {/if}
+                  {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
+                  <span class="highlight-actions">
+                    {#if item.media_image || item.media_video}
+                      <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
+                        {#if item.media_image}
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
                         {:else}
-                          <a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a>
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                         {/if}
-                      </td>
-                      {#if highlightTab !== 'discoveries'}
-                        <td class="right font-weight-bold">{formatPed(item.value)} PED</td>
-                      {/if}
-                      <td class="col-badge">{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
-                      <td class="col-media">
-                        {#if item.media_image || item.media_video}
-                          <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(item)}>
-                            {#if item.media_image}
-                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                            {:else}
-                              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                            {/if}
-                          </button>
-                        {:else if user}
-                          <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
-                        {/if}
-                      </td>
-                      <td class="col-gz"><GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact /></td>
-                      <td class="text-muted col-time" title={new Date(item.timestamp).toLocaleString()}>{timeAgo(item.timestamp)}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
+                      </button>
+                    {:else if user}
+                      <GlobalMediaUpload globalId={item.id} {playerName} {user} onuploaded={onMediaUploaded} />
+                    {/if}
+                    <GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} {user} compact />
+                  </span>
+                  <span class="highlight-time">{timeAgo(item.timestamp)}</span>
+                </div>
+              {/each}
             </div>
             {#if highlightTotalPages > 1}
               <div class="pagination">
@@ -1550,6 +1532,68 @@
 
   .highlights-header h2 {
     margin: 0;
+  }
+
+  .highlight-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .highlight-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 0.8125rem;
+  }
+
+  .highlight-row + .highlight-row {
+    border-top: 1px solid var(--border-color);
+    padding-top: 6px;
+  }
+
+  .highlight-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .highlight-value {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 0.75rem;
+  }
+
+  .highlight-badge {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .highlight-badge.hof { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .highlight-badge.ath { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+  .highlight-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .highlight-time {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    min-width: 50px;
+    text-align: right;
   }
 
   /* Side-by-side tab layout */
