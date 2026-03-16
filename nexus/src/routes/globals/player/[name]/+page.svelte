@@ -15,7 +15,7 @@
   import { goto } from '$app/navigation';
   import SearchInput from '$lib/components/SearchInput.svelte';
   import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
-  import { TYPE_CONFIG } from '$lib/data/globals-constants.js';
+  import { TYPE_CONFIG, ASTEROID_RE } from '$lib/data/globals-constants.js';
   import { formatPed, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
@@ -46,6 +46,7 @@
     if (playerData?.top_loots?.hunting) playerData.top_loots.hunting = update(playerData.top_loots.hunting);
     if (playerData?.top_loots?.mining) playerData.top_loots.mining = update(playerData.top_loots.mining);
     if (playerData?.top_loots?.crafting) playerData.top_loots.crafting = update(playerData.top_loots.crafting);
+    if (playerData?.top_loots?.space_mining) playerData.top_loots.space_mining = update(playerData.top_loots.space_mining);
     if (playerData?.rare_items) playerData.rare_items = update(playerData.rare_items);
     if (playerData?.achievements) playerData.achievements = update(playerData.achievements);
     if (playerData?.pvp_events) playerData.pvp_events = update(playerData.pvp_events);
@@ -60,6 +61,7 @@
     if (playerData?.top_loots?.hunting) playerData.top_loots.hunting = update(playerData.top_loots.hunting);
     if (playerData?.top_loots?.mining) playerData.top_loots.mining = update(playerData.top_loots.mining);
     if (playerData?.top_loots?.crafting) playerData.top_loots.crafting = update(playerData.top_loots.crafting);
+    if (playerData?.top_loots?.space_mining) playerData.top_loots.space_mining = update(playerData.top_loots.space_mining);
     if (playerData?.recent) playerData.recent = update(playerData.recent);
     if (playerData?.rare_items) playerData.rare_items = update(playerData.rare_items);
     if (playerData?.achievements) playerData.achievements = update(playerData.achievements);
@@ -101,6 +103,7 @@
     { value: 'overview', label: 'Overview' },
     { value: 'hunting', label: 'Hunting' },
     { value: 'mining', label: 'Mining' },
+    { value: 'space_mining', label: 'Space Mining' },
     { value: 'crafting', label: 'Crafting' },
   ];
   const EXTRA_TABS = [
@@ -139,7 +142,7 @@
         playerData = await res.json();
       } else if (res.status === 404) {
         // No data for this period — show empty summary
-        playerData = { player: playerName, summary: { total_count: 0, total_value: 0, avg_value: 0, max_value: 0, hof_count: 0, ath_count: 0, kill_count: 0, team_kill_count: 0, hunting_value: 0, deposit_count: 0, mining_value: 0, craft_count: 0, crafting_value: 0, rare_count: 0, discovery_count: 0, tier_count: 0, pvp_count: 0, pvp_value: 0 }, hunting: [], mining: { resources: [] }, crafting: { items: [] }, activity: [], recent: [], achievements: [], rare_items: [], pvp_events: [], top_loots: { hunting: [], mining: [], crafting: [] }, ath_rankings: { hunting: [], mining: [], crafting: [], pvp: [] } };
+        playerData = { player: playerName, summary: { total_count: 0, total_value: 0, avg_value: 0, max_value: 0, hof_count: 0, ath_count: 0, kill_count: 0, team_kill_count: 0, hunting_value: 0, deposit_count: 0, mining_value: 0, craft_count: 0, crafting_value: 0, rare_count: 0, discovery_count: 0, tier_count: 0, pvp_count: 0, pvp_value: 0 }, hunting: [], mining: { resources: [] }, space_mining: [], crafting: { items: [] }, activity: [], recent: [], achievements: [], rare_items: [], pvp_events: [], top_loots: { hunting: [], mining: [], crafting: [], space_mining: [] }, ath_rankings: { hunting: [], mining: [], crafting: [], space_mining: [], pvp: [] } };
       }
     } catch { /* ignore */ }
     loading = false;
@@ -179,6 +182,12 @@
   let miningLootPage = $state(0);
   let miningLootSort = $state({ col: 'value', asc: false });
 
+  // Space Mining tab pagination
+  let smTargetPage = $state(0);
+  let smLootPage = $state(0);
+  let smSort = $state({ col: 'total_value', asc: false });
+  let smLootSort = $state({ col: 'value', asc: false });
+
   // Crafting tab pagination
   let craftTargetPage = $state(0);
   let craftLootPage = $state(0);
@@ -188,6 +197,7 @@
   const ATH_CATEGORIES = [
     { value: 'hunting', label: 'Hunting' },
     { value: 'mining', label: 'Mining' },
+    { value: 'space_mining', label: 'Space Mining' },
     { value: 'crafting', label: 'Crafting' },
     { value: 'pvp', label: 'PvP' },
   ];
@@ -199,8 +209,7 @@
 
   // Highlights panel (Overview tab)
   // Overview ATH ranking mode
-  let overviewAthMode = $state('total');
-  let miningFilter = $state('combined'); // 'combined' | 'regular' | 'space'
+  let overviewAthMode = $state('best');
 
   // PvP sorting
   let pvpSort = $state({ col: 'value', asc: false });
@@ -303,9 +312,10 @@
   let summary = $derived(playerData?.summary);
   let hunting = $derived(playerData?.hunting || []);
   let mining = $derived(playerData?.mining?.resources || []);
+  let spaceMining = $derived(playerData?.space_mining || []);
   let crafting = $derived(playerData?.crafting?.items || []);
   let activity = $derived(playerData?.activity || []);
-  let activityByType = $derived(playerData?.activity_by_type || { hunting: [], mining: [], crafting: [] });
+  let activityByType = $derived(playerData?.activity_by_type || { hunting: [], mining: [], crafting: [], space_mining: [] });
 
   /** Generate a smoothed SVG path for a sparkline from an array of numbers.
    *  Uses Catmull-Rom interpolation between active points but drops to the
@@ -341,8 +351,8 @@
   let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
   let achievements = $derived(playerData?.achievements || []);
   let rareItems = $derived(playerData?.rare_items || []);
-  let topLoots = $derived(playerData?.top_loots || { hunting: [], mining: [], crafting: [] });
-  let athRankings = $derived(playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] });
+  let topLoots = $derived(playerData?.top_loots || { hunting: [], mining: [], crafting: [], space_mining: [] });
+  let athRankings = $derived(playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], space_mining: [], pvp: [] });
   let categoryRanks = $derived(playerData?.category_ranks || null);
   let isTeam = $derived(summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count);
   let tabs = $derived([
@@ -350,9 +360,9 @@
     ...EXTRA_TABS.filter(t => summary && summary[t.key] > 0),
     { value: 'aths', label: 'ATHs' },
   ]);
-  let sortedHunting = $derived(sortedData(hunting, huntSort));
-  let sortedMining = $derived(sortedData(mining, miningSort));
-  let sortedCrafting = $derived(sortedData(crafting, craftSort));
+  let sortedHunting = $derived(sortedBreakdown(hunting, huntSort, 'hunting'));
+  let sortedMining = $derived(sortedBreakdown(mining, miningSort, 'mining'));
+  let sortedCrafting = $derived(sortedBreakdown(crafting, craftSort, 'crafting'));
   let huntTargetPages = $derived(Math.ceil(sortedHunting.length / PAGE_SIZE));
   let sortedHuntingLoots = $derived(sortedData(topLoots.hunting || [], huntLootSort));
   let huntLootPages = $derived(Math.ceil(sortedHuntingLoots.length / PAGE_SIZE));
@@ -363,14 +373,20 @@
   let miningLootPages = $derived(Math.ceil(sortedMiningLoots.length / PAGE_SIZE));
   let pagedMining = $derived(sortedMining.slice(miningTargetPage * PAGE_SIZE, (miningTargetPage + 1) * PAGE_SIZE));
   let pagedMiningLoots = $derived(sortedMiningLoots.slice(miningLootPage * PAGE_SIZE, (miningLootPage + 1) * PAGE_SIZE));
+  let sortedSpaceMining = $derived(sortedBreakdown(spaceMining, smSort, 'space_mining'));
+  let smTargetPages = $derived(Math.ceil(sortedSpaceMining.length / PAGE_SIZE));
+  let sortedSmLoots = $derived(sortedData(topLoots.space_mining || [], smLootSort));
+  let smLootPages = $derived(Math.ceil(sortedSmLoots.length / PAGE_SIZE));
+  let pagedSpaceMining = $derived(sortedSpaceMining.slice(smTargetPage * PAGE_SIZE, (smTargetPage + 1) * PAGE_SIZE));
+  let pagedSmLoots = $derived(sortedSmLoots.slice(smLootPage * PAGE_SIZE, (smLootPage + 1) * PAGE_SIZE));
   let craftTargetPages = $derived(Math.ceil(sortedCrafting.length / PAGE_SIZE));
   let sortedCraftingLoots = $derived(sortedData(topLoots.crafting || [], craftLootSort));
   let craftLootPages = $derived(Math.ceil(sortedCraftingLoots.length / PAGE_SIZE));
   let pagedCrafting = $derived(sortedCrafting.slice(craftTargetPage * PAGE_SIZE, (craftTargetPage + 1) * PAGE_SIZE));
   let pagedCraftingLoots = $derived(sortedCraftingLoots.slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE));
   let athCategory = $derived((() => {
-    const counts = { hunting: 0, mining: 0, crafting: 0, pvp: 0 };
-    for (const cat of ['hunting', 'mining', 'crafting']) {
+    const counts = { hunting: 0, mining: 0, space_mining: 0, crafting: 0, pvp: 0 };
+    for (const cat of ['hunting', 'mining', 'space_mining', 'crafting']) {
       counts[cat] = (athRankings[cat] || []).length;
     }
     counts.pvp = (athRankings.pvp || []).length;
@@ -389,7 +405,7 @@
   // ATH rank lookup by target name for breakdown tables
   let athRankByTarget = $derived((() => {
     const map = new Map();
-    for (const cat of ['hunting', 'mining', 'crafting']) {
+    for (const cat of ['hunting', 'mining', 'space_mining', 'crafting']) {
       for (const e of athRankings[cat] || []) {
         const rank = { total: e.total_rank, best: e.best_rank, count: e.count_rank };
         map.set(`${cat}:${e.target?.toLowerCase()}`, rank);
@@ -399,6 +415,19 @@
     }
     return map;
   })());
+  /** Sort breakdown data with ATH rank awareness. When sorting by 'rank', looks up
+   *  total_rank from athRankByTarget; unranked items sort to the end. */
+  function sortedBreakdown(arr, sort, athCategory) {
+    if (sort.col === 'rank') {
+      return [...arr].sort((a, b) => {
+        const ra = athRankByTarget.get(`${athCategory}:${a.target?.toLowerCase()}`)?.total ?? 999999;
+        const rb = athRankByTarget.get(`${athCategory}:${b.target?.toLowerCase()}`)?.total ?? 999999;
+        return sort.asc ? ra - rb : rb - ra;
+      });
+    }
+    return sortedData(arr, sort);
+  }
+
   let sortedRareItems = $derived(sortedData(rareItems, rareFindSort));
   let pvpEvents = $derived(playerData?.pvp_events || []);
   let sortedPvpEvents = $derived(sortedData(pvpEvents, pvpSort));
@@ -501,6 +530,7 @@
       {#each [
         { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color', count: summary.kill_count + summary.team_kill_count, value: summary.hunting_value, tab: 'hunting' },
         { key: 'mining', label: 'Mining', colorClass: 'mining-color', count: summary.deposit_count, value: summary.mining_value, tab: 'mining' },
+        { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color', count: spaceMining.reduce((s, m) => s + m.finds, 0), value: spaceMining.reduce((s, m) => s + m.total_value, 0), tab: 'space_mining' },
         { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: summary.craft_count, value: summary.crafting_value, tab: 'crafting' },
       ] as cat}
         {@const cr = categoryRanks?.[cat.key]}
@@ -567,6 +597,7 @@
           {#each [
             { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color' },
             { key: 'mining', label: 'Mining', colorClass: 'mining-color' },
+            { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color' },
             { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' },
           ] as category}
             {@const useBest = overviewAthMode === 'best' || overviewAthMode === 'bestTarget'}
@@ -578,31 +609,16 @@
                 return a.total_rank - b.total_rank || b.total_value - a.total_value;
               })
               .slice(0, 10)}
-            {@const entries = category.key === 'mining' && miningFilter !== 'combined'
-              ? rawEntries.filter(e => miningFilter === 'space'
-                  ? /asteroid/i.test(e.target)
-                  : !/asteroid/i.test(e.target))
-              : rawEntries}
+            {@const entries = rawEntries}
             <div class="overview-ranking-card">
               <div class="ranking-card-header {category.colorClass}">
                 {category.label}
-                {#if category.key === 'mining'}
-                  <div class="mining-toggle">
-                    <button class="mining-toggle-btn" class:active={miningFilter === 'combined'} onclick={() => miningFilter = 'combined'}>All</button>
-                    <button class="mining-toggle-btn" class:active={miningFilter === 'regular'} onclick={() => miningFilter = 'regular'}>Regular</button>
-                    <button class="mining-toggle-btn" class:active={miningFilter === 'space'} onclick={() => miningFilter = 'space'}>Space</button>
-                  </div>
-                {/if}
               </div>
               {#each entries as entry}
                 {@const r = useBest ? entry.best_rank : entry.total_rank}
-                {@const cr = entry.count_rank || 0}
                 {@const v = useBest ? entry.best_value : entry.total_value}
                 <div class="highlight-row">
                   <span class="ranking-badge" title={useBest ? "Rank by best loot" : "Rank by total value"} class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
-                  {#if cr > 0}
-                    <span class="ranking-badge ranking-badge-count" title="Rank by global count" class:rank-ruby={cr <= 1} class:rank-diamond={cr > 1 && cr <= 10} class:rank-gold={cr > 10 && cr <= 50} class:rank-silver={cr > 50 && cr <= 200} class:rank-bronze={cr > 200 && cr <= 500}>#{cr}</span>
-                  {/if}
                   <span class="highlight-name"><a href="/globals/target/{encodeURIComponent(entry.target)}" class="target-link">{entry.target}</a></span>
                   <span class="highlight-value">{formatPed(v)} PED</span>
                 </div>
@@ -747,7 +763,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="col-rank">Rank</th>
+                      <th class="col-rank sortable" onclick={() => { huntSort = toggleSort(huntSort, 'rank'); huntTargetPage = 0; }}>Rank{sortIcon(huntSort, 'rank')}</th>
                       <th class="sortable" onclick={() => { huntSort = toggleSort(huntSort, 'target'); huntTargetPage = 0; }}>
                         Target{sortIcon(huntSort, 'target')}
                       </th>
@@ -757,7 +773,7 @@
                       <th class="sortable right col-value" onclick={() => { huntSort = toggleSort(huntSort, 'total_value'); huntTargetPage = 0; }}>
                         Total{sortIcon(huntSort, 'total_value')}
                       </th>
-                      <th class="right col-value col-hide-mobile">Best</th>
+                      <th class="sortable right col-value col-hide-mobile" onclick={() => { huntSort = toggleSort(huntSort, 'best_value'); huntTargetPage = 0; }}>Best{sortIcon(huntSort, 'best_value')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -886,7 +902,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="col-rank">Rank</th>
+                      <th class="col-rank sortable" onclick={() => { miningSort = toggleSort(miningSort, 'rank'); miningTargetPage = 0; }}>Rank{sortIcon(miningSort, 'rank')}</th>
                       <th class="sortable" onclick={() => { miningSort = toggleSort(miningSort, 'target'); miningTargetPage = 0; }}>
                         Resource{sortIcon(miningSort, 'target')}
                       </th>
@@ -896,7 +912,7 @@
                       <th class="sortable right col-value" onclick={() => { miningSort = toggleSort(miningSort, 'total_value'); miningTargetPage = 0; }}>
                         Total{sortIcon(miningSort, 'total_value')}
                       </th>
-                      <th class="right col-value col-hide-mobile">Best</th>
+                      <th class="sortable right col-value col-hide-mobile" onclick={() => { miningSort = toggleSort(miningSort, 'best_value'); miningTargetPage = 0; }}>Best{sortIcon(miningSort, 'best_value')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -989,6 +1005,145 @@
           </div>
         </div>
 
+      <!-- === SPACE MINING TAB === -->
+      {:else if activeTab === 'space_mining'}
+        <div class="tab-side-by-side">
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22l10-10"/><path d="M16 8l-4 4"/><path d="M22 2l-5.5 5.5"/><circle cx="18" cy="6" r="3"/></svg>
+              Asteroid Breakdown
+            </h2>
+            {#if spaceMining.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank sortable" onclick={() => { smSort = toggleSort(smSort, 'rank'); smTargetPage = 0; }}>Rank{sortIcon(smSort, 'rank')}</th>
+                      <th class="sortable" onclick={() => { smSort = toggleSort(smSort, 'target'); smTargetPage = 0; }}>
+                        Target{sortIcon(smSort, 'target')}
+                      </th>
+                      <th class="sortable right col-value" onclick={() => { smSort = toggleSort(smSort, 'finds'); smTargetPage = 0; }}>
+                        Finds{sortIcon(smSort, 'finds')}
+                      </th>
+                      <th class="sortable right col-value" onclick={() => { smSort = toggleSort(smSort, 'total_value'); smTargetPage = 0; }}>
+                        Total{sortIcon(smSort, 'total_value')}
+                      </th>
+                      <th class="sortable right col-value col-hide-mobile" onclick={() => { smSort = toggleSort(smSort, 'best_value'); smTargetPage = 0; }}>Best{sortIcon(smSort, 'best_value')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedSpaceMining as mob, i}
+                      {@const mobKey = 'sm_' + (mob.mob_id || mob.target || (smTargetPage * PAGE_SIZE + i))}
+                      {@const hasDetails = mob.maturities && mob.maturities.length > 1}
+                      {@const displayName = hasDetails ? mob.target : (mob.maturities?.[0]?.target || mob.target)}
+                      {@const athRank = athRankByTarget.get('space_mining:' + mob.target?.toLowerCase())}
+                      <tr
+                        class="mob-row"
+                        class:expandable={hasDetails}
+                        onclick={() => hasDetails && toggleMob(mobKey)}
+                      >
+                        <td class="col-rank">
+                          {#if athRank}
+                            <span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                          {/if}
+                        </td>
+                        <td>
+                          {#if hasDetails}
+                            <span class="expand-icon">{expandedMobs.has(mobKey) ? '\u25BC' : '\u25B6'}</span>
+                          {/if}
+                          <a href="/globals/target/{encodeURIComponent(displayName)}" class="target-link" onclick={(e) => e.stopPropagation()}>{displayName}</a>
+                        </td>
+                        <td class="right">{mob.finds}</td>
+                        <td class="right">{formatPed(mob.total_value)}</td>
+                        <td class="right col-hide-mobile">{formatPed(mob.best_value)}</td>
+                      </tr>
+                      {#if hasDetails && expandedMobs.has(mobKey)}
+                        {#each mob.maturities as mat}
+                          <tr class="maturity-row">
+                            <td></td>
+                            <td class="indent"><a href="/globals/target/{encodeURIComponent(mat.target)}" class="target-link">{mat.target}</a></td>
+                            <td class="right">{mat.finds}</td>
+                            <td class="right">{formatPed(mat.total_value)}</td>
+                            <td class="right col-hide-mobile">{formatPed(mat.best_value)}</td>
+                          </tr>
+                        {/each}
+                      {/if}
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if smTargetPages > 1}
+                <div class="pagination">
+                  <button disabled={smTargetPage === 0} onclick={() => smTargetPage--}>&laquo; Prev</button>
+                  <span>{smTargetPage + 1} / {smTargetPages}</span>
+                  <button disabled={smTargetPage >= smTargetPages - 1} onclick={() => smTargetPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No space mining globals for this period</p>
+            {/if}
+          </div>
+
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Top Individual Loots
+            </h2>
+            {#if topLoots.space_mining.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank right">#</th>
+                      <th class="sortable" onclick={() => { smLootSort = toggleSort(smLootSort, 'target'); smLootPage = 0; }}>Target{sortIcon(smLootSort, 'target')}</th>
+                      <th class="sortable right col-value" onclick={() => { smLootSort = toggleSort(smLootSort, 'value'); smLootPage = 0; }}>Value{sortIcon(smLootSort, 'value')}</th>
+                      <th class="col-badge"></th>
+                      <th class="col-media"></th>
+                      <th class="col-gz"></th>
+                      <th class="sortable col-time" onclick={() => { smLootSort = toggleSort(smLootSort, 'timestamp'); smLootPage = 0; }}>Time{sortIcon(smLootSort, 'timestamp')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedSmLoots as loot, i}
+                      {@const athRank = athRankByTarget.get('space_mining:' + loot.target?.toLowerCase())}
+                      <tr>
+                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
+                        <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
+                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="col-media">
+                          {#if loot.media_image || loot.media_video}
+                            <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
+                              {#if loot.media_image}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                              {:else}
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                              {/if}
+                            </button>
+                          {:else if user}
+                            <GlobalMediaUpload globalId={loot.id} {playerName} {user} onuploaded={onMediaUploaded} />
+                          {/if}
+                        </td>
+                        <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact /></td>
+                        <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if smLootPages > 1}
+                <div class="pagination">
+                  <button disabled={smLootPage === 0} onclick={() => smLootPage--}>&laquo; Prev</button>
+                  <span>{smLootPage + 1} / {smLootPages}</span>
+                  <button disabled={smLootPage >= smLootPages - 1} onclick={() => smLootPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No space mining HoFs recorded</p>
+            {/if}
+          </div>
+        </div>
+
       <!-- === CRAFTING TAB === -->
       {:else if activeTab === 'crafting'}
         <div class="tab-side-by-side">
@@ -1002,7 +1157,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th class="col-rank">Rank</th>
+                      <th class="col-rank sortable" onclick={() => { craftSort = toggleSort(craftSort, 'rank'); craftTargetPage = 0; }}>Rank{sortIcon(craftSort, 'rank')}</th>
                       <th class="sortable" onclick={() => { craftSort = toggleSort(craftSort, 'target'); craftTargetPage = 0; }}>
                         Item{sortIcon(craftSort, 'target')}
                       </th>
@@ -1012,7 +1167,7 @@
                       <th class="sortable right col-value" onclick={() => { craftSort = toggleSort(craftSort, 'total_value'); craftTargetPage = 0; }}>
                         Total{sortIcon(craftSort, 'total_value')}
                       </th>
-                      <th class="right col-value col-hide-mobile">Best</th>
+                      <th class="sortable right col-value col-hide-mobile" onclick={() => { craftSort = toggleSort(craftSort, 'best_value'); craftTargetPage = 0; }}>Best{sortIcon(craftSort, 'best_value')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1552,7 +1707,7 @@
   }
 
   .stats-row.category-row {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     margin-bottom: 20px;
   }
 
@@ -1659,6 +1814,7 @@
 
   .hunting-color { color: #ef4444; }
   .mining-color { color: #60b0ff; }
+  .space-mining-color { color: #a78bfa; }
   .crafting-color { color: #f97316; }
 
   /* Tab Navigation */
@@ -1715,7 +1871,7 @@
 
   .overview-rankings-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     margin-bottom: 16px;
   }
@@ -1744,31 +1900,10 @@
 
   .ranking-card-header.hunting-color { color: #ef4444; }
   .ranking-card-header.mining-color { color: #60b0ff; }
+  .ranking-card-header.space-mining-color { color: #a78bfa; }
   .ranking-card-header.crafting-color { color: #f97316; }
   .ranking-card-header.rare-color { color: #9b59b6; }
   .ranking-card-header.discovery-color { color: #2ecc71; }
-
-  .mining-toggle {
-    display: inline-flex;
-    gap: 2px;
-    margin-left: 8px;
-  }
-
-  .mining-toggle-btn {
-    padding: 1px 6px;
-    font-size: 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .mining-toggle-btn.active {
-    background: var(--accent-color);
-    color: white;
-    border-color: var(--accent-color);
-  }
 
   .ranking-badge {
     display: inline-block;
@@ -2266,7 +2401,7 @@
     }
 
     .stats-row.category-row {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
     }
 
     .overview-rankings-header {

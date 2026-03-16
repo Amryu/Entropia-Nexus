@@ -4,8 +4,8 @@
  * Public endpoint, no auth required.
  *
  * Returns summary stats + breakdowns by hunting (per-mob with maturities),
- * mining (per-resource), crafting (per-item), activity timeline,
- * top individual loots per category, and per-target ATH stats.
+ * mining (per-resource), space mining (asteroids), crafting (per-item),
+ * activity timeline, top individual loots per category, and per-target ATH stats.
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
@@ -110,6 +110,7 @@ export async function GET({ params, url, locals }) {
       summaryResult,
       huntingResult,
       miningResult,
+      spaceMiningResult,
       craftingResult,
       activityResult,
       recentResult,
@@ -118,10 +119,14 @@ export async function GET({ params, url, locals }) {
       pvpResult,
       topHuntingResult,
       topMiningResult,
+      topSpaceMiningResult,
       topCraftingResult,
       categoryRanksResult,
+      spaceMiningRanksResult,
+      spaceMiningActivityResult,
       athHuntingResult,
       athMiningResult,
+      athSpaceMiningResult,
       athCraftingResult,
       athPvpResult,
     ] = await Promise.all([
@@ -153,7 +158,9 @@ export async function GET({ params, url, locals }) {
                     count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
                     count(*) FILTER (WHERE global_type = 'tier') AS tier_count,
                     count(*) FILTER (WHERE global_type = 'pvp') AS pvp_count,
-                    COALESCE(sum(value) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value
+                    COALESCE(sum(value) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value,
+                    count(*) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid') AS space_deposit_count,
+                    COALESCE(sum(value) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value
              FROM ingested_globals
              WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}`,
             [playerName, ...extraParams]
@@ -173,14 +180,27 @@ export async function GET({ params, url, locals }) {
         [playerName, ...extraParams]
       ),
 
-      // Mining: per-resource breakdown
+      // Mining: per-resource breakdown (excludes space mining / asteroids)
       pool.query(
         `SELECT target_name AS target, count(*) AS finds,
                 COALESCE(sum(value), 0) AS total_value,
                 COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
-           AND global_type = 'deposit'
+           AND global_type = 'deposit' AND target_name !~* 'asteroid'
+         GROUP BY target_name
+         ORDER BY total_value DESC`,
+        [playerName, ...extraParams]
+      ),
+
+      // Space mining: per-resource breakdown (asteroids only)
+      pool.query(
+        `SELECT target_name, MAX(mob_id) AS mob_id, MAX(maturity_id) AS maturity_id,
+                count(*) AS finds, COALESCE(sum(value), 0) AS total_value,
+                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type = 'deposit' AND target_name ~* 'asteroid'
          GROUP BY target_name
          ORDER BY total_value DESC`,
         [playerName, ...extraParams]
@@ -270,8 +290,11 @@ export async function GET({ params, url, locals }) {
       // Top individual hunting loots
       topLootsQuery("global_type IN ('kill', 'team_kill')"),
 
-      // Top individual mining loots
-      topLootsQuery("global_type = 'deposit'"),
+      // Top individual mining loots (excludes asteroids)
+      topLootsQuery("global_type = 'deposit' AND target_name !~* 'asteroid'"),
+
+      // Top individual space mining loots (asteroids only)
+      topLootsQuery("global_type = 'deposit' AND target_name ~* 'asteroid'"),
 
       // Top individual crafting loots
       topLootsQuery("global_type = 'craft'"),
@@ -308,6 +331,34 @@ export async function GET({ params, url, locals }) {
         [playerName]
       )),
 
+      // Space mining category ranks (separate query since rollup table lacks target_name)
+      safeQuery(pool.query(
+        `WITH space_totals AS (
+          SELECT player_name, SUM(value) AS val, COUNT(*) AS cnt
+          FROM ingested_globals
+          WHERE confirmed = true AND global_type = 'deposit' AND target_name ~* 'asteroid'
+          GROUP BY player_name
+        ),
+        ranked AS (
+          SELECT player_name,
+            RANK() OVER (ORDER BY val DESC NULLS LAST) AS value_rank,
+            RANK() OVER (ORDER BY cnt DESC NULLS LAST) AS count_rank
+          FROM space_totals
+        )
+        SELECT value_rank, count_rank FROM ranked WHERE lower(player_name) = lower($1)`,
+        [playerName]
+      )),
+
+      // Space mining activity (separate from main activity since global_type doesn't distinguish asteroids)
+      pool.query(
+        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type = 'deposit' AND target_name ~* 'asteroid'
+         GROUP BY bucket ORDER BY bucket LIMIT 2555`,
+        [playerName, ...extraParams]
+      ),
+
       // ATH rankings — use pre-aggregated leaderboard for all-time, fall back to live CTEs for period filters
       // Wrapped with safeQuery so timeouts don't crash the entire endpoint
       ...(useLeaderboard ? [
@@ -326,6 +377,15 @@ export async function GET({ params, url, locals }) {
           `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank, count_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'mining'
+             AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName]
+        )),
+        // Space mining ATH from leaderboard
+        safeQuery(pool.query(
+          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank, count_rank
+           FROM globals_ath_leaderboard
+           WHERE lower(player_name) = lower($1) AND category = 'space_mining'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName]
@@ -384,11 +444,38 @@ export async function GET({ params, url, locals }) {
                     sum(value) AS total_value, max(value) AS best_value,
                     count(*) AS count
              FROM ingested_globals
-             WHERE confirmed = true AND global_type = 'deposit'${periodCond}
+             WHERE confirmed = true AND global_type = 'deposit' AND target_name !~* 'asteroid'${periodCond}
                AND target_name IN (
                  SELECT DISTINCT target_name FROM ingested_globals
                  WHERE confirmed = true AND lower(player_name) = lower($1)
-                   AND global_type = 'deposit'${periodCond}
+                   AND global_type = 'deposit' AND target_name !~* 'asteroid'${periodCond}
+               )
+             GROUP BY player_name, target_name
+           ),
+           ranked AS (
+             SELECT *,
+                    RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
+                    RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
+             FROM target_totals
+           )
+           SELECT target_name, total_value, best_value, count, total_rank, best_rank
+           FROM ranked
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF_LIVE} OR best_rank <= ${ATH_RANK_CUTOFF_LIVE})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName, ...extraParams]
+        )),
+        // Space mining ATH fallback CTE
+        safeQuery(pool.query(
+          `WITH target_totals AS (
+             SELECT player_name, target_name,
+                    sum(value) AS total_value, max(value) AS best_value,
+                    count(*) AS count
+             FROM ingested_globals
+             WHERE confirmed = true AND global_type = 'deposit' AND target_name ~* 'asteroid'${periodCond}
+               AND target_name IN (
+                 SELECT DISTINCT target_name FROM ingested_globals
+                 WHERE confirmed = true AND lower(player_name) = lower($1)
+                   AND global_type = 'deposit' AND target_name ~* 'asteroid'${periodCond}
                )
              GROUP BY player_name, target_name
            ),
@@ -529,10 +616,46 @@ export async function GET({ params, url, locals }) {
       maturities: m.maturities.sort((a, b) => b.total_value - a.total_value),
     }));
 
+    // Group space mining results by mob (aggregate maturities under each mob)
+    const smMobMap = new Map();
+    for (const row of spaceMiningResult.rows) {
+      const resolved = resolveMob(row.target_name);
+      const mobName = resolved?.mobName || row.target_name;
+      const key = row.mob_id ?? row.target_name;
+      if (!smMobMap.has(key)) {
+        smMobMap.set(key, {
+          mob_id: row.mob_id,
+          target: mobName,
+          finds: 0,
+          total_value: 0,
+          best_value: 0,
+          maturities: [],
+        });
+      }
+      const mob = smMobMap.get(key);
+      mob.finds += parseInt(row.finds);
+      mob.total_value += parseFloat(row.total_value);
+      mob.best_value = Math.max(mob.best_value, parseFloat(row.best_value));
+      mob.maturities.push({
+        target: row.target_name,
+        maturity_id: row.maturity_id,
+        finds: parseInt(row.finds),
+        total_value: parseFloat(row.total_value),
+        avg_value: parseFloat(row.avg_value),
+        best_value: parseFloat(row.best_value),
+      });
+    }
+    const spaceMining = [...smMobMap.values()].map(m => ({
+      ...m,
+      avg_value: m.finds > 0 ? m.total_value / m.finds : 0,
+      maturities: m.maturities.sort((a, b) => b.total_value - a.total_value),
+    }));
+
     // Batch lookup: gz counts for all globals (replaces per-row correlated subqueries)
     const allGlobalIds = [
       ...recentResult.rows, ...discoveryResult.rows, ...rareItemsResult.rows,
-      ...pvpResult.rows, ...topHuntingResult.rows, ...topMiningResult.rows, ...topCraftingResult.rows,
+      ...pvpResult.rows, ...topHuntingResult.rows, ...topMiningResult.rows,
+      ...topSpaceMiningResult.rows, ...topCraftingResult.rows,
     ].map(r => r.id).filter(Boolean);
 
     const gzCountMap = new Map();
@@ -585,36 +708,49 @@ export async function GET({ params, url, locals }) {
 
     const responseJson = JSON.stringify({
       player: playerName,
-      summary: {
-        total_count: parseInt(summary.total_count),
-        total_value: parseFloat(summary.total_value),
-        avg_value: parseFloat(summary.avg_value),
-        max_value: parseFloat(summary.max_value),
-        hof_count: parseInt(summary.hof_count),
-        ath_count: parseInt(summary.ath_count),
-        kill_count: parseInt(summary.kill_count),
-        team_kill_count: parseInt(summary.team_kill_count),
-        hunting_value: parseFloat(summary.hunting_value),
-        deposit_count: parseInt(summary.deposit_count),
-        mining_value: parseFloat(summary.mining_value),
-        craft_count: parseInt(summary.craft_count),
-        crafting_value: parseFloat(summary.crafting_value),
-        rare_count: parseInt(summary.rare_count),
-        discovery_count: parseInt(summary.discovery_count),
-        tier_count: parseInt(summary.tier_count),
-        pvp_count: parseInt(summary.pvp_count),
-        pvp_value: parseFloat(summary.pvp_value),
-      },
+      summary: (() => {
+        const spaceDepositCount = useRollup
+          ? spaceMining.reduce((s, m) => s + m.finds, 0)
+          : parseInt(summary.space_deposit_count);
+        const spaceMiningValue = useRollup
+          ? spaceMining.reduce((s, m) => s + m.total_value, 0)
+          : parseFloat(summary.space_mining_value);
+        return {
+          total_count: parseInt(summary.total_count),
+          total_value: parseFloat(summary.total_value),
+          avg_value: parseFloat(summary.avg_value),
+          max_value: parseFloat(summary.max_value),
+          hof_count: parseInt(summary.hof_count),
+          ath_count: parseInt(summary.ath_count),
+          kill_count: parseInt(summary.kill_count),
+          team_kill_count: parseInt(summary.team_kill_count),
+          hunting_value: parseFloat(summary.hunting_value),
+          deposit_count: parseInt(summary.deposit_count) - spaceDepositCount,
+          mining_value: parseFloat(summary.mining_value) - spaceMiningValue,
+          craft_count: parseInt(summary.craft_count),
+          crafting_value: parseFloat(summary.crafting_value),
+          rare_count: parseInt(summary.rare_count),
+          discovery_count: parseInt(summary.discovery_count),
+          tier_count: parseInt(summary.tier_count),
+          pvp_count: parseInt(summary.pvp_count),
+          pvp_value: parseFloat(summary.pvp_value),
+          space_deposit_count: spaceDepositCount,
+          space_mining_value: spaceMiningValue,
+        };
+      })(),
       category_ranks: (() => {
         const cr = categoryRanksResult.rows[0];
         if (!cr) return null;
+        const smr = spaceMiningRanksResult.rows[0];
         return {
           hunting: { value_rank: parseInt(cr.hunting_value_rank), count_rank: parseInt(cr.hunting_count_rank) },
           mining: { value_rank: parseInt(cr.mining_value_rank), count_rank: parseInt(cr.mining_count_rank) },
           crafting: { value_rank: parseInt(cr.crafting_value_rank), count_rank: parseInt(cr.crafting_count_rank) },
+          space_mining: smr ? { value_rank: parseInt(smr.value_rank), count_rank: parseInt(smr.count_rank) } : null,
         };
       })(),
       hunting,
+      space_mining: spaceMining,
       mining: {
         resources: miningResult.rows.map(r => ({
           target: r.target,
@@ -657,6 +793,17 @@ export async function GET({ params, url, locals }) {
           else if (r.type === 'deposit') types.mining.set(key, (types.mining.get(key) || 0) + count);
           else if (r.type === 'craft') types.crafting.set(key, (types.crafting.get(key) || 0) + count);
         }
+        // Build space mining activity from separate query
+        const smActivity = new Map();
+        for (const r of spaceMiningActivityResult.rows) {
+          const key = new Date(r.bucket).toISOString();
+          smActivity.set(key, (smActivity.get(key) || 0) + parseInt(r.count));
+        }
+        // Subtract space mining counts from mining totals (since deposit includes asteroids)
+        for (const [key, count] of smActivity) {
+          const miningCount = types.mining.get(key) || 0;
+          types.mining.set(key, Math.max(0, miningCount - count));
+        }
         // Fill gaps with zeros using the same bucket list as the main activity chart
         const toArr = (m) => {
           const filled = fillActivityGaps(
@@ -665,7 +812,12 @@ export async function GET({ params, url, locals }) {
           );
           return filled.map(r => r.count);
         };
-        return { hunting: toArr(types.hunting), mining: toArr(types.mining), crafting: toArr(types.crafting) };
+        return {
+          hunting: toArr(types.hunting),
+          mining: toArr(types.mining),
+          crafting: toArr(types.crafting),
+          space_mining: toArr(smActivity),
+        };
       })(),
       recent: recentResult.rows.map(r => ({
         id: r.id,
@@ -726,6 +878,7 @@ export async function GET({ params, url, locals }) {
       top_loots: {
         hunting: mapLootRows(topHuntingResult.rows),
         mining: mapLootRows(topMiningResult.rows),
+        space_mining: mapLootRows(topSpaceMiningResult.rows),
         crafting: mapLootRows(topCraftingResult.rows),
       },
       ath_rankings: {
@@ -745,6 +898,7 @@ export async function GET({ params, url, locals }) {
           };
         }),
         mining: mapRankingRows(athMiningResult.rows),
+        space_mining: mapRankingRows(athSpaceMiningResult.rows),
         crafting: mapRankingRows(athCraftingResult.rows),
         pvp: useLeaderboard
           ? athPvpResult.rows.map(r => ({

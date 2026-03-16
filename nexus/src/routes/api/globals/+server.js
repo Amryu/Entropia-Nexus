@@ -98,6 +98,14 @@ export async function GET({ url, locals }) {
     conditions.push('is_ath = true');
   }
 
+  // Space mining filter (deposit sub-category)
+  const spaceFilter = url.searchParams.get('space');
+  if (spaceFilter === 'only') {
+    conditions.push(`target_name ~* 'asteroid'`);
+  } else if (spaceFilter === 'exclude') {
+    conditions.push(`(target_name IS NULL OR target_name !~* 'asteroid')`);
+  }
+
   // Since timestamp (for polling — exclusive, returns events after this time)
   const since = url.searchParams.get('since');
   if (since) {

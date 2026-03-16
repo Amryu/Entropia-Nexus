@@ -68,6 +68,7 @@
     hof_count: 0, ath_count: 0,
     hunting: { count: 0, value: 0 },
     mining: { count: 0, value: 0 },
+    space_mining: { count: 0, value: 0 },
     crafting: { count: 0, value: 0 },
   };
 
@@ -78,6 +79,7 @@
 
   // Filters
   let typeFilter = $state('');
+  let spaceFilter = $state('');  // '' | 'only' | 'exclude'
   let playerFilter = $state('');
   let targetFilter = $state('');
   let locationFilter = $state('');
@@ -136,6 +138,7 @@
   function buildParams(extra = {}) {
     const params = new URLSearchParams();
     if (typeFilter) params.set('type', typeFilter);
+    if (spaceFilter) params.set('space', spaceFilter);
     if (playerFilter) params.set('player', playerFilter);
     if (targetFilter) params.set('target', targetFilter);
     if (locationFilter) params.set('location', locationFilter);
@@ -192,6 +195,9 @@
         extra.sort = topLootsSort.col;
         extra.sort_dir = topLootsSort.asc ? 'asc' : 'desc';
       }
+      // Get space filter from tab config
+      const tabConfig = TOP_LOOTS_TABS.find(t => t.value === topLootsTab);
+      if (tabConfig?.space) extra.space = tabConfig.space;
       const params = buildParams(extra);
       const res = await fetch(`/api/globals/stats/top-loots?${params}`);
       if (!res.ok) return;
@@ -260,10 +266,11 @@
     'craft': 'crafting',
   };
 
-  function onTypeFilter(val) {
+  function onTypeFilter(val, space = '') {
     typeFilter = val;
+    spaceFilter = space;
     // Auto-select matching top loots tab
-    const matchedTab = TYPE_TO_TAB[val];
+    const matchedTab = space === 'only' ? 'space_mining' : TYPE_TO_TAB[val];
     if (matchedTab && !filtersDisabled) {
       topLootsTab = matchedTab;
       topLootsPage = 1;
@@ -657,9 +664,9 @@
       {#each TYPE_FILTERS as tf}
         <button
           class="type-btn"
-          class:active={!filtersDisabled && typeFilter === tf.value}
+          class:active={!filtersDisabled && typeFilter === tf.value && spaceFilter === (tf.space || '')}
           disabled={filtersDisabled}
-          onclick={() => onTypeFilter(tf.value)}
+          onclick={() => onTypeFilter(tf.value, tf.space || '')}
         >
           {tf.label}
         </button>
@@ -780,6 +787,11 @@
       <span class="stat-value mining-color">{summary.mining.count.toLocaleString()}</span>
       <span class="stat-label">Mining</span>
       <span class="stat-sub">{formatPedShort(summary.mining.value)} PED</span>
+    </div>
+    <div class="stat-card category-card">
+      <span class="stat-value space-mining-color">{summary.space_mining.count.toLocaleString()}</span>
+      <span class="stat-label">Space Mining</span>
+      <span class="stat-sub">{formatPedShort(summary.space_mining.value)} PED</span>
     </div>
     <div class="stat-card category-card">
       <span class="stat-value crafting-color">{summary.crafting.count.toLocaleString()}</span>
@@ -966,7 +978,8 @@
         {#each [
           { value: '', label: 'All' },
           { value: 'kill,team_kill,examine', label: 'Hunting' },
-          { value: 'deposit', label: 'Mining' },
+          { value: 'deposit', label: 'Mining', space: 'exclude' },
+          { value: 'deposit', label: 'Space Mining', space: 'only' },
           { value: 'craft', label: 'Crafting' },
           { value: 'rare_item', label: 'Rare Finds' },
           { value: 'discovery', label: 'Discoveries' },
@@ -975,8 +988,8 @@
         ] as tf}
           <button
             class="type-btn"
-            class:active={typeFilter === tf.value}
-            onclick={() => onTypeFilter(tf.value)}
+            class:active={typeFilter === tf.value && spaceFilter === (tf.space || '')}
+            onclick={() => onTypeFilter(tf.value, tf.space || '')}
           >
             {tf.label}
           </button>
@@ -1258,7 +1271,7 @@
   }
 
   .stats-row.category-row {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     margin-bottom: 20px;
   }
 
@@ -1304,6 +1317,7 @@
 
   .hunting-color { color: #ef4444; }
   .mining-color { color: #60b0ff; }
+  .space-mining-color { color: #a78bfa; }
   .crafting-color { color: #f97316; }
 
   .stats-loading .stat-value {
@@ -1677,6 +1691,7 @@
 
   .type-kill     { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
   .type-deposit  { background: rgba(59, 130, 246, 0.15); color: #60b0ff; }
+  .type-space-deposit { background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
   .type-craft    { background: rgba(249, 115, 22, 0.15); color: #f97316; }
   .type-rare     { background: rgba(96, 176, 255, 0.15); color: var(--accent-color); }
   .type-discovery { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
@@ -1789,7 +1804,7 @@
     }
 
     .stats-row.category-row {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
     }
 
     .charts-grid {
@@ -1810,7 +1825,7 @@
     }
 
     .stats-row.category-row {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
     }
 
     .filter-input {

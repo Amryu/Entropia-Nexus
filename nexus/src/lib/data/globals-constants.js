@@ -2,36 +2,42 @@
  * Shared constants for globals pages and components.
  */
 
+/** Regex to identify space mining targets (asteroid resources). */
+export const ASTEROID_RE = /asteroid/i;
+
 /** Global type configuration: labels, CSS classes, and chart colors. */
 export const TYPE_CONFIG = {
-  kill:       { label: 'Hunting',     cssClass: 'type-kill',      color: '#ef4444' },
-  team_kill:  { label: 'Team Hunt',   cssClass: 'type-kill',      color: '#ef4444' },
-  deposit:    { label: 'Mining',      cssClass: 'type-deposit',   color: '#60b0ff' },
-  craft:      { label: 'Crafting',    cssClass: 'type-craft',     color: '#f97316' },
-  rare_item:  { label: 'Rare Find',   cssClass: 'type-rare',      color: '#60b0ff' },
-  discovery:  { label: 'Discovery',   cssClass: 'type-discovery', color: '#9b59b6' },
-  tier:       { label: 'Tier Record', cssClass: 'type-tier',      color: '#f1c40f' },
-  examine:    { label: 'Instance',    cssClass: 'type-examine',   color: '#2ecc71' },
-  pvp:        { label: 'PvP',         cssClass: 'type-pvp',       color: '#e74c3c' },
+  kill:          { label: 'Hunting',      cssClass: 'type-kill',          color: '#ef4444' },
+  team_kill:     { label: 'Team Hunt',    cssClass: 'type-kill',          color: '#ef4444' },
+  deposit:       { label: 'Mining',       cssClass: 'type-deposit',       color: '#60b0ff' },
+  space_deposit: { label: 'Space Mining', cssClass: 'type-space-deposit', color: '#a78bfa' },
+  craft:         { label: 'Crafting',     cssClass: 'type-craft',         color: '#f97316' },
+  rare_item:     { label: 'Rare Find',    cssClass: 'type-rare',          color: '#60b0ff' },
+  discovery:     { label: 'Discovery',    cssClass: 'type-discovery',     color: '#9b59b6' },
+  tier:          { label: 'Tier Record',  cssClass: 'type-tier',          color: '#f1c40f' },
+  examine:       { label: 'Instance',     cssClass: 'type-examine',       color: '#2ecc71' },
+  pvp:           { label: 'PvP',          cssClass: 'type-pvp',           color: '#e74c3c' },
 };
 
 /** Type filter buttons for the filter bar. */
 export const TYPE_FILTERS = [
   { value: '', label: 'All' },
   { value: 'kill,team_kill,examine', label: 'Hunting' },
-  { value: 'deposit', label: 'Mining' },
+  { value: 'deposit', label: 'Mining', space: 'exclude' },
+  { value: 'deposit', label: 'Space Mining', space: 'only' },
   { value: 'craft', label: 'Crafting' },
 ];
 
 /** Top loots tab definitions. */
 export const TOP_LOOTS_TABS = [
-  { value: 'hunting',   label: 'Hunting',     types: "('kill', 'team_kill', 'examine')", hasValue: true },
-  { value: 'mining',    label: 'Mining',       types: "('deposit')",          hasValue: true },
-  { value: 'crafting',  label: 'Crafting',     types: "('craft')",            hasValue: true },
-  { value: 'rare_item', label: 'Rare Find',    types: "('rare_item')",        hasValue: true,  isSpecial: true },
-  { value: 'discovery', label: 'Discovery',    types: "('discovery')",        hasValue: false, isSpecial: true },
-  { value: 'tier',      label: 'Tier Record',  types: "('tier')",             hasValue: false, isSpecial: true },
-  { value: 'pvp',       label: 'PvP',          types: "('pvp')",              hasValue: true,  isSpecial: true },
+  { value: 'hunting',      label: 'Hunting',      types: "('kill', 'team_kill', 'examine')", hasValue: true },
+  { value: 'mining',       label: 'Mining',        types: "('deposit')",          hasValue: true, space: 'exclude' },
+  { value: 'space_mining', label: 'Space Mining',  types: "('deposit')",          hasValue: true, space: 'only' },
+  { value: 'crafting',     label: 'Crafting',      types: "('craft')",            hasValue: true },
+  { value: 'rare_item',    label: 'Rare Find',     types: "('rare_item')",        hasValue: true,  isSpecial: true },
+  { value: 'discovery',    label: 'Discovery',     types: "('discovery')",        hasValue: false, isSpecial: true },
+  { value: 'tier',         label: 'Tier Record',   types: "('tier')",             hasValue: false, isSpecial: true },
+  { value: 'pvp',          label: 'PvP',           types: "('pvp')",              hasValue: true,  isSpecial: true },
 ];
 
 /** Period preset options for the date range picker. */

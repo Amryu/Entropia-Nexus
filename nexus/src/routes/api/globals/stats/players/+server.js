@@ -46,7 +46,7 @@ export async function GET({ url, request }) {
   // Pre-computed aggregate table: standard periods without type or incompatible filters
   const hasNoExtraFilters = !url.searchParams.get('player') && !url.searchParams.get('target')
     && !url.searchParams.get('location') && !url.searchParams.get('min_value')
-    && !url.searchParams.get('hof') && !url.searchParams.get('type') && !from && !to;
+    && !url.searchParams.get('hof') && !url.searchParams.get('type') && !url.searchParams.get('space') && !from && !to;
   if (hasNoExtraFilters && AGG_PERIODS.has(period)) {
     try {
       const aggSortCol = AGG_SORT_COLS[sortBy];
@@ -103,7 +103,7 @@ export async function GET({ url, request }) {
   const canUseRollup = rollupGranularity && isRollupReady()
     && !url.searchParams.get('player') && !url.searchParams.get('target')
     && !url.searchParams.get('location') && !url.searchParams.get('min_value')
-    && !url.searchParams.get('hof');
+    && !url.searchParams.get('hof') && !url.searchParams.get('space');
 
   if (canUseRollup) {
     try {

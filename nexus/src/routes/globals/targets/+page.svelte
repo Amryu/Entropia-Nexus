@@ -16,6 +16,7 @@
   // Read initial state from URL params
   const sp = $page.url.searchParams;
   let typeFilter = $state(sp.get('type') || '');
+  let spaceFilter = $state(sp.get('space') || '');
   let playerFilter = $state(sp.get('player') || '');
   let targetFilter = $state(sp.get('target') || '');
   let locationFilter = $state(sp.get('location') || '');
@@ -34,6 +35,7 @@
   function buildParams(extra = {}) {
     const params = new URLSearchParams();
     if (typeFilter) params.set('type', typeFilter);
+    if (spaceFilter) params.set('space', spaceFilter);
     if (playerFilter) params.set('player', playerFilter);
     if (targetFilter) params.set('target', targetFilter);
     if (locationFilter) params.set('location', locationFilter);
@@ -75,8 +77,9 @@
     filterDebounce = setTimeout(fetchData, 300);
   }
 
-  function onTypeFilter(val) {
+  function onTypeFilter(val, space = '') {
     typeFilter = val;
+    spaceFilter = space;
     // Reset mob grouping when switching away from hunting
     if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill' || t === 'examine')) {
       groupBy = 'maturity';
@@ -184,7 +187,7 @@
   <div class="filters-bar">
     <div class="type-filters">
       {#each TYPE_FILTERS as tf}
-        <button class="type-btn" class:active={typeFilter === tf.value} onclick={() => onTypeFilter(tf.value)}>
+        <button class="type-btn" class:active={typeFilter === tf.value && spaceFilter === (tf.space || '')} onclick={() => onTypeFilter(tf.value, tf.space || '')}>
           {tf.label}
         </button>
       {/each}

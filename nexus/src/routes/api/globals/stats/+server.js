@@ -94,7 +94,11 @@ export async function GET({ url, request }) {
       const playersSortAgg = playersSortBy === 'count' ? 'event_count' : 'sum_value';
       const targetsSortAgg = targetsSortBy === 'count' ? 'event_count' : 'sum_value';
 
-      const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
+      // Space mining filter condition for rollup_target
+      const spaceFilter = url.searchParams.get('space');
+      const smPeriodParams = [rollupGranularity, ...periodParams];
+
+      const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult, spaceMiningResult] = await Promise.all([
         // Summary
         pool.query(
           `SELECT SUM(event_count) AS total_count,
@@ -188,9 +192,20 @@ export async function GET({ url, request }) {
            LIMIT ${MAX_ACTIVITY_BUCKETS}`,
           baseParams
         ),
+        // Space mining stats from rollup_target (has target_name)
+        pool.query(
+          `SELECT COALESCE(SUM(event_count), 0) AS count,
+                  COALESCE(SUM(sum_value), 0) AS value
+           FROM globals_rollup_target
+           WHERE granularity = $1${periodWhere} AND global_type = 'deposit' AND target_name ~* 'asteroid'`,
+          smPeriodParams
+        ),
       ]);
 
       const summary = summaryResult.rows[0];
+      const smRow = spaceMiningResult.rows[0];
+      const smCount = parseInt(smRow?.count) || 0;
+      const smValue = parseFloat(smRow?.value) || 0;
 
       return new Response(JSON.stringify({
         summary: {
@@ -201,7 +216,8 @@ export async function GET({ url, request }) {
           hof_count: parseInt(summary.hof_count) || 0,
           ath_count: parseInt(summary.ath_count) || 0,
           hunting: { count: parseInt(summary.hunting_count) || 0, value: parseFloat(summary.hunting_value) || 0 },
-          mining: { count: parseInt(summary.mining_count) || 0, value: parseFloat(summary.mining_value) || 0 },
+          mining: { count: (parseInt(summary.mining_count) || 0) - smCount, value: (parseFloat(summary.mining_value) || 0) - smValue },
+          space_mining: { count: smCount, value: smValue },
           crafting: { count: parseInt(summary.crafting_count) || 0, value: parseFloat(summary.crafting_value) || 0 },
         },
         by_type: byTypeResult.rows.map(r => ({
@@ -259,6 +275,8 @@ export async function GET({ url, request }) {
                 COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
                 count(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
                 COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
+                count(*) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid') AS space_mining_count,
+                COALESCE(sum(value) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value,
                 count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
                 COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
          FROM ingested_globals
@@ -323,6 +341,8 @@ export async function GET({ url, request }) {
     await client.query('COMMIT');
 
     const summary = summaryResult.rows[0];
+    const rawSmCount = parseInt(summary.space_mining_count) || 0;
+    const rawSmValue = parseFloat(summary.space_mining_value) || 0;
 
     return new Response(JSON.stringify({
       summary: {
@@ -333,7 +353,8 @@ export async function GET({ url, request }) {
         hof_count: parseInt(summary.hof_count),
         ath_count: parseInt(summary.ath_count),
         hunting: { count: parseInt(summary.hunting_count), value: parseFloat(summary.hunting_value) },
-        mining: { count: parseInt(summary.mining_count), value: parseFloat(summary.mining_value) },
+        mining: { count: (parseInt(summary.mining_count) || 0) - rawSmCount, value: (parseFloat(summary.mining_value) || 0) - rawSmValue },
+        space_mining: { count: rawSmCount, value: rawSmValue },
         crafting: { count: parseInt(summary.crafting_count), value: parseFloat(summary.crafting_value) },
       },
       by_type: byTypeResult.rows.map(r => ({

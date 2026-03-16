@@ -101,6 +101,14 @@ export function buildGlobalsFilter(url) {
     conditions.push('is_hof = true');
   }
 
+  // Space mining filter (deposit sub-category)
+  const spaceFilter = url.searchParams.get('space');
+  if (spaceFilter === 'only') {
+    conditions.push(`target_name ~* 'asteroid'`);
+  } else if (spaceFilter === 'exclude') {
+    conditions.push(`(target_name IS NULL OR target_name !~* 'asteroid')`);
+  }
+
   return { conditions, params, paramIdx, period, from: from || null, to: to || null };
 }
 

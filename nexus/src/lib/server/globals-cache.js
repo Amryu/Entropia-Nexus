@@ -72,7 +72,7 @@ async function buildStatsCache() {
   // Use rollup tables instead of scanning 6.6M raw rows.
   // globals_rollup has ~21K daily rows grouped by global_type with
   // event_count, sum_value, max_value, hof_count, ath_count.
-  const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
+  const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult, spaceMiningResult] = await Promise.all([
     // Summary stats from rollup — replaces full-table aggregate (~920ms → <10ms)
     pool.query(
       `SELECT COALESCE(SUM(event_count), 0) AS total_count,
@@ -128,9 +128,19 @@ async function buildStatsCache() {
        ORDER BY period_start
        LIMIT 2555`
     ),
+    // Space mining stats from rollup_target (has target_name, unlike globals_rollup)
+    pool.query(
+      `SELECT COALESCE(SUM(event_count), 0) AS count,
+              COALESCE(SUM(sum_value), 0) AS value
+       FROM globals_rollup_target
+       WHERE granularity = 'daily' AND global_type = 'deposit' AND target_name ~* 'asteroid'`
+    ),
   ]);
 
   const summary = summaryResult.rows[0];
+  const smRow = spaceMiningResult.rows[0];
+  const smCount = parseInt(smRow?.count) || 0;
+  const smValue = parseFloat(smRow?.value) || 0;
   const data = {
     summary: {
       total_count: parseInt(summary.total_count),
@@ -140,7 +150,8 @@ async function buildStatsCache() {
       hof_count: parseInt(summary.hof_count),
       ath_count: parseInt(summary.ath_count),
       hunting: { count: parseInt(summary.hunting_count), value: parseFloat(summary.hunting_value) },
-      mining: { count: parseInt(summary.mining_count), value: parseFloat(summary.mining_value) },
+      mining: { count: (parseInt(summary.mining_count) || 0) - smCount, value: (parseFloat(summary.mining_value) || 0) - smValue },
+      space_mining: { count: smCount, value: smValue },
       crafting: { count: parseInt(summary.crafting_count), value: parseFloat(summary.crafting_value) },
     },
     by_type: byTypeResult.rows.map(r => ({
@@ -264,7 +275,8 @@ async function buildTargetsPage1Cache() {
 
 const ATH_CATEGORIES = [
   { category: 'hunting', typeFilter: "global_type IN ('kill', 'team_kill', 'examine')", useMobKey: true },
-  { category: 'mining', typeFilter: "global_type = 'deposit'", useMobKey: false },
+  { category: 'mining', typeFilter: "global_type = 'deposit' AND target_name !~* 'asteroid'", useMobKey: false },
+  { category: 'space_mining', typeFilter: "global_type = 'deposit' AND target_name ~* 'asteroid'", useMobKey: false },
   { category: 'crafting', typeFilter: "global_type = 'craft'", useMobKey: false },
   { category: 'pvp', typeFilter: "global_type = 'pvp'", useMobKey: false },
 ];
