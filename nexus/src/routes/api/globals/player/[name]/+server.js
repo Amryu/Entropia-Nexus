@@ -232,7 +232,7 @@ export async function GET({ params, url, locals }) {
       // Discovery + tier achievements
       pool.query(
         `SELECT id, global_type, target_name, value, extra, event_timestamp, is_hof, is_ath,
-                media_image_key, media_video_url
+                location, media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('discovery', 'tier')
@@ -624,6 +624,7 @@ export async function GET({ params, url, locals }) {
         target: r.target_name,
         value: parseFloat(r.value),
         extra: r.extra,
+        location: r.location || null,
         timestamp: r.event_timestamp,
         hof: r.is_hof,
         ath: r.is_ath,

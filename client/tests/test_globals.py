@@ -169,6 +169,17 @@ class TestGlobalsHandler(unittest.TestCase):
         self.assertEqual(event.player_name, "Jessica aJK Eschweiler")
         self.assertEqual(event.target_name, "Hyperion Arm Guards, Perfected (F)")
         self.assertAlmostEqual(event.value, 0)
+        self.assertIsNone(event.location)
+
+    def test_discovery_with_location(self):
+        line = _make_global_line("Thomas Neoglific Anderson is the first colonist to discover Mayhem Gold Cosmetic Token. Item discovered in Mayhem Annihilation 06!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.DISCOVERY)
+        self.assertEqual(event.player_name, "Thomas Neoglific Anderson")
+        self.assertEqual(event.target_name, "Mayhem Gold Cosmetic Token")
+        self.assertEqual(event.location, "Mayhem Annihilation 06")
+        self.assertAlmostEqual(event.value, 0)
 
     def test_tier_record(self):
         line = _make_global_line("Geir MrGersh Mathiesen is the first colonist to reach tier 7 for A.R.C. Adept Leg Guards (M,L)!")

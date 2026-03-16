@@ -77,7 +77,7 @@ class GlobalsHandler(BaseHandler):
                     is_ath=is_ath,
                 )
         if not event:
-            # Discovery
+            # Discovery (optionally with location: "Item discovered in {Location}")
             match = GLOBAL_DISCOVERY_PATTERN.search(msg)
             if match:
                 event = GlobalEvent(
@@ -87,6 +87,7 @@ class GlobalsHandler(BaseHandler):
                     target_name=match.group(2),
                     value=0,
                     value_unit="PED",
+                    location=match.group(3),  # None if no location in message
                     is_hof=is_hof,
                     is_ath=is_ath,
                 )

@@ -217,7 +217,7 @@ GLOBAL_RARE_PATTERN = re.compile(
 )
 
 GLOBAL_DISCOVERY_PATTERN = re.compile(
-    r'^(.+?) is the first colonist to discover (.+?)!'
+    r'^(.+?) is the first colonist to discover (.+?)(?:\. Item discovered in (.+?))?!'
 )
 GLOBAL_TIER_PATTERN = re.compile(
     r'^(.+?) is the first colonist to reach tier (\d+) for (.+?)!'
