@@ -191,6 +191,17 @@ class TestGlobalsHandler(unittest.TestCase):
         self.assertEqual(event.location, "Mayhem Annihilation 06")
         self.assertTrue(event.is_hof)
 
+    def test_discovery_with_location_and_old_hof_format(self):
+        """Old format uses period instead of exclamation after Hall of Fame."""
+        line = _make_global_line("Vladislav XPEHOBUHA Yurev is the first colonist to discover Electric Attack Nanochip I (L). Item discovered in Feffoid Cave! A record has been added to the Hall of Fame.")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.DISCOVERY)
+        self.assertEqual(event.player_name, "Vladislav XPEHOBUHA Yurev")
+        self.assertEqual(event.target_name, "Electric Attack Nanochip I (L)")
+        self.assertEqual(event.location, "Feffoid Cave")
+        self.assertTrue(event.is_hof)
+
     def test_tier_record(self):
         line = _make_global_line("Geir MrGersh Mathiesen is the first colonist to reach tier 7 for A.R.C. Adept Leg Guards (M,L)!")
         self.handler.handle(line)
