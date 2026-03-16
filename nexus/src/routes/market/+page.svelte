@@ -142,6 +142,28 @@
     </section>
   {/if}
 
+  <!-- PCF Trade -->
+  {#if data.forumStats.total_active > 0}
+    <section class="dashboard-section">
+      <div class="section-header">
+        <h2 class="section-title">PCF Trade</h2>
+        <a href="/market/forum" class="section-link">Browse all &rarr;</a>
+      </div>
+      <div class="forum-grid">
+        <a href="/market/forum?type=selling" class="forum-card">
+          <span class="forum-card-name">Selling</span>
+          <span class="forum-card-desc">Items listed for sale on PCF</span>
+          <span class="forum-card-count">{formatCount(data.forumStats.sell_count)} threads</span>
+        </a>
+        <a href="/market/forum?type=buying" class="forum-card">
+          <span class="forum-card-name">Buying</span>
+          <span class="forum-card-desc">Items wanted by other players</span>
+          <span class="forum-card-count">{formatCount(data.forumStats.buy_count)} threads</span>
+        </a>
+      </div>
+    </section>
+  {/if}
+
   <!-- Browse & Offer Services -->
   <section class="dashboard-section">
     <div class="section-header">
@@ -440,6 +462,54 @@
     margin-top: auto;
   }
 
+  /* Forum Trade Grid */
+  .forum-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+
+  .forum-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 14px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--border-color);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text-color);
+    transition: border-color 0.2s ease, background-color 0.2s ease, border-left-color 0.2s ease;
+    text-align: center;
+  }
+
+  .forum-card:hover {
+    border-color: var(--accent-color);
+    border-left-color: var(--accent-color);
+    background-color: var(--hover-color);
+  }
+
+  .forum-card-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .forum-card-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+  }
+
+  .forum-card-count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    margin-top: auto;
+  }
+
   /* Responsive */
   @media (max-width: 900px) {
     .market-dashboard {
@@ -480,8 +550,13 @@
       grid-template-columns: 1fr;
     }
 
+    .forum-grid {
+      grid-template-columns: 1fr;
+    }
+
     .featured-description,
-    .secondary-description {
+    .secondary-description,
+    .forum-card-desc {
       display: none;
     }
   }

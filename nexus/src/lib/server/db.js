@@ -5118,6 +5118,160 @@ export async function getAllLatestMarketPrices() {
   return rows;
 }
 
+// ── Forum Trading Indexer ──────────────────────────────────────────
+
+export async function upsertForumThread({ thread_id, forum_type, title, author, url, content_snippet, comment_count, is_closed, created_at, feed_position }) {
+  const result = await pool.query(
+    `INSERT INTO forum_threads (thread_id, forum_type, title, author, url, content_snippet, comment_count, is_closed, created_at, last_activity_at, last_seen_at, feed_position)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), $10)
+     ON CONFLICT (thread_id) DO UPDATE SET
+       title = EXCLUDED.title,
+       author = EXCLUDED.author,
+       url = EXCLUDED.url,
+       content_snippet = EXCLUDED.content_snippet,
+       comment_count = EXCLUDED.comment_count,
+       is_closed = CASE WHEN EXCLUDED.is_closed THEN true ELSE forum_threads.is_closed END,
+       last_activity_at = CASE
+         WHEN EXCLUDED.comment_count > forum_threads.comment_count
+           OR EXCLUDED.feed_position < forum_threads.feed_position
+         THEN NOW()
+         ELSE forum_threads.last_activity_at
+       END,
+       last_seen_at = NOW(),
+       feed_position = EXCLUDED.feed_position,
+       updated_at = NOW()
+     RETURNING id`,
+    [thread_id, forum_type, title, author, url, content_snippet, comment_count, is_closed, created_at, feed_position]
+  );
+  return result.rows[0];
+}
+
+export async function upsertForumThreadItems(threadDbId, items) {
+  if (!items || items.length === 0) return;
+  // Build a multi-row VALUES clause
+  const values = [];
+  const params = [];
+  let idx = 1;
+  for (const item of items) {
+    values.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3})`);
+    params.push(threadDbId, item.itemId, item.itemName, item.matchSource);
+    idx += 4;
+  }
+  await pool.query(
+    `INSERT INTO forum_thread_items (thread_id, item_id, item_name, match_source)
+     VALUES ${values.join(', ')}
+     ON CONFLICT (thread_id, item_id) DO UPDATE SET
+       match_source = CASE WHEN EXCLUDED.match_source = 'title' THEN 'title' ELSE forum_thread_items.match_source END`,
+    params
+  );
+}
+
+export async function getForumThreadsByItem(itemId, limit = 20) {
+  const result = await pool.query(
+    `SELECT t.thread_id, t.forum_type, t.title, t.author, t.url, t.content_snippet,
+            t.comment_count, t.created_at, t.last_activity_at
+     FROM forum_threads t
+     JOIN forum_thread_items fi ON fi.thread_id = t.id
+     WHERE fi.item_id = $1 AND t.is_closed = false
+     ORDER BY t.last_activity_at DESC
+     LIMIT $2`,
+    [itemId, limit]
+  );
+  return result.rows;
+}
+
+export async function getForumThreads({ type = 'all', sort = 'activity', limit = 50, offset = 0, excludeClosed = true, query = '' } = {}) {
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+
+  if (type !== 'all') {
+    conditions.push(`t.forum_type = $${idx++}`);
+    params.push(type);
+  }
+  if (excludeClosed) {
+    conditions.push('t.is_closed = false');
+  }
+  if (query) {
+    // Search in thread title and matched item names
+    conditions.push(`(t.title ILIKE $${idx} OR EXISTS (
+      SELECT 1 FROM forum_thread_items fi WHERE fi.thread_id = t.id AND fi.item_name ILIKE $${idx}
+    ))`);
+    params.push(`%${query}%`);
+    idx++;
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const orderMap = {
+    activity: 't.last_activity_at DESC',
+    created: 't.created_at DESC',
+    comments: 't.comment_count DESC',
+  };
+  const order = orderMap[sort] || orderMap.activity;
+
+  params.push(limit);
+  const limitIdx = idx++;
+  params.push(offset);
+  const offsetIdx = idx++;
+
+  const [dataResult, countResult] = await Promise.all([
+    pool.query(
+      `SELECT t.*,
+        COALESCE(
+          (SELECT json_agg(json_build_object('itemId', fi.item_id, 'itemName', fi.item_name, 'matchSource', fi.match_source))
+           FROM forum_thread_items fi WHERE fi.thread_id = t.id),
+          '[]'::json
+        ) AS matched_items
+       FROM forum_threads t
+       ${where}
+       ORDER BY ${order}
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS total FROM forum_threads t ${where}`,
+      params.slice(0, -2) // exclude limit and offset
+    ),
+  ]);
+
+  return { threads: dataResult.rows, total: countResult.rows[0].total };
+}
+
+export async function getForumStats() {
+  const result = await pool.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE NOT is_closed)::int AS total_active,
+       COUNT(*) FILTER (WHERE forum_type = 'selling' AND NOT is_closed)::int AS sell_count,
+       COUNT(*) FILTER (WHERE forum_type = 'buying' AND NOT is_closed)::int AS buy_count
+     FROM forum_threads`
+  );
+  return result.rows[0];
+}
+
+export async function markStaleForumThreads(staleDays = 90) {
+  await pool.query(
+    `UPDATE forum_threads SET is_closed = true, updated_at = NOW()
+     WHERE last_seen_at < NOW() - make_interval(days => $1) AND is_closed = false`,
+    [staleDays]
+  );
+}
+
+export async function searchForumThreadsByItemName(query, limit = 10) {
+  const result = await pool.query(
+    `SELECT DISTINCT ON (t.thread_id)
+       t.thread_id, t.forum_type, t.title, t.author, t.url, t.comment_count,
+       t.last_activity_at, fi.item_name AS matched_item_name
+     FROM forum_threads t
+     JOIN forum_thread_items fi ON fi.thread_id = t.id
+     WHERE t.is_closed = false AND fi.item_name ILIKE $1
+     ORDER BY t.thread_id, t.last_activity_at DESC
+     LIMIT $2`,
+    [`%${query}%`, limit]
+  );
+  return result.rows;
+}
+
 export async function getRewardsSummary() {
   const result = await pool.query(`
     SELECT

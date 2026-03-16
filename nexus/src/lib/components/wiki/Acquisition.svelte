@@ -9,6 +9,7 @@
 
   import FancyTable from '../FancyTable.svelte';
   import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
+  import { timeAgo } from '$lib/utils/globalsFormat.js';
 
   /**
    * @typedef {Object} Props
@@ -247,6 +248,30 @@
     { key: 'rarity', header: 'Rarity' }
   ]);
 
+  // Build forum trade data
+  let forumData = $derived((() => {
+    if (!acquisition?.ForumThreads?.length) return [];
+    return acquisition.ForumThreads.map(t => ({
+      title: t.title,
+      url: t.url,
+      forumType: t.forum_type,
+      typeLabel: t.forum_type === 'selling' ? 'WTS' : 'WTB',
+      author: t.author,
+      replies: t.comment_count,
+      activity: timeAgo(t.last_activity_at)
+    }));
+  })());
+
+  let forumColumns = $derived([
+    { key: 'title', header: 'Thread', main: true, formatter: (v, row) =>
+      `<a href="${row.url}" target="_blank" rel="noopener">${v}</a>` +
+      ` <span class="badge badge-subtle ${row.forumType === 'selling' ? 'badge-accent' : 'badge-success'}">${row.typeLabel}</span>`
+    },
+    { key: 'author', header: 'Author' },
+    { key: 'replies', header: 'Replies' },
+    { key: 'activity', header: 'Activity' }
+  ]);
+
   // Copy waypoint handler
   function copyWaypoint(waypoint) {
     if (waypoint) {
@@ -398,7 +423,8 @@
   && (!acquisition.MissionRewards || acquisition.MissionRewards.length === 0)
   && !hasMarketData
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
-  && (!acquisition.Events || acquisition.Events.length === 0)))}
+  && (!acquisition.Events || acquisition.Events.length === 0)
+  && (!acquisition.ForumThreads || acquisition.ForumThreads.length === 0)))}
 <div class="no-data">
   No acquisition data available for this item.
   {#if acquisition?._exchangeItemId}
@@ -470,6 +496,22 @@
             defaultSort={{ column: 'markup', order: 'ASC' }}
             emptyMessage="No market listings"
             onrowClick={handleMarketRowClick}
+          />
+        </div>
+      {/if}
+
+      {#if forumData.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">PCF Trade</h4>
+          <FancyTable
+            columns={forumColumns}
+            data={forumData}
+            rowHeight={32}
+            searchable={true}
+            sortable={true}
+            compact
+            fitContent
+            emptyMessage="No forum listings"
           />
         </div>
       {/if}

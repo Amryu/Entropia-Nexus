@@ -39,7 +39,8 @@
     service: { label: 'Service', cls: 'badge-service' },
     auction: { label: 'Auction', cls: 'badge-auction' },
     rental: { label: 'Rental', cls: 'badge-rental' },
-    shop: { label: 'Shop', cls: 'badge-shop' }
+    shop: { label: 'Shop', cls: 'badge-shop' },
+    forum: { label: 'PCF Trade', cls: 'badge-forum' }
   };
 
   onDestroy(() => {
@@ -383,6 +384,11 @@
   .badge-shop {
     background-color: rgba(148, 163, 184, 0.15);
     color: var(--text-muted);
+  }
+
+  .badge-forum {
+    background-color: rgba(251, 146, 60, 0.15);
+    color: #fb923c;
   }
 
   .market-result-name {

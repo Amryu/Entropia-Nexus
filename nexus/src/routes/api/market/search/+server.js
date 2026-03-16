@@ -11,6 +11,7 @@ import { getResponse, apiCall, encodeURIComponentSafe } from '$lib/util.js';
 import { getExchangeCategorizationSummary, getSlimItemLookup } from '$lib/market/cache.js';
 import { isPercentMarkupType } from '$lib/common/itemTypes.js';
 import { scoreSearchResult } from '$lib/search.js';
+import { searchForumThreadsByItemName } from '$lib/server/db.js';
 
 const MAX_RESULTS = 30;
 const MIN_QUERY_LENGTH = 2;
@@ -359,6 +360,45 @@ async function searchShops(query, fetch) {
     .slice(0, MAX_OTHER_RESULTS);
 }
 
+/**
+ * Search forum threads by matching item names and thread titles.
+ */
+async function searchForum(query) {
+  try {
+    const rows = await searchForumThreadsByItemName(query, 10);
+    if (!rows || rows.length === 0) return [];
+
+    const results = [];
+    for (const row of rows) {
+      // Score by matched item name or thread title
+      const itemScore = scoreSearchResult(row.matched_item_name, query);
+      const titleScore = scoreSearchResult(row.title, query);
+      const score = Math.max(itemScore, titleScore);
+      if (score <= 0) continue;
+
+      const typeLabel = row.forum_type === 'selling' ? 'WTS' : 'WTB';
+
+      results.push({
+        id: `forum:${row.thread_id}`,
+        name: row.title,
+        marketType: 'forum',
+        entityType: null,
+        price: null,
+        detail: `${typeLabel} · ${row.author} · ${row.comment_count} replies`,
+        url: row.url,
+        score: score + NON_EXCHANGE_BONUS
+      });
+    }
+
+    return results
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_OTHER_RESULTS);
+  } catch (err) {
+    console.error('Forum search error:', err.message);
+    return [];
+  }
+}
+
 export async function GET({ url, fetch }) {
   const query = (url.searchParams.get('query') || '').trim();
 
@@ -372,16 +412,17 @@ export async function GET({ url, fetch }) {
 
   try {
     // Search all market types in parallel
-    const [exchange, services, auctions, rentals, shops] = await Promise.all([
+    const [exchange, services, auctions, rentals, shops, forum] = await Promise.all([
       searchExchange(query, fetch),
       searchServices(query, fetch),
       searchAuctions(query, fetch),
       searchRentals(query, fetch),
-      searchShops(query, fetch)
+      searchShops(query, fetch),
+      searchForum(query)
     ]);
 
     // Merge and sort by score (non-exchange already boosted by NON_EXCHANGE_BONUS)
-    const allResults = [...services, ...auctions, ...rentals, ...shops, ...exchange]
+    const allResults = [...services, ...auctions, ...rentals, ...shops, ...forum, ...exchange]
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_RESULTS);
 

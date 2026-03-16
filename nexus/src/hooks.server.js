@@ -57,6 +57,14 @@ if (import.meta.env.SSR) {
     syncSteamNews().catch(err => console.error('[news-sync] Error syncing Steam news:', err));
   }, STEAM_SYNC_INTERVAL_MS).unref();
 
+  // Periodically index Planet Calypso Forum trading threads
+  const { syncForumTrading } = await import('$lib/server/forum-indexer.js');
+  const FORUM_SYNC_INTERVAL_MS = 15 * 60_000; // 15 minutes
+  syncForumTrading().catch(err => console.error('[forum-indexer] Error syncing forum:', err));
+  setInterval(() => {
+    syncForumTrading().catch(err => console.error('[forum-indexer] Error syncing forum:', err));
+  }, FORUM_SYNC_INTERVAL_MS).unref();
+
   // Periodically finalize pending market price submissions
   const { maybeRunMarketFinalization } = await import('$lib/server/ingestion.js');
   const MARKET_FINALIZATION_INTERVAL_MS = 5 * 60_000; // 5 minutes

@@ -661,6 +661,7 @@
       { label: 'Rental', url: 'rental' },
       { label: 'Services', url: 'services' },
       { label: 'Shops', url: 'shops' },
+      { label: 'PCF Trade', url: 'forum' },
     ],
     'External': [
       { label: 'Entropia Museum', url: 'entropiamuseum' },

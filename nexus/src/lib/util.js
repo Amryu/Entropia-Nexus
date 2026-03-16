@@ -927,6 +927,16 @@ export async function handlePageLoad(fetch, items, config) {
       });
   }
 
+  // Fetch forum trading threads mentioning this item
+  if (acquisition && itemId) {
+    try {
+      const forumResult = await apiCall(fetch, `/api/forum/threads/item/${itemId}?limit=10`);
+      if (forumResult?.threads?.length > 0) {
+        acquisition.ForumThreads = forumResult.threads;
+      }
+    } catch (_) { /* forum data is optional */ }
+  }
+
   return { items: items, response: pageResponse(items, object, { type: config.type, tierInfo, acquisition, usage }) };
 }
 

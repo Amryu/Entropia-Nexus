@@ -36,12 +36,13 @@ function countActiveItems(node) {
 }
 
 export async function load({ fetch }) {
-  const [exchangeSummary, services, auctionResult, rentals, shops] = await Promise.all([
+  const [exchangeSummary, services, auctionResult, rentals, shops, forumStats] = await Promise.all([
     getExchangeCategorizationSummary(fetch),
     apiCall(fetch, '/api/services'),
     apiCall(fetch, '/api/auction?status=active&limit=1&offset=0'),
     apiCall(fetch, '/api/rental?limit=100'),
-    apiCall(fetch, '/shops')
+    apiCall(fetch, '/shops'),
+    apiCall(fetch, '/api/forum/stats').catch(() => null),
   ]);
 
   // Build exchange category counts (items with active orders)
@@ -79,6 +80,7 @@ export async function load({ fetch }) {
     totalServices,
     activeAuctions: auctionResult?.total || 0,
     availableRentals: Array.isArray(rentals) ? rentals.length : 0,
-    totalShops: Array.isArray(shops) ? shops.length : 0
+    totalShops: Array.isArray(shops) ? shops.length : 0,
+    forumStats: forumStats || { total_active: 0, sell_count: 0, buy_count: 0 },
   };
 }
