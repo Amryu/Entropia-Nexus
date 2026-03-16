@@ -70,45 +70,140 @@ def column_def_from_dict(d: dict) -> ColumnDef:
 
 
 # ---------------------------------------------------------------------------
-# Filter matching (reuse from wiki_table)
+# Filter matching — supports operators, regex, AND/OR chaining, parentheses
 # ---------------------------------------------------------------------------
 
 _OP_RE = re.compile(r"^(>=|<=|>|<|=|!)(.+)$")
+_RX_RE = re.compile(r"^/(.+)/([gimsuy]*)$")
+_HAS_LOGIC_RE = re.compile(r"[&|()]|\band\b|\bor\b", re.IGNORECASE)
 
 
-def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
-    """Check if a cell value matches a filter expression."""
-    filter_text = filter_text.strip()
-    if not filter_text:
-        return True
-
-    m = _OP_RE.match(filter_text)
+def _eval_filter_term(
+    raw_value, str_value: str, num_value: float | None, term: str,
+) -> bool:
+    """Evaluate a single filter term against a value."""
+    m = _OP_RE.match(term)
     if m:
         op, operand = m.group(1), m.group(2).strip()
-
         if op in (">", "<", ">=", "<="):
             try:
                 threshold = float(operand)
             except ValueError:
                 return True
-            if raw_value is None or not isinstance(raw_value, (int, float)):
+            if num_value is None:
                 return False
-            if op == ">":
-                return raw_value > threshold
-            if op == "<":
-                return raw_value < threshold
-            if op == ">=":
-                return raw_value >= threshold
-            if op == "<=":
-                return raw_value <= threshold
-
+            if op == ">":  return num_value > threshold
+            if op == "<":  return num_value < threshold
+            if op == ">=": return num_value >= threshold
+            if op == "<=": return num_value <= threshold
         if op == "=":
-            return display_text.lower() == operand.lower()
-
+            return str_value == operand.lower()
         if op == "!":
-            return operand.lower() not in display_text.lower()
+            return operand.lower() not in str_value
 
-    return filter_text.lower() in display_text.lower()
+    # Regex: /pattern/ or /pattern/flags
+    rx = _RX_RE.match(term)
+    if rx:
+        flags = 0
+        for ch in rx.group(2):
+            if ch == "i": flags |= re.IGNORECASE
+            if ch == "m": flags |= re.MULTILINE
+            if ch == "s": flags |= re.DOTALL
+        try:
+            return bool(re.search(rx.group(1), str_value, flags or re.IGNORECASE))
+        except re.error:
+            return False
+
+    return term in str_value
+
+
+def _tokenize_filter(s: str) -> list[str]:
+    """Tokenize a filter string into terms and operators (&, |, (, ))."""
+    tokens: list[str] = []
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if ch == " ":
+            i += 1; continue
+        if ch in "(&|)":
+            tokens.append(ch); i += 1; continue
+        # Regex literal
+        if ch == "/":
+            j = i + 1
+            while j < len(s) and s[j] != "/":
+                j += 1
+            j += 1  # closing /
+            while j < len(s) and s[j] in "gimsuy":
+                j += 1
+            tokens.append(s[i:j]); i = j; continue
+        # Word token
+        j = i
+        while j < len(s) and s[j] not in " &|()":
+            j += 1
+        word = s[i:j]
+        if word.lower() in ("and",):
+            tokens.append("&")
+        elif word.lower() in ("or",):
+            tokens.append("|")
+        else:
+            tokens.append(word)
+        i = j
+    return tokens
+
+
+def _eval_expr(raw, sv, nv, tokens, pos):
+    """Parse OR level: expr = and_expr ('|' and_expr)*"""
+    val, pos = _eval_and(raw, sv, nv, tokens, pos)
+    while pos < len(tokens) and tokens[pos] == "|":
+        v2, pos = _eval_and(raw, sv, nv, tokens, pos + 1)
+        val = val or v2
+    return val, pos
+
+
+def _eval_and(raw, sv, nv, tokens, pos):
+    """Parse AND level: and_expr = atom ('&' atom)*"""
+    val, pos = _eval_atom(raw, sv, nv, tokens, pos)
+    while pos < len(tokens) and tokens[pos] == "&":
+        v2, pos = _eval_atom(raw, sv, nv, tokens, pos + 1)
+        val = val and v2
+    return val, pos
+
+
+def _eval_atom(raw, sv, nv, tokens, pos):
+    """Parse atom: '(' expr ')' | term"""
+    if pos >= len(tokens):
+        return True, pos
+    if tokens[pos] == "(":
+        val, pos = _eval_expr(raw, sv, nv, tokens, pos + 1)
+        if pos < len(tokens) and tokens[pos] == ")":
+            pos += 1
+        return val, pos
+    return _eval_filter_term(raw, sv, nv, tokens[pos]), pos + 1
+
+
+def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
+    """Check if a cell value matches a filter expression.
+
+    Supports: >=, <=, >, <, =, !, /regex/, plain text contains,
+    & (AND), | (OR), parentheses for grouping.
+    """
+    filter_text = filter_text.strip()
+    if not filter_text:
+        return True
+
+    str_value = display_text.lower()
+    try:
+        num_value: float | None = float(raw_value) if raw_value is not None and isinstance(raw_value, (int, float)) else None
+    except (ValueError, TypeError):
+        num_value = None
+
+    # Fast path: no operators or parens
+    if not _HAS_LOGIC_RE.search(filter_text):
+        return _eval_filter_term(raw_value, str_value, num_value, filter_text.lower())
+
+    tokens = _tokenize_filter(filter_text.lower())
+    val, _ = _eval_expr(raw_value, str_value, num_value, tokens, 0)
+    return val
 
 
 # ---------------------------------------------------------------------------

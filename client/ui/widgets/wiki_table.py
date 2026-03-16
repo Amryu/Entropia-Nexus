@@ -6,13 +6,12 @@ user preferences, and the column config dialog.
 
 from __future__ import annotations
 
-import re
 from typing import Callable
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt, pyqtSignal
 
-from .fancy_table import FancyTable, ColumnDef, column_def_from_dict
+from .fancy_table import FancyTable, ColumnDef, column_def_from_dict, _matches_filter
 from ...core.gil_yield import GilYielder
 from ...data.wiki_columns import COLUMN_DEFS, DEFAULT_COLUMNS, get_item_name
 
@@ -53,46 +52,8 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
     return cache, numeric
 
 
-# ---------------------------------------------------------------------------
-# Filter matching (kept at module level for backward compat)
-# ---------------------------------------------------------------------------
 
-_OP_RE = re.compile(r"^(>=|<=|>|<|=|!)(.+)$")
-
-
-def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
-    """Check if a cell value matches a filter expression."""
-    filter_text = filter_text.strip()
-    if not filter_text:
-        return True
-
-    m = _OP_RE.match(filter_text)
-    if m:
-        op, operand = m.group(1), m.group(2).strip()
-
-        if op in (">", "<", ">=", "<="):
-            try:
-                threshold = float(operand)
-            except ValueError:
-                return True
-            if raw_value is None or not isinstance(raw_value, (int, float)):
-                return False
-            if op == ">":
-                return raw_value > threshold
-            if op == "<":
-                return raw_value < threshold
-            if op == ">=":
-                return raw_value >= threshold
-            if op == "<=":
-                return raw_value <= threshold
-
-        if op == "=":
-            return display_text.lower() == operand.lower()
-
-        if op == "!":
-            return operand.lower() not in display_text.lower()
-
-    return filter_text.lower() in display_text.lower()
+# _matches_filter imported from fancy_table (shared implementation)
 
 
 # ---------------------------------------------------------------------------
