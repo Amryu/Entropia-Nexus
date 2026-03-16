@@ -282,8 +282,8 @@ function matchItems(text, source) {
 
 // ── Fuzzy Matching (misspellings) ──────────────────────────────────
 
-const MIN_FUZZY_NAME_LENGTH = 10; // Only fuzzy-match longer names to reduce noise
-const MAX_EDIT_DISTANCE = 1;     // Single character typos only
+const MIN_FUZZY_NAME_LENGTH = 8; // Only fuzzy-match longer names to reduce noise
+const MAX_EDIT_DISTANCE = 2;
 
 /**
  * Compute Levenshtein edit distance between two strings.
