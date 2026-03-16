@@ -657,7 +657,14 @@ export async function GET({ params, url, locals }) {
           else if (r.type === 'deposit') types.mining.set(key, (types.mining.get(key) || 0) + count);
           else if (r.type === 'craft') types.crafting.set(key, (types.crafting.get(key) || 0) + count);
         }
-        const toArr = (m) => [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, count]) => count);
+        // Fill gaps with zeros using the same bucket list as the main activity chart
+        const toArr = (m) => {
+          const filled = fillActivityGaps(
+            [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([bucket, count]) => ({ bucket, count })),
+            bucketUnit, from, to, period
+          );
+          return filled.map(r => r.count);
+        };
         return { hunting: toArr(types.hunting), mining: toArr(types.mining), crafting: toArr(types.crafting) };
       })(),
       recent: recentResult.rows.map(r => ({
