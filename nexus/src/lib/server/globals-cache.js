@@ -380,11 +380,12 @@ async function rebuildAthLeaderboard() {
         // Compute ranks
         await client.query(
           `UPDATE globals_ath_leaderboard a
-           SET total_rank = sub.total_rank, best_rank = sub.best_rank
+           SET total_rank = sub.total_rank, best_rank = sub.best_rank, count_rank = sub.count_rank
            FROM (
              SELECT target_key, player_name,
                     RANK() OVER (PARTITION BY target_key ORDER BY total_value DESC) AS total_rank,
-                    RANK() OVER (PARTITION BY target_key ORDER BY best_value DESC) AS best_rank
+                    RANK() OVER (PARTITION BY target_key ORDER BY best_value DESC) AS best_rank,
+                    RANK() OVER (PARTITION BY target_key ORDER BY count DESC) AS count_rank
              FROM globals_ath_leaderboard
              WHERE category = $1
            ) sub

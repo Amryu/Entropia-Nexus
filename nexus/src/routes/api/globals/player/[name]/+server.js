@@ -278,7 +278,7 @@ export async function GET({ params, url, locals }) {
         // Hunting ATH from leaderboard
         safeQuery(pool.query(
           `SELECT target_key, total_value, best_value, count, mob_id,
-                  best_target_name, total_rank, best_rank
+                  best_target_name, total_rank, best_rank, count_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'hunting'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
@@ -287,7 +287,7 @@ export async function GET({ params, url, locals }) {
         )),
         // Mining ATH from leaderboard
         safeQuery(pool.query(
-          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank
+          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank, count_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'mining'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
@@ -296,7 +296,7 @@ export async function GET({ params, url, locals }) {
         )),
         // Crafting ATH from leaderboard
         safeQuery(pool.query(
-          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank
+          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank, count_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'crafting'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
@@ -542,6 +542,7 @@ export async function GET({ params, url, locals }) {
         best_value: parseFloat(r.best_value),
         total_rank: parseInt(r.total_rank),
         best_rank: parseInt(r.best_rank),
+        count_rank: parseInt(r.count_rank) || 0,
         mob_id: r.mob_id || null,
       }));
     }
@@ -674,6 +675,7 @@ export async function GET({ params, url, locals }) {
             best_value: parseFloat(r.best_value),
             total_rank: parseInt(r.total_rank),
             best_rank: parseInt(r.best_rank),
+            count_rank: parseInt(r.count_rank) || 0,
             mob_id: r.mob_id || null,
           };
         }),

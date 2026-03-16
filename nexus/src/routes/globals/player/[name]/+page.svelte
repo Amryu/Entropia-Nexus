@@ -200,6 +200,7 @@
   // Highlights panel (Overview tab)
   // Overview ATH ranking mode
   let overviewAthMode = $state('total');
+  let miningFilter = $state('combined'); // 'combined' | 'regular' | 'space'
 
   // PvP sorting
   let pvpSort = $state({ col: 'value', asc: false });
@@ -357,7 +358,7 @@
     const map = new Map();
     for (const cat of ['hunting', 'mining', 'crafting']) {
       for (const e of athRankings[cat] || []) {
-        const rank = { total: e.total_rank, best: e.best_rank };
+        const rank = { total: e.total_rank, best: e.best_rank, count: e.count_rank };
         map.set(`${cat}:${e.target?.toLowerCase()}`, rank);
         // Also key by mob_id for hunting (loots use maturity names, ATH uses base mob names)
         if (e.mob_id) map.set(`${cat}:mob:${e.mob_id}`, rank);
@@ -517,7 +518,7 @@
             { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' },
           ] as category}
             {@const useBest = overviewAthMode === 'best' || overviewAthMode === 'bestTarget'}
-            {@const entries = [...(athRankings[category.key] || [])]
+            {@const rawEntries = [...(athRankings[category.key] || [])]
               .sort((a, b) => {
                 if (overviewAthMode === 'best') return b.best_value - a.best_value;
                 if (overviewAthMode === 'total') return b.total_value - a.total_value;
@@ -525,13 +526,31 @@
                 return a.total_rank - b.total_rank || b.total_value - a.total_value;
               })
               .slice(0, 10)}
+            {@const entries = category.key === 'mining' && miningFilter !== 'combined'
+              ? rawEntries.filter(e => miningFilter === 'space'
+                  ? /asteroid/i.test(e.target)
+                  : !/asteroid/i.test(e.target))
+              : rawEntries}
             <div class="overview-ranking-card">
-              <div class="ranking-card-header {category.colorClass}">{category.label}</div>
+              <div class="ranking-card-header {category.colorClass}">
+                {category.label}
+                {#if category.key === 'mining'}
+                  <div class="mining-toggle">
+                    <button class="mining-toggle-btn" class:active={miningFilter === 'combined'} onclick={() => miningFilter = 'combined'}>All</button>
+                    <button class="mining-toggle-btn" class:active={miningFilter === 'regular'} onclick={() => miningFilter = 'regular'}>Regular</button>
+                    <button class="mining-toggle-btn" class:active={miningFilter === 'space'} onclick={() => miningFilter = 'space'}>Space</button>
+                  </div>
+                {/if}
+              </div>
               {#each entries as entry}
                 {@const r = useBest ? entry.best_rank : entry.total_rank}
+                {@const cr = entry.count_rank || 0}
                 {@const v = useBest ? entry.best_value : entry.total_value}
                 <div class="highlight-row">
                   <span class="ranking-badge" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>
+                  {#if cr > 0}
+                    <span class="ranking-badge ranking-badge-count" class:rank-ruby={cr <= 1} class:rank-diamond={cr > 1 && cr <= 10} class:rank-gold={cr > 10 && cr <= 50} class:rank-silver={cr > 50 && cr <= 200} class:rank-bronze={cr > 200 && cr <= 500}>#{cr}</span>
+                  {/if}
                   <span class="highlight-name"><a href="/globals/target/{encodeURIComponent(entry.target)}" class="target-link">{entry.target}</a></span>
                   <span class="highlight-value">{formatPed(v)} PED</span>
                 </div>
@@ -1625,6 +1644,28 @@
   .ranking-card-header.rare-color { color: #9b59b6; }
   .ranking-card-header.discovery-color { color: #2ecc71; }
 
+  .mining-toggle {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 8px;
+  }
+
+  .mining-toggle-btn {
+    padding: 1px 6px;
+    font-size: 0.625rem;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .mining-toggle-btn.active {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+  }
+
   .ranking-badge {
     display: inline-block;
     flex-shrink: 0;
@@ -1642,6 +1683,11 @@
     padding: 1px 7px;
     line-height: 1.2;
     vertical-align: middle;
+  }
+
+  .ranking-badge-count {
+    border: 1px dashed currentColor;
+    background: transparent !important;
   }
 
   .ranking-badge.rank-ruby { background: rgba(224, 17, 95, 0.15); color: #e0115f; }
