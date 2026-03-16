@@ -55,11 +55,10 @@ export async function GET({ url }) {
 
   try {
     const result = await pool.query(
-      `SELECT target_name AS name, count(*) AS cnt
-       FROM ingested_globals
-       WHERE confirmed = true AND target_name IS NOT NULL AND target_name ILIKE $1
-       GROUP BY target_name
-       ORDER BY count(*) DESC
+      `SELECT target_name AS name, event_count AS cnt
+       FROM globals_target_agg
+       WHERE period = 'all' AND target_name ILIKE $1
+       ORDER BY event_count DESC
        LIMIT $2`,
       [escaped, MAX_RAW_RESULTS]
     );

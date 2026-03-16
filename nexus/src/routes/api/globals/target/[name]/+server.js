@@ -279,11 +279,10 @@ export async function GET({ params, url, locals }) {
       // Available maturities for this target (find all variants sharing the same mob_id)
       resolvedMobId
         ? q(
-            `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
-             FROM ingested_globals
-             WHERE confirmed = true AND mob_id = $1
-             GROUP BY target_name
-             ORDER BY count(*) DESC`,
+            `SELECT target_name, event_count AS count, sum_value AS value
+             FROM globals_target_agg
+             WHERE period = 'all' AND mob_id = $1
+             ORDER BY event_count DESC`,
             [resolvedMobId]
           )
         : q(

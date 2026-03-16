@@ -31,11 +31,10 @@ export async function GET({ url }) {
 
   try {
     const result = await pool.query(
-      `SELECT player_name AS name, count(*) AS cnt
-       FROM ingested_globals
-       WHERE confirmed = true AND player_name ILIKE $1
-       GROUP BY player_name
-       ORDER BY count(*) DESC
+      `SELECT player_name AS name, event_count AS cnt
+       FROM globals_player_agg
+       WHERE period = 'all' AND player_name ILIKE $1
+       ORDER BY event_count DESC
        LIMIT $2`,
       [escaped, MAX_RESULTS]
     );

@@ -91,30 +91,22 @@ export async function GET({ url }) {
 
   try {
     const [playersResult, targetsResult] = await Promise.all([
-      // Players & Teams — grouped by player_name
+      // Players & Teams — from pre-aggregated table
       pool.query(
-        `SELECT player_name AS name,
-                bool_or(global_type = 'team_kill') AS has_team,
-                bool_or(global_type != 'team_kill') AS has_solo,
-                count(*) AS cnt
-         FROM ingested_globals
-         WHERE confirmed = true AND player_name ILIKE $1
-         GROUP BY player_name
-         ORDER BY count(*) DESC
+        `SELECT player_name AS name, has_team, has_solo, event_count AS cnt
+         FROM globals_player_agg
+         WHERE period = 'all' AND player_name ILIKE $1
+         ORDER BY event_count DESC
          LIMIT $2`,
         [escaped, MAX_RESULTS_PER_CATEGORY]
       ),
 
-      // Targets — grouped by target_name with most common type
-      // Fetch more than needed to build mob groups
+      // Targets — from pre-aggregated table
       pool.query(
-        `SELECT target_name AS name,
-                MIN(global_type) AS primary_type,
-                count(*) AS cnt
-         FROM ingested_globals
-         WHERE confirmed = true AND target_name ILIKE $1
-         GROUP BY target_name
-         ORDER BY count(*) DESC
+        `SELECT target_name AS name, primary_type, event_count AS cnt
+         FROM globals_target_agg
+         WHERE period = 'all' AND target_name ILIKE $1
+         ORDER BY event_count DESC
          LIMIT $2`,
         [escaped, MAX_RAW_TARGETS]
       ),

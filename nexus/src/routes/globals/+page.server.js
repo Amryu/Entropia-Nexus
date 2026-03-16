@@ -18,12 +18,12 @@ export async function load() {
         [INITIAL_LIMIT]
       ),
       pool.query(
-        `SELECT count(*) AS total_count,
-                COALESCE(sum(value), 0) AS total_value,
-                count(*) FILTER (WHERE is_hof) AS hof_count,
-                count(*) FILTER (WHERE is_ath) AS ath_count
-         FROM ingested_globals
-         WHERE confirmed = true`
+        `SELECT COALESCE(SUM(event_count), 0) AS total_count,
+                COALESCE(SUM(sum_value), 0) AS total_value,
+                COALESCE(SUM(hof_count), 0) AS hof_count,
+                COALESCE(SUM(ath_count), 0) AS ath_count
+         FROM globals_rollup
+         WHERE granularity = 'daily'`
       ),
     ]);
 
