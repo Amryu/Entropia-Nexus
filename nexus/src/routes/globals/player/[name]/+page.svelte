@@ -473,15 +473,25 @@
       ] as cat}
         {@const cr = categoryRanks?.[cat.key]}
         <button class="stat-card category-card clickable" onclick={() => activeTab = cat.tab}>
-          <span class="stat-value {cat.colorClass}">{cat.count.toLocaleString()}</span>
-          <span class="stat-label">{cat.label}</span>
-          <span class="stat-sub">{formatPed(cat.value)} PED</span>
-          {#if cr}
-            <span class="stat-ranks">
-              <span class="ranking-badge" class:rank-ruby={cr.value_rank <= 1} class:rank-diamond={cr.value_rank > 1 && cr.value_rank <= 10} class:rank-gold={cr.value_rank > 10 && cr.value_rank <= 50} class:rank-silver={cr.value_rank > 50 && cr.value_rank <= 200} class:rank-bronze={cr.value_rank > 200 && cr.value_rank <= 500} title="Value rank">#{cr.value_rank}</span>
-              <span class="ranking-badge ranking-badge-count" class:rank-ruby={cr.count_rank <= 1} class:rank-diamond={cr.count_rank > 1 && cr.count_rank <= 10} class:rank-gold={cr.count_rank > 10 && cr.count_rank <= 50} class:rank-silver={cr.count_rank > 50 && cr.count_rank <= 200} class:rank-bronze={cr.count_rank > 200 && cr.count_rank <= 500} title="Count rank">#{cr.count_rank}</span>
-            </span>
-          {/if}
+          <div class="category-card-inner">
+            <div class="category-card-stats">
+              <span class="stat-value {cat.colorClass}">{cat.count.toLocaleString()}</span>
+              <span class="stat-label">{cat.label}</span>
+              <span class="stat-sub">{formatPed(cat.value)} PED</span>
+            </div>
+            {#if cr}
+              <div class="category-card-ranks">
+                <div class="category-rank-item">
+                  <span class="category-rank-label">Value</span>
+                  <span class="ranking-badge ranking-badge-lg" class:rank-ruby={cr.value_rank <= 1} class:rank-diamond={cr.value_rank > 1 && cr.value_rank <= 10} class:rank-gold={cr.value_rank > 10 && cr.value_rank <= 50} class:rank-silver={cr.value_rank > 50 && cr.value_rank <= 200} class:rank-bronze={cr.value_rank > 200 && cr.value_rank <= 500}>#{cr.value_rank}</span>
+                </div>
+                <div class="category-rank-item">
+                  <span class="category-rank-label">Count</span>
+                  <span class="ranking-badge ranking-badge-lg ranking-badge-count" class:rank-ruby={cr.count_rank <= 1} class:rank-diamond={cr.count_rank > 1 && cr.count_rank <= 10} class:rank-gold={cr.count_rank > 10 && cr.count_rank <= 50} class:rank-silver={cr.count_rank > 50 && cr.count_rank <= 200} class:rank-bronze={cr.count_rank > 200 && cr.count_rank <= 500}>#{cr.count_rank}</span>
+                </div>
+              </div>
+            {/if}
+          </div>
         </button>
       {/each}
     </div>
@@ -1557,11 +1567,37 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .stat-ranks {
+  .category-card-inner {
     display: flex;
-    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .category-card-stats {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .category-card-ranks {
+    display: flex;
+    flex-direction: column;
     gap: 4px;
-    margin-top: 4px;
+    flex-shrink: 0;
+  }
+
+  .category-rank-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .category-rank-label {
+    font-size: 0.5625rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    width: 32px;
   }
 
   .hunting-color { color: #ef4444; }
