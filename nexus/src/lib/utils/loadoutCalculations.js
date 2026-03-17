@@ -171,7 +171,7 @@ export function calculateRange(weapon, hitSkill, skillModEnhancers, rangeEnhance
     return weapon.Properties.Range * (0.935 + 0.065 * progress) * rangeEnhancerFactor;
   }
   else {
-    return weapon.Properties.Range * (0.945 + 0.055 * (effectiveHitSkill / 100)) * rangeEnhancerFactor;
+    return weapon.Properties.Range * Math.min(1, 0.945 + 0.055 * (effectiveHitSkill / 100)) * rangeEnhancerFactor;
   }
 }
 
@@ -858,13 +858,13 @@ export function calculateHealInterval(tool, healSkill, skillModEnhancers, healEn
     );
 
     return {
-      min: minHeal + (maxHeal - minHeal) * 0.25 * (1 + progress),
-      max: minHeal + (maxHeal - minHeal) * 0.5 * (1 + progress)
+      min: minHeal * 0.5 * (1 + progress),
+      max: maxHeal * 0.5 * (1 + progress)
     };
   }
   else {
     return {
-      min: minHeal + (maxHeal - minHeal) * 0.25 * (1 + Math.min(effectiveHealSkill / 100, 1)),
+      min: minHeal * 0.5 * (1 + Math.min(effectiveHealSkill / 100, 1)),
       max: maxHeal
     };
   }
