@@ -19,14 +19,11 @@ if TYPE_CHECKING:
 
 log = get_logger("TwitchEmotes")
 
-# Emote image size (1x scale)
-_EMOTE_SIZE = 1
-
-# CDN URLs
-_TWITCH_CDN = "https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/1.0"
-_BTTV_CDN = "https://cdn.betterttv.net/emote/{id}/1x.png"
-_FFZ_CDN = "https://cdn.frankerfacez.com/emote/{id}/1"
-_7TV_CDN = "https://cdn.7tv.app/emote/{id}/1x.webp"
+# CDN URLs — use 2x scale for decent quality at 22-28px display size
+_TWITCH_CDN = "https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/2.0"
+_BTTV_CDN = "https://cdn.betterttv.net/emote/{id}/2x.png"
+_FFZ_CDN = "https://cdn.frankerfacez.com/emote/{id}/2"
+_7TV_CDN = "https://cdn.7tv.app/emote/{id}/2x.webp"
 
 # API endpoints
 _BTTV_GLOBAL_URL = "https://api.betterttv.net/3/cached/emotes/global"

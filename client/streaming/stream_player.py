@@ -436,16 +436,14 @@ class StreamPlayer(QObject):
             return
 
         import mpv
-        from PyQt6.QtCore import Qt
 
-        # Force the video widget to create its own native HWND so mpv can
-        # render to it independently of the parent overlay's layered window.
-        self._widget.setAttribute(
-            Qt.WidgetAttribute.WA_DontCreateNativeAncestors
-        )
-        self._widget.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
-
+        # Widget must have a valid native HWND (set at build time via
+        # WA_NativeWindow).  Verify it's ready.
         wid = str(int(self._widget.winId()))
+        if wid == "0":
+            log.error("Video widget has no valid HWND yet")
+            self.stream_error.emit("Video widget not ready")
+            return
 
         def _mpv_log(loglevel, component, message):
             log.debug("[mpv/%s] %s: %s", loglevel, component, message)
@@ -504,10 +502,26 @@ class StreamPlayer(QObject):
             self._resolving = False
 
     def _on_url_resolved(self, url: str):
-        """Main-thread handler: start mpv playback with the resolved URL."""
+        """Main-thread handler: start mpv playback with the resolved URL.
+
+        Defers actual playback by one event-loop cycle to ensure the
+        video widget has been shown and its HWND is fully realized.
+        """
         self._resolving = False
+        self._pending_url = url
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._start_mpv_playback)
+
+    def _start_mpv_playback(self):
+        """Actually create mpv and start playing (deferred from _on_url_resolved)."""
+        url = getattr(self, "_pending_url", "")
+        if not url:
+            return
+        self._pending_url = ""
         try:
             self._ensure_player()
+            if self._player is None:
+                return
             self._player.play(url)
             self._paused = False
             self.stream_started.emit()

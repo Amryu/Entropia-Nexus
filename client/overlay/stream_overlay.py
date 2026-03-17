@@ -552,7 +552,12 @@ class StreamOverlay(OverlayWidget):
         player_lay.setSpacing(0)
 
         # Video container (opaque black background for mpv)
+        # Force native HWND creation early so mpv always gets a valid handle.
         self._video_container = QWidget()
+        self._video_container.setAttribute(
+            Qt.WidgetAttribute.WA_DontCreateNativeAncestors
+        )
+        self._video_container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
         self._video_container.setStyleSheet(f"background-color: {VIDEO_BG};")
         self._video_container.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
@@ -1461,8 +1466,17 @@ class StreamOverlay(OverlayWidget):
             return
         self._chat_client.send_message(text)
         self._chat_input.clear()
-        # Message will appear via echo-message capability — Twitch
-        # sends it back as a normal PRIVMSG with full emote tags.
+        # Twitch does NOT echo your own messages back — show locally.
+        # Third-party emotes will be resolved by _render_text_with_third_party.
+        import time
+        self._on_chat_message({
+            "display_name": self._twitch_display_name,
+            "color": ACCENT,
+            "badges": [],
+            "emotes": [],
+            "message": text,
+            "timestamp": time.time(),
+        })
 
     # ------------------------------------------------------------------
     # Viewer count polling
