@@ -207,9 +207,12 @@ class StreamOverlay(OverlayWidget):
         self._stream_rows: list[QWidget] = []
         self._size_btns: list[QPushButton] = []
 
-        from ..streaming.twitch_auth import load_twitch_token, load_twitch_display_name
+        from ..streaming.twitch_auth import (
+            load_twitch_token, load_twitch_display_name, load_twitch_chat_color,
+        )
         self._twitch_token = load_twitch_token()
         self._twitch_display_name = load_twitch_display_name() or "You"
+        self._twitch_chat_color = load_twitch_chat_color() or ACCENT
 
         # If token exists but display name was never fetched, fetch now
         if self._twitch_token and self._twitch_display_name == "You":
@@ -1429,19 +1432,22 @@ class StreamOverlay(OverlayWidget):
     # ------------------------------------------------------------------
 
     def _fetch_display_name(self):
-        """Background thread: fetch and cache Twitch display name."""
+        """Background thread: fetch and cache Twitch user info."""
         from ..streaming.twitch_auth import (
-            DEFAULT_TWITCH_CLIENT_ID, fetch_twitch_display_name,
-            save_twitch_display_name,
+            DEFAULT_TWITCH_CLIENT_ID, fetch_twitch_user_info,
+            save_twitch_display_name, save_twitch_chat_color,
         )
         client_id = (
             getattr(self._config, "twitch_client_id", "")
             or DEFAULT_TWITCH_CLIENT_ID
         )
-        name = fetch_twitch_display_name(self._twitch_token, client_id)
-        if name:
-            save_twitch_display_name(name)
-            self._twitch_display_name = name
+        info = fetch_twitch_user_info(self._twitch_token, client_id)
+        if info.get("display_name"):
+            save_twitch_display_name(info["display_name"])
+            self._twitch_display_name = info["display_name"]
+        if info.get("color"):
+            save_twitch_chat_color(info["color"])
+            self._twitch_chat_color = info["color"]
 
     def _on_twitch_login(self):
         """Open Twitch OAuth login flow in a background thread."""
@@ -1462,18 +1468,21 @@ class StreamOverlay(OverlayWidget):
     def _twitch_login_worker(self, client_id: str):
         """Background thread: run Twitch OAuth flow."""
         from ..streaming.twitch_auth import (
-            twitch_login, save_twitch_token,
-            fetch_twitch_display_name, save_twitch_display_name,
+            twitch_login, save_twitch_token, fetch_twitch_user_info,
+            save_twitch_display_name, save_twitch_chat_color,
         )
         token = twitch_login(client_id)
         if token:
             save_twitch_token(token)
             self._twitch_token = token
-            # Fetch and cache display name
-            name = fetch_twitch_display_name(token, client_id)
-            if name:
-                save_twitch_display_name(name)
-                self._twitch_display_name = name
+            # Fetch and cache display name + chat color
+            info = fetch_twitch_user_info(token, client_id)
+            if info.get("display_name"):
+                save_twitch_display_name(info["display_name"])
+                self._twitch_display_name = info["display_name"]
+            if info.get("color"):
+                save_twitch_chat_color(info["color"])
+                self._twitch_chat_color = info["color"]
             self._twitch_login_done.emit()
 
     def _reconnect_chat_authenticated(self):
@@ -1505,7 +1514,7 @@ class StreamOverlay(OverlayWidget):
         import time
         self._on_chat_message({
             "display_name": self._twitch_display_name,
-            "color": ACCENT,
+            "color": self._twitch_chat_color,
             "badges": [],
             "emotes": emotes,
             "message": text,

@@ -45,6 +45,7 @@ def save_twitch_token(token: str) -> None:
 
 
 _DISPLAY_NAME_KEY = "twitch_display_name"
+_CHAT_COLOR_KEY = "twitch_chat_color"
 
 
 def load_twitch_display_name() -> str:
@@ -65,28 +66,61 @@ def save_twitch_display_name(name: str) -> None:
         pass
 
 
-def fetch_twitch_display_name(token: str, client_id: str) -> str:
-    """Fetch the authenticated user's display name from the Twitch API.
+def load_twitch_chat_color() -> str:
+    """Load the cached Twitch chat color from keyring."""
+    try:
+        color = keyring.get_password(_SERVICE_NAME, _CHAT_COLOR_KEY)
+        return color or ""
+    except Exception:
+        return ""
+
+
+def save_twitch_chat_color(color: str) -> None:
+    """Cache the Twitch chat color in keyring."""
+    try:
+        if color:
+            keyring.set_password(_SERVICE_NAME, _CHAT_COLOR_KEY, color)
+    except Exception:
+        pass
+
+
+def fetch_twitch_user_info(token: str, client_id: str) -> dict:
+    """Fetch the authenticated user's display name and chat color.
 
     Call from a background thread.
+    Returns ``{"display_name": str, "color": str}``.
     """
     import requests
+    headers = {"Authorization": f"Bearer {token}", "Client-Id": client_id}
+    result = {"display_name": "", "color": ""}
     try:
         resp = requests.get(
             "https://api.twitch.tv/helix/users",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Client-Id": client_id,
-            },
-            timeout=10,
+            headers=headers, timeout=10,
         )
         if resp.ok:
             data = resp.json().get("data", [])
             if data:
-                return data[0].get("display_name", "")
+                result["display_name"] = data[0].get("display_name", "")
+                user_id = data[0].get("id", "")
+                # Fetch chat color
+                if user_id:
+                    color_resp = requests.get(
+                        f"https://api.twitch.tv/helix/chat/color?user_id={user_id}",
+                        headers=headers, timeout=10,
+                    )
+                    if color_resp.ok:
+                        color_data = color_resp.json().get("data", [])
+                        if color_data:
+                            result["color"] = color_data[0].get("color", "")
     except Exception as exc:
-        log.debug("Failed to fetch Twitch display name: %s", exc)
-    return ""
+        log.debug("Failed to fetch Twitch user info: %s", exc)
+    return result
+
+
+def fetch_twitch_display_name(token: str, client_id: str) -> str:
+    """Fetch display name only (backward compat)."""
+    return fetch_twitch_user_info(token, client_id).get("display_name", "")
 
 
 _REDIRECT_PORT = 47833  # different from Nexus OAuth port (47832)
