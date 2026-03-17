@@ -455,19 +455,6 @@ for name, total in group_sizes.items():
 print(f'  Manifest: {len(files)} files ({core_count} core), version {version}')
 " "$MANIFEST_DIST_CHECK" "$VERSION" "$PLATFORM"
 
-# ── Post-build: copy config template ────────────────────────────────────────
-
-CONFIG_SRC="${ROOT}/client/config.example.json"
-if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
-    CONFIG_SRC_CHECK="$(cygpath -u "$CONFIG_SRC")"
-else
-    CONFIG_SRC_CHECK="$CONFIG_SRC"
-fi
-if [[ -f "$CONFIG_SRC_CHECK" ]]; then
-    cp "$CONFIG_SRC_CHECK" "$DIST_DIR/$APP_NAME/config.example.json"
-    cyan "Copied config.example.json into output."
-fi
-
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

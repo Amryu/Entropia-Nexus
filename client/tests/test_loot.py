@@ -116,19 +116,19 @@ class TestLootHandler(unittest.TestCase):
         self.assertEqual(rows[0][3], 3)                  # quantity
         self.assertAlmostEqual(rows[0][4], 0.03)         # value_ped
 
-    def test_db_stores_id_without_name_when_resolved(self):
-        """When the resolver returns an ID, item_name is NULL."""
+    def test_db_stores_both_name_and_id_when_resolved(self):
+        """When the resolver returns an ID, item_name is always kept (NOT NULL)."""
         self.handler._item_resolver = lambda name: 42 if name == "Metal Residue" else None
         ts = datetime(2026, 2, 7, 11, 19, 50)
         self.handler.handle(_make_loot_line("You received Metal Residue x (3) Value: 0.0300 PED", ts))
         self.handler.flush()
 
         rows = self.db.insert_loot_events.call_args[0][0]
-        self.assertIsNone(rows[0][1])   # item_name omitted
-        self.assertEqual(rows[0][2], 42) # item_id stored
+        self.assertEqual(rows[0][1], "Metal Residue")  # item_name always kept
+        self.assertEqual(rows[0][2], 42)                # item_id stored
 
     def test_db_mixed_resolved_and_unresolved(self):
-        """Items that resolve get id only; unknown items keep the name."""
+        """Both resolved and unresolved items always keep item_name."""
         self.handler._item_resolver = lambda name: 99 if name == "Shrapnel" else None
         ts = datetime(2026, 2, 7, 11, 20, 39)
         self.handler.handle(_make_loot_line("You received Shrapnel x (29) Value: 0.0029 PED", ts))
@@ -136,10 +136,10 @@ class TestLootHandler(unittest.TestCase):
         self.handler.flush()
 
         rows = self.db.insert_loot_events.call_args[0][0]
-        # Shrapnel resolved
-        self.assertIsNone(rows[0][1])
+        # Shrapnel resolved — name kept, id stored
+        self.assertEqual(rows[0][1], "Shrapnel")
         self.assertEqual(rows[0][2], 99)
-        # Rare Gizmo unresolved
+        # Rare Gizmo unresolved — name kept, id None
         self.assertEqual(rows[1][1], "Rare Gizmo")
         self.assertIsNone(rows[1][2])
 

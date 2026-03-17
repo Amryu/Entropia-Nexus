@@ -69,8 +69,7 @@ class LootHandler(BaseHandler):
         rows = []
         for item in group.items:
             item_id = resolve(item.item_name) if resolve else None
-            name = None if item_id is not None else item.item_name
-            rows.append((ts_iso, name, item_id, item.quantity, item.value_ped))
+            rows.append((ts_iso, item.item_name, item_id, item.quantity, item.value_ped))
         self._db.insert_loot_events(rows)
 
         if not self.suppress_events:
