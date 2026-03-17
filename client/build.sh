@@ -36,6 +36,8 @@ HIDDEN_IMPORTS=(
     keyring.backends
     keyring.backends.Windows
     keyring.backends.SecretService
+    win32cred
+    pywintypes
     sounddevice
     _sounddevice_data
     obsws_python
