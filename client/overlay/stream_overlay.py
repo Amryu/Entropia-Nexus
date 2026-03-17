@@ -1181,7 +1181,9 @@ class StreamOverlay(OverlayWidget):
         if self._emote_manager:
             self._emote_manager.load_global_emotes()
             # Load Twitch global emote name→ID map for sent message resolution
-            name_map = self._emote_manager.load_twitch_global_emote_names()
+            name_map = self._emote_manager.load_twitch_global_emote_names(
+                oauth_token=self._twitch_token,
+            )
             self._known_twitch_emotes.update(name_map)
 
     def _on_room_id(self, room_id: str):
@@ -1511,6 +1513,11 @@ class StreamOverlay(OverlayWidget):
         # Build emote positions from known emote text→ID mappings so
         # Twitch native emotes render in our own messages too.
         emotes = self._build_emote_tags(text)
+        # Ensure emote images are queued for download
+        if emotes and self._emote_manager:
+            self._emote_manager.queue_twitch_emotes(
+                {e["id"] for e in emotes}
+            )
         import time
         self._on_chat_message({
             "display_name": self._twitch_display_name,

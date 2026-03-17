@@ -54,23 +54,20 @@ class EmoteManager:
     # Public API (call from background threads)
     # ------------------------------------------------------------------
 
-    def load_twitch_global_emote_names(self) -> dict[str, str]:
+    def load_twitch_global_emote_names(self, oauth_token: str = "") -> dict[str, str]:
         """Fetch Twitch global emote name→ID mappings.
 
         Returns {emote_name: emote_id}. Call from a background thread.
-        Uses the public Twitch emote endpoint (no auth required).
+        Requires an OAuth token (user or app access) for the Helix API.
         """
         name_map: dict[str, str] = {}
         try:
-            # Twitch public emote set for global emotes (set ID 0)
             url = "https://api.twitch.tv/helix/chat/emotes/global"
-            # This endpoint requires Client-ID but no OAuth token
             from .twitch_auth import DEFAULT_TWITCH_CLIENT_ID
-            resp = requests.get(
-                url,
-                headers={"Client-Id": DEFAULT_TWITCH_CLIENT_ID},
-                timeout=_REQUEST_TIMEOUT,
-            )
+            headers = {"Client-Id": DEFAULT_TWITCH_CLIENT_ID}
+            if oauth_token:
+                headers["Authorization"] = f"Bearer {oauth_token}"
+            resp = requests.get(url, headers=headers, timeout=_REQUEST_TIMEOUT)
             if resp.ok:
                 for e in resp.json().get("data", []):
                     name = e.get("name", "")
@@ -78,6 +75,8 @@ class EmoteManager:
                     if name and eid:
                         name_map[name] = eid
                 log.debug("Loaded %d Twitch global emote names", len(name_map))
+            else:
+                log.debug("Twitch global emotes API returned %d", resp.status_code)
         except Exception as exc:
             log.debug("Twitch global emote names fetch failed: %s", exc)
         return name_map
