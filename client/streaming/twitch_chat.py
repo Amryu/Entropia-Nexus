@@ -147,6 +147,7 @@ class TwitchChatClient(QThread):
     """
 
     message_received = pyqtSignal(dict)
+    room_id_received = pyqtSignal(str)  # Twitch user ID of the channel
     connected = pyqtSignal()
     disconnected = pyqtSignal(str)
 
@@ -258,6 +259,16 @@ class TwitchChatClient(QThread):
         # PING keepalive
         if line.startswith("PING"):
             ws.send("PONG :tmi.twitch.tv")
+            return
+
+        # ROOMSTATE — contains room-id (Twitch user ID of the channel)
+        if "ROOMSTATE" in line:
+            tag_match = _TAG_RE.match(line)
+            if tag_match:
+                tags = parse_tags(tag_match.group(1))
+                room_id = tags.get("room-id", "")
+                if room_id:
+                    self.room_id_received.emit(room_id)
             return
 
         # PRIVMSG (chat message)

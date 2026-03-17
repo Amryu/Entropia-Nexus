@@ -196,6 +196,8 @@ class StreamOverlay(OverlayWidget):
         self._chat_client = None
         self._emote_manager = None
         self._chat_buffer: list[dict] = []
+        self._rendered_messages: list[dict] = []
+        self._pending_emote_ids: set[str] = set()
         self._current_channel = ""
         self._current_channel_id = ""
         self._avatar_labels: dict[str, QLabel] = {}
@@ -1093,6 +1095,7 @@ class StreamOverlay(OverlayWidget):
             channel, oauth_token=token, parent=self,
         )
         self._chat_client.message_received.connect(self._on_chat_message)
+        self._chat_client.room_id_received.connect(self._on_room_id)
         self._chat_client.connected.connect(
             lambda: log.debug("Chat connected to #%s", channel)
         )
@@ -1110,19 +1113,14 @@ class StreamOverlay(OverlayWidget):
             name=f"recent-msgs-{channel}",
         ).start()
 
-        # Load emotes in background
+        # Load global emotes (channel emotes loaded when room_id arrives)
         self._ensure_emote_manager()
-        if self._emote_manager:
-            threading.Thread(
-                target=self._load_emotes_for_channel,
-                args=(channel, channel_id),
-                daemon=True,
-                name=f"emotes-{channel}",
-            ).start()
 
     def _stop_chat(self):
         """Disconnect chat and stop flush timer."""
         self._chat_flush_timer.stop()
+        self._rendered_messages.clear()
+        self._pending_emote_ids.clear()
         if self._chat_client:
             self._chat_client.stop()
             # Don't wait synchronously — the thread will exit on its own
@@ -1149,6 +1147,17 @@ class StreamOverlay(OverlayWidget):
             ).start()
         except Exception as exc:
             log.debug("Failed to create EmoteManager: %s", exc)
+
+    def _on_room_id(self, room_id: str):
+        """Main-thread: Twitch user ID received — load channel emotes."""
+        self._current_channel_id = room_id
+        if self._emote_manager and room_id:
+            threading.Thread(
+                target=self._load_emotes_for_channel,
+                args=(self._current_channel, room_id),
+                daemon=True,
+                name=f"emotes-{self._current_channel}",
+            ).start()
 
     def _load_emotes_for_channel(self, channel: str, channel_id: str):
         """Background thread: load channel-specific emotes."""
@@ -1181,25 +1190,52 @@ class StreamOverlay(OverlayWidget):
 
     def _flush_chat(self):
         """Timer slot: batch-render buffered chat messages into QTextBrowser."""
-        if not self._chat_buffer:
+        has_new = bool(self._chat_buffer)
+
+        # Check if any pending emotes are now cached → rebuild
+        if self._pending_emote_ids and self._emote_manager:
+            newly_cached = {
+                eid for eid in self._pending_emote_ids
+                if self._emote_manager.get_twitch_emote_path(eid)
+            }
+            if newly_cached:
+                self._pending_emote_ids -= newly_cached
+                # Absorb any buffered messages into rendered list first
+                if self._chat_buffer:
+                    self._rendered_messages.extend(
+                        self._chat_buffer[-MAX_MESSAGES_PER_FLUSH:]
+                    )
+                    self._chat_buffer.clear()
+                self._rebuild_chat()
+                return
+
+        if not has_new:
             return
 
         # Hard cap: keep only the last N messages per flush
         batch = self._chat_buffer[-MAX_MESSAGES_PER_FLUSH:]
         self._chat_buffer.clear()
 
-        # Check if scrollbar is at the bottom before appending
-        sb = self._chat_browser.verticalScrollBar()
-        at_bottom = sb.value() >= sb.maximum() - 5
+        # Track rendered messages for potential rebuild
+        self._rendered_messages.extend(batch)
+        if len(self._rendered_messages) > MAX_CHAT_MESSAGES:
+            self._rendered_messages = self._rendered_messages[-MAX_CHAT_MESSAGES:]
 
         # Collect Twitch emote IDs for background download
         if self._emote_manager:
             emote_ids = set()
             for msg in batch:
                 for e in msg.get("emotes", []):
-                    emote_ids.add(e["id"])
+                    eid = e["id"]
+                    emote_ids.add(eid)
+                    if not self._emote_manager.get_twitch_emote_path(eid):
+                        self._pending_emote_ids.add(eid)
             if emote_ids:
                 self._emote_manager.queue_twitch_emotes(emote_ids)
+
+        # Check if scrollbar is at the bottom before appending
+        sb = self._chat_browser.verticalScrollBar()
+        at_bottom = sb.value() >= sb.maximum() - 5
 
         self._chat_browser.setUpdatesEnabled(False)
         try:
@@ -1233,6 +1269,25 @@ class StreamOverlay(OverlayWidget):
             self._chat_browser.setUpdatesEnabled(True)
 
         # Auto-scroll only if user was already at the bottom
+        if at_bottom:
+            sb.setValue(sb.maximum())
+
+    def _rebuild_chat(self):
+        """Re-render all messages from the rendered buffer (emotes may have updated)."""
+        sb = self._chat_browser.verticalScrollBar()
+        at_bottom = sb.value() >= sb.maximum() - 5
+
+        self._chat_browser.setUpdatesEnabled(False)
+        try:
+            self._chat_browser.clear()
+            html_parts = []
+            for msg in self._rendered_messages:
+                html_parts.append(self._render_chat_message(msg))
+            if html_parts:
+                self._chat_browser.setHtml("".join(html_parts))
+        finally:
+            self._chat_browser.setUpdatesEnabled(True)
+
         if at_bottom:
             sb.setValue(sb.maximum())
 
