@@ -174,13 +174,39 @@ class EmoteManager:
             self._channel_emotes.clear()
 
     def get_twitch_emote_path(self, emote_id: str) -> str | None:
-        """Get cached file path for a Twitch native emote (by ID from IRC tags).
+        """Return cached path for a Twitch native emote, or None.
 
-        Downloads if not cached. Safe to call from any thread.
+        Does NOT download — call ``queue_twitch_emotes`` to fetch missing
+        emotes in the background.  This is safe to call from the main thread.
         """
-        return self._ensure_cached(
-            "twitch", emote_id, _TWITCH_CDN.format(id=emote_id),
-        )
+        path = os.path.join(self._cache_dir, "twitch", f"{emote_id}.png")
+        return path if os.path.isfile(path) else None
+
+    def queue_twitch_emotes(self, emote_ids: set[str]) -> None:
+        """Download missing Twitch emotes in the background.
+
+        Call from the main thread; spawns a daemon thread.
+        """
+        missing = []
+        for eid in emote_ids:
+            path = os.path.join(self._cache_dir, "twitch", f"{eid}.png")
+            if not os.path.isfile(path):
+                missing.append(eid)
+
+        if not missing:
+            return
+
+        threading.Thread(
+            target=self._download_twitch_emotes,
+            args=(missing,),
+            daemon=True,
+            name="twitch-emotes",
+        ).start()
+
+    def _download_twitch_emotes(self, emote_ids: list[str]) -> None:
+        """Background thread: download a batch of Twitch emotes."""
+        for eid in emote_ids:
+            self._ensure_cached("twitch", eid, _TWITCH_CDN.format(id=eid))
 
     def resolve_third_party(self, word: str) -> str | None:
         """Look up a word in BTTV/FFZ/7TV emote maps. Returns cached file path or None."""
@@ -195,8 +221,10 @@ class EmoteManager:
     # ------------------------------------------------------------------
 
     def _ensure_cached(self, provider: str, emote_id: str, url: str) -> str | None:
-        """Return local file path, downloading if necessary."""
-        # Use .png extension for all (we save as PNG regardless of source format)
+        """Return local file path, downloading if necessary.
+
+        Call from background threads only (does network I/O).
+        """
         path = os.path.join(self._cache_dir, provider, f"{emote_id}.png")
         if os.path.isfile(path):
             return path

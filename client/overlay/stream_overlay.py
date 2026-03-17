@@ -1138,7 +1138,7 @@ class StreamOverlay(OverlayWidget):
         try:
             from ..streaming.twitch_emotes import EmoteManager
             cache_dir = os.path.join(
-                os.path.dirname(self._config_path), "emote_cache"
+                os.path.expanduser("~"), ".entropia-nexus", "emote_cache"
             )
             self._emote_manager = EmoteManager(cache_dir)
             # Load globals in background
@@ -1156,10 +1156,18 @@ class StreamOverlay(OverlayWidget):
             self._emote_manager.load_channel_emotes(channel, channel_id)
 
     def _fetch_recent_messages(self, channel: str):
-        """Background thread: fetch recent chat history."""
+        """Background thread: fetch recent chat history and pre-download emotes."""
         from ..streaming.twitch_chat import fetch_recent_messages
         messages = fetch_recent_messages(channel)
         if messages:
+            # Pre-download Twitch emotes so they're cached before rendering
+            if self._emote_manager:
+                emote_ids = set()
+                for msg in messages:
+                    for e in msg.get("emotes", []):
+                        emote_ids.add(e["id"])
+                if emote_ids:
+                    self._emote_manager._download_twitch_emotes(list(emote_ids))
             self._recent_messages_ready.emit(messages)
 
     def _on_recent_messages(self, messages: list):
@@ -1183,6 +1191,15 @@ class StreamOverlay(OverlayWidget):
         # Check if scrollbar is at the bottom before appending
         sb = self._chat_browser.verticalScrollBar()
         at_bottom = sb.value() >= sb.maximum() - 5
+
+        # Collect Twitch emote IDs for background download
+        if self._emote_manager:
+            emote_ids = set()
+            for msg in batch:
+                for e in msg.get("emotes", []):
+                    emote_ids.add(e["id"])
+            if emote_ids:
+                self._emote_manager.queue_twitch_emotes(emote_ids)
 
         self._chat_browser.setUpdatesEnabled(False)
         try:
