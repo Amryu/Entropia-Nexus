@@ -74,17 +74,20 @@ _BTN_STYLE = (
     "}"
 )
 
-_SIZE_BTN_STYLE = (
-    "QPushButton {{"
-    "  background: transparent; border: 1px solid rgba(80,80,100,120);"
-    "  border-radius: 3px; padding: 1px 4px; margin: 0px;"
-    "  color: {color}; font-size: 11px; font-weight: bold;"
-    "  min-width: 18px;"
-    "}}"
-    "QPushButton:hover {{"
-    "  background-color: rgba(50, 50, 70, 180);"
-    "}}"
-)
+def _size_btn_style(active: bool) -> str:
+    if active:
+        return (
+            f"QPushButton {{ color: {ACCENT}; font-size: 10px; font-weight: 700;"
+            f" background: rgba(60, 60, 90, 200); border: 1px solid {ACCENT};"
+            " border-radius: 3px; padding: 0px; }}"
+        )
+    return (
+        f"QPushButton {{ color: {TEXT_DIM}; font-size: 10px; font-weight: 600;"
+        " background: transparent; border: 1px solid transparent;"
+        " border-radius: 3px; padding: 0px; }}"
+        f"QPushButton:hover {{ color: {TEXT_COLOR};"
+        f" background: {TAB_HOVER_BG}; }}"
+    )
 
 _CTRL_BTN_STYLE = (
     "QPushButton {"
@@ -276,10 +279,9 @@ class StreamOverlay(OverlayWidget):
 
         for i, label in enumerate(_SIZE_LABELS):
             btn = QPushButton(label)
-            btn.setFixedSize(22, 18)
+            btn.setFixedSize(18, 18)
             active = i == self._config.stream_overlay_size_preset
-            color = ACCENT if active else TEXT_DIM
-            btn.setStyleSheet(_SIZE_BTN_STYLE.format(color=color))
+            btn.setStyleSheet(_size_btn_style(active))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda checked, idx=i: self._on_size_clicked(idx))
             size_lay.addWidget(btn)
@@ -935,8 +937,7 @@ class StreamOverlay(OverlayWidget):
 
         # Update button styles
         for i, btn in enumerate(self._size_btns):
-            color = ACCENT if i == index else TEXT_DIM
-            btn.setStyleSheet(_SIZE_BTN_STYLE.format(color=color))
+            btn.setStyleSheet(_size_btn_style(i == index))
 
     def _apply_list_size(self):
         """Set a compact size for the stream list view."""
