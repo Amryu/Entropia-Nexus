@@ -41,6 +41,14 @@ HIDDEN_IMPORTS=(
     sounddevice
     _sounddevice_data
     obsws_python
+    mpv
+    streamlink
+    streamlink.plugins
+    trio
+    trio._core
+    websockets
+    websockets.sync
+    websockets.sync.client
     client.overlay.custom_grid.builtin._common
     client.overlay.custom_grid.builtin.button_widget
     client.overlay.custom_grid.builtin.clock_widget
@@ -189,6 +197,7 @@ python -m PyInstaller \
     --collect-all sounddevice \
     --collect-all onnxruntime \
     --collect-all numpy \
+    --collect-all streamlink \
     --exclude-module onnxruntime.transformers \
     --exclude-module onnxruntime.quantization \
     --exclude-module onnxruntime.tools \
@@ -207,12 +216,8 @@ python -m PyInstaller \
     --exclude-module 'numpy.random' \
     --exclude-module 'numpy.fft' \
     --exclude-module 'PIL.ImageMath' \
-    --exclude-module '_asyncio' \
     --exclude-module '_multiprocessing' \
-    --exclude-module '_overlapped' \
     --exclude-module '_decimal' \
-    --exclude-module 'pyexpat' \
-    --exclude-module 'xml.parsers.expat' \
     --exclude-module '_yaml' \
     "${DATA_ARGS[@]}" \
     "${IMPORT_ARGS[@]}" \
