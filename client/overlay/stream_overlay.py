@@ -625,6 +625,7 @@ class StreamOverlay(OverlayWidget):
         from PyQt6.QtWidgets import QTextBrowser
         self._chat_browser = QTextBrowser()
         self._chat_browser.setOpenLinks(False)
+        self._chat_browser.anchorClicked.connect(self._on_chat_link_clicked)
         self._chat_browser.setStyleSheet(
             f"QTextBrowser {{"
             f"  background-color: {CHAT_BG}; color: {TEXT_COLOR};"
@@ -1373,24 +1374,38 @@ class StreamOverlay(OverlayWidget):
 
         return f'<p style="margin: 2px 0;">{"".join(parts)}</p>'
 
-    def _render_text_with_third_party(self, text: str) -> str:
-        """Replace third-party emote codes in text with <img> tags."""
-        if not self._emote_manager:
-            return html_mod.escape(text)
+    @staticmethod
+    def _is_url(word: str) -> bool:
+        return word.startswith("http://") or word.startswith("https://")
 
+    def _render_text_with_third_party(self, text: str) -> str:
+        """Replace emote codes with images and URLs with clickable links."""
         words = text.split(" ")
         result = []
         for word in words:
-            emote_path = self._emote_manager.resolve_third_party(word)
-            if emote_path:
+            if self._is_url(word):
+                escaped = html_mod.escape(word)
                 result.append(
-                    f'<img src="file:///{emote_path.replace(os.sep, "/")}" '
-                    f'height="22" style="vertical-align: middle;">'
+                    f'<a href="{escaped}" style="color: #bf94ff;">{escaped}</a>'
                 )
+            elif self._emote_manager:
+                emote_path = self._emote_manager.resolve_third_party(word)
+                if emote_path:
+                    result.append(
+                        f'<img src="file:///{emote_path.replace(os.sep, "/")}" '
+                        f'height="22" style="vertical-align: middle;">'
+                    )
+                else:
+                    result.append(html_mod.escape(word))
             else:
                 result.append(html_mod.escape(word))
 
         return " ".join(result)
+
+    def _on_chat_link_clicked(self, url):
+        """Open clicked chat links in the system browser."""
+        from PyQt6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(url)
 
     # ------------------------------------------------------------------
     # Twitch auth & chat sending
