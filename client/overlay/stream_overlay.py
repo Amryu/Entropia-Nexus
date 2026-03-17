@@ -208,6 +208,14 @@ class StreamOverlay(OverlayWidget):
         self._twitch_token = load_twitch_token()
         self._twitch_display_name = load_twitch_display_name() or "You"
 
+        # If token exists but display name was never fetched, fetch now
+        if self._twitch_token and self._twitch_display_name == "You":
+            threading.Thread(
+                target=self._fetch_display_name,
+                daemon=True,
+                name="twitch-name",
+            ).start()
+
         # Container style
         self._container.setStyleSheet(
             f"background-color: {BG_COLOR}; border-radius: 8px; padding: 0px;"
@@ -1373,6 +1381,21 @@ class StreamOverlay(OverlayWidget):
     # ------------------------------------------------------------------
     # Twitch auth & chat sending
     # ------------------------------------------------------------------
+
+    def _fetch_display_name(self):
+        """Background thread: fetch and cache Twitch display name."""
+        from ..streaming.twitch_auth import (
+            DEFAULT_TWITCH_CLIENT_ID, fetch_twitch_display_name,
+            save_twitch_display_name,
+        )
+        client_id = (
+            getattr(self._config, "twitch_client_id", "")
+            or DEFAULT_TWITCH_CLIENT_ID
+        )
+        name = fetch_twitch_display_name(self._twitch_token, client_id)
+        if name:
+            save_twitch_display_name(name)
+            self._twitch_display_name = name
 
     def _on_twitch_login(self):
         """Open Twitch OAuth login flow in a background thread."""
