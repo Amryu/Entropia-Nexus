@@ -43,6 +43,52 @@ def save_twitch_token(token: str) -> None:
     except Exception as exc:
         log.warning("Failed to save Twitch token to keyring: %s", exc)
 
+
+_DISPLAY_NAME_KEY = "twitch_display_name"
+
+
+def load_twitch_display_name() -> str:
+    """Load the cached Twitch display name from keyring."""
+    try:
+        name = keyring.get_password(_SERVICE_NAME, _DISPLAY_NAME_KEY)
+        return name or ""
+    except Exception:
+        return ""
+
+
+def save_twitch_display_name(name: str) -> None:
+    """Cache the Twitch display name in keyring."""
+    try:
+        if name:
+            keyring.set_password(_SERVICE_NAME, _DISPLAY_NAME_KEY, name)
+    except Exception:
+        pass
+
+
+def fetch_twitch_display_name(token: str, client_id: str) -> str:
+    """Fetch the authenticated user's display name from the Twitch API.
+
+    Call from a background thread.
+    """
+    import requests
+    try:
+        resp = requests.get(
+            "https://api.twitch.tv/helix/users",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Client-Id": client_id,
+            },
+            timeout=10,
+        )
+        if resp.ok:
+            data = resp.json().get("data", [])
+            if data:
+                return data[0].get("display_name", "")
+    except Exception as exc:
+        log.debug("Failed to fetch Twitch display name: %s", exc)
+    return ""
+
+
 _REDIRECT_PORT = 47833  # different from Nexus OAuth port (47832)
 _REDIRECT_URI = f"http://localhost:{_REDIRECT_PORT}"
 _SCOPES = "chat:read chat:edit"

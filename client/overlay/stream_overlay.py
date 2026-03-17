@@ -175,6 +175,7 @@ class StreamOverlay(OverlayWidget):
     _avatar_ready = pyqtSignal(str, QPixmap)
     _viewer_count_ready = pyqtSignal(int)
     _twitch_login_done = pyqtSignal()
+    _recent_messages_ready = pyqtSignal(list)
 
     def __init__(
         self,
@@ -201,8 +202,9 @@ class StreamOverlay(OverlayWidget):
         self._stream_rows: list[QWidget] = []
         self._size_btns: list[QPushButton] = []
 
-        from ..streaming.twitch_auth import load_twitch_token
+        from ..streaming.twitch_auth import load_twitch_token, load_twitch_display_name
         self._twitch_token = load_twitch_token()
+        self._twitch_display_name = load_twitch_display_name() or "You"
 
         # Container style
         self._container.setStyleSheet(
@@ -227,6 +229,7 @@ class StreamOverlay(OverlayWidget):
         self._avatar_ready.connect(self._on_avatar_ready)
         self._viewer_count_ready.connect(self._on_viewer_count_ready)
         self._twitch_login_done.connect(self._reconnect_chat_authenticated)
+        self._recent_messages_ready.connect(self._on_recent_messages)
 
         # Update login button if already authenticated
         if self._twitch_token:
@@ -1099,6 +1102,14 @@ class StreamOverlay(OverlayWidget):
         self._chat_client.start()
         self._chat_flush_timer.start()
 
+        # Load recent chat history in background
+        threading.Thread(
+            target=self._fetch_recent_messages,
+            args=(channel,),
+            daemon=True,
+            name=f"recent-msgs-{channel}",
+        ).start()
+
         # Load emotes in background
         self._ensure_emote_manager()
         if self._emote_manager:
@@ -1143,6 +1154,18 @@ class StreamOverlay(OverlayWidget):
         """Background thread: load channel-specific emotes."""
         if self._emote_manager and channel_id:
             self._emote_manager.load_channel_emotes(channel, channel_id)
+
+    def _fetch_recent_messages(self, channel: str):
+        """Background thread: fetch recent chat history."""
+        from ..streaming.twitch_chat import fetch_recent_messages
+        messages = fetch_recent_messages(channel)
+        if messages:
+            self._recent_messages_ready.emit(messages)
+
+    def _on_recent_messages(self, messages: list):
+        """Main-thread: prepend recent messages to chat."""
+        for msg in messages:
+            self._chat_buffer.append(msg)
 
     def _on_chat_message(self, msg: dict):
         """Slot: buffer incoming chat message (no UI work here)."""
@@ -1297,11 +1320,19 @@ class StreamOverlay(OverlayWidget):
 
     def _twitch_login_worker(self, client_id: str):
         """Background thread: run Twitch OAuth flow."""
-        from ..streaming.twitch_auth import twitch_login, save_twitch_token
+        from ..streaming.twitch_auth import (
+            twitch_login, save_twitch_token,
+            fetch_twitch_display_name, save_twitch_display_name,
+        )
         token = twitch_login(client_id)
         if token:
             save_twitch_token(token)
             self._twitch_token = token
+            # Fetch and cache display name
+            name = fetch_twitch_display_name(token, client_id)
+            if name:
+                save_twitch_display_name(name)
+                self._twitch_display_name = name
             self._twitch_login_done.emit()
 
     def _reconnect_chat_authenticated(self):
@@ -1330,7 +1361,7 @@ class StreamOverlay(OverlayWidget):
         # the echo-message cap, which requires additional handling)
         import time
         self._on_chat_message({
-            "display_name": "You",
+            "display_name": self._twitch_display_name,
             "color": ACCENT,
             "badges": [],
             "emotes": [],

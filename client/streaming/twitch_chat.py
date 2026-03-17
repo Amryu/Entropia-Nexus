@@ -99,6 +99,40 @@ def parse_badges_tag(badges_str: str) -> list[str]:
     return result
 
 
+def fetch_recent_messages(channel: str) -> list[dict]:
+    """Fetch recent chat messages via the recent-messages API.
+
+    Returns a list of parsed message dicts (same format as message_received).
+    Call from a background thread.
+    """
+    import requests
+    url = f"https://recent-messages.robotty.de/api/v2/recent-messages/{channel}"
+    try:
+        resp = requests.get(url, timeout=10)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        messages = []
+        for raw in data.get("messages", []):
+            match = _PRIVMSG_RE.match(raw)
+            if not match:
+                continue
+            tag_str, _user, _ch, message = match.groups()
+            tags = parse_tags(tag_str) if tag_str else {}
+            messages.append({
+                "display_name": tags.get("display-name", ""),
+                "color": tags.get("color", ""),
+                "badges": parse_badges_tag(tags.get("badges", "")),
+                "emotes": parse_emotes_tag(tags.get("emotes", "")),
+                "message": message,
+                "timestamp": float(tags.get("tmi-sent-ts", "0")) / 1000.0,
+            })
+        return messages
+    except Exception as exc:
+        log.debug("Recent messages fetch failed: %s", exc)
+        return []
+
+
 class TwitchChatClient(QThread):
     """Twitch IRC chat client running on a QThread.
 
