@@ -199,6 +199,8 @@ class StreamOverlay(OverlayWidget):
         self._rendered_messages: list[dict] = []
         self._pending_emote_ids: set[str] = set()
         self._chat_was_visible_before_minify = True
+        # Map of emote text → emote ID, learned from incoming messages
+        self._known_twitch_emotes: dict[str, str] = {}
         self._current_channel = ""
         self._current_channel_id = ""
         self._avatar_labels: dict[str, QLabel] = {}
@@ -1162,14 +1164,22 @@ class StreamOverlay(OverlayWidget):
                 os.path.expanduser("~"), ".entropia-nexus", "emote_cache"
             )
             self._emote_manager = EmoteManager(cache_dir)
-            # Load globals in background
+            # Load globals + Twitch emote names in background
             threading.Thread(
-                target=self._emote_manager.load_global_emotes,
+                target=self._load_global_emotes,
                 daemon=True,
                 name="emotes-global",
             ).start()
         except Exception as exc:
             log.debug("Failed to create EmoteManager: %s", exc)
+
+    def _load_global_emotes(self):
+        """Background thread: load third-party globals + Twitch emote name map."""
+        if self._emote_manager:
+            self._emote_manager.load_global_emotes()
+            # Load Twitch global emote name→ID map for sent message resolution
+            name_map = self._emote_manager.load_twitch_global_emote_names()
+            self._known_twitch_emotes.update(name_map)
 
     def _on_room_id(self, room_id: str):
         """Main-thread: Twitch user ID received — load channel emotes."""
@@ -1209,6 +1219,13 @@ class StreamOverlay(OverlayWidget):
 
     def _on_chat_message(self, msg: dict):
         """Slot: buffer incoming chat message (no UI work here)."""
+        # Learn emote text→ID mapping from incoming messages
+        message_text = msg.get("message", "")
+        for e in msg.get("emotes", []):
+            start, end = e["start"], e["end"] + 1
+            if 0 <= start < end <= len(message_text):
+                emote_text = message_text[start:end]
+                self._known_twitch_emotes[emote_text] = e["id"]
         self._chat_buffer.append(msg)
 
     def _flush_chat(self):
@@ -1482,16 +1499,36 @@ class StreamOverlay(OverlayWidget):
         self._chat_client.send_message(text)
         self._chat_input.clear()
         # Twitch does NOT echo your own messages back — show locally.
-        # Third-party emotes will be resolved by _render_text_with_third_party.
+        # Build emote positions from known emote text→ID mappings so
+        # Twitch native emotes render in our own messages too.
+        emotes = self._build_emote_tags(text)
         import time
         self._on_chat_message({
             "display_name": self._twitch_display_name,
             "color": ACCENT,
             "badges": [],
-            "emotes": [],
+            "emotes": emotes,
             "message": text,
             "timestamp": time.time(),
         })
+
+    def _build_emote_tags(self, text: str) -> list[dict]:
+        """Build Twitch emote position tags for a message from known emotes."""
+        if not self._known_twitch_emotes:
+            return []
+        emotes = []
+        words = text.split(" ")
+        pos = 0
+        for word in words:
+            emote_id = self._known_twitch_emotes.get(word)
+            if emote_id:
+                emotes.append({
+                    "id": emote_id,
+                    "start": pos,
+                    "end": pos + len(word) - 1,
+                })
+            pos += len(word) + 1  # +1 for the space
+        return emotes
 
     # ------------------------------------------------------------------
     # Viewer count polling

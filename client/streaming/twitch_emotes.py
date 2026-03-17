@@ -54,6 +54,34 @@ class EmoteManager:
     # Public API (call from background threads)
     # ------------------------------------------------------------------
 
+    def load_twitch_global_emote_names(self) -> dict[str, str]:
+        """Fetch Twitch global emote name→ID mappings.
+
+        Returns {emote_name: emote_id}. Call from a background thread.
+        Uses the public Twitch emote endpoint (no auth required).
+        """
+        name_map: dict[str, str] = {}
+        try:
+            # Twitch public emote set for global emotes (set ID 0)
+            url = "https://api.twitch.tv/helix/chat/emotes/global"
+            # This endpoint requires Client-ID but no OAuth token
+            from .twitch_auth import DEFAULT_TWITCH_CLIENT_ID
+            resp = requests.get(
+                url,
+                headers={"Client-Id": DEFAULT_TWITCH_CLIENT_ID},
+                timeout=_REQUEST_TIMEOUT,
+            )
+            if resp.ok:
+                for e in resp.json().get("data", []):
+                    name = e.get("name", "")
+                    eid = e.get("id", "")
+                    if name and eid:
+                        name_map[name] = eid
+                log.debug("Loaded %d Twitch global emote names", len(name_map))
+        except Exception as exc:
+            log.debug("Twitch global emote names fetch failed: %s", exc)
+        return name_map
+
     def load_global_emotes(self) -> dict[str, str]:
         """Fetch global emotes from BTTV, FFZ, 7TV. Returns the emote map.
 
