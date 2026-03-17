@@ -2925,10 +2925,15 @@ class LoadoutPage(QWidget):
     def _on_loadout_selected(self, index, *, _prompt=True):
         if index < 0 or index >= len(self._loadouts):
             return
+        if self._applying:
+            return
 
         # Prompt if the previous loadout has unsaved changes (user-initiated only)
         if _prompt and self._dirty and self._current_loadout:
             label = _get_loadout_label(self._current_loadout)
+            # Pause polling while the modal dialog is open so
+            # _merge_remote_loadouts can't rebuild the dropdown.
+            self._poll_timer.stop()
             reply = QMessageBox.question(
                 self, "Unsaved Changes",
                 f'"{label}" has unsaved changes.\n\nSave before switching?',
@@ -2936,6 +2941,7 @@ class LoadoutPage(QWidget):
                 | QMessageBox.StandardButton.Discard
                 | QMessageBox.StandardButton.Cancel,
             )
+            self._poll_timer.start()
             if reply == QMessageBox.StandardButton.Cancel:
                 # Revert combo to the previous loadout
                 prev_idx = self._loadouts.index(self._current_loadout) \
@@ -3591,6 +3597,8 @@ class LoadoutPage(QWidget):
         # Refresh combo while preserving selection
         active_id = self._config.active_loadout_id
         accent_color = QColor(ACCENT)
+        # Keep signals blocked for the entire rebuild + restore cycle
+        # to prevent stale currentIndexChanged(-1) from .clear().
         self._loadout_combo.blockSignals(True)
         self._loadout_combo.clear()
         for i, lo in enumerate(self._loadouts):
@@ -3601,25 +3609,23 @@ class LoadoutPage(QWidget):
             self._loadout_combo.addItem(label)
             if is_active:
                 self._loadout_combo.setItemData(i, QBrush(accent_color), Qt.ItemDataRole.ForegroundRole)
-        self._loadout_combo.blockSignals(False)
 
-        # Restore selection
+        # Restore selection (still blocked)
         restored = False
         if current_id:
             for i, lo in enumerate(self._loadouts):
                 if lo.get("Id") == current_id:
-                    self._loadout_combo.blockSignals(True)
                     self._loadout_combo.setCurrentIndex(i)
-                    self._loadout_combo.blockSignals(False)
                     self._current_loadout = lo
                     if conflict_resolved_use_remote:
                         self._apply_loadout_to_ui(lo)
                     restored = True
                     break
         if not restored and self._loadouts:
-            self._loadout_combo.blockSignals(True)
             self._loadout_combo.setCurrentIndex(0)
-            self._loadout_combo.blockSignals(False)
+        self._loadout_combo.blockSignals(False)
+
+        if not restored and self._loadouts:
             self._on_loadout_selected(0, _prompt=False)
 
         self._poll_timer.start()  # Resume polling
