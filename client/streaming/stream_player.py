@@ -429,12 +429,15 @@ class StreamPlayer(QObject):
         import mpv
 
         wid = str(int(self._widget.winId()))
+        def _mpv_log(loglevel, component, message):
+            log.debug("[mpv/%s] %s: %s", loglevel, component, message)
+
         self._player = mpv.MPV(
             wid=wid,
-            log_level="warn",
+            loglevel="warn",
+            log_handler=_mpv_log,
             ytdl=False,
             input_default_bindings=False,
-            input_vo_keyboard=False,
         )
         self._player.volume = self._volume
         self._player.mute = self._muted
@@ -472,7 +475,7 @@ class StreamPlayer(QObject):
             self._url_resolved.emit(stream_url)
 
         except Exception as exc:
-            log.debug("Stream resolution failed for %s: %s", channel, exc)
+            log.error("Stream resolution failed for %s: %s", channel, exc)
             self.stream_error.emit(str(exc))
             self._resolving = False
 
@@ -485,5 +488,5 @@ class StreamPlayer(QObject):
             self._paused = False
             self.stream_started.emit()
         except Exception as exc:
-            log.debug("mpv play failed: %s", exc)
+            log.error("mpv play failed: %s", exc)
             self.stream_error.emit(str(exc))
