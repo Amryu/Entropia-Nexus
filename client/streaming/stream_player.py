@@ -462,9 +462,9 @@ class StreamPlayer(QObject):
             # Use d3d11 context for native child window inside layered overlay
             gpu_context="d3d11",
             # Live stream cache: small forward buffer, no backward buffer
-            demuxer_max_bytes=str(2 * 1024 * 1024),       # 2 MB forward
+            demuxer_max_bytes=str(4 * 1024 * 1024),       # 4 MB forward
             demuxer_max_back_bytes=str(0),                  # no backward
-            cache_secs=str(5),                              # 5s live buffer
+            cache_secs=str(10),                             # 10s live buffer
         )
         self._player.volume = self._volume
         self._player.mute = self._muted
