@@ -40,13 +40,12 @@ MAX_MESSAGES_PER_FLUSH = 50
 
 # Size presets (video area, 16:9)
 _SIZE_PRESETS = [
-    (400, 225),   # Small
-    (640, 360),   # Medium
-    (854, 480),   # Large
+    (400, 225),    # Small
+    (640, 360),    # Medium
+    (854, 480),    # Large
+    (1280, 720),   # XL
 ]
-_SIZE_LABELS = ["S", "M", "L"]
-# Stream quality matching each size preset (streamlink quality names)
-_SIZE_QUALITIES = ["480p", "480p", "720p"]
+_SIZE_LABELS = ["S", "M", "L", "XL"]
 
 # --- Pages ---
 _PAGE_LIST = 0
@@ -991,9 +990,7 @@ class StreamOverlay(OverlayWidget):
         self._stream_player.stream_error.connect(self._on_stream_error)
         self._stream_player.stream_ended.connect(self._on_stream_ended)
         self._stream_player.set_volume(self._vol_slider.value())
-        idx = self._config.stream_overlay_size_preset
-        idx = max(0, min(len(_SIZE_QUALITIES) - 1, idx))
-        self._stream_player.play_channel(channel, quality=_SIZE_QUALITIES[idx])
+        self._stream_player.play_channel(channel, quality="720p")
 
         # Start chat
         self._start_chat(channel, channel_id)
@@ -1096,18 +1093,9 @@ class StreamOverlay(OverlayWidget):
     # ------------------------------------------------------------------
 
     def _on_size_clicked(self, index: int):
-        old_idx = self._config.stream_overlay_size_preset
         self._apply_size_preset(index)
         self._config.stream_overlay_size_preset = index
         save_config(self._config, self._config_path)
-
-        # Restart stream at new quality if it changed
-        old_q = _SIZE_QUALITIES[max(0, min(len(_SIZE_QUALITIES) - 1, old_idx))]
-        new_q = _SIZE_QUALITIES[max(0, min(len(_SIZE_QUALITIES) - 1, index))]
-        if old_q != new_q and self._stream_player and self._current_channel:
-            self._stream_player.play_channel(
-                self._current_channel, quality=new_q,
-            )
 
     def _apply_size_preset(self, index: int):
         """Resize the overlay based on the preset index (player view)."""
