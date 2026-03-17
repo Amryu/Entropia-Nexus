@@ -755,6 +755,11 @@ class StreamOverlay(OverlayWidget):
 
     def _toggle_minify(self):
         expanding = not self._body.isVisible()
+        if not expanding:
+            # Save chat state BEFORE hiding the body — once the body is
+            # hidden, isVisible() returns False for all children.
+            self._chat_was_visible_before_minify = self._chat_panel.isVisible()
+            self._chat_panel.setVisible(False)
         self._body.setVisible(expanding)
         if expanding:
             self._title_bar.setStyleSheet(
@@ -770,9 +775,6 @@ class StreamOverlay(OverlayWidget):
             else:
                 self._apply_size_preset(self._config.stream_overlay_size_preset)
         else:
-            # Remember chat state and hide it
-            self._chat_was_visible_before_minify = self._chat_panel.isVisible()
-            self._chat_panel.setVisible(False)
             self._chat_toggle_btn.setEnabled(False)
             self._title_bar.setStyleSheet(
                 f"background-color: {TITLE_BG}; border-radius: 8px;"
