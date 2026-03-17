@@ -760,14 +760,14 @@ class StreamOverlay(OverlayWidget):
                 f"background-color: {TITLE_BG};"
                 " border-top-left-radius: 8px; border-top-right-radius: 8px;"
             )
+            # Restore chat panel before resizing so the size accounts for it
+            if self._chat_was_visible_before_minify:
+                self._chat_panel.setVisible(True)
+            self._chat_toggle_btn.setEnabled(True)
             if self._stack.currentIndex() == _PAGE_LIST:
                 self._apply_list_size()
             else:
                 self._apply_size_preset(self._config.stream_overlay_size_preset)
-            # Restore chat panel if it was open before minifying
-            if self._chat_was_visible_before_minify:
-                self._chat_panel.setVisible(True)
-            self._chat_toggle_btn.setEnabled(True)
         else:
             # Remember chat state and hide it
             self._chat_was_visible_before_minify = self._chat_panel.isVisible()
@@ -776,7 +776,14 @@ class StreamOverlay(OverlayWidget):
             self._title_bar.setStyleSheet(
                 f"background-color: {TITLE_BG}; border-radius: 8px;"
             )
-            self.setFixedSize(self.width(), TITLE_H)
+            # Use video-only width (no chat) for minified bar
+            if self._stack.currentIndex() == _PAGE_LIST:
+                w = 320
+            else:
+                idx = self._config.stream_overlay_size_preset
+                idx = max(0, min(len(_SIZE_PRESETS) - 1, idx))
+                w = _SIZE_PRESETS[idx][0]
+            self.setFixedSize(w, TITLE_H)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
