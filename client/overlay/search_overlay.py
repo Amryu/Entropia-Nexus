@@ -54,6 +54,7 @@ _MENU_ITEMS = [
     {"label": "Notifications", "shortcut": "Ctrl+N", "action": "notifications"},
     {"label": "Recording", "shortcut": "Ctrl+R", "action": "recording"},
     {"label": "Gallery", "shortcut": "Ctrl+G", "action": "gallery"},
+    {"label": "Streams", "shortcut": "", "action": "streams"},
     *([{"label": "Custom Grid", "shortcut": "", "action": "custom_grid"}]
       if not getattr(sys, "frozen", False) else []),
 ]

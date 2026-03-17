@@ -62,6 +62,11 @@ class AppConfig:
     gallery_overlay_position: tuple[int, int] = (100, 100)
     gallery_overlay_size: tuple[int, int] = (350, 500)
     map_overlay_size: int = 1  # 0=Small, 1=Medium, 2=Large
+    stream_overlay_position: tuple[int, int] = (100, 100)
+    stream_overlay_size_preset: int = 1  # 0=Small, 1=Medium, 2=Large
+    stream_overlay_chat_visible: bool = True
+    stream_overlay_volume: int = 80
+    stream_custom_streamers: list[str] = field(default_factory=list)
     overlay_opacity: float = 0.85
     overlay_enabled: bool = True
     auto_pin_detail_overlay: bool = False
@@ -148,6 +153,7 @@ class AppConfig:
     # Streams
     stream_notifications_enabled: bool = True
     stream_exclude_list: list[str] = field(default_factory=list)
+    twitch_client_id: str = ""
 
     # Tracker — Dailies & Events
     tracker_missions: list = field(default_factory=list)
@@ -349,6 +355,11 @@ DEFAULTS = {
     "profile_overlay_position": [450, 50],
     "society_overlay_position": [450, 50],
     "map_overlay_size": 1,
+    "stream_overlay_position": [100, 100],
+    "stream_overlay_size_preset": 1,
+    "stream_overlay_chat_visible": True,
+    "stream_overlay_volume": 80,
+    "stream_custom_streamers": [],
     "overlay_opacity": 0.85,
     "overlay_enabled": True,
     "auto_pin_detail_overlay": False,
@@ -403,6 +414,7 @@ DEFAULTS = {
     "trade_chat_keywords": [],
     "stream_notifications_enabled": True,
     "stream_exclude_list": [],
+    "twitch_client_id": "",
     "tracker_missions": [],
     "tracker_event_reminders": [],
     "dashboard_globals_min_value": 0.0,
@@ -621,7 +633,7 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         "confirm_overlay_position", "profile_overlay_position",
         "society_overlay_position",
         "recording_bar_overlay_position", "gallery_overlay_position",
-        "gallery_overlay_size",
+        "gallery_overlay_size", "stream_overlay_position",
         "mob_name_region", "tool_name_region",
         "radar_origin_offset", "radar_lon_roi", "radar_lat_roi",
     ):

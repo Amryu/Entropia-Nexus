@@ -2134,6 +2134,14 @@ class SettingsPage(QWidget):
         self._oauth_client_id = QLineEdit(self._config.oauth_client_id)
         self._oauth_client_id.setFixedWidth(_PATH_MAX_W)
         adv_grid.addWidget(self._oauth_client_id, adv_row, 1)
+        adv_row += 1
+
+        # Twitch Client ID override
+        adv_grid.addWidget(QLabel("Twitch Client ID:"), adv_row, 0)
+        self._twitch_client_id = QLineEdit(self._config.twitch_client_id)
+        self._twitch_client_id.setFixedWidth(_PATH_MAX_W)
+        self._twitch_client_id.setPlaceholderText("(built-in default)")
+        adv_grid.addWidget(self._twitch_client_id, adv_row, 1)
 
         layout.addLayout(adv_grid)
 
@@ -2273,6 +2281,7 @@ class SettingsPage(QWidget):
         self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()
+        self._config.twitch_client_id = self._twitch_client_id.text()
 
         # Dashboard — Globals
         self._config.dashboard_globals_min_value = self._dash_globals_min.value()

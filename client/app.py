@@ -334,6 +334,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     _notifications_overlay = None
     _recording_bar = None
     _gallery_overlay = None
+    _stream_overlay = None
     _custom_grid_overlays: dict = {}
     _grid_manager_dialog = None
 
@@ -630,6 +631,17 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             )
             return _gallery_overlay
 
+        def _ensure_stream_overlay():
+            nonlocal _stream_overlay
+            if _stream_overlay is not None:
+                return _stream_overlay
+            from .overlay.stream_overlay import StreamOverlay
+            _stream_overlay = StreamOverlay(
+                config=config, config_path=config_path,
+                nexus_client=nexus_client, manager=overlay_manager,
+            )
+            return _stream_overlay
+
         def _ensure_custom_grid(grid_id: str):
             """Return (and lazily create) the overlay instance for grid_id."""
             nonlocal _custom_grid_overlays
@@ -720,6 +732,14 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             else:
                 overlay.set_wants_visible(False)
 
+        def _toggle_stream_overlay():
+            overlay = _ensure_stream_overlay()
+            if not overlay.isVisible():
+                overlay.set_wants_visible(True)
+                overlay.raise_()
+            else:
+                overlay.set_wants_visible(False)
+
         # Auto-show recording bar when recording starts
         def _auto_show_recording_bar(data):
             bar = _ensure_recording_bar()
@@ -754,6 +774,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     _toggle_map_overlay()
                 elif action_data == "notifications":
                     _toggle_notifications_overlay()
+                elif action_data == "streams":
+                    _toggle_stream_overlay()
 
         toast_manager.toast_action_triggered.connect(_on_toast_action)
 
@@ -907,6 +929,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     _toggle_gallery_overlay()
                 elif action == "custom_grid":
                     _toggle_custom_grid_overlay()
+                elif action == "streams":
+                    _toggle_stream_overlay()
 
             _search_overlay.menu_action.connect(_on_search_menu_action)
 

@@ -11,4 +11,7 @@ obsws-python>=1.6.0
 sounddevice>=0.5.0; sys_platform == "win32"
 windows-capture>=1.5.0; sys_platform == "win32"
 onnxruntime>=1.18.0
+streamlink>=6.0.0
+python-mpv>=1.0.0
+websockets>=12.0
 python-xlib>=0.33; sys_platform == "linux"
