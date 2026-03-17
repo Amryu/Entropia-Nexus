@@ -113,6 +113,13 @@ Use **one** of these — nothing else:
 
 Auto commit changes when substantial work has been done or a fix has been confirmed. Do not commit obvious experiments or debugging attempts (whenever something is incomplete). Be careful to not include any stray script files, passwords or other unwanted files/data.
 
+## Client Release Checklist
+
+Files to update for a version bump:
+1. `client/VERSION` — single line with version number (e.g. `0.4.1`)
+2. `client/data/changelog.json` — prepend new version entry with date and changes
+3. Git tag: `client-X.Y.Z` on the release commit
+
 # Testing
 
 Create/update e2e tests when editing code.

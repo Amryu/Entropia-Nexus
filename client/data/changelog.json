@@ -1,5 +1,27 @@
 [
   {
+    "version": "0.4.1",
+    "date": "2026-03-17",
+    "changes": [
+      {"type": "feat", "text": "Individual armor slot editing — manage armor pieces per slot (Head/Torso/Arms/Hands/Legs/Shins/Feet) with toggle between set and individual modes, matching the website's loadout editor"},
+      {"type": "feat", "text": "Skills tab shows total skill points (with decimals, excluding Social) and average profession level in the toolbar, updating live with filter changes and skill gains"},
+      {"type": "feat", "text": "XL stream size preset (1280×720) for native 720p viewing"},
+      {"type": "feat", "text": "GPU hardware decoding (DXVA2/D3D11VA/NVDEC) for stream playback — lower CPU usage"},
+      {"type": "feat", "text": "Chat toggle button highlighted when chat is open, matching the S/M/L button style"},
+      {"type": "fix", "text": "Stream overlay segfault prevention: guard deferred mpv playback against stop/cleanup races, validate HWND before mpv creation"},
+      {"type": "fix", "text": "Loadout dropdown no longer becomes unresponsive (signal blocking race during periodic merge, modal dialog allowing poll timer to rebuild dropdown)"},
+      {"type": "fix", "text": "Skills dashboard no longer shows visual reset after 5-minute periodic rebuild (live gains re-injected into timeseries after DB reload)"},
+      {"type": "fix", "text": "Stream overlay chat panel properly restores on un-minify (chat state saved before hiding parent)"},
+      {"type": "fix", "text": "Stream overlay correctly accounts for chat width on initial open (page switch before resize)"},
+      {"type": "fix", "text": "Minified stream bar uses video-only width instead of including chat panel width"},
+      {"type": "fix", "text": "Mute/pause/play buttons reset to default state when switching between streams"},
+      {"type": "fix", "text": "Stream overlay properly returns to stream list on close, allowing re-open to work"},
+      {"type": "fix", "text": "Reduced stream memory usage: 10s forward buffer with no backward buffer (down from 150 MB default)"},
+      {"type": "fix", "text": "All streams use 720p quality regardless of window size to balance quality and bandwidth"},
+      {"type": "fix", "text": "Build: fix keyring crash from excluded _cffi_backend breaking pywin32-ctypes, bundle streamlink/mpv/websockets"}
+    ]
+  },
+  {
     "version": "0.4.0",
     "date": "2026-03-17",
     "changes": [
