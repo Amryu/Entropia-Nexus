@@ -709,6 +709,17 @@ class SkillsPage(QWidget):
         toolbar.addWidget(self._skills_clear_btn)
 
         toolbar.addStretch()
+
+        self._skills_total_label = QLabel("")
+        self._skills_total_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        toolbar.addWidget(self._skills_total_label)
+
+        self._skills_avg_prof_label = QLabel("")
+        self._skills_avg_prof_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; margin-left: 8px;"
+        )
+        toolbar.addWidget(self._skills_avg_prof_label)
+
         layout.addLayout(toolbar)
 
         # Grid view — virtual scroll (only visible cards are created)
@@ -1357,12 +1368,40 @@ class SkillsPage(QWidget):
             elif sort_idx == 5:
                 filtered.sort(key=lambda s: gains.get(s["Name"], 0), reverse=True)
 
+            # Compute summary stats from filtered skills
+            _SOCIAL = {"Promoter Rating", "Reputation"}
+            # Merge live gains into values for accurate totals
+            live_values = dict(values)
+            for name, gain in gains.items():
+                live_values[name] = live_values.get(name, 0) + gain
+            total_points = sum(
+                live_values.get(s["Name"], 0)
+                for s in filtered
+                if s["Name"] not in _SOCIAL
+            )
+            # Average profession level
+            profs = self._manager.professions
+            if profs and live_values:
+                prof_levels = calculate_all_profession_levels(
+                    live_values, profs, meta,
+                )
+                if skill_filter_prof and skill_filter_prof in prof_levels:
+                    avg_prof = prof_levels[skill_filter_prof]
+                elif prof_levels:
+                    avg_prof = sum(prof_levels.values()) / len(prof_levels)
+                else:
+                    avg_prof = 0.0
+            else:
+                avg_prof = 0.0
+
+            stats = (total_points, avg_prof)
+
             if view_mode == "grid":
                 # Build row model for virtual grid
                 return ("grid", self._build_skills_row_model(
                     filtered, values, meta, gains, rank_thresholds,
                     skill_filter_prof, sort_idx, skills_viewport_w,
-                ))
+                ), stats)
             else:
                 # Build table row data
                 rows = []
@@ -1376,12 +1415,12 @@ class SkillsPage(QWidget):
                     dimmed = points == 0 and gain < 0.001
                     rows.append((name, skill.get("Category") or "", rank,
                                  points, gain, hp_inc, badges, dimmed))
-                return ("table", rows)
+                return ("table", rows, stats)
 
         def apply(result):
             if self._skills_version != version:
                 return
-            kind, data = result
+            kind, data, stats = result
             try:
                 if kind == "grid":
                     self._apply_skills_grid(data)
@@ -1389,6 +1428,10 @@ class SkillsPage(QWidget):
                     self._apply_skills_table(data)
             except RuntimeError:
                 pass
+            # Update summary labels
+            total_points, avg_prof = stats
+            self._skills_total_label.setText(f"Total: {total_points:,.2f}")
+            self._skills_avg_prof_label.setText(f"Avg Prof: {avg_prof:,.1f}")
 
         if sync:
             try:
@@ -1396,7 +1439,8 @@ class SkillsPage(QWidget):
             except Exception:
                 log.exception("skills compute error")
                 result = ("grid" if view_mode == "grid" else "table",
-                          ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [])
+                          ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [],
+                          (0.0, 0.0))
             apply(result)
             return
 
@@ -1406,7 +1450,8 @@ class SkillsPage(QWidget):
             except Exception:
                 log.exception("skills compute error")
                 result = ("grid" if view_mode == "grid" else "table",
-                          ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [])
+                          ([], 0, CARD_MIN_WIDTH, False) if view_mode == "grid" else [],
+                          (0.0, 0.0))
             invoke_on_main(lambda: apply(result))
 
         threading.Thread(target=worker, daemon=True, name="skills-grid").start()
