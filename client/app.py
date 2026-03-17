@@ -432,13 +432,13 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
-    workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated()))
+    workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated(), data_client=data_client))
     workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_distributor))
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
     workers.extend(_start_target_lock_detector(config, event_bus, frame_distributor))
-    workers.extend(_start_player_status_detector(config, event_bus, frame_distributor))
+    workers.extend(_start_player_status_detector(config, event_bus, frame_distributor, data_client))
     workers.extend(_start_market_price_detector(config, event_bus, frame_distributor, data_client))
     # workers.extend(_start_radar_detector(config, event_bus, frame_distributor, config_path))
 
@@ -1266,7 +1266,7 @@ def _run_headless(config, event_bus, db):
     data_client = DataClient(config)
 
     workers = []
-    workers.extend(_start_chat_watcher(config, event_bus, db))
+    workers.extend(_start_chat_watcher(config, event_bus, db, data_client=data_client))
     workers.extend(_start_ocr_pipeline(config, event_bus, db))
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
@@ -1297,12 +1297,20 @@ def _run_headless(config, event_bus, db):
     log.info("Goodbye")
 
 
-def _start_chat_watcher(config, event_bus, db, *, authenticated=False):
+def _start_chat_watcher(config, event_bus, db, *, authenticated=False, data_client=None):
     """Start the chat log watcher. Returns list of stoppable workers."""
     workers = []
     try:
         from .chat_parser.watcher import ChatLogWatcher
+        from .hunt.entity_resolver import EntityResolver
+
         watcher = ChatLogWatcher(config, event_bus, db, authenticated=authenticated)
+
+        # Wire item ID resolver so loot_events can store IDs instead of names
+        resolver = EntityResolver(data_client)
+        resolver.warmup()
+        watcher.set_item_resolver(resolver.resolve_item)
+
         watcher.start()
         workers.append(watcher)
         log.info("Chat watcher started: %s", config.chat_log_path)
@@ -1446,7 +1454,7 @@ def _start_target_lock_detector(config, event_bus, frame_cache=None):
     return workers
 
 
-def _start_player_status_detector(config, event_bus, frame_cache=None):
+def _start_player_status_detector(config, event_bus, frame_cache=None, data_client=None):
     """Start the player status (heart) detector. Returns list of stoppable workers."""
     workers = []
     if not getattr(config, "player_status_enabled", True):
@@ -1456,7 +1464,7 @@ def _start_player_status_detector(config, event_bus, frame_cache=None):
         if frame_cache is None:
             from .ocr.capturer import ScreenCapturer
             frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
-        detector = PlayerStatusDetector(config, event_bus, frame_cache)
+        detector = PlayerStatusDetector(config, event_bus, frame_cache, data_client=data_client)
         detector.start()
         workers.append(detector)
         log.info("Player status detector started")

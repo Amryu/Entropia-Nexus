@@ -30,7 +30,12 @@ try:
 except ImportError:
     cv2 = None
 
-from ..core.constants import EVENT_PLAYER_STATUS_UPDATE, EVENT_PLAYER_STATUS_LOST, GAME_TITLE_PREFIX
+from ..core.constants import (
+    EVENT_ACTIVE_TOOL_CHANGED,
+    EVENT_PLAYER_STATUS_UPDATE,
+    EVENT_PLAYER_STATUS_LOST,
+    GAME_TITLE_PREFIX,
+)
 from ..core.logger import get_logger
 from ..platform import backend as _platform
 
@@ -70,6 +75,14 @@ TOOL_TEXT_MIN_RATIO = 0.05       # at least 5% bright pixels = has text
 # --- Layout shift ---
 NO_TOOL_BAR_OFFSET = 8  # px bars shift down when no tool equipped
 
+# --- Tool name OCR ---
+STPK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "stpk")
+TOOL_STPK_FILE = "tool_text.stpk"
+TOOL_OCR_BRIGHTNESS = 80       # text brightness threshold
+TOOL_OCR_MAX_CHAR_W = 9        # Arial Unicode MS 12 chars are ~7-9px wide
+TOOL_OCR_VALLEY_THRESHOLD = 20  # column-sum threshold for blob splitting
+MIN_TOOL_OCR_CONFIDENCE = 0.50  # minimum STPK read confidence to attempt matching
+
 
 def _precompute_color_ranges(colors, tolerance=COLOR_TOLERANCE):
     """Pre-compute (lower, upper) BGR bounds for cv2.inRange."""
@@ -89,7 +102,7 @@ class PlayerStatusDetector:
     fast vectorized color matching.
     """
 
-    def __init__(self, config, event_bus, frame_source):
+    def __init__(self, config, event_bus, frame_source, data_client=None):
         self._config = config
         self._event_bus = event_bus
 
@@ -139,6 +152,19 @@ class PlayerStatusDetector:
         self._reload_pct: float | None = None
         self._tool_equipped = True  # assume equipped until checked
 
+        # Tool name OCR state
+        self._tool_text_reader = None
+        self._tool_name_matcher = None
+        self._last_tool_name: str | None = None
+        self._last_tool_pixels: np.ndarray | None = None
+        self._load_tool_stpk()
+        if data_client:
+            try:
+                from .tool_name_matcher import ToolNameMatcher
+                self._tool_name_matcher = ToolNameMatcher(data_client)
+            except Exception as e:
+                log.warning("Tool name matcher not available: %s", e)
+
         # Idle mode tracking
         self._idle_ticks = 0  # consecutive ticks with no data change
         self._last_health_pct: float | None = None
@@ -182,6 +208,25 @@ class PlayerStatusDetector:
         total_px = self._template_h * self._template_w
         log.info("Template loaded: %dx%d (%d/%d opaque)",
                  self._template_w, self._template_h, opaque_px, total_px)
+
+    def _load_tool_stpk(self):
+        """Load STPK templates for tool name OCR."""
+        stpk_path = os.path.join(STPK_DIR, TOOL_STPK_FILE)
+        if not os.path.exists(stpk_path):
+            log.info("Tool name STPK not found: %s — tool name OCR disabled", stpk_path)
+            return
+        try:
+            from .stpk_text_reader import StpkTextReader
+            self._tool_text_reader = StpkTextReader.from_stpk(
+                stpk_path,
+                brightness_threshold=TOOL_OCR_BRIGHTNESS,
+                max_single_char_w=TOOL_OCR_MAX_CHAR_W,
+                valley_threshold=TOOL_OCR_VALLEY_THRESHOLD,
+                right_align=False,
+            )
+            log.info("Tool name STPK loaded: %s", stpk_path)
+        except Exception as e:
+            log.warning("Failed to load tool STPK: %s", e)
 
     def set_game_hwnd(self, hwnd: int,
                       geometry: tuple[int, int, int, int] | None = None):
@@ -561,6 +606,72 @@ class PlayerStatusDetector:
         bright_pixels = int(np.count_nonzero(gray > TOOL_BRIGHTNESS_THRESHOLD))
         total_pixels = gray.size
         self._tool_equipped = bright_pixels > (total_pixels * TOOL_TEXT_MIN_RATIO)
+
+        # OCR the tool name when a tool is equipped
+        if self._tool_equipped and self._tool_text_reader is not None:
+            self._read_tool_name(region)
+        elif not self._tool_equipped and self._last_tool_name is not None:
+            # Tool was unequipped — clear and notify
+            self._last_tool_name = None
+            self._last_tool_pixels = None
+            self._event_bus.publish(EVENT_ACTIVE_TOOL_CHANGED, {
+                "tool_name": None,
+                "candidates": [],
+                "confidence": 0.0,
+                "ocr_raw": "",
+                "source": "stpk",
+            })
+
+    # ------------------------------------------------------------------
+    # Tool name OCR
+    # ------------------------------------------------------------------
+
+    def _read_tool_name(self, tool_region: np.ndarray):
+        """OCR the equipped tool name from the tool_name ROI.
+
+        Uses STPK blob matching to read the text, then Levenshtein
+        matching against known equippable items. Publishes
+        EVENT_ACTIVE_TOOL_CHANGED when the detected tool changes.
+        """
+        # Pixel-change check — skip OCR if region is unchanged
+        if (self._last_tool_pixels is not None
+                and tool_region.shape == self._last_tool_pixels.shape
+                and np.array_equal(tool_region, self._last_tool_pixels)):
+            return
+        self._last_tool_pixels = tool_region.copy()
+
+        # STPK text reading
+        raw_text, confidence, per_char_scores = self._tool_text_reader.read_text(
+            tool_region,
+        )
+
+        if not raw_text or confidence < MIN_TOOL_OCR_CONFIDENCE:
+            return
+
+        # Levenshtein matching against known items
+        matched_name = raw_text
+        candidates: list[str] = []
+
+        if self._tool_name_matcher is not None:
+            result = self._tool_name_matcher.match_prefix(
+                raw_text, per_char_scores, confidence,
+            )
+            matched_name = result.matched_name
+            candidates = result.candidates
+            confidence = result.confidence
+
+        # Only publish if the tool name actually changed
+        if matched_name == self._last_tool_name:
+            return
+
+        self._last_tool_name = matched_name
+        self._event_bus.publish(EVENT_ACTIVE_TOOL_CHANGED, {
+            "tool_name": matched_name,
+            "candidates": candidates,
+            "confidence": confidence,
+            "ocr_raw": raw_text,
+            "source": "stpk",
+        })
 
     # ------------------------------------------------------------------
     # ROI helper (for overlay debug / generic reads)
