@@ -436,8 +436,17 @@ class StreamPlayer(QObject):
             return
 
         import mpv
+        from PyQt6.QtCore import Qt
+
+        # Force the video widget to create its own native HWND so mpv can
+        # render to it independently of the parent overlay's layered window.
+        self._widget.setAttribute(
+            Qt.WidgetAttribute.WA_DontCreateNativeAncestors
+        )
+        self._widget.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
 
         wid = str(int(self._widget.winId()))
+
         def _mpv_log(loglevel, component, message):
             log.debug("[mpv/%s] %s: %s", loglevel, component, message)
 
@@ -447,6 +456,9 @@ class StreamPlayer(QObject):
             log_handler=_mpv_log,
             ytdl=False,
             input_default_bindings=False,
+            # Use gpu-next with d3d11 context — works with native child
+            # windows inside layered (WA_TranslucentBackground) parents.
+            gpu_context="d3d11",
         )
         self._player.volume = self._volume
         self._player.mute = self._muted
