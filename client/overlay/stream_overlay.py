@@ -198,6 +198,7 @@ class StreamOverlay(OverlayWidget):
         self._chat_buffer: list[dict] = []
         self._rendered_messages: list[dict] = []
         self._pending_emote_ids: set[str] = set()
+        self._chat_was_visible_before_minify = True
         self._current_channel = ""
         self._current_channel_id = ""
         self._avatar_labels: dict[str, QLabel] = {}
@@ -747,7 +748,15 @@ class StreamOverlay(OverlayWidget):
                 self._apply_list_size()
             else:
                 self._apply_size_preset(self._config.stream_overlay_size_preset)
+            # Restore chat panel if it was open before minifying
+            if self._chat_was_visible_before_minify:
+                self._chat_panel.setVisible(True)
+            self._chat_toggle_btn.setEnabled(True)
         else:
+            # Remember chat state and hide it
+            self._chat_was_visible_before_minify = self._chat_panel.isVisible()
+            self._chat_panel.setVisible(False)
+            self._chat_toggle_btn.setEnabled(False)
             self._title_bar.setStyleSheet(
                 f"background-color: {TITLE_BG}; border-radius: 8px;"
             )
