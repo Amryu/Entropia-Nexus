@@ -36,8 +36,8 @@ HIDDEN_IMPORTS=(
     keyring.backends
     keyring.backends.Windows
     keyring.backends.SecretService
-    win32cred
-    pywintypes
+    win32ctypes.pywin32.win32cred
+    win32ctypes.pywin32.pywintypes
     sounddevice
     _sounddevice_data
     obsws_python
@@ -214,7 +214,6 @@ python -m PyInstaller \
     --exclude-module 'pyexpat' \
     --exclude-module 'xml.parsers.expat' \
     --exclude-module '_yaml' \
-    --exclude-module '_cffi_backend' \
     "${DATA_ARGS[@]}" \
     "${IMPORT_ARGS[@]}" \
     "${PLATFORM_ARGS[@]}" \
