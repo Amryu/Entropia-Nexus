@@ -387,11 +387,20 @@ class StreamPlayer(QObject):
                 pass
 
     def toggle_pause(self) -> bool:
-        """Toggle pause. Returns new paused state."""
+        """Toggle pause. Returns new paused state.
+
+        On unpause, seeks to the live edge so playback catches up
+        instead of playing through the stale buffer.
+        """
         self._paused = not self._paused
         if self._player is not None:
             try:
-                self._player.pause = self._paused
+                if self._paused:
+                    self._player.pause = True
+                else:
+                    # Seek to live edge before unpausing
+                    self._player.pause = False
+                    self._player.seek(100, "absolute-percent")
             except Exception:
                 pass
         return self._paused
