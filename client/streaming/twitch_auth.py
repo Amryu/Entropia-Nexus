@@ -14,6 +14,8 @@ from ..core.logger import get_logger
 
 log = get_logger("TwitchAuth")
 
+DEFAULT_TWITCH_CLIENT_ID = "0jdvickf4cpdz3uc5cgxjltp4mll7q"
+
 _REDIRECT_PORT = 47833  # different from Nexus OAuth port (47832)
 _REDIRECT_URI = f"http://localhost:{_REDIRECT_PORT}"
 _SCOPES = "chat:read chat:edit"

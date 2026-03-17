@@ -1275,13 +1275,11 @@ class StreamOverlay(OverlayWidget):
 
     def _on_twitch_login(self):
         """Open Twitch OAuth login flow in a background thread."""
-        client_id = getattr(self._config, "twitch_client_id", "")
-        if not client_id:
-            self._chat_browser.append(
-                f'<p style="color: {ACCENT}; margin: 4px 0;">'
-                "Set twitch_client_id in config to enable chat login.</p>"
-            )
-            return
+        from ..streaming.twitch_auth import DEFAULT_TWITCH_CLIENT_ID
+        client_id = (
+            getattr(self._config, "twitch_client_id", "")
+            or DEFAULT_TWITCH_CLIENT_ID
+        )
 
         # Run OAuth in a background thread (it blocks waiting for browser)
         threading.Thread(
