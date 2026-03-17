@@ -729,8 +729,17 @@ class CaptureManager:
         if not self._is_own_global(event.player_name):
             return
 
-        log.info("Own global detected: %s killed %s for %.2f PED",
-                 event.player_name, event.target_name, event.value)
+        detect_mono = time.monotonic()
+        # Log detection latency: time from chat line timestamp to now
+        if hasattr(event, "timestamp") and event.timestamp:
+            detection_lag = (datetime.now() - event.timestamp).total_seconds()
+            log.info("Own global detected: %s killed %s for %.2f PED "
+                     "(detection_lag=%.3fs)",
+                     event.player_name, event.target_name, event.value,
+                     detection_lag)
+        else:
+            log.info("Own global detected: %s killed %s for %.2f PED",
+                     event.player_name, event.target_name, event.value)
         self._event_bus.publish(EVENT_OWN_GLOBAL, event)
 
         cfg = self._config
@@ -747,10 +756,11 @@ class CaptureManager:
             ):
                 self._last_auto_screenshot = time.monotonic()
                 delay = cfg.screenshot_delay_s
+                log.info("Screenshot timer starting (delay=%.3fs)", delay)
                 threading.Timer(
                     delay,
                     self._take_global_screenshot,
-                    args=(event,),
+                    args=(event, detect_mono),
                 ).start()
 
         # Video clip (requires capture infrastructure + clip_enabled for the clipping feature)
@@ -814,8 +824,12 @@ class CaptureManager:
     # Screenshot actions
     # ------------------------------------------------------------------
 
-    def _take_global_screenshot(self, event) -> None:
+    def _take_global_screenshot(self, event, detect_mono: float = 0) -> None:
         """Capture a screenshot after an own-global event."""
+        if detect_mono > 0:
+            total_elapsed = time.monotonic() - detect_mono
+            log.info("Screenshot callback fired (total_elapsed=%.3fs since detection)",
+                     total_elapsed)
         frame = self._grab_frame()
         if frame is None:
             self._event_bus.publish(EVENT_CAPTURE_ERROR,
