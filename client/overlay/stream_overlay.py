@@ -1012,6 +1012,17 @@ class StreamOverlay(OverlayWidget):
         self._current_channel = ""
         self._current_channel_id = ""
 
+        # Reset control button states for next stream
+        self._play_btn.setIcon(svg_icon(PAUSE, TEXT_COLOR, 14))
+        self._play_btn.setToolTip("Pause")
+        self._mute_btn.setIcon(svg_icon(VOLUME, TEXT_COLOR, 14))
+        self._mute_btn.setToolTip("Mute")
+        self._viewer_label.setText("0")
+
+        # Clear error labels from video container
+        for child in self._video_container.findChildren(QLabel):
+            child.deleteLater()
+
     def _show_player_error(self, message: str):
         """Show an error message in the video container."""
         # Clear any existing error labels

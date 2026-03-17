@@ -420,6 +420,8 @@ class StreamPlayer(QObject):
 
     def cleanup(self):
         """Release mpv resources. Call before widget destruction."""
+        self._current_channel = ""
+        self._pending_url = ""
         if self._player is not None:
             try:
                 self._player.terminate()
@@ -462,9 +464,12 @@ class StreamPlayer(QObject):
         self._player.volume = self._volume
         self._player.mute = self._muted
 
-        # Marshal mpv events to Qt signals
+        # Marshal mpv events to Qt signals.
+        # Guard against emit-after-cleanup: check _player is still alive.
         @self._player.event_callback("end-file")
         def _on_end_file(event):
+            if self._player is None:
+                return  # already cleaned up
             try:
                 reason = getattr(event, "reason", None)
                 if reason is not None and "error" in str(reason).lower():
@@ -516,7 +521,8 @@ class StreamPlayer(QObject):
     def _start_mpv_playback(self):
         """Actually create mpv and start playing (deferred from _on_url_resolved)."""
         url = getattr(self, "_pending_url", "")
-        if not url:
+        if not url or not self._current_channel:
+            # Playback was cancelled (stop/cleanup called before timer fired)
             return
         self._pending_url = ""
         try:
