@@ -11,23 +11,31 @@ import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-import keyring
-
 from ..core.logger import get_logger
 
 log = get_logger("TwitchAuth")
 
 DEFAULT_TWITCH_CLIENT_ID = "0jdvickf4cpdz3uc5cgxjltp4mll7q"
 
-# Keyring storage — reuses the same service name as the Nexus token store
-_SERVICE_NAME = "EntropiaNexusClient"
+# Reuse the keyring instance from the existing token store — it handles
+# PyInstaller backend setup (WinVaultKeyring on Windows, SecretService
+# on Linux).  Importing token_store triggers the backend configuration.
 _TWITCH_TOKEN_KEY = "twitch_oauth_token"
+_DISPLAY_NAME_KEY = "twitch_display_name"
+_CHAT_COLOR_KEY = "twitch_chat_color"
+
+
+def _keyring():
+    """Return the configured keyring module (lazy import to avoid circular deps)."""
+    from ..auth.token_store import keyring as _kr, SERVICE_NAME  # noqa: F401
+    return _kr, SERVICE_NAME
 
 
 def load_twitch_token() -> str:
     """Load the Twitch OAuth token from the OS keyring."""
     try:
-        token = keyring.get_password(_SERVICE_NAME, _TWITCH_TOKEN_KEY)
+        kr, svc = _keyring()
+        token = kr.get_password(svc, _TWITCH_TOKEN_KEY)
         return token or ""
     except Exception:
         return ""
@@ -36,22 +44,20 @@ def load_twitch_token() -> str:
 def save_twitch_token(token: str) -> None:
     """Save the Twitch OAuth token to the OS keyring."""
     try:
+        kr, svc = _keyring()
         if token:
-            keyring.set_password(_SERVICE_NAME, _TWITCH_TOKEN_KEY, token)
+            kr.set_password(svc, _TWITCH_TOKEN_KEY, token)
         else:
-            keyring.delete_password(_SERVICE_NAME, _TWITCH_TOKEN_KEY)
+            kr.delete_password(svc, _TWITCH_TOKEN_KEY)
     except Exception as exc:
         log.warning("Failed to save Twitch token to keyring: %s", exc)
-
-
-_DISPLAY_NAME_KEY = "twitch_display_name"
-_CHAT_COLOR_KEY = "twitch_chat_color"
 
 
 def load_twitch_display_name() -> str:
     """Load the cached Twitch display name from keyring."""
     try:
-        name = keyring.get_password(_SERVICE_NAME, _DISPLAY_NAME_KEY)
+        kr, svc = _keyring()
+        name = kr.get_password(svc, _DISPLAY_NAME_KEY)
         return name or ""
     except Exception:
         return ""
@@ -60,8 +66,9 @@ def load_twitch_display_name() -> str:
 def save_twitch_display_name(name: str) -> None:
     """Cache the Twitch display name in keyring."""
     try:
+        kr, svc = _keyring()
         if name:
-            keyring.set_password(_SERVICE_NAME, _DISPLAY_NAME_KEY, name)
+            kr.set_password(svc, _DISPLAY_NAME_KEY, name)
     except Exception:
         pass
 
@@ -69,7 +76,8 @@ def save_twitch_display_name(name: str) -> None:
 def load_twitch_chat_color() -> str:
     """Load the cached Twitch chat color from keyring."""
     try:
-        color = keyring.get_password(_SERVICE_NAME, _CHAT_COLOR_KEY)
+        kr, svc = _keyring()
+        color = kr.get_password(svc, _CHAT_COLOR_KEY)
         return color or ""
     except Exception:
         return ""
@@ -78,8 +86,9 @@ def load_twitch_chat_color() -> str:
 def save_twitch_chat_color(color: str) -> None:
     """Cache the Twitch chat color in keyring."""
     try:
+        kr, svc = _keyring()
         if color:
-            keyring.set_password(_SERVICE_NAME, _CHAT_COLOR_KEY, color)
+            kr.set_password(svc, _CHAT_COLOR_KEY, color)
     except Exception:
         pass
 
