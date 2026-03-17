@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 log = get_logger("StreamOverlay")
 
 # --- Layout constants ---
-TITLE_H = 28
+TITLE_H = 24
 CHAT_WIDTH = 250
 CONTROLS_H = 36
 MAX_CHAT_MESSAGES = 200
@@ -244,8 +244,14 @@ class StreamOverlay(OverlayWidget):
         self._title_bar = self._build_title_bar()
         layout.addWidget(self._title_bar)
 
+        # Body (hidden when minified)
+        self._body = QWidget()
+        body_layout = QVBoxLayout(self._body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+
         self._stack = QStackedWidget()
-        layout.addWidget(self._stack, 1)
+        body_layout.addWidget(self._stack, 1)
 
         # Page 0: Stream list
         self._list_page = self._build_list_page()
@@ -256,6 +262,9 @@ class StreamOverlay(OverlayWidget):
         self._stack.addWidget(self._player_page)
 
         self._stack.setCurrentIndex(_PAGE_LIST)
+        layout.addWidget(self._body, 1)
+
+        self._click_origin = None
 
     def _build_title_bar(self) -> QWidget:
         bar = QWidget()
@@ -703,6 +712,52 @@ class StreamOverlay(OverlayWidget):
     def _on_close(self):
         self._stop_playback()
         self.set_wants_visible(False)
+
+    # ------------------------------------------------------------------
+    # Minify (click title bar to collapse/expand)
+    # ------------------------------------------------------------------
+
+    def _toggle_minify(self):
+        expanding = not self._body.isVisible()
+        self._body.setVisible(expanding)
+        if expanding:
+            self._title_bar.setStyleSheet(
+                f"background-color: {TITLE_BG};"
+                " border-top-left-radius: 8px; border-top-right-radius: 8px;"
+            )
+            if self._stack.currentIndex() == _PAGE_LIST:
+                self._apply_list_size()
+            else:
+                self._apply_size_preset(self._config.stream_overlay_size_preset)
+        else:
+            self._title_bar.setStyleSheet(
+                f"background-color: {TITLE_BG}; border-radius: 8px;"
+            )
+            self.setFixedSize(self.width(), TITLE_H)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._click_origin = event.globalPosition().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        click_origin = self._click_origin
+        self._click_origin = None
+        super().mouseReleaseEvent(event)
+
+        if click_origin and event.button() == Qt.MouseButton.LeftButton:
+            delta = (
+                event.globalPosition().toPoint() - click_origin
+            ).manhattanLength()
+            if delta < 5:
+                # Click (not drag) — toggle minify if in title bar area
+                from PyQt6.QtCore import QPoint
+                click_local = self.mapFromGlobal(click_origin)
+                title_bottom = self._title_bar.mapTo(
+                    self, QPoint(0, self._title_bar.height()),
+                ).y()
+                if click_local.y() <= title_bottom:
+                    self._toggle_minify()
 
     # ------------------------------------------------------------------
     # Stream list logic
