@@ -1177,7 +1177,9 @@ function formatDiffLinesFlat(obj, lines, depth, prefix, skipContext = true) {
       lines.push(`${prefix} ${pad}${key}:`);
       formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
     } else if (value != null) {
-      lines.push(`${prefix} ${pad}${key}: ${value}`);
+      // Strip redundant "<empty> -> " / " -> <empty>" — the +/- prefix already conveys direction
+      const display = typeof value === 'string' ? value.replace('<empty> -> ', '').replace(' -> <empty>', '') : value;
+      if (display !== '') lines.push(`${prefix} ${pad}${key}: ${display}`);
     }
   }
 }
