@@ -63,10 +63,10 @@ export function getClientIp(event) {
     if (last && IP_PATTERN.test(last)) return last;
   }
   try {
-    return event.getClientAddress();
-  } catch {
-    return '0.0.0.0';
-  }
+    const addr = event.getClientAddress();
+    if (addr && IP_PATTERN.test(addr)) return addr;
+  } catch { /* ignore */ }
+  return '0.0.0.0';
 }
 
 // ---------- referrer parsing ----------
