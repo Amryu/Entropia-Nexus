@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.4.0",
+    "date": "2026-03-17",
+    "changes": [
+      {"type": "feat", "text": "Twitch stream overlay — watch streams with video playback (streamlink + mpv) directly in the overlay"},
+      {"type": "feat", "text": "Live chat with emote support (Twitch, BTTV, FFZ, 7TV) and broadcaster/moderator/subscriber badges"},
+      {"type": "feat", "text": "Twitch OAuth login for sending chat messages, with token stored securely in OS keyring"},
+      {"type": "feat", "text": "Stream browser showing live Nexus streamers with viewer counts and avatars, plus custom channel support"},
+      {"type": "feat", "text": "S/M/L video size presets, retractable chat panel, volume/mute/pause controls"},
+      {"type": "feat", "text": "Recent chat history loaded on channel join, clickable links in chat (Twitch purple)"},
+      {"type": "feat", "text": "Auto-download of mpv library with user prompt dialog when not installed"},
+      {"type": "fix", "text": "Emotes pre-scaled with Lanczos interpolation for crisp rendering in chat"},
+      {"type": "fix", "text": "Twitch native emotes resolve in sent messages via learned emote map + global emote API"},
+      {"type": "fix", "text": "Stream overlay follows standard overlay patterns: click-to-minify title bar, snap positioning, game focus coordination"}
+    ]
+  },
+  {
     "version": "0.3.8",
     "date": "2026-03-16",
     "changes": [
