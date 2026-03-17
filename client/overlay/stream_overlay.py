@@ -201,6 +201,9 @@ class StreamOverlay(OverlayWidget):
         self._stream_rows: list[QWidget] = []
         self._size_btns: list[QPushButton] = []
 
+        from ..streaming.twitch_auth import load_twitch_token
+        self._twitch_token = load_twitch_token()
+
         # Container style
         self._container.setStyleSheet(
             f"background-color: {BG_COLOR}; border-radius: 8px; padding: 0px;"
@@ -226,8 +229,6 @@ class StreamOverlay(OverlayWidget):
         self._twitch_login_done.connect(self._reconnect_chat_authenticated)
 
         # Update login button if already authenticated
-        from ..streaming.twitch_auth import load_twitch_token
-        self._twitch_token = load_twitch_token()
         if self._twitch_token:
             self._twitch_login_btn.setToolTip("Connected to Twitch")
             _user_svg = (
