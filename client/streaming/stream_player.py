@@ -257,7 +257,8 @@ def _try_import_mpv():
         return False
 
 
-# Initial import attempt
+# Initial import attempt — mpv is lightweight, streamlink is deferred
+# because its import tree is heavy (~0.6s).
 _add_mpv_paths()
 
 try:
@@ -268,11 +269,11 @@ except ImportError:
 except OSError:
     _MPV_DLL_MISSING = True
 
-try:
-    import streamlink as _streamlink_mod  # noqa: F401
-    _STREAMLINK_AVAILABLE = True
-except ImportError:
-    pass
+# Don't import streamlink at module level — it's heavy.
+# Check if the package exists without importing it.
+import importlib.util as _ilu
+_STREAMLINK_AVAILABLE = _ilu.find_spec("streamlink") is not None
+del _ilu
 
 
 def is_available() -> bool:
