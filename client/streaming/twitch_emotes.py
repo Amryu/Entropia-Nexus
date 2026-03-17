@@ -244,8 +244,35 @@ class EmoteManager:
     # Internal
     # ------------------------------------------------------------------
 
+    # Display height for emotes in chat (pixels)
+    _DISPLAY_HEIGHT = 22
+
+    @staticmethod
+    def _save_and_scale(path: str, data: bytes) -> None:
+        """Save emote image, pre-scaled to display height with Lanczos."""
+        try:
+            from PIL import Image
+            import io as _io
+            img = Image.open(_io.BytesIO(data))
+            if img.height > EmoteManager._DISPLAY_HEIGHT:
+                ratio = EmoteManager._DISPLAY_HEIGHT / img.height
+                new_w = max(1, int(img.width * ratio))
+                img = img.resize(
+                    (new_w, EmoteManager._DISPLAY_HEIGHT),
+                    Image.Resampling.LANCZOS,
+                )
+            img.save(path, "PNG")
+        except Exception:
+            # Fallback: save raw bytes if Pillow fails
+            with open(path, "wb") as f:
+                f.write(data)
+
     def _ensure_cached(self, provider: str, emote_id: str, url: str) -> str | None:
         """Return local file path, downloading if necessary.
+
+        Downloads the emote and pre-scales it to display height using
+        smooth (Lanczos) interpolation so QTextBrowser doesn't have to
+        scale with its default nearest-neighbor.
 
         Call from background threads only (does network I/O).
         """
@@ -256,8 +283,7 @@ class EmoteManager:
         try:
             resp = requests.get(url, timeout=_REQUEST_TIMEOUT)
             if resp.ok:
-                with open(path, "wb") as f:
-                    f.write(resp.content)
+                self._save_and_scale(path, resp.content)
                 return path
         except Exception as exc:
             log.debug("Emote download failed %s/%s: %s", provider, emote_id, exc)
