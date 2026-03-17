@@ -2287,16 +2287,26 @@ class SkillsPage(QWidget):
         self._dash_last_custom_timeseries = custom_timeseries
         self._dash_last_baselines = baselines
 
-        # Merge accumulated live gains into baselines so the chart Y-axis
-        # stays correct (baselines from DB are scan-only values).
+        # Merge accumulated live gains into baselines and timeseries so
+        # the chart and cards stay correct after the periodic DB reload.
+        # The DB timeseries only includes persisted gains — any live gains
+        # accumulated since the last scan need to be re-injected.
         if self._skill_gains:
+            import time as _time
             nm = name_to_id_map()
+            now_ts = int(_time.time())
             for name, gain in self._skill_gains.items():
                 sid = nm.get(name)
                 if sid is not None:
                     self._dash_last_baselines[sid] = (
                         self._dash_last_baselines.get(sid, 0) + gain
                     )
+                    # Re-inject live gains into timeseries as a single
+                    # aggregate entry so charts don't show a gap.
+                    entry = {"ts": now_ts, "skill_id": sid, "amount": gain}
+                    self._dash_last_goal_timeseries.append(entry)
+                    self._dash_last_top_timeseries.append(entry)
+                    self._dash_last_custom_timeseries.append(entry)
 
         # Store pre-scan gains (id-based → name-based)
         id_names = id_to_name_map()
