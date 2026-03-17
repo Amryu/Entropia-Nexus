@@ -1114,7 +1114,10 @@ function formatDiffLines(obj, lines, depth) {
         formatChangedValue(item, null, pad, lines);
       } else if (typeof item === 'object' && item !== null) {
         const status = item._status;
-        const label = item.Name || item.Tier || '';
+        const rawLabel = item.Name || item.Tier || '';
+        const label = (status === 'added' || status === 'removed') && typeof rawLabel === 'string'
+          ? rawLabel.replace('<empty> -> ', '').replace(' -> <empty>', '')
+          : rawLabel;
         const prefix = status === 'added' ? '+' : status === 'removed' ? '-' : ' ';
 
         if (status === 'added' || status === 'removed') {
