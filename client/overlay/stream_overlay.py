@@ -1326,6 +1326,17 @@ class StreamOverlay(OverlayWidget):
             return
         self._chat_client.send_message(text)
         self._chat_input.clear()
+        # Show own message locally (Twitch doesn't echo without
+        # the echo-message cap, which requires additional handling)
+        import time
+        self._on_chat_message({
+            "display_name": "You",
+            "color": ACCENT,
+            "badges": [],
+            "emotes": [],
+            "message": text,
+            "timestamp": time.time(),
+        })
 
     # ------------------------------------------------------------------
     # Viewer count polling

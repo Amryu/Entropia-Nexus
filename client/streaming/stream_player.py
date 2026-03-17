@@ -466,9 +466,12 @@ class StreamPlayer(QObject):
         # Marshal mpv events to Qt signals
         @self._player.event_callback("end-file")
         def _on_end_file(event):
-            reason = event.get("event", {}).get("reason", "")
-            if reason == "error":
-                self.stream_error.emit("Stream playback error")
+            try:
+                reason = getattr(event, "reason", None)
+                if reason is not None and "error" in str(reason).lower():
+                    self.stream_error.emit("Stream playback error")
+            except Exception:
+                pass
             self.stream_ended.emit()
 
     def _resolve_stream_url(self, channel: str, quality: str):
