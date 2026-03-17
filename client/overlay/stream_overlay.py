@@ -955,12 +955,14 @@ class StreamOverlay(OverlayWidget):
         self._current_channel_id = channel_id
         self._title_label.setText(channel)
 
-        # Show player controls and resize to video preset
+        # Switch to player page BEFORE resizing so chat panel's
+        # isVisible() reflects its true state (children of hidden
+        # stack pages always report isVisible()=False).
+        self._stack.setCurrentIndex(_PAGE_PLAYER)
         for b in self._size_btns: b.setVisible(True)
         self._chat_toggle_btn.setVisible(True)
         self._update_chat_btn_style(self._chat_panel.isVisible())
         self._apply_size_preset(self._config.stream_overlay_size_preset)
-        self._stack.setCurrentIndex(_PAGE_PLAYER)
 
         # Initialize stream player — check dependencies
         from ..streaming.stream_player import (
