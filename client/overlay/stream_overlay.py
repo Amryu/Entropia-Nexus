@@ -1102,7 +1102,7 @@ class StreamOverlay(OverlayWidget):
         index = max(0, min(len(_SIZE_PRESETS) - 1, index))
         video_w, video_h = _SIZE_PRESETS[index]
 
-        chat_w = CHAT_WIDTH if self._config.stream_overlay_chat_visible else 0
+        chat_w = CHAT_WIDTH if self._chat_panel.isVisible() else 0
         total_w = video_w + chat_w
         total_h = video_h + TITLE_H + CONTROLS_H
 
