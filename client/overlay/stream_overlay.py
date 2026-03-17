@@ -815,15 +815,30 @@ class StreamOverlay(OverlayWidget):
         self._apply_size_preset(self._config.stream_overlay_size_preset)
         self._stack.setCurrentIndex(_PAGE_PLAYER)
 
-        # Initialize stream player
-        from ..streaming.stream_player import StreamPlayer, is_available
+        # Initialize stream player — check dependencies
+        from ..streaming.stream_player import (
+            StreamPlayer, is_available, is_mpv_dll_missing,
+            missing_components, _try_import_mpv,
+        )
 
         if not is_available():
-            from ..streaming.stream_player import missing_components
-            self._show_player_error(
-                "Missing components:\n" + "\n".join(missing_components())
-            )
-            return
+            if is_mpv_dll_missing():
+                # Prompt user to download mpv-2.dll
+                if not self._prompt_mpv_download():
+                    self._on_back()
+                    return
+                # Re-check after download
+                _try_import_mpv()
+                if not is_available():
+                    self._show_player_error("mpv-2.dll download failed")
+                    return
+            else:
+                comps = missing_components()
+                if comps:
+                    self._show_player_error(
+                        "Missing components:\n" + "\n".join(comps)
+                    )
+                    return
 
         self._stream_player = StreamPlayer(self._video_container, parent=self)
         self._stream_player.stream_started.connect(self._on_stream_started)
@@ -834,6 +849,12 @@ class StreamOverlay(OverlayWidget):
 
         # Start chat
         self._start_chat(channel, channel_id)
+
+    def _prompt_mpv_download(self) -> bool:
+        """Show a dialog asking the user to download mpv-2.dll. Returns True on success."""
+        from ..streaming.mpv_download_dialog import MpvDownloadDialog
+        dialog = MpvDownloadDialog(parent=self)
+        return dialog.exec() == dialog.DialogCode.Accepted
 
     def _stop_playback(self):
         """Stop current playback and clean up."""
