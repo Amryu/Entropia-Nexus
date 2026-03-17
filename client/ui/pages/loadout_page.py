@@ -712,6 +712,8 @@ class LoadoutPage(QWidget):
         outer.addStretch()
         self._editor_tabs.addTab(self._scrollable_tab(tab), "Weapon")
 
+    _ARMOR_SLOTS = ["Head", "Torso", "Arms", "Hands", "Legs", "Shins", "Feet"]
+
     def _build_armor_tab(self):
         tab = QWidget()
         outer = QVBoxLayout(tab)
@@ -719,20 +721,60 @@ class LoadoutPage(QWidget):
 
         outer.addWidget(self._build_set_bar("Armor"))
 
-        vbox = QVBoxLayout()
-        vbox.setSpacing(4)
+        # --- Mode toggle ---
+        self._armor_individual_cb = QCheckBox("Manage armor pieces individually")
+        self._armor_individual_cb.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self._armor_individual_cb.toggled.connect(self._on_armor_mode_toggled)
+        outer.addWidget(self._armor_individual_cb)
+
+        # --- Set mode widgets ---
+        self._armor_set_container = QWidget()
+        set_vbox = QVBoxLayout(self._armor_set_container)
+        set_vbox.setContentsMargins(0, 0, 0, 0)
+        set_vbox.setSpacing(4)
 
         self._armor_set_field = FuzzyLineEdit("Select armor set...")
         self._armor_set_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Armor Set", self._armor_set_field, "ArmorSet",
-                                              picker_kind="armor_set"))
+        set_vbox.addWidget(self._make_gear_row("Armor Set", self._armor_set_field, "ArmorSet",
+                                               picker_kind="armor_set"))
 
         self._plate_field = FuzzyLineEdit("Select plating...")
         self._plate_field.textChanged.connect(self._schedule_recalc)
-        vbox.addWidget(self._make_gear_row("Plating", self._plate_field, "PlateSet",
-                                              picker_kind="plating"))
+        set_vbox.addWidget(self._make_gear_row("Plating", self._plate_field, "PlateSet",
+                                               picker_kind="plating"))
 
-        outer.addLayout(vbox)
+        outer.addWidget(self._armor_set_container)
+
+        # --- Individual mode widgets ---
+        self._armor_individual_container = QWidget()
+        ind_vbox = QVBoxLayout(self._armor_individual_container)
+        ind_vbox.setContentsMargins(0, 0, 0, 0)
+        ind_vbox.setSpacing(2)
+
+        self._armor_slot_fields: dict[str, FuzzyLineEdit] = {}
+        self._armor_slot_plate_fields: dict[str, FuzzyLineEdit] = {}
+
+        for slot in self._ARMOR_SLOTS:
+            # Armor piece for this slot
+            armor_field = FuzzyLineEdit(f"Select {slot.lower()} armor...")
+            armor_field.textChanged.connect(self._schedule_recalc)
+            ind_vbox.addWidget(self._make_gear_row(
+                slot, armor_field, f"Armor_{slot}",
+                picker_kind=f"armor_piece_{slot}",
+            ))
+            self._armor_slot_fields[slot] = armor_field
+
+            # Plating for this slot
+            plate_field = FuzzyLineEdit(f"Select {slot.lower()} plating...")
+            plate_field.textChanged.connect(self._schedule_recalc)
+            ind_vbox.addWidget(self._make_gear_row(
+                f"  {slot} Plate", plate_field, f"Plate_{slot}",
+                indent=True, picker_kind="plating",
+            ))
+            self._armor_slot_plate_fields[slot] = plate_field
+
+        self._armor_individual_container.setVisible(False)
+        outer.addWidget(self._armor_individual_container)
 
         # Enhancers (wrapping grid)
         self._armor_enhancers: dict[str, QSpinBox] = {}
@@ -742,6 +784,83 @@ class LoadoutPage(QWidget):
 
         outer.addStretch()
         self._editor_tabs.addTab(self._scrollable_tab(tab), "Armor")
+
+    def _on_armor_mode_toggled(self, individual: bool):
+        """Toggle between set mode and individual slot mode.
+
+        Matches website behaviour: switching to individual mode populates
+        slot fields from the current armor set (if any); switching back
+        to set mode clears individual slots.
+        """
+        self._armor_set_container.setVisible(not individual)
+        self._armor_individual_container.setVisible(individual)
+
+        if individual:
+            # Populate individual slots from the selected armor set
+            set_name = self._armor_set_field.current_value()
+            plate_name = self._plate_field.current_value()
+            if set_name:
+                self._populate_slots_from_set(set_name, plate_name)
+        else:
+            # Clear individual slot fields when switching to set mode
+            for slot in self._ARMOR_SLOTS:
+                self._armor_slot_fields[slot].set_value("")
+                self._armor_slot_plate_fields[slot].set_value("")
+
+        self._schedule_recalc()
+
+    def _populate_slots_from_set(self, set_name: str, plate_name: str = ""):
+        """Fill individual slot fields from an armor set's pieces."""
+        armor_sets = self._entity_data.get("armor_sets", [])
+        armors = self._entity_data.get("armors", [])
+
+        # Find the set
+        target_set = None
+        for s in armor_sets:
+            if s.get("Name") == set_name:
+                target_set = s
+                break
+        if not target_set:
+            return
+
+        # Build slot → armor name map from individual armor pieces
+        # that belong to this set
+        set_id = target_set.get("Id")
+        slot_map: dict[str, str] = {}
+        for armor in armors:
+            if armor.get("Set", {}).get("Id") == set_id or \
+               armor.get("SetId") == set_id:
+                slot = armor.get("Slot", "")
+                if slot in self._ARMOR_SLOTS:
+                    # Prefer non-L version; take first match per slot
+                    if slot not in slot_map:
+                        slot_map[slot] = armor.get("Name", "")
+
+        for slot in self._ARMOR_SLOTS:
+            name = slot_map.get(slot, "")
+            self._armor_slot_fields[slot].set_value(name)
+            self._armor_slot_plate_fields[slot].set_value(
+                plate_name if name else ""
+            )
+
+    def _build_armor_data(self) -> dict:
+        """Build the Gear.Armor dict from UI state."""
+        individual = self._armor_individual_cb.isChecked()
+        armor = {
+            "SetName": self._armor_set_field.current_value() or None,
+            "PlateName": self._plate_field.current_value() or None,
+            "ManageIndividual": individual,
+            "Enhancers": {k: s.value() for k, s in self._armor_enhancers.items()},
+        }
+        # Always include per-slot data (website always stores it)
+        for slot in self._ARMOR_SLOTS:
+            piece_name = self._armor_slot_fields[slot].current_value() or None
+            plate_name = self._armor_slot_plate_fields[slot].current_value() or None
+            armor[slot] = {
+                "Name": piece_name if individual else None,
+                "Plate": {"Name": plate_name} if (individual and plate_name) else None,
+            }
+        return armor
 
     def _build_healing_tab(self):
         tab = QWidget()
@@ -1315,8 +1434,24 @@ class LoadoutPage(QWidget):
             for k, spin in self._weapon_enhancers.items():
                 spin.setValue(enh.get(k, 0))
         elif section == "Armor":
+            individual = gear.get("ManageIndividual", False)
+            self._armor_individual_cb.setChecked(individual)
+
+            # Set mode fields
             self._armor_set_field.set_value(gear.get("SetName") or "")
             self._plate_field.set_value(gear.get("PlateName") or "")
+
+            # Individual slot fields
+            for slot in self._ARMOR_SLOTS:
+                slot_data = gear.get(slot) or {}
+                self._armor_slot_fields[slot].set_value(
+                    slot_data.get("Name") or ""
+                )
+                plate = slot_data.get("Plate") or {}
+                self._armor_slot_plate_fields[slot].set_value(
+                    plate.get("Name") if isinstance(plate, dict) else (plate or "")
+                )
+
             enh = gear.get("Enhancers") or {}
             for k, spin in self._armor_enhancers.items():
                 spin.setValue(enh.get(k, 0))
@@ -1346,6 +1481,16 @@ class LoadoutPage(QWidget):
             for k in ("ArmorSet", "PlateSet"):
                 if k in self._markup_spins:
                     self._markup_spins[k].setValue(markup.get(k, 100))
+            # Per-slot markups
+            armors_mu = markup.get("Armors", {})
+            plates_mu = markup.get("Plates", {})
+            for slot in self._ARMOR_SLOTS:
+                spin = self._markup_spins.get(f"Armor_{slot}")
+                if spin:
+                    spin.setValue(armors_mu.get(slot, 100))
+                spin = self._markup_spins.get(f"Plate_{slot}")
+                if spin:
+                    spin.setValue(plates_mu.get(slot, 100))
         elif section == "Healing":
             if "HealingTool" in self._markup_spins:
                 self._markup_spins["HealingTool"].setValue(markup.get("HealingTool", 100))
@@ -1916,6 +2061,32 @@ class LoadoutPage(QWidget):
                 "rows": rows,
             }
 
+        # === Individual armor piece (filtered by slot) ===
+        if kind.startswith("armor_piece_"):
+            slot = kind.replace("armor_piece_", "")
+            items = self._entity_data.get("armors", [])
+            rows = []
+            for it in items:
+                name = it.get("Name", "")
+                if not name:
+                    continue
+                if it.get("Slot") != slot:
+                    continue
+                durability = _prop(it, "Economy", "Durability")
+                rows.append({
+                    "_name": name,
+                    "Name": name,
+                    "Durability": _fmt(durability) if durability is not None else "",
+                })
+            return {
+                "title": f"Select {slot} Armor",
+                "columns": [
+                    {"key": "Name", "header": "Name"},
+                    {"key": "Durability", "header": "Durability", "width": 90},
+                ],
+                "rows": rows,
+            }
+
         # === Plating ===
         if kind == "plating":
             items = self._entity_data.get("armor_platings", [])
@@ -2089,6 +2260,13 @@ class LoadoutPage(QWidget):
                 "implants": _entity_names(self._entity_data.get("implants", [])),
                 "armor_sets": _entity_names(self._entity_data.get("armor_sets", [])),
                 "plates": _entity_names(self._entity_data.get("armor_platings", [])),
+                **{
+                    f"armors_{slot}": sorted({
+                        item.get("Name", "") for item in self._entity_data.get("armors", [])
+                        if item.get("Slot") == slot
+                    } - {""})
+                    for slot in self._ARMOR_SLOTS
+                },
                 "heals": sorted(set(
                     _entity_names(self._entity_data.get("medical_tools", []))
                     + _entity_names(self._entity_data.get("medical_chips", []))
@@ -2131,6 +2309,9 @@ class LoadoutPage(QWidget):
         self._implant_field.set_items(n["implants"])
         self._armor_set_field.set_items(n["armor_sets"])
         self._plate_field.set_items(n["plates"])
+        for slot in self._ARMOR_SLOTS:
+            self._armor_slot_fields[slot].set_items(n.get(f"armors_{slot}", []))
+            self._armor_slot_plate_fields[slot].set_items(n["plates"])
         self._heal_field.set_items(n["heals"])
         self._pet_field.set_items(n["pets"])
         self._left_ring_field.set_items(n["rings_left"])
@@ -2266,12 +2447,7 @@ class LoadoutPage(QWidget):
                     "Implant": {"Name": self._implant_field.current_value() or None},
                     "Enhancers": {k: s.value() for k, s in self._weapon_enhancers.items()},
                 },
-                "Armor": {
-                    "SetName": self._armor_set_field.current_value() or None,
-                    "PlateName": self._plate_field.current_value() or None,
-                    "ManageIndividual": False,
-                    "Enhancers": {k: s.value() for k, s in self._armor_enhancers.items()},
-                },
+                "Armor": self._build_armor_data(),
                 "Healing": {
                     "Name": self._heal_field.current_value() or None,
                     "Enhancers": {k: s.value() for k, s in self._heal_enhancers.items()},
@@ -2300,14 +2476,18 @@ class LoadoutPage(QWidget):
             spin = self._markup_spins.get(key)
             if spin:
                 markup[key] = spin.value()
-        # Preserve per-slot armor/plate markup from loadout
-        if self._current_loadout:
-            existing = self._current_loadout.get("Markup", {})
-            markup["Armors"] = existing.get("Armors", {})
-            markup["Plates"] = existing.get("Plates", {})
-        else:
-            markup["Armors"] = {}
-            markup["Plates"] = {}
+        # Per-slot armor/plate markup (from individual mode UI spins)
+        armors_mu = {}
+        plates_mu = {}
+        for slot in self._ARMOR_SLOTS:
+            spin = self._markup_spins.get(f"Armor_{slot}")
+            if spin:
+                armors_mu[slot] = spin.value()
+            spin = self._markup_spins.get(f"Plate_{slot}")
+            if spin:
+                plates_mu[slot] = spin.value()
+        markup["Armors"] = armors_mu
+        markup["Plates"] = plates_mu
         return markup
 
     @property
@@ -2329,11 +2509,18 @@ class LoadoutPage(QWidget):
         # overhead during bulk apply (handlers already check _applying, but
         # the Qt signal machinery itself is expensive across 30+ widgets).
         blocked = []
-        for field in (self._weapon_field, self._amp_field, self._absorber_field,
-                      self._scope_field, self._scope_sight_field, self._sight_field,
-                      self._matrix_field, self._implant_field, self._armor_set_field,
-                      self._plate_field, self._heal_field, self._left_ring_field,
-                      self._right_ring_field, self._pet_field, self._name_input):
+        all_fields = [
+            self._weapon_field, self._amp_field, self._absorber_field,
+            self._scope_field, self._scope_sight_field, self._sight_field,
+            self._matrix_field, self._implant_field, self._armor_set_field,
+            self._plate_field, self._heal_field, self._left_ring_field,
+            self._right_ring_field, self._pet_field, self._name_input,
+            self._armor_individual_cb,
+        ]
+        for slot in self._ARMOR_SLOTS:
+            all_fields.append(self._armor_slot_fields[slot])
+            all_fields.append(self._armor_slot_plate_fields[slot])
+        for field in all_fields:
             field.blockSignals(True)
             blocked.append(field)
         for spins in (self._weapon_enhancers, self._armor_enhancers,
