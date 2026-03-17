@@ -6,7 +6,10 @@
       {"type": "fix", "text": "Build now bundles NumPy native extensions correctly (fixes startup crash with NumPy 2.x)"},
       {"type": "fix", "text": "All 14 builtin overlay widgets are now included in the build (were silently missing due to dynamic loading)"},
       {"type": "fix", "text": "Quick trade dialog on exchange orderbook no longer crashes from broken import path"},
-      {"type": "fix", "text": "Removed unused pyautogui dependency and excluded bloat from onnxtr/scipy"}
+      {"type": "fix", "text": "Removed unused pyautogui dependency and excluded bloat from onnxtr/scipy"},
+      {"type": "fix", "text": "Fix crash when loot item resolves to a known ID (NOT NULL constraint on item_name)"},
+      {"type": "fix", "text": "Exclude unused modules from dist (numpy tests/random, PIL ImageMath, etc.) — ~4.5 MB smaller"},
+      {"type": "fix", "text": "Remove outdated config.example.json from dist (config auto-creates from defaults)"}
     ]
   },
   {
