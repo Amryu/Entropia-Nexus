@@ -957,8 +957,7 @@
     calculatedColumnWidths = {};
   }
 
-  function handleColumnDialogApply(event) {
-    const { columnKeys } = event.detail;
+  function handleColumnDialogApply({ columnKeys }) {
     userColumnSelection = columnKeys;
     saveColumnSelection(columnKeys);
     showColumnDialog = false;
