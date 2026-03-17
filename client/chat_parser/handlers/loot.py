@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 
 from ...core.constants import EVENT_LOOT_GROUP, LOOT_PATTERN
 from ..models import LootGroup, LootItem, ParsedLine
@@ -15,6 +15,7 @@ class LootHandler(BaseHandler):
     def __init__(self, event_bus, db):
         super().__init__(event_bus, db)
         self._pending_group: Optional[LootGroup] = None
+        self._item_resolver: Callable[[str], int | None] | None = None
 
     def can_handle(self, parsed_line: ParsedLine) -> bool:
         if parsed_line.channel != "System" or parsed_line.username != "":
@@ -60,6 +61,17 @@ class LootHandler(BaseHandler):
 
         group = self._pending_group
         self._pending_group = None
+
+        # Always persist to loot_events regardless of tracker state.
+        # When an item_id can be resolved, store id only (name=NULL) to save space.
+        ts_iso = group.timestamp.isoformat()
+        resolve = self._item_resolver
+        rows = []
+        for item in group.items:
+            item_id = resolve(item.item_name) if resolve else None
+            name = None if item_id is not None else item.item_name
+            rows.append((ts_iso, name, item_id, item.quantity, item.value_ped))
+        self._db.insert_loot_events(rows)
 
         if not self.suppress_events:
             self._event_bus.publish(EVENT_LOOT_GROUP, group)

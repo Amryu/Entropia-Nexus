@@ -99,11 +99,71 @@ class TestLootHandler(unittest.TestCase):
 
         self.bus.publish.assert_not_called()
 
-    def test_db_called(self):
+    # -- DB persistence tests --
+
+    def test_db_persists_with_name_when_no_resolver(self):
+        """Without a resolver, item_name is stored and item_id is None."""
         ts = datetime(2026, 2, 7, 11, 19, 50)
         self.handler.handle(_make_loot_line("You received Metal Residue x (3) Value: 0.0300 PED", ts))
         self.handler.flush()
-        self.db.insert_loot_group.assert_called_once()
+
+        self.db.insert_loot_events.assert_called_once()
+        rows = self.db.insert_loot_events.call_args[0][0]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], ts.isoformat())  # timestamp
+        self.assertEqual(rows[0][1], "Metal Residue")  # item_name kept
+        self.assertIsNone(rows[0][2])                   # item_id
+        self.assertEqual(rows[0][3], 3)                  # quantity
+        self.assertAlmostEqual(rows[0][4], 0.03)         # value_ped
+
+    def test_db_stores_id_without_name_when_resolved(self):
+        """When the resolver returns an ID, item_name is NULL."""
+        self.handler._item_resolver = lambda name: 42 if name == "Metal Residue" else None
+        ts = datetime(2026, 2, 7, 11, 19, 50)
+        self.handler.handle(_make_loot_line("You received Metal Residue x (3) Value: 0.0300 PED", ts))
+        self.handler.flush()
+
+        rows = self.db.insert_loot_events.call_args[0][0]
+        self.assertIsNone(rows[0][1])   # item_name omitted
+        self.assertEqual(rows[0][2], 42) # item_id stored
+
+    def test_db_mixed_resolved_and_unresolved(self):
+        """Items that resolve get id only; unknown items keep the name."""
+        self.handler._item_resolver = lambda name: 99 if name == "Shrapnel" else None
+        ts = datetime(2026, 2, 7, 11, 20, 39)
+        self.handler.handle(_make_loot_line("You received Shrapnel x (29) Value: 0.0029 PED", ts))
+        self.handler.handle(_make_loot_line("You received Rare Gizmo x (1) Value: 5.0000 PED", ts))
+        self.handler.flush()
+
+        rows = self.db.insert_loot_events.call_args[0][0]
+        # Shrapnel resolved
+        self.assertIsNone(rows[0][1])
+        self.assertEqual(rows[0][2], 99)
+        # Rare Gizmo unresolved
+        self.assertEqual(rows[1][1], "Rare Gizmo")
+        self.assertIsNone(rows[1][2])
+
+    def test_db_persists_during_catchup(self):
+        """Loot events are persisted even during catchup (suppress_events=True)."""
+        self.handler.suppress_events = True
+        ts = datetime(2026, 2, 7, 11, 19, 50)
+        self.handler.handle(_make_loot_line("You received Metal Residue x (3) Value: 0.0300 PED", ts))
+        self.handler.flush()
+
+        self.db.insert_loot_events.assert_called_once()
+        self.bus.publish.assert_not_called()
+
+    def test_db_batch_contains_all_group_items(self):
+        ts = datetime(2026, 2, 7, 11, 20, 39)
+        self.handler.handle(_make_loot_line("You received Explosive Projectiles x (1166) Value: 0.1166 PED", ts))
+        self.handler.handle(_make_loot_line("You received Metal Residue x (8) Value: 0.0800 PED", ts))
+        self.handler.handle(_make_loot_line("You received Shrapnel x (29) Value: 0.0029 PED", ts))
+        self.handler.flush()
+
+        rows = self.db.insert_loot_events.call_args[0][0]
+        self.assertEqual(len(rows), 3)
+        names = [r[1] for r in rows]
+        self.assertEqual(names, ["Explosive Projectiles", "Metal Residue", "Shrapnel"])
 
 
 if __name__ == "__main__":

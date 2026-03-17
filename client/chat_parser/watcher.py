@@ -19,6 +19,7 @@ log = get_logger("Watcher")
 
 FINGERPRINT_LINES = 50
 BATCH_COMMIT_INTERVAL = 5000  # Commit progress every N lines during catchup/reparse
+POLL_FALLBACK_S = 1.0  # Periodic poll interval as safety net for missed OS events
 
 
 def _file_fingerprint(path: str) -> str | None:
@@ -69,6 +70,8 @@ class ChatLogWatcher:
         self._observer = None
         self._running = False
         self._catching_up = False
+        self._poll_stop = threading.Event()
+        self._poll_thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
         # File state
@@ -92,6 +95,10 @@ class ChatLogWatcher:
                 self._line_number = saved_line
                 self._file_hash = current_hash or saved_hash
                 log.info("Resuming from byte %s, line %s", self._byte_offset, self._line_number)
+
+    def set_item_resolver(self, resolver) -> None:
+        """Set item name→ID resolver for loot event storage."""
+        self._classifier.set_item_resolver(resolver)
 
     def start(self) -> None:
         """Start watching chat.log in a background thread."""
@@ -129,6 +136,10 @@ class ChatLogWatcher:
             if self._running:
                 log.info("Catch-up complete (line %s, offset %s)", self._line_number, self._byte_offset)
                 self._event_bus.publish(EVENT_CATCHUP_COMPLETE, None)
+                # Start periodic poll fallback — watchdog file change events
+                # can be delayed or coalesced by the OS, so we also poll at a
+                # fixed interval to guarantee timely global detection.
+                self._start_poll_fallback()
             else:
                 log.info("Catch-up interrupted at line %s, will resume next startup", self._line_number)
 
@@ -137,19 +148,62 @@ class ChatLogWatcher:
     def stop(self) -> None:
         """Stop watching and flush pending state."""
         self._running = False
+        self._poll_stop.set()
         self._event_bus.unsubscribe(EVENT_REPARSE_REQUESTED, self._on_reparse_requested)
         if self._observer:
             self._observer.stop()
             self._observer.join(timeout=2)
             self._observer = None
+        if self._poll_thread:
+            self._poll_thread.join(timeout=2)
+            self._poll_thread = None
         self._classifier.flush()
         self._save_state()
         log.info("Stopped")
 
+    def _start_poll_fallback(self) -> None:
+        """Start a periodic poll thread as a safety net.
+
+        Watchdog ``ReadDirectoryChangesW`` events can be delayed or
+        coalesced by the OS under memory pressure or heavy I/O.
+        This poll thread checks the file every ``POLL_FALLBACK_S``
+        seconds so global detection is never more than ~1 s late,
+        regardless of watchdog behaviour.
+        """
+        if self._poll_thread is not None:
+            return
+        self._poll_stop.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="watcher-poll",
+        )
+        self._poll_thread.start()
+        log.info("Periodic poll fallback started (%.1fs interval)", POLL_FALLBACK_S)
+
+    def _poll_loop(self) -> None:
+        """Periodically check for new content as a fallback."""
+        while not self._poll_stop.wait(timeout=POLL_FALLBACK_S):
+            if not self._running or self._catching_up:
+                continue
+            try:
+                # Quick size check before acquiring lock — avoids lock
+                # contention when the file hasn't changed.
+                file_size = os.path.getsize(self._file_path)
+                if file_size <= self._byte_offset:
+                    continue
+            except (IOError, OSError):
+                continue
+            with self._lock:
+                self._read_new_lines()
+
     def _on_file_change(self) -> None:
         """Called by watchdog when the file is modified."""
+        t0 = time.monotonic()
         with self._lock:
             self._read_new_lines()
+        elapsed = time.monotonic() - t0
+        if elapsed > 1.0:
+            log.warning("_on_file_change took %.3fs (possible capture delay source)",
+                        elapsed)
 
     def _read_new_lines(self) -> None:
         """Read new content from the file starting at the saved byte offset.

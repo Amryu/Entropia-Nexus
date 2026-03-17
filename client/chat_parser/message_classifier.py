@@ -96,6 +96,10 @@ class MessageClassifier:
         self._globals.ingestion_enabled = enabled
         self._trade.ingestion_enabled = enabled
 
+    def set_item_resolver(self, resolver) -> None:
+        """Set item name→ID resolver on the loot handler."""
+        self._loot._item_resolver = resolver
+
     def flush(self) -> None:
         """Flush any pending state in handlers (call on shutdown/EOF)."""
         self._loot.flush()

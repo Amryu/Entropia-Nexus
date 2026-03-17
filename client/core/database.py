@@ -331,6 +331,18 @@ CREATE TABLE IF NOT EXISTS screenshots (
 
 CREATE INDEX IF NOT EXISTS idx_screenshots_path ON screenshots(file_path);
 CREATE INDEX IF NOT EXISTS idx_screenshots_global ON screenshots(global_id);
+
+CREATE TABLE IF NOT EXISTS loot_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    item_id INTEGER,
+    quantity INTEGER NOT NULL,
+    value_ped REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_loot_events_timestamp ON loot_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_loot_events_item_name ON loot_events(item_name);
 """
 
 # Indexes that depend on columns added by _migrate()
@@ -1085,6 +1097,35 @@ class Database:
             )
             self._auto_commit()
             return group_id
+
+    # Loot events (standalone, tracker-agnostic)
+    def insert_loot_events(self, events: list[tuple]):
+        """Batch insert loot events.
+
+        Each tuple: (timestamp_iso, item_name, item_id_or_None, quantity, value_ped).
+        """
+        if not events:
+            return
+        with self._lock:
+            self._conn.executemany(
+                "INSERT INTO loot_events (timestamp, item_name, item_id, quantity, value_ped) "
+                "VALUES (?, ?, ?, ?, ?)",
+                events,
+            )
+            self._auto_commit()
+
+    def get_loot_events_in_range(self, from_ts: str, to_ts: str) -> list[dict]:
+        """Get all loot events between two ISO timestamps (inclusive)."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM loot_events WHERE timestamp >= ? AND timestamp <= ? "
+                "ORDER BY timestamp, id",
+                (from_ts, to_ts),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            self._conn.row_factory = None
+            return rows
 
     # Enhancer breaks
     def insert_enhancer_break(self, timestamp: str, enhancer_name: str, item_name: str,
