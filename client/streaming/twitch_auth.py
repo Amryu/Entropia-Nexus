@@ -1,0 +1,130 @@
+"""Twitch OAuth — implicit grant flow for chat authentication.
+
+Opens the system browser for Twitch login, catches the token via a
+localhost HTTP server.  The token is stored in the app config.
+"""
+
+from __future__ import annotations
+
+import webbrowser
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+
+from ..core.logger import get_logger
+
+log = get_logger("TwitchAuth")
+
+_REDIRECT_PORT = 47833  # different from Nexus OAuth port (47832)
+_REDIRECT_URI = f"http://localhost:{_REDIRECT_PORT}"
+_SCOPES = "chat:read chat:edit"
+
+# HTML page served at redirect URI.  Twitch implicit grant puts the
+# token in the URL fragment (#), which the browser doesn't send to the
+# server.  This page reads the fragment via JS and sends it back.
+_CALLBACK_HTML = """<!DOCTYPE html>
+<html><head><title>Twitch Login</title>
+<style>
+  body { background: #18181b; color: #efeff1; font-family: sans-serif;
+         display: flex; justify-content: center; align-items: center;
+         height: 100vh; margin: 0; }
+  .box { text-align: center; }
+  h2 { color: #9147ff; }
+</style></head>
+<body><div class="box">
+  <h2>Twitch Connected!</h2>
+  <p id="msg">Authenticating...</p>
+</div>
+<script>
+  const hash = window.location.hash.substring(1);
+  const params = new URLSearchParams(hash);
+  const token = params.get('access_token');
+  if (token) {
+    fetch('/token?access_token=' + token).then(() => {
+      document.getElementById('msg').textContent =
+        'You can close this tab and return to the app.';
+    });
+  } else {
+    document.getElementById('msg').textContent =
+      'Authentication failed — no token received.';
+  }
+</script></body></html>"""
+
+_SUCCESS_HTML = """<!DOCTYPE html>
+<html><head><title>Done</title></head>
+<body><script>window.close()</script></body></html>"""
+
+
+def twitch_login(client_id: str) -> str | None:
+    """Run the Twitch OAuth implicit grant flow.
+
+    Opens the system browser for Twitch login.  Blocks until the user
+    completes login or the timeout expires (120 s).
+
+    Args:
+        client_id: Twitch application Client ID.
+
+    Returns:
+        The OAuth access token, or None on failure/cancel.
+    """
+    if not client_id:
+        log.error("No Twitch Client ID configured")
+        return None
+
+    result = {"token": None}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urlparse(self.path)
+
+            if parsed.path == "/token":
+                # JS callback with the token
+                qs = parse_qs(parsed.query)
+                token = qs.get("access_token", [None])[0]
+                if token:
+                    result["token"] = token
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(_SUCCESS_HTML.encode())
+                return
+
+            # Serve the callback page (reads fragment via JS)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(_CALLBACK_HTML.encode())
+
+        def log_message(self, fmt, *args):
+            pass  # suppress server logs
+
+    auth_url = (
+        f"https://id.twitch.tv/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={_REDIRECT_URI}"
+        f"&response_type=token"
+        f"&scope={_SCOPES.replace(' ', '+')}"
+    )
+
+    try:
+        server = HTTPServer(("127.0.0.1", _REDIRECT_PORT), Handler)
+        server.timeout = 120
+
+        webbrowser.open(auth_url)
+        log.info("Opened Twitch login in browser")
+
+        # Handle two requests: the redirect page + the JS token callback
+        server.handle_request()  # serves the HTML page
+        if result["token"] is None:
+            server.handle_request()  # receives the token via /token?...
+
+        server.server_close()
+    except Exception as exc:
+        log.error("Twitch login failed: %s", exc)
+        return None
+
+    if result["token"]:
+        log.info("Twitch login successful")
+    else:
+        log.warning("Twitch login: no token received")
+
+    return result["token"]

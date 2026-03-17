@@ -153,6 +153,8 @@ class AppConfig:
     # Streams
     stream_notifications_enabled: bool = True
     stream_exclude_list: list[str] = field(default_factory=list)
+    twitch_client_id: str = ""
+    twitch_oauth_token: str = ""
 
     # Tracker — Dailies & Events
     tracker_missions: list = field(default_factory=list)
@@ -413,6 +415,8 @@ DEFAULTS = {
     "trade_chat_keywords": [],
     "stream_notifications_enabled": True,
     "stream_exclude_list": [],
+    "twitch_client_id": "",
+    "twitch_oauth_token": "",
     "tracker_missions": [],
     "tracker_event_reminders": [],
     "dashboard_globals_min_value": 0.0,

@@ -173,6 +173,7 @@ class StreamOverlay(OverlayWidget):
     # Internal signals for thread → main-thread communication
     _streams_loaded = pyqtSignal(list)
     _avatar_ready = pyqtSignal(str, QPixmap)
+    _viewer_count_ready = pyqtSignal(int)
 
     def __init__(
         self,
@@ -212,9 +213,24 @@ class StreamOverlay(OverlayWidget):
         self._chat_flush_timer.setInterval(CHAT_FLUSH_INTERVAL_MS)
         self._chat_flush_timer.timeout.connect(self._flush_chat)
 
+        # Viewer count poll timer (every 60s)
+        self._viewer_poll_timer = QTimer(self)
+        self._viewer_poll_timer.setInterval(60_000)
+        self._viewer_poll_timer.timeout.connect(self._poll_viewer_count)
+
         # Connect internal signals
         self._streams_loaded.connect(self._on_streams_loaded)
         self._avatar_ready.connect(self._on_avatar_ready)
+        self._viewer_count_ready.connect(self._on_viewer_count_ready)
+
+        # Update login button if already authenticated
+        if self._config.twitch_oauth_token:
+            self._twitch_login_btn.setToolTip("Connected to Twitch")
+            _user_svg = (
+                '<path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4'
+                ' 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>'
+            )
+            self._twitch_login_btn.setIcon(svg_icon(_user_svg, ACCENT, 12))
 
     # ------------------------------------------------------------------
     # UI construction
@@ -559,6 +575,17 @@ class StreamOverlay(OverlayWidget):
         h_lay.addWidget(chat_title)
         h_lay.addStretch(1)
 
+        # Twitch login button
+        self._twitch_login_btn = QPushButton()
+        self._twitch_login_btn.setFixedSize(16, 16)
+        _login_svg = '<path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>'
+        self._twitch_login_btn.setIcon(svg_icon(_login_svg, TEXT_DIM, 12))
+        self._twitch_login_btn.setStyleSheet(_BTN_STYLE)
+        self._twitch_login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._twitch_login_btn.setToolTip("Connect Twitch account")
+        self._twitch_login_btn.clicked.connect(self._on_twitch_login)
+        h_lay.addWidget(self._twitch_login_btn)
+
         lay.addWidget(header)
 
         # Chat message area
@@ -579,6 +606,18 @@ class StreamOverlay(OverlayWidget):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         lay.addWidget(self._chat_browser, 1)
+
+        # Chat input (visible when authenticated)
+        self._chat_input = QLineEdit()
+        self._chat_input.setPlaceholderText("Send a message...")
+        self._chat_input.setStyleSheet(
+            f"background: rgba(15,15,25,200); color: {TEXT_COLOR};"
+            " border: 1px solid rgba(80,80,100,120); border-radius: 0px;"
+            " padding: 4px 6px; font-size: 12px;"
+        )
+        self._chat_input.returnPressed.connect(self._send_chat_message)
+        self._chat_input.setVisible(bool(self._config.twitch_oauth_token))
+        lay.addWidget(self._chat_input)
 
         return panel
 
@@ -864,6 +903,7 @@ class StreamOverlay(OverlayWidget):
             self._stream_player = None
 
         self._stop_chat()
+        self._viewer_poll_timer.stop()
         self._current_channel = ""
         self._current_channel_id = ""
 
@@ -888,6 +928,9 @@ class StreamOverlay(OverlayWidget):
 
     def _on_stream_started(self):
         log.debug("Stream started: %s", self._current_channel)
+        # Start viewer count polling
+        self._poll_viewer_count()
+        self._viewer_poll_timer.start()
 
     def _on_stream_error(self, error: str):
         log.debug("Stream error: %s", error)
@@ -982,7 +1025,10 @@ class StreamOverlay(OverlayWidget):
         self._chat_buffer.clear()
         self._chat_browser.clear()
 
-        self._chat_client = TwitchChatClient(channel, parent=self)
+        token = getattr(self._config, "twitch_oauth_token", "")
+        self._chat_client = TwitchChatClient(
+            channel, oauth_token=token, parent=self,
+        )
         self._chat_client.message_received.connect(self._on_chat_message)
         self._chat_client.connected.connect(
             lambda: log.debug("Chat connected to #%s", channel)
@@ -1167,6 +1213,95 @@ class StreamOverlay(OverlayWidget):
                 result.append(html_mod.escape(word))
 
         return " ".join(result)
+
+    # ------------------------------------------------------------------
+    # Twitch auth & chat sending
+    # ------------------------------------------------------------------
+
+    def _on_twitch_login(self):
+        """Open Twitch OAuth login flow in a background thread."""
+        client_id = getattr(self._config, "twitch_client_id", "")
+        if not client_id:
+            self._chat_browser.append(
+                f'<p style="color: {ACCENT}; margin: 4px 0;">'
+                "Set twitch_client_id in config to enable chat login.</p>"
+            )
+            return
+
+        # Run OAuth in a background thread (it blocks waiting for browser)
+        threading.Thread(
+            target=self._twitch_login_worker,
+            args=(client_id,),
+            daemon=True,
+            name="twitch-oauth",
+        ).start()
+
+    def _twitch_login_worker(self, client_id: str):
+        """Background thread: run Twitch OAuth flow."""
+        from ..streaming.twitch_auth import twitch_login
+        token = twitch_login(client_id)
+        if token:
+            self._config.twitch_oauth_token = token
+            save_config(self._config, self._config_path)
+            # Reconnect chat with auth
+            from PyQt6.QtCore import QMetaObject, Q_ARG
+            QMetaObject.invokeMethod(
+                self, "_reconnect_chat_authenticated",
+                Qt.ConnectionType.QueuedConnection,
+            )
+
+    def _reconnect_chat_authenticated(self):
+        """Main-thread: reconnect chat with the new OAuth token."""
+        if self._current_channel:
+            self._stop_chat()
+            self._start_chat(self._current_channel, self._current_channel_id)
+        self._chat_input.setVisible(True)
+        self._twitch_login_btn.setToolTip("Connected to Twitch")
+        self._twitch_login_btn.setIcon(
+            svg_icon(
+                '<path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4'
+                ' 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>',
+                ACCENT, 12,
+            )
+        )
+
+    def _send_chat_message(self):
+        """Send the chat input text as a Twitch message."""
+        text = self._chat_input.text().strip()
+        if not text or not self._chat_client:
+            return
+        self._chat_client.send_message(text)
+        self._chat_input.clear()
+
+    # ------------------------------------------------------------------
+    # Viewer count polling
+    # ------------------------------------------------------------------
+
+    def _poll_viewer_count(self):
+        """Fetch current viewer count on a background thread."""
+        if not self._nexus_client or not self._current_channel:
+            return
+        threading.Thread(
+            target=self._fetch_viewer_count,
+            daemon=True,
+            name="poll-viewers",
+        ).start()
+
+    def _fetch_viewer_count(self):
+        """Background thread: get viewer count for current channel."""
+        try:
+            creators = self._nexus_client.get_streams() or []
+            for c in creators:
+                name = c.get("name", "").lower()
+                if name == self._current_channel.lower() and c.get("is_live"):
+                    self._viewer_count_ready.emit(c.get("viewer_count", 0))
+                    return
+        except Exception:
+            pass
+
+    def _on_viewer_count_ready(self, count: int):
+        """Main-thread: update the viewer count label."""
+        self._viewer_label.setText(self._format_viewers(count))
 
     # ------------------------------------------------------------------
     # Avatar loading

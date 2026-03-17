@@ -1,12 +1,13 @@
-"""Read-only Twitch IRC chat client via WebSocket.
+"""Twitch IRC chat client via WebSocket.
 
-Connects anonymously (no auth required) and emits parsed messages
-via pyqtSignal for the overlay to consume.
+Connects anonymously for read-only, or with an OAuth token to send messages.
+Emits parsed messages via pyqtSignal for the overlay to consume.
 """
 
 from __future__ import annotations
 
 import re
+import threading
 import time
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -99,7 +100,10 @@ def parse_badges_tag(badges_str: str) -> list[str]:
 
 
 class TwitchChatClient(QThread):
-    """Read-only Twitch IRC chat client running on a QThread.
+    """Twitch IRC chat client running on a QThread.
+
+    When ``oauth_token`` is provided, connects authenticated and can
+    send messages.  Otherwise connects anonymously (read-only).
 
     Signals:
         message_received(dict): Parsed chat message with keys:
@@ -112,14 +116,33 @@ class TwitchChatClient(QThread):
     connected = pyqtSignal()
     disconnected = pyqtSignal(str)
 
-    def __init__(self, channel: str, parent=None):
+    def __init__(self, channel: str, *, oauth_token: str = "",
+                 parent=None):
         super().__init__(parent)
         self._channel = channel.lower().lstrip("#")
+        self._oauth_token = oauth_token
         self._running = False
+        self._ws = None
+        self._ws_lock = threading.Lock()
+
+    @property
+    def is_authenticated(self) -> bool:
+        return bool(self._oauth_token)
 
     def stop(self):
         """Signal the thread to stop."""
         self._running = False
+
+    def send_message(self, text: str):
+        """Send a chat message (must be authenticated). Thread-safe."""
+        if not self._oauth_token or not text:
+            return
+        with self._ws_lock:
+            if self._ws is not None:
+                try:
+                    self._ws.send(f"PRIVMSG #{self._channel} :{text}")
+                except Exception as exc:
+                    log.error("Failed to send message: %s", exc)
 
     def run(self):
         if not _WS_AVAILABLE:
@@ -136,7 +159,7 @@ class TwitchChatClient(QThread):
                 if not self._running:
                     break
             except Exception as exc:
-                log.debug("Chat connection error: %s", exc)
+                log.error("Chat connection error: %s", exc)
 
             retries += 1
             if self._running and retries < _MAX_RETRIES:
@@ -156,30 +179,45 @@ class TwitchChatClient(QThread):
     def _run_connection(self):
         """Single connection lifecycle."""
         with ws_connect(_WS_URL) as ws:
-            # Request tags and commands capabilities
-            ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands")
-            ws.send(f"NICK {_ANON_NICK}")
-            ws.send(f"JOIN #{self._channel}")
+            with self._ws_lock:
+                self._ws = ws
 
-            self.connected.emit()
-            log.debug("Joined #%s", self._channel)
+            try:
+                # Request tags and commands capabilities
+                ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands")
 
-            while self._running:
-                try:
-                    raw = ws.recv(timeout=1.0)
-                except TimeoutError:
-                    continue
-                except ConnectionClosed:
-                    self.disconnected.emit("connection closed")
-                    return
+                # Authenticate or use anonymous nick
+                if self._oauth_token:
+                    ws.send(f"PASS oauth:{self._oauth_token}")
+                    ws.send(f"NICK {self._oauth_token[:8]}")  # nick ignored when authed
+                else:
+                    ws.send(f"NICK {_ANON_NICK}")
 
-                if not raw:
-                    continue
+                ws.send(f"JOIN #{self._channel}")
 
-                for line in raw.split("\r\n"):
-                    if not line:
+                self.connected.emit()
+                log.debug("Joined #%s (auth=%s)", self._channel,
+                          bool(self._oauth_token))
+
+                while self._running:
+                    try:
+                        raw = ws.recv(timeout=1.0)
+                    except TimeoutError:
                         continue
-                    self._handle_line(line, ws)
+                    except ConnectionClosed:
+                        self.disconnected.emit("connection closed")
+                        return
+
+                    if not raw:
+                        continue
+
+                    for line in raw.split("\r\n"):
+                        if not line:
+                            continue
+                        self._handle_line(line, ws)
+            finally:
+                with self._ws_lock:
+                    self._ws = None
 
     def _handle_line(self, line: str, ws):
         """Process a single IRC line."""
