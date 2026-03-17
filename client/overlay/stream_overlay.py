@@ -741,6 +741,11 @@ class StreamOverlay(OverlayWidget):
 
     def _on_close(self):
         self._stop_playback()
+        self._title_label.setText("Streams")
+        for b in self._size_btns: b.setVisible(False)
+        self._chat_toggle_btn.setVisible(False)
+        self._stack.setCurrentIndex(_PAGE_LIST)
+        self._apply_list_size()
         self.set_wants_visible(False)
 
     # ------------------------------------------------------------------
