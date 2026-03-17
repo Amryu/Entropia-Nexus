@@ -174,6 +174,7 @@ class StreamOverlay(OverlayWidget):
     _streams_loaded = pyqtSignal(list)
     _avatar_ready = pyqtSignal(str, QPixmap)
     _viewer_count_ready = pyqtSignal(int)
+    _twitch_login_done = pyqtSignal()
 
     def __init__(
         self,
@@ -222,9 +223,12 @@ class StreamOverlay(OverlayWidget):
         self._streams_loaded.connect(self._on_streams_loaded)
         self._avatar_ready.connect(self._on_avatar_ready)
         self._viewer_count_ready.connect(self._on_viewer_count_ready)
+        self._twitch_login_done.connect(self._reconnect_chat_authenticated)
 
         # Update login button if already authenticated
-        if self._config.twitch_oauth_token:
+        from ..streaming.twitch_auth import load_twitch_token
+        self._twitch_token = load_twitch_token()
+        if self._twitch_token:
             self._twitch_login_btn.setToolTip("Connected to Twitch")
             _user_svg = (
                 '<path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4'
@@ -625,7 +629,7 @@ class StreamOverlay(OverlayWidget):
             " padding: 4px 6px; font-size: 12px;"
         )
         self._chat_input.returnPressed.connect(self._send_chat_message)
-        self._chat_input.setVisible(bool(self._config.twitch_oauth_token))
+        self._chat_input.setVisible(bool(self._twitch_token))
         lay.addWidget(self._chat_input)
 
         return panel
@@ -1080,7 +1084,7 @@ class StreamOverlay(OverlayWidget):
         self._chat_buffer.clear()
         self._chat_browser.clear()
 
-        token = getattr(self._config, "twitch_oauth_token", "")
+        token = self._twitch_token
         self._chat_client = TwitchChatClient(
             channel, oauth_token=token, parent=self,
         )
@@ -1292,17 +1296,12 @@ class StreamOverlay(OverlayWidget):
 
     def _twitch_login_worker(self, client_id: str):
         """Background thread: run Twitch OAuth flow."""
-        from ..streaming.twitch_auth import twitch_login
+        from ..streaming.twitch_auth import twitch_login, save_twitch_token
         token = twitch_login(client_id)
         if token:
-            self._config.twitch_oauth_token = token
-            save_config(self._config, self._config_path)
-            # Reconnect chat with auth
-            from PyQt6.QtCore import QMetaObject, Q_ARG
-            QMetaObject.invokeMethod(
-                self, "_reconnect_chat_authenticated",
-                Qt.ConnectionType.QueuedConnection,
-            )
+            save_twitch_token(token)
+            self._twitch_token = token
+            self._twitch_login_done.emit()
 
     def _reconnect_chat_authenticated(self):
         """Main-thread: reconnect chat with the new OAuth token."""

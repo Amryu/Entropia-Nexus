@@ -1,7 +1,8 @@
 """Twitch OAuth — implicit grant flow for chat authentication.
 
 Opens the system browser for Twitch login, catches the token via a
-localhost HTTP server.  The token is stored in the app config.
+localhost HTTP server.  The token is stored in the OS keyring via the
+existing TokenStore infrastructure.
 """
 
 from __future__ import annotations
@@ -10,11 +11,37 @@ import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
+import keyring
+
 from ..core.logger import get_logger
 
 log = get_logger("TwitchAuth")
 
 DEFAULT_TWITCH_CLIENT_ID = "0jdvickf4cpdz3uc5cgxjltp4mll7q"
+
+# Keyring storage — reuses the same service name as the Nexus token store
+_SERVICE_NAME = "EntropiaNexusClient"
+_TWITCH_TOKEN_KEY = "twitch_oauth_token"
+
+
+def load_twitch_token() -> str:
+    """Load the Twitch OAuth token from the OS keyring."""
+    try:
+        token = keyring.get_password(_SERVICE_NAME, _TWITCH_TOKEN_KEY)
+        return token or ""
+    except Exception:
+        return ""
+
+
+def save_twitch_token(token: str) -> None:
+    """Save the Twitch OAuth token to the OS keyring."""
+    try:
+        if token:
+            keyring.set_password(_SERVICE_NAME, _TWITCH_TOKEN_KEY, token)
+        else:
+            keyring.delete_password(_SERVICE_NAME, _TWITCH_TOKEN_KEY)
+    except Exception as exc:
+        log.warning("Failed to save Twitch token to keyring: %s", exc)
 
 _REDIRECT_PORT = 47833  # different from Nexus OAuth port (47832)
 _REDIRECT_URI = f"http://localhost:{_REDIRECT_PORT}"
