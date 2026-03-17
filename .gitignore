@@ -63,3 +63,4 @@ client/assets/stpk/*_preview.png
 client/assets/stpk/*.orig
 nexus-crash-*.txt
 experiments/
+emote_cache/
