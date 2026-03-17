@@ -1168,13 +1168,14 @@ function formatChangedValue(value, key, pad, lines) {
 }
 
 /** Format all fields of an object with a fixed prefix (+/-) for added/removed items. */
-function formatDiffLinesFlat(obj, lines, depth, prefix) {
+function formatDiffLinesFlat(obj, lines, depth, prefix, skipContext = true) {
   const pad = '  '.repeat(depth);
   for (const [key, value] of Object.entries(obj)) {
-    if (key === '_status' || key === 'Name' || key === 'Tier') continue;
+    if (key === '_status') continue;
+    if (skipContext && (key === 'Name' || key === 'Tier')) continue;
     if (typeof value === 'object' && value !== null) {
       lines.push(`${prefix} ${pad}${key}:`);
-      formatDiffLinesFlat(value, lines, depth + 1, prefix);
+      formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
     } else if (value != null) {
       lines.push(`${prefix} ${pad}${key}: ${value}`);
     }
