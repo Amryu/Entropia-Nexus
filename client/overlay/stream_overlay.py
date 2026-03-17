@@ -1109,7 +1109,8 @@ class StreamOverlay(OverlayWidget):
         self._chat_flush_timer.stop()
         if self._chat_client:
             self._chat_client.stop()
-            self._chat_client.wait(2000)
+            # Don't wait synchronously — the thread will exit on its own
+            # after the next recv timeout (~1s).
             self._chat_client = None
         if self._emote_manager:
             self._emote_manager.clear_channel_emotes()
