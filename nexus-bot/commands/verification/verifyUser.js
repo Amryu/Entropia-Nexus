@@ -279,7 +279,11 @@ function collectVerificationCode(thread, userVerify, guild, code, onEnd) {
     const typed = msg.content.trim();
     if (!typed) return;
 
-    if (typed === codeStr) {
+    // Only treat messages containing 3+ consecutive digits as code attempts
+    const digitSequences = typed.match(/\d{3,}/g);
+    if (!digitSequences) return;
+
+    if (digitSequences.some(seq => seq === codeStr)) {
       await onVerified();
     } else {
       try {
