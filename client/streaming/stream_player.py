@@ -6,6 +6,8 @@ All heavy I/O (URL resolution) runs on background threads.
 
 from __future__ import annotations
 
+import os
+import sys
 import threading
 from typing import TYPE_CHECKING
 
@@ -21,12 +23,30 @@ log = get_logger("StreamPlayer")
 # Try importing optional dependencies
 _MPV_AVAILABLE = False
 _STREAMLINK_AVAILABLE = False
+_MPV_DLL_MISSING = False
+
+# mpv requires its DLL on PATH before import.  Search common locations
+# and the directory next to the running executable/script.
+if sys.platform == "win32":
+    _MPV_SEARCH_DIRS = [
+        os.path.join(os.path.dirname(sys.executable), "mpv"),
+        os.path.dirname(sys.executable),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "mpv"),
+        os.path.join(os.environ.get("ProgramFiles", ""), "mpv"),
+        # Next to this source file (dev convenience)
+        os.path.join(os.path.dirname(__file__), "..", "assets", "mpv"),
+    ]
+    for _d in _MPV_SEARCH_DIRS:
+        if os.path.isdir(_d):
+            os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
 
 try:
     import mpv as _mpv_mod  # noqa: F401
     _MPV_AVAILABLE = True
-except (ImportError, OSError):
+except ImportError:
     pass
+except OSError:
+    _MPV_DLL_MISSING = True
 
 try:
     import streamlink as _streamlink_mod  # noqa: F401
@@ -41,12 +61,18 @@ def is_available() -> bool:
 
 
 def missing_components() -> list[str]:
-    """Return list of missing component names."""
+    """Return list of missing component names with install hints."""
     missing = []
     if not _STREAMLINK_AVAILABLE:
-        missing.append("streamlink")
-    if not _MPV_AVAILABLE:
-        missing.append("python-mpv (+ mpv-2.dll)")
+        missing.append("streamlink (pip install streamlink)")
+    if _MPV_DLL_MISSING:
+        missing.append(
+            "mpv-2.dll not found — download libmpv from\n"
+            "https://sourceforge.net/projects/mpv-player-windows/files/libmpv/\n"
+            "and place mpv-2.dll next to the executable or in PATH"
+        )
+    elif not _MPV_AVAILABLE:
+        missing.append("python-mpv (pip install python-mpv)")
     return missing
 
 

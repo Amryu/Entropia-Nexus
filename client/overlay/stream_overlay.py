@@ -271,12 +271,6 @@ class StreamOverlay(OverlayWidget):
         lay.addStretch(1)
 
         # Size buttons (S/M/L) — hidden initially, shown during playback
-        self._size_btn_container = QWidget()
-        self._size_btn_container.setStyleSheet("background: transparent;")
-        size_lay = QHBoxLayout(self._size_btn_container)
-        size_lay.setContentsMargins(0, 0, 0, 0)
-        size_lay.setSpacing(2)
-
         for i, label in enumerate(_SIZE_LABELS):
             btn = QPushButton(label)
             btn.setFixedSize(18, 18)
@@ -284,11 +278,9 @@ class StreamOverlay(OverlayWidget):
             btn.setStyleSheet(_size_btn_style(active))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda checked, idx=i: self._on_size_clicked(idx))
-            size_lay.addWidget(btn)
+            btn.setVisible(False)
+            lay.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
             self._size_btns.append(btn)
-
-        self._size_btn_container.setVisible(False)
-        lay.addWidget(self._size_btn_container, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Chat toggle button — hidden initially
         self._chat_toggle_btn = QPushButton()
@@ -818,7 +810,7 @@ class StreamOverlay(OverlayWidget):
         self._title_label.setText(channel)
 
         # Show player controls and resize to video preset
-        self._size_btn_container.setVisible(True)
+        for b in self._size_btns: b.setVisible(True)
         self._chat_toggle_btn.setVisible(True)
         self._apply_size_preset(self._config.stream_overlay_size_preset)
         self._stack.setCurrentIndex(_PAGE_PLAYER)
@@ -887,7 +879,7 @@ class StreamOverlay(OverlayWidget):
         """Return to stream list."""
         self._stop_playback()
         self._title_label.setText("Streams")
-        self._size_btn_container.setVisible(False)
+        for b in self._size_btns: b.setVisible(False)
         self._chat_toggle_btn.setVisible(False)
         self._stack.setCurrentIndex(_PAGE_LIST)
         self._apply_list_size()
