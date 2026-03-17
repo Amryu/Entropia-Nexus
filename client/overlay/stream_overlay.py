@@ -332,15 +332,14 @@ class StreamOverlay(OverlayWidget):
             lay.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
             self._size_btns.append(btn)
 
-        # Chat toggle button — hidden initially
+        # Chat toggle button — hidden initially, styled like S/M/L buttons
         self._chat_toggle_btn = QPushButton()
         self._chat_toggle_btn.setFixedSize(18, 18)
-        self._chat_toggle_btn.setIcon(svg_icon(_CHAT_SVG, TEXT_DIM, 14))
-        self._chat_toggle_btn.setStyleSheet(_BTN_STYLE)
         self._chat_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._chat_toggle_btn.setToolTip("Toggle chat")
         self._chat_toggle_btn.clicked.connect(self._toggle_chat)
         self._chat_toggle_btn.setVisible(False)
+        self._update_chat_btn_style(self._config.stream_overlay_chat_visible)
         lay.addWidget(self._chat_toggle_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Minimize button
@@ -959,6 +958,7 @@ class StreamOverlay(OverlayWidget):
         # Show player controls and resize to video preset
         for b in self._size_btns: b.setVisible(True)
         self._chat_toggle_btn.setVisible(True)
+        self._update_chat_btn_style(self._chat_panel.isVisible())
         self._apply_size_preset(self._config.stream_overlay_size_preset)
         self._stack.setCurrentIndex(_PAGE_PLAYER)
 
@@ -1122,10 +1122,17 @@ class StreamOverlay(OverlayWidget):
     # Chat toggle
     # ------------------------------------------------------------------
 
+    def _update_chat_btn_style(self, active: bool):
+        """Style the chat toggle button like the S/M/L size buttons."""
+        self._chat_toggle_btn.setStyleSheet(_size_btn_style(active))
+        color = ACCENT if active else TEXT_DIM
+        self._chat_toggle_btn.setIcon(svg_icon(_CHAT_SVG, color, 14))
+
     def _toggle_chat(self):
         visible = not self._chat_panel.isVisible()
         self._chat_panel.setVisible(visible)
         self._config.stream_overlay_chat_visible = visible
+        self._update_chat_btn_style(visible)
         save_config(self._config, self._config_path)
         self._apply_size_preset(self._config.stream_overlay_size_preset)
 
