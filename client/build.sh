@@ -196,6 +196,23 @@ python -m PyInstaller \
     --exclude-module onnxtr \
     --exclude-module scipy \
     --exclude-module pyautogui \
+    --exclude-module 'numpy._core._multiarray_tests' \
+    --exclude-module 'numpy._core._umath_tests' \
+    --exclude-module 'numpy._core._struct_ufunc_tests' \
+    --exclude-module 'numpy._core._rational_tests' \
+    --exclude-module 'numpy._core._operand_flag_tests' \
+    --exclude-module 'numpy._core._simd' \
+    --exclude-module 'numpy.random' \
+    --exclude-module 'numpy.fft' \
+    --exclude-module 'PIL.ImageMath' \
+    --exclude-module '_asyncio' \
+    --exclude-module '_multiprocessing' \
+    --exclude-module '_overlapped' \
+    --exclude-module '_decimal' \
+    --exclude-module 'pyexpat' \
+    --exclude-module 'xml.parsers.expat' \
+    --exclude-module '_yaml' \
+    --exclude-module '_cffi_backend' \
     "${DATA_ARGS[@]}" \
     "${IMPORT_ARGS[@]}" \
     "${PLATFORM_ARGS[@]}" \
