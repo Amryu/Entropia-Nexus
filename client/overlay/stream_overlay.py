@@ -1452,17 +1452,8 @@ class StreamOverlay(OverlayWidget):
             return
         self._chat_client.send_message(text)
         self._chat_input.clear()
-        # Show own message locally (Twitch doesn't echo without
-        # the echo-message cap, which requires additional handling)
-        import time
-        self._on_chat_message({
-            "display_name": self._twitch_display_name,
-            "color": ACCENT,
-            "badges": [],
-            "emotes": [],
-            "message": text,
-            "timestamp": time.time(),
-        })
+        # Message will appear via echo-message capability — Twitch
+        # sends it back as a normal PRIVMSG with full emote tags.
 
     # ------------------------------------------------------------------
     # Viewer count polling

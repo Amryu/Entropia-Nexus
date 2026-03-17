@@ -218,8 +218,11 @@ class TwitchChatClient(QThread):
                 self._ws = ws
 
             try:
-                # Request tags and commands capabilities
-                ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands")
+                # Request tags, commands, and echo-message capabilities.
+                # echo-message makes Twitch echo back our own sent messages
+                # with full tags (emotes, badges, etc.) so we don't need
+                # to fake a local echo.
+                ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/echo-message")
 
                 # Authenticate or use anonymous nick
                 if self._oauth_token:
