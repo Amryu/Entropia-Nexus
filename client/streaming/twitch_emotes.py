@@ -23,7 +23,7 @@ log = get_logger("TwitchEmotes")
 _EMOTE_SIZE = 1
 
 # CDN URLs
-_TWITCH_CDN = "https://static-cdn.jtvnps.net/emoticons/v2/{id}/default/dark/1.0"
+_TWITCH_CDN = "https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/1.0"
 _BTTV_CDN = "https://cdn.betterttv.net/emote/{id}/1x.png"
 _FFZ_CDN = "https://cdn.frankerfacez.com/emote/{id}/1"
 _7TV_CDN = "https://cdn.7tv.app/emote/{id}/1x.webp"
