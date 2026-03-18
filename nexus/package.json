@@ -63,6 +63,7 @@
 	"overrides": {
 		"minimatch": "^10.2.1",
 		"cookie": "^0.7.0",
-		"yauzl": "^3.2.1"
+		"yauzl": "^3.2.1",
+		"fast-xml-parser": "5.5.6"
 	}
 }
