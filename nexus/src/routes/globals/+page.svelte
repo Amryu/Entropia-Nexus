@@ -85,7 +85,7 @@
   let locationFilter = $state('');
   let minValue = $state('');
   let hofOnly = $state(false);
-  let period = $state('7d');
+  let period = $state('90d');
   let dateFrom = $state(null);
   let dateTo = $state(null);
 
@@ -742,6 +742,9 @@
   <GlobalsTabNav {buildParams} />
 
   {#if !isLiveView}
+  <!-- Period Selector -->
+  <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} onchange={onDateRangeChange} />
+
   <!-- Stats Cards -->
   <div class="stats-row" class:stats-loading={statsLoading}>
     <div class="stat-card">
@@ -802,10 +805,7 @@
 
   <!-- Charts -->
   <div class="charts-section">
-    <div class="chart-header">
-      <h2>Statistics</h2>
-      <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} onchange={onDateRangeChange} />
-    </div>
+    <h2 class="charts-heading">Statistics</h2>
 
     <div class="charts-grid">
       <div class="chart-card chart-wide">
@@ -1330,15 +1330,8 @@
     margin-bottom: 20px;
   }
 
-  .chart-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-  }
-
-  .chart-header h2 {
-    margin: 0;
+  .charts-heading {
+    margin: 0 0 16px 0;
     font-size: 1.125rem;
     font-weight: 600;
   }

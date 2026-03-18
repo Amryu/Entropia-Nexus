@@ -23,7 +23,7 @@
   let locationFilter = $state(sp.get('location') || '');
   let minValue = $state(sp.get('min_value') || '');
   let hofOnly = $state(sp.get('hof') === 'true');
-  let period = $state(sp.get('period') || '7d');
+  let period = $state(sp.get('period') || '90d');
   let dateFrom = $state(sp.get('from') || null);
   let dateTo = $state(sp.get('to') || null);
   let sortBy = $state(sp.get('sort') || 'value');

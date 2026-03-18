@@ -187,6 +187,11 @@ export function fillActivityGaps(rows, sqlUnit, from, to, period) {
     i++;
   }
 
+  // Trim leading/trailing zero-count buckets so charts don't start/end at 0
+  // when the period range extends beyond the actual data
+  while (result.length > 0 && result[0].count === 0 && result[0].value === 0) result.shift();
+  while (result.length > 0 && result[result.length - 1].count === 0 && result[result.length - 1].value === 0) result.pop();
+
   return result;
 }
 

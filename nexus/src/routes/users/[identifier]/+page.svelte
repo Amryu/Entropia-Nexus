@@ -1589,7 +1589,7 @@
           <!-- Category rankings -->
           <div class="globals-rankings">
             <div class="globals-rankings-header">
-              <h3>Personal All Time High Rankings</h3>
+              <h3>Personal All Time Rankings</h3>
               <div class="globals-ath-toggle">
                 <button class="globals-ath-btn" class:active={globalsAthMode === 'best'} onclick={() => globalsAthMode = 'best'}>Best</button>
                 <button class="globals-ath-btn" class:active={globalsAthMode === 'total'} onclick={() => globalsAthMode = 'total'}>Total</button>

@@ -317,43 +317,77 @@ export async function GET({ params, url, locals }) {
       topLootsQuery("global_type = 'craft'"),
 
       // Category-level player rankings (how this player ranks among ALL players per category)
-      safeQuery(pool.query(
-        `WITH category_totals AS (
-          SELECT player_name,
-            SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
-            SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
-            SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
-            SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
-            SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value,
-            SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count
-          FROM globals_rollup_player
-          WHERE granularity = 'monthly'
-          GROUP BY player_name
-        ),
-        ranked AS (
-          SELECT player_name,
-            RANK() OVER (ORDER BY hunting_value DESC NULLS LAST) AS hunting_value_rank,
-            RANK() OVER (ORDER BY hunting_count DESC NULLS LAST) AS hunting_count_rank,
-            RANK() OVER (ORDER BY mining_value DESC NULLS LAST) AS mining_value_rank,
-            RANK() OVER (ORDER BY mining_count DESC NULLS LAST) AS mining_count_rank,
-            RANK() OVER (ORDER BY crafting_value DESC NULLS LAST) AS crafting_value_rank,
-            RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank
-          FROM category_totals
-        )
-        SELECT hunting_value_rank, hunting_count_rank,
-               mining_value_rank, mining_count_rank,
-               crafting_value_rank, crafting_count_rank
-        FROM ranked
-        WHERE lower(player_name) = lower($1)`,
-        [playerName]
-      )),
+      // When a period filter is active, ranks are computed over that period using raw events;
+      // for all-time, use the pre-aggregated rollup table for speed.
+      safeQuery(periodCond
+        ? pool.query(
+            `WITH category_totals AS (
+              SELECT player_name,
+                SUM(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
+                COUNT(*) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
+                SUM(value) FILTER (WHERE global_type = 'deposit') AS mining_value,
+                COUNT(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
+                SUM(value) FILTER (WHERE global_type = 'craft') AS crafting_value,
+                COUNT(*) FILTER (WHERE global_type = 'craft') AS crafting_count
+              FROM ingested_globals
+              WHERE confirmed = true${periodCond}
+              GROUP BY player_name
+            ),
+            ranked AS (
+              SELECT player_name,
+                RANK() OVER (ORDER BY hunting_value DESC NULLS LAST) AS hunting_value_rank,
+                RANK() OVER (ORDER BY hunting_count DESC NULLS LAST) AS hunting_count_rank,
+                RANK() OVER (ORDER BY mining_value DESC NULLS LAST) AS mining_value_rank,
+                RANK() OVER (ORDER BY mining_count DESC NULLS LAST) AS mining_count_rank,
+                RANK() OVER (ORDER BY crafting_value DESC NULLS LAST) AS crafting_value_rank,
+                RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank
+              FROM category_totals
+            )
+            SELECT hunting_value_rank, hunting_count_rank,
+                   mining_value_rank, mining_count_rank,
+                   crafting_value_rank, crafting_count_rank
+            FROM ranked
+            WHERE lower(player_name) = lower($1)`,
+            [playerName, ...extraParams]
+          )
+        : pool.query(
+            `WITH category_totals AS (
+              SELECT player_name,
+                SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
+                SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
+                SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
+                SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
+                SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value,
+                SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count
+              FROM globals_rollup_player
+              WHERE granularity = 'monthly'
+              GROUP BY player_name
+            ),
+            ranked AS (
+              SELECT player_name,
+                RANK() OVER (ORDER BY hunting_value DESC NULLS LAST) AS hunting_value_rank,
+                RANK() OVER (ORDER BY hunting_count DESC NULLS LAST) AS hunting_count_rank,
+                RANK() OVER (ORDER BY mining_value DESC NULLS LAST) AS mining_value_rank,
+                RANK() OVER (ORDER BY mining_count DESC NULLS LAST) AS mining_count_rank,
+                RANK() OVER (ORDER BY crafting_value DESC NULLS LAST) AS crafting_value_rank,
+                RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank
+              FROM category_totals
+            )
+            SELECT hunting_value_rank, hunting_count_rank,
+                   mining_value_rank, mining_count_rank,
+                   crafting_value_rank, crafting_count_rank
+            FROM ranked
+            WHERE lower(player_name) = lower($1)`,
+            [playerName]
+          )
+      ),
 
       // Space mining category ranks (separate query since rollup table lacks target_name)
       safeQuery(pool.query(
         `WITH space_totals AS (
           SELECT player_name, SUM(value) AS val, COUNT(*) AS cnt
           FROM ingested_globals
-          WHERE confirmed = true AND global_type = 'deposit' AND target_name ~* 'asteroid'
+          WHERE confirmed = true AND global_type = 'deposit' AND target_name ~* 'asteroid'${periodCond}
           GROUP BY player_name
         ),
         ranked AS (
@@ -363,7 +397,7 @@ export async function GET({ params, url, locals }) {
           FROM space_totals
         )
         SELECT value_rank, count_rank FROM ranked WHERE lower(player_name) = lower($1)`,
-        [playerName]
+        [playerName, ...extraParams]
       )),
 
       // Space mining activity (separate from main activity since global_type doesn't distinguish asteroids)

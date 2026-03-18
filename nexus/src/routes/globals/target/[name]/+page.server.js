@@ -10,7 +10,7 @@ export function load({ params, fetch }) {
   return {
     targetName,
     streamed: {
-      targetData: fetch(`/api/globals/target/${encodeURIComponent(targetName)}`)
+      targetData: fetch(`/api/globals/target/${encodeURIComponent(targetName)}?period=90d`)
         .then(r => r.ok ? r.json() : null)
         .catch(() => null)
     }

@@ -15,7 +15,7 @@
   import { goto } from '$app/navigation';
   import SearchInput from '$lib/components/SearchInput.svelte';
   import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
-  import { TYPE_CONFIG, ASTEROID_RE } from '$lib/data/globals-constants.js';
+  import { TYPE_CONFIG, ASTEROID_RE, PERIOD_OPTIONS } from '$lib/data/globals-constants.js';
   import { formatPed, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
   import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
   import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
@@ -114,10 +114,17 @@
   ];
   let activeTab = $state('overview');
 
-  let period = $state('all');
+  let period = $state('90d');
   let dateFrom = $state(null);
   let dateTo = $state(null);
   let loading = $state(false);
+
+  /** Human-readable label for the current period (e.g. "90 Day", "All Time"). */
+  let periodLabel = $derived((() => {
+    if (dateFrom && dateTo) return 'Custom Range';
+    const opt = PERIOD_OPTIONS.find(p => p.value === period);
+    return opt ? opt.label.replace(/s$/, '') : 'All Time';
+  })());
 
   function onDateRangeChange(data) {
     period = data.period;
@@ -585,7 +592,7 @@
       {#if activeTab === 'overview'}
         <!-- ATH Rankings (top 10 per category, matching user profile layout) -->
         <div class="overview-rankings-header">
-          <h2>All Time High Rankings</h2>
+          <h2>{period === 'all' ? 'All Time' : periodLabel} Rankings</h2>
           <div class="sort-toggle">
             <button class="sort-btn" class:active={overviewAthMode === 'best'} onclick={() => overviewAthMode = 'best'}>Best</button>
             <button class="sort-btn" class:active={overviewAthMode === 'total'} onclick={() => overviewAthMode = 'total'}>Total</button>
@@ -1888,6 +1895,8 @@
     border-radius: 6px;
     background: var(--secondary-color);
     padding: 12px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .ranking-card-header {

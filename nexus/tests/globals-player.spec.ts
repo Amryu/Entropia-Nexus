@@ -41,7 +41,7 @@ test.describe('Globals player detail page', () => {
     await expect(picker.locator('.period-btn', { hasText: '90 Days' })).toBeVisible();
     await expect(picker.locator('.period-btn', { hasText: 'All Time' })).toBeVisible();
     await expect(picker.locator('.period-btn', { hasText: 'Custom' })).toBeVisible();
-    await expect(picker.locator('.period-btn.active')).toContainText('All Time');
+    await expect(picker.locator('.period-btn.active')).toContainText('90 Days');
   });
 
   test('shows category breakdown cards', async ({ page }) => {

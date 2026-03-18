@@ -98,7 +98,7 @@
   let maturities = $state([]);
   let wikiUrl = $state(null);
 
-  let period = $state('all');
+  let period = $state('90d');
   let dateFrom = $state(null);
   let dateTo = $state(null);
   let loading = $state(false);

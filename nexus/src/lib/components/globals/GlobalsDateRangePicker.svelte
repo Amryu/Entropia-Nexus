@@ -21,7 +21,7 @@
 
   /** @type {Props} */
   let {
-    period = $bindable('7d'),
+    period = $bindable('90d'),
     from = $bindable(null),
     to = $bindable(null),
     disabled = false,
