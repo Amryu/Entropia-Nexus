@@ -83,7 +83,7 @@ class AppConfig:
     oauth_redirect_port: int = 47832
 
     # Hunt tracking
-    encounter_close_timeout_ms: int = 15000
+    encounter_close_timeout_ms: int = 180000       # 3 min — wait for loot after last combat event
     loot_close_timeout_ms: int = 3000            # faster timeout after loot received
     max_encounter_duration_ms: int = 600000      # 10 min hard cap — prevents stuck encounters
     attribution_window_ms: int = 3000
@@ -377,7 +377,7 @@ DEFAULTS = {
     "api_base_url": "https://api.entropianexus.com",
     "oauth_client_id": "",
     "oauth_redirect_port": 47832,
-    "encounter_close_timeout_ms": 15000,
+    "encounter_close_timeout_ms": 180000,
     "loot_close_timeout_ms": 3000,
     "max_encounter_duration_ms": 600000,
     "attribution_window_ms": 3000,
