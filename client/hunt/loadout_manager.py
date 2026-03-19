@@ -61,10 +61,12 @@ class SessionLoadoutManager:
         return None
 
     def warmup(self):
-        """Pre-initialize the calculator in a background thread.
+        """Pre-initialize the calculator and evaluate active loadout.
 
         Called after catchup completes so V8 + entity data loading
         doesn't block the watcher thread during a hunt session.
+        Also evaluates the active loadout from cache so weapon signatures
+        are ready before the first combat event.
         """
         if self._warmup_started:
             return
@@ -73,9 +75,21 @@ class SessionLoadoutManager:
         def _init():
             try:
                 self._do_init_calculator()
-                log.info("Calculator pre-warmed")
-            except Exception as e:
-                log.error("Calculator warmup failed: %s", e)
+                log.info("Calculator pre-warmed (V8 + %d entity types)",
+                         len(self._entity_data) if self._entity_data else 0)
+                # Pre-evaluate the active loadout from cache
+                if not self._active_loadout:
+                    self.load_active_loadout()
+                if self._active_stats:
+                    log.info("Active loadout evaluated: %s (cost=%.4f PEC/shot, dmg=%.1f-%.1f)",
+                             (self._active_loadout or {}).get("Gear", {}).get("Weapon", {}).get("Name", "?"),
+                             self._active_stats.cost,
+                             self._active_stats.damage_interval_min,
+                             self._active_stats.damage_interval_max)
+                else:
+                    log.warning("No active loadout or evaluation failed — cost tracking disabled")
+            except Exception:
+                log.exception("Calculator warmup failed")
             finally:
                 self._calculator_ready.set()
 
@@ -131,9 +145,11 @@ class SessionLoadoutManager:
         """Load and cache active loadout from local file cache (no UI needed)."""
         loadout_id = self._config.active_loadout_id
         if not loadout_id:
+            log.info("No active_loadout_id configured — skipping loadout load")
             return
         cache_path = Path("data/cache/loadouts.json")
         if not cache_path.exists():
+            log.warning("Loadout cache not found at %s", cache_path)
             return
         try:
             loadouts = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -144,9 +160,13 @@ class SessionLoadoutManager:
                     if stats:
                         self._active_stats = stats
                         self._tool_inference.load_from_loadout_stats(weapon_name, stats)
+                        log.info("Loaded active loadout: %s", weapon_name)
+                    else:
+                        log.warning("Loadout found but evaluation returned no stats")
                     return
-        except Exception as e:
-            log.error("Failed to load active loadout: %s", e)
+            log.warning("Loadout ID %s not found in cache (%d loadouts)", loadout_id, len(loadouts))
+        except Exception:
+            log.exception("Failed to load active loadout")
 
     def on_active_loadout_changed(self, loadout: dict, weapon_name: str | None, stats):
         """Called when loadout page publishes EVENT_ACTIVE_LOADOUT_CHANGED."""
