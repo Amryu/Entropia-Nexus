@@ -174,7 +174,7 @@ def format_cooldown_label(interval) -> str:
 # ---------------------------------------------------------------------------
 
 _TAB_LABELS = ["Dailies", "Events", "Hunting", "Mining", "Crafting"]
-_COMING_SOON_TABS = {2, 3, 4}
+_COMING_SOON_TABS = {3, 4}  # Mining, Crafting
 
 _TABLE_STYLE = f"""
     QTableWidget {{
@@ -328,8 +328,9 @@ class TrackerPage(QWidget):
 
         # Sub-pages
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._build_dailies_page())
-        self._stack.addWidget(self._build_events_page())
+        self._stack.addWidget(self._build_dailies_page())    # 0: Dailies
+        self._stack.addWidget(self._build_events_page())     # 1: Events
+        self._stack.addWidget(self._build_hunting_page())    # 2: Hunting
         for i in sorted(_COMING_SOON_TABS):
             self._stack.addWidget(self._build_coming_soon_page(_TAB_LABELS[i]))
         root.addWidget(self._stack)
@@ -459,6 +460,169 @@ class TrackerPage(QWidget):
         layout.addWidget(self._events_table)
 
         return page
+
+    # --- Hunting sub-page ---
+
+    def _build_hunting_page(self):
+        from PyQt6.QtWidgets import QTextEdit, QSplitter
+        from PyQt6.QtGui import QFont, QTextCursor
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(8)
+
+        # Header with session info
+        header = QHBoxLayout()
+        title = QLabel("Hunting Tracker")
+        title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {TEXT}; border: none;")
+        header.addWidget(title)
+        header.addStretch()
+
+        self._hunt_status_label = QLabel("No active session")
+        self._hunt_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; border: none;")
+        header.addWidget(self._hunt_status_label)
+        layout.addLayout(header)
+
+        # Session summary bar
+        summary_bar = QWidget()
+        summary_bar.setStyleSheet(
+            f"background: {SECONDARY}; border: 1px solid {BORDER}; border-radius: 4px;"
+        )
+        summary_layout = QHBoxLayout(summary_bar)
+        summary_layout.setContentsMargins(12, 8, 12, 8)
+        summary_layout.setSpacing(16)
+
+        self._hunt_kills_label = self._stat_label("Kills", "0")
+        self._hunt_cost_label = self._stat_label("Cost", "0.00")
+        self._hunt_loot_label = self._stat_label("Loot", "0.00")
+        self._hunt_return_label = self._stat_label("Return", "—")
+        summary_layout.addWidget(self._hunt_kills_label)
+        summary_layout.addWidget(self._hunt_cost_label)
+        summary_layout.addWidget(self._hunt_loot_label)
+        summary_layout.addWidget(self._hunt_return_label)
+        summary_layout.addStretch()
+        layout.addWidget(summary_bar)
+
+        # Log area
+        self._hunt_log = QTextEdit()
+        self._hunt_log.setReadOnly(True)
+        self._hunt_log.setFont(QFont("Consolas", 9))
+        self._hunt_log.setStyleSheet(
+            f"QTextEdit {{"
+            f"  background: {PRIMARY}; color: {TEXT};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 8px;"
+            f"}}"
+        )
+        self._hunt_log.setPlaceholderText(
+            "Tracking log will appear here when a hunting session is active.\n"
+            "Start hunting in-game to see real-time combat events, tool attribution, "
+            "and encounter tracking."
+        )
+        layout.addWidget(self._hunt_log, 1)  # stretch factor 1
+
+        # Clear button
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        clear_btn = QPushButton("Clear Log")
+        clear_btn.setFixedHeight(28)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setStyleSheet(
+            f"QPushButton {{ background: {SECONDARY}; color: {TEXT_MUTED};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 4px 12px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        clear_btn.clicked.connect(self._hunt_log.clear)
+        btn_row.addWidget(clear_btn)
+        layout.addLayout(btn_row)
+
+        # Connect signals
+        self._signals.tracking_log.connect(self._on_tracking_log)
+        self._signals.hunt_session_updated.connect(self._on_hunt_session_updated)
+        self._signals.hunt_session_started.connect(
+            lambda _: self._hunt_status_label.setText("Session active")
+        )
+        self._signals.hunt_session_stopped.connect(self._on_hunt_session_stopped)
+
+        return page
+
+    def _stat_label(self, title: str, value: str) -> QLabel:
+        """Create a small stat label for the summary bar."""
+        lbl = QLabel(f"<span style='color:{TEXT_MUTED};font-size:10px;'>{title}</span>"
+                     f"<br><span style='font-size:13px;font-weight:bold;'>{value}</span>")
+        lbl.setStyleSheet(f"color: {TEXT}; border: none;")
+        return lbl
+
+    def _update_stat_label(self, label: QLabel, title: str, value: str):
+        label.setText(
+            f"<span style='color:{TEXT_MUTED};font-size:10px;'>{title}</span>"
+            f"<br><span style='font-size:13px;font-weight:bold;'>{value}</span>"
+        )
+
+    # Category → color mapping for log entries
+    _LOG_COLORS = {
+        "combat": "#d4d4d4",   # light gray
+        "loot": "#4ec9b0",     # teal
+        "death": "#f44747",    # red
+        "global": "#dcdcaa",   # gold
+        "ocr": "#569cd6",      # blue
+        "tool": "#c586c0",     # purple
+        "encounter": "#ce9178",  # orange
+        "session": "#6a9955",  # green
+    }
+
+    def _on_tracking_log(self, entry):
+        """Append a tracking log entry to the hunt log."""
+        if not isinstance(entry, dict):
+            return
+        time_str = entry.get("time", "")[11:23]  # HH:MM:SS.mmm
+        category = entry.get("category", "")
+        message = entry.get("message", "")
+        color = self._LOG_COLORS.get(category, TEXT)
+        tag = category.upper().ljust(9)
+
+        line = (
+            f"<span style='color:{TEXT_MUTED}'>{time_str}</span> "
+            f"<span style='color:{color};font-weight:bold'>{tag}</span> "
+            f"<span style='color:{color}'>{message}</span>"
+        )
+        self._hunt_log.append(line)
+
+        # Auto-scroll to bottom
+        cursor = self._hunt_log.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self._hunt_log.setTextCursor(cursor)
+
+    def _on_hunt_session_updated(self, data):
+        """Update the summary bar with session stats."""
+        if not isinstance(data, dict):
+            return
+        kills = data.get("kills", 0)
+        cost = data.get("total_cost", 0)
+        loot = data.get("loot_total", 0)
+        ret = (loot / cost * 100) if cost > 0 else 0
+
+        self._update_stat_label(self._hunt_kills_label, "Kills", str(kills))
+        self._update_stat_label(self._hunt_cost_label, "Cost", f"{cost:.2f}")
+        self._update_stat_label(self._hunt_loot_label, "Loot", f"{loot:.2f}")
+
+        if cost > 0:
+            ret_color = "#4ec9b0" if ret >= 100 else "#f44747"
+            self._update_stat_label(
+                self._hunt_return_label, "Return",
+                f"<span style='color:{ret_color}'>{ret:.1f}%</span>",
+            )
+        else:
+            self._update_stat_label(self._hunt_return_label, "Return", "—")
+
+        self._hunt_status_label.setText(
+            f"Session active — {kills} kills, {data.get('hunt_count', 0)} hunts"
+        )
+
+    def _on_hunt_session_stopped(self, _data):
+        self._hunt_status_label.setText("No active session")
 
     # --- Coming soon sub-page ---
 

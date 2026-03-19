@@ -29,6 +29,7 @@ from ..core.constants import (
     EVENT_LOOT_GROUP,
     EVENT_MOB_TARGET_CHANGED,
     EVENT_ACTIVE_TOOL_CHANGED,
+    EVENT_TRACKING_LOG,
     EVENT_NOTIFICATION,
     EVENT_TRADE_REQUEST,
     EVENT_OCR_COMPLETE,
@@ -104,6 +105,7 @@ class AppSignals(QObject):
     session_auto_timeout = pyqtSignal(object)
     mob_target_changed = pyqtSignal(object)
     active_tool_changed = pyqtSignal(object)
+    tracking_log = pyqtSignal(object)
 
     # Config
     config_changed = pyqtSignal(object)
@@ -193,6 +195,7 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_SESSION_AUTO_TIMEOUT: signals.session_auto_timeout,
         EVENT_MOB_TARGET_CHANGED: signals.mob_target_changed,
         EVENT_ACTIVE_TOOL_CHANGED: signals.active_tool_changed,
+        EVENT_TRACKING_LOG: signals.tracking_log,
         EVENT_CONFIG_CHANGED: signals.config_changed,
         EVENT_HOTKEY_TRIGGERED: signals.hotkey_triggered,
         EVENT_CATCHUP_COMPLETE: signals.catchup_complete,
