@@ -683,6 +683,14 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             )
             return _stream_overlay
 
+        # Hunt overlay — auto-shows on session start, hidden otherwise.
+        # Created eagerly so it can receive hunt_session_started signals.
+        from .overlay.hunt_overlay import HuntOverlay
+        _hunt_overlay = HuntOverlay(
+            signals=signals, config=config, config_path=config_path,
+            manager=overlay_manager,
+        )
+
         def _ensure_custom_grid(grid_id: str):
             """Return (and lazily create) the overlay instance for grid_id."""
             nonlocal _custom_grid_overlays
