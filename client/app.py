@@ -440,13 +440,52 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_distributor))
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
-    workers.extend(_start_target_lock_detector(config, event_bus, frame_distributor))
-    workers.extend(_start_player_status_detector(config, event_bus, frame_distributor, data_client))
-    workers.extend(_start_market_price_detector(config, event_bus, frame_distributor, data_client))
+    _tl_workers = _start_target_lock_detector(config, event_bus, frame_distributor)
+    _ps_workers = _start_player_status_detector(config, event_bus, frame_distributor, data_client)
+    _mp_workers = _start_market_price_detector(config, event_bus, frame_distributor, data_client)
+    workers.extend(_tl_workers)
+    workers.extend(_ps_workers)
+    workers.extend(_mp_workers)
     # workers.extend(_start_radar_detector(config, event_bus, frame_distributor, config_path))
 
     frame_distributor.start()
     workers.append(frame_distributor)
+
+    # Wire config changes to start/stop detectors dynamically
+    _detector_refs = {
+        "target_lock": (_tl_workers[0] if _tl_workers else None,
+                        "target_lock_enabled",
+                        lambda: _start_target_lock_detector(config, event_bus, frame_distributor)),
+        "player_status": (_ps_workers[0] if _ps_workers else None,
+                          "player_status_enabled",
+                          lambda: _start_player_status_detector(config, event_bus, frame_distributor, data_client)),
+        "market_price": (_mp_workers[0] if _mp_workers else None,
+                         "market_price_enabled",
+                         lambda: _start_market_price_detector(config, event_bus, frame_distributor, data_client)),
+    }
+
+    def _on_detector_config_changed(new_config):
+        nonlocal workers
+        cfg = new_config if not callable(new_config) else config
+        for key, (detector, cfg_field, factory) in list(_detector_refs.items()):
+            enabled = getattr(cfg, cfg_field, False)
+            if enabled and detector is None:
+                # Start detector that wasn't running
+                new_workers = factory()
+                if new_workers:
+                    workers.extend(new_workers)
+                    _detector_refs[key] = (new_workers[0], cfg_field, factory)
+                    log.info("Started %s detector (config toggled on)", key)
+            elif not enabled and detector is not None:
+                # Stop running detector
+                try:
+                    detector.stop()
+                    log.info("Stopped %s detector (config toggled off)", key)
+                except Exception as e:
+                    log.error("Failed to stop %s detector: %s", key, e)
+                _detector_refs[key] = (None, cfg_field, factory)
+
+    event_bus.subscribe(EVENT_CONFIG_CHANGED, _on_detector_config_changed)
 
     # Expose on main_window so dialogs can discover it via topLevelWidgets()
     main_window._frame_distributor = frame_distributor
