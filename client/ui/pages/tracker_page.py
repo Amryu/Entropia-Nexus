@@ -580,7 +580,24 @@ class TrackerPage(QWidget):
         summary_layout.addStretch()
         content_layout.addWidget(summary_bar)
 
-        # Log area
+        # View toggle: Event Log ↔ Hunt Log
+        self._log_mode = "event"  # "event" or "hunt"
+        self._log_toggle_btn = QPushButton("Hunt Log")
+        self._log_toggle_btn.setFixedHeight(28)
+        self._log_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._log_toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: {SECONDARY}; color: {TEXT};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 4px 12px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        self._log_toggle_btn.clicked.connect(self._toggle_log_mode)
+        content_layout.addWidget(self._log_toggle_btn)
+
+        # Stacked widget for Event Log / Hunt Log
+        self._log_stack = QStackedWidget()
+
+        # Page 0: Event Log (real-time tracking log)
         self._hunt_log = QTextEdit()
         self._hunt_log.setReadOnly(True)
         self._hunt_log.setFont(QFont("Consolas", 9))
@@ -596,42 +613,78 @@ class TrackerPage(QWidget):
             "Start hunting in-game to see real-time combat events, tool attribution, "
             "and encounter tracking."
         )
-        content_layout.addWidget(self._hunt_log, 1)
+        self._log_stack.addWidget(self._hunt_log)
 
-        # Loadout & encounter history (collapsible)
-        self._history_toggle = QPushButton("▸ Session History")
-        self._history_toggle.setFixedHeight(24)
-        self._history_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._history_toggle.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {TEXT_MUTED};"
-            f"  border: none; font-size: 11px; text-align: left; padding: 0 4px; }}"
-            f"QPushButton:hover {{ color: {TEXT}; }}"
-        )
-        self._history_visible = False
-        self._history_toggle.clicked.connect(self._toggle_history)
-        content_layout.addWidget(self._history_toggle)
+        # Page 1: Hunt Log (structured encounter/loadout history)
+        from PyQt6.QtWidgets import QScrollArea, QListWidget
+        hunt_log_container = QWidget()
+        hunt_log_layout = QVBoxLayout(hunt_log_container)
+        hunt_log_layout.setContentsMargins(0, 0, 0, 0)
+        hunt_log_layout.setSpacing(4)
 
-        self._history_widget = QWidget()
-        self._history_widget.setStyleSheet(
-            f"background: {SECONDARY}; border: 1px solid {BORDER}; border-radius: 4px;"
+        self._hunt_log_list = QListWidget()
+        self._hunt_log_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self._hunt_log_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._hunt_log_list.setStyleSheet(
+            f"QListWidget {{"
+            f"  background: {PRIMARY}; color: {TEXT};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  font-size: 11px;"
+            f"}}"
+            f"QListWidget::item {{"
+            f"  padding: 4px 8px; border-bottom: 1px solid {BORDER};"
+            f"}}"
+            f"QListWidget::item:selected {{"
+            f"  background: {HOVER};"
+            f"}}"
         )
-        self._history_layout = QVBoxLayout(self._history_widget)
-        self._history_layout.setContentsMargins(8, 4, 8, 4)
-        self._history_layout.setSpacing(2)
-        self._history_widget.hide()
-        self._history_widget.setMaximumHeight(200)
+        hunt_log_layout.addWidget(self._hunt_log_list, 1)
 
-        from PyQt6.QtWidgets import QScrollArea
-        history_scroll = QScrollArea()
-        history_scroll.setWidget(self._history_widget)
-        history_scroll.setWidgetResizable(True)
-        history_scroll.setMaximumHeight(200)
-        history_scroll.setStyleSheet(
-            f"QScrollArea {{ border: 1px solid {BORDER}; border-radius: 4px; }}"
+        # Insert buttons row
+        insert_row = QHBoxLayout()
+        insert_row.setSpacing(6)
+
+        add_separator_btn = QPushButton("+ Hunt Separator")
+        add_separator_btn.setFixedHeight(26)
+        add_separator_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_separator_btn.setStyleSheet(
+            f"QPushButton {{ background: {SECONDARY}; color: {TEXT_MUTED};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 2px 10px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; color: {TEXT}; }}"
         )
-        self._history_scroll = history_scroll
-        self._history_scroll.hide()
-        content_layout.addWidget(self._history_scroll)
+        add_separator_btn.clicked.connect(self._add_hunt_separator)
+        insert_row.addWidget(add_separator_btn)
+
+        add_loadout_btn = QPushButton("+ Loadout Update")
+        add_loadout_btn.setFixedHeight(26)
+        add_loadout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_loadout_btn.setStyleSheet(
+            f"QPushButton {{ background: {SECONDARY}; color: {TEXT_MUTED};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 2px 10px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; color: {TEXT}; }}"
+        )
+        add_loadout_btn.clicked.connect(self._add_loadout_update)
+        insert_row.addWidget(add_loadout_btn)
+
+        delete_btn = QPushButton("Delete Selected")
+        delete_btn.setFixedHeight(26)
+        delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        delete_btn.setStyleSheet(
+            f"QPushButton {{ background: {SECONDARY}; color: {TEXT_MUTED};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 2px 10px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; color: {ERROR}; }}"
+        )
+        delete_btn.clicked.connect(self._delete_hunt_log_item)
+        insert_row.addWidget(delete_btn)
+
+        insert_row.addStretch()
+        hunt_log_layout.addLayout(insert_row)
+
+        self._log_stack.addWidget(hunt_log_container)
+        content_layout.addWidget(self._log_stack, 1)
 
         # Alive encounters bar (bottom)
         self._encounters_bar = QWidget()
@@ -883,9 +936,12 @@ class TrackerPage(QWidget):
         alive = data.get("alive_encounters", [])
         self._rebuild_encounters_bar(alive)
 
-        # Rebuild history if visible
-        if self._history_visible:
-            self._rebuild_history(data)
+        # Store data for hunt log rebuilds
+        self._last_hunt_data = data
+
+        # Refresh hunt log if visible
+        if self._log_mode == "hunt":
+            self._rebuild_hunt_log()
 
     def _rebuild_encounters_bar(self, alive: list[dict]):
         """Rebuild the encounters bar from alive encounters list."""
@@ -917,94 +973,130 @@ class TrackerPage(QWidget):
                 self._encounters_bar_layout.count() - 1, lbl
             )
 
-    def _toggle_history(self):
-        self._history_visible = not self._history_visible
-        self._history_scroll.setVisible(self._history_visible)
-        self._history_widget.setVisible(self._history_visible)
-        self._history_toggle.setText(
-            "▾ Session History" if self._history_visible else "▸ Session History"
-        )
+    def _toggle_log_mode(self):
+        """Toggle between Event Log and Hunt Log views."""
+        if self._log_mode == "event":
+            self._log_mode = "hunt"
+            self._log_stack.setCurrentIndex(1)
+            self._log_toggle_btn.setText("Event Log")
+            self._rebuild_hunt_log()
+        else:
+            self._log_mode = "event"
+            self._log_stack.setCurrentIndex(0)
+            self._log_toggle_btn.setText("Hunt Log")
 
-    def _rebuild_history(self, data: dict):
-        """Rebuild the session history timeline from loadout events and encounters."""
-        # Clear existing
-        while self._history_layout.count():
-            item = self._history_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    # -- Hunt Log (structured encounter + loadout history) --------------------
 
-        # Collect loadout events
-        loadout_events = data.get("loadout_events", [])
+    _HUNT_LOG_ICONS = {
+        "encounter": ("\u2694", "#d4d4d4"),      # ⚔ gray
+        "hunt_separator": ("\u2500\u2500\u2500", ACCENT),  # ─── blue
+        "initial": ("\u25c6", "#6a9955"),         # ◆ green
+        "edit": ("\u270e", ACCENT),               # ✎ blue
+        "enhancer_break": ("\u2717", "#f44747"),  # ✗ red
+        "enhancer_adjust": ("\u2699", "#dcdcaa"), # ⚙ gold
+        "tool_detected": ("\u2795", "#4ec9b0"),   # + teal
+    }
 
-        # Collect finalized encounters from hunts
-        encounters = []
-        for hunt in data.get("hunts", []):
-            # Hunt summaries don't include individual encounters —
-            # we show loadout events only for now, encounters are in the log
-            pass
+    def _rebuild_hunt_log(self):
+        """Rebuild the Hunt Log from session data."""
+        from PyQt6.QtWidgets import QListWidgetItem
 
-        if not loadout_events:
-            lbl = QLabel("No loadout history yet.")
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; border: none;")
-            self._history_layout.addWidget(lbl)
+        self._hunt_log_list.clear()
+        if not hasattr(self, '_last_hunt_data'):
             return
 
-        # Type → style mapping
-        _ICONS = {
-            "initial": ("\u25c6", "#6a9955"),    # ◆ green
-            "edit": ("\u270e", ACCENT),           # ✎ blue
-            "enhancer_break": ("\u2717", "#f44747"),  # ✗ red
-            "enhancer_adjust": ("\u2699", "#dcdcaa"),  # ⚙ gold
-            "tool_detected": ("\u2795", "#4ec9b0"),    # + teal
-        }
+        data = self._last_hunt_data
+        loadout_events = data.get("loadout_events", [])
 
+        # Build a merged timeline: encounters (from session.encounters via DB)
+        # + loadout events, sorted by timestamp
+        timeline = []
+
+        # Add loadout events
         for evt in loadout_events:
-            evt_type = evt.get("event_type", "")
             ts = evt.get("timestamp", "")
-            desc = evt.get("description", "")
-            cost = evt.get("cost_per_shot")
-            evt_id = evt.get("id")
+            timeline.append({
+                "timestamp": ts,
+                "type": evt.get("event_type", ""),
+                "text": evt.get("description", ""),
+                "cost": evt.get("cost_per_shot"),
+                "db_id": evt.get("id"),
+                "draggable": evt.get("event_type") in ("hunt_separator", "edit", "enhancer_adjust"),
+            })
 
+        # Sort by timestamp
+        timeline.sort(key=lambda x: x.get("timestamp", ""))
+
+        for entry in timeline:
+            etype = entry["type"]
+            ts = entry.get("timestamp", "")
             time_str = ts[11:19] if len(ts) >= 19 else ts
-            icon, color = _ICONS.get(evt_type, ("\u2022", TEXT_MUTED))
-
+            icon, color = self._HUNT_LOG_ICONS.get(etype, ("\u2022", TEXT_MUTED))
+            text = entry.get("text", "")
+            cost = entry.get("cost")
             cost_str = f"  [{cost:.4f} PED/shot]" if cost else ""
 
-            row = QHBoxLayout()
-            row.setSpacing(4)
-            row.setContentsMargins(0, 0, 0, 0)
+            if etype == "hunt_separator":
+                display = f"{'─' * 10}  Hunt boundary  {'─' * 10}"
+            else:
+                display = f"{time_str}  {icon} {text}{cost_str}"
 
-            text = QLabel(
-                f"<span style='color:{TEXT_MUTED}'>{time_str}</span> "
-                f"<span style='color:{color}'>{icon}</span> "
-                f"<span style='color:{TEXT};font-size:10px'>{desc}</span>"
-                f"<span style='color:{TEXT_MUTED};font-size:9px'>{cost_str}</span>"
-            )
-            text.setStyleSheet("border: none;")
-            row.addWidget(text, 1)
+            item = QListWidgetItem(display)
+            item.setData(Qt.ItemDataRole.UserRole, entry.get("db_id"))
+            item.setData(Qt.ItemDataRole.UserRole + 1, etype)
 
-            # Delete button for editable events
-            if evt_type in ("initial", "edit", "enhancer_adjust", "tool_detected") and evt_id:
-                del_btn = QPushButton("\u00d7")  # ×
-                del_btn.setFixedSize(16, 16)
-                del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                del_btn.setStyleSheet(
-                    f"QPushButton {{ background: transparent; color: {TEXT_MUTED};"
-                    f"  border: none; font-size: 12px; }}"
-                    f"QPushButton:hover {{ color: {ERROR}; }}"
+            # Only separators and loadout updates are draggable
+            if entry.get("draggable"):
+                item.setFlags(
+                    item.flags() | Qt.ItemFlag.ItemIsDragEnabled
                 )
-                del_btn.clicked.connect(lambda _, eid=evt_id: self._delete_history_event(eid))
-                row.addWidget(del_btn)
+            else:
+                item.setFlags(
+                    item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled
+                )
 
-            container = QWidget()
-            container.setLayout(row)
-            container.setStyleSheet("border: none;")
-            self._history_layout.addWidget(container)
+            self._hunt_log_list.addItem(item)
 
-    def _delete_history_event(self, event_id: int):
-        """Delete a loadout history event."""
-        self._db.delete_loadout_event(event_id)
-        # History will refresh on next session update
+    def _add_hunt_separator(self):
+        """Insert a hunt separator at the current selection point."""
+        row = self._hunt_log_list.currentRow()
+        if row < 0:
+            row = self._hunt_log_list.count()
+
+        # Persist to DB
+        from datetime import datetime
+        self._db.insert_loadout_event(
+            session_id=self._last_hunt_data.get("session_id", "") if hasattr(self, '_last_hunt_data') else "",
+            timestamp=datetime.utcnow().isoformat(),
+            event_type="hunt_separator",
+            description="Hunt boundary",
+        )
+        self._rebuild_hunt_log()
+
+    def _add_loadout_update(self):
+        """Insert a manual loadout update at the current selection point."""
+        from ..dialogs.hunt_config_dialog import HuntConfigDialog
+        dlg = HuntConfigDialog(
+            config=self._config,
+            db=self._db,
+            event_bus=self._event_bus,
+            parent=self,
+        )
+        dlg.exec()
+        self._rebuild_hunt_log()
+
+    def _delete_hunt_log_item(self):
+        """Delete the selected hunt log item."""
+        item = self._hunt_log_list.currentItem()
+        if not item:
+            return
+        db_id = item.data(Qt.ItemDataRole.UserRole)
+        etype = item.data(Qt.ItemDataRole.UserRole + 1)
+
+        # Only allow deleting user-created items
+        if etype in ("hunt_separator", "edit", "enhancer_adjust", "tool_detected", "initial") and db_id:
+            self._db.delete_loadout_event(db_id)
+            self._rebuild_hunt_log()
 
     def _on_hunt_session_stopped(self, _data):
         self._hunt_timer.stop()
