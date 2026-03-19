@@ -94,6 +94,15 @@ class AppConfig:
     # Open encounter auto-merge: auto-merge successive deaths to same mob
     auto_merge_deaths: bool = False
 
+    # Reload-based tool correlation
+    reload_correlation_window_ms: int = 500   # max ms between damage event and reload drop
+    reload_correlation_enabled: bool = True
+
+    # Tool cost filter — controls which tools contribute to hunt cost
+    # "blacklist": include all except listed; "whitelist": include only listed
+    tool_cost_filter_mode: str = "blacklist"
+    tool_cost_filter_list: list[str] = field(default_factory=list)
+
     # Loot blacklist — items never counted as loot
     # Global: always applied regardless of mob
     # Per-mob: only applied when hunting that specific mob (mob_name_lower -> item names)
@@ -376,6 +385,10 @@ DEFAULTS = {
     "hunt_split_mob_threshold": 10,
     "hunt_split_min_remote_kills": 5,
     "auto_merge_deaths": False,
+    "reload_correlation_window_ms": 500,
+    "reload_correlation_enabled": True,
+    "tool_cost_filter_mode": "blacklist",
+    "tool_cost_filter_list": [],
     "loot_blacklist": [],
     "loot_blacklist_per_mob": {},
     "hotkeys_enabled": True,

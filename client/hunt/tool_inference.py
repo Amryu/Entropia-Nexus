@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime
 
 from ..core.logger import get_logger
+from .combat_action_log import SOURCE_PRIORITY
 from .session import CombatEventDetail, WeaponSignature
 
 log = get_logger("ToolInference")
@@ -190,15 +191,19 @@ class ToolInferenceEngine:
         enriched = []
         for event in events:
             event_id, timestamp, amount, is_crit, tool_name, tool_source = event
-            if tool_name is not None:
-                continue  # Already attributed
+
+            # Respect attribution priority — don't downgrade
+            existing_priority = SOURCE_PRIORITY.get(tool_source, 0)
+            new_priority = SOURCE_PRIORITY.get("ocr_timeline", 0)
+            if tool_name is not None and existing_priority >= new_priority:
+                continue  # Already has equal or better attribution
 
             # Find the active tool at this timestamp using the timeline
             resolved_tool = self._resolve_tool_at(timestamp)
             if resolved_tool:
                 event[4] = resolved_tool  # tool_name
                 event[5] = "ocr_timeline"  # tool_source
-                enriched.append((event_id, resolved_tool, "ocr_timeline", 0.9))
+                enriched.append((event_id, resolved_tool, "ocr_timeline", 0.85))
 
         if enriched:
             log.info("Retroactively enriched %d events in encounter %s",

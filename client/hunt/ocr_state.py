@@ -28,6 +28,8 @@ class OCRState:
     health_pct: float | None = None
     reload_pct: float | None = None
     reload_completed_at: datetime | None = None  # last reload 0->100 transition
+    reload_dropped_at: datetime | None = None    # last >=100 -> <100 transition
+    reload_drop_tool: str | None = None          # tool name at time of drop
     tool_equipped: bool | None = None
     status_last_seen: datetime | None = None
 
@@ -53,6 +55,9 @@ class OCRStateTracker:
 
     Designed for the hunt tracker to query without subscribing
     to individual OCR events directly.
+
+    Supports callbacks for reload drops (>=100 → <100 transition)
+    so the reload correlator can retroactively attribute tools.
     """
 
     STALE_THRESHOLD = timedelta(seconds=10)
@@ -60,6 +65,7 @@ class OCRStateTracker:
     def __init__(self, event_bus):
         self._state = OCRState()
         self._prev_reload_pct: float | None = None
+        self._reload_drop_callbacks: list = []
 
         event_bus.subscribe(EVENT_PLAYER_STATUS_UPDATE, self._on_player_status)
         event_bus.subscribe(EVENT_PLAYER_STATUS_LOST, self._on_player_status_lost)
@@ -72,6 +78,14 @@ class OCRStateTracker:
     @property
     def state(self) -> OCRState:
         return self._state
+
+    def on_reload_drop(self, callback) -> None:
+        """Register a callback for reload drop events.
+
+        Callback signature: callback(tool_name: str | None, timestamp: datetime)
+        Called when reload_pct transitions from >=100 to <100.
+        """
+        self._reload_drop_callbacks.append(callback)
 
     def is_stale(self, field: str) -> bool:
         """Check if a specific OCR reading is stale (>10s old or never received)."""
@@ -103,6 +117,20 @@ class OCRStateTracker:
                         and self._prev_reload_pct < 100
                         and new_reload >= 100):
                     self._state.reload_completed_at = now
+
+                # Detect reload drop: went from >=100 to <100
+                if (self._prev_reload_pct is not None
+                        and self._prev_reload_pct >= 100
+                        and new_reload < 100):
+                    self._state.reload_dropped_at = now
+                    self._state.reload_drop_tool = self._state.ocr_tool_name
+                    # Fire callbacks
+                    for cb in self._reload_drop_callbacks:
+                        try:
+                            cb(self._state.ocr_tool_name, now)
+                        except Exception as e:
+                            log.error("Reload drop callback error: %s", e)
+
                 self._prev_reload_pct = new_reload
                 self._state.reload_pct = new_reload
 

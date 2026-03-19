@@ -42,6 +42,8 @@ EVENT_SESSION_LOADOUT_UPDATED = "session_loadout_updated"
 EVENT_PLAYER_DEATH = "player_death"
 EVENT_PLAYER_REVIVED = "player_revived"
 EVENT_OPEN_ENCOUNTER_UPDATED = "open_encounter_updated"
+EVENT_TRACKING_LOG = "tracking_log"
+EVENT_TOOL_COST_FILTER_CHANGED = "tool_cost_filter_changed"
 
 # Event names — Skills upload
 EVENT_SKILLS_UPLOADED = "skills_uploaded"

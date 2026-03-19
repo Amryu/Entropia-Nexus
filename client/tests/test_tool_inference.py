@@ -110,7 +110,7 @@ class TestToolInferenceEngine(unittest.TestCase):
         self.assertEqual(len(enriched), 1)
         self.assertEqual(enriched[0][1], "Gun")  # tool_name
         self.assertEqual(enriched[0][2], "ocr_timeline")  # source
-        self.assertAlmostEqual(enriched[0][3], 0.9)  # confidence
+        self.assertAlmostEqual(enriched[0][3], 0.85)  # confidence
 
     def test_enrich_with_tool_timeline_multi_weapon(self):
         """Events before/between/after tool changes are correctly attributed."""

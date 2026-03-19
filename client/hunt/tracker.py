@@ -14,22 +14,27 @@ from ..core.constants import (
     EVENT_HUNT_ENCOUNTER_ENDED, EVENT_HUNT_SESSION_UPDATED,
     EVENT_HUNT_STARTED, EVENT_HUNT_ENDED, EVENT_HUNT_SPLIT,
     EVENT_HUNT_END_REQUESTED, EVENT_SESSION_AUTO_TIMEOUT,
-    EVENT_LOOT_BLACKLIST_CHANGED,
+    EVENT_LOOT_BLACKLIST_CHANGED, EVENT_TOOL_COST_FILTER_CHANGED,
     EVENT_ACTIVE_LOADOUT_CHANGED, EVENT_SESSION_LOADOUT_UPDATED,
     EVENT_PLAYER_DEATH, EVENT_PLAYER_REVIVED, EVENT_OPEN_ENCOUNTER_UPDATED,
 )
 from ..core.logger import get_logger
+from .combat_action_log import CombatAction, CombatActionLog, SOURCE_PRIORITY
 from .encounter_manager import EncounterManager
 from .entity_resolver import EntityResolver
 from .hunt_detector import HuntDetector
 from .loadout_manager import SessionLoadoutManager
 from .loot_filter import LootFilter
 from .ocr_state import OCRStateTracker
+from .reload_correlator import ReloadCorrelator
 from .running_stats import SessionRunningStats
 from .session import (
-    EncounterLootItem, Hunt, HuntSession, MobEncounter, SessionLoadoutEntry,
+    EncounterLootItem, EncounterToolStats,
+    Hunt, HuntSession, MobEncounter, SessionLoadoutEntry,
 )
+from .tool_filter import ToolFilter
 from .tool_inference import ToolInferenceEngine
+from .tracking_log import TrackingLog
 
 log = get_logger("Hunt")
 
@@ -129,6 +134,10 @@ class HuntTracker:
         self._loot_filter: LootFilter = LootFilter(config, data_client)
         self._entity_resolver: EntityResolver = EntityResolver(data_client)
         self._ocr_state: OCRStateTracker = OCRStateTracker(event_bus)
+        self._tool_filter: ToolFilter = ToolFilter(config)
+        self._tracking_log: TrackingLog = TrackingLog(event_bus)
+        self._combat_log: CombatActionLog | None = None
+        self._reload_correlator: ReloadCorrelator | None = None
         self._running_stats: SessionRunningStats | None = None
         self._timeout_timer: threading.Timer | None = None
         self._persisted_encounter_ids: set[str] = set()
@@ -137,6 +146,9 @@ class HuntTracker:
         self._live = False  # True after chat log catchup completes
         self._last_activity_time: datetime | None = None
         self._auto_timeout = timedelta(milliseconds=config.session_auto_timeout_ms)
+
+        # Register reload drop callback — fires when reload bar drops from >=100 to <100
+        self._ocr_state.on_reload_drop(self._on_reload_drop)
 
         # Subscribe to events
         event_bus.subscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
@@ -151,6 +163,7 @@ class HuntTracker:
         event_bus.subscribe(EVENT_PLAYER_DEATH, self._on_player_death)
         event_bus.subscribe(EVENT_PLAYER_REVIVED, self._on_player_revived)
         event_bus.subscribe(EVENT_LOOT_BLACKLIST_CHANGED, self._on_blacklist_changed)
+        event_bus.subscribe(EVENT_TOOL_COST_FILTER_CHANGED, self._on_tool_filter_changed)
         event_bus.subscribe(EVENT_ACTIVE_LOADOUT_CHANGED, self._on_active_loadout_changed)
 
     GLOBAL_CORRELATION_WINDOW = timedelta(seconds=10)
@@ -232,10 +245,15 @@ class HuntTracker:
         self._manager = EncounterManager(self._config, self._session)
         self._hunt_detector = HuntDetector(self._config)
         self._running_stats = SessionRunningStats()
+        self._combat_log = CombatActionLog()
+        self._reload_correlator = ReloadCorrelator(self._config, self._combat_log, self._db)
         self._tool_inference.reset_timeline()
         self._loot_filter.invalidate_mob_cache()
         self._active = True
         self._last_activity_time = datetime.utcnow()
+
+        # Rebuild combat log from DB
+        self._restore_combat_log(session_id)
 
         # Rebuild running stats from restored encounters
         for enc in session.encounters:
@@ -301,6 +319,8 @@ class HuntTracker:
         self._manager = EncounterManager(self._config, self._session)
         self._hunt_detector = HuntDetector(self._config)
         self._running_stats = SessionRunningStats()
+        self._combat_log = CombatActionLog()
+        self._reload_correlator = ReloadCorrelator(self._config, self._combat_log, self._db)
         self._loot_filter.invalidate_mob_cache()
         self._tool_inference.reset_timeline()
         self._active = True  # BEFORE any publish to prevent re-entrance
@@ -310,6 +330,7 @@ class HuntTracker:
         self._db.insert_hunt_session(
             session_id, now.isoformat(), loadout_id, primary_mob
         )
+        self._tracking_log.session_started(session_id)
 
         # Snapshot active loadout for cost tracking
         self._loadout_mgr.start_session(self._session)
@@ -366,17 +387,24 @@ class HuntTracker:
 
         # Publish final summary
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._tracking_log.session_ended(
+            self._session.id, self._session.kill_count, self._session.total_cost,
+        )
 
         self._cancel_timeout()
         self._active = False
         self._last_activity_time = None
         self._persisted_encounter_ids.clear()
         self._tool_inference.clear()
+        if self._combat_log:
+            self._combat_log.clear()
         log.info("Session ended: %s", self._session.id)
         self._session = None
         self._manager = None
         self._hunt_detector = None
         self._running_stats = None
+        self._combat_log = None
+        self._reload_correlator = None
 
     def _on_hunt_end_requested(self, data):
         """Manually end the current hunt without ending the session.
@@ -431,6 +459,9 @@ class HuntTracker:
         now = timestamp or datetime.utcnow()
         self._last_activity_time = now
 
+        # Visible tracking log
+        self._tracking_log.combat_event(event_type, amount or 0, now)
+
         if event_type == "damage_dealt":
             self._handle_damage(amount or 0, False, now)
         elif event_type == "critical_hit":
@@ -438,24 +469,57 @@ class HuntTracker:
         elif event_type == "damage_received":
             if amount is not None and amount == 0.0:
                 self._manager.on_block(timestamp=now)
+                self._log_non_damage_event("block", 0.0, now)
             else:
                 self._manager.on_damage_received(amount or 0, timestamp=now)
+                self._log_non_damage_event("damage_received", amount or 0, now)
         elif event_type == "self_heal":
             self._manager.on_heal(amount or 0, timestamp=now)
+            self._log_non_damage_event("self_heal", amount or 0, now)
         elif event_type in ("player_evade", "player_dodge", "player_jam"):
             self._manager.on_player_avoid(timestamp=now)
+            self._log_non_damage_event(event_type, 0.0, now)
         elif event_type in ("target_evade", "target_dodge", "target_jam"):
             self._manager.on_target_avoid(timestamp=now)
+            self._log_non_damage_event(event_type, 0.0, now)
         elif event_type == "mob_miss":
             self._manager.on_mob_miss(timestamp=now)
+            self._log_non_damage_event("mob_miss", 0.0, now)
         elif event_type == "deflect":
             self._manager.on_deflect(timestamp=now)
+            self._log_non_damage_event("deflect", 0.0, now)
 
         # Notify loadout manager of combat activity
         self._loadout_mgr.on_combat()
 
         # Publish session update
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+
+    def _log_non_damage_event(self, event_type: str, amount: float, now: datetime):
+        """Record a non-damage combat event to the combat log and DB."""
+        enc = self._manager.current_encounter if self._manager else None
+        encounter_id = enc.id if enc else None
+
+        event_id = str(uuid.uuid4())
+
+        # Persist to DB (only if we have an encounter — FK constraint)
+        if encounter_id:
+            self._ensure_encounter_in_db(enc)
+            self._db.insert_combat_event_detail(
+                event_id, encounter_id, now.isoformat(),
+                event_type, amount, None, None, 0.0,
+            )
+
+        # Add to session combat log (always — even without encounter)
+        if self._combat_log:
+            action = CombatAction(
+                id=event_id,
+                encounter_id=encounter_id,
+                timestamp=now,
+                event_type=event_type,
+                amount=amount,
+            )
+            self._combat_log.append(action)
 
     def _ensure_encounter_in_db(self, enc):
         """Insert encounter row into DB if not yet persisted (for FK integrity)."""
@@ -467,7 +531,7 @@ class HuntTracker:
             self._persisted_encounter_ids.add(enc.id)
 
     def _handle_damage(self, amount: float, is_crit: bool, now: datetime):
-        """Handle damage dealt with tool inference and cost tracking."""
+        """Handle damage dealt with tool inference, cost tracking, and combat logging."""
         self._manager.on_damage_dealt(amount, is_crit=is_crit, timestamp=now)
 
         enc = self._manager.current_encounter
@@ -480,25 +544,52 @@ class HuntTracker:
 
         self._ensure_encounter_in_db(enc)
 
-        # Tool inference: try to infer weapon from damage value
-        tool_name = self._manager._current_tool
-        tool_source = "ocr" if tool_name else None
+        # Tool attribution cascade:
+        # 1. OCR tool current and not stale → "ocr_direct"
+        # 2. Damage-range inference → "inferred"
+        # 3. Leave unattributed (reload correlator may fix later)
+        tool_name = None
+        tool_source = None
+        confidence = 0.0
         cost_per_shot = 0.0
 
+        # Priority 1: OCR direct (tool is current and not stale)
+        if not self._ocr_state.is_stale("tool"):
+            ocr_tool = self._ocr_state.state.ocr_tool_name
+            if ocr_tool:
+                tool_name = ocr_tool
+                tool_source = "ocr_direct"
+                confidence = 0.9
+
+        # Priority 2: Manager's current tool (set by tool change event)
+        if not tool_name and self._manager._current_tool:
+            tool_name = self._manager._current_tool
+            tool_source = "ocr_direct"
+            confidence = 0.9
+
+        # Priority 3: Damage-range inference
         if not tool_name and self._tool_inference.has_signatures:
-            inferred, confidence, cost = self._tool_inference.infer_tool(amount, is_crit=is_crit)
+            inferred, inf_confidence, cost = self._tool_inference.infer_tool(amount, is_crit=is_crit)
             if inferred:
                 tool_name = inferred
                 tool_source = "inferred"
+                confidence = inf_confidence
                 cost_per_shot = cost
 
         # Get cost from signature if we know the tool
         if tool_name and not cost_per_shot:
             cost_per_shot = self._tool_inference.get_cost_per_shot(tool_name)
 
-        # Accumulate cost on encounter
-        if cost_per_shot > 0:
+        # Accumulate cost on encounter (respecting tool filter)
+        if cost_per_shot > 0 and self._tool_filter.should_include_cost(tool_name):
             enc.cost += cost_per_shot
+
+        # Log tool attribution decision
+        if tool_name:
+            self._tracking_log.tool_attributed(
+                "critical_hit" if is_crit else "damage_dealt",
+                amount, tool_name, tool_source, confidence,
+            )
 
         # Record detailed combat event
         event = self._tool_inference.create_event(
@@ -508,7 +599,7 @@ class HuntTracker:
             amount=amount,
             tool_name=tool_name,
             tool_source=tool_source,
-            confidence=1.0 if tool_source == "ocr" else 0.0,
+            confidence=confidence,
         )
 
         # Buffer for retroactive enrichment (per-encounter, no time trim)
@@ -526,6 +617,20 @@ class HuntTracker:
             event.event_type, event.amount,
             event.tool_name, event.tool_source, event.inferred_confidence,
         )
+
+        # Add to session combat log
+        if self._combat_log:
+            action = CombatAction(
+                id=event.id,
+                encounter_id=enc.id,
+                timestamp=now,
+                event_type=event.event_type,
+                amount=amount,
+                tool_name=tool_name,
+                tool_source=tool_source,
+                confidence=confidence,
+            )
+            self._combat_log.append(action)
 
     def _on_loot(self, data):
         if not self._live or not self._active or not self._manager:
@@ -567,6 +672,7 @@ class HuntTracker:
         self._last_activity_time = datetime.utcnow()
         self._manager.on_loot_group(raw_total, classified)
         self._loadout_mgr.on_loot()
+        self._tracking_log.loot_received(raw_total, len(classified), mob_name)
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
 
     def _on_mob_changed(self, data):
@@ -578,12 +684,17 @@ class HuntTracker:
         source = data.get("source", "ocr") if isinstance(data, dict) else "ocr"
 
         self._last_activity_time = datetime.utcnow()
+        self._tracking_log.ocr_mob_detected(mob_name, source)
 
         ended = self._manager.on_mob_name_detected(mob_name, confidence, source)
         if ended:
+            self._tracking_log.encounter_ended(
+                ended.mob_name, ended.outcome, ended.damage_dealt, ended.cost,
+            )
             self._persist_encounter(ended)
             self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, ended.to_dict())
 
+        self._tracking_log.encounter_started(mob_name, source)
         self._event_bus.publish(EVENT_HUNT_ENCOUNTER_STARTED, {
             "mob_name": mob_name,
             "source": source,
@@ -595,6 +706,7 @@ class HuntTracker:
 
         tool_name = data.get("tool_name", "") if isinstance(data, dict) else str(data)
         self._manager.set_current_tool(tool_name)
+        self._tracking_log.ocr_tool_detected(tool_name)
 
         # Record on timeline for retroactive attribution
         now = datetime.utcnow()
@@ -608,8 +720,40 @@ class HuntTracker:
                 self._db.update_combat_event_tool(
                     event_id, new_tool, new_source, new_confidence
                 )
+                # Sync with combat log (respects priority)
+                if self._combat_log:
+                    self._combat_log.update_tool(
+                        event_id, new_tool, new_source, new_confidence
+                    )
             if enriched:
-                self._rebuild_encounter_tool_stats(enc)
+                self._tracking_log.tool_retroactive(
+                    len(enriched), tool_name, "ocr_timeline",
+                )
+                self._recalculate_encounter_stats(enc)
+
+    def _on_reload_drop(self, tool_name: str | None, timestamp: datetime):
+        """Handle reload bar drop — retroactively attribute recent damage events."""
+        if not self._active or not self._reload_correlator:
+            return
+
+        reload_pct = self._ocr_state.state.reload_pct or 0
+        self._tracking_log.ocr_reload_drop(tool_name, reload_pct)
+
+        attributed = self._reload_correlator.on_reload_drop(tool_name, timestamp)
+        if attributed > 0:
+            self._tracking_log.tool_retroactive(attributed, tool_name, "ocr_reload")
+            # Sync tool inference buffer with updated attributions
+            enc = self._manager.current_encounter if self._manager else None
+            if enc:
+                # Update tool_inference buffer to match combat log
+                events = self._tool_inference.get_encounter_events(enc.id)
+                for ev in events:
+                    event_id = ev[0]
+                    action = self._combat_log.get_by_id(event_id) if self._combat_log else None
+                    if action and action.tool_source == "ocr_reload":
+                        ev[4] = action.tool_name
+                        ev[5] = action.tool_source
+                self._recalculate_encounter_stats(enc)
 
     def _on_global(self, data):
         """Correlate global events with recent encounters."""
@@ -652,6 +796,7 @@ class HuntTracker:
                 match.id, is_global=1, is_hof=1 if match.is_hof else 0
             )
             self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+            self._tracking_log.global_event(target, value, match.is_hof)
             log.info("Global correlated with encounter %s (mob: %s, value: %s PED)",
                      match.id[:8], match.mob_name, value)
 
@@ -662,6 +807,7 @@ class HuntTracker:
 
         mob_name = data.mob_name if hasattr(data, 'mob_name') else ""
         timestamp = data.timestamp if hasattr(data, 'timestamp') else None
+        self._tracking_log.death(mob_name)
 
         ended = self._manager.on_death(mob_name, timestamp=timestamp)
         if ended:
@@ -859,7 +1005,6 @@ class HuntTracker:
                 ts.damage_dealt += src_stats.damage_dealt
                 ts.critical_hits += src_stats.critical_hits
             else:
-                from .session import EncounterToolStats
                 target.tool_stats[tool_name] = EncounterToolStats(
                     tool_name=tool_name,
                     shots_fired=src_stats.shots_fired,
@@ -901,6 +1046,12 @@ class HuntTracker:
                 return enc
         return None
 
+    def _on_tool_filter_changed(self, _data):
+        """Recalculate costs when tool cost filter settings change."""
+        self._tool_filter.on_config_changed()
+        if self._active:
+            self.recalculate_session()
+
     def _on_blacklist_changed(self, _data):
         """Reclassify all in-memory loot items when blacklist config changes."""
         if not self._active or not self._session:
@@ -930,6 +1081,8 @@ class HuntTracker:
             # Update running stats with expected DPP from loadout
             if self._running_stats:
                 self._running_stats.set_expected_dpp(self._loadout_mgr.expected_dpp)
+            # Recalculate costs with new weapon signatures
+            self.recalculate_session()
             self._event_bus.publish(EVENT_SESSION_LOADOUT_UPDATED, {
                 "session_id": self._session.id,
             })
@@ -943,24 +1096,102 @@ class HuntTracker:
             li.is_refining_output = c["is_refining_output"]
             li.is_in_loot_table = c["is_in_loot_table"]
 
-    def _rebuild_encounter_tool_stats(self, enc: MobEncounter):
-        """Rebuild tool_stats from the tool_inference event buffer."""
-        events = self._tool_inference.get_encounter_events(enc.id)
-        if not events:
+    def _recalculate_encounter_stats(self, enc: MobEncounter):
+        """Recalculate encounter tool_stats and cost from the combat action log.
+
+        Uses the combat log as source of truth for tool attribution and the
+        tool filter for cost inclusion. This allows mid-hunt settings changes
+        (gear updates, filter changes) to be reflected immediately.
+
+        Falls back to tool_inference event buffer if combat log is unavailable.
+        """
+        # Prefer combat log (session-scoped, survives encounter finalization)
+        if self._combat_log:
+            actions = self._combat_log.get_by_encounter(enc.id)
+            damage_actions = [
+                a for a in actions
+                if a.event_type in ("damage_dealt", "critical_hit")
+            ]
+        else:
+            # Fallback to tool_inference buffer (only available before finalization)
+            events = self._tool_inference.get_encounter_events(enc.id)
+            if not events:
+                return
+            damage_actions = []
+            for ev in events:
+                event_id, _ts, amount, is_crit, tool_name, tool_source = ev
+                action = CombatAction(
+                    id=event_id,
+                    encounter_id=enc.id,
+                    timestamp=_ts,
+                    event_type="critical_hit" if is_crit else "damage_dealt",
+                    amount=amount,
+                    tool_name=tool_name,
+                    tool_source=tool_source,
+                )
+                damage_actions.append(action)
+
+        if not damage_actions:
             return
+
         enc.tool_stats.clear()
         enc.cost = 0.0
-        for ev in events:
-            _event_id, _timestamp, amount, is_crit, tool_name, _tool_source = ev
-            tool = tool_name or "Unknown"
+        for action in damage_actions:
+            tool = action.tool_name or "Unknown"
             if tool not in enc.tool_stats:
-                from .session import EncounterToolStats
                 enc.tool_stats[tool] = EncounterToolStats(tool_name=tool)
-            enc.tool_stats[tool].damage_dealt += amount
+            enc.tool_stats[tool].damage_dealt += action.amount
             enc.tool_stats[tool].shots_fired += 1
-            if is_crit:
+            if action.event_type == "critical_hit":
                 enc.tool_stats[tool].critical_hits += 1
-            enc.cost += self._tool_inference.get_cost_per_shot(tool)
+            cost = self._tool_inference.get_cost_per_shot(tool)
+            if cost > 0 and self._tool_filter.should_include_cost(tool):
+                enc.cost += cost
+
+    def _restore_combat_log(self, session_id: str):
+        """Reload combat events from DB into the session combat log."""
+        if not self._combat_log:
+            return
+
+        for enc in self._session.encounters:
+            rows = self._db.get_encounter_combat_events(enc.id)
+            for row in rows:
+                action = CombatAction(
+                    id=row["id"],
+                    encounter_id=row["encounter_id"],
+                    timestamp=datetime.fromisoformat(row["timestamp"]),
+                    event_type=row["event_type"],
+                    amount=row.get("amount", 0.0),
+                    tool_name=row.get("tool_name"),
+                    tool_source=row.get("tool_source"),
+                    confidence=row.get("inferred_confidence", 0.0),
+                )
+                self._combat_log.append(action)
+
+        log.info("Restored %d combat actions from DB", len(self._combat_log))
+
+    def recalculate_session(self):
+        """Recalculate all encounter stats from the combat action log.
+
+        Call this when settings change mid-session (tool filter, gear update)
+        to recompute cost and tool attribution from raw events.
+        """
+        if not self._active or not self._session:
+            return
+
+        for enc in self._session.encounters:
+            self._recalculate_encounter_stats(enc)
+
+        # Also recalculate current encounter if active
+        if self._manager and self._manager.current_encounter:
+            self._recalculate_encounter_stats(self._manager.current_encounter)
+
+        total_encounters = len(self._session.encounters)
+        if self._manager and self._manager.current_encounter:
+            total_encounters += 1
+        self._tracking_log.recalculated(total_encounters)
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        log.info("Session stats recalculated from combat log")
 
     def _persist_encounter(self, encounter):
         """Save a completed encounter and check for hunt boundaries."""
