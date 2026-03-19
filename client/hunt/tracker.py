@@ -899,14 +899,16 @@ class HuntTracker:
         )
 
         if delta:
-            old = delta["old_count"]
-            new = delta["new_count"]
+            total_info = f"{delta['old_total']}→{delta['new_total']} total"
+            slot_info = ""
+            if delta.get("slot_changed"):
+                slot_info = f", slots {delta['old_active']}→{delta['new_active']}"
             cost_str = ""
-            if self._loadout_mgr.active_stats:
+            if delta.get("slot_changed") and self._loadout_mgr.active_stats:
                 cost_str = f", cost now {self._loadout_mgr.active_stats.cost / 100:.4f} PED/shot"
             self._tracking_log.session_info(
                 f"Enhancer broke: {enhancer_name} on {item_name} "
-                f"({old}→{new}{cost_str})"
+                f"({total_info}{slot_info}{cost_str})"
             )
         else:
             self._tracking_log.session_info(

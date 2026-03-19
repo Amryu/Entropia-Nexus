@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..core.logger import get_logger
-from .enhancer_state import EnhancerState
+from .enhancer_state import EnhancerState, MAX_STACK_SIZE
 from .session import HuntSession, SessionLoadoutEntry
 from .tool_inference import ToolInferenceEngine
 
@@ -216,27 +216,33 @@ class SessionLoadoutManager:
 
     def on_enhancer_break(self, enhancer_name: str, item_name: str,
                           remaining: int, shrapnel_ped: float) -> dict | None:
-        """Handle an enhancer break — decrement state, re-evaluate, persist event.
+        """Handle an enhancer break — decrement state, re-evaluate if slot depleted.
 
         Returns the delta dict if matched, None otherwise.
+        Only re-evaluates the loadout when an active slot count actually changes
+        (i.e., a stack was fully depleted), since the evaluator uses slot counts.
         """
         delta = self._enhancer_state.apply_break(enhancer_name, item_name, remaining)
         if not delta:
             return None
 
-        # Re-evaluate with updated enhancer counts
-        if self._active_loadout:
+        # Only re-evaluate if a slot was depleted (active count changed)
+        if delta.get("slot_changed") and self._active_loadout:
             weapon_name, stats = self._evaluate(self._active_loadout)
             if stats:
                 self._active_stats = stats
                 self._tool_inference.load_from_loadout_stats(weapon_name, stats)
-                log.info("Re-evaluated after enhancer break: cost=%.4f PEC/shot", stats.cost)
+                log.info("Slot depleted — re-evaluated: cost=%.4f PEC/shot, "
+                         "%d→%d active slots", stats.cost,
+                         delta["old_active"], delta["new_active"])
 
         # Persist as an incremental event (no full loadout stored)
         if self._session:
             desc = (f"{delta['category']}.{delta['slot']} "
-                    f"{delta['old_count']}→{delta['new_count']} "
-                    f"({enhancer_name} on {item_name})")
+                    f"{delta['old_total']}→{delta['new_total']} total"
+                    + (f", slots {delta['old_active']}→{delta['new_active']}"
+                       if delta.get("slot_changed") else "")
+                    + f" ({enhancer_name} on {item_name})")
             self._db.insert_loadout_event(
                 session_id=self._session.id,
                 timestamp=datetime.utcnow().isoformat(),
@@ -248,20 +254,29 @@ class SessionLoadoutManager:
 
         return delta
 
-    def on_enhancer_adjust(self, category: str, slot: str, new_count: int) -> dict | None:
-        """Handle a manual enhancer count adjustment by the user.
+    def on_enhancer_adjust(self, category: str, slot_key: str,
+                           num_slots: int, stack_size: int = MAX_STACK_SIZE) -> dict | None:
+        """Handle a manual enhancer adjustment by the user.
 
+        Sets the number of slots and stack size for a specific enhancer type.
         Returns the delta dict.
         """
-        old_count = self._enhancer_state.get_slot(category, slot)
-        self._enhancer_state.set_slot(category, slot, new_count)
-        actual_new = self._enhancer_state.get_slot(category, slot)
+        from .enhancer_state import EnhancerSlot
+        old_slot = self._enhancer_state.get_slot(category, slot_key)
+        old_active = old_slot.active_slots
+        old_total = old_slot.total_count
+
+        new_slot = EnhancerSlot.from_loadout(num_slots, stack_size)
+        self._enhancer_state.set_slot(category, slot_key, new_slot)
 
         delta = {
             "category": category,
-            "slot": slot,
-            "old_count": old_count,
-            "new_count": actual_new,
+            "slot": slot_key,
+            "old_active": old_active,
+            "new_active": new_slot.active_slots,
+            "old_total": old_total,
+            "new_total": new_slot.total_count,
+            "slot_changed": old_active != new_slot.active_slots,
         }
 
         # Re-evaluate
@@ -273,7 +288,7 @@ class SessionLoadoutManager:
 
         # Persist as adjustment event
         if self._session:
-            desc = f"Manual: {category}.{slot} {old_count}→{actual_new}"
+            desc = f"Manual: {category}.{slot_key} {old_active}→{new_slot.active_slots} slots"
             self._db.insert_loadout_event(
                 session_id=self._session.id,
                 timestamp=datetime.utcnow().isoformat(),
@@ -283,7 +298,7 @@ class SessionLoadoutManager:
                 cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
             )
 
-        log.info("Enhancer adjusted: %s.%s %d → %d", category, slot, old_count, actual_new)
+        log.info("Enhancer adjusted: %s.%s %d→%d slots", category, slot_key, old_active, new_slot.active_slots)
         return delta
 
     def on_tool_detected(self, tool_name: str, cost_per_shot: float = 0,
