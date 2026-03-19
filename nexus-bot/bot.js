@@ -737,7 +737,18 @@ async function handleDirectApply(change) {
   setConfigValue('lastChangeCheck', newCheckTime.toISOString());
 }
 
+let _checkChangesRunning = false;
 async function checkChanges() {
+  if (_checkChangesRunning) return;
+  _checkChangesRunning = true;
+  try {
+    await _checkChangesImpl();
+  } finally {
+    _checkChangesRunning = false;
+  }
+}
+
+async function _checkChangesImpl() {
   const channel = client.channels.cache.find(channel => channel.id === config.pendingChangesChannelId);
   if (!channel) {
     console.error('Changes channel not found');
