@@ -184,6 +184,7 @@ class HuntTracker:
         self._loadout_mgr.warmup()
         self._loot_filter.warmup()
         self._entity_resolver.warmup()
+        self._tracking_log.session_info("Chat log catchup complete — hunt tracking active")
         log.info("Catchup complete, hunt tracking active")
 
     def _try_restore_session(self):

@@ -151,3 +151,7 @@ class TrackingLog:
     def recalculated(self, encounter_count: int):
         """Log full recalculation."""
         self._emit("session", f"Stats recalculated for {encounter_count} encounters")
+
+    def session_info(self, message: str):
+        """Log a general session/system info message."""
+        self._emit("session", message)
