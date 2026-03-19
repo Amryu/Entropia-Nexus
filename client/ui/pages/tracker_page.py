@@ -598,6 +598,41 @@ class TrackerPage(QWidget):
         )
         content_layout.addWidget(self._hunt_log, 1)
 
+        # Loadout & encounter history (collapsible)
+        self._history_toggle = QPushButton("▸ Session History")
+        self._history_toggle.setFixedHeight(24)
+        self._history_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._history_toggle.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {TEXT_MUTED};"
+            f"  border: none; font-size: 11px; text-align: left; padding: 0 4px; }}"
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
+        self._history_visible = False
+        self._history_toggle.clicked.connect(self._toggle_history)
+        content_layout.addWidget(self._history_toggle)
+
+        self._history_widget = QWidget()
+        self._history_widget.setStyleSheet(
+            f"background: {SECONDARY}; border: 1px solid {BORDER}; border-radius: 4px;"
+        )
+        self._history_layout = QVBoxLayout(self._history_widget)
+        self._history_layout.setContentsMargins(8, 4, 8, 4)
+        self._history_layout.setSpacing(2)
+        self._history_widget.hide()
+        self._history_widget.setMaximumHeight(200)
+
+        from PyQt6.QtWidgets import QScrollArea
+        history_scroll = QScrollArea()
+        history_scroll.setWidget(self._history_widget)
+        history_scroll.setWidgetResizable(True)
+        history_scroll.setMaximumHeight(200)
+        history_scroll.setStyleSheet(
+            f"QScrollArea {{ border: 1px solid {BORDER}; border-radius: 4px; }}"
+        )
+        self._history_scroll = history_scroll
+        self._history_scroll.hide()
+        content_layout.addWidget(self._history_scroll)
+
         # Alive encounters bar (bottom)
         self._encounters_bar = QWidget()
         self._encounters_bar.setStyleSheet(
@@ -848,6 +883,10 @@ class TrackerPage(QWidget):
         alive = data.get("alive_encounters", [])
         self._rebuild_encounters_bar(alive)
 
+        # Rebuild history if visible
+        if self._history_visible:
+            self._rebuild_history(data)
+
     def _rebuild_encounters_bar(self, alive: list[dict]):
         """Rebuild the encounters bar from alive encounters list."""
         # Clear existing encounter labels (keep the title label at index 0 and stretch)
@@ -877,6 +916,95 @@ class TrackerPage(QWidget):
             self._encounters_bar_layout.insertWidget(
                 self._encounters_bar_layout.count() - 1, lbl
             )
+
+    def _toggle_history(self):
+        self._history_visible = not self._history_visible
+        self._history_scroll.setVisible(self._history_visible)
+        self._history_widget.setVisible(self._history_visible)
+        self._history_toggle.setText(
+            "▾ Session History" if self._history_visible else "▸ Session History"
+        )
+
+    def _rebuild_history(self, data: dict):
+        """Rebuild the session history timeline from loadout events and encounters."""
+        # Clear existing
+        while self._history_layout.count():
+            item = self._history_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Collect loadout events
+        loadout_events = data.get("loadout_events", [])
+
+        # Collect finalized encounters from hunts
+        encounters = []
+        for hunt in data.get("hunts", []):
+            # Hunt summaries don't include individual encounters —
+            # we show loadout events only for now, encounters are in the log
+            pass
+
+        if not loadout_events:
+            lbl = QLabel("No loadout history yet.")
+            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; border: none;")
+            self._history_layout.addWidget(lbl)
+            return
+
+        # Type → style mapping
+        _ICONS = {
+            "initial": ("\u25c6", "#6a9955"),    # ◆ green
+            "edit": ("\u270e", ACCENT),           # ✎ blue
+            "enhancer_break": ("\u2717", "#f44747"),  # ✗ red
+            "enhancer_adjust": ("\u2699", "#dcdcaa"),  # ⚙ gold
+            "tool_detected": ("\u2795", "#4ec9b0"),    # + teal
+        }
+
+        for evt in loadout_events:
+            evt_type = evt.get("event_type", "")
+            ts = evt.get("timestamp", "")
+            desc = evt.get("description", "")
+            cost = evt.get("cost_per_shot")
+            evt_id = evt.get("id")
+
+            time_str = ts[11:19] if len(ts) >= 19 else ts
+            icon, color = _ICONS.get(evt_type, ("\u2022", TEXT_MUTED))
+
+            cost_str = f"  [{cost:.4f} PED/shot]" if cost else ""
+
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            row.setContentsMargins(0, 0, 0, 0)
+
+            text = QLabel(
+                f"<span style='color:{TEXT_MUTED}'>{time_str}</span> "
+                f"<span style='color:{color}'>{icon}</span> "
+                f"<span style='color:{TEXT};font-size:10px'>{desc}</span>"
+                f"<span style='color:{TEXT_MUTED};font-size:9px'>{cost_str}</span>"
+            )
+            text.setStyleSheet("border: none;")
+            row.addWidget(text, 1)
+
+            # Delete button for editable events
+            if evt_type in ("initial", "edit", "enhancer_adjust", "tool_detected") and evt_id:
+                del_btn = QPushButton("\u00d7")  # ×
+                del_btn.setFixedSize(16, 16)
+                del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                del_btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {TEXT_MUTED};"
+                    f"  border: none; font-size: 12px; }}"
+                    f"QPushButton:hover {{ color: {ERROR}; }}"
+                )
+                del_btn.clicked.connect(lambda _, eid=evt_id: self._delete_history_event(eid))
+                row.addWidget(del_btn)
+
+            container = QWidget()
+            container.setLayout(row)
+            container.setStyleSheet("border: none;")
+            self._history_layout.addWidget(container)
+
+    def _delete_history_event(self, event_id: int):
+        """Delete a loadout history event."""
+        self._db.delete_loadout_event(event_id)
+        # History will refresh on next session update
 
     def _on_hunt_session_stopped(self, _data):
         self._hunt_timer.stop()

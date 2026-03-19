@@ -59,6 +59,16 @@ class SessionLoadoutManager:
     def enhancer_state(self) -> EnhancerState:
         return self._enhancer_state
 
+    def get_loadout_events(self) -> list[dict]:
+        """Get loadout history events for the current session."""
+        if not self._session:
+            return []
+        return self._db.get_session_loadout_events(self._session.id)
+
+    def delete_loadout_event(self, event_id: int):
+        """Delete a loadout history event by ID."""
+        self._db.delete_loadout_event(event_id)
+
     @property
     def expected_dpp(self) -> float | None:
         """Expected damage per pec from the current loadout evaluation."""
@@ -187,8 +197,18 @@ class SessionLoadoutManager:
         self._active_stats = stats
         if weapon_name and stats:
             self._tool_inference.load_from_loadout_stats(weapon_name, stats)
-        # If session active, check if new snapshot needed
+
         if self._session:
+            # Reinitialize enhancer state from the new loadout
+            self._enhancer_state = EnhancerState.from_loadout(loadout)
+
+            # Create a history event for this loadout change
+            enh_count = self._enhancer_state.total_enhancers()
+            cost_str = f"{stats.cost / 100:.4f} PED/shot" if stats and stats.cost else "unknown"
+            self._create_loadout_event(
+                "edit",
+                f"Loadout changed: {weapon_name or '?'} ({cost_str}, {enh_count} enhancers)",
+            )
             self._maybe_create_snapshot("external_update")
 
     def start_session(self, session: HuntSession):
