@@ -870,17 +870,18 @@ class HuntTracker:
         log.info("Player revived")
 
     def _on_enhancer_break(self, data):
-        """Track enhancer break for shrapnel correlation."""
+        """Track enhancer break — decrement enhancer state, re-evaluate, correlate shrapnel."""
         if not self._live:
             return
         timestamp = data.timestamp if hasattr(data, 'timestamp') else datetime.utcnow()
         shrapnel_ped = data.shrapnel_ped if hasattr(data, 'shrapnel_ped') else 0
         enhancer_name = data.enhancer_name if hasattr(data, 'enhancer_name') else ""
         item_name = data.item_name if hasattr(data, 'item_name') else ""
+        remaining = data.remaining if hasattr(data, 'remaining') else None
 
+        # Shrapnel correlation tracking
         if shrapnel_ped > 0:
             self._recent_enhancer_breaks.append((timestamp, shrapnel_ped))
-            # Trim old breaks beyond the correlation window
             cutoff = datetime.utcnow() - self.ENHANCER_SHRAPNEL_WINDOW * 5
             self._recent_enhancer_breaks = [
                 b for b in self._recent_enhancer_breaks if b[0] > cutoff
@@ -892,10 +893,26 @@ class HuntTracker:
             enc.enhancer_breaks += 1
             enc.enhancer_shrapnel_ped += shrapnel_ped
 
-        self._tracking_log.session_info(
-            f"Enhancer broke: {enhancer_name} on {item_name} "
-            f"(+{shrapnel_ped:.2f} PED shrapnel)"
+        # Decrement enhancer state and re-evaluate loadout
+        delta = self._loadout_mgr.on_enhancer_break(
+            enhancer_name, item_name, remaining, shrapnel_ped,
         )
+
+        if delta:
+            old = delta["old_count"]
+            new = delta["new_count"]
+            cost_str = ""
+            if self._loadout_mgr.active_stats:
+                cost_str = f", cost now {self._loadout_mgr.active_stats.cost / 100:.4f} PED/shot"
+            self._tracking_log.session_info(
+                f"Enhancer broke: {enhancer_name} on {item_name} "
+                f"({old}→{new}{cost_str})"
+            )
+        else:
+            self._tracking_log.session_info(
+                f"Enhancer broke: {enhancer_name} on {item_name} "
+                f"(+{shrapnel_ped:.2f} PED shrapnel, unmatched slot)"
+            )
 
     def _match_enhancer_shrapnel(self, item_name: str, value_ped: float,
                                   loot_timestamp: datetime) -> bool:

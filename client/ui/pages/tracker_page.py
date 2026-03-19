@@ -547,6 +547,17 @@ class TrackerPage(QWidget):
         self._hunt_status_label = QLabel("No active session")
         self._hunt_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; border: none; margin-left: 12px;")
         header.addWidget(self._hunt_status_label)
+
+        configure_btn = QPushButton("Configure...")
+        configure_btn.setFixedHeight(28)
+        configure_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        configure_btn.setStyleSheet(
+            f"QPushButton {{ background: {ACCENT}; color: #fff; border: none;"
+            f"  border-radius: 4px; padding: 4px 12px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background: {ACCENT_HOVER}; }}"
+        )
+        configure_btn.clicked.connect(self._open_hunt_config)
+        header.addWidget(configure_btn)
         content_layout.addLayout(header)
 
         # Summary bar
@@ -873,6 +884,17 @@ class TrackerPage(QWidget):
         self._encounters_bar.hide()
         # Refresh tree to include the just-ended session
         self._hunt_refresh_tree()
+
+    def _open_hunt_config(self):
+        """Open the hunt configuration dialog."""
+        from ..dialogs.hunt_config_dialog import HuntConfigDialog
+        dlg = HuntConfigDialog(
+            config=self._config,
+            db=self._db,
+            event_bus=self._event_bus,
+            parent=self,
+        )
+        dlg.exec()
 
     # --- Coming soon sub-page ---
 

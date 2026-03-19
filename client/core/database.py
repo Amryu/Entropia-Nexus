@@ -223,6 +223,22 @@ CREATE TABLE IF NOT EXISTS session_loadouts (
     source TEXT NOT NULL DEFAULT 'snapshot'
 );
 
+CREATE TABLE IF NOT EXISTS session_loadout_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES hunt_sessions(id),
+    timestamp TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    description TEXT,
+    loadout_data TEXT,
+    enhancer_delta TEXT,
+    tool_name TEXT,
+    cost_per_shot REAL,
+    damage_min REAL,
+    damage_max REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_loadout_events_session ON session_loadout_events(session_id);
+
 CREATE INDEX IF NOT EXISTS idx_tier_increases_timestamp ON tier_increases(timestamp);
 CREATE INDEX IF NOT EXISTS idx_tier_increases_item ON tier_increases(item_name);
 CREATE INDEX IF NOT EXISTS idx_hunt_sessions_start ON hunt_sessions(start_time);
@@ -1885,6 +1901,60 @@ class Database:
             row = cur.fetchone()
             self._conn.row_factory = None
             return dict(row) if row else None
+
+    # Session loadout events (enhancer tracking, loadout history)
+    def insert_loadout_event(self, session_id: str, timestamp: str,
+                             event_type: str, description: str = None,
+                             loadout_data: str = None, enhancer_delta: str = None,
+                             tool_name: str = None, cost_per_shot: float = None,
+                             damage_min: float = None, damage_max: float = None) -> int:
+        """Insert a loadout event and return its ID."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO session_loadout_events "
+                "(session_id, timestamp, event_type, description, loadout_data, "
+                "enhancer_delta, tool_name, cost_per_shot, damage_min, damage_max) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (session_id, timestamp, event_type, description, loadout_data,
+                 enhancer_delta, tool_name, cost_per_shot, damage_min, damage_max)
+            )
+            self._auto_commit()
+            return cur.lastrowid
+
+    def get_session_loadout_events(self, session_id: str) -> list[dict]:
+        """Get all loadout events for a session, ordered by timestamp."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM session_loadout_events WHERE session_id = ? "
+                "ORDER BY timestamp",
+                (session_id,)
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            self._conn.row_factory = None
+            return rows
+
+    def update_loadout_event(self, event_id: int, **kwargs):
+        """Update a loadout event by ID."""
+        if not kwargs:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in kwargs)
+        values = list(kwargs.values()) + [event_id]
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE session_loadout_events SET {set_clause} WHERE id = ?",
+                tuple(values)
+            )
+            self._auto_commit()
+
+    def delete_loadout_event(self, event_id: int):
+        """Delete a loadout event by ID."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM session_loadout_events WHERE id = ?",
+                (event_id,)
+            )
+            self._auto_commit()
 
     # Custom item markups
     def get_custom_markup(self, item_name: str) -> dict | None:

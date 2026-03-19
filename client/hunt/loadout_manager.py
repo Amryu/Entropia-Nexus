@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..core.logger import get_logger
+from .enhancer_state import EnhancerState
 from .session import HuntSession, SessionLoadoutEntry
 from .tool_inference import ToolInferenceEngine
 
@@ -40,6 +41,9 @@ class SessionLoadoutManager:
         self._calculator_ready = threading.Event()  # Signalled when init completes
         self._warmup_started = False
 
+        # Enhancer tracking — overlays the loadout's enhancer fields
+        self._enhancer_state: EnhancerState = EnhancerState()
+
         # Auto-detect unknown weapons
         self._unmatched_damage_values: list[float] = []
 
@@ -50,6 +54,10 @@ class SessionLoadoutManager:
     @property
     def active_stats(self):
         return self._active_stats
+
+    @property
+    def enhancer_state(self) -> EnhancerState:
+        return self._enhancer_state
 
     @property
     def expected_dpp(self) -> float | None:
@@ -129,13 +137,18 @@ class SessionLoadoutManager:
             self._calculator_ready.set()
 
     def _evaluate(self, loadout: dict):
-        """Evaluate a loadout. Returns (weapon_name, stats) or (None, None)."""
+        """Evaluate a loadout with current enhancer state applied.
+
+        Returns (weapon_name, stats) or (None, None).
+        """
         self._ensure_calculator()
         weapon_name = (loadout.get("Gear", {}).get("Weapon", {}).get("Name") or "").strip()
         if not weapon_name:
             return None, None
         try:
-            stats = self._calculator.evaluate(loadout, self._entity_data)
+            # Apply enhancer state overrides before evaluation
+            effective_loadout = self._enhancer_state.apply_to_loadout(loadout)
+            stats = self._calculator.evaluate(effective_loadout, self._entity_data)
             return weapon_name, stats
         except Exception as e:
             log.error("Loadout evaluation failed: %s", e)
@@ -187,7 +200,12 @@ class SessionLoadoutManager:
         if not self._active_loadout:
             self.load_active_loadout()  # Try loading from cache
         if self._active_loadout:
+            # Initialize enhancer state from the loadout
+            self._enhancer_state = EnhancerState.from_loadout(self._active_loadout)
             self._create_snapshot("snapshot")
+            # Create initial loadout event
+            self._create_loadout_event("initial",
+                f"Session started with {self._enhancer_state.total_count()} enhancers")
 
     def end_session(self):
         """Clear session state."""
@@ -196,33 +214,185 @@ class SessionLoadoutManager:
         self._loot_since_last_snapshot = False
         self._unmatched_damage_values.clear()
 
+    def on_enhancer_break(self, enhancer_name: str, item_name: str,
+                          remaining: int, shrapnel_ped: float) -> dict | None:
+        """Handle an enhancer break — decrement state, re-evaluate, persist event.
+
+        Returns the delta dict if matched, None otherwise.
+        """
+        delta = self._enhancer_state.apply_break(enhancer_name, item_name, remaining)
+        if not delta:
+            return None
+
+        # Re-evaluate with updated enhancer counts
+        if self._active_loadout:
+            weapon_name, stats = self._evaluate(self._active_loadout)
+            if stats:
+                self._active_stats = stats
+                self._tool_inference.load_from_loadout_stats(weapon_name, stats)
+                log.info("Re-evaluated after enhancer break: cost=%.4f PEC/shot", stats.cost)
+
+        # Persist as an incremental event (no full loadout stored)
+        if self._session:
+            desc = (f"{delta['category']}.{delta['slot']} "
+                    f"{delta['old_count']}→{delta['new_count']} "
+                    f"({enhancer_name} on {item_name})")
+            self._db.insert_loadout_event(
+                session_id=self._session.id,
+                timestamp=datetime.utcnow().isoformat(),
+                event_type="enhancer_break",
+                description=desc,
+                enhancer_delta=json.dumps(delta),
+                cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
+            )
+
+        return delta
+
+    def on_enhancer_adjust(self, category: str, slot: str, new_count: int) -> dict | None:
+        """Handle a manual enhancer count adjustment by the user.
+
+        Returns the delta dict.
+        """
+        old_count = self._enhancer_state.get_slot(category, slot)
+        self._enhancer_state.set_slot(category, slot, new_count)
+        actual_new = self._enhancer_state.get_slot(category, slot)
+
+        delta = {
+            "category": category,
+            "slot": slot,
+            "old_count": old_count,
+            "new_count": actual_new,
+        }
+
+        # Re-evaluate
+        if self._active_loadout:
+            weapon_name, stats = self._evaluate(self._active_loadout)
+            if stats:
+                self._active_stats = stats
+                self._tool_inference.load_from_loadout_stats(weapon_name, stats)
+
+        # Persist as adjustment event
+        if self._session:
+            desc = f"Manual: {category}.{slot} {old_count}→{actual_new}"
+            self._db.insert_loadout_event(
+                session_id=self._session.id,
+                timestamp=datetime.utcnow().isoformat(),
+                event_type="enhancer_adjust",
+                description=desc,
+                enhancer_delta=json.dumps(delta),
+                cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
+            )
+
+        log.info("Enhancer adjusted: %s.%s %d → %d", category, slot, old_count, actual_new)
+        return delta
+
+    def on_tool_detected(self, tool_name: str, cost_per_shot: float = 0,
+                         damage_min: float = 0, damage_max: float = 0):
+        """Register a newly detected tool (from OCR) that wasn't in the loadout.
+
+        Adds a weapon signature and creates a history event.
+        """
+        if damage_max > 0:
+            self._tool_inference.load_signature(
+                tool_name, damage_min, damage_max,
+                (damage_min + damage_max) / 2,
+                cost_per_shot,
+            )
+
+        if self._session:
+            self._db.insert_loadout_event(
+                session_id=self._session.id,
+                timestamp=datetime.utcnow().isoformat(),
+                event_type="tool_detected",
+                description=f"Auto-detected: {tool_name}",
+                tool_name=tool_name,
+                cost_per_shot=cost_per_shot,
+                damage_min=damage_min,
+                damage_max=damage_max,
+            )
+        log.info("Tool detected and registered: %s", tool_name)
+
+    def _create_loadout_event(self, event_type: str, description: str):
+        """Create a loadout event with current state."""
+        if not self._session:
+            return
+        self._db.insert_loadout_event(
+            session_id=self._session.id,
+            timestamp=datetime.utcnow().isoformat(),
+            event_type=event_type,
+            description=description,
+            loadout_data=json.dumps(self._active_loadout) if self._active_loadout else None,
+            cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
+            damage_min=self._active_stats.damage_interval_min if self._active_stats else None,
+            damage_max=self._active_stats.damage_interval_max if self._active_stats else None,
+        )
+
     def restore_session(self, session: HuntSession):
         """Restore session state from DB data (after restart).
 
-        Loads weapon signatures from the latest loadout entry so cost
-        tracking resumes immediately.
+        Reconstructs enhancer state by replaying loadout events, then
+        re-evaluates the loadout with the correct enhancer counts.
         """
         self._session = session
         self._combat_since_last_snapshot = False
         self._loot_since_last_snapshot = False
         self._unmatched_damage_values.clear()
 
-        # Always re-evaluate from the stored loadout data — the result is
-        # deterministic so there's no reason to use cached snapshot values.
+        # Load the base loadout from the latest snapshot
         if not self._active_loadout and session.loadout_entries:
             latest = session.loadout_entries[-1]
             if latest.loadout_data:
                 self._active_loadout = latest.loadout_data
-        if self._active_loadout:
-            weapon_name, stats = self._evaluate(self._active_loadout)
-            if stats:
-                self._active_stats = stats
-                self._tool_inference.load_from_loadout_stats(weapon_name, stats)
-                log.info("Loadout restored: %s (cost=%.4f PEC/shot)",
-                         weapon_name, stats.cost)
-            else:
-                log.warning("Loadout evaluation failed on restore — no cost tracking")
-        log.info("Loadout manager restored for session %s", session.id)
+
+        if not self._active_loadout:
+            log.warning("No loadout to restore — no cost tracking")
+            return
+
+        # Initialize enhancer state from the base loadout
+        self._enhancer_state = EnhancerState.from_loadout(self._active_loadout)
+
+        # Replay loadout events to reconstruct current enhancer state
+        events = self._db.get_session_loadout_events(session.id)
+        break_count = 0
+        adjust_count = 0
+        for evt in events:
+            evt_type = evt.get("event_type", "")
+            delta_json = evt.get("enhancer_delta")
+            if evt_type in ("enhancer_break", "enhancer_adjust") and delta_json:
+                try:
+                    delta = json.loads(delta_json)
+                    cat = delta.get("category", "")
+                    slot = delta.get("slot", "")
+                    new_count = delta.get("new_count", 0)
+                    self._enhancer_state.set_slot(cat, slot, new_count)
+                    if evt_type == "enhancer_break":
+                        break_count += 1
+                    else:
+                        adjust_count += 1
+                except (json.JSONDecodeError, KeyError):
+                    pass
+            elif evt_type == "tool_detected":
+                # Re-register detected tools
+                tool = evt.get("tool_name")
+                if tool:
+                    self._tool_inference.load_signature(
+                        tool,
+                        evt.get("damage_min", 0),
+                        evt.get("damage_max", 0),
+                        (evt.get("damage_min", 0) + evt.get("damage_max", 0)) / 2,
+                        evt.get("cost_per_shot", 0),
+                    )
+
+        # Evaluate with reconstructed enhancer state
+        weapon_name, stats = self._evaluate(self._active_loadout)
+        if stats:
+            self._active_stats = stats
+            self._tool_inference.load_from_loadout_stats(weapon_name, stats)
+            log.info("Loadout restored: %s (cost=%.4f PEC/shot, %d breaks replayed, %d adjustments)",
+                     weapon_name, stats.cost, break_count, adjust_count)
+        else:
+            log.warning("Loadout evaluation failed on restore — no cost tracking")
+        log.info("Enhancer state: %d total enhancers", self._enhancer_state.total_count())
 
     def on_combat(self):
         """Mark that combat happened since last snapshot."""
