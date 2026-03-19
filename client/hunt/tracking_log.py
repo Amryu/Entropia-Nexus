@@ -63,10 +63,9 @@ class TrackingLog:
                 "type": event_type, "amount": amount,
             })
         elif event_type == "damage_received":
-            if amount == 0.0:
-                self._emit("combat", "BLOCKED incoming attack")
-            else:
+            if amount > 0.0:
                 self._emit("combat", f"TOOK {amount:.1f} dmg")
+            # block (0.0 damage) suppressed from log — still in DB
         elif event_type == "self_heal":
             self._emit("combat", f"HEALED {amount:.1f}")
         elif event_type in ("player_evade", "player_dodge", "player_jam"):
@@ -75,10 +74,7 @@ class TrackingLog:
             self._emit("combat", f"Target {event_type.split('_')[1]}")
         elif event_type == "mob_miss":
             self._emit("combat", "Mob missed")
-        elif event_type == "deflect":
-            self._emit("combat", "Deflected")
-        elif event_type == "block":
-            self._emit("combat", "Blocked")
+        # deflect and block suppressed from log — still recorded in DB
 
     def loot_received(self, total_ped: float, item_count: int, mob_name: str | None):
         """Log loot received."""
