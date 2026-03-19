@@ -147,7 +147,7 @@ class SessionLoadoutManager:
         if not loadout_id:
             log.info("No active_loadout_id configured — skipping loadout load")
             return
-        cache_path = Path("data/cache/loadouts.json")
+        cache_path = Path(__file__).parent.parent / "data" / "cache" / "loadouts.json"
         if not cache_path.exists():
             log.warning("Loadout cache not found at %s", cache_path)
             return
