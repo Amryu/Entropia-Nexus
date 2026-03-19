@@ -54,6 +54,10 @@ export async function execute(interaction) {
   let thread = interaction.channel;
   let change = await getChangeByThreadId(thread.id);
 
+  if (!change) {
+    return interaction.reply({ content: 'No change found for this thread.', flags: MessageFlags.Ephemeral });
+  }
+
   if (change.state === 'Approved' || change.state === 'Denied') {
     return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
   }
