@@ -508,12 +508,6 @@ class TargetLockDetector:
                     log.info("Target name OCR: %r (ROI %dx%d)",
                              name, region.shape[1], region.shape[0])
 
-        # Include HP bar crop too for debug
-        if getattr(self._config, "scan_overlay_debug", False) and roi_hp:
-            hp_region = self._get_roi_region(image, tx, ty, roi_hp)
-            if hp_region is not None and hp_region.size > 0:
-                data["_hp_crop"] = hp_region
-
         return data
 
     def _get_roi_region(self, image: np.ndarray, tx: int, ty: int,
