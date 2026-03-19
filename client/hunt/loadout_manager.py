@@ -207,8 +207,8 @@ class SessionLoadoutManager:
         self._loot_since_last_snapshot = False
         self._unmatched_damage_values.clear()
 
-        # Re-evaluate the loadout from cache rather than trusting old snapshot
-        # values (cost_per_shot may have been stored with the old PEC/PED bug).
+        # Always re-evaluate from the stored loadout data — the result is
+        # deterministic so there's no reason to use cached snapshot values.
         if not self._active_loadout and session.loadout_entries:
             latest = session.loadout_entries[-1]
             if latest.loadout_data:
@@ -218,21 +218,10 @@ class SessionLoadoutManager:
             if stats:
                 self._active_stats = stats
                 self._tool_inference.load_from_loadout_stats(weapon_name, stats)
-                log.info("Re-evaluated loadout on restore: %s (cost=%.4f PEC)",
+                log.info("Loadout restored: %s (cost=%.4f PEC/shot)",
                          weapon_name, stats.cost)
             else:
-                # Fallback to snapshot values if evaluation fails
-                if session.loadout_entries:
-                    latest = session.loadout_entries[-1]
-                    if latest.weapon_name and latest.damage_min > 0:
-                        self._tool_inference.load_signature(
-                            latest.weapon_name,
-                            latest.damage_min,
-                            latest.damage_max,
-                            (latest.damage_min + latest.damage_max) / 2,
-                            latest.cost_per_shot,
-                            latest.crit_damage,
-                        )
+                log.warning("Loadout evaluation failed on restore — no cost tracking")
         log.info("Loadout manager restored for session %s", session.id)
 
     def on_combat(self):
