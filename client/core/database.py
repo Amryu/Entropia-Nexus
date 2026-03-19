@@ -1777,6 +1777,7 @@ class Database:
                 FROM hunts h
                 LEFT JOIN mob_encounters e ON e.hunt_id = h.id
                     AND e.outcome NOT IN ('merged')
+                WHERE h.session_id = ?
                 GROUP BY h.id
                 ORDER BY h.start_time ASC
             """, (session_id,))
