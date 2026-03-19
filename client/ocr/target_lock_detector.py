@@ -28,6 +28,7 @@ except ImportError:
 
 from ..core.constants import (
     EVENT_TARGET_LOCK_UPDATE, EVENT_TARGET_LOCK_LOST,
+    EVENT_MOB_TARGET_CHANGED,
     EVENT_PLAYER_STATUS_UPDATE, EVENT_PLAYER_STATUS_LOST,
     GAME_TITLE_PREFIX,
 )
@@ -125,6 +126,13 @@ class TargetLockDetector:
         self._cb_heart_lost = lambda d: self._on_heart_lost()
         event_bus.subscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_heart_update)
         event_bus.subscribe(EVENT_PLAYER_STATUS_LOST, self._cb_heart_lost)
+
+        # Mob name OCR state
+        self._last_mob_name: str = ""
+        self._name_candidate: str = ""
+        self._name_confirm_count: int = 0
+        self._name_debounce = getattr(config, 'target_lock_name_debounce', 2)
+        self._name_min_confidence = getattr(config, 'target_lock_name_min_confidence', 0.3)
 
         self._load_template()
 
@@ -324,6 +332,9 @@ class TargetLockDetector:
                 "game_origin": self._game_origin,
             })
             self._event_bus.publish(EVENT_TARGET_LOCK_UPDATE, data)
+
+            # Check for mob name change (debounced)
+            self._check_name_change(data.get("raw_name", ""))
         else:
             self._miss_count += 1
             self._idle_ticks += 1  # no target — increment idle counter
@@ -471,8 +482,14 @@ class TargetLockDetector:
             if region is not None and region.size > 0:
                 data["is_shared"] = self._read_shared_icon(region)
 
-        # Name (placeholder — publishes empty string until OCR is wired)
-        # roi_name = getattr(self._config, "target_lock_roi_name", None)
+        # Name — ONNX text recognition
+        roi_name = getattr(self._config, "target_lock_roi_name", None)
+        if roi_name:
+            region = self._get_roi_region(image, tx, ty, roi_name)
+            if region is not None and region.size > 0:
+                name = self._read_mob_name(region)
+                if name:
+                    data["raw_name"] = name
 
         return data
 
@@ -518,6 +535,60 @@ class TargetLockDetector:
         """Detect if the shared loot icon is present via brightness check."""
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
         return float(np.mean(gray)) > SHARED_BRIGHTNESS_THRESHOLD
+
+    def _read_mob_name(self, region: np.ndarray) -> str | None:
+        """Read mob name from the name ROI using ONNX text recognition."""
+        try:
+            from . import onnxtr_recognizer
+            if not onnxtr_recognizer.is_available():
+                return None
+            result = onnxtr_recognizer.recognize_text(
+                region, min_confidence=self._name_min_confidence,
+            )
+            if result is None:
+                return None
+            text, _confidence = result
+            # Strip "Corpse" suffix if present
+            if text.endswith(" Corpse"):
+                text = text[:-7].strip()
+            return text if text else None
+        except Exception as e:
+            log.debug("Mob name OCR failed: %s", e)
+            return None
+
+    def _check_name_change(self, raw_name: str):
+        """Debounce and publish mob name changes.
+
+        Requires `_name_debounce` consecutive frames with the same new name
+        before publishing EVENT_MOB_TARGET_CHANGED.
+        """
+        if not raw_name:
+            # No name detected — reset candidate but don't clear last published
+            self._name_candidate = ""
+            self._name_confirm_count = 0
+            return
+
+        if raw_name == self._last_mob_name:
+            # Same as already published — no change needed
+            self._name_candidate = ""
+            self._name_confirm_count = 0
+            return
+
+        if raw_name == self._name_candidate:
+            self._name_confirm_count += 1
+        else:
+            self._name_candidate = raw_name
+            self._name_confirm_count = 1
+
+        if self._name_confirm_count >= self._name_debounce:
+            self._last_mob_name = raw_name
+            self._name_candidate = ""
+            self._name_confirm_count = 0
+            self._event_bus.publish(EVENT_MOB_TARGET_CHANGED, {
+                "mob_name": raw_name,
+                "confidence": 0.8,
+                "source": "ocr",
+            })
 
     # ------------------------------------------------------------------
     # Heart exclusion zone

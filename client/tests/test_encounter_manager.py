@@ -167,15 +167,27 @@ class TestMobChange(unittest.TestCase):
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
 
-    def test_mob_change_closes_encounter(self):
-        ended = self.em.on_mob_name_detected("Foul")
-        self.assertIsNotNone(ended)
-        self.assertEqual(ended.mob_name, "Atrox")
-        self.assertIsNotNone(ended.end_time)  # Close sets end_time
+    def test_mob_change_suspends_encounter(self):
+        """Switching targets suspends the old encounter, doesn't close it."""
+        old_enc = self.em.current_encounter
+        self.em.on_mob_name_detected("Foul")
+        # Old encounter is suspended (still alive), not closed
+        self.assertIsNone(old_enc.end_time)
+        alive = self.em.alive_encounters
+        self.assertEqual(len(alive), 2)
+        # New encounter is active
         self.assertEqual(self.em.current_encounter.mob_name, "Foul")
 
+    def test_mob_change_resumes_existing(self):
+        """Switching back to a previously fought mob resumes its encounter."""
+        self.em.on_mob_name_detected("Foul")
+        self.em.on_damage_dealt(30.0)
+        self.em.on_mob_name_detected("Atrox")  # Switch back
+        # Should resume the original Atrox encounter
+        self.assertEqual(self.em.current_encounter.mob_name, "Atrox")
+        self.assertAlmostEqual(self.em.current_encounter.damage_dealt, 50.0)
+
     def test_same_mob_updates_confidence(self):
-        # Create a fresh encounter manager (setUp already created one at confidence=1.0)
         em = EncounterManager(_make_config(), _make_session())
         em.on_mob_name_detected("Atrox", confidence=0.5)
         self.assertAlmostEqual(em.current_encounter.confidence, 0.5)
@@ -195,34 +207,45 @@ class TestTimeoutAndClose(unittest.TestCase):
         self.em.on_damage_dealt(50.0)
         self.assertEqual(self.em.state, EncounterState.ACTIVE)
         result = self.em.check_timeout()
-        self.assertIsNone(result)
+        self.assertEqual(result, [])
 
     def test_check_timeout_closes_after_delay(self):
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
-        self.em.on_loot_group(10.0)
+        loot_target = self.em.on_loot_group(10.0)
+        self.assertIsNotNone(loot_target)
         self.assertEqual(self.em.state, EncounterState.CLOSING)
-        # Simulate time passing beyond timeout
-        self.em._last_event_time = datetime.utcnow() - timedelta(seconds=5)
+        # Simulate time passing beyond loot timeout
+        enc_id = self.em.current_encounter.id
+        enc, state, _ts = self.em._alive[enc_id]
+        self.em._alive[enc_id] = (enc, state, datetime.utcnow() - timedelta(seconds=5))
         result = self.em.check_timeout()
-        self.assertIsNotNone(result)
-        self.assertEqual(result.mob_name, "Atrox")
-        self.assertIsNotNone(result.end_time)
-        self.assertEqual(self.em.state, EncounterState.IDLE)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].mob_name, "Atrox")
+        self.assertIsNotNone(result[0].end_time)
 
     def test_force_close(self):
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
         result = self.em.force_close()
-        self.assertIsNotNone(result)
-        self.assertEqual(result.mob_name, "Atrox")
-        self.assertIsNotNone(result.end_time)  # Close sets end_time
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].mob_name, "Atrox")
+        self.assertIsNotNone(result[0].end_time)
         self.assertEqual(self.em.state, EncounterState.IDLE)
         self.assertIsNone(self.em.current_encounter)
 
     def test_force_close_no_encounter(self):
         result = self.em.force_close()
-        self.assertIsNone(result)
+        self.assertEqual(result, [])
+
+    def test_force_close_multiple_alive(self):
+        """Force close should close all alive encounters."""
+        self.em.on_mob_name_detected("Atrox")
+        self.em.on_damage_dealt(50.0)
+        self.em.on_mob_name_detected("Foul")
+        self.em.on_damage_dealt(30.0)
+        result = self.em.force_close()
+        self.assertEqual(len(result), 2)
 
     def test_closed_encounter_in_session(self):
         self.em.on_mob_name_detected("Atrox")
@@ -305,35 +328,43 @@ class TestOutcomeTracking(unittest.TestCase):
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
         result = self.em.force_close()
-        self.assertEqual(result.outcome, "force_closed")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].outcome, "force_closed")
 
     def test_timeout_from_closing_is_kill(self):
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
         self.em.on_loot_group(10.0)
-        self.em._last_event_time = datetime.utcnow() - timedelta(seconds=5)
+        # Simulate time passing via _alive dict
+        enc_id = self.em.current_encounter.id
+        enc, state, _ts = self.em._alive[enc_id]
+        self.em._alive[enc_id] = (enc, state, datetime.utcnow() - timedelta(seconds=5))
         result = self.em.check_timeout()
-        self.assertEqual(result.outcome, "kill")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].outcome, "kill")
 
     def test_timeout_from_active_is_timeout(self):
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
-        self.em._last_event_time = datetime.utcnow() - timedelta(seconds=5)
+        enc_id = self.em.current_encounter.id
+        enc, state, _ts = self.em._alive[enc_id]
+        self.em._alive[enc_id] = (enc, state, datetime.utcnow() - timedelta(seconds=5))
         result = self.em.check_timeout()
-        self.assertEqual(result.outcome, "timeout")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].outcome, "timeout")
 
-    def test_mob_change_with_loot_is_kill(self):
+    def test_mob_change_suspends_not_closes(self):
+        """Mob change suspends the encounter — it's not closed with an outcome yet."""
         self.em.on_mob_name_detected("Atrox")
         self.em.on_damage_dealt(50.0)
         self.em.on_loot_group(10.0)
-        ended = self.em.on_mob_name_detected("Foul")
-        self.assertEqual(ended.outcome, "kill")
-
-    def test_mob_change_without_loot_is_timeout(self):
-        self.em.on_mob_name_detected("Atrox")
-        self.em.on_damage_dealt(50.0)
-        ended = self.em.on_mob_name_detected("Foul")
-        self.assertEqual(ended.outcome, "timeout")
+        self.em.on_mob_name_detected("Foul")
+        # Atrox encounter is suspended, not closed
+        alive = self.em.alive_encounters
+        atrox_encs = [e for e, s in alive if e.mob_name == "Atrox"]
+        self.assertEqual(len(atrox_encs), 1)
+        self.assertEqual(atrox_encs[0].outcome, "kill")  # Outcome set by loot
+        self.assertIsNone(atrox_encs[0].end_time)  # Not yet closed
 
 
 if __name__ == "__main__":

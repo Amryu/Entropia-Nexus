@@ -1,4 +1,10 @@
-"""Encounter manager — attributes combat and loot events to mob encounters."""
+"""Encounter manager — attributes combat and loot events to mob encounters.
+
+Supports multiple alive encounters simultaneously. When the player switches
+targets (detected via OCR), the old encounter is suspended and the new one
+becomes active. Loot is attributed to the most recently fought encounter
+that hasn't received loot yet.
+"""
 
 import uuid
 from datetime import datetime, timedelta
@@ -19,14 +25,12 @@ class EncounterState(Enum):
 class EncounterManager:
     """Attributes combat/loot events to mob encounters using OCR and timing.
 
-    State machine:
-    - IDLE: waiting for combat event or mob name OCR
-    - ACTIVE: attributing events to current encounter
-    - CLOSING: loot received, waiting for next shot or encounter_close_timeout
-
-    Multi-mob handling:
-    - OCR mob name change closes current encounter, opens new one
-    - Events within attribution_window of a name change go to the new encounter
+    Multi-encounter model:
+    - Multiple encounters can be alive simultaneously (active + suspended)
+    - The active encounter receives all combat events
+    - Target switching suspends the old encounter and activates/creates the new one
+    - Loot is attributed to the best candidate (most recently fought without loot)
+    - Suspended encounters auto-close after the configured timeout
     """
 
     # Loot deduplication: skip identical loot groups arriving within this window
@@ -35,12 +39,15 @@ class EncounterManager:
     def __init__(self, config, session: HuntSession):
         self._config = config
         self._session = session
-        self._state = EncounterState.IDLE
-        self._current_encounter: MobEncounter | None = None
         self._current_tool: str | None = None
-        self._last_event_time: datetime | None = None
 
-        # Timing constants from config (converted to timedelta)
+        # Active encounter — receives combat events
+        self._active: MobEncounter | None = None
+
+        # All alive encounters: enc_id → (encounter, state, last_event_time)
+        self._alive: dict[str, tuple[MobEncounter, EncounterState, datetime]] = {}
+
+        # Timing constants from config
         self._close_timeout = timedelta(
             milliseconds=config.encounter_close_timeout_ms
         )
@@ -50,9 +57,6 @@ class EncounterManager:
         self._max_duration = timedelta(
             milliseconds=getattr(config, 'max_encounter_duration_ms', 600000)
         )
-        self._attribution_window = timedelta(
-            milliseconds=config.attribution_window_ms
-        )
 
         # Loot deduplication state
         self._last_loot_fingerprint: tuple | None = None
@@ -60,46 +64,63 @@ class EncounterManager:
 
     @property
     def state(self) -> EncounterState:
-        return self._state
+        """State of the active encounter."""
+        if self._active and self._active.id in self._alive:
+            return self._alive[self._active.id][1]
+        return EncounterState.IDLE
 
     @property
     def current_encounter(self) -> MobEncounter | None:
-        return self._current_encounter
+        """The active encounter receiving combat events."""
+        return self._active
+
+    @property
+    def alive_encounters(self) -> list[tuple[MobEncounter, EncounterState]]:
+        """All alive encounters with their state, active first."""
+        result = []
+        for enc, state, _ts in self._alive.values():
+            result.append((enc, state))
+        # Sort: active first, then by last event time descending
+        result.sort(key=lambda x: (0 if x[0] is self._active else 1))
+        return result
 
     def set_current_tool(self, tool_name: str | None):
         """Update the current tool (from OCR or loadout)."""
         self._current_tool = tool_name
 
     def on_mob_name_detected(self, mob_name: str, confidence: float = 1.0,
-                              source: str = "ocr") -> MobEncounter | None:
-        """Handle OCR-detected mob name. Returns ended encounter if target changed."""
-        ended = None
+                              source: str = "ocr") -> None:
+        """Handle OCR-detected mob name — switch active encounter.
+
+        Does NOT close encounters. Suspends the current active and
+        activates/creates the encounter for mob_name.
+        """
         now = datetime.utcnow()
 
-        if self._current_encounter:
-            if self._current_encounter.mob_name != mob_name:
-                # Target changed — close current, start new
-                outcome = "kill" if self._current_encounter.loot_total_ped > 0 else "timeout"
-                ended = self._close_encounter(now, outcome=outcome)
-                self._start_encounter(mob_name, source, confidence, now)
-            else:
-                # Same mob — update confidence
-                self._current_encounter.confidence = max(
-                    self._current_encounter.confidence, confidence
-                )
-        elif self._state == EncounterState.IDLE:
-            # First mob detected
-            self._start_encounter(mob_name, source, confidence, now)
+        # Same mob as active → just update confidence
+        if self._active and self._active.mob_name == mob_name:
+            self._active.confidence = max(self._active.confidence, confidence)
+            return
 
-        return ended
+        # Check if we already have a suspended encounter for this mob
+        existing = self._find_alive_by_mob(mob_name)
+        if existing:
+            self._set_active(existing, now)
+            existing.confidence = max(existing.confidence, confidence)
+            log.info("Resumed encounter %s (%s)", existing.id[:8], mob_name)
+        else:
+            # New mob — create new encounter, suspend old
+            enc = self._create_encounter(mob_name, source, confidence, now)
+            self._set_active(enc, now)
+            log.info("Started encounter %s (%s)", enc.id[:8], mob_name)
 
     def on_damage_dealt(self, amount: float, is_crit: bool = False,
                         timestamp: datetime | None = None) -> None:
-        """Handle player dealing damage."""
+        """Handle player dealing damage — routed to active encounter."""
         now = timestamp or datetime.utcnow()
         self._ensure_encounter(now)
 
-        enc = self._current_encounter
+        enc = self._active
         if not enc:
             return
 
@@ -117,145 +138,165 @@ class EncounterManager:
         if is_crit:
             enc.tool_stats[tool].critical_hits += 1
 
-        self._state = EncounterState.ACTIVE
-        self._last_event_time = now
+        self._update_alive(enc.id, EncounterState.ACTIVE, now)
 
     def on_damage_received(self, amount: float, timestamp: datetime | None = None) -> None:
         """Handle player receiving damage."""
         now = timestamp or datetime.utcnow()
         self._ensure_encounter(now)
 
-        if self._current_encounter:
-            self._current_encounter.damage_taken += amount
-            self._last_event_time = now
+        if self._active:
+            self._active.damage_taken += amount
+            self._update_alive(self._active.id, None, now)
 
     def on_heal(self, amount: float, timestamp: datetime | None = None) -> None:
         """Handle healing received."""
-        if self._current_encounter:
-            self._current_encounter.heals_received += amount
+        if self._active:
+            self._active.heals_received += amount
 
     def on_player_avoid(self, timestamp: datetime | None = None) -> None:
         """Player evaded/dodged/jammed a mob attack."""
-        if self._current_encounter:
-            self._current_encounter.player_avoids += 1
+        if self._active:
+            self._active.player_avoids += 1
 
     def on_target_avoid(self, timestamp: datetime | None = None) -> None:
         """Mob evaded/dodged/jammed a player attack."""
         now = timestamp or datetime.utcnow()
         self._ensure_encounter(now)
-        if self._current_encounter:
-            self._current_encounter.target_avoids += 1
-            self._last_event_time = now
+        if self._active:
+            self._active.target_avoids += 1
+            self._update_alive(self._active.id, None, now)
 
     def on_mob_miss(self, timestamp: datetime | None = None) -> None:
         """Mob missed the player (separate from avoid)."""
-        if self._current_encounter:
-            self._current_encounter.mob_misses += 1
+        if self._active:
+            self._active.mob_misses += 1
 
     def on_deflect(self, timestamp: datetime | None = None) -> None:
         """Player deflected a mob attack."""
-        if self._current_encounter:
-            self._current_encounter.deflects += 1
+        if self._active:
+            self._active.deflects += 1
 
     def on_block(self, timestamp: datetime | None = None) -> None:
         """Player blocked a mob attack (0.0 damage received)."""
-        if self._current_encounter:
-            self._current_encounter.blocks += 1
+        if self._active:
+            self._active.blocks += 1
 
     def on_loot_group(self, total_ped: float, loot_items: list | None = None,
-                      timestamp: datetime | None = None) -> None:
-        """Handle loot drop — attribute to current/most recent encounter."""
-        if not self._current_encounter:
-            return
+                      timestamp: datetime | None = None) -> MobEncounter | None:
+        """Handle loot drop — attribute to the best alive encounter.
 
+        Finds the most recently fought encounter that hasn't received loot.
+        Returns the encounter that received the loot (may differ from active).
+        """
         now = timestamp or datetime.utcnow()
 
-        # Deduplication: skip if identical loot group arrives within window
+        # Deduplication
         first_item = (loot_items[0].item_name if loot_items else "")
         fingerprint = (round(total_ped, 4), len(loot_items) if loot_items else 0, first_item)
         if (self._last_loot_fingerprint == fingerprint
                 and self._last_loot_time is not None
                 and (now - self._last_loot_time) < self.LOOT_DEDUP_WINDOW):
             log.debug("Duplicate loot group skipped: %s", fingerprint)
-            return
+            return None
         self._last_loot_fingerprint = fingerprint
         self._last_loot_time = now
 
-        self._current_encounter.loot_total_ped += total_ped
+        # Find best candidate for this loot
+        target = self._find_loot_target(now)
+        if not target:
+            return None
+
+        target.loot_total_ped += total_ped
         if loot_items:
-            self._current_encounter.loot_items.extend(loot_items)
-        self._current_encounter.outcome = "kill"
-        self._state = EncounterState.CLOSING
-        self._last_event_time = now
+            target.loot_items.extend(loot_items)
+        target.outcome = "kill"
+        self._update_alive(target.id, EncounterState.CLOSING, now)
+
+        log.info("Loot %.2f PED attributed to encounter %s (%s)",
+                 total_ped, target.id[:8], target.mob_name)
+        return target
 
     def on_death(self, mob_name: str, timestamp: datetime | None = None) -> MobEncounter | None:
-        """Handle player death — close encounter immediately.
+        """Handle player death — close the active encounter immediately.
 
-        Returns the closed encounter (now open-ended), or None if no encounter was active.
-        The mob_name comes from the death message (adjective already stripped).
+        Returns the closed encounter (now open-ended), or None.
         """
-        if not self._current_encounter:
+        if not self._active:
             return None
 
         now = timestamp or datetime.utcnow()
-        enc = self._current_encounter
+        enc = self._active
         enc.outcome = "death"
         enc.death_count += 1
         enc.killed_by_mob = mob_name
         enc.is_open_ended = True
 
-        # Use death mob name if encounter had no OCR detection
         if enc.mob_name == "Unknown" and mob_name:
             enc.mob_name = mob_name
             enc.mob_name_source = "death_message"
 
-        return self._close_encounter(now)
+        return self._close_encounter(enc, now)
 
-    def check_timeout(self) -> MobEncounter | None:
-        """Check if the current encounter should be closed due to timeout.
-        Call this periodically (e.g., every second).
-        Returns the ended encounter if closed, or None.
+    def check_timeout(self) -> list[MobEncounter]:
+        """Check all alive encounters for timeout.
+
+        Returns list of encounters that were closed.
         """
-        if not self._current_encounter:
-            return None
+        if not self._alive:
+            return []
 
         now = datetime.utcnow()
+        closed = []
 
-        # Max duration cap: prevent encounters from running forever
-        duration = now - self._current_encounter.start_time
-        if duration > self._max_duration:
-            log.warning("Encounter %s exceeded max duration (%.0fs), force closing",
-                        self._current_encounter.id[:8], duration.total_seconds())
-            return self._close_encounter(now, outcome="timeout")
+        for enc_id in list(self._alive.keys()):
+            enc, state, last_event = self._alive[enc_id]
 
-        # CLOSING state: use faster loot_close_timeout (loot received = kill confirmed)
-        if self._state == EncounterState.CLOSING and self._last_event_time:
-            if now - self._last_event_time > self._loot_close_timeout:
-                return self._close_encounter(now, outcome="kill")
+            # Max duration cap
+            duration = now - enc.start_time
+            if duration > self._max_duration:
+                log.warning("Encounter %s exceeded max duration (%.0fs), force closing",
+                            enc.id[:8], duration.total_seconds())
+                closed.append(self._close_encounter(enc, now, outcome="timeout"))
+                continue
 
-        # ACTIVE state: use standard close_timeout (combat without loot)
-        if self._state == EncounterState.ACTIVE and self._last_event_time:
-            if now - self._last_event_time > self._close_timeout:
-                return self._close_encounter(now, outcome="timeout")
+            # CLOSING state: fast timeout (loot received = kill confirmed)
+            if state == EncounterState.CLOSING:
+                if (now - last_event) > self._loot_close_timeout:
+                    closed.append(self._close_encounter(enc, now, outcome="kill"))
+                    continue
 
-        return None
+            # ACTIVE state: standard timeout (combat without loot)
+            if state == EncounterState.ACTIVE:
+                if (now - last_event) > self._close_timeout:
+                    closed.append(self._close_encounter(enc, now, outcome="timeout"))
+                    continue
 
-    def force_close(self) -> MobEncounter | None:
-        """Force-close the current encounter (e.g., session stop)."""
-        if self._current_encounter:
-            return self._close_encounter(datetime.utcnow(), outcome="force_closed")
-        return None
+        return closed
+
+    def force_close(self) -> list[MobEncounter]:
+        """Force-close all alive encounters (e.g., session stop)."""
+        now = datetime.utcnow()
+        closed = []
+        for enc_id in list(self._alive.keys()):
+            enc, _state, _ts = self._alive[enc_id]
+            closed.append(self._close_encounter(enc, now, outcome="force_closed"))
+        return closed
+
+    # -- Internal helpers -----------------------------------------------------
 
     def _ensure_encounter(self, now: datetime):
-        """Create an encounter if none exists (anonymous mob)."""
-        if not self._current_encounter:
+        """Create an encounter if none is active (anonymous mob)."""
+        if not self._active:
             mob_name = self._session.primary_mob or "Unknown"
             source = "user" if self._session.primary_mob else "interpolated"
-            self._start_encounter(mob_name, source, 0.5, now)
+            enc = self._create_encounter(mob_name, source, 0.5, now)
+            self._set_active(enc, now)
 
-    def _start_encounter(self, mob_name: str, source: str,
-                          confidence: float, now: datetime):
-        self._current_encounter = MobEncounter(
+    def _create_encounter(self, mob_name: str, source: str,
+                           confidence: float, now: datetime) -> MobEncounter:
+        """Create a new encounter and register it as alive."""
+        enc = MobEncounter(
             id=str(uuid.uuid4()),
             session_id=self._session.id,
             mob_name=mob_name,
@@ -263,15 +304,66 @@ class EncounterManager:
             start_time=now,
             confidence=confidence,
         )
-        self._state = EncounterState.ACTIVE
-        self._last_event_time = now
+        self._alive[enc.id] = (enc, EncounterState.ACTIVE, now)
+        return enc
 
-    def _close_encounter(self, now: datetime, outcome: str | None = None) -> MobEncounter:
-        enc = self._current_encounter
+    def _set_active(self, enc: MobEncounter, now: datetime):
+        """Make an encounter the active one (suspend the previous)."""
+        self._active = enc
+        self._update_alive(enc.id, EncounterState.ACTIVE, now)
+
+    def _update_alive(self, enc_id: str, new_state: EncounterState | None,
+                       now: datetime):
+        """Update an alive encounter's state and/or last event time."""
+        if enc_id not in self._alive:
+            return
+        enc, state, _ts = self._alive[enc_id]
+        self._alive[enc_id] = (enc, new_state or state, now)
+
+    def _find_alive_by_mob(self, mob_name: str) -> MobEncounter | None:
+        """Find an alive encounter matching a mob name."""
+        for enc, _state, _ts in self._alive.values():
+            if enc.mob_name == mob_name:
+                return enc
+        return None
+
+    def _find_loot_target(self, now: datetime) -> MobEncounter | None:
+        """Find the best encounter to receive loot.
+
+        Priority: most recently active encounter that has damage but no loot.
+        If multiple candidates, prefer the one with the most recent event time.
+        """
+        candidates = []
+        for enc, state, last_event in self._alive.values():
+            if enc.damage_dealt > 0 and enc.loot_total_ped == 0:
+                candidates.append((enc, last_event))
+
+        if not candidates:
+            # Fallback: active encounter even if it has no damage yet
+            return self._active
+
+        # Sort by last event time descending — most recently fought first
+        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        # If the active encounter just started (after a switch) and there's a
+        # suspended encounter that was fought more recently overall, prefer it
+        if len(candidates) > 1:
+            best = candidates[0][0]
+            # If the best candidate is NOT the active encounter, it means
+            # there's a suspended encounter that was fought more recently —
+            # this is likely the one that produced the loot
+            return best
+
+        return candidates[0][0]
+
+    def _close_encounter(self, enc: MobEncounter, now: datetime,
+                          outcome: str | None = None) -> MobEncounter:
+        """Close an encounter and remove it from the alive set."""
         enc.end_time = now
         if outcome:
             enc.outcome = outcome
         self._session.encounters.append(enc)
-        self._current_encounter = None
-        self._state = EncounterState.IDLE
+        self._alive.pop(enc.id, None)
+        if self._active is enc:
+            self._active = None
         return enc

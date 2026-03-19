@@ -219,6 +219,55 @@ def is_available() -> bool:
     return _ensure_session() is not None
 
 
+def recognize_text(
+    crop_bgr: np.ndarray,
+    min_confidence: float = 0.3,
+) -> tuple[str, float] | None:
+    """Recognize arbitrary text from a cropped BGR image.
+
+    Parameters
+    ----------
+    crop_bgr : np.ndarray
+        BGR image of the text region.
+    min_confidence : float
+        Minimum per-character confidence threshold.
+
+    Returns
+    -------
+    ``(text, confidence)`` or ``None`` if recognition fails or is below
+    the confidence threshold.
+    """
+    session = _ensure_session()
+    if session is None or cv2 is None:
+        return None
+    if crop_bgr is None or crop_bgr.size == 0:
+        return None
+
+    crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+
+    h, w = crop_rgb.shape[:2]
+    if h < _TARGET_HEIGHT:
+        scale = _TARGET_HEIGHT / h
+        new_w = max(1, round(w * scale))
+        crop_rgb = cv2.resize(
+            crop_rgb, (new_w, _TARGET_HEIGHT), interpolation=cv2.INTER_CUBIC,
+        )
+
+    tensor = _preprocess(crop_rgb)
+    try:
+        outputs = session.run(None, {_input_name: tensor})
+    except Exception:
+        return None
+
+    text, confidence = _ctc_decode(outputs[0])
+    text = text.strip()
+
+    if not text or confidence < min_confidence:
+        return None
+
+    return text, confidence
+
+
 def recognize_coordinate(
     crop_bgr: np.ndarray,
     row: str | None = None,

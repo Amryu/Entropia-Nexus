@@ -180,15 +180,25 @@ class HuntTracker:
         return self._tool_inference
 
     def _build_summary(self) -> dict:
-        """Build session summary including the active encounter's stats."""
+        """Build session summary including all alive encounters' stats."""
         summary = self._session.to_summary()
-        enc = self._manager.current_encounter if self._manager else None
-        if enc:
-            summary["kills"] += 1 if enc.loot_total_ped > 0 else 0
-            summary["damage_dealt"] += enc.damage_dealt
-            summary["damage_taken"] += enc.damage_taken
-            summary["loot_total"] += enc.effective_loot_ped
-            summary["total_cost"] += enc.cost
+        alive_data = []
+        if self._manager:
+            for enc, state in self._manager.alive_encounters:
+                summary["kills"] += 1 if enc.loot_total_ped > 0 else 0
+                summary["damage_dealt"] += enc.damage_dealt
+                summary["damage_taken"] += enc.damage_taken
+                summary["loot_total"] += enc.effective_loot_ped
+                summary["total_cost"] += enc.cost
+                alive_data.append({
+                    "id": enc.id,
+                    "mob_name": enc.mob_name,
+                    "state": state.name,
+                    "damage_dealt": enc.damage_dealt,
+                    "cost": enc.cost,
+                    "is_active": enc is self._manager.current_encounter,
+                })
+        summary["alive_encounters"] = alive_data
         return summary
 
     def _on_catchup_complete(self, _data):
@@ -378,10 +388,9 @@ class HuntTracker:
 
         now = datetime.utcnow()
 
-        # Close any active encounter
+        # Close all alive encounters
         if self._manager:
-            ended = self._manager.force_close()
-            if ended:
+            for ended in self._manager.force_close():
                 self._persist_encounter(ended)
                 self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, ended.to_dict())
 
@@ -436,10 +445,9 @@ class HuntTracker:
 
         now = datetime.utcnow()
 
-        # Close the active encounter first
+        # Close all alive encounters first
         if self._manager:
-            ended = self._manager.force_close()
-            if ended:
+            for ended in self._manager.force_close():
                 self._persist_encounter(ended)
                 self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, ended.to_dict())
 
@@ -690,9 +698,10 @@ class HuntTracker:
                 )
 
         self._last_activity_time = datetime.utcnow()
-        self._manager.on_loot_group(raw_total, classified)
+        loot_target = self._manager.on_loot_group(raw_total, classified)
         self._loadout_mgr.on_loot()
-        self._tracking_log.loot_received(raw_total, len(classified), mob_name)
+        target_name = loot_target.mob_name if loot_target else mob_name
+        self._tracking_log.loot_received(raw_total, len(classified), target_name)
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
 
     def _on_mob_changed(self, data):
@@ -706,13 +715,8 @@ class HuntTracker:
         self._last_activity_time = datetime.utcnow()
         self._tracking_log.ocr_mob_detected(mob_name, source)
 
-        ended = self._manager.on_mob_name_detected(mob_name, confidence, source)
-        if ended:
-            self._tracking_log.encounter_ended(
-                ended.mob_name, ended.outcome, ended.damage_dealt, ended.cost,
-            )
-            self._persist_encounter(ended)
-            self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, ended.to_dict())
+        # Suspends old encounter (if any), activates/creates encounter for mob_name
+        self._manager.on_mob_name_detected(mob_name, confidence, source)
 
         self._tracking_log.encounter_started(mob_name, source)
         self._event_bus.publish(EVENT_HUNT_ENCOUNTER_STARTED, {
@@ -1218,13 +1222,14 @@ class HuntTracker:
         for enc in self._session.encounters:
             self._recalculate_encounter_stats(enc)
 
-        # Also recalculate current encounter if active
-        if self._manager and self._manager.current_encounter:
-            self._recalculate_encounter_stats(self._manager.current_encounter)
+        # Also recalculate all alive encounters
+        if self._manager:
+            for enc, _state in self._manager.alive_encounters:
+                self._recalculate_encounter_stats(enc)
 
         total_encounters = len(self._session.encounters)
-        if self._manager and self._manager.current_encounter:
-            total_encounters += 1
+        if self._manager:
+            total_encounters += len(self._manager.alive_encounters)
         self._tracking_log.recalculated(total_encounters)
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
         log.info("Session stats recalculated from combat log")
@@ -1358,9 +1363,9 @@ class HuntTracker:
                 return
 
             try:
-                # Check encounter timeout
-                ended = self._manager.check_timeout()
-                if ended:
+                # Check all alive encounters for timeout
+                closed_list = self._manager.check_timeout()
+                for ended in closed_list:
                     # Timeout from ACTIVE state (no loot) → open-ended
                     if ended.outcome == "timeout" and ended.damage_dealt > 0:
                         ended.is_open_ended = True
@@ -1369,6 +1374,7 @@ class HuntTracker:
                                                 self._get_open_encounters_data())
                     self._persist_encounter(ended)
                     self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, ended.to_dict())
+                if closed_list:
                     self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
                                             self._build_summary())
 

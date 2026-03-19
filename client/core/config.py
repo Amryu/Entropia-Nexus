@@ -183,6 +183,8 @@ class AppConfig:
     target_lock_roi_hp: dict = field(default_factory=lambda: {"dx": -89, "dy": -17, "w": 193, "h": 6})
     target_lock_roi_shared: dict = field(default_factory=lambda: {"dx": -125, "dy": -22, "w": 16, "h": 16})
     target_lock_roi_name: dict = field(default_factory=lambda: {"dx": -190, "dy": -40, "w": 394, "h": 14})
+    target_lock_name_min_confidence: float = 0.3   # ONNX min confidence for mob name
+    target_lock_name_debounce: int = 2             # consecutive frames before accepting name change
 
     # Market price window detection
     market_price_enabled: bool = True
@@ -440,6 +442,8 @@ DEFAULTS = {
     "target_lock_roi_hp": {"dx": -89, "dy": -17, "w": 193, "h": 6},
     "target_lock_roi_shared": {"dx": -125, "dy": -22, "w": 16, "h": 16},
     "target_lock_roi_name": {"dx": -190, "dy": -40, "w": 394, "h": 14},
+    "target_lock_name_min_confidence": 0.3,
+    "target_lock_name_debounce": 2,
     "market_price_enabled": True,
     "market_price_match_threshold": 0.9,
     "market_price_poll_interval": 1.0,
