@@ -60,12 +60,15 @@ class ToolInferenceEngine:
         """Load a signature from a LoadoutStats object."""
         if not weapon_name or stats.damage_interval_min <= 0:
             return
+        cost_ped = stats.cost / 100  # PEC → PED
+        log.info("Loading from stats: %s, stats.cost=%.4f PEC → %.6f PED/shot",
+                 weapon_name, stats.cost, cost_ped)
         self.load_signature(
             weapon_name=weapon_name,
             damage_min=stats.damage_interval_min,
             damage_max=stats.damage_interval_max,
             total_damage=stats.total_damage,
-            cost_per_shot=stats.cost / 100,  # PEC → PED
+            cost_per_shot=cost_ped,
             crit_damage=getattr(stats, 'crit_damage', 1.0),
         )
 

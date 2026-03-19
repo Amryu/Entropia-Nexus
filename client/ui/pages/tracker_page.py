@@ -548,6 +548,20 @@ class TrackerPage(QWidget):
         self._hunt_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; border: none; margin-left: 12px;")
         header.addWidget(self._hunt_status_label)
 
+        # View toggle: Event Log ↔ Hunt Log
+        self._log_mode = "event"  # "event" or "hunt"
+        self._log_toggle_btn = QPushButton("Hunt Log")
+        self._log_toggle_btn.setFixedHeight(28)
+        self._log_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._log_toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: {SECONDARY}; color: {TEXT};"
+            f"  border: 1px solid {BORDER}; border-radius: 4px;"
+            f"  padding: 4px 12px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        self._log_toggle_btn.clicked.connect(self._toggle_log_mode)
+        header.addWidget(self._log_toggle_btn)
+
         configure_btn = QPushButton("Configure...")
         configure_btn.setFixedHeight(28)
         configure_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -579,20 +593,6 @@ class TrackerPage(QWidget):
         summary_layout.addWidget(self._hunt_return_label)
         summary_layout.addStretch()
         content_layout.addWidget(summary_bar)
-
-        # View toggle: Event Log ↔ Hunt Log
-        self._log_mode = "event"  # "event" or "hunt"
-        self._log_toggle_btn = QPushButton("Hunt Log")
-        self._log_toggle_btn.setFixedHeight(28)
-        self._log_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._log_toggle_btn.setStyleSheet(
-            f"QPushButton {{ background: {SECONDARY}; color: {TEXT};"
-            f"  border: 1px solid {BORDER}; border-radius: 4px;"
-            f"  padding: 4px 12px; font-size: 12px; }}"
-            f"QPushButton:hover {{ background: {HOVER}; }}"
-        )
-        self._log_toggle_btn.clicked.connect(self._toggle_log_mode)
-        content_layout.addWidget(self._log_toggle_btn)
 
         # Stacked widget for Event Log / Hunt Log
         self._log_stack = QStackedWidget()
@@ -988,13 +988,14 @@ class TrackerPage(QWidget):
     # -- Hunt Log (structured encounter + loadout history) --------------------
 
     _HUNT_LOG_ICONS = {
-        "encounter": ("\u2694", "#d4d4d4"),      # ⚔ gray
+        "encounter": ("\u2694", "#d4d4d4"),           # ⚔ gray
+        "encounter_alive": ("\u25cf", "#00ccff"),     # ● cyan
         "hunt_separator": ("\u2500\u2500\u2500", ACCENT),  # ─── blue
-        "initial": ("\u25c6", "#6a9955"),         # ◆ green
-        "edit": ("\u270e", ACCENT),               # ✎ blue
-        "enhancer_break": ("\u2717", "#f44747"),  # ✗ red
-        "enhancer_adjust": ("\u2699", "#dcdcaa"), # ⚙ gold
-        "tool_detected": ("\u2795", "#4ec9b0"),   # + teal
+        "initial": ("\u25c6", "#6a9955"),              # ◆ green
+        "edit": ("\u270e", ACCENT),                    # ✎ blue
+        "enhancer_break": ("\u2717", "#f44747"),       # ✗ red
+        "enhancer_adjust": ("\u2699", "#dcdcaa"),      # ⚙ gold
+        "tool_detected": ("\u2795", "#4ec9b0"),        # + teal
     }
 
     def _rebuild_hunt_log(self):
@@ -1008,15 +1009,51 @@ class TrackerPage(QWidget):
         data = self._last_hunt_data
         session_id = data.get("session_id", "")
 
-        # Fetch loadout events directly from DB (not from summary to avoid per-event overhead)
+        # Fetch loadout events from DB
         try:
             loadout_events = self._db.get_session_loadout_events(session_id) if session_id else []
         except Exception:
             loadout_events = []
 
-        # Build a merged timeline: encounters (from session.encounters via DB)
-        # + loadout events, sorted by timestamp
+        # Fetch completed encounters from DB
+        try:
+            enc_rows = self._db.get_session_encounters(session_id) if session_id else []
+        except Exception:
+            enc_rows = []
+
+        # Build merged timeline
         timeline = []
+
+        # Add encounters (completed)
+        for enc in enc_rows:
+            if enc.get("outcome") == "merged":
+                continue
+            ts = enc.get("start_time", "")
+            mob = enc.get("mob_name", "?")
+            outcome = enc.get("outcome", "?")
+            dmg = enc.get("damage_dealt", 0)
+            loot = enc.get("loot_total_ped", 0)
+            cost = enc.get("cost", 0)
+            ret = f" ({loot/cost*100:.0f}%)" if cost > 0 else ""
+            text = f"{mob} — {outcome}: {dmg:.0f} dmg, {loot:.2f} loot, {cost:.4f} cost{ret}"
+            timeline.append({
+                "timestamp": ts,
+                "type": "encounter",
+                "text": text,
+                "draggable": False,
+            })
+
+        # Add alive encounters
+        for enc_data in data.get("alive_encounters", []):
+            mob = enc_data.get("mob_name", "?")
+            dmg = enc_data.get("damage_dealt", 0)
+            state = "ACTIVE" if enc_data.get("is_active") else "suspended"
+            timeline.append({
+                "timestamp": datetime.utcnow().isoformat(),
+                "type": "encounter_alive",
+                "text": f"{mob} [{state}]: {dmg:.0f} dmg (in progress)",
+                "draggable": False,
+            })
 
         # Add loadout events
         for evt in loadout_events:
@@ -1030,7 +1067,6 @@ class TrackerPage(QWidget):
                 "draggable": evt.get("event_type") in ("hunt_separator", "edit", "enhancer_adjust"),
             })
 
-        # Sort by timestamp
         timeline.sort(key=lambda x: x.get("timestamp", ""))
 
         for entry in timeline:
@@ -1044,6 +1080,8 @@ class TrackerPage(QWidget):
 
             if etype == "hunt_separator":
                 display = f"{'─' * 10}  Hunt boundary  {'─' * 10}"
+            elif etype == "encounter_alive":
+                display = f"{time_str}  \u25cf {text}"
             else:
                 display = f"{time_str}  {icon} {text}{cost_str}"
 
@@ -1051,15 +1089,11 @@ class TrackerPage(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, entry.get("db_id"))
             item.setData(Qt.ItemDataRole.UserRole + 1, etype)
 
-            # Only separators and loadout updates are draggable
+            # Separators and loadout edits are draggable
             if entry.get("draggable"):
-                item.setFlags(
-                    item.flags() | Qt.ItemFlag.ItemIsDragEnabled
-                )
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
             else:
-                item.setFlags(
-                    item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled
-                )
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
 
             self._hunt_log_list.addItem(item)
 
