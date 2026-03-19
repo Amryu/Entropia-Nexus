@@ -809,22 +809,19 @@ class LoadoutPage(QWidget):
 
         self._schedule_recalc()
 
-    def _populate_slots_from_set(self, set_name: str, plate_name: str = ""):
-        """Fill individual slot fields from an armor set's pieces."""
+    def _resolve_set_slots(self, set_name: str) -> dict[str, str]:
+        """Resolve an armor set name to a {slot: armor_name} mapping."""
         armor_sets = self._entity_data.get("armor_sets", [])
         armors = self._entity_data.get("armors", [])
 
-        # Find the set
         target_set = None
         for s in armor_sets:
             if s.get("Name") == set_name:
                 target_set = s
                 break
         if not target_set:
-            return
+            return {}
 
-        # Build slot → armor name map from individual armor pieces
-        # that belong to this set
         set_id = target_set.get("Id")
         slot_map: dict[str, str] = {}
         for armor in armors:
@@ -835,7 +832,11 @@ class LoadoutPage(QWidget):
                     # Prefer non-L version; take first match per slot
                     if slot not in slot_map:
                         slot_map[slot] = armor.get("Name", "")
+        return slot_map
 
+    def _populate_slots_from_set(self, set_name: str, plate_name: str = ""):
+        """Fill individual slot fields from an armor set's pieces."""
+        slot_map = self._resolve_set_slots(set_name)
         for slot in self._ARMOR_SLOTS:
             name = slot_map.get(slot, "")
             self._armor_slot_fields[slot].set_value(name)
@@ -844,22 +845,40 @@ class LoadoutPage(QWidget):
             )
 
     def _build_armor_data(self) -> dict:
-        """Build the Gear.Armor dict from UI state."""
+        """Build the Gear.Armor dict from UI state.
+
+        Matches web format: per-slot data is always populated regardless
+        of ManageIndividual mode.  In set mode the slots are resolved from
+        the selected armor set; in individual mode the UI field values are
+        used directly.
+        """
         individual = self._armor_individual_cb.isChecked()
+        set_name = self._armor_set_field.current_value() or None
+        plate_name_set = self._plate_field.current_value() or None
         armor = {
-            "SetName": self._armor_set_field.current_value() or None,
-            "PlateName": self._plate_field.current_value() or None,
+            "SetName": set_name,
+            "PlateName": plate_name_set,
             "ManageIndividual": individual,
             "Enhancers": {k: s.value() for k, s in self._armor_enhancers.items()},
         }
-        # Always include per-slot data (website always stores it)
-        for slot in self._ARMOR_SLOTS:
-            piece_name = self._armor_slot_fields[slot].current_value() or None
-            plate_name = self._armor_slot_plate_fields[slot].current_value() or None
-            armor[slot] = {
-                "Name": piece_name if individual else None,
-                "Plate": {"Name": plate_name} if (individual and plate_name) else None,
-            }
+
+        if individual:
+            for slot in self._ARMOR_SLOTS:
+                piece_name = self._armor_slot_fields[slot].current_value() or None
+                plate_name = self._armor_slot_plate_fields[slot].current_value() or None
+                armor[slot] = {
+                    "Name": piece_name,
+                    "Plate": {"Name": plate_name} if plate_name else None,
+                }
+        else:
+            # Set mode: resolve individual pieces from the armor set
+            slot_map = self._resolve_set_slots(set_name) if set_name else {}
+            for slot in self._ARMOR_SLOTS:
+                piece_name = slot_map.get(slot) or None
+                armor[slot] = {
+                    "Name": piece_name,
+                    "Plate": {"Name": plate_name_set} if (piece_name and plate_name_set) else None,
+                }
         return armor
 
     def _build_healing_tab(self):
@@ -1299,7 +1318,11 @@ class LoadoutPage(QWidget):
             "Weapon": {k: empty["Markup"][k] for k in
                        ("Weapon", "Ammo", "Amplifier", "Scope", "Sight",
                         "ScopeSight", "Absorber", "Matrix", "Implant")},
-            "Armor": {"ArmorSet": 100, "PlateSet": 100},
+            "Armor": {
+                "ArmorSet": 100, "PlateSet": 100,
+                "Armors": {s: 100 for s in self._ARMOR_SLOTS},
+                "Plates": {s: 100 for s in self._ARMOR_SLOTS},
+            },
             "Healing": {"HealingTool": 100},
             "Accessories": {},
         }
@@ -1385,11 +1408,7 @@ class LoadoutPage(QWidget):
                 "Enhancers": {k: s.value() for k, s in self._weapon_enhancers.items()},
             }
         if section == "Armor":
-            return {
-                "SetName": self._armor_set_field.current_value() or None,
-                "PlateName": self._plate_field.current_value() or None,
-                "Enhancers": {k: s.value() for k, s in self._armor_enhancers.items()},
-            }
+            return self._build_armor_data()
         if section == "Healing":
             return {
                 "Name": self._heal_field.current_value() or None,
@@ -1412,8 +1431,20 @@ class LoadoutPage(QWidget):
                     "ScopeSight", "Absorber", "Matrix", "Implant")
             return {k: self._markup_spins[k].value() for k in keys if k in self._markup_spins}
         if section == "Armor":
-            return {k: self._markup_spins[k].value()
-                    for k in ("ArmorSet", "PlateSet") if k in self._markup_spins}
+            result = {k: self._markup_spins[k].value()
+                      for k in ("ArmorSet", "PlateSet") if k in self._markup_spins}
+            armors_mu = {}
+            plates_mu = {}
+            for slot in self._ARMOR_SLOTS:
+                spin = self._markup_spins.get(f"Armor_{slot}")
+                if spin:
+                    armors_mu[slot] = spin.value()
+                spin = self._markup_spins.get(f"Plate_{slot}")
+                if spin:
+                    plates_mu[slot] = spin.value()
+            result["Armors"] = armors_mu
+            result["Plates"] = plates_mu
+            return result
         if section == "Healing":
             if "HealingTool" in self._markup_spins:
                 return {"HealingTool": self._markup_spins["HealingTool"].value()}
@@ -2559,8 +2590,23 @@ class LoadoutPage(QWidget):
             spin.setValue((weapon.get("Enhancers") or {}).get(k, 0))
 
         # Armor
+        individual = armor.get("ManageIndividual", False)
+        self._armor_individual_cb.blockSignals(True)
+        self._armor_individual_cb.setChecked(individual)
+        self._armor_individual_cb.blockSignals(False)
+        self._armor_set_container.setVisible(not individual)
+        self._armor_individual_container.setVisible(individual)
         self._armor_set_field.set_value(armor.get("SetName") or "")
         self._plate_field.set_value(armor.get("PlateName") or "")
+        for slot in self._ARMOR_SLOTS:
+            slot_data = armor.get(slot) or {}
+            self._armor_slot_fields[slot].set_value(
+                slot_data.get("Name") or ""
+            )
+            plate = slot_data.get("Plate") or {}
+            self._armor_slot_plate_fields[slot].set_value(
+                plate.get("Name") if isinstance(plate, dict) else (plate or "")
+            )
         for k, spin in self._armor_enhancers.items():
             spin.setValue((armor.get("Enhancers") or {}).get(k, 0))
 
@@ -2582,6 +2628,16 @@ class LoadoutPage(QWidget):
             spin = self._markup_spins.get(key)
             if spin:
                 spin.setValue(markup.get(key, 100))
+        # Per-slot armor/plate markups
+        armors_mu = markup.get("Armors", {})
+        plates_mu = markup.get("Plates", {})
+        for slot in self._ARMOR_SLOTS:
+            spin = self._markup_spins.get(f"Armor_{slot}")
+            if spin:
+                spin.setValue(armors_mu.get(slot, 100))
+            spin = self._markup_spins.get(f"Plate_{slot}")
+            if spin:
+                spin.setValue(plates_mu.get(slot, 100))
 
         # Accessories
         self._clothing_items = list(gear.get("Clothing") or [])
