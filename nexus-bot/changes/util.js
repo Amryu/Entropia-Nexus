@@ -18,10 +18,20 @@ export async function applyChange(change) {
     let columnData = await Promise.all(config.columns.map(async col => ({ name: col.name, value: await col.value(object, client) })));
 
     if (object.Id) {
-      await client.query(`UPDATE ONLY "${config.table}"
+      const updateResult = await client.query(`UPDATE ONLY "${config.table}"
           SET
             ${columnData.map((col, i) => `"${col.name}" = $${i + 1}`).join(", ")}
           WHERE "Id" = $${columnData.length + 1}`, columnData.map(col => col.value).concat(object.Id));
+
+      // Entity has an Id but doesn't exist yet — insert with explicit Id
+      if (updateResult.rowCount === 0) {
+        console.warn(`[applyChange] UPDATE matched 0 rows for ${config.table} Id=${object.Id}, inserting with explicit Id`);
+        await client.query(`INSERT INTO "${config.table}" (
+            "Id", ${columnData.map((col) => `"${col.name}"`).join(", ")}
+          ) VALUES (
+            $1, ${columnData.map((_, i) => `$${i + 2}`).join(", ")}
+          )`, [object.Id, ...columnData.map(col => col.value)]);
+      }
     }
     else {
       object.Id = await client.query(`INSERT INTO "${config.table}" (
