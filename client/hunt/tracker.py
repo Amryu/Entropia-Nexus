@@ -199,7 +199,15 @@ class HuntTracker:
                     "is_active": enc is self._manager.current_encounter,
                 })
         summary["alive_encounters"] = alive_data
-        summary["loadout_events"] = self._loadout_mgr.get_loadout_events()
+        return summary
+
+    def _build_summary_with_history(self) -> dict:
+        """Build summary including loadout event history (for Hunt Log view)."""
+        summary = self._build_summary()
+        try:
+            summary["loadout_events"] = self._loadout_mgr.get_loadout_events()
+        except Exception:
+            summary["loadout_events"] = []
         return summary
 
     def _on_catchup_complete(self, _data):

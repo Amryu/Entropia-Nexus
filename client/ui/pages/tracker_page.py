@@ -1006,7 +1006,13 @@ class TrackerPage(QWidget):
             return
 
         data = self._last_hunt_data
-        loadout_events = data.get("loadout_events", [])
+        session_id = data.get("session_id", "")
+
+        # Fetch loadout events directly from DB (not from summary to avoid per-event overhead)
+        try:
+            loadout_events = self._db.get_session_loadout_events(session_id) if session_id else []
+        except Exception:
+            loadout_events = []
 
         # Build a merged timeline: encounters (from session.encounters via DB)
         # + loadout events, sorted by timestamp
