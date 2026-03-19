@@ -4559,10 +4559,8 @@
               {#if sharedLoadoutData?.Gear?.Armor?.ManageIndividual}
                 <div class="armor-grid">
                   <div class="armor-grid-header">Slot</div>
-                  <div class="armor-grid-header">Armor</div>
-                  <div class="armor-grid-header">Armor MU</div>
-                  <div class="armor-grid-header">Plate</div>
-                  <div class="armor-grid-header">Plate MU</div>
+                  <div class="armor-grid-header">Item</div>
+                  <div class="armor-grid-header">MU</div>
                   {#each armorSlots as slot}
                     <div class="armor-label">{slot}</div>
                     {#if sharedLoadoutData?.Gear?.Armor?.[slot]?.Name}
@@ -4580,14 +4578,15 @@
                     {:else}
                       <span class="placeholder-muted"></span>
                     {/if}
+                    <div class="armor-plate-indent"></div>
                     {#if sharedLoadoutData?.Gear?.Armor?.[slot]?.Name == null}
-                      <div class="slot select-button read-only read-only-slot"><span class="placeholder-muted">Armor required.</span></div>
+                      <div class="slot select-button read-only read-only-slot plate-button"><span class="placeholder-muted">Armor required.</span></div>
                     {:else if sharedLoadoutData?.Gear?.Armor?.[slot]?.Plate?.Name}
-                      <a class="slot select-button read-only link-slot" href={getEquipmentLink('armorplating', sharedLoadoutData.Gear.Armor[slot].Plate.Name)}>
+                      <a class="slot select-button read-only link-slot plate-button" href={getEquipmentLink('armorplating', sharedLoadoutData.Gear.Armor[slot].Plate.Name)}>
                         {sharedLoadoutData.Gear.Armor[slot].Plate.Name}
                       </a>
                     {:else}
-                      <div class="slot select-button read-only read-only-slot"><span class="placeholder-text">No plating selected.</span></div>
+                      <div class="slot select-button read-only read-only-slot plate-button"><span class="placeholder-text">No plating selected.</span></div>
                     {/if}
                     {#if isLimitedName(sharedLoadoutData?.Gear?.Armor?.[slot]?.Plate?.Name)}
                       <div class="markup-field">
@@ -5615,10 +5614,8 @@
                 {#if loadout.Gear.Armor.ManageIndividual}
                   <div class="armor-grid">
                     <div class="armor-grid-header">Slot</div>
-                    <div class="armor-grid-header">Armor</div>
-                    <div class="armor-grid-header">Armor MU</div>
-                    <div class="armor-grid-header">Plate</div>
-                    <div class="armor-grid-header">Plate MU</div>
+                    <div class="armor-grid-header">Item</div>
+                    <div class="armor-grid-header">MU</div>
                     {#each armorSlots as slot}
                       <div class="armor-label">{slot}</div>
                       <button class="slot select-button" oncontextmenu={e => clearSlot(e, `armor-${slot}`)} onclick={() => openPicker(`armor-${slot}`)}>
@@ -5636,7 +5633,8 @@
                       {:else}
                         <span class="placeholder-muted"></span>
                       {/if}
-                      <button class="slot select-button" disabled={loadout?.Gear.Armor[slot].Name == null} oncontextmenu={e => clearSlot(e, `armorplating-${slot}`)} onclick={() => openPicker(`armorplating-${slot}`)}>
+                      <div class="armor-plate-indent"></div>
+                      <button class="slot select-button plate-button" disabled={loadout?.Gear.Armor[slot].Name == null} oncontextmenu={e => clearSlot(e, `armorplating-${slot}`)} onclick={() => openPicker(`armorplating-${slot}`)}>
                         {#if loadout?.Gear.Armor[slot].Name != null}
                           {#if loadout?.Gear.Armor[slot].Plate?.Name != null}
                             {loadout.Gear.Armor[slot].Plate.Name}
