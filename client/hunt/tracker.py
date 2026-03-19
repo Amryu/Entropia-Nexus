@@ -19,7 +19,7 @@ from ..core.constants import (
     EVENT_PLAYER_DEATH, EVENT_PLAYER_REVIVED, EVENT_OPEN_ENCOUNTER_UPDATED,
 )
 from ..core.logger import get_logger
-from .combat_action_log import CombatAction, CombatActionLog, SOURCE_PRIORITY
+from .combat_action_log import CombatAction, CombatActionLog
 from .encounter_manager import EncounterManager
 from .entity_resolver import EntityResolver
 from .hunt_detector import HuntDetector
@@ -591,40 +591,27 @@ class HuntTracker:
                 amount, tool_name, tool_source, confidence,
             )
 
-        # Record detailed combat event
-        event = self._tool_inference.create_event(
-            encounter_id=enc.id,
-            timestamp=now,
-            event_type="critical_hit" if is_crit else "damage_dealt",
-            amount=amount,
-            tool_name=tool_name,
-            tool_source=tool_source,
-            confidence=confidence,
-        )
-
-        # Buffer for retroactive enrichment (per-encounter, no time trim)
-        self._tool_inference.buffer_event(
-            enc.id, event.id, now, amount, is_crit, tool_name, tool_source,
-        )
-
         if not tool_name:
             # Track for auto-detection of unknown weapons
             self._loadout_mgr.on_unmatched_damage(amount)
 
+        event_id = str(uuid.uuid4())
+        event_type = "critical_hit" if is_crit else "damage_dealt"
+
         # Persist combat event detail
         self._db.insert_combat_event_detail(
-            event.id, event.encounter_id, event.timestamp.isoformat(),
-            event.event_type, event.amount,
-            event.tool_name, event.tool_source, event.inferred_confidence,
+            event_id, enc.id, now.isoformat(),
+            event_type, amount,
+            tool_name, tool_source, confidence,
         )
 
         # Add to session combat log
         if self._combat_log:
             action = CombatAction(
-                id=event.id,
+                id=event_id,
                 encounter_id=enc.id,
                 timestamp=now,
-                event_type=event.event_type,
+                event_type=event_type,
                 amount=amount,
                 tool_name=tool_name,
                 tool_source=tool_source,
@@ -712,19 +699,19 @@ class HuntTracker:
         now = datetime.utcnow()
         self._tool_inference.on_tool_detected(tool_name, now)
 
-        # Retroactive enrichment — re-attribute unattributed events in current encounter
+        # Retroactive enrichment — re-attribute events in current encounter
+        # using the tool timeline via the combat log as source of truth
         enc = self._manager.current_encounter
-        if enc:
-            enriched = self._tool_inference.enrich_encounter(enc.id)
+        if enc and self._combat_log:
+            actions = self._combat_log.get_by_encounter(enc.id)
+            enriched = self._tool_inference.enrich_actions(actions)
             for event_id, new_tool, new_source, new_confidence in enriched:
                 self._db.update_combat_event_tool(
                     event_id, new_tool, new_source, new_confidence
                 )
-                # Sync with combat log (respects priority)
-                if self._combat_log:
-                    self._combat_log.update_tool(
-                        event_id, new_tool, new_source, new_confidence
-                    )
+                self._combat_log.update_tool(
+                    event_id, new_tool, new_source, new_confidence
+                )
             if enriched:
                 self._tracking_log.tool_retroactive(
                     len(enriched), tool_name, "ocr_timeline",
@@ -742,17 +729,8 @@ class HuntTracker:
         attributed = self._reload_correlator.on_reload_drop(tool_name, timestamp)
         if attributed > 0:
             self._tracking_log.tool_retroactive(attributed, tool_name, "ocr_reload")
-            # Sync tool inference buffer with updated attributions
             enc = self._manager.current_encounter if self._manager else None
             if enc:
-                # Update tool_inference buffer to match combat log
-                events = self._tool_inference.get_encounter_events(enc.id)
-                for ev in events:
-                    event_id = ev[0]
-                    action = self._combat_log.get_by_id(event_id) if self._combat_log else None
-                    if action and action.tool_source == "ocr_reload":
-                        ev[4] = action.tool_name
-                        ev[5] = action.tool_source
                 self._recalculate_encounter_stats(enc)
 
     def _on_global(self, data):
@@ -1102,34 +1080,15 @@ class HuntTracker:
         Uses the combat log as source of truth for tool attribution and the
         tool filter for cost inclusion. This allows mid-hunt settings changes
         (gear updates, filter changes) to be reflected immediately.
-
-        Falls back to tool_inference event buffer if combat log is unavailable.
         """
-        # Prefer combat log (session-scoped, survives encounter finalization)
-        if self._combat_log:
-            actions = self._combat_log.get_by_encounter(enc.id)
-            damage_actions = [
-                a for a in actions
-                if a.event_type in ("damage_dealt", "critical_hit")
-            ]
-        else:
-            # Fallback to tool_inference buffer (only available before finalization)
-            events = self._tool_inference.get_encounter_events(enc.id)
-            if not events:
-                return
-            damage_actions = []
-            for ev in events:
-                event_id, _ts, amount, is_crit, tool_name, tool_source = ev
-                action = CombatAction(
-                    id=event_id,
-                    encounter_id=enc.id,
-                    timestamp=_ts,
-                    event_type="critical_hit" if is_crit else "damage_dealt",
-                    amount=amount,
-                    tool_name=tool_name,
-                    tool_source=tool_source,
-                )
-                damage_actions.append(action)
+        if not self._combat_log:
+            return
+
+        actions = self._combat_log.get_by_encounter(enc.id)
+        damage_actions = [
+            a for a in actions
+            if a.event_type in ("damage_dealt", "critical_hit")
+        ]
 
         if not damage_actions:
             return
@@ -1309,7 +1268,6 @@ class HuntTracker:
         # Update running stats and free memory
         if self._running_stats:
             self._running_stats.on_encounter_finalized(encounter)
-        self._tool_inference.clear_encounter(encounter.id)
         # Strip loot items — already persisted to DB.
         # Keep tool_stats (small) since merge operations need them.
         encounter.loot_items = []

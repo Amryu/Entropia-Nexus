@@ -15,19 +15,6 @@ class EncounterToolStats:
 
 
 @dataclass
-class CombatEventDetail:
-    """Individual combat event for tool inference and retroactive enrichment."""
-    id: str
-    encounter_id: str
-    timestamp: datetime
-    event_type: str  # damage_dealt, critical_hit, damage_received, etc.
-    amount: float = 0.0
-    tool_name: str | None = None
-    tool_source: str | None = None  # 'ocr', 'inferred', 'loadout'
-    inferred_confidence: float = 0.0
-
-
-@dataclass
 class EncounterLootItem:
     """A loot item attributed to an encounter, with classification."""
     item_name: str

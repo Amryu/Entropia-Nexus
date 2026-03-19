@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import MagicMock
 
+from client.hunt.combat_action_log import CombatAction
 from client.hunt.tool_inference import ToolInferenceEngine
 
 
@@ -93,71 +94,86 @@ class TestToolInferenceEngine(unittest.TestCase):
 
         self.assertGreater(conf_narrow, conf_wide)
 
-    # --- Per-encounter buffering and enrichment ---
+    # --- Timeline enrichment (using CombatAction objects) ---
 
-    def test_buffer_and_enrich_via_timeline(self):
-        now = datetime(2026, 1, 1, 12, 0, 0)
-        event = self.engine.create_event(
-            encounter_id="enc-1", timestamp=now,
-            event_type="damage_dealt", amount=50.0,
+    def _action(self, action_id, timestamp, amount=50.0, event_type="damage_dealt",
+                tool_name=None, tool_source=None):
+        return CombatAction(
+            id=action_id,
+            encounter_id="enc-1",
+            timestamp=timestamp,
+            event_type=event_type,
+            amount=amount,
+            tool_name=tool_name,
+            tool_source=tool_source,
         )
-        self.assertIsNone(event.tool_name)
-        self.engine.buffer_event("enc-1", event.id, now, 50.0, False)
 
-        # Record tool on timeline and enrich
+    def test_enrich_via_timeline(self):
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        actions = [self._action("e1", now)]
+
         self.engine.on_tool_detected("Gun", now)
-        enriched = self.engine.enrich_encounter("enc-1")
+        enriched = self.engine.enrich_actions(actions)
         self.assertEqual(len(enriched), 1)
         self.assertEqual(enriched[0][1], "Gun")  # tool_name
         self.assertEqual(enriched[0][2], "ocr_timeline")  # source
         self.assertAlmostEqual(enriched[0][3], 0.85)  # confidence
 
-    def test_enrich_with_tool_timeline_multi_weapon(self):
+    def test_enrich_multi_weapon_timeline(self):
         """Events before/between/after tool changes are correctly attributed."""
         t1 = datetime(2026, 1, 1, 12, 0, 0)
         t2 = datetime(2026, 1, 1, 12, 0, 5)
         t3 = datetime(2026, 1, 1, 12, 0, 10)
 
-        # Buffer 3 events at different times
-        self.engine.buffer_event("enc-1", "e1", t1, 50.0, False)
-        self.engine.buffer_event("enc-1", "e2", t2, 60.0, False)
-        self.engine.buffer_event("enc-1", "e3", t3, 70.0, False)
+        actions = [
+            self._action("e1", t1),
+            self._action("e2", t2),
+            self._action("e3", t3),
+        ]
 
-        # Tool change at t2: switched from GunA to GunB
         self.engine.on_tool_detected("GunA", t1)
         self.engine.on_tool_detected("GunB", t2)
 
-        enriched = self.engine.enrich_encounter("enc-1")
+        enriched = self.engine.enrich_actions(actions)
         enriched_map = {eid: tool for eid, tool, _, _ in enriched}
 
         self.assertEqual(enriched_map["e1"], "GunA")   # before switch
-        self.assertEqual(enriched_map["e2"], "GunB")   # at switch time → new tool
+        self.assertEqual(enriched_map["e2"], "GunB")   # at switch time
         self.assertEqual(enriched_map["e3"], "GunB")   # after switch
 
     def test_enrich_skips_already_attributed(self):
         now = datetime(2026, 1, 1, 12, 0, 0)
-        # Buffer event that already has a tool
-        self.engine.buffer_event("enc-1", "e1", now, 50.0, False, "Gun", "ocr")
+        actions = [self._action("e1", now, tool_name="Gun", tool_source="ocr")]
         self.engine.on_tool_detected("OtherGun", now)
 
-        enriched = self.engine.enrich_encounter("enc-1")
-        self.assertEqual(len(enriched), 0)  # Already attributed, not enriched
+        enriched = self.engine.enrich_actions(actions)
+        self.assertEqual(len(enriched), 0)  # ocr has higher priority than ocr_timeline
 
-    def test_clear_encounter(self):
+    def test_enrich_skips_non_damage_events(self):
         now = datetime(2026, 1, 1, 12, 0, 0)
-        self.engine.buffer_event("enc-1", "e1", now, 50.0, False)
-        self.engine.clear_encounter("enc-1")
-        self.assertEqual(len(self.engine.get_encounter_events("enc-1")), 0)
+        actions = [self._action("e1", now, event_type="player_evade")]
+        self.engine.on_tool_detected("Gun", now)
+
+        enriched = self.engine.enrich_actions(actions)
+        self.assertEqual(len(enriched), 0)
+
+    def test_enrich_upgrades_inferred(self):
+        """Events with 'inferred' source can be upgraded to 'ocr_timeline'."""
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        actions = [self._action("e1", now, tool_name="InferredGun", tool_source="inferred")]
+        self.engine.on_tool_detected("ActualGun", now)
+
+        enriched = self.engine.enrich_actions(actions)
+        self.assertEqual(len(enriched), 1)
+        self.assertEqual(enriched[0][1], "ActualGun")
 
     def test_clear_resets_all_state(self):
         self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15)
         now = datetime(2026, 1, 1, 12, 0, 0)
-        self.engine.buffer_event("enc-1", "e1", now, 50.0, False)
         self.engine.on_tool_detected("Gun", now)
 
         self.engine.clear()
         self.assertFalse(self.engine.has_signatures)
-        self.assertEqual(len(self.engine.get_encounter_events("enc-1")), 0)
 
     def test_timeline_dedup(self):
         """Same tool detected repeatedly doesn't duplicate timeline entries."""
@@ -168,8 +184,8 @@ class TestToolInferenceEngine(unittest.TestCase):
 
     def test_enrich_no_timeline_returns_empty(self):
         now = datetime(2026, 1, 1, 12, 0, 0)
-        self.engine.buffer_event("enc-1", "e1", now, 50.0, False)
-        enriched = self.engine.enrich_encounter("enc-1")
+        actions = [self._action("e1", now)]
+        enriched = self.engine.enrich_actions(actions)
         self.assertEqual(len(enriched), 0)
 
 
