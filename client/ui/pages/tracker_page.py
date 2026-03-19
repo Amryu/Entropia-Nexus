@@ -751,11 +751,12 @@ class TrackerPage(QWidget):
         )
 
     @staticmethod
-    def _return_str(cost: float, loot: float) -> str:
-        """Format return % with color."""
-        if cost <= 0:
+    def _return_str(cost_pec: float, loot_ped: float) -> str:
+        """Format return % with color. Cost is PEC, loot is PED."""
+        cost_ped = cost_pec / 100
+        if cost_ped <= 0:
             return ""
-        ret = loot / cost * 100
+        ret = loot_ped / cost_ped * 100
         color = "#4ec9b0" if ret >= 100 else "#f44747"
         return f"  ({ret:.0f}%)"
 
@@ -787,7 +788,7 @@ class TrackerPage(QWidget):
                 pass
             ret_str = self._return_str(month_cost, month_loot)
             month_item = QTreeWidgetItem([f"{month_label}{ret_str}"])
-            month_item.setToolTip(0, f"{month_kills} kills, {month_cost:.2f} cost, {month_loot:.2f} loot")
+            month_item.setToolTip(0, f"{month_kills} kills, {month_cost / 100:.2f} PED cost, {month_loot:.2f} PED loot")
 
             for s in month_sessions:
                 start = s.get("start_time", "")
@@ -803,7 +804,7 @@ class TrackerPage(QWidget):
                 ret_str = self._return_str(s_cost, s_loot)
                 session_item = QTreeWidgetItem([f"{date_str}{ret_str}"])
                 session_item.setData(0, Qt.ItemDataRole.UserRole, s.get("id"))
-                session_item.setToolTip(0, f"{s_kills} kills, {s_cost:.2f} cost, {s_loot:.2f} loot")
+                session_item.setToolTip(0, f"{s_kills} kills, {s_cost / 100:.2f} PED cost, {s_loot:.2f} PED loot")
 
                 # Load hunts for this session
                 hunts = self._db.get_session_hunts_with_stats(s.get("id", ""))
@@ -816,7 +817,7 @@ class TrackerPage(QWidget):
                     hunt_item = QTreeWidgetItem([f"{mob}{ret_str}"])
                     hunt_item.setData(0, Qt.ItemDataRole.UserRole, h.get("id"))
                     hunt_item.setData(0, Qt.ItemDataRole.UserRole + 1, "hunt")
-                    hunt_item.setToolTip(0, f"{h_kills} kills, {h_cost:.2f} cost, {h_loot:.2f} loot")
+                    hunt_item.setToolTip(0, f"{h_kills} kills, {h_cost / 100:.2f} PED cost, {h_loot:.2f} PED loot")
                     session_item.addChild(hunt_item)
 
                 month_item.addChild(session_item)
@@ -911,12 +912,13 @@ class TrackerPage(QWidget):
         if not isinstance(data, dict):
             return
         kills = data.get("kills", 0)
-        cost = data.get("total_cost", 0)
+        cost_pec = data.get("total_cost", 0)
         loot = data.get("loot_total", 0)
-        ret = (loot / cost * 100) if cost > 0 else 0
+        cost_ped = cost_pec / 100
+        ret = (loot / cost_ped * 100) if cost_ped > 0 else 0
 
         self._update_stat_label(self._hunt_kills_label, "Kills", str(kills))
-        self._update_stat_label(self._hunt_cost_label, "Cost", f"{cost:.2f}")
+        self._update_stat_label(self._hunt_cost_label, "Cost", f"{cost_ped:.2f}")
         self._update_stat_label(self._hunt_loot_label, "Loot", f"{loot:.2f}")
 
         if cost > 0:
@@ -1033,9 +1035,10 @@ class TrackerPage(QWidget):
             outcome = enc.get("outcome", "?")
             dmg = enc.get("damage_dealt", 0)
             loot = enc.get("loot_total_ped", 0)
-            cost = enc.get("cost", 0)
-            ret = f" ({loot/cost*100:.0f}%)" if cost > 0 else ""
-            text = f"{mob} — {outcome}: {dmg:.0f} dmg, {loot:.2f} loot, {cost:.4f} cost{ret}"
+            cost_pec = enc.get("cost", 0)
+            cost_ped = cost_pec / 100
+            ret = f" ({loot/cost_ped*100:.0f}%)" if cost_ped > 0 else ""
+            text = f"{mob} — {outcome}: {dmg:.0f} dmg, {loot:.2f} PED loot, {cost_ped:.2f} PED cost{ret}"
             timeline.append({
                 "timestamp": ts,
                 "type": "encounter",
@@ -1076,7 +1079,7 @@ class TrackerPage(QWidget):
             icon, color = self._HUNT_LOG_ICONS.get(etype, ("\u2022", TEXT_MUTED))
             text = entry.get("text", "")
             cost = entry.get("cost")
-            cost_str = f"  [{cost:.4f} PED/shot]" if cost else ""
+            cost_str = f"  [{cost:.2f} PEC/shot]" if cost else ""
 
             if etype == "hunt_separator":
                 display = f"{'─' * 10}  Hunt boundary  {'─' * 10}"

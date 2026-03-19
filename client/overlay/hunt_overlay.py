@@ -128,15 +128,16 @@ class HuntOverlay(OverlayWidget):
         if not isinstance(data, dict):
             return
 
-        # Update summary stats
+        # Update summary stats (cost is in PEC internally, display as PED)
         kills = data.get("kills", 0)
         loot = data.get("loot_total", 0)
-        cost = data.get("total_cost", 0)
+        cost_pec = data.get("total_cost", 0)
+        cost_ped = cost_pec / 100
         self._stat_labels["Kills"].setText(str(kills))
         self._stat_labels["Loot"].setText(f"{loot:.2f} PED")
-        self._stat_labels["Cost"].setText(f"{cost:.2f} PED")
-        if cost > 0:
-            ret = loot / cost * 100
+        self._stat_labels["Cost"].setText(f"{cost_ped:.2f} PED")
+        if cost_ped > 0:
+            ret = loot / cost_ped * 100
             color = "#4ec9b0" if ret >= 100 else "#ff6b6b"
             self._stat_labels["Return"].setText(
                 f"<span style='color:{color}'>{ret:.1f}%</span>"

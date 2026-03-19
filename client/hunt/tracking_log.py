@@ -133,7 +133,7 @@ class TrackingLog:
         """Log encounter end."""
         self._emit("encounter", (
             f"Ended: {mob_name} — {outcome} "
-            f"(dmg: {damage_dealt:.1f}, cost: {cost:.4f} PED)"
+            f"(dmg: {damage_dealt:.1f}, cost: {cost / 100:.4f} PED)"
         ))
 
     def session_started(self, session_id: str):
@@ -142,7 +142,7 @@ class TrackingLog:
 
     def session_ended(self, session_id: str, kills: int, cost: float):
         """Log session end."""
-        self._emit("session", f"Session ended: {kills} kills, {cost:.2f} PED cost")
+        self._emit("session", f"Session ended: {kills} kills, {cost / 100:.2f} PED cost")
 
     def recalculated(self, encounter_count: int):
         """Log full recalculation."""
