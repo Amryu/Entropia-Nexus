@@ -866,6 +866,21 @@ class ScanHighlightOverlay(QWidget):
             painter.setFont(TARGET_LOCK_LABEL_FONT)
             painter.drawText(rx + 2, ry - 2, label)
 
+        # Show recognized mob name above the name ROI
+        data = self._target_lock_data
+        raw_name = data.get("raw_name", "") if data else ""
+        hp_pct = data.get("hp_pct") if data else None
+        if raw_name or hp_pct is not None:
+            info_parts = []
+            if raw_name:
+                info_parts.append(raw_name)
+            if hp_pct is not None:
+                info_parts.append(f"HP: {hp_pct * 100:.0f}%")
+            info_text = "  |  ".join(info_parts)
+            painter.setPen(QPen(QColor(255, 255, 255, 230)))
+            painter.setFont(TARGET_LOCK_LABEL_FONT)
+            painter.drawText(tx - 100, ty - 50, info_text)
+
     # ── Market price debug ────────────────────────────────────────────
 
     def _paint_market_price(self, painter: QPainter) -> None:

@@ -517,6 +517,10 @@ class HuntTracker:
             self._manager.on_deflect(timestamp=now)
             self._log_non_damage_event("deflect", 0.0, now)
 
+        # Keep encounter HP state updated for same-name mob differentiation
+        if not self._ocr_state.is_stale("target"):
+            self._manager.on_hp_update(self._ocr_state.state.target_hp_pct)
+
         # Notify loadout manager of combat activity
         self._loadout_mgr.on_combat()
 
@@ -712,11 +716,16 @@ class HuntTracker:
         confidence = data.get("confidence", 1.0) if isinstance(data, dict) else 1.0
         source = data.get("source", "ocr") if isinstance(data, dict) else "ocr"
 
+        # Pass HP for same-name mob differentiation
+        hp_pct = None
+        if not self._ocr_state.is_stale("target"):
+            hp_pct = self._ocr_state.state.target_hp_pct
+
         self._last_activity_time = datetime.utcnow()
         self._tracking_log.ocr_mob_detected(mob_name, source)
 
         # Suspends old encounter (if any), activates/creates encounter for mob_name
-        self._manager.on_mob_name_detected(mob_name, confidence, source)
+        self._manager.on_mob_name_detected(mob_name, confidence, source, hp_pct=hp_pct)
 
         self._tracking_log.encounter_started(mob_name, source)
         self._event_bus.publish(EVENT_HUNT_ENCOUNTER_STARTED, {

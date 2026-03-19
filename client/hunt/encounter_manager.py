@@ -47,6 +47,10 @@ class EncounterManager:
         # All alive encounters: enc_id → (encounter, state, last_event_time)
         self._alive: dict[str, tuple[MobEncounter, EncounterState, datetime]] = {}
 
+        # HP tracking for same-name mob differentiation
+        # enc_id → last known HP fraction (0.0–1.0)
+        self._encounter_hp: dict[str, float] = {}
+
         # Timing constants from config
         self._close_timeout = timedelta(
             milliseconds=config.encounter_close_timeout_ms
@@ -88,18 +92,57 @@ class EncounterManager:
         """Update the current tool (from OCR or loadout)."""
         self._current_tool = tool_name
 
+    def on_hp_update(self, hp_pct: float | None):
+        """Update the HP reading for the active encounter (from OCR)."""
+        if self._active and hp_pct is not None:
+            self._encounter_hp[self._active.id] = hp_pct
+
+    def _is_likely_new_mob(self, enc: MobEncounter, hp_pct: float | None) -> bool:
+        """Heuristic: is this likely a NEW mob of the same name?
+
+        Returns True if HP jumped significantly upward after damage was dealt.
+        This indicates the old mob died and a new one with the same name was
+        locked. Not 100% reliable (some mobs regenerate HP) but best available.
+        """
+        if hp_pct is None or enc.damage_dealt == 0:
+            return False
+
+        last_hp = self._encounter_hp.get(enc.id)
+        if last_hp is None:
+            return False
+
+        # HP increased significantly (>30% jump) after we dealt damage
+        hp_jump = hp_pct - last_hp
+        return hp_jump > 0.30
+
     def on_mob_name_detected(self, mob_name: str, confidence: float = 1.0,
-                              source: str = "ocr") -> None:
+                              source: str = "ocr",
+                              hp_pct: float | None = None) -> None:
         """Handle OCR-detected mob name — switch active encounter.
 
         Does NOT close encounters. Suspends the current active and
         activates/creates the encounter for mob_name.
+
+        Same-name mob differentiation: if the active encounter has the same
+        mob name but the HP bar jumped significantly higher than expected
+        (after damage was dealt), it's likely a new mob of the same type.
         """
         now = datetime.utcnow()
 
-        # Same mob as active → just update confidence
+        # Same mob as active → check if HP suggests a different individual
         if self._active and self._active.mob_name == mob_name:
-            self._active.confidence = max(self._active.confidence, confidence)
+            if self._is_likely_new_mob(self._active, hp_pct):
+                # HP jumped up after we dealt damage → new mob of same name
+                log.info("Same-name mob detected: HP jumped, starting new encounter (%s)",
+                         mob_name)
+                enc = self._create_encounter(mob_name, source, confidence, now)
+                self._set_active(enc, now)
+                if hp_pct is not None:
+                    self._encounter_hp[enc.id] = hp_pct
+            else:
+                self._active.confidence = max(self._active.confidence, confidence)
+                if hp_pct is not None:
+                    self._encounter_hp[self._active.id] = hp_pct
             return
 
         # Check if we already have a suspended encounter for this mob
@@ -107,11 +150,15 @@ class EncounterManager:
         if existing:
             self._set_active(existing, now)
             existing.confidence = max(existing.confidence, confidence)
+            if hp_pct is not None:
+                self._encounter_hp[existing.id] = hp_pct
             log.info("Resumed encounter %s (%s)", existing.id[:8], mob_name)
         else:
             # New mob — create new encounter, suspend old
             enc = self._create_encounter(mob_name, source, confidence, now)
             self._set_active(enc, now)
+            if hp_pct is not None:
+                self._encounter_hp[enc.id] = hp_pct
             log.info("Started encounter %s (%s)", enc.id[:8], mob_name)
 
     def on_damage_dealt(self, amount: float, is_crit: bool = False,
@@ -364,6 +411,7 @@ class EncounterManager:
             enc.outcome = outcome
         self._session.encounters.append(enc)
         self._alive.pop(enc.id, None)
+        self._encounter_hp.pop(enc.id, None)
         if self._active is enc:
             self._active = None
         return enc

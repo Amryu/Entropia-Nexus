@@ -587,6 +587,21 @@ class TrackerPage(QWidget):
         )
         content_layout.addWidget(self._hunt_log, 1)
 
+        # Alive encounters bar (bottom)
+        self._encounters_bar = QWidget()
+        self._encounters_bar.setStyleSheet(
+            f"background: {SECONDARY}; border: 1px solid {BORDER}; border-radius: 4px;"
+        )
+        self._encounters_bar_layout = QHBoxLayout(self._encounters_bar)
+        self._encounters_bar_layout.setContentsMargins(8, 6, 8, 6)
+        self._encounters_bar_layout.setSpacing(12)
+        enc_title = QLabel("Encounters:")
+        enc_title.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; font-weight: bold; border: none;")
+        self._encounters_bar_layout.addWidget(enc_title)
+        self._encounters_bar_layout.addStretch()
+        self._encounters_bar.hide()  # Hidden until encounters exist
+        content_layout.addWidget(self._encounters_bar)
+
         # Clear button
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -818,9 +833,44 @@ class TrackerPage(QWidget):
             f"Session active — {kills} kills, {data.get('hunt_count', 0)} hunts"
         )
 
+        # Rebuild encounters bar
+        alive = data.get("alive_encounters", [])
+        self._rebuild_encounters_bar(alive)
+
+    def _rebuild_encounters_bar(self, alive: list[dict]):
+        """Rebuild the encounters bar from alive encounters list."""
+        # Clear existing encounter labels (keep the title label at index 0 and stretch)
+        while self._encounters_bar_layout.count() > 2:
+            item = self._encounters_bar_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not alive:
+            self._encounters_bar.hide()
+            return
+
+        self._encounters_bar.show()
+        for enc in alive:
+            is_active = enc.get("is_active", False)
+            mob = enc.get("mob_name", "?")
+            dmg = enc.get("damage_dealt", 0)
+            color = ACCENT if is_active else TEXT_MUTED
+            indicator = "\u25cf" if is_active else "\u25cb"  # ● / ○
+
+            lbl = QLabel(
+                f"<span style='color:{color}'>{indicator} {mob}</span>"
+                f"  <span style='color:{TEXT_MUTED};font-size:9px'>{dmg:.0f} dmg</span>"
+            )
+            lbl.setStyleSheet(f"font-size: 11px; border: none;")
+            # Insert before the stretch
+            self._encounters_bar_layout.insertWidget(
+                self._encounters_bar_layout.count() - 1, lbl
+            )
+
     def _on_hunt_session_stopped(self, _data):
         self._hunt_timer.stop()
         self._hunt_status_label.setText("No active session")
+        self._encounters_bar.hide()
         # Refresh tree to include the just-ended session
         self._hunt_refresh_tree()
 
