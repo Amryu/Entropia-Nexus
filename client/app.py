@@ -435,7 +435,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
     workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated(), data_client=data_client))
     workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_distributor))
-    # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
+    workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
     workers.extend(_start_target_lock_detector(config, event_bus, frame_distributor))
@@ -1292,7 +1292,7 @@ def _run_headless(config, event_bus, db):
     workers = []
     workers.extend(_start_chat_watcher(config, event_bus, db, data_client=data_client))
     workers.extend(_start_ocr_pipeline(config, event_bus, db))
-    # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
+    workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
     workers.extend(_start_hotkey_manager(config, event_bus))
 
     log.info("Running headless... Press Ctrl+C to stop.")
