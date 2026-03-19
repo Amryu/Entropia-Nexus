@@ -1744,14 +1744,42 @@ class Database:
             )
             self._auto_commit()
 
-    def get_recent_sessions(self, limit: int = 20) -> list[dict]:
-        """Get recent hunt sessions for the History tab."""
+    def get_recent_sessions(self, limit: int = 50) -> list[dict]:
+        """Get recent hunt sessions with aggregate stats."""
         with self._lock:
             self._conn.row_factory = sqlite3.Row
-            cur = self._conn.execute(
-                "SELECT * FROM hunt_sessions ORDER BY start_time DESC LIMIT ?",
-                (limit,)
-            )
+            cur = self._conn.execute("""
+                SELECT s.*,
+                       COUNT(CASE WHEN e.outcome = 'kill' THEN 1 END) AS kills,
+                       COUNT(CASE WHEN e.death_count > 0 THEN 1 END) AS deaths,
+                       COALESCE(SUM(e.cost), 0) AS total_cost,
+                       COALESCE(SUM(e.loot_total_ped), 0) AS total_loot
+                FROM hunt_sessions s
+                LEFT JOIN mob_encounters e ON e.session_id = s.id
+                    AND e.outcome NOT IN ('merged')
+                GROUP BY s.id
+                ORDER BY s.start_time DESC
+                LIMIT ?
+            """, (limit,))
+            rows = [dict(r) for r in cur.fetchall()]
+            self._conn.row_factory = None
+            return rows
+
+    def get_session_hunts_with_stats(self, session_id: str) -> list[dict]:
+        """Get hunts within a session with aggregate stats."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute("""
+                SELECT h.*,
+                       COUNT(CASE WHEN e.outcome = 'kill' THEN 1 END) AS kills,
+                       COALESCE(SUM(e.cost), 0) AS total_cost,
+                       COALESCE(SUM(e.loot_total_ped), 0) AS total_loot
+                FROM hunts h
+                LEFT JOIN mob_encounters e ON e.hunt_id = h.id
+                    AND e.outcome NOT IN ('merged')
+                GROUP BY h.id
+                ORDER BY h.start_time ASC
+            """, (session_id,))
             rows = [dict(r) for r in cur.fetchall()]
             self._conn.row_factory = None
             return rows

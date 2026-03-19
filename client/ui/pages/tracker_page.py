@@ -464,27 +464,92 @@ class TrackerPage(QWidget):
     # --- Hunting sub-page ---
 
     def _build_hunting_page(self):
-        from PyQt6.QtWidgets import QTextEdit, QSplitter
-        from PyQt6.QtGui import QFont, QTextCursor
+        from PyQt6.QtWidgets import (
+            QTextEdit, QSplitter, QTreeWidget, QTreeWidgetItem, QScrollArea,
+        )
+        from PyQt6.QtGui import QFont
 
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(24, 16, 24, 16)
-        layout.setSpacing(8)
+        outer = QHBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        # Header with session info
+        # ── Left sidebar: session tree ──────────────────────────────
+        sidebar = QWidget()
+        sidebar.setFixedWidth(200)
+        sidebar.setStyleSheet(
+            f"background: {SECONDARY};"
+            f"border-right: 1px solid {BORDER};"
+        )
+        sb_layout = QVBoxLayout(sidebar)
+        sb_layout.setContentsMargins(0, 8, 0, 8)
+        sb_layout.setSpacing(4)
+
+        # "Live" button
+        self._hunt_live_btn = QPushButton("  Live")
+        self._hunt_live_btn.setFixedHeight(32)
+        self._hunt_live_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hunt_live_btn.setCheckable(True)
+        self._hunt_live_btn.setChecked(True)
+        self._hunt_live_btn.setStyleSheet(self._tree_btn_style(True))
+        self._hunt_live_btn.clicked.connect(self._hunt_show_live)
+        sb_layout.addWidget(self._hunt_live_btn)
+
+        # Separator
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {BORDER};")
+        sb_layout.addWidget(sep)
+
+        # Session tree
+        self._hunt_tree = QTreeWidget()
+        self._hunt_tree.setHeaderHidden(True)
+        self._hunt_tree.setIndentation(14)
+        self._hunt_tree.setStyleSheet(
+            f"QTreeWidget {{"
+            f"  background: {SECONDARY}; color: {TEXT};"
+            f"  border: none; font-size: 11px;"
+            f"}}"
+            f"QTreeWidget::item {{"
+            f"  padding: 3px 4px; border: none;"
+            f"}}"
+            f"QTreeWidget::item:hover {{"
+            f"  background: {HOVER};"
+            f"}}"
+            f"QTreeWidget::item:selected {{"
+            f"  background: {HOVER}; color: {ACCENT};"
+            f"}}"
+        )
+        self._hunt_tree.itemClicked.connect(self._on_hunt_tree_clicked)
+        sb_layout.addWidget(self._hunt_tree, 1)
+
+        outer.addWidget(sidebar)
+
+        # ── Right content area ──────────────────────────────────────
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(16, 12, 16, 12)
+        content_layout.setSpacing(8)
+
+        # Header row: title + timer + status
         header = QHBoxLayout()
         title = QLabel("Hunting Tracker")
         title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {TEXT}; border: none;")
         header.addWidget(title)
         header.addStretch()
 
-        self._hunt_status_label = QLabel("No active session")
-        self._hunt_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; border: none;")
-        header.addWidget(self._hunt_status_label)
-        layout.addLayout(header)
+        self._hunt_timer_label = QLabel("00:00:00")
+        self._hunt_timer_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 13px; font-family: Consolas; border: none;"
+        )
+        header.addWidget(self._hunt_timer_label)
 
-        # Session summary bar
+        self._hunt_status_label = QLabel("No active session")
+        self._hunt_status_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; border: none; margin-left: 12px;")
+        header.addWidget(self._hunt_status_label)
+        content_layout.addLayout(header)
+
+        # Summary bar
         summary_bar = QWidget()
         summary_bar.setStyleSheet(
             f"background: {SECONDARY}; border: 1px solid {BORDER}; border-radius: 4px;"
@@ -502,7 +567,7 @@ class TrackerPage(QWidget):
         summary_layout.addWidget(self._hunt_loot_label)
         summary_layout.addWidget(self._hunt_return_label)
         summary_layout.addStretch()
-        layout.addWidget(summary_bar)
+        content_layout.addWidget(summary_bar)
 
         # Log area
         self._hunt_log = QTextEdit()
@@ -520,7 +585,7 @@ class TrackerPage(QWidget):
             "Start hunting in-game to see real-time combat events, tool attribution, "
             "and encounter tracking."
         )
-        layout.addWidget(self._hunt_log, 1)  # stretch factor 1
+        content_layout.addWidget(self._hunt_log, 1)
 
         # Clear button
         btn_row = QHBoxLayout()
@@ -536,17 +601,132 @@ class TrackerPage(QWidget):
         )
         clear_btn.clicked.connect(self._hunt_log.clear)
         btn_row.addWidget(clear_btn)
-        layout.addLayout(btn_row)
+        content_layout.addLayout(btn_row)
 
-        # Connect signals
+        outer.addWidget(content, 1)
+
+        # ── Session timer ───────────────────────────────────────────
+        self._hunt_session_start: datetime | None = None
+        self._hunt_timer = QTimer(self)
+        self._hunt_timer.setInterval(1000)
+        self._hunt_timer.timeout.connect(self._update_hunt_timer)
+
+        # ── Connect signals ─────────────────────────────────────────
         self._signals.tracking_log.connect(self._on_tracking_log)
         self._signals.hunt_session_updated.connect(self._on_hunt_session_updated)
-        self._signals.hunt_session_started.connect(
-            lambda _: self._hunt_status_label.setText("Session active")
-        )
+        self._signals.hunt_session_started.connect(self._on_hunt_session_started)
         self._signals.hunt_session_stopped.connect(self._on_hunt_session_stopped)
 
+        # Load historical sessions into tree
+        self._hunt_refresh_tree()
+
         return page
+
+    def _tree_btn_style(self, active: bool) -> str:
+        if active:
+            return (
+                f"QPushButton {{ background: {HOVER}; color: {ACCENT};"
+                f"  border: none; font-weight: bold; font-size: 12px;"
+                f"  text-align: left; padding: 4px 12px; }}"
+            )
+        return (
+            f"QPushButton {{ background: transparent; color: {TEXT};"
+            f"  border: none; font-size: 12px;"
+            f"  text-align: left; padding: 4px 12px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+
+    @staticmethod
+    def _return_str(cost: float, loot: float) -> str:
+        """Format return % with color."""
+        if cost <= 0:
+            return ""
+        ret = loot / cost * 100
+        color = "#4ec9b0" if ret >= 100 else "#f44747"
+        return f"  ({ret:.0f}%)"
+
+    def _hunt_refresh_tree(self):
+        """Populate the session tree from DB."""
+        from PyQt6.QtWidgets import QTreeWidgetItem
+
+        self._hunt_tree.clear()
+        sessions = self._db.get_recent_sessions(limit=100)
+
+        # Group by month
+        months: dict[str, list[dict]] = {}
+        for s in sessions:
+            start = s.get("start_time", "")
+            month_key = start[:7] if len(start) >= 7 else "Unknown"  # YYYY-MM
+            months.setdefault(month_key, []).append(s)
+
+        for month_key in sorted(months.keys(), reverse=True):
+            month_sessions = months[month_key]
+            # Month node
+            month_cost = sum(s.get("total_cost", 0) for s in month_sessions)
+            month_loot = sum(s.get("total_loot", 0) for s in month_sessions)
+            month_kills = sum(s.get("kills", 0) for s in month_sessions)
+            month_label = month_key
+            try:
+                dt = datetime.strptime(month_key, "%Y-%m")
+                month_label = dt.strftime("%B %Y")
+            except ValueError:
+                pass
+            ret_str = self._return_str(month_cost, month_loot)
+            month_item = QTreeWidgetItem([f"{month_label}{ret_str}"])
+            month_item.setToolTip(0, f"{month_kills} kills, {month_cost:.2f} cost, {month_loot:.2f} loot")
+
+            for s in month_sessions:
+                start = s.get("start_time", "")
+                s_cost = s.get("total_cost", 0)
+                s_loot = s.get("total_loot", 0)
+                s_kills = s.get("kills", 0)
+                # Format: "19 Mar 14:30  (85%)"
+                try:
+                    dt = datetime.fromisoformat(start)
+                    date_str = dt.strftime("%d %b %H:%M")
+                except (ValueError, TypeError):
+                    date_str = start[:16]
+                ret_str = self._return_str(s_cost, s_loot)
+                session_item = QTreeWidgetItem([f"{date_str}{ret_str}"])
+                session_item.setData(0, Qt.ItemDataRole.UserRole, s.get("id"))
+                session_item.setToolTip(0, f"{s_kills} kills, {s_cost:.2f} cost, {s_loot:.2f} loot")
+
+                # Load hunts for this session
+                hunts = self._db.get_session_hunts_with_stats(s.get("id", ""))
+                for h in hunts:
+                    h_cost = h.get("total_cost", 0)
+                    h_loot = h.get("total_loot", 0)
+                    h_kills = h.get("kills", 0)
+                    mob = h.get("primary_mob") or "Mixed"
+                    ret_str = self._return_str(h_cost, h_loot)
+                    hunt_item = QTreeWidgetItem([f"{mob}{ret_str}"])
+                    hunt_item.setData(0, Qt.ItemDataRole.UserRole, h.get("id"))
+                    hunt_item.setData(0, Qt.ItemDataRole.UserRole + 1, "hunt")
+                    hunt_item.setToolTip(0, f"{h_kills} kills, {h_cost:.2f} cost, {h_loot:.2f} loot")
+                    session_item.addChild(hunt_item)
+
+                month_item.addChild(session_item)
+
+            self._hunt_tree.addTopLevelItem(month_item)
+
+    def _on_hunt_tree_clicked(self, item, column):
+        """Handle tree item click — switch to historical view (placeholder)."""
+        self._hunt_live_btn.setChecked(False)
+        self._hunt_live_btn.setStyleSheet(self._tree_btn_style(False))
+        # For now, just show info in the log
+        node_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if node_id:
+            self._hunt_log.setPlaceholderText(f"Historical view for {item.text(0)} — coming soon")
+
+    def _hunt_show_live(self):
+        """Switch back to live view."""
+        self._hunt_live_btn.setChecked(True)
+        self._hunt_live_btn.setStyleSheet(self._tree_btn_style(True))
+        self._hunt_tree.clearSelection()
+        self._hunt_log.setPlaceholderText(
+            "Tracking log will appear here when a hunting session is active.\n"
+            "Start hunting in-game to see real-time combat events."
+        )
 
     def _stat_label(self, title: str, value: str) -> QLabel:
         """Create a small stat label for the summary bar."""
@@ -595,6 +775,23 @@ class TrackerPage(QWidget):
         cursor.movePosition(cursor.MoveOperation.End)
         self._hunt_log.setTextCursor(cursor)
 
+    def _update_hunt_timer(self):
+        """Update the session elapsed time display."""
+        if not self._hunt_session_start:
+            return
+        elapsed = datetime.utcnow() - self._hunt_session_start
+        total_secs = int(elapsed.total_seconds())
+        h, rem = divmod(total_secs, 3600)
+        m, s = divmod(rem, 60)
+        self._hunt_timer_label.setText(f"{h:02d}:{m:02d}:{s:02d}")
+
+    def _on_hunt_session_started(self, data):
+        """Handle session start — start timer, update status."""
+        self._hunt_session_start = datetime.utcnow()
+        self._hunt_timer.start()
+        self._hunt_timer_label.setText("00:00:00")
+        self._hunt_status_label.setText("Session active")
+
     def _on_hunt_session_updated(self, data):
         """Update the summary bar with session stats."""
         if not isinstance(data, dict):
@@ -622,7 +819,10 @@ class TrackerPage(QWidget):
         )
 
     def _on_hunt_session_stopped(self, _data):
+        self._hunt_timer.stop()
         self._hunt_status_label.setText("No active session")
+        # Refresh tree to include the just-ended session
+        self._hunt_refresh_tree()
 
     # --- Coming soon sub-page ---
 
