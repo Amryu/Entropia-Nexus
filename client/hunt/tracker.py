@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from ..core.constants import (
     EVENT_CATCHUP_COMPLETE,
     EVENT_COMBAT, EVENT_GLOBAL, EVENT_LOOT_GROUP, EVENT_MOB_TARGET_CHANGED,
-    EVENT_ACTIVE_TOOL_CHANGED, EVENT_HUNT_SESSION_STARTED,
+    EVENT_ACTIVE_TOOL_CHANGED, EVENT_ENHANCER_BREAK,
+    EVENT_HUNT_SESSION_STARTED,
     EVENT_HUNT_SESSION_STOPPED, EVENT_HUNT_ENCOUNTER_STARTED,
     EVENT_HUNT_ENCOUNTER_ENDED, EVENT_HUNT_SESSION_UPDATED,
     EVENT_HUNT_STARTED, EVENT_HUNT_ENDED, EVENT_HUNT_SPLIT,
@@ -146,6 +147,8 @@ class HuntTracker:
         self._live = False  # True after chat log catchup completes
         self._last_activity_time: datetime | None = None
         self._auto_timeout = timedelta(milliseconds=config.session_auto_timeout_ms)
+        # Recent enhancer breaks for shrapnel correlation: list of (timestamp, shrapnel_ped)
+        self._recent_enhancer_breaks: list[tuple[datetime, float]] = []
 
         # Register reload drop callback — fires when reload bar drops from >=100 to <100
         self._ocr_state.on_reload_drop(self._on_reload_drop)
@@ -162,16 +165,31 @@ class HuntTracker:
         event_bus.subscribe(EVENT_GLOBAL, self._on_global)
         event_bus.subscribe(EVENT_PLAYER_DEATH, self._on_player_death)
         event_bus.subscribe(EVENT_PLAYER_REVIVED, self._on_player_revived)
+        event_bus.subscribe(EVENT_ENHANCER_BREAK, self._on_enhancer_break)
         event_bus.subscribe(EVENT_LOOT_BLACKLIST_CHANGED, self._on_blacklist_changed)
         event_bus.subscribe(EVENT_TOOL_COST_FILTER_CHANGED, self._on_tool_filter_changed)
         event_bus.subscribe(EVENT_ACTIVE_LOADOUT_CHANGED, self._on_active_loadout_changed)
 
     GLOBAL_CORRELATION_WINDOW = timedelta(seconds=10)
+    # Window within which shrapnel loot is correlated to an enhancer break
+    ENHANCER_SHRAPNEL_WINDOW = timedelta(seconds=2)
 
     @property
     def tool_inference(self) -> ToolInferenceEngine:
         """Expose tool inference for external signature loading."""
         return self._tool_inference
+
+    def _build_summary(self) -> dict:
+        """Build session summary including the active encounter's stats."""
+        summary = self._session.to_summary()
+        enc = self._manager.current_encounter if self._manager else None
+        if enc:
+            summary["kills"] += 1 if enc.loot_total_ped > 0 else 0
+            summary["damage_dealt"] += enc.damage_dealt
+            summary["damage_taken"] += enc.damage_taken
+            summary["loot_total"] += enc.effective_loot_ped
+            summary["total_cost"] += enc.cost
+        return summary
 
     def _on_catchup_complete(self, _data):
         """Chat log watcher finished replaying old lines — safe to track now."""
@@ -223,6 +241,7 @@ class HuntTracker:
                     is_blacklisted=bool(lr.get("is_blacklisted", 0)),
                     is_refining_output=bool(lr.get("is_refining_output", 0)),
                     is_in_loot_table=bool(lr.get("is_in_loot_table", 1)),
+                    is_enhancer_shrapnel=bool(lr.get("is_enhancer_shrapnel", 0)),
                 ))
             session.encounters.append(enc)
             self._persisted_encounter_ids.add(enc.id)
@@ -387,7 +406,7 @@ class HuntTracker:
         self._db.end_hunt_session(self._session.id, now.isoformat())
 
         # Publish final summary
-        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
         self._tracking_log.session_ended(
             self._session.id, self._session.kill_count, self._session.total_cost,
         )
@@ -431,7 +450,7 @@ class HuntTracker:
             self._event_bus.publish(EVENT_HUNT_ENDED, hunt.to_dict())
             log.info("Hunt manually ended: %s", hunt.id[:8])
 
-        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
 
     def _on_combat(self, data):
         if not self._live:
@@ -494,7 +513,7 @@ class HuntTracker:
         self._loadout_mgr.on_combat()
 
         # Publish session update
-        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
 
     def _log_non_damage_event(self, event_type: str, amount: float, now: datetime):
         """Record a non-damage combat event to the combat log and DB."""
@@ -638,12 +657,19 @@ class HuntTracker:
         classified = []
         raw_total = 0.0
 
+        loot_timestamp = data.timestamp if hasattr(data, 'timestamp') else datetime.utcnow()
+
         for item in items:
             item_name = item.item_name if hasattr(item, 'item_name') else item.get('item_name', '')
             quantity = item.quantity if hasattr(item, 'quantity') else item.get('quantity', 0)
             value_ped = item.value_ped if hasattr(item, 'value_ped') else item.get('value_ped', 0)
 
             classification = self._loot_filter.classify(item_name, mob_name)
+
+            # Check if this is enhancer shrapnel (refund, not mob loot)
+            is_enhancer_shrapnel = self._match_enhancer_shrapnel(
+                item_name, value_ped, loot_timestamp,
+            )
 
             loot_entry = EncounterLootItem(
                 item_name=item_name,
@@ -653,15 +679,21 @@ class HuntTracker:
                 is_blacklisted=classification["is_blacklisted"],
                 is_refining_output=classification["is_refining_output"],
                 is_in_loot_table=classification["is_in_loot_table"],
+                is_enhancer_shrapnel=is_enhancer_shrapnel,
             )
             classified.append(loot_entry)
             raw_total += value_ped
+
+            if is_enhancer_shrapnel:
+                self._tracking_log.session_info(
+                    f"Shrapnel {value_ped:.2f} PED identified as enhancer refund"
+                )
 
         self._last_activity_time = datetime.utcnow()
         self._manager.on_loot_group(raw_total, classified)
         self._loadout_mgr.on_loot()
         self._tracking_log.loot_received(raw_total, len(classified), mob_name)
-        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
 
     def _on_mob_changed(self, data):
         if not self._live or not self._active or not self._manager:
@@ -774,7 +806,7 @@ class HuntTracker:
             self._db.update_mob_encounter(
                 match.id, is_global=1, is_hof=1 if match.is_hof else 0
             )
-            self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+            self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
             self._tracking_log.global_event(target, value, match.is_hof)
             log.info("Global correlated with encounter %s (mob: %s, value: %s PED)",
                      match.id[:8], match.mob_name, value)
@@ -805,7 +837,7 @@ class HuntTracker:
                     self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
                                             self._get_open_encounters_data())
                     self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
-                                            self._session.to_summary())
+                                            self._build_summary())
                     return
 
             self._open_encounters.append(ended)
@@ -814,7 +846,7 @@ class HuntTracker:
             self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
                                     self._get_open_encounters_data())
             self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
-                                    self._session.to_summary())
+                                    self._build_summary())
             log.info("Player died to %s — encounter %s is open-ended (cost: %.2f PED)",
                      mob_name, ended.id[:8], ended.cost)
 
@@ -823,6 +855,50 @@ class HuntTracker:
         if not self._live:
             return
         log.info("Player revived")
+
+    def _on_enhancer_break(self, data):
+        """Track enhancer break for shrapnel correlation."""
+        if not self._live:
+            return
+        timestamp = data.timestamp if hasattr(data, 'timestamp') else datetime.utcnow()
+        shrapnel_ped = data.shrapnel_ped if hasattr(data, 'shrapnel_ped') else 0
+        enhancer_name = data.enhancer_name if hasattr(data, 'enhancer_name') else ""
+        item_name = data.item_name if hasattr(data, 'item_name') else ""
+
+        if shrapnel_ped > 0:
+            self._recent_enhancer_breaks.append((timestamp, shrapnel_ped))
+            # Trim old breaks beyond the correlation window
+            cutoff = datetime.utcnow() - self.ENHANCER_SHRAPNEL_WINDOW * 5
+            self._recent_enhancer_breaks = [
+                b for b in self._recent_enhancer_breaks if b[0] > cutoff
+            ]
+
+        # Track on current encounter
+        enc = self._manager.current_encounter if self._manager else None
+        if enc:
+            enc.enhancer_breaks += 1
+            enc.enhancer_shrapnel_ped += shrapnel_ped
+
+        self._tracking_log.session_info(
+            f"Enhancer broke: {enhancer_name} on {item_name} "
+            f"(+{shrapnel_ped:.2f} PED shrapnel)"
+        )
+
+    def _match_enhancer_shrapnel(self, item_name: str, value_ped: float,
+                                  loot_timestamp: datetime) -> bool:
+        """Check if a loot item is shrapnel from a recent enhancer break."""
+        if item_name.lower() != "shrapnel":
+            return False
+        now = datetime.utcnow()
+        for i, (break_time, break_ped) in enumerate(self._recent_enhancer_breaks):
+            if (now - break_time) > self.ENHANCER_SHRAPNEL_WINDOW:
+                continue
+            # Match by value: enhancer shrapnel value equals the enhancer's TT
+            if abs(value_ped - break_ped) < 0.0001:
+                # Consume this break so it doesn't match again
+                self._recent_enhancer_breaks.pop(i)
+                return True
+        return False
 
     # -- Open encounter management -----------------------------------------
 
@@ -879,7 +955,7 @@ class HuntTracker:
         self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
                                 self._get_open_encounters_data())
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
-                                self._session.to_summary())
+                                self._build_summary())
 
         log.info("Merged open encounter %s into %s", open_enc.id[:8], target_enc.id[:8])
         return True
@@ -899,7 +975,7 @@ class HuntTracker:
         self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
                                 self._get_open_encounters_data())
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
-                                self._session.to_summary())
+                                self._build_summary())
 
         log.info("Abandoned open encounter %s (cost: %.2f PED)",
                  open_enc.id[:8], open_enc.cost)
@@ -961,7 +1037,7 @@ class HuntTracker:
         self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
                                 self._get_open_encounters_data())
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
-                                self._session.to_summary())
+                                self._build_summary())
 
         log.info("Split encounter %s out of %s", source_enc.id[:8], target_enc.id[:8])
         return True
@@ -1047,7 +1123,7 @@ class HuntTracker:
         # Also reclassify encounters in hunts (they reference the same objects,
         # but be safe in case of future changes)
 
-        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
 
     def _on_active_loadout_changed(self, data):
         """Handle loadout changes from the loadout page."""
@@ -1150,7 +1226,7 @@ class HuntTracker:
         if self._manager and self._manager.current_encounter:
             total_encounters += 1
         self._tracking_log.recalculated(total_encounters)
-        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._session.to_summary())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
         log.info("Session stats recalculated from combat log")
 
     def _persist_encounter(self, encounter):
@@ -1294,7 +1370,7 @@ class HuntTracker:
                     self._persist_encounter(ended)
                     self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, ended.to_dict())
                     self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
-                                            self._session.to_summary())
+                                            self._build_summary())
 
                 # Check session auto-timeout
                 if self._last_activity_time:

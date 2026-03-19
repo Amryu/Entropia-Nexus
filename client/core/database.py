@@ -405,6 +405,7 @@ class Database:
             ("mob_encounters", "mob_id", "INTEGER"),
             ("mob_encounters", "is_shared_loot", "INTEGER"),
             ("encounter_loot_items", "item_id", "INTEGER"),
+            ("encounter_loot_items", "is_enhancer_shrapnel", "INTEGER DEFAULT 0"),
             ("encounter_tool_stats", "tool_id", "INTEGER"),
             ("session_loadouts", "crit_damage", "REAL DEFAULT 1.0"),
             ("parser_state", "file_hash", "TEXT"),
@@ -1694,12 +1695,14 @@ class Database:
             self._conn.executemany(
                 "INSERT INTO encounter_loot_items "
                 "(encounter_id, item_name, quantity, value_ped, "
-                "is_blacklisted, is_refining_output, is_in_loot_table) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "is_blacklisted, is_refining_output, is_in_loot_table, "
+                "is_enhancer_shrapnel) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (encounter_id, li.item_name, li.quantity, li.value_ped,
                      int(li.is_blacklisted), int(li.is_refining_output),
-                     int(li.is_in_loot_table))
+                     int(li.is_in_loot_table),
+                     int(getattr(li, 'is_enhancer_shrapnel', False)))
                     for li in items
                 ]
             )

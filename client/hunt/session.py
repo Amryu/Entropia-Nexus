@@ -24,6 +24,7 @@ class EncounterLootItem:
     is_blacklisted: bool = False
     is_refining_output: bool = False
     is_in_loot_table: bool = True  # True when mob unknown (assume valid)
+    is_enhancer_shrapnel: bool = False  # Shrapnel refund from a broken enhancer
 
 
 @dataclass
@@ -86,6 +87,10 @@ class MobEncounter:
     # Cost (populated by tool inference)
     cost: float = 0.0
 
+    # Enhancer breaks during this encounter
+    enhancer_breaks: int = 0
+    enhancer_shrapnel_ped: float = 0.0  # total shrapnel refunded
+
     # Global / Hall of Fame
     is_global: bool = False
     is_hof: bool = False
@@ -117,6 +122,7 @@ class MobEncounter:
         return sum(
             li.value_ped for li in self.loot_items
             if not li.is_blacklisted and not li.is_refining_output
+            and not li.is_enhancer_shrapnel
         )
 
     def to_dict(self) -> dict:
@@ -143,6 +149,7 @@ class MobEncounter:
                     "is_blacklisted": li.is_blacklisted,
                     "is_refining_output": li.is_refining_output,
                     "is_in_loot_table": li.is_in_loot_table,
+                    "is_enhancer_shrapnel": li.is_enhancer_shrapnel,
                 }
                 for li in self.loot_items
             ],
@@ -228,7 +235,7 @@ class Hunt:
         items = []
         for enc in self.encounters:
             for li in enc.loot_items:
-                if not li.is_blacklisted and not li.is_refining_output:
+                if not li.is_blacklisted and not li.is_refining_output and not li.is_enhancer_shrapnel:
                     items.append(li)
         return items
 
@@ -300,7 +307,7 @@ class HuntSession:
         items = []
         for enc in self.encounters:
             for li in enc.loot_items:
-                if not li.is_blacklisted and not li.is_refining_output:
+                if not li.is_blacklisted and not li.is_refining_output and not li.is_enhancer_shrapnel:
                     items.append(li)
         return items
 

@@ -194,12 +194,16 @@ class ChatLogWatcher:
                 continue
             with self._lock:
                 self._read_new_lines()
+                self._classifier.flush()
 
     def _on_file_change(self) -> None:
         """Called by watchdog when the file is modified."""
         t0 = time.monotonic()
         with self._lock:
             self._read_new_lines()
+            # Flush any pending loot group so it doesn't wait for the next line
+            if not self._catching_up:
+                self._classifier.flush()
         elapsed = time.monotonic() - t0
         if elapsed > 1.0:
             log.warning("_on_file_change took %.3fs (possible capture delay source)",
