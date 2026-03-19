@@ -65,7 +65,7 @@ class ToolInferenceEngine:
             damage_min=stats.damage_interval_min,
             damage_max=stats.damage_interval_max,
             total_damage=stats.total_damage,
-            cost_per_shot=stats.cost,
+            cost_per_shot=stats.cost / 100,  # PEC → PED
             crit_damage=getattr(stats, 'crit_damage', 1.0),
         )
 

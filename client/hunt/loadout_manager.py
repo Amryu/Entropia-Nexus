@@ -57,7 +57,7 @@ class SessionLoadoutManager:
         stats = self._active_stats
         if stats and hasattr(stats, 'total_damage') and hasattr(stats, 'cost'):
             if stats.cost > 0:
-                return stats.total_damage / (stats.cost * 100)
+                return stats.total_damage / stats.cost  # cost is in PEC
         return None
 
     def warmup(self):
@@ -241,7 +241,7 @@ class SessionLoadoutManager:
             session_id=self._session.id,
             loadout_data=self._active_loadout or {},
             weapon_name=weapon_name,
-            cost_per_shot=stats.cost if stats else 0,
+            cost_per_shot=stats.cost / 100 if stats and stats.cost else 0,  # PEC → PED
             damage_min=stats.damage_interval_min if stats else 0,
             damage_max=stats.damage_interval_max if stats else 0,
             crit_damage=stats.crit_damage if stats else 1.0,
