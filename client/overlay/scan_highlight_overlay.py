@@ -866,20 +866,73 @@ class ScanHighlightOverlay(QWidget):
             painter.setFont(TARGET_LOCK_LABEL_FONT)
             painter.drawText(rx + 2, ry - 2, label)
 
-        # Show recognized mob name above the name ROI
+        # Show recognized mob name and OCR input crops above the name ROI
         data = self._target_lock_data
-        raw_name = data.get("raw_name", "") if data else ""
-        hp_pct = data.get("hp_pct") if data else None
-        if raw_name or hp_pct is not None:
+        if not data:
+            return
+
+        raw_name = data.get("raw_name", "")
+        hp_pct = data.get("hp_pct")
+
+        # Render the name crop (what ONNX sees) above the name ROI
+        name_roi = getattr(self._config, "target_lock_roi_name", None)
+        name_crop = data.get("_name_crop")
+        if name_crop is not None and name_roi:
+            try:
+                import numpy as np
+                from PyQt6.QtGui import QImage, QPixmap
+                h_c, w_c = name_crop.shape[:2]
+                # Scale up for visibility (3x height)
+                scale = max(1, 48 // max(h_c, 1))
+                disp_w, disp_h = w_c * scale, h_c * scale
+                rgb = name_crop[:, :, ::-1].copy()  # BGR → RGB
+                qimg = QImage(rgb.data, w_c, h_c, w_c * 3, QImage.Format.Format_RGB888)
+                pixmap = QPixmap.fromImage(qimg).scaled(disp_w, disp_h)
+                crop_x = tx + name_roi.get("dx", 0)
+                crop_y = ty + name_roi.get("dy", 0) - disp_h - 4
+                painter.drawPixmap(crop_x, crop_y, pixmap)
+                # Label
+                painter.setPen(QPen(QColor(255, 255, 255, 200)))
+                painter.setFont(TARGET_LOCK_LABEL_FONT)
+                painter.drawText(crop_x, crop_y - 2,
+                                 f"ONNX input ({w_c}x{h_c}) → {raw_name!r}")
+            except Exception:
+                pass  # Don't crash the overlay
+
+        # Render HP bar crop above the HP ROI
+        hp_roi = getattr(self._config, "target_lock_roi_hp", None)
+        hp_crop = data.get("_hp_crop")
+        if hp_crop is not None and hp_roi:
+            try:
+                import numpy as np
+                from PyQt6.QtGui import QImage, QPixmap
+                h_c, w_c = hp_crop.shape[:2]
+                scale = max(1, 24 // max(h_c, 1))
+                disp_w, disp_h = w_c * scale, h_c * scale
+                rgb = hp_crop[:, :, ::-1].copy()
+                qimg = QImage(rgb.data, w_c, h_c, w_c * 3, QImage.Format.Format_RGB888)
+                pixmap = QPixmap.fromImage(qimg).scaled(disp_w, disp_h)
+                hp_x = tx + hp_roi.get("dx", 0)
+                hp_y = ty + hp_roi.get("dy", 0) - disp_h - 4
+                painter.drawPixmap(hp_x, hp_y, pixmap)
+                hp_str = f"{hp_pct * 100:.0f}%" if hp_pct is not None else "?"
+                painter.setPen(QPen(QColor(255, 255, 255, 200)))
+                painter.setFont(TARGET_LOCK_LABEL_FONT)
+                painter.drawText(hp_x + disp_w + 4, hp_y + disp_h, f"HP: {hp_str}")
+            except Exception:
+                pass
+
+        # Text fallback when no crops available
+        if name_crop is None and hp_crop is None:
             info_parts = []
             if raw_name:
                 info_parts.append(raw_name)
             if hp_pct is not None:
                 info_parts.append(f"HP: {hp_pct * 100:.0f}%")
-            info_text = "  |  ".join(info_parts)
-            painter.setPen(QPen(QColor(255, 255, 255, 230)))
-            painter.setFont(TARGET_LOCK_LABEL_FONT)
-            painter.drawText(tx - 100, ty - 50, info_text)
+            if info_parts:
+                painter.setPen(QPen(QColor(255, 255, 255, 230)))
+                painter.setFont(TARGET_LOCK_LABEL_FONT)
+                painter.drawText(tx - 100, ty - 50, "  |  ".join(info_parts))
 
     # ── Market price debug ────────────────────────────────────────────
 
