@@ -564,7 +564,15 @@ class HuntTracker:
 
     def _handle_damage(self, amount: float, is_crit: bool, now: datetime):
         """Handle damage dealt with tool inference, cost tracking, and combat logging."""
-        self._manager.on_damage_dealt(amount, is_crit=is_crit, timestamp=now)
+        closed = self._manager.on_damage_dealt(amount, is_crit=is_crit, timestamp=now)
+
+        # If a CLOSING encounter was finalized (new shot after loot), persist it
+        if closed:
+            self._tracking_log.encounter_ended(
+                closed.mob_name, closed.outcome, closed.damage_dealt, closed.cost,
+            )
+            self._persist_encounter(closed)
+            self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, closed.to_dict())
 
         enc = self._manager.current_encounter
         if not enc:

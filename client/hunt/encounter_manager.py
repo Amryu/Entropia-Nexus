@@ -162,14 +162,27 @@ class EncounterManager:
             log.info("Started encounter %s (%s)", enc.id[:8], mob_name)
 
     def on_damage_dealt(self, amount: float, is_crit: bool = False,
-                        timestamp: datetime | None = None) -> None:
-        """Handle player dealing damage — routed to active encounter."""
+                        timestamp: datetime | None = None) -> MobEncounter | None:
+        """Handle player dealing damage — routed to active encounter.
+
+        If the active encounter is in CLOSING state (loot received), it is
+        closed as a kill and a new encounter is started for the new mob.
+        Returns the closed encounter if one was finalized, else None.
+        """
         now = timestamp or datetime.utcnow()
+
+        # If active encounter already received loot, close it and start fresh
+        closed = None
+        if self._active and self._active.id in self._alive:
+            _enc, state, _ts = self._alive[self._active.id]
+            if state == EncounterState.CLOSING:
+                closed = self._close_encounter(self._active, now, outcome="kill")
+
         self._ensure_encounter(now)
 
         enc = self._active
         if not enc:
-            return
+            return closed
 
         enc.damage_dealt += amount
         enc.shots_fired += 1
@@ -186,15 +199,26 @@ class EncounterManager:
             enc.tool_stats[tool].critical_hits += 1
 
         self._update_alive(enc.id, EncounterState.ACTIVE, now)
+        return closed
 
-    def on_damage_received(self, amount: float, timestamp: datetime | None = None) -> None:
-        """Handle player receiving damage."""
+    def on_damage_received(self, amount: float,
+                           timestamp: datetime | None = None) -> MobEncounter | None:
+        """Handle player receiving damage. Returns closed encounter if any."""
         now = timestamp or datetime.utcnow()
+
+        # Close CLOSING encounter on new combat
+        closed = None
+        if self._active and self._active.id in self._alive:
+            _enc, state, _ts = self._alive[self._active.id]
+            if state == EncounterState.CLOSING:
+                closed = self._close_encounter(self._active, now, outcome="kill")
+
         self._ensure_encounter(now)
 
         if self._active:
             self._active.damage_taken += amount
             self._update_alive(self._active.id, None, now)
+        return closed
 
     def on_heal(self, amount: float, timestamp: datetime | None = None) -> None:
         """Handle healing received."""
