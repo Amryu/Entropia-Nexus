@@ -474,6 +474,14 @@ class TargetLockDetector:
             region = self._get_roi_region(image, tx, ty, roi_hp)
             if region is not None and region.size > 0:
                 data["hp_pct"] = self._read_hp_bar(region)
+                if self._tick_count % 20 == 0:
+                    log.debug("HP ROI %dx%d at (%d,%d): hp=%.2f",
+                              region.shape[1], region.shape[0],
+                              tx + roi_hp.get("dx", 0), ty + roi_hp.get("dy", 0),
+                              data["hp_pct"] or 0)
+            elif self._tick_count % 20 == 0:
+                log.debug("HP ROI out of bounds: template at (%d,%d), roi=%s, image=%dx%d",
+                          tx, ty, roi_hp, image.shape[1], image.shape[0])
 
         # Shared icon
         roi_shared = getattr(self._config, "target_lock_roi_shared", None)
@@ -490,19 +498,45 @@ class TargetLockDetector:
                 name = self._read_mob_name(region)
                 if name:
                     data["raw_name"] = name
+                if self._tick_count % 20 == 0:
+                    log.debug("Name ROI %dx%d at (%d,%d): name=%r",
+                              region.shape[1], region.shape[0],
+                              tx + roi_name.get("dx", 0), ty + roi_name.get("dy", 0),
+                              name)
+            elif self._tick_count % 20 == 0:
+                log.debug("Name ROI out of bounds: template at (%d,%d), roi=%s, image=%dx%d",
+                          tx, ty, roi_name, image.shape[1], image.shape[0])
 
         return data
 
     def _get_roi_region(self, image: np.ndarray, tx: int, ty: int,
                         roi: dict) -> np.ndarray | None:
-        """Extract an ROI region from image given template position and offsets."""
+        """Extract an ROI region from image given template position and offsets.
+
+        Clamps the ROI to image bounds instead of rejecting out-of-bounds regions,
+        so partial reads near screen edges still work.
+        """
         dx = roi.get("dx", 0)
         dy = roi.get("dy", 0)
         w = roi.get("w", 0)
         h = roi.get("h", 0)
         if w <= 0 or h <= 0:
             return None
-        return self._extract_region(image, tx + dx, ty + dy, w, h)
+
+        ih, iw = image.shape[:2]
+        x = tx + dx
+        y = ty + dy
+
+        # Clamp to image bounds
+        x0 = max(0, x)
+        y0 = max(0, y)
+        x1 = min(iw, x + w)
+        y1 = min(ih, y + h)
+
+        if x1 <= x0 or y1 <= y0:
+            return None
+
+        return image[y0:y1, x0:x1].copy()
 
     @staticmethod
     def _read_hp_bar(region: np.ndarray) -> float:
