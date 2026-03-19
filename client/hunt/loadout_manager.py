@@ -207,20 +207,32 @@ class SessionLoadoutManager:
         self._loot_since_last_snapshot = False
         self._unmatched_damage_values.clear()
 
-        # Load weapon signatures from the latest loadout entry
-        if session.loadout_entries:
+        # Re-evaluate the loadout from cache rather than trusting old snapshot
+        # values (cost_per_shot may have been stored with the old PEC/PED bug).
+        if not self._active_loadout and session.loadout_entries:
             latest = session.loadout_entries[-1]
-            if latest.weapon_name and latest.damage_min > 0:
-                self._tool_inference.load_signature(
-                    latest.weapon_name,
-                    latest.damage_min,
-                    latest.damage_max,
-                    (latest.damage_min + latest.damage_max) / 2,
-                    latest.cost_per_shot,
-                    latest.crit_damage,
-                )
             if latest.loadout_data:
                 self._active_loadout = latest.loadout_data
+        if self._active_loadout:
+            weapon_name, stats = self._evaluate(self._active_loadout)
+            if stats:
+                self._active_stats = stats
+                self._tool_inference.load_from_loadout_stats(weapon_name, stats)
+                log.info("Re-evaluated loadout on restore: %s (cost=%.4f PEC)",
+                         weapon_name, stats.cost)
+            else:
+                # Fallback to snapshot values if evaluation fails
+                if session.loadout_entries:
+                    latest = session.loadout_entries[-1]
+                    if latest.weapon_name and latest.damage_min > 0:
+                        self._tool_inference.load_signature(
+                            latest.weapon_name,
+                            latest.damage_min,
+                            latest.damage_max,
+                            (latest.damage_min + latest.damage_max) / 2,
+                            latest.cost_per_shot,
+                            latest.crit_damage,
+                        )
         log.info("Loadout manager restored for session %s", session.id)
 
     def on_combat(self):
