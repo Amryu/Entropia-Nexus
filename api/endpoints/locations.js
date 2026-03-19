@@ -90,7 +90,7 @@ async function _fetchFacilities(locationIds) {
   }
 }
 
-// Fetch wave event waves for a set of location IDs
+// Fetch wave event waves for a set of location IDs, resolving maturity IDs to full objects
 async function _fetchWaveEventWaves(locationIds) {
   if (!locationIds || locationIds.length === 0) return {};
   try {
@@ -98,18 +98,48 @@ async function _fetchWaveEventWaves(locationIds) {
       `${queries.WaveEventWaves} WHERE w."LocationId" = ANY($1) ORDER BY w."LocationId", w."WaveIndex"`,
       [locationIds]
     );
+
+    // Collect all unique maturity IDs across all waves
+    const allMaturityIds = new Set();
+    for (const r of rows) {
+      for (const id of (r.MobMaturities || [])) {
+        allMaturityIds.add(id);
+      }
+    }
+
+    // Resolve maturity IDs to full maturity objects
+    let maturityMap = {};
+    if (allMaturityIds.size > 0) {
+      const { rows: matRows } = await pool.query(
+        `SELECT mm.*, m."Name" AS "Mob", m."Id" AS "MobId"
+         FROM ONLY "MobMaturities" mm
+         INNER JOIN ONLY "Mobs" m ON mm."MobId" = m."Id"
+         WHERE mm."Id" = ANY($1::int[])`,
+        [Array.from(allMaturityIds)]
+      );
+      for (const r of matRows) {
+        maturityMap[r.Id] = {
+          IsRare: false,
+          Maturity: formatMobMaturity(r)
+        };
+      }
+    }
+
     const map = {};
     for (const r of rows) {
       if (!map[r.LocationId]) map[r.LocationId] = [];
+      const ids = r.MobMaturities || [];
       map[r.LocationId].push({
         Id: r.Id,
         WaveIndex: r.WaveIndex,
         TimeToComplete: r.TimeToComplete,
-        MobMaturities: r.MobMaturities || []
+        MobMaturities: ids,
+        Maturities: ids.map(id => maturityMap[id]).filter(Boolean)
       });
     }
     return map;
-  } catch {
+  } catch (e) {
+    console.error('Error fetching wave event waves:', e);
     return {};
   }
 }

@@ -261,7 +261,7 @@
 
   // Layer visibility toggles
   let showTeleporters = $state(true);
-  let showLandAreas = $state(true);
+  let showLandAreas = $state(false);
   let showMobAreas = $state(true);
   let showPvpAreas = $state(true);
   let showOtherAreas = $state(false);
@@ -1491,8 +1491,8 @@
       // Land Areas
       if (areaType === 'LandArea') return showLandAreas;
 
-      // Mob Areas (creatures)
-      if (areaType === 'MobArea') return showMobAreas;
+      // Mob Areas (creatures) & Wave Event Areas
+      if (areaType === 'MobArea' || areaType === 'WaveEventArea') return showMobAreas;
 
       // PvP Areas (PvpArea and PvpLootArea)
       if (areaType === 'PvpArea' || areaType === 'PvpLootArea') return showPvpAreas;
@@ -1667,7 +1667,7 @@
       class="layer-btn"
       class:active={showMobAreas}
       onclick={toggleMobAreas}
-      title="Toggle Mob Areas"
+      title="Toggle Mob & Wave Event Areas"
     >
       <span class="layer-icon ma-icon">MA</span>
     </button>

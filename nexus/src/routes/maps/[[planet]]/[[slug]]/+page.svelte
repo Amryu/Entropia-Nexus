@@ -1099,6 +1099,46 @@
             </div>
           {/if}
 
+          {#if activeLocation?.Properties?.AreaType === 'WaveEventArea'}
+            <div class="info-section">
+              <h4>Wave Event</h4>
+              {#if activeLocation?.Waves?.length}
+                <div class="wave-info-list">
+                  {#each activeLocation.Waves as wave}
+                    {@const waveMobs = formatMobAreaMaturities(wave.Maturities || [])}
+                    <div class="wave-info-block">
+                      <div class="wave-info-header">
+                        <span class="wave-info-label">Wave {wave.WaveIndex}</span>
+                        {#if wave.TimeToComplete}
+                          <span class="wave-info-time">{wave.TimeToComplete} min</span>
+                        {/if}
+                      </div>
+                      {#if waveMobs.length}
+                        <div class="mob-types-list">
+                          {#each waveMobs as entry}
+                            <div class="mob-type-row">
+                              <a class="mob-name-link" href="/information/mobs/{entry.mobSlug || ''}">{entry.mob}</a>
+                              {#if entry.display}
+                                <span class="mob-mat-range">- {entry.display}</span>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {:else}
+                        <div class="wave-info-empty">No mobs listed</div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <div class="wave-info-empty">No wave data available</div>
+              {/if}
+              {#if activeLocation?.Properties?.Notes}
+                <div class="description-text">{@html activeLocation.Properties.Notes}</div>
+              {/if}
+            </div>
+          {/if}
+
           {#if activeLocation?.Properties?.AreaType === 'LandArea'}
             <div class="info-section">
               <h4>Land Area</h4>
@@ -2007,6 +2047,43 @@
 
   .mob-mat-range {
     color: var(--text-muted, #999);
+  }
+
+  .wave-info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .wave-info-block {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px;
+    background: var(--secondary-color);
+  }
+
+  .wave-info-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  .wave-info-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .wave-info-time {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+  }
+
+  .wave-info-empty {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    font-style: italic;
   }
 
   .dialog-backdrop {
