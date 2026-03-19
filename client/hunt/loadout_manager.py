@@ -204,7 +204,7 @@ class SessionLoadoutManager:
 
             # Create a history event for this loadout change
             enh_count = self._enhancer_state.total_enhancers()
-            cost_str = f"{stats.cost / 100:.4f} PED/shot" if stats and stats.cost else "unknown"
+            cost_str = f"{stats.cost:.2f} PEC/shot" if stats and stats.cost else "unknown"
             self._create_loadout_event(
                 "edit",
                 f"Loadout changed: {weapon_name or '?'} ({cost_str}, {enh_count} enhancers)",
@@ -269,7 +269,7 @@ class SessionLoadoutManager:
                 event_type="enhancer_break",
                 description=desc,
                 enhancer_delta=json.dumps(delta),
-                cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
+                cost_per_shot=self._active_stats.cost if self._active_stats else None,
             )
 
         return delta
@@ -315,7 +315,7 @@ class SessionLoadoutManager:
                 event_type="enhancer_adjust",
                 description=desc,
                 enhancer_delta=json.dumps(delta),
-                cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
+                cost_per_shot=self._active_stats.cost if self._active_stats else None,
             )
 
         log.info("Enhancer adjusted: %s.%s %d→%d slots", category, slot_key, old_active, new_slot.active_slots)
@@ -357,7 +357,7 @@ class SessionLoadoutManager:
             event_type=event_type,
             description=description,
             loadout_data=json.dumps(self._active_loadout) if self._active_loadout else None,
-            cost_per_shot=(self._active_stats.cost / 100) if self._active_stats else None,
+            cost_per_shot=self._active_stats.cost if self._active_stats else None,
             damage_min=self._active_stats.damage_interval_min if self._active_stats else None,
             damage_max=self._active_stats.damage_interval_max if self._active_stats else None,
         )
@@ -467,7 +467,7 @@ class SessionLoadoutManager:
             session_id=self._session.id,
             loadout_data=self._active_loadout or {},
             weapon_name=weapon_name,
-            cost_per_shot=stats.cost / 100 if stats and stats.cost else 0,  # PEC → PED
+            cost_per_shot=stats.cost if stats and stats.cost else 0,
             damage_min=stats.damage_interval_min if stats else 0,
             damage_max=stats.damage_interval_max if stats else 0,
             crit_damage=stats.crit_damage if stats else 1.0,

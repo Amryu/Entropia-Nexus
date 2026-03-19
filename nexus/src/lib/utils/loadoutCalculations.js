@@ -283,9 +283,9 @@ export function calculateAmmoBurn(weapon, damageEnhancers, economyEnhancers, amp
 export function calculateCost(decay, ammoBurn, ammoMarkup) {
   if (decay === null) return null;
 
-  // Both decay and ammoBurn are in PEC. Result is in PEC.
-  // ammoMarkup is a percentage (100 = TT).
-  return decay + ((ammoBurn ?? 0) * (ammoMarkup ?? 100) / 100);
+  // decay is in PEC. ammoBurn is in ammo units (÷100 = PEC).
+  // ammoMarkup is a percentage (÷100 to apply). Result in PEC.
+  return decay + ((ammoBurn ?? 0) / 100) * (ammoMarkup ?? 100) / 100;
 }
 
 export function calculateDPP(effectiveDamage, cost) {
@@ -934,8 +934,8 @@ export function calculateHealAmmoBurn(tool) {
 
 export function calculateHealCost(healDecay, healAmmoBurn) {
   if (healDecay == null) return null;
-  // Both in PEC. Result in PEC.
-  return healDecay + (healAmmoBurn ?? 0);
+  // healDecay in PEC. healAmmoBurn in ammo units (÷100 = PEC). Result in PEC.
+  return healDecay + (healAmmoBurn ?? 0) / 100;
 }
 
 export function calculateHealTotalUses(tool, healEnhancers, economyEnhancers) {

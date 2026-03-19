@@ -633,7 +633,7 @@ class HuntTracker:
         if cost_per_shot > 0 and self._tool_filter.should_include_cost(tool_name):
             enc.cost += cost_per_shot
             if enc.shots_fired <= 3:  # Log first few shots for diagnostics
-                log.info("Shot cost: +%.6f PED (%s via %s), total=%.4f",
+                log.info("Shot cost: +%.4f PEC (%s via %s), total=%.2f PEC",
                          cost_per_shot, tool_name, tool_source, enc.cost)
 
         # Log tool attribution decision
