@@ -311,13 +311,20 @@ class TargetLockDetector:
                 confidence = 0.0
 
         if pos is not None:
+            prev_lost = self._published_lost
             self._last_pos = pos
             self._miss_count = 0
             self._published_lost = False
             self._idle_ticks = 0  # target found — reset idle
 
-            # Cache pixels at this position for cheap check next tick
+            # Log template position on first detection or re-acquisition
             x, y = pos
+            if prev_lost or self._tick_count <= 1:
+                ih, iw = image.shape[:2]
+                log.info("Target lock found at (%d,%d) in %dx%d image, template=%dx%d",
+                         x, y, iw, ih, self._template_w, self._template_h)
+
+            # Cache pixels at this position for cheap check next tick
             self._last_region_pixels = self._extract_region(
                 image, x, y, self._template_w, self._template_h
             )
@@ -473,15 +480,11 @@ class TargetLockDetector:
         if roi_hp:
             region = self._get_roi_region(image, tx, ty, roi_hp)
             if region is not None and region.size > 0:
-                data["hp_pct"] = self._read_hp_bar(region)
-                if self._tick_count % 20 == 0:
-                    log.debug("HP ROI %dx%d at (%d,%d): hp=%.2f",
-                              region.shape[1], region.shape[0],
-                              tx + roi_hp.get("dx", 0), ty + roi_hp.get("dy", 0),
-                              data["hp_pct"] or 0)
-            elif self._tick_count % 20 == 0:
-                log.debug("HP ROI out of bounds: template at (%d,%d), roi=%s, image=%dx%d",
-                          tx, ty, roi_hp, image.shape[1], image.shape[0])
+                hp = self._read_hp_bar(region)
+                data["hp_pct"] = hp
+                if self._tick_count % 40 == 1:
+                    log.info("Target HP: %.0f%% (ROI %dx%d, red+green pixels in region)",
+                             (hp or 0) * 100, region.shape[1], region.shape[0])
 
         # Shared icon
         roi_shared = getattr(self._config, "target_lock_roi_shared", None)
@@ -498,14 +501,9 @@ class TargetLockDetector:
                 name = self._read_mob_name(region)
                 if name:
                     data["raw_name"] = name
-                if self._tick_count % 20 == 0:
-                    log.debug("Name ROI %dx%d at (%d,%d): name=%r",
-                              region.shape[1], region.shape[0],
-                              tx + roi_name.get("dx", 0), ty + roi_name.get("dy", 0),
-                              name)
-            elif self._tick_count % 20 == 0:
-                log.debug("Name ROI out of bounds: template at (%d,%d), roi=%s, image=%dx%d",
-                          tx, ty, roi_name, image.shape[1], image.shape[0])
+                if self._tick_count % 40 == 1:
+                    log.info("Target name OCR: %r (ROI %dx%d)",
+                             name, region.shape[1], region.shape[0])
 
         return data
 
