@@ -63,10 +63,6 @@ export const Location = {
           "enum": ["Shop", "Apartment", null],
           "default": null
         },
-        "OwnerId": {
-          "type": ["string", "null"],
-          "default": null
-        },
         "ItemTradeAvailable": {
           "type": ["boolean", "null"],
           "default": null
@@ -87,14 +83,6 @@ export const Location = {
         },
         "TaxRateShops": {
           "type": ["number", "null"],
-          "default": null
-        },
-        "LandAreaOwnerId": {
-          "type": ["string", "null"],
-          "default": null
-        },
-        "LandAreaOwnerName": {
-          "type": ["string", "null"],
           "default": null
         },
         // MobArea-specific properties (when Type = 'Area' and AreaType = 'MobArea')
@@ -124,6 +112,13 @@ export const Location = {
       ]
     },
     "ParentLocation": {
+      "anyOf": [
+        { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+        { "type": "null" }
+      ]
+    },
+    // Owner for LandArea type (NamedEntity resolved to user ID when possible)
+    "Owner": {
       "anyOf": [
         { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
         { "type": "null" }

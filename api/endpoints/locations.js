@@ -1,5 +1,5 @@
 const pgp = require('pg-promise')();
-const { pool } = require('./dbClient');
+const { pool, usersPool } = require('./dbClient');
 const { getObjects, parseItemList } = require('./utils');
 const { withCache } = require('./responseCache');
 const { formatMobMaturity } = require('./mobmaturities');
@@ -35,6 +35,7 @@ const queries = {
            -- Estate extension data
            e."Type"::text AS "EstateType",
            e."OwnerId" AS "EstateOwnerId",
+           e."OwnerName" AS "EstateOwnerName",
            e."ItemTradeAvailable" AS "EstateItemTradeAvailable",
            e."MaxGuests" AS "EstateMaxGuests",
            -- LandArea extension data
@@ -42,6 +43,7 @@ const queries = {
            la."TaxRateMining" AS "LandAreaTaxRateMining",
            la."TaxRateShops" AS "LandAreaTaxRateShops",
            la."OwnerId" AS "LandAreaOwnerId",
+           la."OwnerName" AS "LandAreaOwnerName",
            -- MobSpawn extension data
            ms."Density" AS "MobSpawnDensity",
            ms."IsShared" AS "MobSpawnIsShared",
@@ -171,6 +173,22 @@ async function _fetchMobSpawnMaturities(locationIds) {
   }
 }
 
+// Resolve OwnerId values to eu_names from the users database
+async function _fetchOwnerNames(ownerIds) {
+  if (!ownerIds || ownerIds.length === 0) return {};
+  try {
+    const { rows } = await usersPool.query(
+      'SELECT id, eu_name FROM users WHERE id = ANY($1) AND verified = true',
+      [ownerIds]
+    );
+    const map = {};
+    for (const r of rows) map[r.id] = r.eu_name;
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 function formatLocation(x, add = {}) {
   const result = {
     Id: x.Id,
@@ -215,15 +233,33 @@ function formatLocation(x, add = {}) {
       result.Properties.TaxRateHunting = x.LandAreaTaxRateHunting ?? null;
       result.Properties.TaxRateMining = x.LandAreaTaxRateMining ?? null;
       result.Properties.TaxRateShops = x.LandAreaTaxRateShops ?? null;
-      result.Properties.LandAreaOwnerId = x.LandAreaOwnerId ?? null;
+      // Owner as top-level NamedEntity: { Id, Name }
+      const ownerName = (x.LandAreaOwnerId && add.ownerNames?.[x.LandAreaOwnerId])
+        || x.LandAreaOwnerName
+        || null;
+      if (x.LandAreaOwnerId || ownerName) {
+        result.Owner = {
+          Id: x.LandAreaOwnerId ?? null,
+          Name: ownerName
+        };
+      }
     }
   }
 
   if (x.Type === 'Estate' && x.EstateType) {
     result.Properties.EstateType = x.EstateType;
-    result.Properties.OwnerId = x.EstateOwnerId;
     result.Properties.ItemTradeAvailable = x.EstateItemTradeAvailable;
     result.Properties.MaxGuests = x.EstateMaxGuests;
+    // Owner as top-level NamedEntity
+    const estateOwnerName = (x.EstateOwnerId && add.ownerNames?.[x.EstateOwnerId])
+      || x.EstateOwnerName
+      || null;
+    if (x.EstateOwnerId || estateOwnerName) {
+      result.Owner = {
+        Id: x.EstateOwnerId ?? null,
+        Name: estateOwnerName
+      };
+    }
   }
 
   if (x.AreaType === 'WaveEventArea' && add.waves) {
@@ -290,18 +326,21 @@ async function getLocations(options = {}) {
     });
   }
 
-  // Fetch wave event waves and mob spawn maturities
+  // Fetch wave event waves, mob spawn maturities, and owner names
   const waveEventIds = filteredRows.filter(r => r.AreaType === 'WaveEventArea').map(r => r.Id);
   const mobAreaIds = filteredRows.filter(r => r.AreaType === 'MobArea').map(r => r.Id);
-  const [wavesMap, maturitiesMap] = await Promise.all([
+  const ownerIds = [...new Set(filteredRows.map(r => r.LandAreaOwnerId || r.EstateOwnerId).filter(Boolean))];
+  const [wavesMap, maturitiesMap, ownerNames] = await Promise.all([
     _fetchWaveEventWaves(waveEventIds),
-    _fetchMobSpawnMaturities(mobAreaIds)
+    _fetchMobSpawnMaturities(mobAreaIds),
+    _fetchOwnerNames(ownerIds)
   ]);
 
   return filteredRows.map(x => formatLocation(x, {
     facilities: facilitiesMap[x.Id] || [],
     waves: wavesMap[x.Id] || null,
-    maturities: maturitiesMap[x.Id] || null
+    maturities: maturitiesMap[x.Id] || null,
+    ownerNames
   }));
 }
 
@@ -316,10 +355,12 @@ async function getLocation(idOrName) {
   // If fetching by name and multiple matches found, return them all for disambiguation
   if (!byId && rows.length > 1) {
     const locationIds = rows.map(r => r.Id);
-    const [facilitiesMap, wavesMap, maturitiesMap] = await Promise.all([
+    const ownerIds = [...new Set(rows.map(r => r.LandAreaOwnerId || r.EstateOwnerId).filter(Boolean))];
+    const [facilitiesMap, wavesMap, maturitiesMap, ownerNames] = await Promise.all([
       _fetchFacilities(locationIds),
       _fetchWaveEventWaves(rows.filter(r => r.AreaType === 'WaveEventArea').map(r => r.Id)),
-      _fetchMobSpawnMaturities(rows.filter(r => r.AreaType === 'MobArea').map(r => r.Id))
+      _fetchMobSpawnMaturities(rows.filter(r => r.AreaType === 'MobArea').map(r => r.Id)),
+      _fetchOwnerNames(ownerIds)
     ]);
 
     return {
@@ -327,22 +368,25 @@ async function getLocation(idOrName) {
       matches: rows.map(x => formatLocation(x, {
         facilities: facilitiesMap[x.Id] || [],
         waves: wavesMap[x.Id] || null,
-        maturities: maturitiesMap[x.Id] || null
+        maturities: maturitiesMap[x.Id] || null,
+        ownerNames
       }))
     };
   }
 
   const location = rows[0];
-  const [facilities, waves, maturities] = await Promise.all([
+  const [facilities, waves, maturities, ownerNames] = await Promise.all([
     _fetchFacilities([location.Id]),
     location.AreaType === 'WaveEventArea' ? _fetchWaveEventWaves([location.Id]) : Promise.resolve({}),
-    location.AreaType === 'MobArea' ? _fetchMobSpawnMaturities([location.Id]) : Promise.resolve({})
+    location.AreaType === 'MobArea' ? _fetchMobSpawnMaturities([location.Id]) : Promise.resolve({}),
+    (location.LandAreaOwnerId || location.EstateOwnerId) ? _fetchOwnerNames([location.LandAreaOwnerId || location.EstateOwnerId].filter(Boolean)) : Promise.resolve({})
   ]);
 
   return formatLocation(location, {
     facilities: facilities[location.Id] || [],
     waves: waves[location.Id] || null,
-    maturities: maturities[location.Id] || null
+    maturities: maturities[location.Id] || null,
+    ownerNames
   });
 }
 

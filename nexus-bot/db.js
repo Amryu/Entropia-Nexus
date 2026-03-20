@@ -1076,3 +1076,36 @@ export async function resolveMarketPriceItemIds() {
 
   return resolved;
 }
+
+/**
+ * Resolve LandAreas and Estates that have OwnerName matching a newly verified user's eu_name.
+ * Sets OwnerId and clears OwnerName (mutual exclusivity).
+ * @param {string|number} userId - The verified user's ID
+ * @param {string} euName - The verified user's Entropia Universe name
+ * @returns {number} Total number of rows resolved
+ */
+export async function resolveLocationOwners(userId, euName) {
+  if (!euName) return 0;
+  let total = 0;
+  try {
+    const landAreas = await poolNexus.query(
+      `UPDATE "LandAreas" SET "OwnerId" = $1, "OwnerName" = NULL
+       WHERE "OwnerName" = $2 AND "OwnerId" IS NULL`,
+      [userId, euName]
+    );
+    total += landAreas.rowCount;
+  } catch (e) {
+    console.error(`Failed to resolve LandArea owners for "${euName}": ${e.message}`);
+  }
+  try {
+    const estates = await poolNexus.query(
+      `UPDATE "Estates" SET "OwnerId" = $1, "OwnerName" = NULL
+       WHERE "OwnerName" = $2 AND "OwnerId" IS NULL`,
+      [userId, euName]
+    );
+    total += estates.rowCount;
+  } catch (e) {
+    console.error(`Failed to resolve Estate owners for "${euName}": ${e.message}`);
+  }
+  return total;
+}

@@ -136,8 +136,6 @@
         props.TaxRateHunting = mod.taxRateHunting !== undefined ? mod.taxRateHunting : (origProps?.TaxRateHunting ?? null);
         props.TaxRateMining = mod.taxRateMining !== undefined ? mod.taxRateMining : (origProps?.TaxRateMining ?? null);
         props.TaxRateShops = mod.taxRateShops !== undefined ? mod.taxRateShops : (origProps?.TaxRateShops ?? null);
-        const ownerName = mod.landAreaOwner !== undefined ? mod.landAreaOwner : origProps?.LandAreaOwnerName;
-        if (ownerName) props.LandAreaOwnerName = ownerName;
       }
 
       // Density: use pending value if set, otherwise preserve original
@@ -183,6 +181,12 @@
     const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : orig?.ParentLocation?.Name;
     if (parentName) {
       body.ParentLocation = { Name: parentName };
+    }
+
+    // LandArea owner as top-level NamedEntity
+    const ownerName = mod.landAreaOwner !== undefined ? mod.landAreaOwner : (orig?.Owner?.Name || origProps?.LandAreaOwnerName);
+    if (ownerName) {
+      body.Owner = { Name: ownerName };
     }
 
     return body;

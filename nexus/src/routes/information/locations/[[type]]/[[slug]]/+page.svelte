@@ -430,17 +430,22 @@
   }
 
   function selectOwner(u) {
-    // Store ID as string to avoid precision loss with large Discord snowflakes
-    updateField('Properties.OwnerId', u ? String(u.id) : null);
-    // Keep display name locally for the editing session
-    selectedOwnerDisplayName = u ? (u.eu_name || u.global_name || '') : '';
+    // Store as NamedEntity — bot resolves name to ID on approval
+    const name = u ? (u.eu_name || u.global_name || '') : null;
+    updateField('Owner', name ? { Name: name } : null);
+    selectedOwnerDisplayName = name || '';
     ownerSearchQuery = '';
     ownerSearchResults = [];
     showOwnerSuggestions = false;
   }
 
+  function setOwnerByName(name) {
+    updateField('Owner', name ? { Name: name } : null);
+    selectedOwnerDisplayName = name || '';
+  }
+
   function clearOwner() {
-    updateField('Properties.OwnerId', null);
+    updateField('Owner', null);
     selectedOwnerDisplayName = '';
     ownerSearchQuery = '';
     ownerSearchResults = [];
@@ -760,8 +765,8 @@
   }));
   // Get owner display name - use local state in edit mode, or entity's Owner object in view mode
   let ownerDisplayName = $derived($editMode
-    ? (selectedOwnerDisplayName || (activeLocation?.Properties?.OwnerId ? `User #${activeLocation.Properties.OwnerId}` : ''))
-    : (activeLocation?.Owner?.Name || (activeLocation?.Properties?.OwnerId ? `User #${activeLocation.Properties.OwnerId}` : 'Unknown')));
+    ? (selectedOwnerDisplayName || activeLocation?.Owner?.Name || '')
+    : (activeLocation?.Owner?.Name || 'Unknown'));
   // Get current area shape (for shape data editor)
   let currentShape = $derived(activeLocation?.Properties?.Shape || 'Point');
 </script>
@@ -1127,7 +1132,7 @@
               <span class="stat-value">
                 {#if $editMode}
                   <div class="owner-picker">
-                    {#if activeLocation?.Properties?.OwnerId || selectedOwnerDisplayName}
+                    {#if activeLocation?.Owner?.Name || selectedOwnerDisplayName}
                       <div class="selected-owner-chip">
                         <span class="owner-name">{ownerDisplayName}</span>
                         <button type="button" class="chip-remove" onclick={clearOwner}>×</button>
@@ -1139,9 +1144,10 @@
                           class="owner-search-input"
                           bind:value={ownerSearchQuery}
                           oninput={handleOwnerSearchInput}
+                          onkeydown={(e) => { if (e.key === 'Enter' && ownerSearchQuery.trim()) { e.preventDefault(); setOwnerByName(ownerSearchQuery.trim()); ownerSearchQuery = ''; showOwnerSuggestions = false; } }}
                           onfocus={() => { if (ownerSearchResults.length > 0) showOwnerSuggestions = true; }}
                           onblur={() => { setTimeout(() => showOwnerSuggestions = false, 150); }}
-                          placeholder="Search for owner..."
+                          placeholder="Search or type owner name..."
                           autocomplete="off"
                         />
                         {#if isOwnerSearching}

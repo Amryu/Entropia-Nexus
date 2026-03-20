@@ -1,3 +1,5 @@
+import { poolUsers } from '../db.js';
+
 export const UpsertConfigs = {
   Shop: {
     columns: [
@@ -13,6 +15,7 @@ export const UpsertConfigs = {
     relationChangeFunc: async (client, locationId, x) => {
       await applyLocationExtensionChanges(client, locationId, {
         Properties: { Type: 'Estate', EstateType: 'Shop', OwnerId: x.OwnerId, ItemTradeAvailable: true, MaxGuests: x.MaxGuests },
+        Owner: x.Owner,
         Sections: x.Sections ?? []
       });
     }
@@ -1254,12 +1257,32 @@ async function applyLocationExtensionChanges(client, locationId, x) {
       const taxHunting = x.Properties?.TaxRateHunting ?? null;
       const taxMining = x.Properties?.TaxRateMining ?? null;
       const taxShops = x.Properties?.TaxRateShops ?? null;
-      const ownerId = x.Properties?.LandAreaOwnerId ?? null;
+
+      // Changes carry owner as top-level NamedEntity; fall back to legacy Properties field
+      const ownerName = x.Owner?.Name || x.Properties?.LandAreaOwnerName || null;
+      let ownerId = null;
+      let ownerNameToStore = ownerName;
+      if (ownerName) {
+        try {
+          const { rows } = await poolUsers.query(
+            'SELECT id FROM users WHERE eu_name = $1 AND verified = true LIMIT 1',
+            [ownerName]
+          );
+          if (rows.length > 0) {
+            ownerId = rows[0].id;
+            ownerNameToStore = null; // Resolved — don't store the name
+          }
+        } catch (e) {
+          console.error(`Failed to resolve LandArea owner "${ownerName}": ${e.message}`);
+          // Fall through: store name without ID
+        }
+      }
+
       await client.query(
-        `INSERT INTO "LandAreas" ("LocationId", "TaxRateHunting", "TaxRateMining", "TaxRateShops", "OwnerId")
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT ("LocationId") DO UPDATE SET "TaxRateHunting" = $2, "TaxRateMining" = $3, "TaxRateShops" = $4, "OwnerId" = $5`,
-        [locationId, taxHunting, taxMining, taxShops, ownerId]
+        `INSERT INTO "LandAreas" ("LocationId", "TaxRateHunting", "TaxRateMining", "TaxRateShops", "OwnerId", "OwnerName")
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT ("LocationId") DO UPDATE SET "TaxRateHunting" = $2, "TaxRateMining" = $3, "TaxRateShops" = $4, "OwnerId" = $5, "OwnerName" = $6`,
+        [locationId, taxHunting, taxMining, taxShops, ownerId, ownerNameToStore]
       );
     }
   }
@@ -1267,14 +1290,36 @@ async function applyLocationExtensionChanges(client, locationId, x) {
   // Handle Estates extension for Estate type
   if (locationType === 'Estate' && x.Properties?.EstateType) {
     const estateType = x.Properties.EstateType;
-    const ownerId = x.Properties?.OwnerId ?? null;
     const itemTradeAvailable = x.Properties?.ItemTradeAvailable ?? false;
     const maxGuests = x.Properties?.MaxGuests ?? null;
+
+    // Resolve owner: top-level NamedEntity, fall back to legacy Properties.OwnerId
+    const estateOwnerName = x.Owner?.Name || null;
+    let estateOwnerId = x.Properties?.OwnerId ?? null;
+    let estateOwnerNameToStore = null;
+    if (estateOwnerName) {
+      estateOwnerId = null; // NamedEntity takes precedence over legacy ID
+      try {
+        const { rows } = await poolUsers.query(
+          'SELECT id FROM users WHERE eu_name = $1 AND verified = true LIMIT 1',
+          [estateOwnerName]
+        );
+        if (rows.length > 0) {
+          estateOwnerId = rows[0].id;
+        } else {
+          estateOwnerNameToStore = estateOwnerName;
+        }
+      } catch (e) {
+        console.error(`Failed to resolve Estate owner "${estateOwnerName}": ${e.message}`);
+        estateOwnerNameToStore = estateOwnerName;
+      }
+    }
+
     await client.query(
-      `INSERT INTO "Estates" ("LocationId", "Type", "OwnerId", "ItemTradeAvailable", "MaxGuests")
-       VALUES ($1, $2::"EstateType", $3, $4, $5)
-       ON CONFLICT ("LocationId") DO UPDATE SET "Type" = $2::"EstateType", "OwnerId" = $3, "ItemTradeAvailable" = $4, "MaxGuests" = $5`,
-      [locationId, estateType, ownerId, itemTradeAvailable, maxGuests]
+      `INSERT INTO "Estates" ("LocationId", "Type", "OwnerId", "OwnerName", "ItemTradeAvailable", "MaxGuests")
+       VALUES ($1, $2::"EstateType", $3, $4, $5, $6)
+       ON CONFLICT ("LocationId") DO UPDATE SET "Type" = $2::"EstateType", "OwnerId" = $3, "OwnerName" = $4, "ItemTradeAvailable" = $5, "MaxGuests" = $6`,
+      [locationId, estateType, estateOwnerId, estateOwnerNameToStore, itemTradeAvailable, maxGuests]
     );
 
     // Handle EstateSections for estates

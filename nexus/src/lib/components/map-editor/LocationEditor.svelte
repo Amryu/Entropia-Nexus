@@ -415,7 +415,7 @@
       description = location.Properties?.Description || '';
       isEvent = location.Properties?.IsEvent ?? false;
       isShared = location.Properties?.IsShared ?? false;
-      landAreaOwner = location.Properties?.LandAreaOwnerName || '';
+      landAreaOwner = location.Owner?.Name || location.Properties?.LandAreaOwnerName || '';
       taxRateHunting = location.Properties?.TaxRateHunting ?? null;
       taxRateMining = location.Properties?.TaxRateMining ?? null;
       taxRateShops = location.Properties?.TaxRateShops ?? null;

@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getConfigValue, replaceVerificationFlow } from '../../bot.js';
-import { getUserById, getUserByUsername, setUserVerified, assignUserRole, getBotConfig, setBotConfig } from '../../db.js';
+import { getUserById, getUserByUsername, setUserVerified, assignUserRole, getBotConfig, setBotConfig, resolveLocationOwners } from '../../db.js';
 
 const cancelRow = new ActionRowBuilder()
   .addComponents(
@@ -264,6 +264,16 @@ function collectVerificationCode(thread, userVerify, guild, code, onEnd) {
       await setBotConfig(`verify_code:${userVerify.id}`, null);
     } catch (e) {
       console.error(`Failed to update DB after verification for ${userVerify.id}: ${e.message}`);
+    }
+
+    // Resolve any LandAreas/Estates whose OwnerName matches this user's EU name
+    try {
+      const resolved = await resolveLocationOwners(userVerify.id, userVerify.eu_name);
+      if (resolved > 0) {
+        console.log(`Resolved ${resolved} location owner(s) for "${userVerify.eu_name}" (user ${userVerify.id})`);
+      }
+    } catch (e) {
+      console.error(`Failed to resolve location owners for ${userVerify.id}: ${e.message}`);
     }
 
     try {

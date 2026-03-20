@@ -8,6 +8,7 @@ const queries = {
            p."TechnicalName",
            e."Type" AS "EstateType",
            e."OwnerId",
+           e."OwnerName",
            e."ItemTradeAvailable",
            e."MaxGuests"
     FROM ONLY "Locations" l
@@ -115,6 +116,9 @@ async function _fetchMultipleShopInventories(locationIds) {
 }
 
 function formatShop(x, add = {}) {
+  // Build Owner: resolved from users DB, or direct OwnerName, or null
+  const ownerName = add.owner?.Name || x.OwnerName || null;
+  const owner = (x.OwnerId || ownerName) ? { Id: x.OwnerId ?? null, Name: ownerName } : null;
   const out = {
     Id: x.Id,
     Name: x.Name,
@@ -127,12 +131,11 @@ function formatShop(x, add = {}) {
       Altitude: x.Altitude != null ? Number(x.Altitude) : null,
     },
     Planet: x.Planet ? { Name: x.Planet, Properties: { TechnicalName: x.TechnicalName }, Links: { "$Url": `/planets/${x.PlanetId}` } } : null,
-    Owner: null,
+    Owner: owner,
     InventoryGroups: [],
     Sections: [],
     Links: { "$Url": `/shops/${x.Id}` }
   };
-  if (add.owner) out.Owner = add.owner;
   if (add.inventory) out.InventoryGroups = add.inventory;
   if (add.sections) {
     out.Sections = add.sections;
