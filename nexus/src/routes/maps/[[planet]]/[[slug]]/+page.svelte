@@ -48,6 +48,13 @@
 
   let { data = $bindable() } = $props();
 
+  // --- Embed mode ---
+  let isEmbed = $derived($page.url.searchParams.get('embed') === '1');
+  let embedHideSearch = $state(false);
+  let embedHidePanel = $state(false);
+  let embedHideLayers = $state(false);
+  let embedHighlightLocations = $state([]);
+
   let mapRef = $state();
   let currentSlug = $state(null);
   let searchQuery = $state('');
@@ -328,10 +335,12 @@
     }
 
     // Navigate (this triggers data reload but animation already started)
-    const targetPlanet = location.Planet?.Name || currentPlanet?.Name;
-    const planetSlug = normalizePlanetSlug(targetPlanet);
-    if (planetSlug && location.Id) {
-      await goto(`/maps/${planetSlug}/${location.Id}`, { noScroll: true });
+    if (!isEmbed) {
+      const targetPlanet = location.Planet?.Name || currentPlanet?.Name;
+      const planetSlug = normalizePlanetSlug(targetPlanet);
+      if (planetSlug && location.Id) {
+        await goto(`/maps/${planetSlug}/${location.Id}`, { noScroll: true });
+      }
     }
 
     // Clear loading state after navigation completes
@@ -519,7 +528,7 @@
 
   function clearSelection() {
     selectedLocation = null;
-    if (currentPlanet?.Name) {
+    if (!isEmbed && currentPlanet?.Name) {
       const planetSlug = normalizePlanetSlug(currentPlanet.Name);
       goto(`/maps/${planetSlug}`, { noScroll: true });
     }
@@ -535,6 +544,100 @@
 
 
 
+  // --- Embed postMessage handler ---
+  function handleEmbedMessage(msg) {
+    switch (msg.type) {
+      case 'nexus:panTo':
+        if (msg.longitude != null && msg.latitude != null) {
+          mapRef?.panToCoords(msg.longitude, msg.latitude);
+        }
+        break;
+      case 'nexus:focusLocation':
+      case 'nexus:selectLocation': {
+        const found = locations.find(l => l.Id == msg.locationId);
+        if (found) {
+          selectedLocation = found;
+          mapRef?.focusOnLocation(found);
+        }
+        break;
+      }
+      case 'nexus:setZoom':
+        if (msg.zoom != null) mapRef?.setZoom(msg.zoom);
+        break;
+      case 'nexus:search': {
+        const query = (msg.query || '').trim();
+        const results = query ? locations
+          .map(item => ({
+            item,
+            score: Math.max(
+              fuzzyScore(item.Name, query),
+              item.Properties?.AreaType === 'MobArea' ? fuzzyScore(getMobAreaShortName(item.Name), query) : 0,
+              fuzzyScore(item.Properties?.Type, query) * 0.4
+            )
+          }))
+          .filter(e => e.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 50)
+          .map(e => ({
+            id: e.item.Id, name: e.item.Name,
+            type: e.item.Properties?.Type,
+            areaType: e.item.Properties?.AreaType,
+            coordinates: e.item.Properties?.Coordinates,
+            score: e.score
+          }))
+          : [];
+        parent.postMessage({ type: 'nexus:searchResults', query, results }, '*');
+        break;
+      }
+      case 'nexus:setLayers':
+        if (msg.layers) {
+          for (const [layer, visible] of Object.entries(msg.layers)) {
+            mapRef?.setLayerVisibility(layer, visible);
+          }
+        }
+        break;
+      case 'nexus:highlightLocations': {
+        const ids = new Set((msg.locationIds || []).map(id => String(id)));
+        embedHighlightLocations = locations.filter(l => ids.has(String(l.Id)));
+        break;
+      }
+      case 'nexus:clearHighlight':
+        embedHighlightLocations = [];
+        break;
+      case 'nexus:getLocations':
+        parent.postMessage({
+          type: 'nexus:locations',
+          locations: locations.map(l => ({
+            id: l.Id, name: l.Name,
+            type: l.Properties?.Type,
+            areaType: l.Properties?.AreaType,
+            coordinates: l.Properties?.Coordinates
+          }))
+        }, '*');
+        break;
+      case 'nexus:getSelectedLocation':
+        if (selectedLocation) {
+          parent.postMessage({
+            type: 'nexus:selectedLocation',
+            location: {
+              id: selectedLocation.Id, name: selectedLocation.Name,
+              type: selectedLocation.Properties?.Type,
+              areaType: selectedLocation.Properties?.AreaType,
+              coordinates: selectedLocation.Properties?.Coordinates
+            }
+          }, '*');
+        } else {
+          parent.postMessage({ type: 'nexus:selectedLocation', location: null }, '*');
+        }
+        break;
+      case 'nexus:setVisibility':
+        if (msg.search != null) embedHideSearch = !msg.search;
+        if (msg.panel != null) embedHidePanel = !msg.panel;
+        if (msg.layers != null) embedHideLayers = !msg.layers;
+        break;
+    }
+  }
+
   onMount(() => {
     if (typeof window === 'undefined') return;
     const media = window.matchMedia('(max-width: 899px)');
@@ -546,12 +649,34 @@
     };
     update();
     media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
+
+    // --- Embed mode: init from URL params and set up postMessage bridge ---
+    let embedMessageHandler;
+    if (isEmbed) {
+      const params = $page.url.searchParams;
+      embedHideSearch = params.get('hideSearch') === '1';
+      embedHidePanel = params.get('hidePanel') === '1';
+      embedHideLayers = params.get('hideLayers') === '1';
+
+      embedMessageHandler = (event) => {
+        const msg = event.data;
+        if (!msg?.type?.startsWith('nexus:')) return;
+        handleEmbedMessage(msg);
+      };
+      window.addEventListener('message', embedMessageHandler);
+    }
+
+    return () => {
+      media.removeEventListener?.('change', update);
+      if (embedMessageHandler) {
+        window.removeEventListener('message', embedMessageHandler);
+      }
+    };
   });
 
   let user = $derived(data.session?.user);
   let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
-  let isEditAllowed = $derived(canEdit && !isMobile);
+  let isEditAllowed = $derived(!isEmbed && canEdit && !isMobile);
   let routeMode = $derived((() => {
     const m = ($page.url.searchParams.get('mode') || '').toLowerCase();
     return m === 'create' ? 'edit' : m; // create mode was removed; treat as edit
@@ -720,30 +845,62 @@
       panelClosing = false;
     }
   });
+
+  // --- Embed outbound messages ---
+  let embedReadySent = false;
+  $effect(() => {
+    if (!isEmbed || !browser || embedReadySent) return;
+    if (currentPlanet && locations && mapRef) {
+      embedReadySent = true;
+      parent.postMessage({
+        type: 'nexus:ready',
+        planet: currentPlanet.Name,
+        locationCount: locations.length
+      }, '*');
+    }
+  });
+  $effect(() => {
+    if (!isEmbed || !browser) return;
+    if (selectedLocation) {
+      parent.postMessage({
+        type: 'nexus:locationSelected',
+        location: {
+          id: selectedLocation.Id, name: selectedLocation.Name,
+          type: selectedLocation.Properties?.Type,
+          areaType: selectedLocation.Properties?.AreaType,
+          coordinates: selectedLocation.Properties?.Coordinates
+        }
+      }, '*');
+    } else {
+      parent.postMessage({ type: 'nexus:locationDeselected' }, '*');
+    }
+  });
 </script>
 
 <svelte:head>
-  <title>{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus</title>
-  <meta name="description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
-  {#if currentPlanet}
-    <link rel="canonical" href="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet.Name)}" />
-  {:else}
-    <link rel="canonical" href="https://entropianexus.com/maps" />
+  {#if !isEmbed}
+    <title>{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus</title>
+    <meta name="description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
+    {#if currentPlanet}
+      <link rel="canonical" href="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet.Name)}" />
+    {:else}
+      <link rel="canonical" href="https://entropianexus.com/maps" />
+    {/if}
+    <meta property="og:type" content="website" />
+    {#if currentPlanet}
+      <meta property="og:url" content="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet.Name)}" />
+    {:else}
+      <meta property="og:url" content="https://entropianexus.com/maps" />
+    {/if}
+    <meta property="og:title" content="{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus" />
+    <meta property="og:description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
+    <meta property="og:image" content="https://entropianexus.com/icon.png" />
+    <meta property="og:site_name" content="Entropia Nexus" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus" />
+    <meta name="twitter:description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
+    <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
   {/if}
-  <meta property="og:type" content="website" />
-  {#if currentPlanet}
-    <meta property="og:url" content="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet.Name)}" />
-  {:else}
-    <meta property="og:url" content="https://entropianexus.com/maps" />
-  {/if}
-  <meta property="og:title" content="{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus" />
-  <meta property="og:description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
-  <meta property="og:image" content="https://entropianexus.com/icon.png" />
-  <meta property="og:site_name" content="Entropia Nexus" />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="{currentPlanet ? `${currentPlanet.Name} Map` : 'Maps'} - Entropia Nexus" />
-  <meta name="twitter:description" content="{currentPlanet ? `Interactive map for ${currentPlanet.Name}.` : 'Interactive maps for every planet and moon in Entropia Universe.'}" />
-  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="map-page">
@@ -762,7 +919,11 @@
           locations={locations}
           bind:selected={selectedLocation}
           bind:hovered={hoveredLocation}
-          searchResults={searchOpen ? searchResults : []}
+          searchResults={isEmbed && embedHighlightLocations.length > 0
+            ? embedHighlightLocations
+            : (searchOpen ? searchResults : [])}
+          embedMode={isEmbed}
+          hideLayerToggles={isEmbed && embedHideLayers}
         />
       {:else}
         <div class="maps-overview">
@@ -803,8 +964,9 @@
     {/if}
   </div>
 
-  {#if currentPlanet}
+  {#if currentPlanet && !(isEmbed && embedHideSearch)}
   <div class="map-controls">
+    {#if !isEmbed}
     <div class="control-row">
       <div class="control-group">
         <label for="map-planet">Planet</label>
@@ -823,6 +985,7 @@
         </select>
       </div>
     </div>
+    {/if}
 
     <div class="search-row">
       <input
@@ -875,7 +1038,7 @@
   </div>
   {/if}
 
-  {#if activeLocation && !$existingPendingChange}
+  {#if activeLocation && !$existingPendingChange && !(isEmbed && embedHidePanel)}
     <aside
       class="map-info-panel"
       class:mobile={isMobile}
@@ -1146,7 +1309,7 @@
   {/if}
 
   <!-- Edit Mode Button (bottom-right, desktop only) -->
-  {#if canEdit && !isMobile && currentPlanet && !leafletEditMode}
+  {#if !isEmbed && canEdit && !isMobile && currentPlanet && !leafletEditMode}
     <button class="edit-mode-btn" onclick={activateEditMode} title="Open Leaflet map editor">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />

@@ -17,6 +17,8 @@
 
   $page;
 
+  let isEmbed = $derived($page.url.searchParams.get('embed') === '1');
+
   // Set initial viewport width from server-side detection
   $effect(() => {
     if (data.initialViewportWidth) {
@@ -152,11 +154,13 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="manifest" href="/site.webmanifest">
 </svelte:head>
-<Toasts />
+{#if !isEmbed}<Toasts />{/if}
 <div class="app-layout">
-  <Menu user={data?.session?.user} realUser={data?.session?.realUser} />
-  {#if $navigating}
-    <div class="nav-progress-bar"></div>
+  {#if !isEmbed}
+    <Menu user={data?.session?.user} realUser={data?.session?.realUser} />
+    {#if $navigating}
+      <div class="nav-progress-bar"></div>
+    {/if}
   {/if}
   <div class="app-content">
     {@render children?.()}

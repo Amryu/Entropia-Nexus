@@ -60,6 +60,11 @@ export async function load({ fetch, params, url, parent }) {
     }
   );
 
+  // Embed mode: skip all pending changes loading (no edit functionality)
+  if (url.searchParams.get('embed') === '1') {
+    return response;
+  }
+
   response.session = session;
 
   const getEntityType = (loc) => {

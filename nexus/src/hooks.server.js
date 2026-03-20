@@ -337,6 +337,12 @@ export async function handle({ event, resolve }) {
     response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   }
 
+  // Clickjacking protection: allow framing only for embed map routes
+  const isEmbedRoute = event.url.pathname.startsWith('/maps') && event.url.searchParams.get('embed') === '1';
+  if (!isEmbedRoute) {
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN');
+  }
+
   return response;
 }
 

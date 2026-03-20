@@ -250,7 +250,9 @@
     locations = $bindable([]),
     selected = $bindable(),
     hovered = $bindable(),
-    searchResults = []
+    searchResults = [],
+    embedMode = false,
+    hideLayerToggles = false
   } = $props();
   let filteredLocations = [];
   let filteredAreas = [];
@@ -389,6 +391,41 @@
       location.Properties.Coordinates.Latitude
     );
     moveTo(target, 250);
+  }
+
+  export async function panToCoords(longitude, latitude) {
+    if (typeof window === 'undefined') return;
+    await mapLoaded;
+    const target = entropiaCoordsToImageCoords(longitude, latitude);
+    moveTo(target, 250);
+  }
+
+  export function setZoom(level) {
+    const clamped = Math.max(getMinZoom(), Math.min(getMaxZoom(), level));
+    zoomTo(clamped, 200);
+  }
+
+  export function getZoom() { return zoom; }
+
+  export function setLayerVisibility(layer, visible) {
+    switch (layer) {
+      case 'teleporters': showTeleporters = visible; break;
+      case 'landAreas': showLandAreas = visible; break;
+      case 'mobAreas': showMobAreas = visible; break;
+      case 'pvpAreas': showPvpAreas = visible; break;
+      case 'otherAreas': showOtherAreas = visible; break;
+    }
+    markDirty();
+  }
+
+  export function getLayerVisibility() {
+    return {
+      teleporters: showTeleporters,
+      landAreas: showLandAreas,
+      mobAreas: showMobAreas,
+      pvpAreas: showPvpAreas,
+      otherAreas: showOtherAreas
+    };
   }
 
   // --- React to selection from outside (e.g. MapList) ---
@@ -1199,7 +1236,7 @@
       selected = null;
       hovered = null;
       markDirty();
-      if (typeof window !== 'undefined' && planet) {
+      if (!embedMode && typeof window !== 'undefined' && planet) {
         const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
         await navigate(`/maps/${planetSimpleName}`);
       }
@@ -1210,14 +1247,13 @@
     selected = targetHit.shape;
     markDirty();
     if (targetHit.shape?.Properties?.Coordinates) {
-      if (typeof window !== 'undefined' && planet && targetHit.shape?.Id) {
+      if (!embedMode && typeof window !== 'undefined' && planet && targetHit.shape?.Id) {
         const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
         const newUrl = `/maps/${planetSimpleName}/${targetHit.shape.Id}`;
         if (targetHit.shape.Id !== currentId) {
           await navigate(newUrl);
         }
       }
-      // focusOnLocation removed: only visual highlight
     }
   }
 
@@ -1646,6 +1682,7 @@
   </canvas>
 
   <!-- Layer toggles (bottom-left, desktop only) -->
+  {#if !hideLayerToggles}
   <div class="layer-toggles">
     <button
       class="layer-btn"
@@ -1688,4 +1725,5 @@
       <span class="layer-icon other-icon">OTH</span>
     </button>
   </div>
+  {/if}
 </div>

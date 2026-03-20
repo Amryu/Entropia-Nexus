@@ -709,6 +709,23 @@ Batch skill point to PED value conversions. Rate limit: 60/min per IP.
 
 At least one array must be provided. Max 200 items total.
 
+## Map Embed
+
+Embed an interactive planet map on your website via iframe. No authentication required.
+
+**URL:** `https://entropianexus.com/maps/<planet>?embed=1`
+
+| Parameter | Description |
+|-----------|-------------|
+| `embed=1` | Required. Activates embed mode |
+| `hideSearch=1` | Hide search bar |
+| `hidePanel=1` | Hide location detail panel |
+| `hideLayers=1` | Hide layer toggle buttons |
+
+The embed exposes a bidirectional `postMessage` API for programmatic control (pan, zoom, search, filtering, highlighting). See [Map Embed documentation](/docs/maps.md#embed-api) for the full API reference.
+
+---
+
 ## OAuth API
 
 All OAuth API requests require a valid OAuth 2.0 Bearer token in the `Authorization` header:

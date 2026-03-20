@@ -507,6 +507,144 @@ Each map has defined bounds:
 }
 ```
 
+## Embed API
+
+The map can be embedded on external websites via iframe. All editing functionality is automatically disabled in embed mode.
+
+### Embed URL
+
+```
+https://entropianexus.com/maps/<planet>?embed=1
+```
+
+**Query Parameters:**
+
+| Parameter | Values | Default | Description |
+|-----------|--------|---------|-------------|
+| `embed` | `1` | — | Activates embed mode (required) |
+| `hideSearch` | `1` | `0` | Hide search bar and planet selectors |
+| `hidePanel` | `1` | `0` | Hide location detail panel |
+| `hideLayers` | `1` | `0` | Hide layer toggle buttons (TP, LA, MA, etc.) |
+
+**Example — minimal embed (map only):**
+```html
+<iframe
+  src="https://entropianexus.com/maps/calypso?embed=1&hideSearch=1&hidePanel=1&hideLayers=1"
+  width="800" height="600"
+  style="border: none;"
+></iframe>
+```
+
+**Example — embed with search:**
+```html
+<iframe
+  src="https://entropianexus.com/maps/calypso?embed=1&hidePanel=1"
+  width="800" height="600"
+  style="border: none;"
+></iframe>
+```
+
+### postMessage API
+
+All messages use a `nexus:` prefix. The embed communicates with the parent page via `window.postMessage`.
+
+#### Inbound Messages (Parent → Embed)
+
+| Message Type | Payload | Description |
+|---|---|---|
+| `nexus:panTo` | `{ longitude, latitude }` | Pan map to game coordinates |
+| `nexus:focusLocation` | `{ locationId }` | Select location and animate to it |
+| `nexus:selectLocation` | `{ locationId }` | Same as `focusLocation` |
+| `nexus:setZoom` | `{ zoom }` | Set zoom level (clamped to valid range) |
+| `nexus:search` | `{ query }` | Run search, returns `nexus:searchResults` |
+| `nexus:setLayers` | `{ layers: { teleporters?, landAreas?, mobAreas?, pvpAreas?, otherAreas? } }` | Set layer visibility |
+| `nexus:highlightLocations` | `{ locationIds: number[] }` | Highlight locations (others grayed out) |
+| `nexus:clearHighlight` | `{}` | Remove all highlights |
+| `nexus:getLocations` | `{}` | Get all locations, returns `nexus:locations` |
+| `nexus:getSelectedLocation` | `{}` | Get currently selected location, returns `nexus:selectedLocation` |
+| `nexus:setVisibility` | `{ search?, panel?, layers? }` | Show/hide UI elements at runtime (boolean values) |
+
+#### Outbound Messages (Embed → Parent)
+
+| Message Type | Payload | Description |
+|---|---|---|
+| `nexus:ready` | `{ planet, locationCount }` | Map loaded and ready |
+| `nexus:locationSelected` | `{ id, name, type, areaType, coordinates }` | User clicked a location |
+| `nexus:locationDeselected` | `{}` | User clicked empty space |
+| `nexus:searchResults` | `{ query, results: [{ id, name, type, areaType, coordinates, score }] }` | Response to `nexus:search` |
+| `nexus:locations` | `{ locations: [{ id, name, type, areaType, coordinates }] }` | Response to `nexus:getLocations` |
+| `nexus:selectedLocation` | `{ location: { id, name, type, areaType, coordinates } \| null }` | Response to `nexus:getSelectedLocation` |
+
+#### JavaScript Example
+
+```javascript
+const iframe = document.querySelector('iframe');
+
+// Wait for map to be ready
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  if (msg.type === 'nexus:ready') {
+    console.log(`Map loaded: ${msg.planet} with ${msg.locationCount} locations`);
+
+    // Focus on a specific location
+    iframe.contentWindow.postMessage({
+      type: 'nexus:focusLocation',
+      locationId: 123
+    }, '*');
+  }
+
+  if (msg.type === 'nexus:locationSelected') {
+    console.log('User selected:', msg.location.name);
+  }
+
+  if (msg.type === 'nexus:searchResults') {
+    console.log('Search results:', msg.results);
+  }
+});
+
+// Run a search
+iframe.contentWindow.postMessage({
+  type: 'nexus:search',
+  query: 'Fort Victoria'
+}, '*');
+
+// Highlight specific locations (others grayed out)
+iframe.contentWindow.postMessage({
+  type: 'nexus:highlightLocations',
+  locationIds: [101, 102, 103]
+}, '*');
+
+// Toggle layers
+iframe.contentWindow.postMessage({
+  type: 'nexus:setLayers',
+  layers: { teleporters: true, mobAreas: false, landAreas: true }
+}, '*');
+
+// Show/hide UI elements at runtime
+iframe.contentWindow.postMessage({
+  type: 'nexus:setVisibility',
+  search: false,
+  panel: true,
+  layers: false
+}, '*');
+```
+
+### Search Scoring
+
+The embed uses the same scoring algorithm as the main site. Scores range from 0 (no match) to 1000 (exact match):
+
+| Score Range | Match Type |
+|---|---|
+| 1000 | Exact match |
+| 900+ | Name starts with query |
+| 800+ | A word starts with query |
+| 700+ | Contains exact substring |
+| 550–650 | Multi-word match |
+| 300–500 | Fuzzy match (4+ char queries) |
+| 100–299 | Partial fuzzy match |
+
+---
+
 ## Integration
 
 ### Mob Spawns
