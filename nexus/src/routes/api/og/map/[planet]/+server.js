@@ -6,7 +6,7 @@ import { resolve, dirname } from 'path';
 import { apiCall } from '$lib/util.js';
 
 const OG_WIDTH = 1200;
-const OG_HEIGHT = 630;
+const OG_HEIGHT = 1200;
 const CACHE_MAX_AGE_SECONDS = 86400; // 1 day
 const CACHE_REGEN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -59,15 +59,12 @@ function gameToImage(entropiaX, entropiaY, planet, imgWidth) {
 
 /**
  * Convert source image coords to OG output coords.
- * Accounts for the fit: 'contain' scaling with padding.
+ * Accounts for fit: 'contain' scaling with padding to preserve aspect ratio.
  */
 function imageToOg(imgX, imgY, srcW, srcH) {
-  // 'contain' scales to fit within bounds, preserving aspect ratio, then pads
   const scale = Math.min(OG_WIDTH / srcW, OG_HEIGHT / srcH);
-  const scaledW = srcW * scale;
-  const scaledH = srcH * scale;
-  const padX = (OG_WIDTH - scaledW) / 2;
-  const padY = (OG_HEIGHT - scaledH) / 2;
+  const padX = (OG_WIDTH - srcW * scale) / 2;
+  const padY = (OG_HEIGHT - srcH * scale) / 2;
   return {
     x: imgX * scale + padX,
     y: imgY * scale + padY
