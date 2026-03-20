@@ -9,6 +9,9 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Generated OG preview images
+/static/og-cache/
+
 # Playwright
 /test-results/
 /playwright-report/
