@@ -279,13 +279,13 @@
   }
 
   const AREA_TYPE_LABELS = {
-    MobArea: 'Mob Area',
+    MobArea: 'Mob Spawn',
     LandArea: 'Land Area',
     WaveEventArea: 'Wave Event',
     PvpArea: 'PvP Area',
     PvpLootArea: 'Lootable PvP Area',
     ZoneArea: 'Zone',
-    CityArea: 'City Area',
+    CityArea: 'City',
     EstateArea: 'Estate Area',
     EventArea: 'Event Area',
   };

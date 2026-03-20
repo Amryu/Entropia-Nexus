@@ -1331,12 +1331,16 @@ async function applyLocationExtensionChanges(client, locationId, x) {
   // Handle MobSpawns extension for MobArea type
   if (areaType === 'MobArea') {
     const density = x.Properties?.Density ?? null;
+    const isShared = x.Properties?.IsShared ? 1 : 0;
+    const isEvent = x.Properties?.IsEvent ? 1 : 0;
     await client.query(
-      `INSERT INTO "MobSpawns" ("LocationId", "Density")
-       VALUES ($1, $2)
+      `INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent")
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT ("LocationId") DO UPDATE SET
-         "Density" = COALESCE($2, "MobSpawns"."Density")`,
-      [locationId, density]
+         "Density" = COALESCE($2, "MobSpawns"."Density"),
+         "IsShared" = $3,
+         "IsEvent" = $4`,
+      [locationId, density, isShared, isEvent]
     );
 
     const mobData = x.Maturities;
