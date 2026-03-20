@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { apiCall } from '$lib/util.js';
+import { getMobAreaDifficulty } from '$lib/mapUtil.js';
 
 const OG_WIDTH = 1200;
 const OG_HEIGHT = 1200;
@@ -27,6 +28,10 @@ const COLOR_MAP = {
 };
 
 function getColor(loc) {
+  if (loc.Properties?.AreaType === 'MobArea') {
+    const diff = getMobAreaDifficulty(loc.Maturities);
+    return diff?.color || '#facc15';
+  }
   return COLOR_MAP[loc.Properties?.AreaType] || COLOR_MAP[loc.Properties?.Type] || 'white';
 }
 
