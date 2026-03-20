@@ -691,6 +691,11 @@
             Shape: mod.shape ?? loc.Properties?.Shape,
             Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
             Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
+            // MobArea fields
+            ...(mod.isShared != null ? { IsShared: mod.isShared } : {}),
+            ...(mod.isEvent != null ? { IsEvent: mod.isEvent } : {}),
+            ...(mod.density != null ? { Density: mod.density } : {}),
+            // LandArea fields
             TaxRateHunting: mod.taxRateHunting !== undefined ? mod.taxRateHunting : loc.Properties?.TaxRateHunting,
             TaxRateMining: mod.taxRateMining !== undefined ? mod.taxRateMining : loc.Properties?.TaxRateMining,
             TaxRateShops: mod.taxRateShops !== undefined ? mod.taxRateShops : loc.Properties?.TaxRateShops,
