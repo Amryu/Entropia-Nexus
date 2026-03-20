@@ -221,6 +221,17 @@
           `/api/changes?type=${changeType}&entity=${entityType}&state=Pending`,
           body
         );
+        // Server returned an existing open change — update it instead of creating a duplicate
+        if (result?.existingChangeId && !result?.id) {
+          result = await apiPut(
+            fetch,
+            `/api/changes/${result.existingChangeId}`,
+            body
+          );
+          if (result?.id) {
+            dbChangeIdMap.set(key, result.id);
+          }
+        }
       }
 
       if (result?.id) {
@@ -306,6 +317,17 @@
             `/api/changes?type=${changeType}&entity=${entityType}&state=DirectApply`,
             body
           );
+          // Server returned an existing open change — update it instead of creating a duplicate
+          if (result?.existingChangeId && !result?.id) {
+            result = await apiPut(
+              fetch,
+              `/api/changes/${result.existingChangeId}?state=DirectApply`,
+              body
+            );
+            if (result?.id) {
+              dbChangeIdMap.set(key, result.id);
+            }
+          }
         }
 
         if (result?.id) {
