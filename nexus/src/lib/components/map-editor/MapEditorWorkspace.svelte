@@ -5,7 +5,7 @@
   import LocationEditor from './LocationEditor.svelte';
   import MobAreaEditor from './MobAreaEditor.svelte';
   import WaveEventEditor from './WaveEventEditor.svelte';
-  import { isArea, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
+  import { isArea, DEFAULT_ALTITUDE, entityToModified, modifiedToLocation } from './mapEditorUtils.js';
   import { SvelteMap } from 'svelte/reactivity';
 
   
@@ -94,6 +94,18 @@
   }
 
 
+  /**
+   * Set a pending change, handling _dbSeeded stripping, _isUpdate flag, and modifiedDbChanges tracking.
+   * @param {any} key — pendingChanges map key (location ID or tempId)
+   * @param {object} entry — the change entry ({ action, original, modified, ... })
+   */
+  function setPendingChange(key, entry) {
+    const { _dbSeeded, ...rest } = entry;
+    const isUpdate = dbChangeIdMap.has(key) || undefined;
+    pendingChanges.set(key, { ...rest, _isUpdate: isUpdate });
+    if (isUpdate) modifiedDbChanges.add(key);
+  }
+
   /** Extract pending mob data ({ density, maturities }) from a modified object, or null. */
   function getPendingMobData(id) {
     const m = pendingChanges.get(id)?.modified;
@@ -152,39 +164,12 @@
         // Seed as a pending add
         const tempId = -change.id;
         if (!pendingChanges.has(tempId)) {
-          const modified = {
-            name: data?.Name || '',
-            locationType: isAreaType ? 'Area' : (props.Type || 'Location'),
-            longitude: props.Coordinates?.Longitude ?? 0,
-            latitude: props.Coordinates?.Latitude ?? 0,
-            altitude: props.Coordinates?.Altitude ?? null,
-            areaType: isAreaType ? (props.AreaType || 'MobArea') : null,
-            shape: props.Shape || null,
-            shapeData: props.Data || null,
-            parentLocationName: data?.ParentLocation?.Name || null,
-            description: props.Description || null,
-            landAreaOwner: data?.Owner?.Name || props.LandAreaOwnerName || null,
-            taxRateHunting: props.TaxRateHunting ?? null,
-            taxRateMining: props.TaxRateMining ?? null,
-            taxRateShops: props.TaxRateShops ?? null,
-            tempId
-          };
-          // Restore mob data if persisted in the change
-          if (data?.Maturities?.length || props.Density != null) {
-            modified.density = props.Density ?? 4;
-            modified.maturities = data.Maturities || [];
-          }
-          // Restore wave data if persisted in the change
-          if (data?.Waves) {
-            modified.waves = data.Waves;
-          }
+          const modified = entityToModified(data);
+          modified.tempId = tempId;
           pendingChanges.set(tempId, { action: 'edit', original: null, modified, _dbSeeded: true });
           dbChangeIdMap.set(tempId, change.id);
 
           if (mapComponent?.rebuildDbOverlay) mapComponent.rebuildDbOverlay();
-          // Force immediate rebuild so the pending add layer exists in layerGroup
-          // before updateSelection runs — rebuildDbOverlay already removed the DB
-          // overlay layer, and the RAF-deferred rebuildLayers may not fire in time.
           if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
         }
         selectedId = tempId;
@@ -198,22 +183,7 @@
         // Seed as a pending edit for the existing location
         const loc = locations.find(l => l.Id === data.Id);
         if (loc) {
-          const modified = {
-            name: data.Name ?? loc.Name,
-            locationType: isAreaType ? 'Area' : (props.Type || loc.Properties?.Type || 'Location'),
-            longitude: props.Coordinates?.Longitude ?? loc.Properties?.Coordinates?.Longitude ?? 0,
-            latitude: props.Coordinates?.Latitude ?? loc.Properties?.Coordinates?.Latitude ?? 0,
-            altitude: props.Coordinates?.Altitude ?? loc.Properties?.Coordinates?.Altitude ?? null,
-            areaType: isAreaType ? (props.AreaType || loc.Properties?.AreaType || 'MobArea') : null,
-            shape: props.Shape ?? loc.Properties?.Shape ?? null,
-            shapeData: props.Data ?? loc.Properties?.Data ?? null,
-            parentLocationName: data.ParentLocation?.Name || loc.ParentLocation?.Name || null,
-            description: props.Description ?? loc.Properties?.Description ?? null,
-            landAreaOwner: data.Owner?.Name || props.LandAreaOwnerName || loc.Owner?.Name || loc.Properties?.LandAreaOwnerName || null,
-            taxRateHunting: props.TaxRateHunting ?? loc.Properties?.TaxRateHunting ?? null,
-            taxRateMining: props.TaxRateMining ?? loc.Properties?.TaxRateMining ?? null,
-            taxRateShops: props.TaxRateShops ?? loc.Properties?.TaxRateShops ?? null,
-          };
+          const modified = entityToModified(data, loc);
           pendingChanges.set(data.Id, { action: 'edit', original: loc, modified, _dbSeeded: true });
           dbChangeIdMap.set(data.Id, change.id);
 
@@ -320,8 +290,7 @@
     const existingChange = pendingChanges.get(original.Id);
     if (existingChange && !existingChange.original) {
       // Editing a pending add: merge into existing — new object so SvelteMap signals change
-      const { _dbSeeded, ...rest } = existingChange;
-      pendingChanges.set(original.Id, { ...rest, modified: { ...existingChange.modified, ...modified }, _isUpdate: dbChangeIdMap.has(original.Id) || undefined });
+      setPendingChange(original.Id, { ...existingChange, modified: { ...existingChange.modified, ...modified } });
     } else {
       // Preserve the true original from the first edit — `original` from the editor
       // is the merged selectedLocation, not the raw location from locations[].
@@ -336,12 +305,9 @@
       if (existingChange?.modified?.waves && !modified.waves) {
         modified.waves = existingChange.modified.waves;
       }
-      pendingChanges.set(original.Id, { action: 'edit', original: trueOriginal, modified, _isUpdate: dbChangeIdMap.has(original.Id) || undefined });
-      // Show afterimage of original for committed edits
+      setPendingChange(original.Id, { action: 'edit', original: trueOriginal, modified });
       showAfterimageForOriginal(original.Id);
     }
-    // Track that this DB-seeded change was locally modified
-    if (dbChangeIdMap.has(original.Id)) { modifiedDbChanges.add(original.Id); }
 
     // Force rebuild so the map reflects the saved state even when _editingActive blocks the reactive
     if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
@@ -491,14 +457,12 @@
 
     if (!existing?.original && existing?.modified) {
       // Pending add: merge shape edits — new object so SvelteMap signals change
-      const { _dbSeeded, ...rest } = existing;
       const updatedMod = {
         ...existing.modified,
         ...(entropiaData.center ? { longitude: entropiaData.center.x, latitude: entropiaData.center.y } : {}),
         ...(entropiaData.shape ? { shape: entropiaData.shape, shapeData: entropiaData.data } : {})
       };
-      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); }
-      pendingChanges.set(locId, { ...rest, modified: updatedMod, _isUpdate: dbChangeIdMap.has(locId) || undefined });
+      setPendingChange(locId, { ...existing, modified: updatedMod });
   
     } else if (loc) {
       // Existing location: create/update edit change
@@ -522,9 +486,7 @@
         modified.altitude = loc.Properties?.Coordinates?.Altitude ?? DEFAULT_ALTITUDE;
       }
 
-      if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); }
-      pendingChanges.set(locId, { action: 'edit', original: loc, modified });
-  
+      setPendingChange(locId, { action: 'edit', original: loc, modified });
 
       // Show afterimage of original position
       showAfterimageForOriginal(locId);
@@ -676,62 +638,15 @@
       // Merge pending edit data so the editor form reflects map edits
       const pending = pendingChanges.get(loc.Id);
       if (pending?.action === 'edit' && pending.modified) {
-        const mod = pending.modified;
-        result = {
-          ...loc,
-          Name: mod.name ?? loc.Name,
-          _hasPendingEdit: true,
-          ...(mod.waves ? { Waves: mod.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
-          ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
-          Owner: mod.landAreaOwner !== undefined ? (mod.landAreaOwner ? { Name: mod.landAreaOwner } : null) : (loc.Owner || null),
-          Properties: {
-            ...loc.Properties,
-            Type: mod.locationType ? (mod.locationType === 'Area' ? 'Area' : mod.locationType) : loc.Properties?.Type,
-            AreaType: mod.areaType !== undefined ? mod.areaType : loc.Properties?.AreaType,
-            Shape: mod.shape ?? loc.Properties?.Shape,
-            Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
-            Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
-            // MobArea fields
-            ...(mod.isShared != null ? { IsShared: mod.isShared } : {}),
-            ...(mod.isEvent != null ? { IsEvent: mod.isEvent } : {}),
-            ...(mod.density != null ? { Density: mod.density } : {}),
-            // LandArea fields
-            TaxRateHunting: mod.taxRateHunting !== undefined ? mod.taxRateHunting : loc.Properties?.TaxRateHunting,
-            TaxRateMining: mod.taxRateMining !== undefined ? mod.taxRateMining : loc.Properties?.TaxRateMining,
-            TaxRateShops: mod.taxRateShops !== undefined ? mod.taxRateShops : loc.Properties?.TaxRateShops,
-            Coordinates: {
-              ...loc.Properties?.Coordinates,
-              ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
-              ...(mod.latitude !== undefined ? { Latitude: mod.latitude } : {}),
-              ...(mod.altitude !== undefined ? { Altitude: mod.altitude } : {})
-            }
-          }
-        };
+        result = modifiedToLocation(pending.modified, loc);
       } else {
         result = loc;
       }
     } else {
       const pending = pendingChanges.get(selectedId);
       if (!pending?.original && pending?.modified) {
-        const mod = pending.modified;
-        result = {
-          Id: selectedId,
-          Name: mod.name || '',
-          _isPendingAdd: true,
-          ...(mod.waves ? { Waves: mod.waves } : {}),
-          Owner: mod.landAreaOwner ? { Name: mod.landAreaOwner } : null,
-          Properties: {
-            Type: mod.locationType === 'Area' ? 'Area' : (mod.locationType || 'Area'),
-            AreaType: mod.areaType || null,
-            Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
-            Shape: mod.shape || null,
-            Data: mod.shapeData || null,
-            Description: mod.description || null,
-            TaxRateHunting: mod.taxRateHunting ?? null,
-            TaxRateMining: mod.taxRateMining ?? null,
-            TaxRateShops: mod.taxRateShops ?? null,
-          }
-        };
+        const base = { Id: selectedId, Name: '', Properties: {} };
+        result = { ...modifiedToLocation(pending.modified, base), _isPendingAdd: true, _hasPendingEdit: false };
       } else if (selectedDbChange) {
         // DB pending change (read-only viewing)
         const d = selectedDbChange.data;

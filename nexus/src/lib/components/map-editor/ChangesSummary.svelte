@@ -2,7 +2,7 @@
   // @ts-nocheck
   import { apiPost, apiPut, apiDelete } from '$lib/util.js';
   import { addToast } from '$lib/stores/toasts.js';
-  import { getEffectiveType, DEFAULT_ALTITUDE } from './mapEditorUtils.js';
+  import { getEffectiveType, modifiedToEntity } from './mapEditorUtils.js';
   import { SvelteMap } from 'svelte/reactivity';
 
   
@@ -103,150 +103,40 @@
       };
     }
 
-    const mod = change.modified;
-    if (!mod) return null;
-
-    // Fall back to original data for fields not present in modified
-    const orig = change.original || null;
-    const origProps = orig?.Properties;
-    const origCoords = origProps?.Coordinates;
-
-    const effectiveLocationType = mod.locationType ||
-      ((origProps?.Shape || origProps?.AreaType || origProps?.Type === 'Area') ? 'Area' : origProps?.Type) ||
-      null;
-    if (!effectiveLocationType) return null;
-    const isArea = effectiveLocationType === 'Area';
-    const props = {
-      Type: isArea ? 'Area' : effectiveLocationType,
-      Coordinates: {
-        Longitude: mod.longitude ?? origCoords?.Longitude ?? null,
-        Latitude: mod.latitude ?? origCoords?.Latitude ?? null,
-        Altitude: mod.altitude !== undefined ? mod.altitude : (origCoords?.Altitude ?? DEFAULT_ALTITUDE)
-      },
-      Description: mod.description !== undefined ? (mod.description || null) : (origProps?.Description || null)
-    };
-
-    if (isArea) {
-      props.AreaType = mod.areaType ?? origProps?.AreaType ?? null;
-      props.Shape = mod.shape ?? origProps?.Shape ?? null;
-      props.Data = mod.shapeData !== undefined ? mod.shapeData : (origProps?.Data ?? null);
-
-      // LandArea extension fields
-      const effectiveAreaType = props.AreaType;
-      if (effectiveAreaType === 'LandArea') {
-        props.TaxRateHunting = mod.taxRateHunting !== undefined ? mod.taxRateHunting : (origProps?.TaxRateHunting ?? null);
-        props.TaxRateMining = mod.taxRateMining !== undefined ? mod.taxRateMining : (origProps?.TaxRateMining ?? null);
-        props.TaxRateShops = mod.taxRateShops !== undefined ? mod.taxRateShops : (origProps?.TaxRateShops ?? null);
-      }
-
-      // Density: use pending value if set, otherwise preserve original
-      if (mod.density != null) {
-        props.Density = mod.density;
-      } else if (origProps?.Density != null) {
-        props.Density = origProps.Density;
-      }
-
-      // MobArea boolean flags
-      if (mod.isEvent != null) props.IsEvent = mod.isEvent;
-      else if (origProps?.IsEvent != null) props.IsEvent = origProps.IsEvent;
-      if (mod.isShared != null) props.IsShared = mod.isShared;
-      else if (origProps?.IsShared != null) props.IsShared = origProps.IsShared;
-    }
-
-    const body = {
-      Id: change.original?.Id || null,
-      Name: mod.name ?? orig?.Name ?? '',
-      Properties: props,
-      Planet: { Name: planet?.Name }
-    };
-
-    // MobArea maturities (stored at body level, not in Properties)
-    if (mod.maturities) {
-      body.Maturities = mod.maturities;
-    } else if (orig?.Maturities?.length) {
-      body.Maturities = orig.Maturities;
-    }
-
-    // WaveEvent wave data (stored at body level, not in Properties)
-    if (mod.waves) {
-      body.Waves = mod.waves;
-    } else if (orig?.Waves?.length) {
-      body.Waves = orig.Waves;
-    }
-
-    // Preserve facilities from original
-    if (orig?.Facilities?.length) {
-      body.Facilities = orig.Facilities;
-    }
-
-    const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : orig?.ParentLocation?.Name;
-    if (parentName) {
-      body.ParentLocation = { Name: parentName };
-    }
-
-    // LandArea owner as top-level NamedEntity
-    const ownerName = mod.landAreaOwner !== undefined ? mod.landAreaOwner : (orig?.Owner?.Name || origProps?.LandAreaOwnerName);
-    if (ownerName) {
-      body.Owner = { Name: ownerName };
-    }
-
-    return body;
+    return modifiedToEntity(change.modified, change.original, { Planet: { Name: planet?.Name } });
   }
 
-  async function submitChange(change) {
+  /** Submit or update a single change. Returns true on success. */
+  async function _submitOne(change, state) {
     const key = change.key;
     changeStatuses[key] = 'submitting';
-
     try {
-      const changeType = change.action === 'delete' ? 'Delete' : ((change.original?.Id || dbChangeIdMap.has(change.key)) ? 'Update' : 'Create');
+      const changeType = change.action === 'delete' ? 'Delete'
+        : ((change.original?.Id || dbChangeIdMap.has(key)) ? 'Update' : 'Create');
       const body = buildEntityBody(change);
-
-      if (!body) {
-        changeStatuses[key] = 'error';
-        return false;
-      }
+      if (!body) { changeStatuses[key] = 'error'; return false; }
 
       const existingChangeId = dbChangeIdMap.get(key);
-      const entityType = body ? getEntityType(change) : 'Location';
+      const entityType = getEntityType(change);
+      const stateParam = state ? `state=${state}` : '';
       let result;
+
       if (existingChangeId) {
-        // Update existing change via PUT
-        result = await apiPut(
-          fetch,
-          `/api/changes/${existingChangeId}`,
-          body
-        );
+        result = await apiPut(fetch, `/api/changes/${existingChangeId}${stateParam ? '?' + stateParam : ''}`, body);
       } else {
-        result = await apiPost(
-          fetch,
-          `/api/changes?type=${changeType}&entity=${entityType}&state=Pending`,
-          body
-        );
+        result = await apiPost(fetch, `/api/changes?type=${changeType}&entity=${entityType}&${stateParam}`, body);
         // Server returned an existing open change — update it instead of creating a duplicate
         if (result?.existingChangeId && !result?.id) {
-          result = await apiPut(
-            fetch,
-            `/api/changes/${result.existingChangeId}`,
-            body
-          );
-          if (result?.id) {
-            dbChangeIdMap.set(key, result.id);
-          }
+          result = await apiPut(fetch, `/api/changes/${result.existingChangeId}${stateParam ? '?' + stateParam : ''}`, body);
+          if (result?.id) dbChangeIdMap.set(key, result.id);
         }
       }
 
       if (result?.id) {
-        // Store the DB change ID so re-submissions use PUT
-        if (!existingChangeId) {
-          onchangeCreated?.({ key, changeId: result.id });
-        }
+        if (!existingChangeId) onchangeCreated?.({ key, changeId: result.id });
         // Mark as DB-seeded so it drops out of the changes list.
-        // If the user edits again, handleEditLocation strips _dbSeeded
-        // and creates a fresh entry that shows as a new pending edit.
         const existing = pendingChanges.get(key);
-        if (existing) {
-          pendingChanges.set(key, { ...existing, _dbSeeded: true, _isUpdate: true });
-        }
+        if (existing) pendingChanges.set(key, { ...existing, _dbSeeded: true, _isUpdate: true });
         changeStatuses[key] = 'success';
         return true;
       } else {
@@ -262,108 +152,28 @@
   }
 
   async function submitAll() {
-    if (hasValidationErrors) {
-      addToast('Fix validation errors before submitting', { type: 'error' });
-      return;
-    }
-
+    if (hasValidationErrors) { addToast('Fix validation errors before submitting', { type: 'error' }); return; }
     submitting = true;
     let successCount = 0;
-
     for (const change of changeList) {
-      // Skip already submitted
       if (changeStatuses[change.key] === 'success') continue;
-
-      const ok = await submitChange(change);
-      if (ok) successCount++;
+      if (await _submitOne(change, 'Pending')) successCount++;
     }
-
     submitting = false;
-
-    if (successCount > 0) {
-      addToast(`Submitted ${successCount} change(s) for review`, { type: 'success' });
-      onsubmitted?.();
-    }
+    if (successCount > 0) { addToast(`Submitted ${successCount} change(s) for review`, { type: 'success' }); onsubmitted?.(); }
   }
 
   async function directApplyAll() {
-    if (hasValidationErrors) {
-      addToast('Fix validation errors before applying', { type: 'error' });
-      return;
-    }
+    if (hasValidationErrors) { addToast('Fix validation errors before applying', { type: 'error' }); return; }
     if (!confirm(`Directly apply ${changeList.length} change(s)? This will be applied immediately.`)) return;
     directApplying = true;
     let successCount = 0;
-
     for (const change of changeList) {
       if (changeStatuses[change.key] === 'success') continue;
-
-      const key = change.key;
-      changeStatuses[key] = 'submitting';
-
-      try {
-        const changeType = change.action === 'delete' ? 'Delete' : ((change.original?.Id || dbChangeIdMap.has(change.key)) ? 'Update' : 'Create');
-        const body = buildEntityBody(change);
-
-        if (!body) {
-          changeStatuses[key] = 'error';
-          continue;
-        }
-
-        const existingChangeId = dbChangeIdMap.get(key);
-        const entityType = body ? getEntityType(change) : 'Location';
-        let result;
-        if (existingChangeId) {
-          result = await apiPut(
-            fetch,
-            `/api/changes/${existingChangeId}?state=DirectApply`,
-            body
-          );
-        } else {
-          result = await apiPost(
-            fetch,
-            `/api/changes?type=${changeType}&entity=${entityType}&state=DirectApply`,
-            body
-          );
-          // Server returned an existing open change — update it instead of creating a duplicate
-          if (result?.existingChangeId && !result?.id) {
-            result = await apiPut(
-              fetch,
-              `/api/changes/${result.existingChangeId}?state=DirectApply`,
-              body
-            );
-            if (result?.id) {
-              dbChangeIdMap.set(key, result.id);
-            }
-          }
-        }
-
-        if (result?.id) {
-          if (!existingChangeId) {
-            onchangeCreated?.({ key, changeId: result.id });
-          }
-          const existing = pendingChanges.get(key);
-          if (existing) {
-            pendingChanges.set(key, { ...existing, _dbSeeded: true, _isUpdate: true });
-          }
-          changeStatuses[key] = 'success';
-          successCount++;
-        } else {
-          changeStatuses[key] = 'error';
-          addToast(`Failed to apply: ${result?.error || 'Unknown error'}`, { type: 'error' });
-        }
-      } catch (e) {
-        changeStatuses[key] = 'error';
-        addToast(`Apply error: ${e.message}`, { type: 'error' });
-      }
+      if (await _submitOne(change, 'DirectApply')) successCount++;
     }
-
     directApplying = false;
-
-    if (successCount > 0) {
-      addToast(`Directly applied ${successCount} change(s)`, { type: 'success' });
-      onsubmitted?.();
-    }
+    if (successCount > 0) { addToast(`Directly applied ${successCount} change(s)`, { type: 'success' }); onsubmitted?.(); }
   }
 
   function clearAll() {

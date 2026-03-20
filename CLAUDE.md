@@ -6,6 +6,7 @@
 - Avoid magic numbers - use constants
 - Question your approach and estimate success rate. If less than 80% certain, ask instead of guessing.
 - After implementing, look for further steps that need fixing or optimizing — especially consistency, redundancy, and security issues.
+- After every feature addition, check if there is potential to consolidate existing code and find opportunities to reduce the line count (do not reduce line count by making lines more complicated)
 - Never use `nexusPool` in the frontend except for the purpose stated in the comment next to it
 
 # Database

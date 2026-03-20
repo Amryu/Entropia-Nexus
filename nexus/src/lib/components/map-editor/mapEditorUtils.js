@@ -603,6 +603,176 @@ export function computeVertexSnap(vx, vy, candidateVertices, gridLines, gap, thr
   return { dx: bestDx, dy: bestDy, guideX, guideY, bisector, edge, gap };
 }
 
+// ─── Entity ↔ Modified Converters ────────────────────────────────────────────
+// These convert between the API entity format (PascalCase, nested Properties)
+// and the flat camelCase `modified` format used in pendingChanges.
+
+/**
+ * Convert an API entity (or change data) to the flat `modified` format.
+ * Optionally falls back to a base location for missing fields.
+ * @param {object} data — entity body ({ Name, Properties, Owner, ParentLocation, ... })
+ * @param {object} [fallback] — base location to fill missing values from
+ * @returns {object} modified object
+ */
+export function entityToModified(data, fallback = null) {
+  const props = data?.Properties || {};
+  const fbProps = fallback?.Properties || {};
+  const coords = props.Coordinates || {};
+  const fbCoords = fbProps?.Coordinates || {};
+  const isAreaType = props.Shape || props.AreaType || props.Type === 'Area'
+    || fbProps?.Shape || fbProps?.AreaType || fbProps?.Type === 'Area';
+
+  const modified = {
+    name: data?.Name ?? fallback?.Name ?? '',
+    locationType: isAreaType ? 'Area' : (props.Type || fbProps?.Type || 'Location'),
+    longitude: coords.Longitude ?? fbCoords?.Longitude ?? 0,
+    latitude: coords.Latitude ?? fbCoords?.Latitude ?? 0,
+    altitude: coords.Altitude ?? fbCoords?.Altitude ?? null,
+    areaType: isAreaType ? (props.AreaType || fbProps?.AreaType || 'MobArea') : null,
+    shape: props.Shape ?? fbProps?.Shape ?? null,
+    shapeData: props.Data ?? fbProps?.Data ?? null,
+    parentLocationName: data?.ParentLocation?.Name || fallback?.ParentLocation?.Name || null,
+    description: props.Description ?? fbProps?.Description ?? null,
+    landAreaOwner: data?.Owner?.Name || props.LandAreaOwnerName || fallback?.Owner?.Name || fbProps?.LandAreaOwnerName || null,
+    taxRateHunting: props.TaxRateHunting ?? fbProps?.TaxRateHunting ?? null,
+    taxRateMining: props.TaxRateMining ?? fbProps?.TaxRateMining ?? null,
+    taxRateShops: props.TaxRateShops ?? fbProps?.TaxRateShops ?? null,
+    isShared: props.IsShared ?? fbProps?.IsShared ?? null,
+    isEvent: props.IsEvent ?? fbProps?.IsEvent ?? null,
+  };
+
+  // MobArea density + maturities
+  if (data?.Maturities?.length || props.Density != null) {
+    modified.density = props.Density ?? fbProps?.Density ?? 4;
+    modified.maturities = data.Maturities || fallback?.Maturities || [];
+  } else if (fbProps?.Density != null) {
+    modified.density = fbProps.Density;
+  }
+
+  // WaveEvent waves
+  if (data?.Waves) {
+    modified.waves = data.Waves;
+  } else if (fallback?.Waves) {
+    modified.waves = fallback.Waves;
+  }
+
+  return modified;
+}
+
+/**
+ * Convert a flat `modified` object back into the API entity body format.
+ * Falls back to original entity data for fields not present in modified.
+ * @param {object} mod — the modified object from pendingChanges
+ * @param {object} [original] — original entity for fallback values
+ * @param {object} [extra] — extra top-level fields to merge (e.g. { Planet })
+ * @returns {object|null} entity body or null if invalid
+ */
+export function modifiedToEntity(mod, original = null, extra = {}) {
+  if (!mod) return null;
+  const origProps = original?.Properties;
+  const origCoords = origProps?.Coordinates;
+
+  const effectiveLocationType = mod.locationType ||
+    ((origProps?.Shape || origProps?.AreaType || origProps?.Type === 'Area') ? 'Area' : origProps?.Type) ||
+    null;
+  if (!effectiveLocationType) return null;
+
+  const isArea = effectiveLocationType === 'Area';
+  const props = {
+    Type: isArea ? 'Area' : effectiveLocationType,
+    Coordinates: {
+      Longitude: mod.longitude ?? origCoords?.Longitude ?? null,
+      Latitude: mod.latitude ?? origCoords?.Latitude ?? null,
+      Altitude: mod.altitude !== undefined ? mod.altitude : (origCoords?.Altitude ?? DEFAULT_ALTITUDE)
+    },
+    Description: mod.description !== undefined ? (mod.description || null) : (origProps?.Description || null)
+  };
+
+  if (isArea) {
+    props.AreaType = mod.areaType ?? origProps?.AreaType ?? null;
+    props.Shape = mod.shape ?? origProps?.Shape ?? null;
+    props.Data = mod.shapeData !== undefined ? mod.shapeData : (origProps?.Data ?? null);
+
+    // LandArea tax rates
+    if (props.AreaType === 'LandArea') {
+      props.TaxRateHunting = mod.taxRateHunting !== undefined ? mod.taxRateHunting : (origProps?.TaxRateHunting ?? null);
+      props.TaxRateMining = mod.taxRateMining !== undefined ? mod.taxRateMining : (origProps?.TaxRateMining ?? null);
+      props.TaxRateShops = mod.taxRateShops !== undefined ? mod.taxRateShops : (origProps?.TaxRateShops ?? null);
+    }
+
+    // MobArea fields
+    if (mod.density != null) props.Density = mod.density;
+    else if (origProps?.Density != null) props.Density = origProps.Density;
+    if (mod.isEvent != null) props.IsEvent = mod.isEvent;
+    else if (origProps?.IsEvent != null) props.IsEvent = origProps.IsEvent;
+    if (mod.isShared != null) props.IsShared = mod.isShared;
+    else if (origProps?.IsShared != null) props.IsShared = origProps.IsShared;
+  }
+
+  const body = {
+    Id: original?.Id || null,
+    Name: mod.name ?? original?.Name ?? '',
+    Properties: props,
+    ...extra
+  };
+
+  // Body-level collections
+  if (mod.maturities) body.Maturities = mod.maturities;
+  else if (original?.Maturities?.length) body.Maturities = original.Maturities;
+
+  if (mod.waves) body.Waves = mod.waves;
+  else if (original?.Waves?.length) body.Waves = original.Waves;
+
+  if (original?.Facilities?.length) body.Facilities = original.Facilities;
+
+  // NamedEntity references
+  const parentName = mod.parentLocationName !== undefined ? mod.parentLocationName : original?.ParentLocation?.Name;
+  if (parentName) body.ParentLocation = { Name: parentName };
+
+  const ownerName = mod.landAreaOwner !== undefined ? mod.landAreaOwner : (original?.Owner?.Name || origProps?.LandAreaOwnerName);
+  if (ownerName) body.Owner = { Name: ownerName };
+
+  return body;
+}
+
+/**
+ * Convert a `modified` object back to a location-like object for display.
+ * Used by selectedLocation derived to merge pending edits into the view.
+ * @param {object} mod — the modified object
+ * @param {object} loc — base location object to merge onto
+ * @returns {object} merged location-like object
+ */
+export function modifiedToLocation(mod, loc) {
+  return {
+    ...loc,
+    Name: mod.name ?? loc.Name,
+    _hasPendingEdit: true,
+    ...(mod.waves ? { Waves: mod.waves } : loc.Waves ? { Waves: loc.Waves } : {}),
+    ...(mod.parentLocationName !== undefined ? { ParentLocation: mod.parentLocationName ? { Name: mod.parentLocationName } : null } : {}),
+    Owner: mod.landAreaOwner !== undefined ? (mod.landAreaOwner ? { Name: mod.landAreaOwner } : null) : (loc.Owner || null),
+    Properties: {
+      ...loc.Properties,
+      Type: mod.locationType ? (mod.locationType === 'Area' ? 'Area' : mod.locationType) : loc.Properties?.Type,
+      AreaType: mod.areaType !== undefined ? mod.areaType : loc.Properties?.AreaType,
+      Shape: mod.shape ?? loc.Properties?.Shape,
+      Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
+      Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
+      ...(mod.isShared != null ? { IsShared: mod.isShared } : {}),
+      ...(mod.isEvent != null ? { IsEvent: mod.isEvent } : {}),
+      ...(mod.density != null ? { Density: mod.density } : {}),
+      TaxRateHunting: mod.taxRateHunting !== undefined ? mod.taxRateHunting : loc.Properties?.TaxRateHunting,
+      TaxRateMining: mod.taxRateMining !== undefined ? mod.taxRateMining : loc.Properties?.TaxRateMining,
+      TaxRateShops: mod.taxRateShops !== undefined ? mod.taxRateShops : loc.Properties?.TaxRateShops,
+      Coordinates: {
+        ...loc.Properties?.Coordinates,
+        ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
+        ...(mod.latitude !== undefined ? { Latitude: mod.latitude } : {}),
+        ...(mod.altitude !== undefined ? { Altitude: mod.altitude } : {})
+      }
+    }
+  };
+}
+
 // ─── Mob Area Name Generation ────────────────────────────────────────────────
 
 /**
