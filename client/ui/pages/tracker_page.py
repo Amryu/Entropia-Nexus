@@ -173,8 +173,10 @@ def format_cooldown_label(interval) -> str:
 # Tab / table styles
 # ---------------------------------------------------------------------------
 
+from ...core.build_flags import is_dev_build as _is_dev
+
 _TAB_LABELS = ["Dailies", "Events", "Hunting", "Mining", "Crafting"]
-_COMING_SOON_TABS = {3, 4}  # Mining, Crafting
+_COMING_SOON_TABS = {3, 4} if _is_dev() else {2, 3, 4}  # Hunting is dev-only
 
 _TABLE_STYLE = f"""
     QTableWidget {{
@@ -254,9 +256,10 @@ class TrackerPage(QWidget):
         custom = self._db.get_custom_dailies()
         # Parse waypoints into start_location for custom dailies
         for cd in custom:
-            loc, planet = _parse_waypoint(cd.get("waypoint", ""))
+            loc, wp_planet = _parse_waypoint(cd.get("waypoint", ""))
             cd["start_location"] = loc
-            cd["planet"] = planet or ""
+            if not cd.get("planet"):
+                cd["planet"] = wp_planet or ""
         self._tracked_missions: list[dict] = self._db.get_tracked_missions() + custom
 
         # Track auth state for submit button
@@ -330,7 +333,8 @@ class TrackerPage(QWidget):
         self._stack = QStackedWidget()
         self._stack.addWidget(self._build_dailies_page())    # 0: Dailies
         self._stack.addWidget(self._build_events_page())     # 1: Events
-        self._stack.addWidget(self._build_hunting_page())    # 2: Hunting
+        if _is_dev():
+            self._stack.addWidget(self._build_hunting_page())  # 2: Hunting (dev only)
         for i in sorted(_COMING_SOON_TABS):
             self._stack.addWidget(self._build_coming_soon_page(_TAB_LABELS[i]))
         root.addWidget(self._stack)
@@ -381,6 +385,20 @@ class TrackerPage(QWidget):
         """)
         custom_btn.clicked.connect(self._open_custom_daily_dialog)
         header.addWidget(custom_btn)
+
+        self._planet_filter = QComboBox()
+        self._planet_filter.addItem("All Planets", "")
+        self._planet_filter.setStyleSheet(f"""
+            QComboBox {{
+                background: {SECONDARY}; color: {TEXT}; border: 1px solid {BORDER};
+                border-radius: 4px; padding: 4px 8px; font-size: 12px;
+            }}
+        """)
+        self._planet_filter.currentIndexChanged.connect(
+            lambda: self._refresh_missions_table()
+        )
+        header.addWidget(self._planet_filter)
+
         layout.addLayout(header)
 
         self._missions_table = QTableWidget(0, len(_MISSION_HEADERS))
@@ -1236,9 +1254,36 @@ class TrackerPage(QWidget):
     # Missions table
     # ------------------------------------------------------------------
 
+    def _update_planet_filter(self):
+        """Rebuild planet filter options from tracked missions, preserving selection."""
+        planets = sorted({
+            m.get("planet", "") for m in (self._tracked_missions or [])
+            if m.get("planet")
+        })
+        current = self._planet_filter.currentData() or ""
+        self._planet_filter.blockSignals(True)
+        self._planet_filter.clear()
+        self._planet_filter.addItem("All Planets", "")
+        for p in planets:
+            self._planet_filter.addItem(p, p)
+        # Restore previous selection if still valid
+        if current:
+            idx = self._planet_filter.findData(current)
+            if idx >= 0:
+                self._planet_filter.setCurrentIndex(idx)
+        self._planet_filter.blockSignals(False)
+
     def _refresh_missions_table(self):
         tracked = self._tracked_missions or []
         now_ms = int(time.time() * 1000)
+
+        # Update planet filter options
+        self._update_planet_filter()
+
+        # Apply planet filter
+        selected_planet = self._planet_filter.currentData()
+        if selected_planet:
+            tracked = [m for m in tracked if m.get("planet", "") == selected_planet]
 
         # Compute remaining time for each
         entries = []
@@ -1841,12 +1886,12 @@ class TrackerPage(QWidget):
                         pass
             new_id = f"c_{max_id + 1}"
 
-            loc, planet = _parse_waypoint(data.get("waypoint", ""))
+            loc, _wp_planet = _parse_waypoint(data.get("waypoint", ""))
             entry = {
                 "id": new_id,
                 "is_custom": True,
                 "name": data["name"],
-                "planet": planet or "",
+                "planet": data.get("planet", "") or _wp_planet or "",
                 "cooldown_duration": data["cooldown_duration"],
                 "cooldown_starts_on": data["cooldown_starts_on"],
                 "cooldown_ms": data["cooldown_ms"],
@@ -1875,14 +1920,14 @@ class TrackerPage(QWidget):
         dlg = _CustomDailyDialog(parent=self, existing=mission)
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_data:
             data = dlg.result_data
-            loc, planet = _parse_waypoint(data.get("waypoint", ""))
+            loc, _wp_planet = _parse_waypoint(data.get("waypoint", ""))
             mission["name"] = data["name"]
             mission["cooldown_duration"] = data["cooldown_duration"]
             mission["cooldown_starts_on"] = data["cooldown_starts_on"]
             mission["cooldown_ms"] = data["cooldown_ms"]
             mission["waypoint"] = data.get("waypoint", "")
             mission["start_location"] = loc
-            mission["planet"] = planet or ""
+            mission["planet"] = data.get("planet", "") or _wp_planet or ""
             self._schedule_save()
             self._refresh_missions_table()
 
@@ -2029,9 +2074,22 @@ class TrackerPage(QWidget):
                     # Rebuild to swap action buttons (Start vs Reset)
                     QTimer.singleShot(0, self._refresh_missions_table)
 
-            # --- Notification checks ---
+        # --- Notification checks (all missions, regardless of planet filter) ---
+        for mission in tracked:
+            if mission.get("is_custom") and not mission.get("enabled", True):
+                continue
             if not mission.get("notify"):
                 continue
+            started = mission.get("cooldown_started_at")
+            if not started:
+                continue
+            try:
+                started_ms = int(datetime.fromisoformat(started).timestamp() * 1000)
+            except (ValueError, TypeError):
+                continue
+            cd_ms = mission.get("cooldown_ms", MS_24H)
+            remaining = max(0, cd_ms - (now_ms - started_ms))
+            mid = mission.get("id")
 
             # Pre-reminder
             pre_ms = mission.get("notify_minutes_before", 5) * 60_000
@@ -2408,6 +2466,15 @@ class _CustomDailyDialog(QDialog):
                 self._starts_on.setCurrentIndex(idx)
         layout.addWidget(self._starts_on)
 
+        # Planet
+        layout.addWidget(QLabel("Planet"))
+        self._planet = QLineEdit()
+        self._planet.setPlaceholderText("e.g., Calypso (auto-filled from waypoint)")
+        self._planet.setStyleSheet(f"QLineEdit {{ {_input_style} }}")
+        if existing:
+            self._planet.setText(existing.get("planet", ""))
+        layout.addWidget(self._planet)
+
         # Waypoint
         layout.addWidget(QLabel("Waypoint (optional)"))
         self._waypoint = QLineEdit()
@@ -2416,6 +2483,7 @@ class _CustomDailyDialog(QDialog):
         if existing:
             wp = existing.get("waypoint", "")
             self._waypoint.setText(wp)
+        self._waypoint.textChanged.connect(self._on_waypoint_changed)
         layout.addWidget(self._waypoint)
 
         # Buttons
@@ -2453,6 +2521,12 @@ class _CustomDailyDialog(QDialog):
     def _validate(self):
         self._save_btn.setEnabled(bool(self._name.text().strip()))
 
+    def _on_waypoint_changed(self, text):
+        """Auto-derive planet from waypoint input."""
+        _, planet = _parse_waypoint(text.strip())
+        if planet:
+            self._planet.setText(planet)
+
     def _on_save(self):
         name = self._name.text().strip()
         if not name:
@@ -2477,5 +2551,6 @@ class _CustomDailyDialog(QDialog):
             "cooldown_starts_on": self._starts_on.currentText(),
             "cooldown_ms": cooldown_ms,
             "waypoint": raw_wp,
+            "planet": self._planet.text().strip(),
         }
         self.accept()
