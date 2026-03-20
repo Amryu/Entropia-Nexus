@@ -564,7 +564,8 @@
   }
 
   .row-delete-btn,
-  .row-remove-btn {
+  .row-remove-btn,
+  .row-revert-btn {
     flex-shrink: 0;
     width: 18px;
     height: 18px;
@@ -582,6 +583,9 @@
   .row-delete-btn { color: #ef4444; border-color: #ef4444; }
   .row-delete-btn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); }
   .row-delete-btn:disabled { opacity: 0.5; cursor: default; }
+  .row-revert-btn { color: #f97316; border-color: #f97316; }
+  .row-revert-btn:hover:not(:disabled) { background: rgba(249, 115, 22, 0.15); }
+  .row-revert-btn:disabled { opacity: 0.5; cursor: default; }
   .row-remove-btn { color: var(--text-muted); }
   .row-remove-btn:hover { background: var(--hover-color); color: var(--text-color); }
 
@@ -648,6 +652,7 @@
             <span class="status-indicator {statusKey}">{getStatusIcon(change.key)}</span>
           {/if}
           {#if hasDbChange}
+            <button class="row-revert-btn" title="Revert local edits" onclick={() => { pendingChanges.delete(change.key); onremoved?.(change.key); }} disabled={submitting || directApplying}>↩</button>
             <button class="row-delete-btn" title="Delete submitted change" onclick={() => deleteDbChange(change.key)} disabled={submitting || directApplying}>×</button>
           {:else}
             <button class="row-remove-btn" title="Revert" onclick={() => { pendingChanges.delete(change.key); onremoved?.(change.key); }}>×</button>
