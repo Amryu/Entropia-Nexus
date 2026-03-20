@@ -23,7 +23,6 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
 
   const mode = url.searchParams.get('mode') || 'view';
-  const isCreateMode = mode === 'create' && !!(session?.user?.verified || session?.user?.grants?.includes('wiki.approve') || session?.user?.administrator);
   const changeId = url.searchParams.get('changeId');
 
   let locations = await apiCall(fetch, '/locations?Planet=' + planet.Name) || [];
@@ -62,21 +61,6 @@ export async function load({ fetch, params, url, parent }) {
   );
 
   response.session = session;
-  response.isCreateMode = isCreateMode;
-
-  // If a changeId is provided (editing an existing pending create), fetch that change
-  if (changeId && isCreateMode) {
-    try {
-      const changeRes = await fetch(`/api/changes/${changeId}`);
-      if (changeRes.ok) {
-        const change = await changeRes.json();
-        response.existingChange = change;
-        response.pendingChange = change;
-      }
-    } catch (e) {
-      console.warn('Failed to fetch existing change:', e);
-    }
-  }
 
   const getEntityType = (loc) => {
     if (!loc) return null;

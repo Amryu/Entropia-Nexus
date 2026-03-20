@@ -83,7 +83,6 @@
   let editorChangeCount = $derived(Array.from(editorPendingChanges.values()).filter(c => !c._dbSeeded).length);
   let editorDbChangeIdMap = $state(new SvelteMap());
   let allMobs = $state([]);
-  let seededChangeId = null;
   let planetPendingOverride = $state(null);
   let manualEditFocus = $state(null);
   let manualEditFocusKey = $state(null);
@@ -91,7 +90,7 @@
   async function handleChangesSubmitted() {
     editorPendingChanges = new SvelteMap();
     editorDbChangeIdMap = new SvelteMap();
-    seededChangeId = null;
+
     try {
       const res = await fetch(`/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(currentPlanet.Name)}&limit=100`);
       planetPendingOverride = res.ok ? await res.json() : [];
@@ -117,10 +116,7 @@
   /** Check if there are real unsaved local changes in the editor */
   function hasUnsavedEditorChanges() {
     if (!leafletEditMode) return false;
-    const realChangeCount = Array.from(editorPendingChanges.values()).filter(c => !c._dbSeeded).length;
-    return seededChangeId
-      ? realChangeCount > 1 || (realChangeCount === 1 && !editorPendingChanges.has(-seededChangeId))
-      : realChangeCount > 0;
+    return Array.from(editorPendingChanges.values()).some(c => !c._dbSeeded);
   }
 
   function deactivateEditMode() {
@@ -130,7 +126,7 @@
     leafletEditMode = false;
     editorPendingChanges = new SvelteMap();
     editorRightPanel = 'editor';
-    seededChangeId = null;
+
     manualEditFocus = null;
     manualEditFocusKey = null;
   }
@@ -155,7 +151,7 @@
       editorPendingChanges = new SvelteMap();
       editorDbChangeIdMap = new SvelteMap();
       editorRightPanel = 'editor';
-      seededChangeId = null;
+  
       manualEditFocus = null;
       manualEditFocusKey = null;
       return;
@@ -182,7 +178,7 @@
     editorPendingChanges = new SvelteMap();
     editorDbChangeIdMap = new SvelteMap();
     editorRightPanel = 'editor';
-    seededChangeId = null;
+
     manualEditFocus = null;
     manualEditFocusKey = null;
     goto(`/maps/${slug}?mode=edit`);
@@ -199,51 +195,6 @@
   const DEFAULT_VISIBLE_LOCATION_TYPES = new Set(['Teleporter']);
   const DEFAULT_VISIBLE_AREA_TYPES = new Set(['PvpArea', 'PvpLootArea', 'ZoneArea']);
 
-
-
-  function convertChangeToModified(changeData, tempId) {
-    if (!changeData?.Properties) return null;
-    const props = changeData.Properties;
-    const coords = props.Coordinates || {};
-    const isArea = props.Shape || props.AreaType || props.Type === 'Area';
-    const modified = {
-      name: changeData.Name || '',
-      locationType: isArea ? 'Area' : (props.Type || 'Location'),
-      longitude: coords.Longitude ?? 0,
-      latitude: coords.Latitude ?? 0,
-      altitude: coords.Altitude ?? null,
-      areaType: isArea ? (props.AreaType || props.Type || 'MobArea') : null,
-      shape: props.Shape || null,
-      shapeData: props.Data || null,
-      description: props.Description || null,
-      tempId
-    };
-    // Restore mob data if persisted in the change
-    if (changeData?.Maturities?.length || props.Density != null) {
-      modified.mobData = { density: props.Density ?? 4, maturities: changeData.Maturities || [] };
-    }
-    return modified;
-  }
-
-  function buildLeafletFocusLocation(locLike) {
-    if (!locLike?.Properties) return null;
-    const props = locLike.Properties || {};
-    const coords = props.Coordinates || {};
-    return {
-      Id: locLike.Id ?? locLike.ItemId ?? null,
-      Name: locLike.Name || '',
-      Properties: {
-        ...props,
-        Coordinates: {
-          Longitude: coords.Longitude ?? null,
-          Latitude: coords.Latitude ?? null,
-          Altitude: coords.Altitude ?? null
-        },
-        Shape: props.Shape || null,
-        Data: props.Data || null
-      }
-    };
-  }
 
   function isAreaType(type) {
     if (!type) return false;
@@ -373,7 +324,7 @@
 
   function handleCreate() {
     if (!isEditAllowed || !canCreateNew) return;
-    goto(`/maps/${$page.params.planet}?mode=create`);
+    goto(`/maps/${$page.params.planet}?mode=edit`);
   }
 
   async function handleEdit() {
@@ -389,7 +340,7 @@
     const planetSlug = normalizePlanetSlug(change?.data?.Planet?.Name || currentPlanet?.Name);
     if (!planetSlug) return;
     if (change?.type === 'Create' || change?.data?.Id == null) {
-      goto(`/maps/${planetSlug}?mode=create&changeId=${change.id}`);
+      goto(`/maps/${planetSlug}?mode=edit&changeId=${change.id}`);
       return;
     }
     const isApartmentChange = change?.entity === 'Apartment' || isApartmentType(change?.data?.Properties?.Type);
@@ -583,10 +534,13 @@
   let user = $derived(data.session?.user);
   let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
   let isEditAllowed = $derived(canEdit && !isMobile);
-  let routeMode = $derived(($page.url.searchParams.get('mode') || '').toLowerCase());
+  let routeMode = $derived((() => {
+    const m = ($page.url.searchParams.get('mode') || '').toLowerCase();
+    return m === 'create' ? 'edit' : m; // create mode was removed; treat as edit
+  })());
   let routeChangeId = $derived($page.url.searchParams.get('changeId'));
   let currentPlanet = $derived(data?.additional?.planet);
-  let shouldAutoOpenLeaflet = $derived(!!currentPlanet && isEditAllowed && (routeMode === 'edit' || routeMode === 'create'));
+  let shouldAutoOpenLeaflet = $derived(!!currentPlanet && isEditAllowed && routeMode === 'edit');
   let autoLeafletKey = $derived(`${$page.url.pathname}|${routeMode}|${routeChangeId || ''}`);
   let canCreateNew = $derived(data.canCreateNew ?? true);
   let pendingChange = $derived(data.pendingChange);
@@ -594,7 +548,6 @@
   let userPendingUpdates = $derived(data.userPendingUpdates || []);
   let hasPendingChanges = $derived(userPendingCreates.length + userPendingUpdates.length > 0);
   let locations = $derived(data?.additional?.locations || []);
-  let isCreateMode = $derived(data.isCreateMode || false);
   $effect(() => {
     if (locations) {
       const slug = $page.params.slug;
@@ -604,7 +557,7 @@
         if (isMobile) {
           panelExpanded = false;
         }
-      } else if (slug !== untrack(() => currentSlug) && !isCreateMode) {
+      } else if (slug !== untrack(() => currentSlug)) {
         currentSlug = slug;
         // Only update selectedLocation if it doesn't already match the slug.
         // This prevents a race condition where the URL updates before new locations
@@ -630,7 +583,6 @@
     }
   });
   let error = $derived(data.error);
-  let effectiveCreateMode = $derived(isCreateMode && isEditAllowed);
   $effect(() => {
     if (resolvedPendingChange) {
       setExistingPendingChange(resolvedPendingChange);
@@ -664,43 +616,14 @@
       mapRef.focusOnLocation(selectedLocation);
     }
   });
-  let canEditExistingChange = $derived(data.existingChange?.id && (
-    data.existingChange.author_id === user?.id ||
-    user?.grants?.includes('wiki.approve')
-  ));
   let leafletFocusLocation = $derived((() => {
     if (manualEditFocus) return manualEditFocus;
     if (!shouldAutoOpenLeaflet) return null;
-    if (routeMode === 'create' && data.existingChange?.data) {
-      const focus = buildLeafletFocusLocation(data.existingChange.data);
-      if (focus && data.existingChange.id) {
-        // Author/admin: select the seeded editable pending add
-        // Normal reviewer: select the read-only DB change overlay
-        focus.Id = canEditExistingChange ? -data.existingChange.id : `db-${data.existingChange.id}`;
-        focus._dbChange = canEditExistingChange ? null : data.existingChange;
-      }
-      return focus;
-    }
-    if (routeMode === 'edit' && selectedLocation) {
-      return selectedLocation;
-    }
     if (selectedLocation) return selectedLocation;
     return null;
   })());
   let leafletFocusKey = $derived(manualEditFocusKey
     || (shouldAutoOpenLeaflet ? `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}` : null));
-  // Seed editorPendingChanges for author/admin viewing an existing Create change
-  $effect(() => {
-    if (leafletEditMode && data.existingChange?.id && data.existingChange.type === 'Create'
-        && canEditExistingChange && untrack(() => seededChangeId) !== data.existingChange.id) {
-      seededChangeId = data.existingChange.id;
-      const tempId = -data.existingChange.id;
-      const modified = convertChangeToModified(data.existingChange.data, tempId);
-      if (modified) {
-        editorPendingChanges.set(tempId, { action: 'add', original: null, modified });
-      }
-    }
-  });
   $effect(() => {
     if (shouldAutoOpenLeaflet && untrack(() => autoLeafletHandledKey) !== autoLeafletKey && !leafletEditMode) {
       autoLeafletHandledKey = autoLeafletKey;
@@ -775,7 +698,7 @@
     }
   });
   $effect(() => {
-    if (isMobile && (selectedLocation || effectiveCreateMode)) {
+    if (isMobile && selectedLocation) {
       panelClosing = false;
     }
   });
@@ -934,7 +857,7 @@
   </div>
   {/if}
 
-  {#if activeLocation && !($existingPendingChange && !effectiveCreateMode)}
+  {#if activeLocation && !$existingPendingChange}
     <aside
       class="map-info-panel"
       class:mobile={isMobile}
