@@ -40,7 +40,8 @@ CREATE TABLE "LandAreas_audit" (
   "TaxRateHunting" NUMERIC,
   "TaxRateMining" NUMERIC,
   "TaxRateShops" NUMERIC,
-  "OwnerName" TEXT
+  "OwnerName" TEXT,
+  CONSTRAINT "LandAreas_owner_exclusive" CHECK (NOT ("OwnerId" IS NOT NULL AND "OwnerName" IS NOT NULL))
 );
 
 INSERT INTO "LandAreas_audit" (operation, stamp, userid, "LocationId", "TaxRateHunting", "TaxRateMining", "TaxRateShops", "OwnerId")
@@ -108,7 +109,8 @@ CREATE TABLE "Estates_audit" (
   "ItemTradeAvailable" BOOLEAN,
   "MaxGuests" INTEGER,
   "LocationId" INTEGER NOT NULL,
-  "OwnerName" TEXT
+  "OwnerName" TEXT,
+  CONSTRAINT "Estates_owner_exclusive" CHECK (NOT ("OwnerId" IS NOT NULL AND "OwnerName" IS NOT NULL))
 );
 
 INSERT INTO "Estates_audit" (operation, stamp, userid, "Type", "OwnerId", "ItemTradeAvailable", "MaxGuests", "LocationId")
