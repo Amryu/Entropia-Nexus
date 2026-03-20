@@ -25,7 +25,7 @@
   let mobSearch = $state('');
   let mobSearchResults = $state([]);
   let selectedMobs = $state([]);  // [{ mobId, mobName, maturities: [{ id, name, health, level, boss, selected, isRare }] }]
-  let density = $state(4);
+  let density = $state(3);
   let autoName = $state('');
   let maturityDialog = $state(null); // { mobId } when dialog is open
 
@@ -83,7 +83,7 @@
     for (const mob of selectedMobs) {
       sortMaturities(mob.maturities);
     }
-    density = location.Properties?.Density ?? 4;
+    density = location.Properties?.Density ?? 3;
   }
 
   function initFromPending() {
@@ -140,7 +140,7 @@
     for (const mob of selectedMobs) {
       sortMaturities(mob.maturities);
     }
-    density = pendingMobData.density ?? location.Properties?.Density ?? 4;
+    density = pendingMobData.density ?? location.Properties?.Density ?? 3;
   }
 
   function sortMaturities(mats) {

@@ -643,7 +643,7 @@ export function entityToModified(data, fallback = null) {
 
   // MobArea density + maturities
   if (data?.Maturities?.length || props.Density != null) {
-    modified.density = props.Density ?? fbProps?.Density ?? 4;
+    modified.density = props.Density ?? fbProps?.Density ?? 3;
     modified.maturities = data.Maturities || fallback?.Maturities || [];
   } else if (fbProps?.Density != null) {
     modified.density = fbProps.Density;
