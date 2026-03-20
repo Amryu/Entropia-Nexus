@@ -278,6 +278,24 @@
     return loc.Name;
   }
 
+  const AREA_TYPE_LABELS = {
+    MobArea: 'Mob Area',
+    LandArea: 'Land Area',
+    WaveEventArea: 'Wave Event',
+    PvpArea: 'PvP Area',
+    PvpLootArea: 'Lootable PvP Area',
+    ZoneArea: 'Zone',
+    CityArea: 'City Area',
+    EstateArea: 'Estate Area',
+    EventArea: 'Event Area',
+  };
+
+  function formatLocationType(loc) {
+    const areaType = loc?.Properties?.AreaType;
+    if (areaType && AREA_TYPE_LABELS[areaType]) return AREA_TYPE_LABELS[areaType];
+    return loc?.Properties?.Type || 'Location';
+  }
+
 
 
 
@@ -894,7 +912,7 @@
               {/if}
             </div>
             <div class="info-subtitle">
-              <span class="type-label">{activeLocation?.Properties?.Type || 'Location'}</span>
+              <span class="type-label">{formatLocationType(activeLocation)}</span>
             </div>
             {#if isMobile}
               <div class="mobile-compact-coords">
