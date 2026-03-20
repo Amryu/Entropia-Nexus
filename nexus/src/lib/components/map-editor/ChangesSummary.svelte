@@ -236,9 +236,16 @@
       }
 
       if (result?.id) {
-        // After first POST, store the DB change ID so re-submissions use PUT
+        // Store the DB change ID so re-submissions use PUT
         if (!existingChangeId) {
           onchangeCreated?.({ key, changeId: result.id });
+        }
+        // Mark as DB-seeded so it drops out of the changes list.
+        // If the user edits again, handleEditLocation strips _dbSeeded
+        // and creates a fresh entry that shows as a new pending edit.
+        const existing = pendingChanges.get(key);
+        if (existing) {
+          pendingChanges.set(key, { ...existing, _dbSeeded: true, _isUpdate: true });
         }
         changeStatuses[key] = 'success';
         return true;
@@ -334,6 +341,10 @@
         if (result?.id) {
           if (!existingChangeId) {
             onchangeCreated?.({ key, changeId: result.id });
+          }
+          const existing = pendingChanges.get(key);
+          if (existing) {
+            pendingChanges.set(key, { ...existing, _dbSeeded: true, _isUpdate: true });
           }
           changeStatuses[key] = 'success';
           successCount++;
