@@ -321,7 +321,7 @@
     if (existingChange && !existingChange.original) {
       // Editing a pending add: merge into existing — new object so SvelteMap signals change
       const { _dbSeeded, ...rest } = existingChange;
-      pendingChanges.set(original.Id, { ...rest, modified: { ...existingChange.modified, ...modified } });
+      pendingChanges.set(original.Id, { ...rest, modified: { ...existingChange.modified, ...modified }, _isUpdate: dbChangeIdMap.has(original.Id) || undefined });
     } else {
       // Preserve the true original from the first edit — `original` from the editor
       // is the merged selectedLocation, not the raw location from locations[].
@@ -336,7 +336,7 @@
       if (existingChange?.modified?.waves && !modified.waves) {
         modified.waves = existingChange.modified.waves;
       }
-      pendingChanges.set(original.Id, { action: 'edit', original: trueOriginal, modified });
+      pendingChanges.set(original.Id, { action: 'edit', original: trueOriginal, modified, _isUpdate: dbChangeIdMap.has(original.Id) || undefined });
       // Show afterimage of original for committed edits
       showAfterimageForOriginal(original.Id);
     }
@@ -498,7 +498,7 @@
         ...(entropiaData.shape ? { shape: entropiaData.shape, shapeData: entropiaData.data } : {})
       };
       if (dbChangeIdMap.has(locId)) { modifiedDbChanges.add(locId); }
-      pendingChanges.set(locId, { ...rest, modified: updatedMod });
+      pendingChanges.set(locId, { ...rest, modified: updatedMod, _isUpdate: dbChangeIdMap.has(locId) || undefined });
   
     } else if (loc) {
       // Existing location: create/update edit change
@@ -633,9 +633,12 @@
     const map = new Map();
     for (const c of dbPendingChanges) {
       if (c.author_id === currentUserId) continue;
-      const entityId = c.data?.Id;
-      if (entityId && c.type === 'Update') {
-        map.set(entityId, c);
+      if (c.type === 'Update') {
+        const entityId = c.data?.Id;
+        if (entityId) map.set(entityId, c);
+      } else if (c.type === 'Create') {
+        // Create changes use negative tempId as key
+        map.set(-c.id, c);
       }
     }
     return map;

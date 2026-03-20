@@ -35,8 +35,9 @@
     .filter(([, change]) => !change._dbSeeded)
     .map(([key, change]) => ({ key, ...change })));
 
-  let addCount = $derived(changeList.filter(c => c.action !== 'delete' && !c.original && !dbChangeIdMap.has(c.key)).length);
-  let editCount = $derived(changeList.filter(c => c.action !== 'delete' && (c.original || dbChangeIdMap.has(c.key))).length);
+  function isEditChange(c) { return c.action !== 'delete' && (c.original || c._isUpdate || dbChangeIdMap.has(c.key)); }
+  let addCount = $derived(changeList.filter(c => c.action !== 'delete' && !isEditChange(c)).length);
+  let editCount = $derived(changeList.filter(c => isEditChange(c)).length);
   let deleteCount = $derived(changeList.filter(c => c.action === 'delete').length);
 
   /** Validate a single change. Returns an error string or null. */
@@ -632,7 +633,7 @@
         {@const type = change.action === 'delete' ? getEffectiveType(change.original) : (change.modified?.areaType || change.modified?.locationType || '')}
         {@const statusKey = changeStatuses[change.key]}
         {@const hasDbChange = dbChangeIdMap.has(change.key)}
-        {@const displayAction = change.action === 'delete' ? 'delete' : ((change.original || dbChangeIdMap.has(change.key)) ? 'edit' : 'add')}
+        {@const displayAction = change.action === 'delete' ? 'delete' : (isEditChange(change) ? 'edit' : 'add')}
         {@const validationError = validationErrors[change.key]}
         <div class="change-row" class:has-error={!!validationError}>
           <span class="action-indicator" style="color: {getActionColor(displayAction)}">{getActionLabel(displayAction)}</span>
