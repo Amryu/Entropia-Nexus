@@ -145,10 +145,16 @@ function buildSvgOverlay(locations, planet, srcW, srcH) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_WIDTH}" height="${OG_HEIGHT}">${elements.join('')}</svg>`;
 }
 
-const STATIC_DIR = resolve(process.cwd(), 'static');
+// In dev: static files in ./static; in production (adapter-node): ./build/client
+const STATIC_DIR = existsSync(resolve(process.cwd(), 'static'))
+  ? resolve(process.cwd(), 'static')
+  : resolve(process.cwd(), 'build', 'client');
+
+// Disk cache in uploads dir (writable in Docker) or static dir (dev)
+const CACHE_DIR = resolve(process.env.UPLOAD_DIR || './uploads', 'og-cache');
 
 function getDiskCachePath(planetSlug) {
-  return resolve(STATIC_DIR, 'og-cache', `map-${planetSlug}.jpg`);
+  return resolve(CACHE_DIR, `map-${planetSlug}.jpg`);
 }
 
 async function isDiskCacheFresh(cachePath) {
