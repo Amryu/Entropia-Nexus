@@ -157,6 +157,10 @@
    * Supports: >=, <=, >, <, !, =, /regex/, plain text contains.
    */
   function evalFilterTerm(strValue, numValue, term) {
+    // Backslash-escaped operator prefix → literal text search
+    if (term.startsWith('\\') && term.length > 1 && '!><='.includes(term[1])) {
+      return strValue.includes(term.slice(1));
+    }
     if (term.startsWith('>=')) {
       const target = parseFloat(term.slice(2));
       return !isNaN(numValue) && !isNaN(target) && numValue >= target;
@@ -215,10 +219,29 @@
         i = j;
         continue;
       }
-      // Word token (and/or are operators, everything else is a term)
+      // Word token (backslash before &|() escapes it into the word)
+      const parts = [];
       let j = i;
-      while (j < str.length && !' &|()'.includes(str[j])) j++;
-      const word = str.slice(i, j);
+      while (j < str.length) {
+        if (str[j] === '\\' && j + 1 < str.length && '&|()'.includes(str[j + 1])) {
+          parts.push(str[j + 1]); j += 2;
+        } else if (' &|()'.includes(str[j])) {
+          // !( at word start → consume !(…) as one NOT-paren term
+          if (str[j] === '(' && parts.length === 1 && parts[0] === '!') {
+            let depth = 1;
+            parts.push(str[j]); j++;
+            while (j < str.length && depth > 0) {
+              if (str[j] === '(') depth++;
+              else if (str[j] === ')') depth--;
+              parts.push(str[j]); j++;
+            }
+          }
+          break;
+        } else {
+          parts.push(str[j]); j++;
+        }
+      }
+      const word = parts.join('');
       if (word === 'and' || word === 'AND') tokens.push('&');
       else if (word === 'or' || word === 'OR') tokens.push('|');
       else tokens.push(word);
@@ -259,6 +282,10 @@
 
   function evalFilterAtom(strValue, numValue, tokens, pos) {
     if (pos >= tokens.length) return { val: true, pos };
+    if (tokens[pos] === '!') {
+      const result = evalFilterAtom(strValue, numValue, tokens, pos + 1);
+      return { val: !result.val, pos: result.pos };
+    }
     if (tokens[pos] === '(') {
       pos++;
       const result = evalFilterExpr(strValue, numValue, tokens, pos);
@@ -276,9 +303,12 @@
     const strValue = String(value ?? '').toLowerCase();
     const numValue = parseFloat(value);
 
-    // Fast path: no operators or parens — single term
-    if (!/[&|()]/.test(filter) && !/\band\b|\bor\b/i.test(filter)) {
-      return evalFilterTerm(strValue, numValue, filter.toLowerCase());
+    // Fast path: no logic operators — single term
+    if (!/(?<!\\)[&|]/.test(filter) && !/\band\b|\bor\b/i.test(filter)) {
+      const term = filter.toLowerCase()
+        .replace(/\\&/g, '&').replace(/\\\|/g, '|')
+        .replace(/\\\(/g, '(').replace(/\\\)/g, ')');
+      return evalFilterTerm(strValue, numValue, term);
     }
 
     const tokens = tokenizeFilter(filter.toLowerCase());

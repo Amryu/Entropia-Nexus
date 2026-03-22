@@ -75,13 +75,16 @@ def column_def_from_dict(d: dict) -> ColumnDef:
 
 _OP_RE = re.compile(r"^(>=|<=|>|<|=|!)(.+)$")
 _RX_RE = re.compile(r"^/(.+)/([gimsuy]*)$")
-_HAS_LOGIC_RE = re.compile(r"[&|()]|\band\b|\bor\b", re.IGNORECASE)
+_HAS_LOGIC_RE = re.compile(r"(?<!\\)[&|]|\band\b|\bor\b", re.IGNORECASE)
 
 
 def _eval_filter_term(
     raw_value, str_value: str, num_value: float | None, term: str,
 ) -> bool:
     """Evaluate a single filter term against a value."""
+    # Backslash-escaped operator prefix → literal text search
+    if term.startswith("\\") and len(term) > 1 and term[1] in "!><=":
+        return term[1:] in str_value
     m = _OP_RE.match(term)
     if m:
         op, operand = m.group(1), m.group(2).strip()
@@ -136,11 +139,25 @@ def _tokenize_filter(s: str) -> list[str]:
             while j < len(s) and s[j] in "gimsuy":
                 j += 1
             tokens.append(s[i:j]); i = j; continue
-        # Word token
+        # Word token (backslash before &|() escapes it into the word)
+        parts: list[str] = []
         j = i
-        while j < len(s) and s[j] not in " &|()":
-            j += 1
-        word = s[i:j]
+        while j < len(s):
+            if s[j] == "\\" and j + 1 < len(s) and s[j + 1] in "&|()":
+                parts.append(s[j + 1]); j += 2
+            elif s[j] in " &|()":
+                # !( at word start → consume !(…) as one NOT-paren term
+                if s[j] == "(" and len(parts) == 1 and parts[0] == "!":
+                    depth = 1
+                    parts.append(s[j]); j += 1
+                    while j < len(s) and depth > 0:
+                        if s[j] == "(": depth += 1
+                        elif s[j] == ")": depth -= 1
+                        parts.append(s[j]); j += 1
+                break
+            else:
+                parts.append(s[j]); j += 1
+        word = "".join(parts)
         if word.lower() in ("and",):
             tokens.append("&")
         elif word.lower() in ("or",):
@@ -170,9 +187,12 @@ def _eval_and(raw, sv, nv, tokens, pos):
 
 
 def _eval_atom(raw, sv, nv, tokens, pos):
-    """Parse atom: '(' expr ')' | term"""
+    """Parse atom: '!' atom | '(' expr ')' | term"""
     if pos >= len(tokens):
         return True, pos
+    if tokens[pos] == "!":
+        val, pos = _eval_atom(raw, sv, nv, tokens, pos + 1)
+        return not val, pos
     if tokens[pos] == "(":
         val, pos = _eval_expr(raw, sv, nv, tokens, pos + 1)
         if pos < len(tokens) and tokens[pos] == ")":
@@ -197,9 +217,12 @@ def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
     except (ValueError, TypeError):
         num_value = None
 
-    # Fast path: no operators or parens
+    # Fast path: no logic operators
     if not _HAS_LOGIC_RE.search(filter_text):
-        return _eval_filter_term(raw_value, str_value, num_value, filter_text.lower())
+        term = filter_text.lower()
+        # Unescape logic chars (they're literal in fast path)
+        term = term.replace("\\&", "&").replace("\\|", "|").replace("\\(", "(").replace("\\)", ")")
+        return _eval_filter_term(raw_value, str_value, num_value, term)
 
     tokens = _tokenize_filter(filter_text.lower())
     val, _ = _eval_expr(raw_value, str_value, num_value, tokens, 0)
