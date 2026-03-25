@@ -834,7 +834,9 @@ async function _checkChangesImpl() {
       if (entityPath) {
         try {
           const baseUrl = `https://entropianexus.com${entityPath}`;
-          const editUrl = `${baseUrl}?mode=edit&changeId=${change.id}`;
+          const locationTypes = ['Location', 'Area', 'Apartment'];
+          const mode = locationTypes.includes(change.entity) || change.type !== 'Create' ? 'edit' : 'create';
+          const editUrl = `${baseUrl}?mode=${mode}&changeId=${change.id}`;
           const linkMsg = await thread.send(`**Edit:** ${editUrl}`);
           await linkMsg.pin().catch(e => console.error(`Failed to pin edit link in thread ${thread.id}: ${e.message}`));
         } catch (e) {

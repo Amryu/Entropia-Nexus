@@ -64,7 +64,7 @@
   let usedPieceCounts = $derived(new Set(groupedEffects.map(g => g.pieces)));
 
   // Available piece counts for adding new sections
-  let availablePieceCounts = $derived(Array.from({ length: maxPieces - 1 }, (_, i) => i + 2)
+  let availablePieceCounts = $derived(Array.from({ length: maxPieces }, (_, i) => i + 1)
     .filter(n => !usedPieceCounts.has(n)));
 
   // Available effect options with sublabel for SearchInput
@@ -138,7 +138,7 @@
       _newEffect,
       Values: {
         Strength: 0,
-        MinSetPieces: createDialogPieceCount || (availablePieceCounts[0] ?? 2)
+        MinSetPieces: createDialogPieceCount || (availablePieceCounts[0] ?? 1)
       }
     };
 
@@ -177,7 +177,7 @@
   }
 
   // New section piece count selection
-  let newSectionPieceCount = $state(2);
+  let newSectionPieceCount = $state(1);
   $effect(() => {
     if (availablePieceCounts.length > 0 && !availablePieceCounts.includes(untrack(() => newSectionPieceCount))) {
       newSectionPieceCount = availablePieceCounts[0];
@@ -192,7 +192,7 @@
         {#each groupedEffects as group}
           <div class="effect-section">
             <div class="section-header">
-              <span class="section-title">{group.pieces} Pieces</span>
+              <span class="section-title">{group.pieces} {group.pieces === 1 ? 'Piece' : 'Pieces'}</span>
               <button class="btn-remove-section" onclick={() => removeSection(group.pieces)} title="Remove section">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -260,7 +260,7 @@
           <div class="add-section-row">
             <select class="section-select" bind:value={newSectionPieceCount}>
               {#each availablePieceCounts as count}
-                <option value={count}>{count} Pieces</option>
+                <option value={count}>{count} {count === 1 ? 'Piece' : 'Pieces'}</option>
               {/each}
             </select>
             <button class="btn-add-section" onclick={() => addSection(newSectionPieceCount)}>
@@ -277,7 +277,7 @@
       <div class="effects-display">
         {#each groupedEffects as group}
           <div class="effect-group">
-            <div class="effect-pieces">{group.pieces} Pieces</div>
+            <div class="effect-pieces">{group.pieces} {group.pieces === 1 ? 'Piece' : 'Pieces'}</div>
             {#each group.effects as effect}
               <div class="effect-row">
                 <span class="effect-value">{formatEffectValue(effect.Values?.Strength, getEffectUnit(effect.Name))}</span>

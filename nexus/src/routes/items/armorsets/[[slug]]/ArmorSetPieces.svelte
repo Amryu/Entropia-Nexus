@@ -210,13 +210,13 @@
           <div class="piece-edit-header">
             <span class="slot-label">{slot}</span>
             <div class="piece-controls">
-              <label class="unisex-toggle" title="When unchecked, allows different male/female variants">
+              <label class="unisex-toggle" title="When checked, allows different male/female variants">
                 <input
                   type="checkbox"
-                  checked={unisex}
+                  checked={!unisex}
                   onchange={() => toggleUnisex(slot)}
                 />
-                <span>Unisex</span>
+                <span>Male and Female are different</span>
               </label>
               <button class="btn-remove-piece" onclick={() => removePieceFromSlot(slot)} title="Remove piece">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
