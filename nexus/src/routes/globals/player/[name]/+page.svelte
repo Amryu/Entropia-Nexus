@@ -643,7 +643,7 @@
             {#each rareItems.slice(0, 10) as item}
               <div class="highlight-row">
                 <span class="highlight-name">{item.target}</span>
-                <span class="highlight-value">{formatPed(item.value)} PED</span>
+                <span class="highlight-value">{formatValue(item.value, item.unit, 'rare_item')}</span>
                 {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
                 <span class="highlight-actions">
                   {#if item.media_image || item.media_video}
@@ -1288,7 +1288,7 @@
                   {#each sortedRareItems as item}
                     <tr>
                       <td>{item.target}</td>
-                      <td class="right font-weight-bold">{formatPed(item.value)} PED</td>
+                      <td class="right font-weight-bold">{formatValue(item.value, item.unit, 'rare_item')}</td>
                       <td class="col-badge">{#if item.ath}<span class="badge-ath">ATH</span>{:else if item.hof}<span class="badge-hof">HoF</span>{/if}</td>
                       <td class="col-media">
                         {#if item.media_image || item.media_video}

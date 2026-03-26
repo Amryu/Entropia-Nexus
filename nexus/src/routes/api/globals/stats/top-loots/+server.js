@@ -76,7 +76,7 @@ export async function GET({ url, locals }) {
         params
       ),
       pool.query(
-        `SELECT id, player_name AS player, target_name AS target, value, mob_id,
+        `SELECT id, player_name AS player, target_name AS target, value, value_unit, mob_id,
                 is_hof AS hof, is_ath AS ath, event_timestamp AS timestamp,
                 media_image_key, media_video_url,
                 (SELECT COUNT(*)::int FROM globals_gz WHERE global_id = ingested_globals.id) AS gz_count
@@ -98,6 +98,7 @@ export async function GET({ url, locals }) {
       player: r.player,
       target: r.target,
       value: parseFloat(r.value),
+      unit: r.value_unit,
       mob_id: r.mob_id,
       hof: r.hof,
       ath: r.ath,

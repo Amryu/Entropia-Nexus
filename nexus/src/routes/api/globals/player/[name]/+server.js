@@ -94,7 +94,7 @@ export async function GET({ params, url, locals }) {
   // Helper for top individual loots query per category
   function topLootsQuery(typeCondition) {
     return pool.query(
-      `SELECT id, target_name, value, mob_id, is_hof, is_ath, event_timestamp,
+      `SELECT id, target_name, value, value_unit, mob_id, is_hof, is_ath, event_timestamp,
               media_image_key, media_video_url
        FROM ingested_globals
        WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
@@ -284,7 +284,7 @@ export async function GET({ params, url, locals }) {
 
       // Rare items
       pool.query(
-        `SELECT id, target_name, value, event_timestamp, is_hof, is_ath,
+        `SELECT id, target_name, value, value_unit, event_timestamp, is_hof, is_ath,
                 media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
@@ -734,6 +734,7 @@ export async function GET({ params, url, locals }) {
         id: r.id,
         target: r.target_name,
         value: parseFloat(r.value),
+        unit: r.value_unit,
         mob_id: r.mob_id,
         hof: r.is_hof,
         ath: r.is_ath,
@@ -908,6 +909,7 @@ export async function GET({ params, url, locals }) {
         id: r.id,
         target: r.target_name,
         value: parseFloat(r.value),
+        unit: r.value_unit,
         timestamp: r.event_timestamp,
         hof: r.is_hof,
         ath: r.is_ath,

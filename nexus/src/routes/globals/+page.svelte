@@ -925,7 +925,7 @@
                     </td>
                   {/if}
                   {#if currentTabConfig.hasValue}
-                    <td class="right font-mono">{topLootsTab === 'pvp' ? `${Math.round(loot.value)} Kills` : `${formatPedShort(loot.value)} PED`}</td>
+                    <td class="right font-mono">{topLootsTab === 'pvp' ? `${Math.round(loot.value)} Kills` : loot.unit === 'PEC' ? `${(loot.value / 100).toFixed(2)} PED` : `${formatPedShort(loot.value)} PED`}</td>
                   {/if}
                   <td class="col-badge">
                     {#if loot.ath}

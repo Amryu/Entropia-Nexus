@@ -20,6 +20,10 @@ export function formatValue(value, unit, type) {
   if (type === 'discovery') return '';
   if (type === 'tier' && unit === 'TIER') return `Tier ${value}`;
   if (type === 'pvp') return `${value} kills`;
+  if (unit === 'PEC') {
+    const ped = value / 100;
+    return `${ped.toFixed(2)} PED`;
+  }
   if (value >= 1000) return `${(value / 1000).toFixed(1)}K PED`;
   return `${value.toFixed(2)} PED`;
 }
