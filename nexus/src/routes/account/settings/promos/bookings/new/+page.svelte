@@ -131,7 +131,7 @@
     {:else}
       <div class="form-section">
         <label class="form-label">
-          Select Promo <span class="required">*</span>
+          <span>Select Promo <span class="required">*</span></span>
           <select class="form-select" bind:value={selectedPromoId}>
             <option value="">Choose a promo...</option>
             {#each promos as promo}
@@ -142,7 +142,7 @@
 
         {#if selectedPromo}
           <label class="form-label">
-            Slot Type <span class="required">*</span>
+            <span>Slot Type <span class="required">*</span></span>
             <select class="form-select" bind:value={slotType}>
               {#if availableSlots.length > 1}
                 <option value="">Choose a slot...</option>
@@ -155,12 +155,12 @@
         {/if}
 
         <label class="form-label">
-          Start Date <span class="required">*</span>
+          <span>Start Date <span class="required">*</span></span>
           <input class="form-input" type="date" bind:value={startDate} min={new Date().toISOString().split('T')[0]} />
         </label>
 
         <label class="form-label">
-          Duration (weeks) <span class="required">*</span>
+          <span>Duration (weeks) <span class="required">*</span></span>
           <input class="form-input" type="number" bind:value={weeks} min={MIN_WEEKS} max={MAX_WEEKS} />
         </label>
 

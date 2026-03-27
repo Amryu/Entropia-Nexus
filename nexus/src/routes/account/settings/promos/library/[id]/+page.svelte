@@ -7,6 +7,7 @@
   import '$lib/style.css';
   import { goto, invalidateAll } from '$app/navigation';
   import { addToast } from '$lib/stores/toasts';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
   let { data } = $props();
 
@@ -18,7 +19,13 @@
   let name = $state(data.promo?.name ?? '');
   let title = $state(data.promo?.title ?? '');
   let summary = $state(data.promo?.summary ?? '');
+  let contentHtml = $state(data.promo?.content_html ?? '');
   let link = $state(data.promo?.link ?? '');
+
+  function stripHtml(html) {
+    if (!html) return '';
+    return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  }
 
   // Images from server
   let serverImages = $derived(data.images ?? []);
@@ -87,10 +94,15 @@
 
     saving = true;
     try {
+      // Auto-generate summary from content if not explicitly provided
+      const explicitSummary = summary.trim();
+      const autoSummary = !explicitSummary && contentHtml ? stripHtml(contentHtml).slice(0, 500) : null;
+
       const body = {
         name: name.trim(),
         title: title.trim() || null,
-        summary: summary.trim() || null,
+        summary: explicitSummary || autoSummary || null,
+        content_html: contentHtml || null,
         link: link.trim() || null
       };
 
@@ -159,7 +171,7 @@
       </label>
 
       <label class="form-label">
-        Name <span class="required">*</span>
+        <span>Name <span class="required">*</span></span>
         <input class="form-input" type="text" bind:value={name} maxlength="100" placeholder="My Promo" />
       </label>
 
@@ -171,8 +183,23 @@
 
         <label class="form-label">
           Summary
-          <textarea class="form-textarea" bind:value={summary} maxlength="500" rows="3" placeholder="Short description of the featured post"></textarea>
+          <span class="field-hint">Optional — auto-generated from body if left empty</span>
+          <textarea class="form-textarea" bind:value={summary} maxlength="500" rows="2" placeholder="Short description (auto-generated if empty)"></textarea>
         </label>
+
+        <div class="form-label">
+          <span>Body</span>
+          <div class="richtext-wrap">
+            <RichTextEditor
+              bind:content={contentHtml}
+              placeholder="Write your featured post content..."
+              showHeadings={false}
+              showCodeBlock={false}
+              showVideo={false}
+              showImages={true}
+            />
+          </div>
+        </div>
       {/if}
 
       <label class="form-label">
@@ -181,10 +208,17 @@
       </label>
     </div>
 
+    {#if isNew && promoType === 'placement'}
+      <div class="create-note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>Image upload will be available after creating the promo.</span>
+      </div>
+    {/if}
+
     {#if !isNew && promoType === 'placement'}
       <div class="form-section">
-        <h2>Ad Images</h2>
-        <p class="section-hint">Upload banner images for each placement size. Save the promo first to enable uploads.</p>
+        <h2>Images</h2>
+        <p class="section-hint">Upload images for each placement size.</p>
 
         <div class="image-slots">
           {#each PLACEMENT_VARIANTS as variant}
@@ -321,6 +355,37 @@
   .form-textarea {
     resize: vertical;
     min-height: 80px;
+  }
+
+  .field-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  .richtext-wrap {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    min-height: 200px;
+  }
+
+  .richtext-wrap :global(.ProseMirror) {
+    min-height: 180px;
+    padding: 0.75rem;
+  }
+
+  .create-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
   }
 
   .section-hint {

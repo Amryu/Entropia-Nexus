@@ -22,14 +22,17 @@
     const insertAt = Math.min(2, result.length);
     for (let i = 0; i < promos.featuredPosts.length; i++) {
       const fp = promos.featuredPosts[i];
+      const autoSummary = !fp.summary && fp.content_html
+        ? fp.content_html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300)
+        : fp.summary;
       result.splice(insertAt + i, 0, {
         title: fp.title,
-        summary: fp.summary,
+        summary: autoSummary || '',
         url: `/api/promos/click/${fp.booking_id}`,
         featured: true,
         source: 'featured',
         date: new Date().toISOString(),
-        has_content: false
+        has_content: !!fp.content_html
       });
     }
     return result;
