@@ -169,6 +169,10 @@ PLATFORM_ARGS=()
 if [[ "$PLATFORM" == "windows" ]]; then
     PLATFORM_ARGS+=( --windowed )
     PLATFORM_ARGS+=( --icon "${ROOT}/client/assets/logo.png" )
+    # Generate version info so Task Manager shows "Entropia Nexus Client"
+    VERSION_INFO="${BUILD_DIR}/version_info.txt"
+    python "${ROOT}/client/version_info.py" > "$VERSION_INFO"
+    PLATFORM_ARGS+=( --version-file "$VERSION_INFO" )
 elif [[ "$PLATFORM" == "linux" ]]; then
     PLATFORM_ARGS+=( --console --strip )
     # Bundle desktop entry file for Linux

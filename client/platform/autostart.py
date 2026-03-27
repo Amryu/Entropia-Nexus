@@ -13,7 +13,7 @@ from pathlib import Path
 
 log = logging.getLogger("autostart")
 
-_APP_NAME = "EntropiaNexus"
+_APP_NAME = "Entropia Nexus Client"
 _DESKTOP_FILENAME = "entropia-nexus.desktop"
 
 
