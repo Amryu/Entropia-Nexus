@@ -1011,15 +1011,16 @@ class DashboardPage(QWidget):
         layout = QVBoxLayout(list_view)
 
         # Feed section — News / Events toggle
-        feed_box = QWidget()
+        feed_box = QGroupBox()
+        feed_box.setTitle("")  # no title text — tabs replace it
         feed_layout = QVBoxLayout(feed_box)
-        feed_layout.setContentsMargins(0, 0, 0, 0)
+        feed_layout.setContentsMargins(4, 8, 4, 4)
         feed_layout.setSpacing(0)
 
         # Toggle header row
         toggle_row = QHBoxLayout()
-        toggle_row.setContentsMargins(4, 4, 4, 0)
-        toggle_row.setSpacing(0)
+        toggle_row.setContentsMargins(0, 0, 0, 4)
+        toggle_row.setSpacing(4)
 
         self._news_tab = QPushButton("News")
         self._events_tab = QPushButton("Events")
@@ -1028,9 +1029,8 @@ class DashboardPage(QWidget):
             btn.setFixedHeight(28)
         self._news_tab.clicked.connect(lambda: self._switch_feed("news"))
         self._events_tab.clicked.connect(lambda: self._switch_feed("events"))
-        toggle_row.addWidget(self._news_tab)
-        toggle_row.addWidget(self._events_tab)
-        toggle_row.addStretch()
+        toggle_row.addWidget(self._news_tab, 1)
+        toggle_row.addWidget(self._events_tab, 1)
         feed_layout.addLayout(toggle_row)
 
         # Stacked feed content
