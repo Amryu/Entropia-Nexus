@@ -26,7 +26,7 @@ export const WeaponAmplifier = {
         },
         "Type": {
           "type": "string",
-          "enum": ["Energy", "BLP", "Melee", "Matrix", "Mindforce"]
+          "enum": ["Energy", "BLP", "Explosive", "Mining", "Melee", "Matrix", "Mindforce"]
         },
         "Economy": {
           "type": "object",

@@ -4,14 +4,24 @@
   import { goto } from '$app/navigation';
 
   let { data } = $props();
-  let booking = $state(data.booking);
-  let images = $state(data.images);
-  let metrics = $state(data.metrics);
 
-  let price = $state(booking.price ?? '');
-  let adminNote = $state(booking.admin_note ?? '');
+  let bookingOverride = $state(null);
+  let booking = $derived(bookingOverride ?? data.booking);
+  let images = $derived(data.images);
+  let metrics = $derived(data.metrics);
+
+  let price = $state('');
+  let adminNote = $state('');
   let saving = $state(false);
   let actionPending = $state(false);
+
+  // Sync form fields when page data loads/changes
+  $effect.pre(() => {
+    const b = data.booking;
+    price = b?.price ?? '';
+    adminNote = b?.admin_note ?? '';
+    bookingOverride = null;
+  });
 
   const statusColors = {
     pending: 'warning', approved: 'info', active: 'success',
@@ -39,7 +49,7 @@
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Save failed'); }
       const updated = await res.json();
-      booking = { ...booking, ...updated };
+      bookingOverride = { ...booking, ...updated };
       addToast('Booking updated', 'success');
     } catch (err) {
       addToast(err.message, 'error');
@@ -70,7 +80,7 @@
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Action failed'); }
       const updated = await res.json();
-      booking = { ...booking, ...updated };
+      bookingOverride = { ...booking, ...updated };
       addToast(`Booking ${action === 'reject' ? 'rejected' : action + 'd'}`, 'success');
     } catch (err) {
       addToast(err.message, 'error');
