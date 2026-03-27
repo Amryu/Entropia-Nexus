@@ -5,7 +5,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
-import { buildGlobalsFilter, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from './filter-utils.js';
+import { buildGlobalsFilter, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter, VALUE_PED } from './filter-utils.js';
 import { getCachedStats } from '$lib/server/globals-cache.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 
@@ -33,11 +33,11 @@ export async function GET({ url, request }) {
   // Sort params for top players/targets charts
   const playersSortParam = url.searchParams.get('players_sort');
   const playersSortBy = VALID_SORT_FIELDS.has(playersSortParam) ? playersSortParam : 'value';
-  const playersSortCol = playersSortBy === 'count' ? 'count(*)' : 'COALESCE(sum(value), 0)';
+  const playersSortCol = playersSortBy === 'count' ? 'count(*)' : `COALESCE(sum(${VALUE_PED}), 0)`;
 
   const targetsSortParam = url.searchParams.get('targets_sort');
   const targetsSortBy = VALID_SORT_FIELDS.has(targetsSortParam) ? targetsSortParam : 'count';
-  const targetsSortCol = targetsSortBy === 'count' ? 'count(*)' : 'COALESCE(sum(value), 0)';
+  const targetsSortCol = targetsSortBy === 'count' ? 'count(*)' : `COALESCE(sum(${VALUE_PED}), 0)`;
 
   const targetsGroupParam = url.searchParams.get('targets_group');
   const targetsGroupBy = VALID_GROUP_FIELDS.has(targetsGroupParam) ? targetsGroupParam : 'maturity';
@@ -266,19 +266,19 @@ export async function GET({ url, request }) {
       // Summary
       client.query(
         `SELECT count(*) AS total_count,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value,
-                COALESCE(max(value), 0) AS max_value,
+                COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value,
+                COALESCE(max(${VALUE_PED}), 0) AS max_value,
                 count(*) FILTER (WHERE is_hof) AS hof_count,
                 count(*) FILTER (WHERE is_ath) AS ath_count,
                 count(*) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
-                COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
+                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')), 0) AS hunting_value,
                 count(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
-                COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
+                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
                 count(*) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid') AS space_mining_count,
-                COALESCE(sum(value) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value,
+                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value,
                 count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
-                COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
+                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
          FROM ingested_globals
          ${whereClause}`,
         params
@@ -286,7 +286,7 @@ export async function GET({ url, request }) {
 
       // By type
       client.query(
-        `SELECT global_type AS type, count(*) AS count, COALESCE(sum(value), 0) AS value
+        `SELECT global_type AS type, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value
          FROM ingested_globals
          ${whereClause}
          GROUP BY global_type
@@ -296,7 +296,7 @@ export async function GET({ url, request }) {
 
       // Top players
       client.query(
-        `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
+        `SELECT player_name AS player, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value,
                 bool_or(global_type = 'team_kill') AS has_team,
                 bool_or(global_type != 'team_kill') AS has_solo
          FROM ingested_globals
@@ -310,13 +310,13 @@ export async function GET({ url, request }) {
       // Top targets (respects type filter)
       client.query(
         groupByMob
-          ? `SELECT min(target_name) AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
+          ? `SELECT min(target_name) AS target, mob_id, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value
              FROM ingested_globals
              ${whereClause}
              GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
              ORDER BY ${targetsSortCol} DESC
              LIMIT 10`
-          : `SELECT target_name AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
+          : `SELECT target_name AS target, mob_id, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value
              FROM ingested_globals
              ${whereClause}
              GROUP BY target_name, mob_id
@@ -328,7 +328,7 @@ export async function GET({ url, request }) {
       // Activity timeline (dynamic bucket aggregation)
       client.query(
         `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count,
-                COALESCE(sum(value), 0) AS total_value
+                COALESCE(sum(${VALUE_PED}), 0) AS total_value
          FROM ingested_globals
          ${whereClause}
          GROUP BY bucket

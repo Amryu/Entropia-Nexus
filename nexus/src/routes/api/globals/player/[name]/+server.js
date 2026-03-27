@@ -10,7 +10,7 @@
 import { pool } from '$lib/server/db.js';
 import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
 import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
-import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
+import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter, VALUE_PED } from '../../stats/filter-utils.js';
 import { isAthLeaderboardReady } from '$lib/server/globals-cache.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 
@@ -99,7 +99,7 @@ export async function GET({ params, url, locals }) {
        FROM ingested_globals
        WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          AND ${typeCondition}
-       ORDER BY value DESC
+       ORDER BY (${VALUE_PED}) DESC
        LIMIT ${TOP_LOOTS_LIMIT}`,
       [playerName, ...extraParams]
     );
@@ -159,25 +159,25 @@ export async function GET({ params, url, locals }) {
           )
         : pool.query(
             `SELECT count(*) AS total_count,
-                    COALESCE(sum(value), 0) AS total_value,
-                    COALESCE(avg(value), 0) AS avg_value,
-                    COALESCE(max(value), 0) AS max_value,
+                    COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                    COALESCE(avg(${VALUE_PED}), 0) AS avg_value,
+                    COALESCE(max(${VALUE_PED}), 0) AS max_value,
                     count(*) FILTER (WHERE is_hof) AS hof_count,
                     count(*) FILTER (WHERE is_ath) AS ath_count,
                     count(*) FILTER (WHERE global_type = 'kill') AS kill_count,
                     count(*) FILTER (WHERE global_type = 'team_kill') AS team_kill_count,
-                    COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
+                    COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
                     count(*) FILTER (WHERE global_type = 'deposit') AS deposit_count,
-                    COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
+                    COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
                     count(*) FILTER (WHERE global_type = 'craft') AS craft_count,
-                    COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
+                    COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
                     count(*) FILTER (WHERE global_type = 'rare_item') AS rare_count,
                     count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
                     count(*) FILTER (WHERE global_type = 'tier') AS tier_count,
                     count(*) FILTER (WHERE global_type = 'pvp') AS pvp_count,
-                    COALESCE(sum(value) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value,
+                    COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value,
                     count(*) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid') AS space_deposit_count,
-                    COALESCE(sum(value) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value
+                    COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value
              FROM ingested_globals
              WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}`,
             [playerName, ...extraParams]
@@ -187,8 +187,8 @@ export async function GET({ params, url, locals }) {
       pool.query(
         `SELECT target_name,
                 MAX(mob_id) AS mob_id, MAX(maturity_id) AS maturity_id,
-                count(*) AS kills, COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
+                count(*) AS kills, COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('kill', 'team_kill')
@@ -200,8 +200,8 @@ export async function GET({ params, url, locals }) {
       // Mining: per-resource breakdown (excludes space mining / asteroids)
       pool.query(
         `SELECT target_name AS target, count(*) AS finds,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
+                COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'deposit' AND target_name !~* 'asteroid'
@@ -213,8 +213,8 @@ export async function GET({ params, url, locals }) {
       // Space mining: per-resource breakdown (asteroids only)
       pool.query(
         `SELECT target_name, MAX(mob_id) AS mob_id, MAX(maturity_id) AS maturity_id,
-                count(*) AS finds, COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
+                count(*) AS finds, COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'deposit' AND target_name ~* 'asteroid'
@@ -226,8 +226,8 @@ export async function GET({ params, url, locals }) {
       // Crafting: per-item breakdown
       pool.query(
         `SELECT target_name AS target, count(*) AS crafts,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
+                COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'craft'
@@ -295,12 +295,12 @@ export async function GET({ params, url, locals }) {
 
       // PvP events
       pool.query(
-        `SELECT id, value, event_timestamp, is_hof, is_ath,
+        `SELECT id, value, value_unit, event_timestamp, is_hof, is_ath,
                 media_image_key, media_video_url
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'pvp'
-         ORDER BY value DESC`,
+         ORDER BY (${VALUE_PED}) DESC`,
         [playerName, ...extraParams]
       ),
 
@@ -323,11 +323,11 @@ export async function GET({ params, url, locals }) {
         ? pool.query(
             `WITH category_totals AS (
               SELECT player_name,
-                SUM(value) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
+                SUM(${VALUE_PED}) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_value,
                 COUNT(*) FILTER (WHERE global_type IN ('kill', 'team_kill', 'examine')) AS hunting_count,
-                SUM(value) FILTER (WHERE global_type = 'deposit') AS mining_value,
+                SUM(${VALUE_PED}) FILTER (WHERE global_type = 'deposit') AS mining_value,
                 COUNT(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
-                SUM(value) FILTER (WHERE global_type = 'craft') AS crafting_value,
+                SUM(${VALUE_PED}) FILTER (WHERE global_type = 'craft') AS crafting_value,
                 COUNT(*) FILTER (WHERE global_type = 'craft') AS crafting_count
               FROM ingested_globals
               WHERE confirmed = true${periodCond}
@@ -385,7 +385,7 @@ export async function GET({ params, url, locals }) {
       // Space mining category ranks (separate query since rollup table lacks target_name)
       safeQuery(pool.query(
         `WITH space_totals AS (
-          SELECT player_name, SUM(value) AS val, COUNT(*) AS cnt
+          SELECT player_name, SUM(${VALUE_PED}) AS val, COUNT(*) AS cnt
           FROM ingested_globals
           WHERE confirmed = true AND global_type = 'deposit' AND target_name ~* 'asteroid'${periodCond}
           GROUP BY player_name
@@ -466,8 +466,8 @@ export async function GET({ params, url, locals }) {
           `WITH target_totals AS (
              SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
                     MAX(target_name) AS target_name,
-                    (array_agg(target_name ORDER BY value DESC))[1] AS best_target_name,
-                    sum(value) AS total_value, max(value) AS best_value,
+                    (array_agg(target_name ORDER BY (${VALUE_PED}) DESC))[1] AS best_target_name,
+                    sum(${VALUE_PED}) AS total_value, max(${VALUE_PED}) AS best_value,
                     count(*) AS count, MAX(mob_id) AS mob_id
              FROM ingested_globals
              WHERE confirmed = true AND global_type IN ('kill', 'team_kill')${periodCond}
@@ -493,7 +493,7 @@ export async function GET({ params, url, locals }) {
         timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
-                    sum(value) AS total_value, max(value) AS best_value,
+                    sum(${VALUE_PED}) AS total_value, max(${VALUE_PED}) AS best_value,
                     count(*) AS count
              FROM ingested_globals
              WHERE confirmed = true AND global_type = 'deposit' AND target_name !~* 'asteroid'${periodCond}
@@ -520,7 +520,7 @@ export async function GET({ params, url, locals }) {
         timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
-                    sum(value) AS total_value, max(value) AS best_value,
+                    sum(${VALUE_PED}) AS total_value, max(${VALUE_PED}) AS best_value,
                     count(*) AS count
              FROM ingested_globals
              WHERE confirmed = true AND global_type = 'deposit' AND target_name ~* 'asteroid'${periodCond}
@@ -546,7 +546,7 @@ export async function GET({ params, url, locals }) {
         timedQuery(c => c.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
-                    sum(value) AS total_value, max(value) AS best_value,
+                    sum(${VALUE_PED}) AS total_value, max(${VALUE_PED}) AS best_value,
                     count(*) AS count
              FROM ingested_globals
              WHERE confirmed = true AND global_type = 'craft'${periodCond}
@@ -571,8 +571,8 @@ export async function GET({ params, url, locals }) {
         )),
         timedQuery(c => c.query(
           `WITH pvp_ranked AS (
-             SELECT player_name, value, event_timestamp, is_hof, is_ath,
-                    RANK() OVER (ORDER BY value DESC) AS rank
+             SELECT player_name, (${VALUE_PED}) AS value, event_timestamp, is_hof, is_ath,
+                    RANK() OVER (ORDER BY (${VALUE_PED}) DESC) AS rank
              FROM ingested_globals
              WHERE confirmed = true AND global_type = 'pvp'${periodCond}
            )

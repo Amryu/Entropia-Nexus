@@ -11,7 +11,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util.js';
-import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
+import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter, VALUE_PED } from '../../stats/filter-utils.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 import { initMobResolver, resolveMob, resolveMobByName } from '$lib/server/mobResolver.js';
 
@@ -211,9 +211,9 @@ export async function GET({ params, url, locals }) {
           )
         : q(
             `SELECT count(*) AS total_count,
-                    COALESCE(sum(value), 0) AS total_value,
-                    COALESCE(avg(value), 0) AS avg_value,
-                    COALESCE(max(value), 0) AS max_value,
+                    COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                    COALESCE(avg(${VALUE_PED}), 0) AS avg_value,
+                    COALESCE(max(${VALUE_PED}), 0) AS max_value,
                     count(*) FILTER (WHERE is_hof) AS hof_count,
                     count(*) FILTER (WHERE is_ath) AS ath_count,
                     MIN(global_type) AS primary_type,
@@ -228,14 +228,14 @@ export async function GET({ params, url, locals }) {
       // Top players by total value
       q(
         `SELECT player_name AS player, count(*) AS count,
-                COALESCE(sum(value), 0) AS value,
-                COALESCE(max(value), 0) AS best_value,
+                COALESCE(sum(${VALUE_PED}), 0) AS value,
+                COALESCE(max(${VALUE_PED}), 0) AS best_value,
                 bool_or(global_type = 'team_kill') AS has_team,
                 bool_or(global_type != 'team_kill') AS has_solo
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}${periodCond}
          GROUP BY player_name
-         ORDER BY sum(value) DESC
+         ORDER BY sum(${VALUE_PED}) DESC
          LIMIT 50`,
         targetParams
       ),
@@ -255,7 +255,7 @@ export async function GET({ params, url, locals }) {
         : q(
             `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
                     count(*) AS count,
-                    COALESCE(sum(value), 0) AS total_value
+                    COALESCE(sum(${VALUE_PED}), 0) AS total_value
              FROM ingested_globals
              WHERE confirmed = true AND ${targetCond}${periodCond}
              GROUP BY 1
@@ -281,7 +281,7 @@ export async function GET({ params, url, locals }) {
       // Uses raw table — mob_id in rollup/agg tables has incomplete coverage
       resolvedMobId
         ? q(
-            `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
+            `SELECT target_name, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value
              FROM ingested_globals
              WHERE confirmed = true AND mob_id = $1
              GROUP BY target_name
@@ -289,7 +289,7 @@ export async function GET({ params, url, locals }) {
             [resolvedMobId]
           )
         : q(
-            `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
+            `SELECT target_name, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value
              FROM ingested_globals
              WHERE confirmed = true AND lower(target_name) = lower($1)
              GROUP BY target_name
@@ -299,11 +299,11 @@ export async function GET({ params, url, locals }) {
 
       // Highest loot per timespan (always uses all-time data, ignoring period filter)
       q(
-        `SELECT COALESCE(max(value), 0) AS highest_all,
-                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '24 hours'), 0) AS highest_24h,
-                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '7 days'), 0) AS highest_7d,
-                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '30 days'), 0) AS highest_30d,
-                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '1 year'), 0) AS highest_1y
+        `SELECT COALESCE(max(${VALUE_PED}), 0) AS highest_all,
+                COALESCE(max(${VALUE_PED}) FILTER (WHERE event_timestamp > now() - interval '24 hours'), 0) AS highest_24h,
+                COALESCE(max(${VALUE_PED}) FILTER (WHERE event_timestamp > now() - interval '7 days'), 0) AS highest_7d,
+                COALESCE(max(${VALUE_PED}) FILTER (WHERE event_timestamp > now() - interval '30 days'), 0) AS highest_30d,
+                COALESCE(max(${VALUE_PED}) FILTER (WHERE event_timestamp > now() - interval '1 year'), 0) AS highest_1y
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}`,
         maturityFilter ? [maturityFilter.map(m => m.toLowerCase())] : resolvedTargets ? [resolvedTargets] : [targetName]

@@ -861,7 +861,7 @@
                       <tr>
                         <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td class="right font-weight-bold">{formatValue(loot.value, loot.unit)}</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
@@ -977,7 +977,7 @@
                       <tr>
                         <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td class="right font-weight-bold">{formatValue(loot.value, loot.unit)}</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
@@ -1116,7 +1116,7 @@
                       <tr>
                         <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td class="right font-weight-bold">{formatValue(loot.value, loot.unit)}</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}
@@ -1232,7 +1232,7 @@
                       <tr>
                         <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
                         <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td class="right font-weight-bold">{formatValue(loot.value, loot.unit)}</td>
                         <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
                         <td class="col-media">
                           {#if loot.media_image || loot.media_video}

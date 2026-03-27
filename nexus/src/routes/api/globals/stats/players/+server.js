@@ -5,7 +5,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
-import { buildGlobalsFilter, chooseRollupGranularity, buildRollupPeriodFilter } from '../filter-utils.js';
+import { buildGlobalsFilter, chooseRollupGranularity, buildRollupPeriodFilter, VALUE_PED } from '../filter-utils.js';
 import { getCachedPlayersPage1 } from '$lib/server/globals-cache.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 
@@ -174,7 +174,7 @@ export async function GET({ url, request }) {
 
   // Raw table path
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
-  const SORT_COLS = { count: 'count(*)', value: 'COALESCE(sum(value), 0)', avg: 'COALESCE(avg(value), 0)', best: 'COALESCE(max(value), 0)' };
+  const SORT_COLS = { count: 'count(*)', value: `COALESCE(sum(${VALUE_PED}), 0)`, avg: `COALESCE(avg(${VALUE_PED}), 0)`, best: `COALESCE(max(${VALUE_PED}), 0)` };
   const sortCol = SORT_COLS[sortBy];
 
   let paramIdx = nextIdx;
@@ -187,8 +187,8 @@ export async function GET({ url, request }) {
 
     const [dataResult, countResult] = await Promise.all([
       client.query(
-        `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
-                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
+        `SELECT player_name AS player, count(*) AS count, COALESCE(sum(${VALUE_PED}), 0) AS value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value,
                 bool_or(global_type = 'team_kill') AS has_team,
                 bool_or(global_type != 'team_kill') AS has_solo,
                 EXISTS(SELECT 1 FROM users u WHERE lower(u.eu_name) = lower(player_name) AND u.verified = true) AS has_profile

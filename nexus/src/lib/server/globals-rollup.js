@@ -18,6 +18,10 @@
  */
 import { pool } from '$lib/server/db.js';
 
+/** SQL expression to normalize value to PED (converts PEC values by dividing by 100). */
+const VALUE_PED = `CASE WHEN value_unit = 'PEC' THEN value / 100.0 ELSE value END`;
+
+
 // --- Timing constants ---
 const ROLLUP_REBUILD_INTERVAL_MS = 10 * 60_000;  // 10 min safety-net refresh
 const ROLLUP_MIN_REBUILD_GAP_MS = 3 * 60_000;    // min 3 min between rebuilds
@@ -62,7 +66,7 @@ async function rebuildDailyRange(startDate, endDate, { skipDelete = false } = {}
     await client.query(
       `INSERT INTO globals_rollup (granularity, period_start, global_type, event_count, sum_value, max_value, hof_count, ath_count)
        SELECT 'daily', date_trunc('day', event_timestamp), global_type,
-              count(*), COALESCE(sum(value), 0), COALESCE(max(value), 0),
+              count(*), COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0),
               count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
        FROM ingested_globals
        WHERE confirmed = true AND event_timestamp >= $1 AND event_timestamp < $2
@@ -84,7 +88,7 @@ async function rebuildDailyRange(startDate, endDate, { skipDelete = false } = {}
     await client.query(
       `INSERT INTO globals_rollup_player (granularity, period_start, player_name, global_type, event_count, sum_value, max_value, hof_count, ath_count)
        SELECT 'daily', date_trunc('day', event_timestamp), player_name, global_type,
-              count(*), COALESCE(sum(value), 0), COALESCE(max(value), 0),
+              count(*), COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0),
               count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
        FROM ingested_globals
        WHERE confirmed = true AND event_timestamp >= $1 AND event_timestamp < $2
@@ -106,7 +110,7 @@ async function rebuildDailyRange(startDate, endDate, { skipDelete = false } = {}
     await client.query(
       `INSERT INTO globals_rollup_target (granularity, period_start, target_name, mob_id, global_type, event_count, sum_value, max_value, hof_count, ath_count)
        SELECT 'daily', date_trunc('day', event_timestamp), target_name, MAX(mob_id), global_type,
-              count(*), COALESCE(sum(value), 0), COALESCE(max(value), 0),
+              count(*), COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0),
               count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
        FROM ingested_globals
        WHERE confirmed = true AND event_timestamp >= $1 AND event_timestamp < $2

@@ -3,6 +3,9 @@
  * Shared filter-building utilities for globals stats endpoints.
  */
 
+/** SQL expression to normalize value to PED (converts PEC values by dividing by 100). */
+export const VALUE_PED = `CASE WHEN value_unit = 'PEC' THEN value / 100.0 ELSE value END`;
+
 export const PERIOD_INTERVALS = {
   '24h': "interval '24 hours'",
   '7d': "interval '7 days'",

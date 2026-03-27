@@ -19,7 +19,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { createHash } from 'node:crypto';
-import { getActivityBucket, fillActivityGaps } from '../../routes/api/globals/stats/filter-utils.js';
+import { getActivityBucket, fillActivityGaps, VALUE_PED } from '../../routes/api/globals/stats/filter-utils.js';
 import { rebuildRollups } from './globals-rollup.js';
 
 // --- Timing constants ---
@@ -340,7 +340,7 @@ async function rebuildAthLeaderboard() {
           ? "COALESCE(mob_id::text, target_name)"
           : "target_name";
         const bestTargetExpr = useMobKey
-          ? "(array_agg(target_name ORDER BY value DESC))[1]"
+          ? `(array_agg(target_name ORDER BY (${VALUE_PED}) DESC))[1]`
           : "MAX(target_name)";
         const mobIdExpr = useMobKey ? "MAX(mob_id)" : "NULL::integer";
 
@@ -353,7 +353,7 @@ async function rebuildAthLeaderboard() {
             `INSERT INTO globals_ath_leaderboard
                (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
              SELECT $1, ${targetKeyExpr}, player_name,
-                    COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
+                    COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0), count(*),
                     ${mobIdExpr}, ${bestTargetExpr},
                     0, 0, now()
              FROM ingested_globals
@@ -393,7 +393,7 @@ async function rebuildAthLeaderboard() {
               `INSERT INTO globals_ath_leaderboard
                  (category, target_key, player_name, total_value, best_value, count, mob_id, best_target_name, total_rank, best_rank, updated_at)
                SELECT $1, ${targetKeyExpr}, player_name,
-                      COALESCE(sum(value), 0), COALESCE(max(value), 0), count(*),
+                      COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0), count(*),
                       ${mobIdExpr}, ${bestTargetExpr},
                       0, 0, now()
                FROM ingested_globals

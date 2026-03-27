@@ -12,7 +12,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
-import { PERIOD_INTERVALS } from '../../../stats/filter-utils.js';
+import { PERIOD_INTERVALS, VALUE_PED } from '../../../stats/filter-utils.js';
 
 const PAGE_SIZE = 20;
 const VALID_SORTS = { count: 'count', value: 'total_value', best: 'best_value' };
@@ -94,8 +94,8 @@ export async function GET({ params, url }) {
     const [dataResult, countResult] = await Promise.all([
       client.query(
         `SELECT player_name AS player, count(*) AS count,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(max(value), 0) AS best_value,
+                COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(max(${VALUE_PED}), 0) AS best_value,
                 bool_or(global_type = 'team_kill') AS has_team,
                 bool_or(global_type != 'team_kill') AS has_solo
          FROM ingested_globals

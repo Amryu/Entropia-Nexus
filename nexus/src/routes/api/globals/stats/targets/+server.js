@@ -8,7 +8,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
-import { buildGlobalsFilter, chooseRollupGranularity, buildRollupPeriodFilter } from '../filter-utils.js';
+import { buildGlobalsFilter, chooseRollupGranularity, buildRollupPeriodFilter, VALUE_PED } from '../filter-utils.js';
 import { getCachedTargetsPage1 } from '$lib/server/globals-cache.js';
 import { isRollupReady } from '$lib/server/globals-rollup.js';
 
@@ -237,7 +237,7 @@ export async function GET({ url, request }) {
 
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-  const SORT_COLS = { count: 'count(*)', value: 'COALESCE(sum(value), 0)', avg: 'COALESCE(avg(value), 0)', best: 'COALESCE(max(value), 0)' };
+  const SORT_COLS = { count: 'count(*)', value: `COALESCE(sum(${VALUE_PED}), 0)`, avg: `COALESCE(avg(${VALUE_PED}), 0)`, best: `COALESCE(max(${VALUE_PED}), 0)` };
   const sortCol = SORT_COLS[sortBy];
 
   const groupByClause = groupByMob
@@ -256,8 +256,8 @@ export async function GET({ url, request }) {
     const [dataResult, countResult] = await Promise.all([
       client.query(
         `SELECT ${selectTarget} AS target, mob_id, count(*) AS count,
-                COALESCE(sum(value), 0) AS value,
-                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
+                COALESCE(sum(${VALUE_PED}), 0) AS value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value,
                 MIN(global_type) AS primary_type
          FROM ingested_globals
          ${whereClause}
