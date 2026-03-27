@@ -37,6 +37,10 @@ export function getCompatibleAmplifiers(amplifiers, weapon, options = {}) {
 		if (weapon.Properties.Class === 'Ranged') {
 			if (weapon.Properties.Type === 'BLP') {
 				return amplifier.Properties.Type === 'BLP';
+			} else if (weapon.Properties.Type === 'Explosive') {
+				return amplifier.Properties.Type === 'Explosive';
+			} else if (weapon.Properties.Type?.startsWith('Mining Laser')) {
+				return amplifier.Properties.Type === 'Mining';
 			} else {
 				return amplifier.Properties.Type === 'Energy';
 			}

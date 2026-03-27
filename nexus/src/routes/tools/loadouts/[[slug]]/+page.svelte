@@ -2831,9 +2831,10 @@
       }
 
       if (weapon.Properties.Class === 'Ranged') {
-        return weapon.Properties.Type === 'BLP'
-          ? x.Properties.Type === 'BLP'
-          : x.Properties.Type === 'Energy';
+        if (weapon.Properties.Type === 'BLP') return x.Properties.Type === 'BLP';
+        if (weapon.Properties.Type === 'Explosive') return x.Properties.Type === 'Explosive';
+        if (weapon.Properties.Type?.startsWith('Mining Laser')) return x.Properties.Type === 'Mining';
+        return x.Properties.Type === 'Energy';
       }
 
       if (weapon.Properties.Class === 'Melee') {

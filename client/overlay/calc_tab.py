@@ -111,7 +111,11 @@ def _filter_amplifiers(
         if wclass == "Ranged":
             if wtype == "BLP" and amp_type == "BLP":
                 compatible = True
-            elif wtype != "BLP" and amp_type == "Energy":
+            elif wtype == "Explosive" and amp_type == "Explosive":
+                compatible = True
+            elif wtype.startswith("Mining Laser") and amp_type == "Mining":
+                compatible = True
+            elif wtype not in ("BLP", "Explosive") and not wtype.startswith("Mining Laser") and amp_type == "Energy":
                 compatible = True
         elif wclass == "Melee" and amp_type == "Melee":
             compatible = True

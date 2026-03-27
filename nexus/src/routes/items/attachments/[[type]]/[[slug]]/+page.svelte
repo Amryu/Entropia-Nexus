@@ -493,6 +493,8 @@
   const amplifierTypeOptions = [
     { value: 'Energy', label: 'Energy' },
     { value: 'BLP', label: 'BLP' },
+    { value: 'Explosive', label: 'Explosive' },
+    { value: 'Mining', label: 'Mining' },
     { value: 'Melee', label: 'Melee' },
     { value: 'Matrix', label: 'Matrix' },
     { value: 'Mindforce', label: 'Mindforce' }

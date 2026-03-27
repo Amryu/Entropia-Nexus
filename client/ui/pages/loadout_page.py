@@ -1815,7 +1815,11 @@ class LoadoutPage(QWidget):
                         if wcls == "Ranged":
                             if wtype == "BLP" and atype != "BLP":
                                 continue
-                            if wtype != "BLP" and atype != "Energy":
+                            elif wtype == "Explosive" and atype != "Explosive":
+                                continue
+                            elif wtype.startswith("Mining Laser") and atype != "Mining":
+                                continue
+                            elif wtype not in ("BLP", "Explosive") and not wtype.startswith("Mining Laser") and atype != "Energy":
                                 continue
                         elif wcls == "Melee" and atype != "Melee":
                             continue
