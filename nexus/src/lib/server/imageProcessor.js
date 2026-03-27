@@ -52,7 +52,9 @@ const VALID_ENTITY_TYPES = [
   // Auction
   'item-set',
   // Globals media (player-uploaded screenshots)
-  'global'
+  'global',
+  // Promo visuals (partner placements)
+  'promo-visual'
 ];
 
 // Entity types that skip the approval workflow and use banner dimensions
@@ -769,7 +771,7 @@ export async function cleanupTempUploads() {
  * @returns {boolean}
  */
 export function isAutoApproveType(entityType) {
-  return GUIDE_ENTITY_TYPES.includes(entityType) || entityType === 'item-set' || entityType === 'global';
+  return GUIDE_ENTITY_TYPES.includes(entityType) || entityType === 'item-set' || entityType === 'global' || entityType === 'promo-visual';
 }
 
 /**

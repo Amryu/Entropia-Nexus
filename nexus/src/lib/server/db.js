@@ -5287,3 +5287,261 @@ export async function getRewardsSummary() {
   `);
   return result.rows[0];
 }
+
+// === Promos ===
+
+export async function createPromo({ ownerId, promoType, name, title = null, summary = null, link = null, contentHtml = null }) {
+  const { rows } = await pool.query(
+    `INSERT INTO promos (owner_id, promo_type, name, title, summary, link, content_html)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [ownerId, promoType, name, title, summary, link, contentHtml]
+  );
+  return rows[0];
+}
+
+export async function getPromoById(id) {
+  const { rows } = await pool.query('SELECT * FROM promos WHERE id = $1', [id]);
+  return rows[0] || null;
+}
+
+export async function getPromosByOwner(ownerId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM promos WHERE owner_id = $1 ORDER BY created_at DESC',
+    [ownerId]
+  );
+  return rows;
+}
+
+export async function updatePromo(id, fields) {
+  const allowed = ['name', 'title', 'summary', 'link', 'content_html'];
+  const sets = [];
+  const values = [];
+  let idx = 1;
+  for (const col of allowed) {
+    if (col in fields) {
+      sets.push(`${col} = $${idx++}`);
+      values.push(fields[col]);
+    }
+  }
+  if (sets.length === 0) return null;
+  sets.push(`updated_at = NOW()`);
+  values.push(id);
+  const { rows } = await pool.query(
+    `UPDATE promos SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+    values
+  );
+  return rows[0] || null;
+}
+
+export async function deletePromo(id) {
+  const { rowCount } = await pool.query('DELETE FROM promos WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+export async function getPromoImages(promoId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM promo_images WHERE promo_id = $1 ORDER BY slot_variant',
+    [promoId]
+  );
+  return rows;
+}
+
+export async function upsertPromoImage({ promoId, slotVariant, imagePath, width, height }) {
+  const { rows } = await pool.query(
+    `INSERT INTO promo_images (promo_id, slot_variant, image_path, width, height)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (promo_id, slot_variant) DO UPDATE
+       SET image_path = EXCLUDED.image_path, width = EXCLUDED.width, height = EXCLUDED.height
+     RETURNING *`,
+    [promoId, slotVariant, imagePath, width, height]
+  );
+  return rows[0];
+}
+
+export async function deletePromoImage(promoId, slotVariant) {
+  const { rowCount } = await pool.query(
+    'DELETE FROM promo_images WHERE promo_id = $1 AND slot_variant = $2',
+    [promoId, slotVariant]
+  );
+  return rowCount > 0;
+}
+
+export async function createPromoBooking({ promoId, userId, slotType, startDate, weeks }) {
+  const { rows } = await pool.query(
+    `INSERT INTO promo_bookings (promo_id, user_id, slot_type, start_date, weeks, end_date)
+     VALUES ($1, $2, $3, $4, $5, $4::date + ($5 * 7 || ' days')::interval)
+     RETURNING *`,
+    [promoId, userId, slotType, startDate, weeks]
+  );
+  return rows[0];
+}
+
+export async function getPromoBookingById(id) {
+  const { rows } = await pool.query(
+    `SELECT b.*, p.name AS promo_name, p.promo_type, p.title AS promo_title,
+            p.summary AS promo_summary, p.link AS promo_link,
+            u.username AS user_name, u.eu_name AS user_eu_name
+     FROM promo_bookings b
+     JOIN promos p ON p.id = b.promo_id
+     JOIN users u ON u.id = b.user_id
+     WHERE b.id = $1`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+export async function getPromoBookingsByUser(userId) {
+  const { rows } = await pool.query(
+    `SELECT b.*, p.name AS promo_name, p.promo_type,
+            COALESCE(m.total_views, 0) AS total_views,
+            COALESCE(m.total_clicks, 0) AS total_clicks
+     FROM promo_bookings b
+     JOIN promos p ON p.id = b.promo_id
+     LEFT JOIN (
+       SELECT booking_id, SUM(views) AS total_views, SUM(clicks) AS total_clicks
+       FROM promo_metrics GROUP BY booking_id
+     ) m ON m.booking_id = b.id
+     WHERE b.user_id = $1
+     ORDER BY b.created_at DESC`,
+    [userId]
+  );
+  return rows;
+}
+
+export async function getAllPromoBookings({ status = null, limit = 50, offset = 0 } = {}) {
+  const conditions = [];
+  const values = [];
+  let idx = 1;
+  if (status) {
+    conditions.push(`b.status = $${idx++}`);
+    values.push(status);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  values.push(limit, offset);
+  const { rows } = await pool.query(
+    `SELECT b.*, p.name AS promo_name, p.promo_type,
+            u.username AS user_name, u.eu_name AS user_eu_name,
+            COALESCE(m.total_views, 0) AS total_views,
+            COALESCE(m.total_clicks, 0) AS total_clicks
+     FROM promo_bookings b
+     JOIN promos p ON p.id = b.promo_id
+     JOIN users u ON u.id = b.user_id
+     LEFT JOIN (
+       SELECT booking_id, SUM(views) AS total_views, SUM(clicks) AS total_clicks
+       FROM promo_metrics GROUP BY booking_id
+     ) m ON m.booking_id = b.id
+     ${where}
+     ORDER BY
+       CASE b.status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 WHEN 'approved' THEN 2 ELSE 3 END,
+       b.created_at DESC
+     LIMIT $${idx++} OFFSET $${idx}`,
+    values
+  );
+  return rows;
+}
+
+export async function updatePromoBooking(id, fields) {
+  const allowed = ['price', 'currency', 'status', 'admin_note', 'approved_by', 'start_date', 'weeks'];
+  const sets = [];
+  const values = [];
+  let idx = 1;
+  for (const key of allowed) {
+    if (key in fields) {
+      sets.push(`${key} = $${idx++}`);
+      values.push(fields[key]);
+    }
+  }
+  if (sets.length === 0) return null;
+  // Recompute end_date whenever start_date or weeks changes
+  if ('start_date' in fields || 'weeks' in fields) {
+    // Use new values if provided, otherwise reference the existing column
+    const startExpr = 'start_date' in fields ? `start_date` : `start_date`;
+    const weeksExpr = 'weeks' in fields ? `weeks` : `weeks`;
+    sets.push(`end_date = ${startExpr} + (${weeksExpr} * INTERVAL '7 days')`);
+  }
+  sets.push(`updated_at = NOW()`);
+  values.push(id);
+  const { rows } = await pool.query(
+    `UPDATE promo_bookings SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+    values
+  );
+  return rows[0] || null;
+}
+
+export async function updatePromoBookingStatus(id, status, approvedBy = null) {
+  const { rows } = await pool.query(
+    `UPDATE promo_bookings SET status = $1, approved_by = COALESCE($2, approved_by), updated_at = NOW()
+     WHERE id = $3 RETURNING *`,
+    [status, approvedBy, id]
+  );
+  return rows[0] || null;
+}
+
+export async function hasActivePromoBookings(promoId) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM promo_bookings WHERE promo_id = $1 AND status IN ('pending', 'approved', 'active') LIMIT 1`,
+    [promoId]
+  );
+  return rows.length > 0;
+}
+
+export async function activateDueBookings() {
+  const { rowCount } = await pool.query(
+    `UPDATE promo_bookings SET status = 'active', updated_at = NOW()
+     WHERE status = 'approved' AND start_date <= CURRENT_DATE`
+  );
+  return rowCount;
+}
+
+export async function expireOldBookings() {
+  const { rowCount } = await pool.query(
+    `UPDATE promo_bookings SET status = 'expired', updated_at = NOW()
+     WHERE status = 'active' AND end_date < CURRENT_DATE`
+  );
+  return rowCount;
+}
+
+export async function getActivePromosForHomepage() {
+  await activateDueBookings();
+  await expireOldBookings();
+  const { rows } = await pool.query(
+    `SELECT b.id AS booking_id, b.slot_type, b.promo_id,
+            p.promo_type, p.name, p.title, p.summary, p.link, p.content_html,
+            COALESCE(
+              json_agg(json_build_object(
+                'slot_variant', pi.slot_variant,
+                'image_path', pi.image_path,
+                'width', pi.width,
+                'height', pi.height
+              )) FILTER (WHERE pi.id IS NOT NULL), '[]'
+            ) AS images
+     FROM promo_bookings b
+     JOIN promos p ON p.id = b.promo_id
+     LEFT JOIN promo_images pi ON pi.promo_id = p.id
+     WHERE b.status = 'active'
+       AND CURRENT_DATE BETWEEN b.start_date AND b.end_date
+     GROUP BY b.id, b.slot_type, b.promo_id, p.promo_type, p.name, p.title, p.summary, p.link, p.content_html
+     ORDER BY b.slot_type, b.id`
+  );
+  return rows;
+}
+
+export async function getPromoBookingMetrics(bookingId) {
+  const { rows } = await pool.query(
+    `SELECT event_date, views, clicks FROM promo_metrics
+     WHERE booking_id = $1 ORDER BY event_date`,
+    [bookingId]
+  );
+  return rows;
+}
+
+export async function incrementPromoMetrics(bookingId, date, viewsDelta = 0, clicksDelta = 0) {
+  await pool.query(
+    `INSERT INTO promo_metrics (booking_id, event_date, views, clicks)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (booking_id, event_date)
+     DO UPDATE SET views = promo_metrics.views + $3, clicks = promo_metrics.clicks + $4`,
+    [bookingId, date, viewsDelta, clicksDelta]
+  );
+}

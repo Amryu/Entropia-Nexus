@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { getPublishedAnnouncements, getUpcomingEvents, getActiveCreators, pool } from '$lib/server/db.js';
 import { formatNewsFeed } from '$lib/server/news-cache.js';
+import { getActivePromos, bufferPromoView } from '$lib/server/promo-cache.js';
 
 const MAX_STREAMS = 6;
 const MAX_VIDEOS = 6;
@@ -144,22 +145,36 @@ async function getRecentGlobals(limit = 15) {
   }
 }
 
-export async function load() {
-  const [announcements, events, creators, globals] = await Promise.all([
-    getPublishedAnnouncements(6),
+export async function load(event) {
+  const [announcements, events, creators, globals, promos] = await Promise.all([
+    getPublishedAnnouncements(5),
     getUpcomingEvents(5),
     getActiveCreators(),
-    getRecentGlobals(15)
+    getRecentGlobals(15),
+    getActivePromos()
   ]);
 
   const news = formatNewsFeed(announcements);
   const { streams, videos } = processCreators(creators);
+  const rotationSeed = Math.floor(Math.random() * 1000);
+
+  // Buffer view impressions for active placements (non-blocking)
+  const shownBookingIds = [
+    ...promos.placements.left,
+    ...promos.placements.right,
+    ...promos.featuredPosts
+  ].map(p => p.booking_id);
+  if (shownBookingIds.length > 0) {
+    bufferPromoView(shownBookingIds, event).catch(() => {});
+  }
 
   return {
     news,
     events,
     streams,
     videos,
-    globals
+    globals,
+    promos,
+    rotationSeed
   };
 }

@@ -102,7 +102,7 @@ function ipv4ToInt(ip) {
   return num >>> 0; // unsigned 32-bit
 }
 
-function isBotIp(ip) {
+export function isBotIp(ip) {
   if (botIpRanges.length === 0) return false;
   const ipInt = ipv4ToInt(ip);
   if (ipInt === null) return false; // skip IPv6 for now
@@ -205,7 +205,7 @@ export function isBot(userAgent, method) {
 // All browsers: Accept-Language.
 const SHOULD_HAVE_SEC_FETCH = /Chrome\/|Firefox\/|Edg\//;
 
-function hasSuspectHeaders(request, userAgent) {
+export function hasSuspectHeaders(request, userAgent) {
   // All real browsers send Accept-Language
   if (!request.headers.get('accept-language')) return true;
   // Chromium-based and Firefox always send Sec-Fetch-Dest; Safari does not

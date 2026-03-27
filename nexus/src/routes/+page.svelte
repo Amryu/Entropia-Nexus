@@ -7,10 +7,33 @@
   // @ts-nocheck
   import '$lib/style.css';
   import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
+  import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
+  import PartnerSlot from '$lib/components/PartnerSlot.svelte';
 
   let { data } = $props();
 
   let { news, events, streams, videos, globals } = $derived(data);
+  let promos = $derived(data.promos);
+  let rotationSeed = $derived(data.rotationSeed ?? 0);
+
+  let mergedNews = $derived.by(() => {
+    if (!promos?.featuredPosts?.length) return news;
+    const result = [...(news || [])];
+    const insertAt = Math.min(2, result.length);
+    for (let i = 0; i < promos.featuredPosts.length; i++) {
+      const fp = promos.featuredPosts[i];
+      result.splice(insertAt + i, 0, {
+        title: fp.title,
+        summary: fp.summary,
+        url: `/api/promos/click/${fp.booking_id}`,
+        featured: true,
+        source: 'featured',
+        date: new Date().toISOString(),
+        has_content: false
+      });
+    }
+    return result;
+  });
 
   const features = [
     { name: 'Items Database', href: '/items', icon: 'ITM', description: 'Weapons, armor, tools, materials, blueprints and more' },
@@ -45,6 +68,13 @@
       day: d.getDate(),
       time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
     };
+  }
+
+  const waypointPattern = /^(?:\/wp\s+)?\[(.+)\]$/;
+
+  function parseWaypoint(location) {
+    const match = location?.match(waypointPattern);
+    return match ? match[1] : null;
   }
 
   const platformLabels = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick' };
@@ -102,6 +132,18 @@
 </svelte:head>
 
 <div class="home-page">
+  <!-- Vertical partner slots for wide screens -->
+  <aside class="partner-rail partner-rail-left" aria-label="Partner content">
+    <div class="partner-slot partner-vertical" data-slot="left">
+      <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} />
+    </div>
+  </aside>
+  <aside class="partner-rail partner-rail-right" aria-label="Partner content">
+    <div class="partner-slot partner-vertical" data-slot="right">
+      <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} />
+    </div>
+  </aside>
+
   <main class="home-content">
     <!-- Hero -->
     <section class="hero">
@@ -109,24 +151,25 @@
       <p class="hero-subtitle">Your comprehensive resource for Entropia Universe</p>
     </section>
 
-    <!-- News Feed -->
-    {#if news && news.length > 0}
-      <section class="section">
-        <div class="section-header">
-          <h2 class="section-title">Latest News</h2>
-          <a href="/news" class="section-action">More</a>
-        </div>
-        <div class="news-grid">
-          {#each news as item}
-            <a href={item.url || '#'} class="news-card" target={!item.has_content ? '_blank' : undefined} rel={!item.has_content ? 'noopener' : undefined}>
-              {#if item.image_url}
-                <div class="news-image" style="background-image: url({item.image_url})"></div>
-              {/if}
-              <div class="news-body">
+    <!-- News & Events side by side -->
+    <section class="section news-events-row" class:single-column={!events || events.length === 0}>
+      {#if news && news.length > 0}
+        <div class="ne-column">
+          <div class="section-header">
+            <h2 class="section-title">Latest News</h2>
+            <a href="/news" class="section-action">More</a>
+          </div>
+          <div class="news-list">
+            {#each mergedNews as item}
+              <a href={item.url || '#'} class="news-card" target={!item.has_content ? '_blank' : undefined} rel={!item.has_content ? 'noopener' : undefined}>
                 <div class="news-meta">
-                  <span class="news-source" class:nexus={item.source === 'nexus'} class:steam={item.source === 'steam'}>
-                    {item.source === 'nexus' ? 'Nexus' : 'EU News'}
-                  </span>
+                  {#if item.featured}
+                    <span class="news-featured">Featured</span>
+                  {:else}
+                    <span class="news-source" class:nexus={item.source === 'nexus'} class:steam={item.source === 'steam'}>
+                      {item.source === 'nexus' ? 'Nexus' : 'EU News'}
+                    </span>
+                  {/if}
                   {#if item.pinned}
                     <span class="news-pinned">Pinned</span>
                   {/if}
@@ -136,61 +179,84 @@
                 {#if item.summary}
                   <p class="news-summary">{item.summary}</p>
                 {/if}
-              </div>
-            </a>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
-    <!-- Events -->
-    {#if events && events.length > 0}
-      <section class="section" id="events">
-        <div class="section-header">
-          <h2 class="section-title">Events</h2>
-          <div class="section-actions">
-            <a href="/events" class="section-action">More</a>
-            <a href="/events/submit" class="section-action">Submit Event</a>
+              </a>
+            {/each}
           </div>
         </div>
-        <div class="events-list">
-          {#each events as event}
-            {@const ed = formatEventDate(event.start_date)}
-            {@const active = isEventActive(event)}
-            {@const duration = formatDuration(event, active)}
-            <div class="event-row" class:event-active={active}>
-              <div class="event-date-block">
-                <span class="event-month">{ed.month}</span>
-                <span class="event-day">{ed.day}</span>
-              </div>
-              <div class="event-info">
-                <div class="event-title-row">
-                  <h3 class="event-title">{event.title}</h3>
-                  {#if active}
-                    <span class="event-active-badge">Live</span>
-                  {/if}
-                  <span class="event-type-badge" class:official={event.type === 'official'}>
-                    {event.type === 'official' ? 'Official' : 'Player Event'}
-                  </span>
-                </div>
-                <div class="event-details">
-                  <span class="event-time">{ed.time} UTC</span>
-                  {#if duration}
-                    <span class="event-duration">{duration}</span>
-                  {/if}
-                  {#if event.location}
-                    <span class="event-location">{event.location}</span>
-                  {/if}
-                </div>
-              </div>
-              {#if event.link}
-                <a href={event.link} class="event-link" target="_blank" rel="noopener">Details</a>
-              {/if}
+      {/if}
+
+      {#if events && events.length > 0}
+        <div class="ne-column" id="events">
+          <div class="section-header">
+            <h2 class="section-title">Events</h2>
+            <div class="section-actions">
+              <a href="/events" class="section-action">More</a>
+              <a href="/events/submit" class="section-action">Submit Event</a>
             </div>
-          {/each}
+          </div>
+          <div class="events-list">
+            {#each events as event}
+              {@const ed = formatEventDate(event.start_date)}
+              {@const active = isEventActive(event)}
+              {@const duration = formatDuration(event, active)}
+              <div class="event-row" class:event-active={active}>
+                <div class="event-date-block">
+                  <span class="event-month">{ed.month}</span>
+                  <span class="event-day">{ed.day}</span>
+                </div>
+                <div class="event-info">
+                  <div class="event-title-row">
+                    <h3 class="event-title">{event.title}</h3>
+                    {#if active}
+                      <span class="event-active-badge">Live</span>
+                    {/if}
+                    <span class="event-type-badge" class:official={event.type === 'official'}>
+                      {event.type === 'official' ? 'Official' : 'Player Event'}
+                    </span>
+                  </div>
+                  <div class="event-details">
+                    <span class="event-time">{ed.time} UTC</span>
+                    {#if duration}
+                      <span class="event-duration">{duration}</span>
+                    {/if}
+                  </div>
+                  {#if event.location}
+                    {@const wp = parseWaypoint(event.location)}
+                    <div class="event-location">
+                      {#if wp}
+                        {@const parts = wp.split(',')}
+                        <WaypointCopyButton waypoint={wp} compact={true} label={`${parts[0]?.trim()} — ${parts.at(-1)?.trim()}`} />
+                      {:else}
+                        {event.location}
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+                {#if event.link}
+                  <a href={event.link} class="event-link" target="_blank" rel="noopener">Details</a>
+                {/if}
+              </div>
+            {/each}
+          </div>
         </div>
-      </section>
-    {/if}
+      {/if}
+    </section>
+
+    <!-- Inline partner slots (visible when side rails are hidden) -->
+    <div class="partner-inline partner-inline-pair">
+      <div class="partner-slot partner-horizontal" data-slot="top-1">
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
+      </div>
+      <div class="partner-slot partner-horizontal" data-slot="top-2">
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
+      </div>
+    </div>
+    <!-- Mobile: single slot after news/events -->
+    <div class="partner-inline partner-inline-mobile-1">
+      <div class="partner-slot partner-horizontal" data-slot="mobile-1">
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
+      </div>
+    </div>
 
     <!-- Globals Feed -->
     <section class="section">
@@ -200,6 +266,13 @@
       </div>
       <GlobalsFeed initialGlobals={globals} />
     </section>
+
+    <!-- Mobile: single slot after globals -->
+    <div class="partner-inline partner-inline-mobile-2">
+      <div class="partner-slot partner-horizontal" data-slot="mobile-2">
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
+      </div>
+    </div>
 
     <!-- Streams / Channels -->
     {#if streams && streams.length > 0}
@@ -355,6 +428,7 @@
     min-height: 100%;
     background-color: var(--primary-color);
     color: var(--text-color);
+    position: relative;
   }
 
   .home-content {
@@ -364,6 +438,81 @@
     padding: 24px 24px 48px;
     width: 100%;
     box-sizing: border-box;
+  }
+
+  /* Partner slots — shared */
+  .partner-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    box-sizing: border-box;
+    min-height: 60px;
+  }
+
+  /* Vertical rail banners (wide screens only) */
+  .partner-rail {
+    display: none;
+    position: fixed;
+    top: 80px;
+    z-index: 10;
+  }
+
+  .partner-rail-left {
+    left: calc((100vw - 1200px) / 4 - 80px);
+  }
+
+  .partner-rail-right {
+    right: calc((100vw - 1200px) / 4 - 80px);
+  }
+
+  .partner-vertical {
+    width: 160px;
+    min-height: 600px;
+  }
+
+  /* Inline horizontal banners */
+  .partner-inline {
+    margin-bottom: 40px;
+  }
+
+  .partner-inline-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* Mobile slots hidden by default */
+  .partner-inline-mobile-1,
+  .partner-inline-mobile-2 {
+    display: none;
+  }
+
+  .partner-horizontal {
+    min-height: 90px;
+  }
+
+  /* Wide screens (>=1560px): show side rails, hide all inline */
+  @media (min-width: 1560px) {
+    .partner-rail {
+      display: block;
+    }
+
+    .partner-inline {
+      display: none;
+    }
+  }
+
+  /* Mobile (<900px): hide pair, show individual mobile slots */
+  @media (max-width: 899px) {
+    .partner-inline-pair {
+      display: none;
+    }
+
+    .partner-inline-mobile-1,
+    .partner-inline-mobile-2 {
+      display: block;
+    }
   }
 
   /* Hero */
@@ -420,20 +569,35 @@
     text-decoration: underline;
   }
 
-  /* News Grid */
-  .news-grid {
+  /* News & Events side by side */
+  .news-events-row {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 16px;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .news-events-row.single-column {
+    grid-template-columns: 1fr;
+  }
+
+  .ne-column {
+    min-width: 0;
+  }
+
+  /* News List */
+  .news-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .news-card {
-    display: flex;
-    flex-direction: column;
+    display: block;
+    padding: 12px 14px;
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    overflow: hidden;
     text-decoration: none;
     color: var(--text-color);
     transition: border-color 0.15s ease, background-color 0.15s ease;
@@ -444,30 +608,16 @@
     background-color: var(--hover-color);
   }
 
-  .news-image {
-    height: 160px;
-    background-size: cover;
-    background-position: center;
-    background-color: var(--primary-color);
-  }
-
-  .news-body {
-    padding: 16px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
   .news-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    font-size: 0.75rem;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 0.6875rem;
   }
 
   .news-source {
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 4px;
     font-weight: 600;
     text-transform: uppercase;
@@ -485,7 +635,17 @@
   }
 
   .news-pinned {
-    padding: 2px 8px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background-color: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .news-featured {
+    padding: 2px 7px;
     border-radius: 4px;
     background-color: rgba(234, 179, 8, 0.15);
     color: #eab308;
@@ -500,21 +660,21 @@
   }
 
   .news-title {
-    margin: 0 0 8px 0;
-    font-size: 1rem;
+    margin: 0;
+    font-size: 0.875rem;
     font-weight: 600;
     line-height: 1.35;
     color: var(--text-color);
   }
 
   .news-summary {
-    margin: 0;
+    margin: 4px 0 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-    line-height: 1.5;
+    line-height: 1.45;
     display: -webkit-box;
-    line-clamp: 3;
-    -webkit-line-clamp: 3;
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -529,16 +689,17 @@
   .event-row {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 14px 16px;
+    gap: 14px;
+    padding: 12px 14px;
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
   .event-row:hover {
     border-color: var(--accent-color);
+    background-color: var(--hover-color);
   }
 
   .event-row.event-active {
@@ -625,10 +786,18 @@
     color: var(--text-muted);
   }
 
-  .event-duration::before,
-  .event-location::before {
+  .event-duration::before {
     content: '\00B7';
     margin-right: 12px;
+  }
+
+  .event-location {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .event-link {
@@ -1020,8 +1189,8 @@
       font-size: 1rem;
     }
 
-    .news-grid {
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    .news-events-row {
+      grid-template-columns: 1fr;
     }
 
     .features-grid {
@@ -1034,10 +1203,6 @@
   }
 
   @media (max-width: 599px) {
-    .news-grid {
-      grid-template-columns: 1fr;
-    }
-
     .event-row {
       flex-wrap: wrap;
       gap: 12px;

@@ -140,6 +140,20 @@ export async function POST({ request, locals }) {
     }
 
     // 8b. Permission checks for auto-approved types (these bypass admin review)
+    if (entityType === 'promo-visual') {
+      // entityId format: {promoId}-{variant}
+      const promoId = parseInt(String(entityId).split('-')[0], 10);
+      if (!promoId || isNaN(promoId)) {
+        throw error(400, 'Invalid promo visual ID format (expected: promoId-variant)');
+      }
+      const { getPromoById } = await import('$lib/server/db.js');
+      const promo = await getPromoById(promoId);
+      if (!promo) throw error(404, 'Promo not found');
+      if (String(promo.owner_id) !== String(userId)) {
+        throw error(403, 'You can only upload images for your own promos');
+      }
+    }
+
     if (entityType === 'announcement') {
       if (!user.grants?.includes('admin.panel')) {
         throw error(403, 'Only administrators can upload announcement images');

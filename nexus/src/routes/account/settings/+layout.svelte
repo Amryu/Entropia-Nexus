@@ -11,6 +11,14 @@
 
   const navItems = [
     {
+      heading: 'Promos',
+      items: [
+        { label: 'Overview', href: '/account/settings/promos' },
+        { label: 'My Promos', href: '/account/settings/promos/library' },
+        { label: 'My Bookings', href: '/account/settings/promos/bookings' }
+      ]
+    },
+    {
       heading: 'Developer',
       items: [
         { label: 'Applications', href: '/account/settings/developer' },
