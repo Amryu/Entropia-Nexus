@@ -939,7 +939,7 @@ class TrackerPage(QWidget):
         self._update_stat_label(self._hunt_cost_label, "Cost", f"{cost_ped:.2f}")
         self._update_stat_label(self._hunt_loot_label, "Loot", f"{loot:.2f}")
 
-        if cost > 0:
+        if cost_ped > 0:
             ret_color = "#4ec9b0" if ret >= 100 else "#f44747"
             self._update_stat_label(
                 self._hunt_return_label, "Return",
