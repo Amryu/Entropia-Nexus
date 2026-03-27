@@ -143,6 +143,10 @@ class AppConfig:
     # Legal
     tos_accepted_version: str = ""
 
+    # Startup
+    start_on_boot: bool = False
+    start_minimized: bool = False
+
     # Updates
     check_for_updates: bool = True
     update_dismissed_version: str = ""
@@ -415,6 +419,8 @@ DEFAULTS = {
     "inventory_prefs": {},
     "js_utils_path": "",
     "tos_accepted_version": "",
+    "start_on_boot": False,
+    "start_minimized": False,
     "check_for_updates": True,
     "update_dismissed_version": "",
     "update_remind_at": "",

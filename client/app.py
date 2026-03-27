@@ -7,6 +7,7 @@ Usage:
     python -m client --config X       # Use custom config file
     python -m client --verbose        # Enable verbose logging
     python -m client --allow-multiple # Allow multiple instances
+    python -m client --minimized      # Start minimized to system tray
 """
 
 import argparse
@@ -90,6 +91,7 @@ def main():
     parser.add_argument("--config", default="config.json", help="Path to config file")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--allow-multiple", action="store_true", help="Allow multiple instances")
+    parser.add_argument("--minimized", action="store_true", help="Start minimized to system tray")
     args = parser.parse_args()
 
     init_logging(verbose=args.verbose)
@@ -132,13 +134,16 @@ def main():
     if args.headless:
         _run_headless(config, event_bus, db)
     else:
-        _run_gui(config, event_bus, db, args.config, allow_multiple=args.allow_multiple)
+        _run_gui(config, event_bus, db, args.config,
+                allow_multiple=args.allow_multiple,
+                start_minimized=args.minimized or config.start_minimized)
 
 
 _SINGLE_INSTANCE_SERVER_NAME = "EntropiaNexus-SingleInstance"
 
 
-def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
+def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
+             start_minimized=False):
     """Run the full GUI application with Qt event loop."""
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtCore import QTimer
@@ -269,24 +274,26 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     # Launch loading splash in a separate process so it keeps animating
     # smoothly while the main process is blocked on heavy widget construction.
+    # Skip the splash entirely when starting minimized — there's nothing to show.
     import subprocess
     _splash_proc = None
-    try:
-        splash_cmd = [sys.executable, "-m", "client.splash_loader"]
-        # Pass saved screen center so the splash appears on the same monitor
-        # the main window will use.
-        sc = config.main_window_screen_center
-        if sc and len(sc) >= 2:
-            splash_cmd += ["--screen-center", str(int(sc[0])), str(int(sc[1]))]
-        _splash_proc = subprocess.Popen(
-            splash_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=os.path.dirname(os.path.dirname(__file__)),
-        )
-    except Exception as e:
-        log.warning("Loading splash failed to start: %s", e)
+    if not start_minimized:
+        try:
+            splash_cmd = [sys.executable, "-m", "client.splash_loader"]
+            # Pass saved screen center so the splash appears on the same monitor
+            # the main window will use.
+            sc = config.main_window_screen_center
+            if sc and len(sc) >= 2:
+                splash_cmd += ["--screen-center", str(int(sc[0])), str(int(sc[1]))]
+            _splash_proc = subprocess.Popen(
+                splash_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=os.path.dirname(os.path.dirname(__file__)),
+            )
+        except Exception as e:
+            log.warning("Loading splash failed to start: %s", e)
 
     # Create main window FIRST — before any background workers, because
     # worker threads (OCR, etc.) access Win32 display APIs that can race
@@ -348,33 +355,43 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     _scan_summary = None
     _review_dialog = None
 
-    # Show the main window BEFORE closing the splash so Qt computes real
-    # widget geometry.  The splash process has WindowStaysOnTopHint, so the
-    # main window appears behind it and the user doesn't see anything yet.
-    main_window.show()
+    if start_minimized:
+        # Show briefly off-screen so Qt initialises native handles and
+        # geometry, then immediately hide to tray.
+        main_window.show()
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+        _skills_page.flush_prewarm()
+        main_window.hide()
+        log.info("Started minimized to system tray")
+    else:
+        # Show the main window BEFORE closing the splash so Qt computes real
+        # widget geometry.  The splash process has WindowStaysOnTopHint, so the
+        # main window appears behind it and the user doesn't see anything yet.
+        main_window.show()
 
-    # If we came from the login splash, show the main window on the same monitor
-    if splash_screen is not None:
-        main_window.bring_to_front_on_screen(splash_screen)
+        # If we came from the login splash, show the main window on the same monitor
+        if splash_screen is not None:
+            main_window.bring_to_front_on_screen(splash_screen)
 
-    # Force Qt to process layout events so viewports have their real sizes.
-    from PyQt6.QtWidgets import QApplication
-    QApplication.processEvents()
+        # Force Qt to process layout events so viewports have their real sizes.
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
 
-    # Build deferred skill/profession grids synchronously.  This is the
-    # expensive card-widget creation (~0.6s) that would otherwise freeze the
-    # main thread after the splash closes.  The splash still covers the screen.
-    _skills_page.flush_prewarm()
+        # Build deferred skill/profession grids synchronously.  This is the
+        # expensive card-widget creation (~0.6s) that would otherwise freeze the
+        # main thread after the splash closes.  The splash still covers the screen.
+        _skills_page.flush_prewarm()
 
-    # NOW close the loading splash — the main window is fully rendered.
-    if _splash_proc is not None:
-        try:
-            _splash_proc.stdin.write(b"close\n")
-            _splash_proc.stdin.flush()
-            _splash_proc.wait(timeout=3)
-        except Exception:
-            _splash_proc.kill()
-        _splash_proc = None
+        # NOW close the loading splash — the main window is fully rendered.
+        if _splash_proc is not None:
+            try:
+                _splash_proc.stdin.write(b"close\n")
+                _splash_proc.stdin.flush()
+                _splash_proc.wait(timeout=3)
+            except Exception:
+                _splash_proc.kill()
+            _splash_proc = None
 
     # Wire single-instance IPC: when another instance connects, bring window to front
     def _handle_ipc_connection():

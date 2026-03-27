@@ -121,8 +121,9 @@ class AppSignals(QObject):
     historical_import_progress = pyqtSignal(object)  # {"parsed_bytes", "total_bytes", "lines"}
     historical_import_complete = pyqtSignal(object)   # {"lines_parsed", "globals_found", "trades_found"}
 
-    # News
+    # News & Events
     new_news_post = pyqtSignal(str, str)  # (title, summary)
+    new_event = pyqtSignal(str, str)  # (title, detail)
 
     # Updates
     update_available = pyqtSignal(object)   # {"version", "download_size", "file_count"}

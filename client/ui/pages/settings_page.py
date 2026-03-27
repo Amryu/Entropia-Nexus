@@ -179,6 +179,7 @@ class SettingsPage(QWidget):
         self._layout = QVBoxLayout(content)
         self._sections: list[QWidget] = []
 
+        self._build_startup_section()
         self._build_account_section()
         self._build_chat_section()
         self._build_dashboard_section()
@@ -205,6 +206,8 @@ class SettingsPage(QWidget):
         scroll.setWidget(content)
 
         # Connect change signals for realtime auto-save
+        self._start_on_boot_cb.stateChanged.connect(self._schedule_save)
+        self._start_minimized_cb.stateChanged.connect(self._schedule_save)
         self._chat_path.editingFinished.connect(self._schedule_save)
         self._poll_interval.valueChanged.connect(self._schedule_save)
         self._opacity_slider.valueChanged.connect(self._schedule_save)
@@ -266,6 +269,28 @@ class SettingsPage(QWidget):
         # Connect auth state changes and apply current state
         signals.auth_state_changed.connect(self._on_auth_changed)
         self._on_auth_changed(oauth.auth_state)
+
+    # --- Startup ---
+    def _build_startup_section(self):
+        group = QGroupBox("Startup")
+        layout = QVBoxLayout(group)
+
+        self._start_on_boot_cb = QCheckBox("Start on PC startup")
+        self._start_on_boot_cb.setToolTip(
+            "Automatically launch Entropia Nexus when you log in to your computer"
+        )
+        self._start_on_boot_cb.setChecked(self._config.start_on_boot)
+        layout.addWidget(self._start_on_boot_cb)
+
+        self._start_minimized_cb = QCheckBox("Start minimized")
+        self._start_minimized_cb.setToolTip(
+            "Start the application minimized to the system tray"
+        )
+        self._start_minimized_cb.setChecked(self._config.start_minimized)
+        layout.addWidget(self._start_minimized_cb)
+
+        self._sections.append(group)
+        self._layout.addWidget(group)
 
     # --- Account ---
     def _build_account_section(self):
@@ -2268,6 +2293,14 @@ class SettingsPage(QWidget):
 
     def _do_save(self):
         """Apply all settings from the UI to config and persist."""
+        # Startup
+        boot_changed = self._config.start_on_boot != self._start_on_boot_cb.isChecked()
+        self._config.start_on_boot = self._start_on_boot_cb.isChecked()
+        self._config.start_minimized = self._start_minimized_cb.isChecked()
+        if boot_changed:
+            from ...platform.autostart import set_enabled
+            set_enabled(self._config.start_on_boot)
+
         self._config.chat_log_path = self._chat_path.text()
         self._config.poll_interval_ms = self._poll_interval.value()
         self._config.overlay_opacity = self._opacity_slider.value() / 100.0

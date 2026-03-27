@@ -848,8 +848,9 @@ class MainWindow(QWidget):
         self._tray.messageClicked.connect(self._on_tray_message_clicked)
         self._tray.show()
 
-        # News notifications
+        # News & event notifications
         self._signals.new_news_post.connect(self._on_new_news_post)
+        self._signals.new_event.connect(self._on_new_event)
 
         # Update notifications
         self._signals.update_available.connect(self._on_update_available)
@@ -925,6 +926,14 @@ class MainWindow(QWidget):
         self._tray.showMessage(
             title,
             summary[:200] if summary else "",
+            QSystemTrayIcon.MessageIcon.Information,
+            5000,
+        )
+
+    def _on_new_event(self, title: str, detail: str):
+        self._tray.showMessage(
+            title,
+            detail[:200] if detail else "",
             QSystemTrayIcon.MessageIcon.Information,
             5000,
         )

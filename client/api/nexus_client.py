@@ -264,6 +264,16 @@ class NexusClient:
             log.error("Failed to get news: %s", e)
             return []
 
+    def get_events(self, limit: int = 20) -> list[dict]:
+        """GET /api/events — returns upcoming approved events (no auth)."""
+        try:
+            resp = self._session.get(self._url(f"/events?limit={limit}"), timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            log.error("Failed to get events: %s", e)
+            return []
+
     def get_news_article(self, article_id: int) -> dict | None:
         """GET /api/news/:id — returns full announcement with content_html."""
         try:

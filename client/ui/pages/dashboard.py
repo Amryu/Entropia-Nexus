@@ -414,6 +414,19 @@ class _ArticleFetcher(QThread):
         self.finished.emit(self._client.get_news_article(self._article_id))
 
 
+class _EventsFetcher(QThread):
+    """Background thread to fetch events from the Nexus API."""
+    finished = pyqtSignal(list)
+
+    def __init__(self, nexus_client, limit=20):
+        super().__init__()
+        self._client = nexus_client
+        self._limit = limit
+
+    def run(self):
+        self.finished.emit(self._client.get_events(self._limit))
+
+
 class _ItemLookupLoader(QThread):
     """Background thread to build the item name→type dict."""
     finished = pyqtSignal(dict)
@@ -539,6 +552,168 @@ class _NewsRow(QFrame):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._post:
             self.clicked.emit(self._post)
+        super().mousePressEvent(event)
+
+
+def _is_event_active(ev: dict) -> bool:
+    """Return True if the event is currently live."""
+    now = datetime.now(timezone.utc)
+    try:
+        start = datetime.fromisoformat(ev["start_date"].replace("Z", "+00:00"))
+    except Exception:
+        return False
+    if start > now:
+        return False
+    end_str = ev.get("end_date")
+    if end_str:
+        try:
+            end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            return end > now
+        except Exception:
+            pass
+    # No end date — active for 24h after start
+    return (now - start).total_seconds() < 86400
+
+
+def _event_status_text(ev: dict) -> tuple[str, str]:
+    """Return (label, color) for the event status."""
+    now = datetime.now(timezone.utc)
+    try:
+        start = datetime.fromisoformat(ev["start_date"].replace("Z", "+00:00"))
+    except Exception:
+        return ("", TEXT_MUTED)
+    if _is_event_active(ev):
+        return ("Live", SUCCESS)
+    if start > now:
+        diff = start - now
+        days = diff.days
+        hours = int(diff.total_seconds() // 3600)
+        if hours < 1:
+            mins = max(1, int(diff.total_seconds() // 60))
+            label = f"in {mins}m"
+        elif hours < 24:
+            label = f"in {hours}h"
+        elif days < 7:
+            label = f"in {days}d"
+        else:
+            label = start.strftime("%b %d")
+        return (label, TEXT_MUTED)
+    return ("Ended", TEXT_MUTED)
+
+
+class _EventRow(QFrame):
+    """Single compact clickable event row: [date] [type] title ... status."""
+
+    clicked = pyqtSignal(dict)  # emits the full event dict
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._event: dict | None = None
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(f"""
+            _EventRow {{
+                background-color: transparent;
+                border-bottom: 1px solid {BORDER};
+                padding: 0px;
+            }}
+            _EventRow:hover {{
+                background-color: {HOVER};
+            }}
+        """)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(6, 4, 6, 4)
+        row.setSpacing(8)
+
+        # Date block (compact: "MAR 27")
+        self._date_label = QLabel()
+        self._date_label.setFixedWidth(52)
+        self._date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._date_label.setStyleSheet(
+            f"font-size: 10px; font-weight: bold; color: {TEXT_MUTED};"
+            " background: transparent;"
+        )
+        row.addWidget(self._date_label)
+
+        # Type badge
+        self._type_badge = QLabel()
+        self._type_badge.setFixedWidth(52)
+        self._type_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self._type_badge)
+
+        # Title + location
+        info = QVBoxLayout()
+        info.setContentsMargins(0, 0, 0, 0)
+        info.setSpacing(0)
+        self._title = QLabel()
+        self._title.setStyleSheet(
+            f"font-size: 12px; color: {TEXT}; background: transparent;"
+        )
+        info.addWidget(self._title)
+        self._location = QLabel()
+        self._location.setStyleSheet(
+            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent;"
+        )
+        info.addWidget(self._location)
+        row.addLayout(info, 1)
+
+        # Status label (Live / in Xh / Ended)
+        self._status = QLabel()
+        self._status.setStyleSheet(
+            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+        )
+        row.addWidget(self._status)
+
+    def set_data(self, ev: dict):
+        self._event = ev
+
+        # Date block
+        try:
+            dt = datetime.fromisoformat(ev["start_date"].replace("Z", "+00:00"))
+            self._date_label.setText(dt.strftime("%b\n%d").upper())
+        except Exception:
+            self._date_label.setText("")
+
+        # Type badge
+        if ev.get("type") == "official":
+            self._type_badge.setText("Official")
+            self._type_badge.setStyleSheet(
+                "font-size: 10px; font-weight: bold; padding: 1px 4px;"
+                f"border-radius: 3px; background: {ACCENT}; color: #fff;"
+            )
+        else:
+            self._type_badge.setText("Player")
+            self._type_badge.setStyleSheet(
+                "font-size: 10px; font-weight: bold; padding: 1px 4px;"
+                "border-radius: 3px; background: #000; color: #fff;"
+            )
+
+        self._title.setText(ev.get("title", ""))
+
+        # Location + time
+        parts = []
+        try:
+            dt = datetime.fromisoformat(ev["start_date"].replace("Z", "+00:00"))
+            parts.append(dt.strftime("%H:%M UTC"))
+        except Exception:
+            pass
+        loc = ev.get("location")
+        if loc:
+            parts.append(loc)
+        self._location.setText(" \u2022 ".join(parts))
+        self._location.setVisible(bool(parts))
+
+        # Status
+        label, color = _event_status_text(ev)
+        self._status.setText(label)
+        style = f"font-size: 11px; background: transparent; color: {color};"
+        if label == "Live":
+            style += " font-weight: bold;"
+        self._status.setStyleSheet(style)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._event:
+            self.clicked.emit(self._event)
         super().mousePressEvent(event)
 
 
@@ -814,12 +989,15 @@ class DashboardPage(QWidget):
         self._trade_lines = 0
         self._trade_html: deque[str] = deque(maxlen=MAX_TICKER_LINES)
         self._fetcher = None
+        self._events_fetcher = None
         self._article_fetcher = None
         self._item_lookup: dict[str, str] = {}
         self._item_loader = None
         self._seen_ids: set[int] | None = None  # None = first load not done yet
+        self._seen_event_fingerprints: set[tuple] | None = None
         self._pending_post: dict | None = None  # post being loaded
         self._pending_ingested_globals: deque[GlobalEvent] = deque()
+        self._active_feed = "news"  # "news" or "events"
 
         # Root layout with stacked widget for list/article views
         root = QVBoxLayout(self)
@@ -832,15 +1010,37 @@ class DashboardPage(QWidget):
         list_view = QWidget()
         layout = QVBoxLayout(list_view)
 
-        # Latest News (scrollable list)
-        news_group = QGroupBox("Latest News")
-        news_group_layout = QVBoxLayout(news_group)
-        news_group_layout.setContentsMargins(4, 12, 4, 4)
+        # Feed section — News / Events toggle
+        feed_box = QWidget()
+        feed_layout = QVBoxLayout(feed_box)
+        feed_layout.setContentsMargins(0, 0, 0, 0)
+        feed_layout.setSpacing(0)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { border: none; }")
+        # Toggle header row
+        toggle_row = QHBoxLayout()
+        toggle_row.setContentsMargins(4, 4, 4, 0)
+        toggle_row.setSpacing(0)
+
+        self._news_tab = QPushButton("News")
+        self._events_tab = QPushButton("Events")
+        for btn in (self._news_tab, self._events_tab):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(28)
+        self._news_tab.clicked.connect(lambda: self._switch_feed("news"))
+        self._events_tab.clicked.connect(lambda: self._switch_feed("events"))
+        toggle_row.addWidget(self._news_tab)
+        toggle_row.addWidget(self._events_tab)
+        toggle_row.addStretch()
+        feed_layout.addLayout(toggle_row)
+
+        # Stacked feed content
+        self._feed_stack = QStackedWidget()
+
+        # --- News feed (index 0) ---
+        news_scroll = QScrollArea()
+        news_scroll.setWidgetResizable(True)
+        news_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        news_scroll.setStyleSheet("QScrollArea { border: none; }")
 
         self._news_container = QWidget()
         self._news_layout = QVBoxLayout(self._news_container)
@@ -848,8 +1048,7 @@ class DashboardPage(QWidget):
         self._news_layout.setSpacing(0)
         self._news_layout.addStretch()
 
-        scroll.setWidget(self._news_container)
-        news_group_layout.addWidget(scroll)
+        news_scroll.setWidget(self._news_container)
 
         self._news_rows: list[_NewsRow] = []
         self._posts_empty = QLabel("Loading...")
@@ -857,7 +1056,34 @@ class DashboardPage(QWidget):
         self._posts_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._news_layout.insertWidget(0, self._posts_empty)
 
-        layout.addWidget(news_group, 3)
+        self._feed_stack.addWidget(news_scroll)  # index 0
+
+        # --- Events feed (index 1) ---
+        events_scroll = QScrollArea()
+        events_scroll.setWidgetResizable(True)
+        events_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        events_scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        self._events_container = QWidget()
+        self._events_layout = QVBoxLayout(self._events_container)
+        self._events_layout.setContentsMargins(0, 0, 0, 0)
+        self._events_layout.setSpacing(0)
+        self._events_layout.addStretch()
+
+        events_scroll.setWidget(self._events_container)
+
+        self._event_rows: list[_EventRow] = []
+        self._events_empty = QLabel("Loading...")
+        self._events_empty.setObjectName("mutedText")
+        self._events_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._events_layout.insertWidget(0, self._events_empty)
+
+        self._feed_stack.addWidget(events_scroll)  # index 1
+
+        feed_layout.addWidget(self._feed_stack)
+        self._update_feed_tabs()
+
+        layout.addWidget(feed_box, 3)
 
         # Tickers (globals + trade)
         ticker_row = QWidget()
@@ -908,13 +1134,15 @@ class DashboardPage(QWidget):
         signals.trade_chat.connect(self._on_trade_chat)
         signals.config_changed.connect(lambda _cfg: self._rebuild_globals())
 
-        # News refresh timer
+        # News + events refresh timer
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._fetch_news)
+        self._refresh_timer.timeout.connect(self._fetch_events)
         self._refresh_timer.start(NEWS_REFRESH_INTERVAL_MS)
 
         # Initial fetches
         self._fetch_news()
+        self._fetch_events()
         self._load_item_lookup()
         self._ticker_loader = None
         self._load_ticker_history()
@@ -1001,9 +1229,10 @@ class DashboardPage(QWidget):
     # --- News ---
 
     def showEvent(self, event):
-        """Refresh news immediately when the tab becomes visible."""
+        """Refresh feeds immediately when the tab becomes visible."""
         super().showEvent(event)
         self._fetch_news()
+        self._fetch_events()
 
     def _fetch_news(self):
         if self._fetcher and self._fetcher.isRunning():
@@ -1011,6 +1240,13 @@ class DashboardPage(QWidget):
         self._fetcher = _NewsFetcher(self._nexus_client)
         self._fetcher.finished.connect(self._on_news_loaded)
         self._fetcher.start()
+
+    def _fetch_events(self):
+        if self._events_fetcher and self._events_fetcher.isRunning():
+            return
+        self._events_fetcher = _EventsFetcher(self._nexus_client)
+        self._events_fetcher.finished.connect(self._on_events_loaded)
+        self._events_fetcher.start()
 
     def _on_news_loaded(self, posts: list):
         # --- Notification for new posts ---
@@ -1021,6 +1257,9 @@ class DashboardPage(QWidget):
         else:
             new_ids = current_ids - self._seen_ids
             self._seen_ids = current_ids
+            if new_ids and self._active_feed != "news":
+                self._news_tab.setProperty("highlight", True)
+                self._update_feed_tabs()
             # Notify for genuinely new posts (most recent first in list)
             for post in posts:
                 pid = post.get("id")
@@ -1093,6 +1332,116 @@ class DashboardPage(QWidget):
             # Fetch failed — show summary fallback
             self._article_view.show_summary_only(post)
         self._show_article_view()
+
+    # --- Events ---
+
+    def _on_events_loaded(self, events: list):
+        """Handle fetched events list — update rows and notify for changes."""
+        # Build fingerprints: (id, start_date, end_date) to detect changes
+        def _fp(ev):
+            return (ev.get("id"), ev.get("start_date"), ev.get("end_date"))
+
+        current_fps = {_fp(ev) for ev in events}
+
+        if self._seen_event_fingerprints is None:
+            self._seen_event_fingerprints = current_fps
+        else:
+            new_fps = current_fps - self._seen_event_fingerprints
+            gone_fps = self._seen_event_fingerprints - current_fps
+            self._seen_event_fingerprints = current_fps
+            changed = new_fps | gone_fps
+            if changed and self._active_feed != "events":
+                self._events_tab.setProperty("highlight", True)
+                self._update_feed_tabs()
+
+            # Emit signal for genuinely new/changed events
+            for ev in events:
+                if _fp(ev) in new_fps:
+                    detail = ""
+                    if _is_event_active(ev):
+                        detail = "Event is now live!"
+                    else:
+                        try:
+                            dt = datetime.fromisoformat(
+                                ev["start_date"].replace("Z", "+00:00"))
+                            detail = dt.strftime("%b %d, %H:%M UTC")
+                        except Exception:
+                            pass
+                    loc = ev.get("location")
+                    if loc:
+                        detail = f"{detail} \u2022 {loc}" if detail else loc
+                    self._signals.new_event.emit(
+                        ev.get("title", "Event"), detail)
+
+        # Update event rows
+        while len(self._event_rows) < len(events):
+            row = _EventRow()
+            row.clicked.connect(self._on_event_row_clicked)
+            idx = len(self._event_rows)
+            self._events_layout.insertWidget(idx, row)
+            self._event_rows.append(row)
+
+        for i, row in enumerate(self._event_rows):
+            if i < len(events):
+                row.set_data(events[i])
+                row.show()
+            else:
+                row.hide()
+
+        if len(events) == 0:
+            self._events_empty.setText("No upcoming events")
+        self._events_empty.setVisible(len(events) == 0)
+
+    def _on_event_row_clicked(self, ev: dict):
+        """Open event link in browser, if available."""
+        link = ev.get("link")
+        if link:
+            webbrowser.open(link)
+
+    # --- Feed toggle ---
+
+    _TAB_STYLE_ACTIVE = (
+        f"QPushButton {{ background: {ACCENT}; color: #fff; border: none;"
+        f" font-weight: bold; font-size: 12px; padding: 4px 14px;"
+        f" border-radius: 4px; }}"
+    )
+    _TAB_STYLE_INACTIVE = (
+        f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; border: none;"
+        f" font-size: 12px; padding: 4px 14px; border-radius: 4px; }}"
+        f"QPushButton:hover {{ background: {HOVER}; }}"
+    )
+    _TAB_STYLE_HIGHLIGHT = (
+        f"QPushButton {{ background: transparent; color: {ACCENT}; border: none;"
+        f" font-weight: bold; font-size: 12px; padding: 4px 14px;"
+        f" border-radius: 4px; }}"
+        f"QPushButton:hover {{ background: {HOVER}; }}"
+    )
+
+    def _switch_feed(self, feed: str):
+        """Switch between news and events feeds."""
+        self._active_feed = feed
+        if feed == "news":
+            self._feed_stack.setCurrentIndex(0)
+            self._news_tab.setProperty("highlight", False)
+        else:
+            self._feed_stack.setCurrentIndex(1)
+            self._events_tab.setProperty("highlight", False)
+        self._update_feed_tabs()
+
+    def _update_feed_tabs(self):
+        """Apply active/inactive/highlight styling to feed tabs."""
+        if self._active_feed == "news":
+            self._news_tab.setStyleSheet(self._TAB_STYLE_ACTIVE)
+            if self._events_tab.property("highlight"):
+                self._events_tab.setStyleSheet(self._TAB_STYLE_HIGHLIGHT)
+            else:
+                self._events_tab.setStyleSheet(self._TAB_STYLE_INACTIVE)
+        else:
+            self._events_tab.setStyleSheet(self._TAB_STYLE_ACTIVE)
+            if self._news_tab.property("highlight"):
+                self._news_tab.setStyleSheet(self._TAB_STYLE_HIGHLIGHT)
+            else:
+                self._news_tab.setStyleSheet(self._TAB_STYLE_INACTIVE)
 
     # --- Ticker helpers ---
 
@@ -1378,6 +1727,9 @@ class DashboardPage(QWidget):
         if self._fetcher and self._fetcher.isRunning():
             self._fetcher.quit()
             self._fetcher.wait(2000)
+        if self._events_fetcher and self._events_fetcher.isRunning():
+            self._events_fetcher.quit()
+            self._events_fetcher.wait(2000)
         if self._article_fetcher and self._article_fetcher.isRunning():
             self._article_fetcher.quit()
             self._article_fetcher.wait(2000)
