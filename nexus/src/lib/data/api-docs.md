@@ -49,7 +49,7 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 
 **ClassId:** All entity responses include a `ClassId` field (string or `null`) representing the in-game object class identifier. You can look up entities by ClassId by prefixing with `C` (case-insensitive): `GET /{collection}/C{classId}` — for example, `GET /weapons/C12345`.
 
-**Items & Equipment:**
+**Items:**
 
 | Endpoint | Description |
 |----------|-------------|
@@ -57,17 +57,13 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/armorplatings` | Armor plating attachments |
 | `/armorsets` | Armor sets with pieces, effects, and tiers |
 | `/armors` | Individual armor pieces |
-| `/blueprints` | Blueprints with materials, books, droppable status, and rarity |
 | `/blueprintbooks` | Blueprint book collections |
-| `/blueprintdrops` | Droppable blueprints (computed by level range and category) |
+| `/blueprints` | Blueprints with materials, books, droppable status, and rarity |
 | `/capsules` | Creature control capsules |
 | `/clothings` | Clothing with effects and equip sets |
-| `/consumables` | Consumable items with effects |
 | `/decorations` | Decorative items |
 | `/effectchips` | Effect chips with materials and effects |
-| `/effects` | All effect definitions |
 | `/enhancers` | Enhancer attachments |
-| `/equipsets` | Equipment sets |
 | `/excavators` | Excavators with effects and tiers |
 | `/finderamplifiers` | Finder amplifiers |
 | `/finders` | Finders with effects and tiers |
@@ -75,21 +71,30 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/items` | All items (supports `?Ids=1,2,3` for batch fetch) |
 | `/medicalchips` | Medical chips with effects |
 | `/medicaltools` | Medical tools with effects and tiers |
-| `/mindforce` | Mindforce implants |
+| `/mindforceimplants` | Mindforce implants |
 | `/misctools` | Miscellaneous tools |
 | `/pets` | Tamed creatures |
 | `/refiners` | Refiner tools |
-| `/refining` | Refining recipes with ingredients |
 | `/scanners` | Scanner tools |
 | `/signs` | Sign items |
+| `/stimulants` | Consumable items with effects |
 | `/storagecontainers` | Storage containers |
 | `/strongboxes` | Strongbox items |
 | `/teleportationchips` | Teleportation chips |
-| `/tiers` | Tier data with materials |
 | `/vehicles` | Vehicles |
 | `/weaponamplifiers` | Weapon amplifiers |
 | `/weaponvisionattachments` | Weapon vision attachments |
 | `/weapons` | Weapons with effects, tiers, and materials |
+
+**Reference Data:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `/blueprintdrops` | Droppable blueprints (computed by level range and category) |
+| `/effects` | All effect definitions |
+| `/equipsets` | Equipment sets |
+| `/refiningrecipes` | Refining recipes with ingredients |
+| `/tiers` | Tier data with materials |
 
 **World & Information:**
 
