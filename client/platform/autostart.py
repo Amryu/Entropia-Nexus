@@ -17,13 +17,15 @@ _APP_NAME = "EntropiaNexus"
 _DESKTOP_FILENAME = "entropia-nexus.desktop"
 
 
-def _get_launch_command() -> list[str]:
-    """Return the command list to launch the client with --minimized."""
+def _get_launch_command(*, minimized: bool = True) -> list[str]:
+    """Return the command list to launch the client on startup."""
     if getattr(sys, "frozen", False):
-        # PyInstaller bundle — the exe is the entry point
-        return [sys.executable, "--minimized"]
-    # Running from source
-    return [sys.executable, "-m", "client", "--minimized"]
+        cmd = [sys.executable]
+    else:
+        cmd = [sys.executable, "-m", "client"]
+    if minimized:
+        cmd.append("--minimized")
+    return cmd
 
 
 def is_enabled() -> bool:
@@ -33,12 +35,12 @@ def is_enabled() -> bool:
     return _linux_is_enabled()
 
 
-def set_enabled(enabled: bool) -> None:
+def set_enabled(enabled: bool, *, minimized: bool = True) -> None:
     """Enable or disable auto-start for the current platform."""
     if sys.platform == "win32":
-        _win_set_enabled(enabled)
+        _win_set_enabled(enabled, minimized=minimized)
     else:
-        _linux_set_enabled(enabled)
+        _linux_set_enabled(enabled, minimized=minimized)
 
 
 # ---------------------------------------------------------------------------
@@ -62,13 +64,13 @@ def _win_is_enabled() -> bool:
         return False
 
 
-def _win_set_enabled(enabled: bool) -> None:
+def _win_set_enabled(enabled: bool, *, minimized: bool = True) -> None:
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_PATH, 0,
                             winreg.KEY_SET_VALUE) as key:
             if enabled:
-                cmd = _get_launch_command()
+                cmd = _get_launch_command(minimized=minimized)
                 # Quote each part that contains spaces
                 value = " ".join(
                     f'"{part}"' if " " in part else part for part in cmd
@@ -112,10 +114,10 @@ def _linux_is_enabled() -> bool:
         return False
 
 
-def _linux_set_enabled(enabled: bool) -> None:
+def _linux_set_enabled(enabled: bool, *, minimized: bool = True) -> None:
     path = _desktop_path()
     if enabled:
-        cmd = _get_launch_command()
+        cmd = _get_launch_command(minimized=minimized)
         exec_line = " ".join(cmd)
         content = (
             "[Desktop Entry]\n"

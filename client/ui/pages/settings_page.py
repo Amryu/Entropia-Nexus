@@ -2294,12 +2294,15 @@ class SettingsPage(QWidget):
     def _do_save(self):
         """Apply all settings from the UI to config and persist."""
         # Startup
-        boot_changed = self._config.start_on_boot != self._start_on_boot_cb.isChecked()
-        self._config.start_on_boot = self._start_on_boot_cb.isChecked()
-        self._config.start_minimized = self._start_minimized_cb.isChecked()
-        if boot_changed:
+        new_boot = self._start_on_boot_cb.isChecked()
+        new_minimized = self._start_minimized_cb.isChecked()
+        boot_changed = self._config.start_on_boot != new_boot
+        minimized_changed = self._config.start_minimized != new_minimized
+        self._config.start_on_boot = new_boot
+        self._config.start_minimized = new_minimized
+        if boot_changed or (minimized_changed and new_boot):
             from ...platform.autostart import set_enabled
-            set_enabled(self._config.start_on_boot)
+            set_enabled(new_boot, minimized=new_minimized)
 
         self._config.chat_log_path = self._chat_path.text()
         self._config.poll_interval_ms = self._poll_interval.value()

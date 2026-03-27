@@ -609,7 +609,6 @@ class _EventRow(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._event: dict | None = None
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"""
             _EventRow {{
                 background-color: transparent;
@@ -666,6 +665,10 @@ class _EventRow(QFrame):
 
     def set_data(self, ev: dict):
         self._event = ev
+        if ev.get("link"):
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
         # Date block
         try:
@@ -1337,9 +1340,10 @@ class DashboardPage(QWidget):
 
     def _on_events_loaded(self, events: list):
         """Handle fetched events list — update rows and notify for changes."""
-        # Build fingerprints: (id, start_date, end_date) to detect changes
+        # Build fingerprints: (id, active_state) to detect new events and
+        # state transitions (upcoming → live → ended).
         def _fp(ev):
-            return (ev.get("id"), ev.get("start_date"), ev.get("end_date"))
+            return (ev.get("id"), _is_event_active(ev))
 
         current_fps = {_fp(ev) for ev in events}
 
