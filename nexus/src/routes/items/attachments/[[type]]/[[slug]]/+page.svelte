@@ -786,7 +786,7 @@
         <div class="stats-section">
           <h4 class="section-title">Economy</h4>
 
-          {#if additional.type === 'absorbers'}
+          {#if additional.type === 'weaponamplifiers' || additional.type === 'absorbers'}
             <div class="stat-row">
               <span class="stat-label">Efficiency</span>
               <span class="stat-value">
