@@ -1014,7 +1014,7 @@ class DashboardPage(QWidget):
         feed_box = QGroupBox()
         feed_box.setTitle("")  # no title text — tabs replace it
         feed_layout = QVBoxLayout(feed_box)
-        feed_layout.setContentsMargins(4, 8, 4, 4)
+        feed_layout.setContentsMargins(4, 2, 4, 4)
         feed_layout.setSpacing(0)
 
         # Toggle header row
@@ -1406,12 +1406,14 @@ class DashboardPage(QWidget):
         f" border-radius: 4px; }}"
     )
     _TAB_STYLE_INACTIVE = (
-        f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; border: none;"
+        f"QPushButton {{ background: transparent; color: {TEXT_MUTED};"
+        f" border: 1px solid {BORDER};"
         f" font-size: 12px; padding: 4px 14px; border-radius: 4px; }}"
         f"QPushButton:hover {{ background: {HOVER}; }}"
     )
     _TAB_STYLE_HIGHLIGHT = (
-        f"QPushButton {{ background: transparent; color: {ACCENT}; border: none;"
+        f"QPushButton {{ background: transparent; color: {ACCENT};"
+        f" border: 1px solid {ACCENT};"
         f" font-weight: bold; font-size: 12px; padding: 4px 14px;"
         f" border-radius: 4px; }}"
         f"QPushButton:hover {{ background: {HOVER}; }}"
