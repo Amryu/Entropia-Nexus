@@ -48,6 +48,21 @@ def set_enabled(enabled: bool, *, minimized: bool = True) -> None:
 # ---------------------------------------------------------------------------
 
 _WIN_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_WIN_LEGACY_NAME = "EntropiaNexus"  # pre-0.4.2 registry key name
+
+
+def _win_remove_legacy() -> None:
+    """Remove the old 'EntropiaNexus' registry entry if it exists."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_PATH, 0,
+                            winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, _WIN_LEGACY_NAME)
+            log.info("Removed legacy autostart entry '%s'", _WIN_LEGACY_NAME)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
 
 
 def _win_is_enabled() -> bool:
@@ -65,6 +80,7 @@ def _win_is_enabled() -> bool:
 
 
 def _win_set_enabled(enabled: bool, *, minimized: bool = True) -> None:
+    _win_remove_legacy()
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_REG_PATH, 0,
