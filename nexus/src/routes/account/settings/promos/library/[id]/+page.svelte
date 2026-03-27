@@ -15,13 +15,23 @@
   let isNew = $derived(data.isNew);
   let saving = $state(false);
 
-  // Form fields
-  let promoType = $state(data.promo?.promo_type ?? 'placement');
-  let name = $state(data.promo?.name ?? '');
-  let title = $state(data.promo?.title ?? '');
-  let summary = $state(data.promo?.summary ?? '');
-  let contentHtml = $state(data.promo?.content_html ?? '');
-  let link = $state(data.promo?.link ?? '');
+  // Form fields — synced from page data on load/navigation
+  let promoType = $state('placement');
+  let name = $state('');
+  let title = $state('');
+  let summary = $state('');
+  let contentHtml = $state('');
+  let link = $state('');
+
+  $effect.pre(() => {
+    const p = data.promo;
+    promoType = p?.promo_type ?? 'placement';
+    name = p?.name ?? '';
+    title = p?.title ?? '';
+    summary = p?.summary ?? '';
+    contentHtml = p?.content_html ?? '';
+    link = p?.link ?? '';
+  });
 
   function stripHtml(html) {
     if (!html) return '';
