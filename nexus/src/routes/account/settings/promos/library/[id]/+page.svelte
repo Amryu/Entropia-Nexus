@@ -333,7 +333,7 @@
 {#if cropperVisible}
   <div class="crop-overlay" role="presentation" onclick={cancelCrop}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="crop-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="crop-dialog" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <h3>Crop Image — {cropperVariant?.label}</h3>
       <p class="crop-hint">Position and zoom to fit the {cropperVariant?.width}x{cropperVariant?.height} area. The image will be resized to exact dimensions after cropping.</p>
       <ImageCropper
