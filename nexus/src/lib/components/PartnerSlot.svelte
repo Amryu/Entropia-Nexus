@@ -44,7 +44,7 @@
     <span class="partner-content-icon">EN</span>
     <div class="partner-content-text">
       <span class="partner-content-heading">Partner with Entropia Nexus</span>
-      <span class="partner-content-sub">Reach the EU community with targeted placements</span>
+      <span class="partner-content-sub">Reach the EU community with your placements</span>
       <span class="partner-cta">Learn More</span>
     </div>
   </a>
