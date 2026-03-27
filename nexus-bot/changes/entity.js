@@ -1432,7 +1432,7 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
       INSERT INTO "MobMaturities"
       ("MobId", "Name", "NameMode", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description")
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
-      ON CONFLICT ("MobId", "Name", COALESCE("DangerLevel", -1)) DO UPDATE SET
+      ON CONFLICT ("MobId", "Name", (COALESCE("DangerLevel", -1))) DO UPDATE SET
       "NameMode" = $3, "Health" = $4, "RegenerationInterval" = $5, "RegenerationAmount" = $6, "AttackSpeed" = $7, "DangerLevel" = $8, "TamingLevel" = $9, "Strength" = $10, "Agility" = $11, "Intelligence" = $12, "Psyche" = $13, "Stamina" = $14, "MissChance" = $15, "ResistanceStab" = $16, "ResistanceCut" = $17, "ResistanceImpact" = $18, "ResistancePenetration" = $19, "ResistanceShrapnel" = $20, "ResistanceBurn" = $21, "ResistanceCold" = $22, "ResistanceAcid" = $23, "ResistanceElectric" = $24, "Boss" = $25, "Description" = $26
       RETURNING "Id"`,
       [
