@@ -1420,12 +1420,19 @@ async function applyWaveEventWavesChanges(client, locationId, waves) {
 
 async function applyMobMaturityChanges(client, mobId, maturities) {
   maturities = await Promise.all([
-    client.query(`DELETE FROM ONLY "MobMaturities" WHERE "MobId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [mobId, maturities.map(x => x.Name)]),
+    client.query(
+      `DELETE FROM ONLY "MobMaturities"
+       WHERE "MobId" = $1
+         AND ("Name", COALESCE("DangerLevel", -1)) NOT IN (
+           SELECT * FROM unnest($2::text[], $3::int[])
+         )`,
+      [mobId, maturities.map(x => x.Name), maturities.map(x => x.Properties.Level ?? -1)]
+    ),
     ...maturities.map(maturity => client.query(`
       INSERT INTO "MobMaturities"
       ("MobId", "Name", "NameMode", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description")
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
-      ON CONFLICT ("MobId", "Name") DO UPDATE SET
+      ON CONFLICT ("MobId", "Name", COALESCE("DangerLevel", -1)) DO UPDATE SET
       "NameMode" = $3, "Health" = $4, "RegenerationInterval" = $5, "RegenerationAmount" = $6, "AttackSpeed" = $7, "DangerLevel" = $8, "TamingLevel" = $9, "Strength" = $10, "Agility" = $11, "Intelligence" = $12, "Psyche" = $13, "Stamina" = $14, "MissChance" = $15, "ResistanceStab" = $16, "ResistanceCut" = $17, "ResistanceImpact" = $18, "ResistancePenetration" = $19, "ResistanceShrapnel" = $20, "ResistanceBurn" = $21, "ResistanceCold" = $22, "ResistanceAcid" = $23, "ResistanceElectric" = $24, "Boss" = $25, "Description" = $26
       RETURNING "Id"`,
       [
@@ -1480,7 +1487,7 @@ async function applyMobLootChanges(client, mobId, loots) {
 
   // Resolve Item and Maturity IDs
   await Promise.all(loots.map(loot => client.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [loot.Item.Name]).then(res => loot.Item.Id = res.rows[0]?.Id)));
-  await Promise.all(loots.map(loot => client.query(`SELECT "Id" FROM ONLY "MobMaturities" WHERE "Name" = $1`, [loot.Maturity.Name]).then(res => loot.Maturity.Id = res.rows[0]?.Id)));
+  await Promise.all(loots.map(loot => client.query(`SELECT "Id" FROM ONLY "MobMaturities" WHERE "MobId" = $1 AND "Name" = $2`, [mobId, loot.Maturity.Name]).then(res => loot.Maturity.Id = res.rows[0]?.Id)));
 
   const newItemIds = loots
     .map(loot => loot?.Item?.Id)
