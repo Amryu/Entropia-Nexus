@@ -16,21 +16,24 @@
 </script>
 
 {#if promo}
-  <a
-    href="/api/promos/click/{promo.booking_id}"
-    class="partner-promo"
-    class:partner-promo-vertical={variant === 'vertical'}
-    class:partner-promo-horizontal={variant === 'horizontal'}
-    rel="noopener"
-    target="_blank"
-  >
-    <img
-      src="/api/img/promo-visual/{promo.promo_id}-{variant}"
-      alt={promo.name || 'Partner'}
-      class="partner-promo-img"
-      loading="lazy"
-    />
-  </a>
+  <div class="partner-promo-wrap">
+    <a
+      href="/api/promos/click/{promo.booking_id}"
+      class="partner-promo"
+      class:partner-promo-vertical={variant === 'vertical'}
+      class:partner-promo-horizontal={variant === 'horizontal'}
+      rel="noopener"
+      target="_blank"
+    >
+      <img
+        src="/api/img/promo-visual/{promo.promo_id}-{variant}"
+        alt={promo.name || 'Partner'}
+        class="partner-promo-img"
+        loading="lazy"
+      />
+    </a>
+    <a href="/account/settings/promos" class="partner-promo-cta">Place yours here</a>
+  </div>
 {:else}
   <a
     href="/account/settings/promos"
@@ -39,13 +42,44 @@
     class:partner-content-horizontal={variant === 'horizontal'}
   >
     <span class="partner-content-icon">EN</span>
-    <span class="partner-content-heading">Partner with Entropia Nexus</span>
-    <span class="partner-content-sub">Reach the EU community</span>
-    <span class="partner-cta">Learn More</span>
+    <div class="partner-content-text">
+      <span class="partner-content-heading">Partner with Entropia Nexus</span>
+      <span class="partner-content-sub">Reach the EU community with targeted placements</span>
+      <span class="partner-cta">Learn More</span>
+    </div>
   </a>
 {/if}
 
 <style>
+  /* Active promo wrapper */
+  .partner-promo-wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .partner-promo-cta {
+    display: block;
+    text-align: center;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 4px 0;
+    opacity: 0.6;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  .partner-promo-cta:hover {
+    opacity: 1;
+    color: var(--accent-color);
+  }
+
+  @media (max-width: 899px) {
+    .partner-promo-cta {
+      display: none;
+    }
+  }
+
   /* Active promo */
   .partner-promo {
     display: block;
@@ -104,42 +138,48 @@
   .partner-content-horizontal {
     flex-direction: row;
     text-align: left;
-    gap: 12px;
+    gap: 16px;
   }
 
   .partner-content-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
     border-radius: 8px;
     background-color: var(--primary-color);
     color: var(--accent-color);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 700;
     letter-spacing: 0.5px;
   }
 
+  .partner-content-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   .partner-content-heading {
-    font-size: 0.8125rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-color);
     line-height: 1.3;
   }
 
   .partner-content-sub {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--text-muted);
     line-height: 1.3;
   }
 
   .partner-cta {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--accent-color);
-    transition: text-decoration 0.15s ease;
+    margin-top: 2px;
   }
 
   .partner-content:hover .partner-cta {
@@ -147,29 +187,31 @@
   }
 
   /* Vertical: stack all items */
+  .partner-content-vertical {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+  }
+
   .partner-content-vertical .partner-content-icon {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    font-size: 0.875rem;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    font-size: 1rem;
   }
 
-  .partner-content-vertical .partner-content-heading {
-    font-size: 0.875rem;
-  }
-
-  /* Horizontal: keep text items together */
-  .partner-content-horizontal .partner-content-sub {
-    display: none;
+  .partner-content-vertical .partner-content-text {
+    align-items: center;
+    gap: 6px;
   }
 
   @media (max-width: 599px) {
-    .partner-content-horizontal .partner-content-sub {
-      display: none;
+    .partner-content-heading {
+      font-size: 0.8125rem;
     }
 
-    .partner-content-heading {
-      font-size: 0.75rem;
+    .partner-content-sub {
+      display: none;
     }
   }
 </style>

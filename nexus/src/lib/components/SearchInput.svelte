@@ -441,9 +441,10 @@
 
   .search-input {
     width: 100%;
+    height: 32px;
     font-size: 14px;
-    padding: 8px 12px;
-    padding-right: 32px;
+    padding: 6px 10px;
+    padding-right: 28px;
     border-radius: 4px;
     border: 1px solid var(--border-color);
     background-color: var(--bg-color);

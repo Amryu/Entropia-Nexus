@@ -79,6 +79,10 @@ export async function POST({ request, locals }) {
   if (summary && summary.length > MAX_SUMMARY_LENGTH) {
     return getResponse({ error: `Summary cannot exceed ${MAX_SUMMARY_LENGTH} characters.` }, 400);
   }
+  // Placement promos require a link (click-through destination)
+  if (body.promo_type === 'placement' && !link) {
+    return getResponse({ error: 'Placement promos require a link URL.' }, 400);
+  }
   if (link && link.length > MAX_LINK_LENGTH) {
     return getResponse({ error: `Link cannot exceed ${MAX_LINK_LENGTH} characters.` }, 400);
   }

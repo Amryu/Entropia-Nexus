@@ -87,6 +87,15 @@
       {/if}
     </div>
 
+    {#if booking.status === 'pending'}
+      <div class="info-banner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <div>
+          <strong>Pending review</strong> — Contact an admin to negotiate pricing and get your content reviewed. You can reach out via Discord or in-game to <strong>Pugnus Amryu Tonitrus</strong>.
+        </div>
+      </div>
+    {/if}
+
     <div class="detail-grid">
       <div class="detail-section">
         <h2>Details</h2>
@@ -489,6 +498,26 @@
   .btn-danger:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .info-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--text-color);
+    line-height: 1.5;
+  }
+
+  .info-banner svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--accent-color);
   }
 
   .status-badge {

@@ -42,7 +42,11 @@ export async function GET(event) {
   const userAgent = event.request.headers.get('user-agent') || '';
   const isBotRequest = isBot(userAgent, event.request.method);
 
-  if (!isBotRequest) {
+  // Exclude promo owner's own clicks
+  const viewerId = event.locals?.session?.user?.id;
+  const isOwner = viewerId && String(viewerId) === String(booking.user_id);
+
+  if (!isBotRequest && !isOwner) {
     const ip = getClientIp(event);
     const rateLimitKey = `promo:click:${bookingId}:${ip}`;
     const rateCheck = checkRateLimit(rateLimitKey, 1, CLICK_WINDOW_MS);

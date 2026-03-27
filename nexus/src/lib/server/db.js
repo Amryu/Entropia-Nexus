@@ -5506,7 +5506,7 @@ export async function getActivePromosForHomepage() {
   await activateDueBookings();
   await expireOldBookings();
   const { rows } = await pool.query(
-    `SELECT b.id AS booking_id, b.slot_type, b.promo_id,
+    `SELECT b.id AS booking_id, b.slot_type, b.promo_id, p.owner_id,
             p.promo_type, p.name, p.title, p.summary, p.link, p.content_html,
             COALESCE(
               json_agg(json_build_object(
@@ -5521,7 +5521,7 @@ export async function getActivePromosForHomepage() {
      LEFT JOIN promo_images pi ON pi.promo_id = p.id
      WHERE b.status = 'active'
        AND CURRENT_DATE BETWEEN b.start_date AND b.end_date
-     GROUP BY b.id, b.slot_type, b.promo_id, p.promo_type, p.name, p.title, p.summary, p.link, p.content_html
+     GROUP BY b.id, b.slot_type, b.promo_id, p.owner_id, p.promo_type, p.name, p.title, p.summary, p.link, p.content_html
      ORDER BY b.slot_type, b.id`
   );
   return rows;

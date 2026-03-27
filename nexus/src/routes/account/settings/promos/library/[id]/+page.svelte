@@ -8,6 +8,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { addToast } from '$lib/stores/toasts';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import ImageCropper from '$lib/components/wiki/ImageCropper.svelte';
 
   let { data } = $props();
 
@@ -30,60 +31,121 @@
   // Images from server
   let serverImages = $derived(data.images ?? []);
 
-  // Image upload states
+  // Image upload & crop states
   let uploadingSlot = $state(null);
+  let cropperVisible = $state(false);
+  let cropperImage = $state('');
+  let cropperVariant = $state(null);
+  /** @type {ImageCropper} */
+  let cropperRef = $state(null);
 
   const PLACEMENT_VARIANTS = [
     { key: 'vertical', label: 'Vertical (160x600)', width: 160, height: 600 },
-    { key: 'horizontal', label: 'Horizontal (728x90)', width: 728, height: 90 }
+    { key: 'horizontal', label: 'Horizontal (728x150)', width: 728, height: 150 }
   ];
+
+  let cropperAspect = $derived(
+    cropperVariant ? cropperVariant.width / cropperVariant.height : 1
+  );
+
+  let imageCacheBust = $state(Date.now());
 
   function getImageUrl(variant) {
     const img = serverImages.find(i => i.slot_variant === variant);
     if (!img) return null;
-    return img.image_path;
+    return `${img.image_path}?t=${imageCacheBust}`;
   }
 
-  async function uploadImage(variant) {
+  function openFilePicker(variantKey) {
+    if (!data.promo?.id) {
+      addToast('Save the promo first before uploading images', 'error');
+      return;
+    }
+    const variant = PLACEMENT_VARIANTS.find(v => v.key === variantKey);
+    if (!variant) return;
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/png,image/jpeg,image/webp';
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        cropperImage = e.target.result;
+        cropperVariant = variant;
+        cropperVisible = true;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
 
-      if (!data.promo?.id) {
-        addToast('Save the promo first before uploading images', 'error');
+  function cancelCrop() {
+    cropperVisible = false;
+    cropperImage = '';
+    cropperVariant = null;
+  }
+
+  async function confirmCrop() {
+    if (!cropperRef || !cropperVariant) return;
+
+    const croppedBlob = await cropperRef.getCroppedImage();
+    if (!croppedBlob) {
+      addToast('Failed to crop image', 'error');
+      return;
+    }
+
+    // Resize to exact target dimensions
+    const resizedBlob = await resizeBlob(croppedBlob, cropperVariant.width, cropperVariant.height);
+    const variantKey = cropperVariant.key;
+
+    cropperVisible = false;
+    cropperImage = '';
+    cropperVariant = null;
+
+    // Upload
+    uploadingSlot = variantKey;
+    try {
+      const formData = new FormData();
+      formData.append('image', new File([resizedBlob], `promo-${variantKey}.png`, { type: 'image/png' }));
+      formData.append('entityType', 'promo-visual');
+      formData.append('entityId', `${data.promo.id}-${variantKey}`);
+
+      const res = await fetch('/api/uploads/entity-image', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        addToast(err?.error || 'Image upload failed', 'error');
         return;
       }
 
-      uploadingSlot = variant;
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('entityType', 'promo-visual');
-        formData.append('entityId', `${data.promo.id}-${variant}`);
+      addToast('Image uploaded', 'success');
+      imageCacheBust = Date.now();
+      await invalidateAll();
+    } catch {
+      addToast('Network error during upload', 'error');
+    } finally {
+      uploadingSlot = null;
+    }
+  }
 
-        const res = await fetch('/api/uploads/entity-image', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => null);
-          addToast(err?.error || 'Image upload failed', 'error');
-          return;
-        }
-
-        addToast('Image uploaded', 'success');
-        await invalidateAll();
-      } catch {
-        addToast('Network error during upload', 'error');
-      } finally {
-        uploadingSlot = null;
-      }
-    };
-    input.click();
+  function resizeBlob(blob, targetW, targetH) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        canvas.toBlob((b) => resolve(b), 'image/png', 1);
+      };
+      img.src = URL.createObjectURL(blob);
+    });
   }
 
   async function savePromo() {
@@ -226,6 +288,9 @@
               <div class="slot-header">
                 <span class="slot-label">{variant.label}</span>
               </div>
+              {#if variant.key === 'horizontal'}
+                <p class="slot-note">The horizontal image may be cropped on the left and right edges depending on screen width. Keep important content centered.</p>
+              {/if}
               <div class="slot-preview" style="aspect-ratio: {variant.width}/{variant.height}; max-width: {Math.min(variant.width, 400)}px;">
                 {#if getImageUrl(variant.key)}
                   <img src={getImageUrl(variant.key)} alt="{variant.label} preview" />
@@ -239,7 +304,7 @@
               <button
                 class="btn-secondary upload-btn"
                 disabled={uploadingSlot === variant.key}
-                onclick={() => uploadImage(variant.key)}
+                onclick={() => openFilePicker(variant.key)}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 {uploadingSlot === variant.key ? 'Uploading...' : 'Upload'}
@@ -264,6 +329,25 @@
     </div>
   </div>
 </div>
+
+{#if cropperVisible}
+  <div class="crop-overlay" role="presentation" onclick={cancelCrop}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="crop-dialog" role="dialog" onclick={(e) => e.stopPropagation()}>
+      <h3>Crop Image — {cropperVariant?.label}</h3>
+      <p class="crop-hint">Position and zoom to fit the {cropperVariant?.width}x{cropperVariant?.height} area. The image will be resized to exact dimensions after cropping.</p>
+      <ImageCropper
+        bind:this={cropperRef}
+        image={cropperImage}
+        aspect={cropperAspect}
+        minZoom={0.5}
+        maxZoom={5}
+        onconfirm={confirmCrop}
+        oncancel={cancelCrop}
+      />
+    </div>
+  </div>
+{/if}
 
 <style>
   .scroll-container {
@@ -434,6 +518,13 @@
     object-fit: contain;
   }
 
+  .slot-note {
+    margin: 0 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
   .slot-placeholder {
     display: flex;
     flex-direction: column;
@@ -500,6 +591,42 @@
   .btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* Crop dialog overlay */
+  .crop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .crop-dialog {
+    background: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1.5rem;
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .crop-dialog h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+    color: var(--text-color);
+  }
+
+  .crop-hint {
+    margin: 0 0 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 
   @media (max-width: 768px) {

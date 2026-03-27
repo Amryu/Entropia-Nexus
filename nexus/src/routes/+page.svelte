@@ -18,23 +18,22 @@
 
   let mergedNews = $derived.by(() => {
     if (!promos?.featuredPosts?.length) return news;
+    // Show at most 1 featured post, rotate if multiple are active
+    const fp = promos.featuredPosts[rotationSeed % promos.featuredPosts.length];
+    const autoSummary = !fp.summary && fp.content_html
+      ? fp.content_html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      : fp.summary;
     const result = [...(news || [])];
     const insertAt = Math.min(2, result.length);
-    for (let i = 0; i < promos.featuredPosts.length; i++) {
-      const fp = promos.featuredPosts[i];
-      const autoSummary = !fp.summary && fp.content_html
-        ? fp.content_html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300)
-        : fp.summary;
-      result.splice(insertAt + i, 0, {
-        title: fp.title,
-        summary: autoSummary || '',
-        url: `/api/promos/click/${fp.booking_id}`,
-        featured: true,
-        source: 'featured',
-        date: new Date().toISOString(),
-        has_content: !!fp.content_html
-      });
-    }
+    result.splice(insertAt, 0, {
+      title: fp.title,
+      summary: autoSummary || '',
+      url: `/api/promos/click/${fp.booking_id}`,
+      featured: true,
+      source: 'featured',
+      date: new Date().toISOString(),
+      has_content: !!fp.content_html
+    });
     return result;
   });
 
@@ -176,7 +175,9 @@
                   {#if item.pinned}
                     <span class="news-pinned">Pinned</span>
                   {/if}
-                  <span class="news-date">{timeAgo(item.date)}</span>
+                  {#if !item.featured}
+                    <span class="news-date">{timeAgo(item.date)}</span>
+                  {/if}
                 </div>
                 <h3 class="news-title">{item.title}</h3>
                 {#if item.summary}
@@ -492,7 +493,7 @@
   }
 
   .partner-horizontal {
-    min-height: 90px;
+    min-height: 150px;
   }
 
   /* Wide screens (>=1560px): show side rails, hide all inline */

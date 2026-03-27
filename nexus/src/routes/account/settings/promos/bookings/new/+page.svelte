@@ -98,7 +98,7 @@
         return;
       }
 
-      addToast('Booking created successfully', 'success');
+      addToast('Booking created! Contact an admin to negotiate pricing and get your content reviewed.', 'success');
       goto(`/account/settings/promos/bookings/${result.id}`);
     } catch {
       addToast('Network error', 'error');

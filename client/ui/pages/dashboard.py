@@ -536,7 +536,13 @@ class _NewsRow(QFrame):
         self._date.setText(_time_ago(date) if date else "")
 
         source = post.get("source", "nexus")
-        if source == "steam":
+        if source == "featured":
+            self._source.setText("Featured")
+            self._source.setStyleSheet(
+                "font-size: 10px; font-weight: bold; padding: 1px 4px;"
+                "border-radius: 3px; background: rgba(234, 179, 8, 0.15); color: #eab308;"
+            )
+        elif source == "steam":
             self._source.setText("EU News")
             self._source.setStyleSheet(
                 "font-size: 10px; font-weight: bold; padding: 1px 4px;"
@@ -878,7 +884,7 @@ class _ArticleView(QWidget):
 
         # Meta
         source = article.get("source", list_post.get("source", "nexus"))
-        source_label = "EU News" if source == "steam" else "Nexus"
+        source_label = "Featured" if source == "featured" else ("EU News" if source == "steam" else "Nexus")
         author = article.get("author_name") or article.get("global_name", "")
         date = _format_date(
             article.get("created_at", list_post.get("date", ""))
@@ -923,7 +929,7 @@ class _ArticleView(QWidget):
         self._title.setText(post.get("title", ""))
 
         source = post.get("source", "nexus")
-        source_label = "EU News" if source == "steam" else "Nexus"
+        source_label = "Featured" if source == "featured" else ("EU News" if source == "steam" else "Nexus")
         date = _format_date(post.get("date", ""))
         meta_parts = [source_label]
         if date:
@@ -1297,6 +1303,16 @@ class DashboardPage(QWidget):
 
     def _on_news_row_clicked(self, post: dict):
         """User clicked a news row — fetch full article and show detail view."""
+        # Featured posts always open in browser via click tracking URL
+        if post.get("featured"):
+            url = post.get("url", "")
+            if url:
+                base = self._config.nexus_base_url
+                if url.startswith("/"):
+                    url = base + url
+                webbrowser.open(url)
+            return
+
         article_id = post.get("id")
         has_content = post.get("has_content", False)
 

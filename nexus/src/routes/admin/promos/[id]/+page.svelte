@@ -38,7 +38,8 @@
         })
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Save failed'); }
-      booking = await res.json();
+      const updated = await res.json();
+      booking = { ...booking, ...updated };
       addToast('Booking updated', 'success');
     } catch (err) {
       addToast(err.message, 'error');
@@ -68,7 +69,8 @@
         body: JSON.stringify({ admin_note: adminNote || null })
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Action failed'); }
-      booking = await res.json();
+      const updated = await res.json();
+      booking = { ...booking, ...updated };
       addToast(`Booking ${action === 'reject' ? 'rejected' : action + 'd'}`, 'success');
     } catch (err) {
       addToast(err.message, 'error');

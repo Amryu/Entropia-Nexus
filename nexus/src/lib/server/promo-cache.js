@@ -32,6 +32,7 @@ export async function getActivePromos() {
     const entry = {
       booking_id: row.booking_id,
       promo_id: row.promo_id,
+      owner_id: row.owner_id,
       name: row.name,
       title: row.title,
       summary: row.summary,
@@ -136,13 +137,13 @@ async function flushViewBuffer() {
 }
 
 /**
- * Buffer a promo view for one or more booking IDs.
- * Filters out bots and non-beacon IPs before counting.
- * @param {number[]} bookingIds - booking IDs shown on this page load
+ * Buffer a promo view for shown promos.
+ * Filters out bots, non-beacon IPs, and promo owners viewing their own content.
+ * @param {Array<{booking_id: number, owner_id: string|number}>} shownPromos
  * @param {import('@sveltejs/kit').RequestEvent} event - the SvelteKit request event
  */
-export async function bufferPromoView(bookingIds, event) {
-  if (!bookingIds || bookingIds.length === 0) return;
+export async function bufferPromoView(shownPromos, event) {
+  if (!shownPromos || shownPromos.length === 0) return;
 
   const ua = event.request.headers.get('user-agent') || '';
   const ip = getClientIp(event);
@@ -156,10 +157,14 @@ export async function bufferPromoView(bookingIds, event) {
   const proven = await hasBeaconHit(ip);
   if (!proven) return;
 
+  // Exclude promo owners viewing their own content
+  const viewerId = event.locals?.session?.user?.id;
+
   const dateStr = toDateStr(new Date());
 
-  for (const bookingId of bookingIds) {
-    const key = `${bookingId}:${dateStr}`;
+  for (const { booking_id, owner_id } of shownPromos) {
+    if (viewerId && String(viewerId) === String(owner_id)) continue;
+    const key = `${booking_id}:${dateStr}`;
     viewBuffer.set(key, (viewBuffer.get(key) || 0) + 1);
   }
 

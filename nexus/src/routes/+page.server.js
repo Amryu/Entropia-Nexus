@@ -159,13 +159,13 @@ export async function load(event) {
   const rotationSeed = Math.floor(Math.random() * 1000);
 
   // Buffer view impressions for active placements (non-blocking)
-  const shownBookingIds = [
+  const shownPromos = [
     ...promos.placements.left,
     ...promos.placements.right,
     ...promos.featuredPosts
-  ].map(p => p.booking_id);
-  if (shownBookingIds.length > 0) {
-    bufferPromoView(shownBookingIds, event).catch(() => {});
+  ].map(p => ({ booking_id: p.booking_id, owner_id: p.owner_id }));
+  if (shownPromos.length > 0) {
+    bufferPromoView(shownPromos, event).catch(() => {});
   }
 
   return {

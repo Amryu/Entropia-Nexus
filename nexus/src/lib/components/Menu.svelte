@@ -1025,6 +1025,7 @@
     position: relative;
     flex: 0 1 280px;
     min-width: 80px;
+    height: 32px;
   }
 
   .notification-menu {
@@ -1209,6 +1210,7 @@
 
   :global(.desktop-search .search-input) {
     width: 100%;
+    height: 32px;
     font-size: 14px;
     padding: 6px 10px;
     padding-right: 28px;
@@ -1216,6 +1218,7 @@
     border: 1px solid var(--border-color);
     background-color: var(--bg-color);
     color: var(--text-color);
+    box-sizing: border-box;
   }
 
   :global(.desktop-search .search-results-container) {

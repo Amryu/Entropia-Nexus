@@ -248,6 +248,28 @@ export async function POST({ request, locals }) {
       approved = true;
     }
 
+    // 15. For promo-visual uploads, upsert the promo_images record
+    if (entityType === 'promo-visual' && approved) {
+      const [promoIdStr, variant] = String(entityId).split('-');
+      const promoId = parseInt(promoIdStr, 10);
+      if (promoId && variant) {
+        const { upsertPromoImage } = await import('$lib/server/db.js');
+        const imagePath = `/api/img/promo-visual/${entityId}`;
+        // Get dimensions from the processed image metadata
+        const sharp = (await import('sharp')).default;
+        const approvedPath = getApprovedImagePath(entityType, entityId);
+        let width = 0, height = 0;
+        if (approvedPath) {
+          try {
+            const meta = await sharp(approvedPath).metadata();
+            width = meta.width || 0;
+            height = meta.height || 0;
+          } catch { /* use 0 */ }
+        }
+        await upsertPromoImage({ promoId, slotVariant: variant, imagePath, width, height });
+      }
+    }
+
     if (!approved) {
       const displayName = user.eu_name || user.global_name || user.username;
       const label = entityName || entityId;
