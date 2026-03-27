@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.4.2",
+    "date": "2026-03-27",
+    "changes": [
+      {"type": "feat", "text": "Align client loadout armor format with website to fix per-slot data loss on sync"},
+      {"type": "fix", "text": "Smart filter treats parentheses as literal characters unless logic operators (AND/OR/NOT) are present"},
+      {"type": "fix", "text": "Cost calculation unit mismatch (PEC vs PED) — values now consistently converted at display boundaries"},
+      {"type": "fix", "text": "Loadout cache path was CWD-relative and never found the file — now uses correct absolute path"},
+      {"type": "fix", "text": "Config changes now dynamically start/stop OCR detectors without requiring restart"}
+    ]
+  },
+  {
     "version": "0.4.1",
     "date": "2026-03-17",
     "changes": [
