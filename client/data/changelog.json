@@ -7,7 +7,10 @@
       {"type": "fix", "text": "Smart filter treats parentheses as literal characters unless logic operators (AND/OR/NOT) are present"},
       {"type": "fix", "text": "Cost calculation unit mismatch (PEC vs PED) — values now consistently converted at display boundaries"},
       {"type": "fix", "text": "Loadout cache path was CWD-relative and never found the file — now uses correct absolute path"},
-      {"type": "fix", "text": "Config changes now dynamically start/stop OCR detectors without requiring restart"}
+      {"type": "fix", "text": "Config changes now dynamically start/stop OCR detectors without requiring restart"},
+      {"type": "feat", "text": "Start on PC startup (Windows registry / Linux XDG autostart) and start minimized to system tray options in Settings"},
+      {"type": "feat", "text": "Dashboard News/Events toggle — browse upcoming events with live status, type badges, and countdown timers; tab highlights when new content arrives"},
+      {"type": "fix", "text": "Tracker session summary crashed on hunt update (undefined variable in return % calculation)"}
     ]
   },
   {
