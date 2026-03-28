@@ -792,7 +792,8 @@ export async function handlePageLoad(fetch, items, config) {
         if (orders.sell?.length > 0) {
           for (const o of orders.sell) {
             if (o.computed_state !== 'active' && o.computed_state !== 'stale') continue;
-            const mu = Number(o.markup);
+            const isNeg = o.markup === null || o.markup === undefined;
+            const mu = isNeg ? null : Number(o.markup);
             const ct = Number(o.details?.CurrentTT);
             const isSet = Number(o.quantity) === PLATE_SET_SIZE;
             const tt = ct > 0 ? ct : maxTT;
@@ -800,31 +801,34 @@ export async function handlePageLoad(fetch, items, config) {
             allSellOrders.push({
               seller_name: o.seller_name || 'Anonymous',
               markup: mu,
-              formattedMarkup: `+${mu.toFixed(2)}`,
-              unitPrice: effectiveTT != null ? effectiveTT + mu : null,
+              formattedMarkup: isNeg ? 'Negotiable' : `+${mu.toFixed(2)}`,
+              unitPrice: !isNeg && effectiveTT != null ? effectiveTT + mu : null,
               quantity: o.quantity,
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
               is_set: isSet,
-              _exchangeItemId: exchangeItemId
+              _exchangeItemId: exchangeItemId,
+              negotiable: isNeg,
             });
           }
         }
         if (orders.buy?.length > 0) {
           for (const o of orders.buy) {
             if (o.computed_state !== 'active' && o.computed_state !== 'stale') continue;
-            const mu = Number(o.markup);
+            const isNeg = o.markup === null || o.markup === undefined;
+            const mu = isNeg ? null : Number(o.markup);
             allBuyOrders.push({
               buyer_name: o.seller_name || 'Anonymous',
               markup: mu,
-              formattedMarkup: `+${mu.toFixed(2)}`,
+              formattedMarkup: isNeg ? 'Negotiable' : `+${mu.toFixed(2)}`,
               quantity: o.quantity,
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
               is_set: Number(o.quantity) === PLATE_SET_SIZE,
-              _exchangeItemId: exchangeItemId
+              _exchangeItemId: exchangeItemId,
+              negotiable: isNeg,
             });
           }
         }
@@ -880,32 +884,36 @@ export async function handlePageLoad(fetch, items, config) {
     acquisition.ExchangeOrders = exchangeOrders.sell
       .filter(o => o.computed_state === 'active' || o.computed_state === 'stale')
       .map(o => {
-        const mu = Number(o.markup);
+        const isNegotiable = o.markup === null || o.markup === undefined;
+        const mu = isNegotiable ? null : Number(o.markup);
         let unitPrice = null;
-        if (isBpNonL) {
-          const qr = Number(o.details?.QualityRating) || 0;
-          const tt = qr > 0 ? qr / 100 : null;
-          unitPrice = tt != null ? tt + mu : mu > 0 ? mu : null;
-        } else if (isPercent) {
-          const ct = Number(o.details?.CurrentTT);
-          const tt = ct > 0 ? ct : maxTT;
-          unitPrice = tt != null ? tt * (mu / 100) : null;
-        } else {
-          const ct = Number(o.details?.CurrentTT);
-          const isSet = entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
-          const tt = ct > 0 ? ct : maxTT;
-          const effectiveTT = isSet && tt != null ? tt * PLATE_SET_SIZE : tt;
-          unitPrice = effectiveTT != null ? effectiveTT + mu : null;
+        if (!isNegotiable) {
+          if (isBpNonL) {
+            const qr = Number(o.details?.QualityRating) || 0;
+            const tt = qr > 0 ? qr / 100 : null;
+            unitPrice = tt != null ? tt + mu : mu > 0 ? mu : null;
+          } else if (isPercent) {
+            const ct = Number(o.details?.CurrentTT);
+            const tt = ct > 0 ? ct : maxTT;
+            unitPrice = tt != null ? tt * (mu / 100) : null;
+          } else {
+            const ct = Number(o.details?.CurrentTT);
+            const isSet = entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
+            const tt = ct > 0 ? ct : maxTT;
+            const effectiveTT = isSet && tt != null ? tt * PLATE_SET_SIZE : tt;
+            unitPrice = effectiveTT != null ? effectiveTT + mu : null;
+          }
         }
         return {
           seller_name: o.seller_name || 'Anonymous',
           markup: mu,
-          formattedMarkup: isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`,
+          formattedMarkup: isNegotiable ? 'Negotiable' : (isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`),
           unitPrice,
           quantity: o.quantity,
           planet: o.planet || 'Any',
           state: o.computed_state,
-          is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE
+          is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE,
+          negotiable: isNegotiable,
         };
       });
   }
@@ -914,15 +922,17 @@ export async function handlePageLoad(fetch, items, config) {
     usage.ExchangeBuyOrders = exchangeOrders.buy
       .filter(o => o.computed_state === 'active' || o.computed_state === 'stale')
       .map(o => {
-        const mu = Number(o.markup);
+        const isNegotiable = o.markup === null || o.markup === undefined;
+        const mu = isNegotiable ? null : Number(o.markup);
         return {
           buyer_name: o.seller_name || 'Anonymous',
           markup: mu,
-          formattedMarkup: isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`,
+          formattedMarkup: isNegotiable ? 'Negotiable' : (isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`),
           quantity: o.quantity,
           planet: o.planet || 'Any',
           state: o.computed_state,
-          is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE
+          is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE,
+          negotiable: isNegotiable,
         };
       });
   }

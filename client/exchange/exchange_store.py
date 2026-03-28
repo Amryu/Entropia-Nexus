@@ -500,6 +500,9 @@ class ExchangeStore(QObject):
                 except (TypeError, ValueError):
                     pass
                 mu_text = format_markup(mu_val, is_absolute_markup(item))
+            elif item.get('ns'):
+                # Item has only negotiable sell offers (no priced ones)
+                mu_text = 'Negotiable'
 
             # Updated sort value (composite: has_orders first, then timestamp)
             u = item.get('u')

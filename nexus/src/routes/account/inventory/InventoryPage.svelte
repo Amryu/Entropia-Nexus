@@ -19,6 +19,7 @@
   import ImportHistory from './ImportHistory.svelte';
   import VirtualGrid from './VirtualGrid.svelte';
   import ContainerTreeView from './ContainerTreeView.svelte';
+  import NegotiableListingDialog from './NegotiableListingDialog.svelte';
 
   /**
    * @typedef {Object} Props
@@ -52,6 +53,7 @@
 
   // --- Dialogs ---
   let showImportDialog = $state(false);
+  let showNegotiableDialog = $state(false);
   let showItemDialog = $state(false);
   let editingItem = $state(null);
   let showDetailDialog = $state(false);
@@ -718,6 +720,14 @@
           <button class="btn btn-primary btn-sm" onclick={() => showImportDialog = true}>
             Import
           </button>
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick={() => showNegotiableDialog = true}
+            disabled={inventoryItems.length === 0}
+            title={inventoryItems.length === 0 ? 'Import inventory first' : 'List inventory items on exchange for negotiation'}
+          >
+            List on Exchange
+          </button>
         </div>
       </div>
 
@@ -1112,6 +1122,17 @@
       const idx = inventoryItems.findIndex(i => i.id === data.id);
       if (idx >= 0) inventoryItems[idx] = { ...inventoryItems[idx], ...data };
     }}
+  />
+{/if}
+
+<!-- Negotiable listing dialog -->
+{#if showNegotiableDialog}
+  <NegotiableListingDialog
+    show={showNegotiableDialog}
+    {inventoryItems}
+    {itemLookup}
+    onclose={() => showNegotiableDialog = false}
+    onsaved={() => {}}
   />
 {/if}
 

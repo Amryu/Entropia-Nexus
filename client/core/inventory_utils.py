@@ -297,7 +297,10 @@ def format_markup(value, absolute: bool) -> str:
 
     Absolute: "+X.XX"
     Percent:  "X.XX%"
+    None:     "Negotiable"
     """
+    if value is None:
+        return 'Negotiable'
     try:
         v = float(value)
     except (TypeError, ValueError):

@@ -40,6 +40,7 @@
   } = $props();
 
   let quantity = $state(1);
+  let proposedMarkup = $state('');
   let submitting = $state(false);
   let error = $state(null);
   let minQty = $state(1);
@@ -72,6 +73,7 @@
     if (show && order) {
       if (!wasOpen || initializedOrderId !== currentOrderId) {
         quantity = maxQty;
+        proposedMarkup = '';
         error = null;
         submitting = false;
         initializedOrderId = currentOrderId;
@@ -135,9 +137,13 @@
   let orderQR = $derived(order?.details?.QualityRating ?? null);
   let orderCurrentTT = $derived(order?.details?.CurrentTT ?? null);
 
+  let isNegotiable = $derived(order?.markup === null);
+  let proposedMarkupNum = $derived(Number(proposedMarkup));
+  let proposedMarkupValid = $derived(!isNegotiable || (Number.isFinite(proposedMarkupNum) && proposedMarkupNum >= 0));
+
   let partnerLabel = $derived(side === 'buy' ? 'Seller' : 'Buyer');
-  let actionLabel = $derived(side === 'buy' ? 'Buy Now' : 'Sell Now');
-  let canConfirm = $derived(!submitting && !isOwnOrder && qtyValid);
+  let actionLabel = $derived(isNegotiable ? 'Propose Trade' : (side === 'buy' ? 'Buy Now' : 'Sell Now'));
+  let canConfirm = $derived(!submitting && !isOwnOrder && qtyValid && proposedMarkupValid);
 
   function getNormalizedQuantity() {
     const parsed = Math.floor(Number(quantity));
@@ -166,7 +172,8 @@
       onconfirm?.({
         order,
         quantity: normalized,
-        side
+        side,
+        proposedMarkup: isNegotiable ? proposedMarkupNum : undefined,
       });
     } catch (err) {
       error = err.message || 'Failed to create trade request';
@@ -250,10 +257,31 @@
           </div>
         {/if}
 
-        <div class="info-row">
-          <span class="info-label">Markup</span>
-          <span class="info-value markup">{markupDisplay}</span>
-        </div>
+        {#if isNegotiable}
+          <div class="info-row">
+            <span class="info-label">Markup</span>
+            <span class="info-value negotiable-text">Negotiable</span>
+          </div>
+          <div class="info-row">
+            <label class="info-label" for="proposedMarkup">Propose {isAbsMu ? '(+PED)' : '(%)'}</label>
+            <span class="qty-field">
+              <input
+                id="proposedMarkup"
+                type="number"
+                step="0.01"
+                min="0"
+                bind:value={proposedMarkup}
+                placeholder={isAbsMu ? '+0.00' : '100.00'}
+              />
+              <span class="qty-hint">Your proposed price for this item</span>
+            </span>
+          </div>
+        {:else}
+          <div class="info-row">
+            <span class="info-label">Markup</span>
+            <span class="info-value markup">{markupDisplay}</span>
+          </div>
+        {/if}
 
         <div class="info-row">
           <label class="info-label" for="tradeQty">Quantity</label>
@@ -457,6 +485,11 @@
   .info-value.markup {
     font-weight: 600;
     color: var(--accent-color);
+  }
+
+  .info-value.negotiable-text {
+    font-style: italic;
+    color: var(--text-muted);
   }
   .own-order-notice {
     color: var(--text-muted);

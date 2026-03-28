@@ -174,6 +174,7 @@ def _build_container_path(item_id, container_map: dict, raw_data: list[dict]) ->
     segments = []
     current = item_id
     visited = set()
+    storage_root = None
     # Build a quick ID→raw-item lookup
     raw_by_id = {r.get('id'): r for r in raw_data if r.get('id') is not None}
 
@@ -190,7 +191,19 @@ def _build_container_path(item_id, container_map: dict, raw_data: list[dict]) ->
         name = re.sub(r'\s+', ' ', name).strip()
         if name:
             segments.insert(0, f"{name}#{current}")
-        current = entry.get('ref')
+
+        # Capture the storage root when we reach the top of the chain
+        ref = entry.get('ref')
+        if ref is None or ref not in container_map:
+            root = re.sub(r'\s+', ' ', entry.get('container') or '').strip()
+            if root:
+                storage_root = root
+
+        current = ref
+
+    # Prepend storage root so containers nest under their planet storage
+    if storage_root and segments:
+        segments.insert(0, storage_root)
 
     return ' > '.join(segments) if segments else None
 
@@ -296,12 +309,18 @@ def _process_items(
         return [], [], f"Too many items ({len(raw_data):,}). Maximum {MAX_IMPORT_ITEMS:,}."
 
     # 1. Build container map
+    def _clean_container(s: str | None) -> str | None:
+        """Strip orphaned double quotes from container strings (game export quirk)."""
+        if not s:
+            return None
+        return str(s).replace('"', '').strip() or None
+
     container_map: dict[int, dict] = {}
     for raw in raw_data:
         rid = raw.get('id')
         if rid is not None:
             container_map[rid] = {
-                'container': (raw.get('container') or raw.get('Container') or '').strip() or None,
+                'container': _clean_container(raw.get('container') or raw.get('Container')),
                 'ref': raw.get('containerRefId') or raw.get('container_ref_id'),
             }
 
@@ -333,7 +352,7 @@ def _process_items(
         if ref_id is not None:
             storage = _resolve_storage_location(ref_id, container_map, set())
         if not storage and isinstance(explicit_container, str):
-            storage = explicit_container.strip() or None
+            storage = _clean_container(explicit_container)
 
         # Skip auction items
         if storage and storage.upper() == 'AUCTION':
@@ -822,7 +841,12 @@ class InventoryImportDialog(QDialog):
                 return
 
         # Process items
-        resolved, unresolved, error = _process_items(raw_data, self._slim_items)
+        try:
+            resolved, unresolved, error = _process_items(raw_data, self._slim_items)
+        except Exception as e:
+            log.error("Error processing items: %s", e, exc_info=True)
+            self._show_parse_error(f"Error processing items: {e}")
+            return
         if error:
             self._show_parse_error(error)
             return

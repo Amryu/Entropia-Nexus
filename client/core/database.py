@@ -426,6 +426,7 @@ class Database:
             ("session_loadouts", "crit_damage", "REAL DEFAULT 1.0"),
             ("parser_state", "file_hash", "TEXT"),
             ("screenshots", "file_hash", "TEXT"),
+            ("custom_dailies", "planet", "TEXT DEFAULT ''"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -1032,7 +1033,7 @@ class Database:
             cur = self._conn.execute(
                 "SELECT id, name, cooldown_duration, cooldown_starts_on, "
                 "cooldown_ms, sort_order, cooldown_started_at, notify, "
-                "notify_minutes_before, waypoint, enabled "
+                "notify_minutes_before, waypoint, enabled, planet "
                 "FROM custom_dailies ORDER BY sort_order, id"
             )
             results = []
@@ -1050,6 +1051,7 @@ class Database:
                     "notify_minutes_before": r[8],
                     "waypoint": r[9] or "",
                     "enabled": bool(r[10]),
+                    "planet": r[11] or "",
                     "has_expiry": False,
                 })
             return results
@@ -1066,8 +1068,8 @@ class Database:
                     "INSERT INTO custom_dailies "
                     "(id, name, cooldown_duration, cooldown_starts_on, "
                     "cooldown_ms, sort_order, cooldown_started_at, notify, "
-                    "notify_minutes_before, waypoint, enabled, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "notify_minutes_before, waypoint, enabled, planet, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         raw_id, m.get("name", "?"),
                         m.get("cooldown_duration", "1 day"),
@@ -1077,6 +1079,7 @@ class Database:
                         m.get("notify_minutes_before", 5),
                         m.get("waypoint", ""),
                         int(m.get("enabled", True)),
+                        m.get("planet", ""),
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )

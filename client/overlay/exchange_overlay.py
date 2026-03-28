@@ -1526,8 +1526,7 @@ class ExchangeOverlay(OverlayWidget):
                     text = format_ped(v) if v is not None else ''
                 elif name.startswith('MU'):
                     mu = order.get('markup')
-                    if mu is not None:
-                        text = format_markup(mu, order.get('_is_absolute', True))
+                    text = format_markup(mu, order.get('_is_absolute', True))
                 elif name == 'Total':
                     t = order.get('_total')
                     text = format_ped(t) if t is not None else ''
@@ -1609,7 +1608,7 @@ class ExchangeOverlay(OverlayWidget):
             rows = []
             for order in orders:
                 mu = order.get('markup')
-                mu_text = format_markup(mu, order.get('_is_absolute', True)) if mu is not None else ''
+                mu_text = format_markup(mu, order.get('_is_absolute', True))
                 try:
                     mu_sort = float(mu) if mu is not None else None
                 except (TypeError, ValueError):

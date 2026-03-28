@@ -168,10 +168,10 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
     return { success: false, error: 'quantity must be at least 1' };
   }
 
-  // Validate markup
-  const markup = parseFloat(entry.markup);
-  if (!Number.isFinite(markup) || markup < 0) {
-    return { success: false, error: 'markup must be a non-negative number' };
+  // Validate markup (null = negotiable)
+  const markup = entry.markup === null || entry.markup === undefined ? null : parseFloat(entry.markup);
+  if (markup !== null && (!Number.isFinite(markup) || markup < 0)) {
+    return { success: false, error: 'markup must be null (negotiable) or a non-negative number' };
   }
 
   // Look up item type (cached across batch)
@@ -186,8 +186,8 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
     }
   }
 
-  // Enforce minimum markup based on item type
-  if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType) && markup < 100) {
+  // Enforce minimum markup based on item type (skip for negotiable)
+  if (markup !== null && itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType) && markup < 100) {
     return { success: false, error: 'Markup must be at least 100% for this item type' };
   }
 
@@ -212,8 +212,8 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
   }
   details = genderResult.details;
 
-  // Undercut enforcement: reject orders too close to the best existing offer
-  if (itemInfo) {
+  // Undercut enforcement: reject orders too close to the best existing offer (skip for negotiable)
+  if (itemInfo && markup !== null) {
     const isPercentMu = isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType);
     const gender = details?.Gender || null;
     try {

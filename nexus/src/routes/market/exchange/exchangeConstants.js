@@ -26,6 +26,9 @@ const MIN_UNDERCUT = 0.01;
 /** Default min_quantity as fraction of total quantity */
 export const DEFAULT_PARTIAL_RATIO = 0.2;
 
+/** Display label for orders without a set price */
+export const NEGOTIABLE_LABEL = 'Negotiable';
+
 /**
  * Compute display state from bumped_at timestamp.
  * @param {Date|string|number} bumpedAt

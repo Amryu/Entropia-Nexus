@@ -254,14 +254,12 @@ export async function DELETE({ params, request, locals }) {
   if (authErr) return authErr;
   if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
-  // Verify Turnstile (skipped for OAuth-authenticated requests)
+  // Verify Turnstile if token provided (closing is low-risk; user is authenticated + rate-limited)
   let body = {};
   try { body = await request.json(); } catch {}
-  if (!isOAuthRequest(locals)) {
-    const turnstileToken = body.turnstile_token;
-    if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
+  if (!isOAuthRequest(locals) && body.turnstile_token) {
     const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
-    if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+    if (!await verifyTurnstile(body.turnstile_token, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
   }
 
   // Global close rate limit

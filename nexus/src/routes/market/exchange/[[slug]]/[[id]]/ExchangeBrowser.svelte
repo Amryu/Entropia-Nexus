@@ -18,6 +18,7 @@
   import BulkTradeDialog from './BulkTradeDialog.svelte';
   import TradeRequestsPanel from './TradeRequestsPanel.svelte';
   import MassSellDialog from './MassSellDialog.svelte';
+  import NegotiableListingDialog from '../../../../account/inventory/NegotiableListingDialog.svelte';
   import PriceHistoryChart from './PriceHistoryChart.svelte';
   import RangeSlider from '$lib/components/RangeSlider.svelte';
 
@@ -107,6 +108,8 @@
   let showImportDialog = $state(false);
   let showAdjustDialog = $state(false);
   let showMassSellDialog = $state(false);
+  let showNegotiableDialog = $state(false);
+  let negotiableInventory = $state([]);
   let massSellItems = $state([]);
   let massSellMode = $state(false);
   let inventoryPanelRef = $state();
@@ -2795,6 +2798,15 @@
               {#if $showInventory}
                 <button class="panel-action-btn" class:mass-sell={!massSellMode} class:mass-sell-cancel={massSellMode} onclick={toggleMassSellMode}>{massSellMode ? 'Cancel' : 'Mass Sell'}</button>
                 <button class="panel-action-btn accent" onclick={() => { showImportDialog = true; }}>Import</button>
+                <button class="panel-action-btn" onclick={async () => {
+                  if (negotiableInventory.length === 0) {
+                    try {
+                      const res = await fetch('/api/users/inventory');
+                      if (res.ok) negotiableInventory = await res.json();
+                    } catch {}
+                  }
+                  showNegotiableDialog = true;
+                }}>List on Exchange</button>
                 {#if discrepancyCount > 0}
                   <button class="panel-action-btn warn" onclick={() => { showAdjustDialog = true; }}>Adjust ({discrepancyCount})</button>
                 {/if}
@@ -2890,6 +2902,16 @@
   onclose={() => { showMassSellDialog = false; }}
   oncomplete={handleMassSellComplete}
 />
+
+{#if showNegotiableDialog}
+  <NegotiableListingDialog
+    show={showNegotiableDialog}
+    inventoryItems={negotiableInventory.length > 0 ? negotiableInventory : ($inventory || [])}
+    itemLookup={new Map((allItems || []).filter(s => s?.i).map(s => [s.i, s]))}
+    onclose={() => showNegotiableDialog = false}
+    onsaved={() => { refreshFloatingPanel(); }}
+  />
+{/if}
 
 {#if pendingTurnstileAction}
   <div class="turnstile-modal-overlay" role="presentation" onclick={cancelTurnstileModal}>

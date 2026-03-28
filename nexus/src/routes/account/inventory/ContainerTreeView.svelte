@@ -161,9 +161,9 @@
     const path = editingContainerPath;
     const name = editingContainerName.trim();
 
-    // Extract original segment name from the path
+    // Extract original segment name from the path (strip #refId suffix)
     const segments = path.split(' > ');
-    const originalName = segments[segments.length - 1];
+    const originalName = stripContainerRef(segments[segments.length - 1]);
 
     if (!name || name === originalName) {
       // Revert to default — delete custom name

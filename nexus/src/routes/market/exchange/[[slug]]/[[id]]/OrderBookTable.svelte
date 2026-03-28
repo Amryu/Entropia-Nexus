@@ -92,6 +92,7 @@
       sortable: true,
       searchable: false,
       formatter: (val) => {
+        if (val === null) return '<span class="negotiable-badge">Negotiable</span>';
         if (val == null) return 'N/A';
         return formatMarkupValue(val, isAbsoluteMu);
       }
@@ -247,5 +248,16 @@
     background: var(--accent-color);
     color: #fff;
     font-weight: 600;
+  }
+
+  :global(.negotiable-badge) {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--secondary-color);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-style: italic;
+    border: 1px solid var(--border-color);
   }
 </style>

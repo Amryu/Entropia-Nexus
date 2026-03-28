@@ -93,9 +93,10 @@ export async function POST({ request, locals, fetch }) {
   }
 
   // Validate markup (basic check first, type-aware check after item lookup)
-  const markup = parseFloat(body.markup);
-  if (!Number.isFinite(markup) || markup < 0) {
-    return getResponse({ error: 'markup must be a non-negative number' }, 400);
+  // markup=null means "negotiable" (no price set)
+  const markup = body.markup === null || body.markup === undefined ? null : parseFloat(body.markup);
+  if (markup !== null && (!Number.isFinite(markup) || markup < 0)) {
+    return getResponse({ error: 'markup must be null (negotiable) or a non-negative number' }, 400);
   }
 
   // Look up item type (used for markup validation and per-item rate limits)
@@ -106,8 +107,8 @@ export async function POST({ request, locals, fetch }) {
     console.error('Error checking item type:', err);
   }
 
-  // Enforce minimum markup based on item type
-  if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType) && markup < 100) {
+  // Enforce minimum markup based on item type (skip for negotiable listings)
+  if (markup !== null && itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType) && markup < 100) {
     return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
   }
 
@@ -159,8 +160,8 @@ export async function POST({ request, locals, fetch }) {
   }
   details = genderResult.details;
 
-  // Undercut enforcement: reject orders too close to the best existing offer
-  if (itemInfo) {
+  // Undercut enforcement: reject orders too close to the best existing offer (skip for negotiable)
+  if (itemInfo && markup !== null) {
     const isPercentMu = isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType);
     const gender = details?.Gender || null;
     try {

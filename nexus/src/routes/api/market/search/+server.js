@@ -88,7 +88,11 @@ function formatExchangePrice(item) {
   const maxTT = item.v;
   const subType = item.st;
 
-  if (median == null || median <= 0) return null;
+  if (median == null || median <= 0) {
+    // Show "Negotiable" if there are negotiable sell offers but no priced ones
+    if (item.ns > 0) return 'Negotiable';
+    return null;
+  }
 
   // Percent-markup items (stackables, (L) blueprints, (L) condition items):
   // median IS the markup percentage directly (e.g., 102.50 = 102.50%)
@@ -107,7 +111,10 @@ function formatExchangePrice(item) {
  */
 function formatExchangeDetail(item) {
   const parts = [];
-  if (item.s > 0) parts.push(`${item.s} sell`);
+  if (item.s > 0) {
+    const neg = item.ns || 0;
+    parts.push(neg > 0 && neg < item.s ? `${item.s} sell (${neg} negotiable)` : `${item.s} sell`);
+  }
   if (item.b > 0) parts.push(`${item.b} buy`);
   return parts.length > 0 ? parts.join(' · ') : null;
 }

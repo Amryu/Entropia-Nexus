@@ -220,6 +220,7 @@ export async function bumpAllOrders(userId) {
 export async function getExchangePrices(itemId, gender = null) {
   const conditions = [
     'item_id = $1',
+    'markup IS NOT NULL',
     `state != 'closed'`,
     `bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'`
   ];
@@ -268,6 +269,7 @@ export async function getBestMarkupForItem(itemId, type, excludeUserId, gender =
     'item_id = $1',
     'type = $2',
     'user_id != $3',
+    'markup IS NOT NULL',
     `state != 'closed'`,
     `bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'`
   ];
@@ -292,7 +294,8 @@ export async function getAllOrderCounts() {
     SELECT item_id, type, COUNT(*) AS cnt, COALESCE(SUM(quantity), 0) AS vol,
       MAX(bumped_at) AS last_update,
       CASE WHEN type = 'BUY' THEN MAX(markup) ELSE NULL END AS best_buy_markup,
-      CASE WHEN type = 'SELL' THEN MIN(markup) ELSE NULL END AS best_sell_markup
+      CASE WHEN type = 'SELL' THEN MIN(markup) ELSE NULL END AS best_sell_markup,
+      COUNT(*) FILTER (WHERE markup IS NULL AND type = 'SELL') AS negotiable_sells
     FROM trade_offers
     WHERE state != 'closed'
       AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
@@ -302,7 +305,7 @@ export async function getAllOrderCounts() {
   const counts = new Map();
   for (const row of rows) {
     const id = row.item_id;
-    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, buyVol: 0, sellVol: 0, lastUpdate: null, bestBuyMarkup: null, bestSellMarkup: null });
+    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, buyVol: 0, sellVol: 0, lastUpdate: null, bestBuyMarkup: null, bestSellMarkup: null, negotiableSells: 0 });
     const entry = counts.get(id);
     if (row.type === 'BUY') {
       entry.buys = parseInt(row.cnt, 10);
@@ -312,6 +315,7 @@ export async function getAllOrderCounts() {
       entry.sells = parseInt(row.cnt, 10);
       entry.sellVol = parseInt(row.vol, 10);
       entry.bestSellMarkup = row.best_sell_markup != null ? parseFloat(row.best_sell_markup) : null;
+      entry.negotiableSells = parseInt(row.negotiable_sells, 10) || 0;
     }
     const ts = row.last_update ? new Date(row.last_update) : null;
     if (ts && (!entry.lastUpdate || ts > entry.lastUpdate)) entry.lastUpdate = ts;
@@ -691,6 +695,375 @@ export function formatRetryTime(seconds) {
   if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.ceil(seconds / 3600)}h`;
   return `${Math.ceil(seconds / 86400)}d`;
+}
+
+// ---------- Negotiable Listing Config ----------
+
+/**
+ * Get a user's negotiable listing configuration.
+ */
+export async function getUserNegotiableConfig(userId) {
+  const { rows } = await pool.query(
+    `SELECT id, config, created_at, updated_at FROM user_negotiable_configs WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Upsert a user's negotiable listing configuration.
+ */
+export async function upsertNegotiableConfig(userId, config) {
+  const { rows } = await pool.query(
+    `INSERT INTO user_negotiable_configs (user_id, config, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (user_id)
+     DO UPDATE SET config = EXCLUDED.config, updated_at = NOW()
+     RETURNING id, config, created_at, updated_at`,
+    [userId, JSON.stringify(config)]
+  );
+  return rows[0];
+}
+
+/**
+ * Delete a user's negotiable listing configuration.
+ */
+export async function deleteNegotiableConfig(userId) {
+  const { rowCount } = await pool.query(
+    `DELETE FROM user_negotiable_configs WHERE user_id = $1`,
+    [userId]
+  );
+  return rowCount > 0;
+}
+
+/**
+ * Close all negotiable (markup IS NULL) sell offers for a user.
+ */
+export async function closeAllNegotiableOffers(userId) {
+  const { rowCount } = await pool.query(
+    `UPDATE trade_offers SET state = 'closed', updated = NOW()
+     WHERE user_id = $1 AND markup IS NULL AND type = 'SELL' AND state != 'closed'`,
+    [userId]
+  );
+  return rowCount;
+}
+
+/**
+ * Validate and sanitize a negotiable config object.
+ * Returns the sanitized config or throws on invalid input.
+ */
+const MAX_CONFIG_NODES = 200;
+const MAX_PATH_LENGTH = 500;
+const MAX_SUBSTRING_LENGTH = 200;
+const MAX_WHITELIST_IDS = 1000;
+const VALID_FILTER_MODES = ['whitelist', 'blacklist', 'match'];
+const VALID_ITEM_TYPES = [
+  'Weapon', 'Armor', 'ArmorPlating', 'ArmorSet', 'Vehicle',
+  'WeaponAmplifier', 'WeaponVisionAttachment', 'Absorber',
+  'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
+  'TeleportationChip', 'EffectChip', 'MedicalChip',
+  'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet', 'Clothing',
+  'Material', 'Consumable', 'Capsule', 'Enhancer', 'Strongbox',
+  'Blueprint', 'BlueprintBook', 'SkillImplant',
+  'Furniture', 'Decoration', 'StorageContainer', 'Sign',
+];
+
+export function validateNegotiableConfig(config) {
+  if (!config || typeof config !== 'object') throw new Error('Config must be an object');
+  if (!Array.isArray(config.nodes)) throw new Error('Config must have a nodes array');
+  if (config.nodes.length > MAX_CONFIG_NODES) throw new Error(`Maximum ${MAX_CONFIG_NODES} nodes`);
+
+  const sanitized = { nodes: [] };
+
+  for (let i = 0; i < config.nodes.length; i++) {
+    const node = config.nodes[i];
+    if (!node || typeof node !== 'object') throw new Error(`nodes[${i}] must be an object`);
+
+    const path = typeof node.path === 'string' ? node.path.trim() : '';
+    if (!path) throw new Error(`nodes[${i}].path is required`);
+    if (path.length > MAX_PATH_LENGTH) throw new Error(`nodes[${i}].path exceeds maximum length`);
+
+    const state = node.state;
+    if (state !== 'included' && state !== 'excluded') throw new Error(`nodes[${i}].state must be 'included' or 'excluded'`);
+
+    const sanitizedNode = { path, state };
+
+    if (state === 'included' && node.filter != null) {
+      const f = node.filter;
+      if (typeof f !== 'object') throw new Error(`nodes[${i}].filter must be an object`);
+      if (!VALID_FILTER_MODES.includes(f.mode)) throw new Error(`nodes[${i}].filter.mode must be one of: ${VALID_FILTER_MODES.join(', ')}`);
+
+      const sanitizedFilter = { mode: f.mode };
+
+      if (f.mode === 'whitelist' || f.mode === 'blacklist') {
+        if (!Array.isArray(f.itemIds)) throw new Error(`nodes[${i}].filter.itemIds must be an array`);
+        if (f.itemIds.length > MAX_WHITELIST_IDS) throw new Error(`nodes[${i}].filter.itemIds exceeds maximum ${MAX_WHITELIST_IDS}`);
+        sanitizedFilter.itemIds = f.itemIds
+          .map(id => parseInt(id, 10))
+          .filter(id => Number.isFinite(id) && id > 0);
+      } else if (f.mode === 'match') {
+        const sub = typeof f.substring === 'string' ? f.substring.replace(/[\x00-\x1f]/g, '').trim() : '';
+        if (sub.length > MAX_SUBSTRING_LENGTH) throw new Error(`nodes[${i}].filter.substring exceeds maximum length`);
+        sanitizedFilter.substring = sub;
+        sanitizedFilter.useRegex = !!f.useRegex;
+        if (sanitizedFilter.useRegex && sub) {
+          try { new RegExp(sub); } catch { throw new Error(`nodes[${i}].filter.substring is not a valid regex`); }
+        }
+        if (Array.isArray(f.itemTypes)) {
+          sanitizedFilter.itemTypes = f.itemTypes.filter(t => VALID_ITEM_TYPES.includes(t));
+        } else {
+          sanitizedFilter.itemTypes = [];
+        }
+      }
+
+      sanitizedNode.filter = sanitizedFilter;
+    }
+
+    sanitized.nodes.push(sanitizedNode);
+  }
+
+  return sanitized;
+}
+
+/**
+ * Resolve a negotiable config against the user's inventory.
+ * Returns an array of items to list: [{ item_id, item_name, quantity, value, details, planet }]
+ */
+export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
+  if (!config?.nodes?.length || !inventoryItems?.length) return [];
+
+  // Build included/excluded path sets
+  const includedNodes = [];
+  const excludedPaths = new Set();
+  for (const node of config.nodes) {
+    if (node.state === 'included') includedNodes.push(node);
+    else if (node.state === 'excluded') excludedPaths.add(node.path);
+  }
+  if (includedNodes.length === 0) return [];
+
+  // Extract planet from a container_path root segment
+  function extractPlanet(containerPath) {
+    if (!containerPath) return null;
+    const root = containerPath.split(' > ')[0];
+    const m = root.match(/^STORAGE \(([^)]+)\)$/i);
+    return m ? m[1].trim() : null;
+  }
+
+  // Check if an item's container_path is under an excluded path
+  function isExcluded(itemPath) {
+    if (!itemPath) return false;
+    for (const ep of excludedPaths) {
+      if (itemPath === ep || itemPath.startsWith(ep + ' > ')) return true;
+    }
+    return false;
+  }
+
+  // Check if an item matches a filter
+  function matchesFilter(item, filter, slim) {
+    if (!filter) return true; // null filter = include all
+
+    if (filter.mode === 'whitelist') {
+      return filter.itemIds?.includes(item.item_id);
+    }
+    if (filter.mode === 'blacklist') {
+      return !filter.itemIds?.includes(item.item_id);
+    }
+    if (filter.mode === 'match') {
+      let nameMatch = true;
+      if (filter.substring) {
+        if (filter.useRegex) {
+          try { nameMatch = new RegExp(filter.substring, 'i').test(item.item_name); } catch { nameMatch = false; }
+        } else {
+          nameMatch = item.item_name.toLowerCase().includes(filter.substring.toLowerCase());
+        }
+      }
+      let typeMatch = true;
+      if (filter.itemTypes?.length > 0) {
+        const itemType = slim?.t || null;
+        typeMatch = itemType ? filter.itemTypes.includes(itemType) : false;
+      }
+      return nameMatch && typeMatch;
+    }
+    return true;
+  }
+
+  const results = [];
+  const seen = new Map(); // key → item (dedup: item_id::planet)
+
+  for (const node of includedNodes) {
+    for (const item of inventoryItems) {
+      // Skip unresolved items
+      if (!item.item_id || item.item_id === 0) continue;
+
+      // Check container_path prefix match
+      const itemPath = item.container_path || '';
+      if (!itemPath.startsWith(node.path) && itemPath !== node.path
+          && !(node.path && itemPath.startsWith(node.path + ' > '))) {
+        // Also match items directly in this path
+        if (itemPath !== node.path) continue;
+      }
+
+      // Check exclusions
+      if (isExcluded(itemPath)) continue;
+
+      // Apply filter
+      const slim = slimLookup?.get(item.item_id) || null;
+      if (!matchesFilter(item, node.filter || null, slim)) continue;
+
+      const planet = extractPlanet(itemPath);
+      if (!planet) continue; // Skip items without a determinable planet
+
+      const itemType = slim?.t || null;
+      const itemName = slim?.n || item.item_name;
+      const stackable = itemType ? isStackableType(itemType, itemName) : false;
+      const hasMetadata = item.details && (
+        item.details.Tier != null || item.details.TierIncreaseRate != null ||
+        item.details.QualityRating != null
+      );
+      // Condition items with metadata can have multiple listings; others get 1 per planet
+      const allowMultiple = !stackable && hasMetadata;
+      const dedupKey = allowMultiple
+        ? `${item.item_id}::${planet}::${item.instance_key || item.id}`
+        : `${item.item_id}::${planet}`;
+
+      if (seen.has(dedupKey)) continue;
+
+      seen.set(dedupKey, true);
+      results.push({
+        item_id: item.item_id,
+        item_name: itemName,
+        quantity: item.quantity || 1,
+        value: item.value ?? null,
+        details: item.details || null,
+        planet,
+        instance_key: item.instance_key || null,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Sync negotiable exchange listings for a user based on their config and inventory.
+ * Creates new offers for items not yet listed, closes offers for items no longer matching.
+ * Returns { created, closed, skipped }.
+ */
+export async function syncNegotiableListings(userId, { slimLookup } = {}) {
+  // 1. Load config
+  const configRow = await getUserNegotiableConfig(userId);
+  if (!configRow?.config?.nodes?.length) return { created: 0, closed: 0, skipped: 0 };
+
+  // 2. Load inventory
+  const { rows: inventory } = await pool.query(
+    `SELECT id, item_id, item_name, quantity, instance_key, details, value, container, container_path
+     FROM user_items WHERE user_id = $1 AND storage = 'server'`,
+    [userId]
+  );
+
+  // 3. Resolve config
+  const resolved = resolveNegotiableConfig(configRow.config, inventory, slimLookup);
+
+  // 4. Load existing sell offers (priced + negotiable)
+  const { rows: existingOffers } = await pool.query(
+    `SELECT id, item_id, planet, markup, details
+     FROM trade_offers
+     WHERE user_id = $1 AND type = 'SELL' AND state != 'closed'
+       AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'`,
+    [userId]
+  );
+
+  // Build lookup of existing offers
+  const pricedByItemPlanet = new Set();
+  const negotiableByItemPlanet = new Map(); // key → offer row
+  const orderCountByItem = new Map(); // item_id → count of all active sell offers
+  for (const offer of existingOffers) {
+    const key = `${offer.item_id}::${offer.planet}`;
+    const cnt = orderCountByItem.get(offer.item_id) || 0;
+    orderCountByItem.set(offer.item_id, cnt + 1);
+    if (offer.markup != null) {
+      pricedByItemPlanet.add(key);
+    } else {
+      negotiableByItemPlanet.set(key, offer);
+    }
+  }
+
+  // 5. Determine what to create and what to close
+  const toCreate = [];
+  const resolvedKeys = new Set();
+  let skipped = 0;
+
+  for (const item of resolved) {
+    const key = `${item.item_id}::${item.planet}`;
+    resolvedKeys.add(key);
+
+    // Skip if priced sell offer already exists
+    if (pricedByItemPlanet.has(key)) { skipped++; continue; }
+    // Skip if negotiable offer already exists
+    if (negotiableByItemPlanet.has(key)) continue;
+    // Check per-item limit
+    const currentCount = orderCountByItem.get(item.item_id) || 0;
+    if (currentCount >= MAX_ORDERS_PER_ITEM) { skipped++; continue; }
+    // Check global sell order limit
+    if (existingOffers.length + toCreate.length >= MAX_SELL_ORDERS) { skipped++; continue; }
+
+    toCreate.push(item);
+    orderCountByItem.set(item.item_id, currentCount + 1);
+  }
+
+  // Close negotiable offers that are no longer in the resolved set
+  const toClose = [];
+  for (const [key, offer] of negotiableByItemPlanet) {
+    if (!resolvedKeys.has(key)) toClose.push(offer.id);
+  }
+
+  // 6. Execute in transaction
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Close removed offers
+    if (toClose.length > 0) {
+      await client.query(
+        `UPDATE trade_offers SET state = 'closed', updated = NOW()
+         WHERE id = ANY($1) AND user_id = $2`,
+        [toClose, userId]
+      );
+    }
+
+    // Create new offers in batches
+    const BATCH = 50;
+    for (let i = 0; i < toCreate.length; i += BATCH) {
+      const batch = toCreate.slice(i, i + BATCH);
+      const values = [];
+      const params = [];
+      let idx = 1;
+      for (const item of batch) {
+        const details = { item_name: item.item_name };
+        if (item.details?.Tier != null) details.Tier = item.details.Tier;
+        if (item.details?.TierIncreaseRate != null) details.TierIncreaseRate = item.details.TierIncreaseRate;
+        if (item.details?.QualityRating != null) details.QualityRating = item.details.QualityRating;
+        if (item.value != null) details.CurrentTT = Number(item.value);
+
+        values.push(`($${idx++}, 'SELL', $${idx++}, $${idx++}, NULL, NULL, $${idx++}, $${idx++}, NOW(), NOW(), NOW(), 'active')`);
+        params.push(userId, item.item_id, item.quantity, item.planet, JSON.stringify(details));
+      }
+      await client.query(
+        `INSERT INTO trade_offers (user_id, type, item_id, quantity, min_quantity, markup, planet, details, created, updated, bumped_at, state)
+         VALUES ${values.join(', ')}`,
+        params
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return { created: toCreate.length, closed: toClose.length, skipped };
 }
 
 export {

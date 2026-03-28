@@ -192,6 +192,7 @@ function formatNum(v: number, usePrecision: boolean): string {
  * - Absolute: thousands separators, up to 4 decimals, scientific notation for very small values
  */
 export function formatMarkupValue(value: any, absolute: boolean): string {
+  if (value === null) return 'Negotiable';
   if (value == null || !isFinite(value)) return 'N/A';
   const v = Number(value);
   if (absolute) {

@@ -3,6 +3,22 @@ import { pool } from './db.js';
 import { isStackableType, isLimitedByName, isPercentMarkupType } from '$lib/common/itemTypes.js';
 
 /**
+ * Re-sync negotiable exchange listings after inventory import.
+ * Uses dynamic import to avoid circular dependency issues.
+ * Only runs if the user has a negotiable config.
+ */
+async function syncNegotiableListingsAfterImport(userId, slimLookup) {
+  try {
+    const { getUserNegotiableConfig, syncNegotiableListings } = await import('$lib/server/exchange.js');
+    const config = await getUserNegotiableConfig(userId);
+    if (!config) return;
+    await syncNegotiableListings(userId, { slimLookup });
+  } catch (err) {
+    console.error('Error in negotiable sync after import:', err);
+  }
+}
+
+/**
  * Get a user's server-stored inventory.
  */
 export async function getUserInventory(userId) {
@@ -323,6 +339,11 @@ export async function syncInventory(userId, items, { slimLookup, userMarkups } =
     await trackUnknownItems(client, userId, items);
 
     await client.query('COMMIT');
+
+    // Re-sync negotiable exchange listings (best-effort, non-blocking)
+    syncNegotiableListingsAfterImport(userId, slimLookup).catch(err => {
+      console.error('Error syncing negotiable listings after import:', err);
+    });
 
     return { added, updated, removed, unchanged, total: items.length };
   } catch (err) {

@@ -109,6 +109,7 @@
     const segments = [];
     let currentId = itemId;
     const visited = new Set();
+    let storageRoot = null;
 
     while (currentId != null && containerMap.has(currentId)) {
       if (visited.has(currentId)) break; // cycle detection
@@ -116,14 +117,27 @@
 
       const entry = containerMap.get(currentId);
 
-      // Add this container's name (look up the item name from data)
+      // Use the item's own name; fall back to entry.container (the parent's name)
       const containerItem = data.find(d => d.id === currentId);
-      const containerName = entry.container || (containerItem
-        ? (containerItem.item_name ?? containerItem.ItemName ?? containerItem.Name ?? containerItem.name ?? '')
-        : '');
-      if (containerName) segments.unshift(containerName.replace(/\s+/g, ' ').trim());
+      const containerName = String(containerItem
+        ? (containerItem.item_name ?? containerItem.ItemName ?? containerItem.Name ?? containerItem.name ?? entry.container ?? '')
+        : (entry.container ?? ''));
+      const clean = containerName.replace(/\s+/g, ' ').trim();
+      if (clean) segments.unshift(`${clean}#${currentId}`);
+
+      // When we reach the top of the chain, capture the storage root
+      // (the location this container sits in, e.g. "STORAGE (Calypso)")
+      if (entry.containerRefId == null || !containerMap.has(entry.containerRefId)) {
+        const root = (entry.container ?? '').replace(/\s+/g, ' ').trim();
+        if (root) storageRoot = root;
+      }
 
       currentId = entry.containerRefId;
+    }
+
+    // Prepend storage root so containers nest under their planet storage
+    if (storageRoot && segments.length > 0) {
+      segments.unshift(storageRoot);
     }
 
     return segments.length > 0 ? segments.join(' > ') : null;
@@ -209,7 +223,13 @@
     // Try TSV first
     const tsvData = detectAndParseTsv(text);
     if (tsvData) {
-      return processItems(tsvData);
+      try {
+        return processItems(tsvData);
+      } catch (e) {
+        console.error('Error processing TSV items:', e);
+        parseError = `Error processing items: ${e.message}`;
+        return;
+      }
     }
 
     try {
@@ -243,6 +263,12 @@
     }
   }
 
+  /** Strip orphaned double quotes from container strings (game export quirk). */
+  function cleanContainer(s) {
+    if (typeof s !== 'string') return null;
+    return s.replace(/"/g, '').trim() || null;
+  }
+
   function processItems(data) {
     if (data.length > MAX_ITEMS) {
       parseError = `Too many items (${data.length}). Maximum ${MAX_ITEMS.toLocaleString()} items per import.`;
@@ -257,7 +283,7 @@
       if (raw.id != null) {
         const rawContainer = raw.container ?? raw.Container ?? null;
         containerMap.set(raw.id, {
-          container: typeof rawContainer === 'string' ? rawContainer.trim() : null,
+          container: cleanContainer(rawContainer),
           containerRefId: raw.containerRefId ?? raw.container_ref_id ?? null,
         });
       }
@@ -290,7 +316,7 @@
       }
       if (!storageLocation && typeof explicitContainer === 'string') {
         // Item directly in STORAGE/CARRIED (no parent container)
-        storageLocation = explicitContainer.trim() || null;
+        storageLocation = cleanContainer(explicitContainer);
       }
 
       // Skip items currently on auction — not in player inventory
@@ -666,7 +692,12 @@
 
     // Strategy 2: Same item_name under same parent
     const savedSegments = saved.container_path.split(' > ');
-    const savedItemName = saved.item_name || savedSegments[savedSegments.length - 1];
+    let savedItemName = saved.item_name || savedSegments[savedSegments.length - 1];
+    // Strip #refId suffix if present (from paths built with unique IDs)
+    const hashIdx = savedItemName.lastIndexOf('#');
+    if (hashIdx > 0 && /^\d+$/.test(savedItemName.substring(hashIdx + 1))) {
+      savedItemName = savedItemName.substring(0, hashIdx);
+    }
     const candidates = newPathsByItemName.get(savedItemName) || [];
 
     if (savedSegments.length >= 2) {
@@ -712,13 +743,18 @@
 
       // 3. Build lookup: item_name → [{ path, ref }] for new import containers
       //    A "container" is any path segment that appears as a non-root in a container_path
+      //    Strip #refId from segment names so it matches saved item_name values
       const newPathsByItemName = new Map();
       for (const path of newPathSet) {
         const segments = path.split(' > ');
         // Register each non-root segment with its full sub-path
         for (let i = 1; i < segments.length; i++) {
           const subPath = segments.slice(0, i + 1).join(' > ');
-          const itemName = segments[i];
+          const rawSeg = segments[i];
+          const hashIdx = rawSeg.lastIndexOf('#');
+          const itemName = (hashIdx > 0 && /^\d+$/.test(rawSeg.substring(hashIdx + 1)))
+            ? rawSeg.substring(0, hashIdx)
+            : rawSeg;
           if (!newPathsByItemName.has(itemName)) {
             newPathsByItemName.set(itemName, []);
           }
