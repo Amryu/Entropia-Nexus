@@ -1473,7 +1473,7 @@
   }
 
   async function handleQuickTradeConfirm(data) {
-    const { order, quantity, side } = data;
+    const { order, quantity, side, proposedMarkup } = data;
     const item = selectedItemDetails || selectedItem;
     const itemName = order.details?.item_name || item?.Name || item?.n || 'Unknown';
 
@@ -1489,7 +1489,7 @@
             item_id: order.item_id ?? item?.i ?? item?.Id,
             item_name: itemName,
             quantity: quantity || order.quantity || 1,
-            markup: order.markup || 0,
+            markup: order.markup !== null ? order.markup : (proposedMarkup ?? 0),
             side: order.type || (side === 'buy' ? 'SELL' : 'BUY')
           }]
         })

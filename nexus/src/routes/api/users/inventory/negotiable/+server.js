@@ -4,7 +4,7 @@ import {
   getUserNegotiableConfig,
   upsertNegotiableConfig,
   deleteNegotiableConfig,
-  closeAllNegotiableOffers,
+  deleteAllNegotiableOffers,
   validateNegotiableConfig,
   syncNegotiableListings,
 } from '$lib/server/exchange.js';
@@ -90,10 +90,16 @@ export async function DELETE({ locals }) {
   const user = locals.session?.user;
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
+
+  const rateCheck = checkRateLimit(`neg:del:${user.id}`, 60, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please slow down.' }, 429);
+  }
 
   try {
     const deleted = await deleteNegotiableConfig(user.id);
-    const closed = await closeAllNegotiableOffers(user.id);
+    const closed = await deleteAllNegotiableOffers(user.id);
     if (closed > 0) invalidateOfferCounts();
 
     return getResponse({ deleted, closed }, deleted ? 200 : 404);

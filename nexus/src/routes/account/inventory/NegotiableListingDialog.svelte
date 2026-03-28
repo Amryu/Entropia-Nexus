@@ -199,10 +199,29 @@
       return nodeStates.get(path) === 'excluded';
     }
 
-    function collectNode(node, parentFilter) {
+    // Find the nearest ancestor's filter for a given path
+    function getApplicableFilter(path) {
+      // Only use the directly-included node's filter, not ancestors
+      // This matches the backend resolveNegotiableConfig behavior
+      const directFilter = nodeFilters.get(path);
+      if (directFilter) return directFilter;
+      // Check if this node is directly included (has its own filter)
+      if (nodeStates.get(path) === 'included') return null; // included with no filter = all items
+      // Inherited node: find the nearest included ancestor's filter
+      const segments = path.split(' > ');
+      for (let i = segments.length - 1; i >= 1; i--) {
+        const ancestorPath = segments.slice(0, i).join(' > ');
+        if (nodeStates.get(ancestorPath) === 'included') {
+          return nodeFilters.get(ancestorPath) || null;
+        }
+      }
+      return null;
+    }
+
+    function collectNode(node) {
       const eff = getEffectiveState(node.path);
       if (eff === 'excluded' || eff === 'unchecked') return;
-      const filter = nodeFilters.get(node.path) ?? parentFilter;
+      const filter = getApplicableFilter(node.path);
 
       for (const item of node.items) {
         if (!item.item_id || item.item_id === 0) continue;
@@ -219,11 +238,11 @@
         });
       }
       for (const child of node.children) {
-        if (!isPathExcluded(child.path)) collectNode(child, filter);
+        if (!isPathExcluded(child.path)) collectNode(child);
       }
     }
 
-    for (const node of tree) collectNode(node, null);
+    for (const node of tree) collectNode(node);
     return items.sort((a, b) => a.item_name.localeCompare(b.item_name));
   })());
 
@@ -314,7 +333,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save');
       syncResult = data;
-      addToast(`Listed ${data.created} items, closed ${data.closed}${data.skipped ? `, skipped ${data.skipped}` : ''}`, 'success');
+      addToast(`Listed ${data.created} items, removed ${data.removed || 0}${data.skipped ? `, skipped ${data.skipped}` : ''}`, 'success');
       onsaved?.(data);
     } catch (err) {
       addToast(err.message, 'error');

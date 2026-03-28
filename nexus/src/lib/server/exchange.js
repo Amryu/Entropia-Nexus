@@ -737,11 +737,12 @@ export async function deleteNegotiableConfig(userId) {
 }
 
 /**
- * Close all negotiable (markup IS NULL) sell offers for a user.
+ * Delete all negotiable (markup IS NULL) sell offers for a user.
+ * Negotiable listings are deleted rather than closed to avoid cluttering My Orders.
  */
-export async function closeAllNegotiableOffers(userId) {
+export async function deleteAllNegotiableOffers(userId) {
   const { rowCount } = await pool.query(
-    `UPDATE trade_offers SET state = 'closed', updated = NOW()
+    `DELETE FROM trade_offers
      WHERE user_id = $1 AND markup IS NULL AND type = 'SELL' AND state != 'closed'`,
     [userId]
   );
@@ -807,6 +808,10 @@ export function validateNegotiableConfig(config) {
         sanitizedFilter.substring = sub;
         sanitizedFilter.useRegex = !!f.useRegex;
         if (sanitizedFilter.useRegex && sub) {
+          // Reject patterns with known catastrophic backtracking constructs
+          if (/(\.\*){3,}|\(\[?[^)]*\+\)\+|\(\[?[^)]*\*\)\+|\(\[?[^)]*\+\)\*/.test(sub)) {
+            throw new Error(`nodes[${i}].filter.substring contains a potentially unsafe regex pattern`);
+          }
           try { new RegExp(sub); } catch { throw new Error(`nodes[${i}].filter.substring is not a valid regex`); }
         }
         if (Array.isArray(f.itemTypes)) {
@@ -858,8 +863,16 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
     return false;
   }
 
+  // Pre-compile regexes for match filters
+  const compiledRegexes = new Map();
+  for (const node of includedNodes) {
+    if (node.filter?.mode === 'match' && node.filter.useRegex && node.filter.substring) {
+      try { compiledRegexes.set(node.path, new RegExp(node.filter.substring, 'i')); } catch { /* skip */ }
+    }
+  }
+
   // Check if an item matches a filter
-  function matchesFilter(item, filter, slim) {
+  function matchesFilter(item, filter, slim, nodePath) {
     if (!filter) return true; // null filter = include all
 
     if (filter.mode === 'whitelist') {
@@ -871,10 +884,13 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
     if (filter.mode === 'match') {
       let nameMatch = true;
       if (filter.substring) {
-        if (filter.useRegex) {
-          try { nameMatch = new RegExp(filter.substring, 'i').test(item.item_name); } catch { nameMatch = false; }
-        } else {
+        const re = compiledRegexes.get(nodePath);
+        if (re) {
+          nameMatch = re.test(item.item_name);
+        } else if (!filter.useRegex) {
           nameMatch = item.item_name.toLowerCase().includes(filter.substring.toLowerCase());
+        } else {
+          nameMatch = false;
         }
       }
       let typeMatch = true;
@@ -895,20 +911,18 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
       // Skip unresolved items
       if (!item.item_id || item.item_id === 0) continue;
 
-      // Check container_path prefix match
+      // Check container_path prefix match: item is in this node or a descendant
       const itemPath = item.container_path || '';
-      if (!itemPath.startsWith(node.path) && itemPath !== node.path
-          && !(node.path && itemPath.startsWith(node.path + ' > '))) {
-        // Also match items directly in this path
-        if (itemPath !== node.path) continue;
-      }
+      const isDirectMatch = itemPath === node.path;
+      const isDescendant = node.path && itemPath.startsWith(node.path + ' > ');
+      if (!isDirectMatch && !isDescendant) continue;
 
       // Check exclusions
       if (isExcluded(itemPath)) continue;
 
       // Apply filter
       const slim = slimLookup?.get(item.item_id) || null;
-      if (!matchesFilter(item, node.filter || null, slim)) continue;
+      if (!matchesFilter(item, node.filter || null, slim, node.path)) continue;
 
       const planet = extractPlanet(itemPath);
       if (!planet) continue; // Skip items without a determinable planet
@@ -950,9 +964,12 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
  * Returns { created, closed, skipped }.
  */
 export async function syncNegotiableListings(userId, { slimLookup } = {}) {
-  // 1. Load config
+  // 1. Load config — if empty/missing, close all negotiable offers
   const configRow = await getUserNegotiableConfig(userId);
-  if (!configRow?.config?.nodes?.length) return { created: 0, closed: 0, skipped: 0 };
+  if (!configRow?.config?.nodes?.length) {
+    const closed = await deleteAllNegotiableOffers(userId);
+    return { created: 0, closed, skipped: 0 };
+  }
 
   // 2. Load inventory
   const { rows: inventory } = await pool.query(
@@ -1022,11 +1039,10 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
   try {
     await client.query('BEGIN');
 
-    // Close removed offers
+    // Delete removed negotiable offers (delete, not close, to avoid My Orders clutter)
     if (toClose.length > 0) {
       await client.query(
-        `UPDATE trade_offers SET state = 'closed', updated = NOW()
-         WHERE id = ANY($1) AND user_id = $2`,
+        `DELETE FROM trade_offers WHERE id = ANY($1) AND user_id = $2 AND markup IS NULL`,
         [toClose, userId]
       );
     }
@@ -1063,7 +1079,7 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
     client.release();
   }
 
-  return { created: toCreate.length, closed: toClose.length, skipped };
+  return { created: toCreate.length, removed: toClose.length, skipped };
 }
 
 export {
