@@ -1,14 +1,14 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import {
-  createOrder, getOrderById, updateOrder,
+  createOrder, getOrderById, updateOrder, closeOrder,
   countUserOrdersBySide, countUserOrdersForItem,
   getItemType, isPercentMarkupServer, formatRetryTime, getBestMarkupForItem,
   MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, MAX_BATCH_SIZE, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
-  RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_EDIT_PER_MIN,
+  RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
 } from '$lib/server/exchange.js';
-import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
+import { checkRateLimit, checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
 import { isOAuthRequest } from '$lib/server/auth.js';
 import {
@@ -292,4 +292,82 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
     console.error('Error creating order:', err);
     return { success: false, error: 'Failed to create order' };
   }
+}
+
+/**
+ * DELETE /api/market/exchange/orders/batch — Close multiple orders at once.
+ * Body: { order_ids: number[] }
+ * Returns per-order results (partial success is possible).
+ */
+export async function DELETE({ request, locals }) {
+  const { user, error } = getVerifiedUser(locals);
+  if (error) return error;
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return getResponse({ error: 'Invalid JSON' }, 400);
+  }
+
+  const { order_ids } = body;
+  if (!Array.isArray(order_ids) || order_ids.length === 0) {
+    return getResponse({ error: 'order_ids must be a non-empty array' }, 400);
+  }
+  if (order_ids.length > MAX_BATCH_SIZE) {
+    return getResponse({ error: `Maximum ${MAX_BATCH_SIZE} orders per batch` }, 400);
+  }
+
+  // Verify Turnstile if provided
+  if (!isOAuthRequest(locals) && body.turnstile_token) {
+    const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
+    if (!await verifyTurnstile(body.turnstile_token, ip)) {
+      return getResponse({ error: 'Captcha verification failed.' }, 400);
+    }
+  }
+
+  // Rate limit
+  const closeCheck = checkRateLimit(`order:close:${user.id}`, RATE_LIMIT_CLOSE_PER_MIN, 60_000);
+  if (!closeCheck.allowed) {
+    const retryAfter = Math.ceil(closeCheck.resetIn / 1000);
+    return getResponse({ error: `Close rate limit exceeded. Try again in ${formatRetryTime(retryAfter)}.`, retryAfter }, 429);
+  }
+
+  const results = [];
+  let closed = 0;
+
+  for (const rawId of order_ids) {
+    const orderId = parseInt(rawId, 10);
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+      results.push({ id: rawId, success: false, error: 'Invalid order ID' });
+      continue;
+    }
+
+    try {
+      const existing = await getOrderById(orderId);
+      if (!existing) {
+        results.push({ id: orderId, success: false, error: 'Order not found' });
+        continue;
+      }
+      if (String(existing.user_id) !== String(user.id)) {
+        results.push({ id: orderId, success: false, error: 'Not authorized' });
+        continue;
+      }
+      if (existing.state === 'closed') {
+        results.push({ id: orderId, success: false, error: 'Already closed' });
+        continue;
+      }
+
+      const result = await closeOrder(orderId);
+      results.push({ id: orderId, success: true, order: result });
+      closed++;
+    } catch (err) {
+      console.error(`Error closing order ${orderId}:`, err);
+      results.push({ id: orderId, success: false, error: 'Failed to close order' });
+    }
+  }
+
+  if (closed > 0) invalidateOfferCounts();
+  return getResponse({ results, closed, failed: order_ids.length - closed }, closed > 0 ? 200 : 400);
 }
