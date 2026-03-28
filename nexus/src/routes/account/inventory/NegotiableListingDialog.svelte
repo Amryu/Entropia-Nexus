@@ -231,10 +231,12 @@
         seen.add(key);
         const slim = itemLookup.get(item.item_id);
         items.push({
+          _key: key,
           item_id: item.item_id,
           item_name: slim?.n || item.item_name,
           quantity: item.quantity || 1,
           type: slim?.t || null,
+          planet: item.container || null,
         });
       }
       for (const child of node.children) {
@@ -454,7 +456,7 @@
             </button>
             {#if showPreview}
               <div class="preview-list">
-                {#each previewItems as item (item.item_id)}
+                {#each previewItems as item (item._key)}
                   <div class="preview-row">
                     <span class="preview-name">{item.item_name}</span>
                     {#if item.type}
