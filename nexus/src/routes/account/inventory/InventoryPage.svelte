@@ -266,6 +266,10 @@
       }
       return computeUnitPrice(slim, pct, orderLike);
     }
+    // Resolve in-game markup for display regardless of whether it's used for value
+    const igmName = slim?.n || item.item_name;
+    const ingameMarkup = (igmName && slim) ? (inGameLookup.get(igmName) ?? null) : null;
+
     if (valueSource === 'default' && markupSource === 'ingame' && slim) {
       const itemName = slim.n || item.item_name;
       const igm = itemName ? inGameLookup.get(itemName) : null;
@@ -302,6 +306,7 @@
       _category: category,
       _maxTT: maxTT,
       _markup: markup,
+      _ingameMarkup: ingameMarkup,
       _marketPrice: marketPrice,
       _ttValue: ttValue,
       _totalValue: totalValue,
@@ -956,7 +961,7 @@
                       <span
                         class="markup-cell"
                         class:has-markup={row._markup != null}
-                        class:has-market={row._markup == null && row._marketPrice != null}
+                        class:has-market={row._markup == null && (row._ingameMarkup != null || row._marketPrice != null)}
                         onclick={() => row.item_id > 0 && startMarkupEdit(row)}
                         onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), row.item_id > 0 && startMarkupEdit(row))}
                         title="Click to edit markup"
@@ -964,9 +969,11 @@
                         tabindex="0"
                       >
                         {#if row._markup != null}
-                          {row._isAbsolute ? formatMarkupValue(row._markup, true) : formatMarkupValue(row._markup, false)}
-                        {:else if row._marketPrice != null}
-                          {row._isAbsolute ? formatMarkupValue(row._marketPrice, true) : formatMarkupValue(row._marketPrice, false)}
+                          {formatMarkupValue(row._markup, row._isAbsolute)}
+                        {:else if markupSource === 'ingame' && row._ingameMarkup != null}
+                          {formatMarkupValue(row._ingameMarkup, false)}
+                        {:else if markupSource === 'exchange' && row._marketPrice != null}
+                          {formatMarkupValue(row._marketPrice, false)}
                         {:else}
                           <span class="text-muted">{row._isAbsolute ? '+0' : '100%'}</span>
                         {/if}
