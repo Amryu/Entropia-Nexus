@@ -2376,10 +2376,17 @@
     return weapons.find(x => x.Name === name);
   }
 
-  let isMining = $derived(getWeapon(loadout?.Gear?.Weapon?.Name)?.Properties?.Type?.startsWith('Mining Laser') ?? false);
-  let isAttached = $derived(['Mounted', 'Hanging'].includes(getWeapon(loadout?.Gear?.Weapon?.Name)?.Properties?.Category));
-  let isMiningShared = $derived(getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Type?.startsWith('Mining Laser') ?? false);
-  let isAttachedShared = $derived(['Mounted', 'Hanging'].includes(getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Category));
+  function isWeaponMining(name) {
+    return getWeapon(name)?.Properties?.Type?.startsWith('Mining Laser') ?? false;
+  }
+  function isWeaponAttached(name) {
+    return ['Mounted', 'Hanging'].includes(getWeapon(name)?.Properties?.Category);
+  }
+  // Fall back to evaluator stats when weapon entities haven't loaded yet
+  let isMining = $derived(isWeaponMining(loadout?.Gear?.Weapon?.Name) || (stats.isMiningWeapon ?? false));
+  let isAttached = $derived(isWeaponAttached(loadout?.Gear?.Weapon?.Name) || isMining);
+  let isMiningShared = $derived(isWeaponMining(sharedLoadoutData?.Gear?.Weapon?.Name));
+  let isAttachedShared = $derived(isWeaponAttached(sharedLoadoutData?.Gear?.Weapon?.Name) || isMiningShared);
 
   function getAmplifier(name) {
     return amplifiers.find(x => x.Name === name);
