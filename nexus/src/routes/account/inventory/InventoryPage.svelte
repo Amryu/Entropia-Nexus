@@ -227,7 +227,13 @@
     const slim = itemLookup.get(item.item_id);
     const type = slim?.t || null;
     const category = getTopCategory(type);
-    const maxTT = slim ? getMaxTT(slim) : null;
+    let maxTT = slim ? getMaxTT(slim) : null;
+    // Stackable items with missing/zero MaxTT: derive per-unit TT from inventory value
+    if ((!maxTT) && isItemStackable(slim) && item.value != null && item.quantity > 0) {
+      maxTT = Number(item.value) / item.quantity;
+      // Patch slim so computeUnitPrice sees the derived MaxTT
+      if (slim) slim = { ...slim, v: maxTT };
+    }
     const markup = userMarkups.get(item.item_id) ?? null;
     const marketPrice = slim?.w ?? slim?.m ?? null;
 
