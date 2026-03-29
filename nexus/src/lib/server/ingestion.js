@@ -9,6 +9,7 @@ import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 // --- Constants ---
 
 const GLOBAL_CONFIRM_THRESHOLD = 3;
+const HOF_CONFIRM_THRESHOLD = 10;
 const TIMESTAMP_WINDOW_MS = 60_000; // ±60 seconds for matching (trades)
 const GLOBAL_DEDUP_WINDOW_MS = 5 * 60 * 1000; // ±5 min for occurrence-based dedup (globals)
 const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
@@ -339,6 +340,7 @@ export async function ingestGlobals(userId, events) {
       const contentHash = computeGlobalContentHash(event);
       const occurrence = event.occurrence ?? 1;
       const eventTs = new Date(event.timestamp);
+      const confirmThreshold = event.hof ? HOF_CONFIRM_THRESHOLD : GLOBAL_CONFIRM_THRESHOLD;
       const dedupLo = new Date(eventTs.getTime() - GLOBAL_DEDUP_WINDOW_MS);
       const dedupHi = new Date(eventTs.getTime() + GLOBAL_DEDUP_WINDOW_MS);
 
@@ -386,7 +388,7 @@ export async function ingestGlobals(userId, events) {
                      confirmed = (confirmation_count + $1) >= $2,
                      confirmed_at = CASE WHEN (confirmation_count + $1) >= $2 AND NOT confirmed THEN now() ELSE confirmed_at END
                  WHERE id = $3`,
-                [delta, GLOBAL_CONFIRM_THRESHOLD, match.id]
+                [delta, confirmThreshold, match.id]
               );
             }
             await client.query('RELEASE SAVEPOINT sp');
@@ -407,7 +409,7 @@ export async function ingestGlobals(userId, events) {
                  confirmed = (confirmation_count + $1) >= $2,
                  confirmed_at = CASE WHEN (confirmation_count + $1) >= $2 AND NOT confirmed THEN now() ELSE confirmed_at END
              WHERE id = $3`,
-            [weight, GLOBAL_CONFIRM_THRESHOLD, match.id]
+            [weight, confirmThreshold, match.id]
           );
 
           await client.query('RELEASE SAVEPOINT sp');
@@ -416,7 +418,7 @@ export async function ingestGlobals(userId, events) {
         }
 
         // 2. New event — resolve mob/maturity and insert canonical entry + first submission
-        const confirmed = weight >= GLOBAL_CONFIRM_THRESHOLD;
+        const confirmed = weight >= confirmThreshold;
 
         const mobMatch = (event.type === 'kill' || event.type === 'team_kill')
           ? resolveMob(event.target)
@@ -903,9 +905,9 @@ export async function purgeUserData(userId, purgedBy) {
       await client.query(
         `UPDATE ingested_globals ig
          SET confirmation_count = COALESCE(sub.total_weight, 0),
-             confirmed = COALESCE(sub.total_weight, 0) >= $2,
+             confirmed = COALESCE(sub.total_weight, 0) >= CASE WHEN ig.is_hof THEN $2 ELSE $3 END,
              confirmed_at = CASE
-               WHEN COALESCE(sub.total_weight, 0) >= $2 THEN ig.confirmed_at
+               WHEN COALESCE(sub.total_weight, 0) >= CASE WHEN ig.is_hof THEN $2 ELSE $3 END THEN ig.confirmed_at
                ELSE NULL
              END
          FROM (
@@ -915,7 +917,7 @@ export async function purgeUserData(userId, purgedBy) {
            GROUP BY global_id
          ) sub
          WHERE ig.id = sub.global_id`,
-        [globalIds, GLOBAL_CONFIRM_THRESHOLD]
+        [globalIds, HOF_CONFIRM_THRESHOLD, GLOBAL_CONFIRM_THRESHOLD]
       );
 
       // Delete globals with 0 remaining submissions
