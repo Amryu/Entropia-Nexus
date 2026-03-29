@@ -3,7 +3,7 @@
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
-  import { isStackableType } from '$lib/common/itemTypes.js';
+  import { isStackableType, isLimitedByName } from '$lib/common/itemTypes.js';
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { formatPedRaw } from '../../orderUtils';
 
@@ -400,6 +400,14 @@
             });
           }
         } else {
+          // UL blueprints: EU export puts QualityRating in the quantity field
+          if (itemType === 'Blueprint' && !isLimitedByName(item.item_name)
+              && (item.value == null || item.value === 0) && (item.quantity || 1) > 1) {
+            const qr = item.quantity;
+            item.value = qr / 1000;
+            item.quantity = 1;
+            item.details = { ...(item.details || {}), QualityRating: qr / 10 };
+          }
           // Non-stackable (condition) items must have quantity 1
           const qty = item.quantity || 1;
           if (qty > 1) {

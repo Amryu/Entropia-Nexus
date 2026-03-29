@@ -18,7 +18,7 @@ from ..theme import (
     TEXT, TEXT_MUTED, ERROR, TABLE_ROW_ALT,
     DIFF_ADDED, DIFF_CHANGED, DIFF_REMOVED,
 )
-from ...core.inventory_utils import format_ped, is_stackable as _is_slim_stackable
+from ...core.inventory_utils import format_ped, is_stackable as _is_slim_stackable, is_limited
 from ...core.logger import get_logger
 
 log = get_logger("InventoryImport")
@@ -391,6 +391,15 @@ def _process_items(
                         'instance_key': f"stack:{cp or 'inventory'}",
                     }
             else:
+                # UL blueprints: EU export puts QualityRating in the quantity field
+                item_type = slim.get('t') if slim else None
+                if (item_type == 'Blueprint' and not is_limited(item['item_name'])
+                        and (item.get('value') is None or item.get('value') == 0)
+                        and (item['quantity'] or 1) > 1):
+                    qr = item['quantity']
+                    item['value'] = qr / 1000
+                    item['quantity'] = 1
+                    item['details'] = {**(item.get('details') or {}), 'QualityRating': qr / 10}
                 # Non-stackable (condition) items must have quantity 1
                 qty = item['quantity'] or 1
                 if qty > 1:
