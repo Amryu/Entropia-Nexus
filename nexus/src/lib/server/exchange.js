@@ -617,7 +617,7 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 // Fetches item metadata via the entity API (not direct DB queries — entity tables
 // live in the nexus database, while this module's pool connects to nexus_users).
 
-import { apiCall } from '$lib/util.js';
+import { apiCall, hasItemTag } from '$lib/util.js';
 import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, STRONGBOX_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
 
@@ -920,8 +920,11 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
       // Check exclusions
       if (isExcluded(itemPath)) continue;
 
-      // Apply filter
+      // Skip items not in the exchange cache or marked untradeable
       const slim = slimLookup?.get(item.item_id) || null;
+      if (!slim || slim.ut) continue;
+
+      // Apply filter
       if (!matchesFilter(item, node.filter || null, slim, node.path)) continue;
 
       const planet = extractPlanet(itemPath);
@@ -934,11 +937,22 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
         item.details.Tier != null || item.details.TierIncreaseRate != null ||
         item.details.QualityRating != null
       );
+
+      // Determine gender for gendered item types
+      let gender;
+      if (slim?.g === 'Male' || slim?.g === 'Female') {
+        gender = slim.g;
+      } else if (slim?.g === 'Both') {
+        if (hasItemTag(item.item_name, 'M')) gender = 'Male';
+        else if (hasItemTag(item.item_name, 'F')) gender = 'Female';
+      }
+
       // Condition items with metadata can have multiple listings; others get 1 per planet
       const allowMultiple = !stackable && hasMetadata;
+      const genderSuffix = gender ? `::${gender}` : '';
       const dedupKey = allowMultiple
         ? `${item.item_id}::${planet}::${item.instance_key || item.id}`
-        : `${item.item_id}::${planet}`;
+        : `${item.item_id}::${planet}${genderSuffix}`;
 
       if (seen.has(dedupKey)) continue;
 
@@ -951,6 +965,7 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
         details: item.details || null,
         planet,
         instance_key: item.instance_key || null,
+        gender,
       });
     }
   }
@@ -990,12 +1005,14 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
     [userId]
   );
 
-  // Build lookup of existing offers
+  // Build lookup of existing offers (include gender in key for gendered items)
   const pricedByItemPlanet = new Set();
   const negotiableByItemPlanet = new Map(); // key → offer row
   const orderCountByItem = new Map(); // item_id → count of all active sell offers
   for (const offer of existingOffers) {
-    const key = `${offer.item_id}::${offer.planet}`;
+    const offerGender = offer.details?.Gender;
+    const genderSuffix = offerGender ? `::${offerGender}` : '';
+    const key = `${offer.item_id}::${offer.planet}${genderSuffix}`;
     const cnt = orderCountByItem.get(offer.item_id) || 0;
     orderCountByItem.set(offer.item_id, cnt + 1);
     if (offer.markup != null) {
@@ -1011,7 +1028,8 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
   let skipped = 0;
 
   for (const item of resolved) {
-    const key = `${item.item_id}::${item.planet}`;
+    const genderSuffix = item.gender ? `::${item.gender}` : '';
+    const key = `${item.item_id}::${item.planet}${genderSuffix}`;
     resolvedKeys.add(key);
 
     // Skip if priced sell offer already exists
@@ -1056,6 +1074,7 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
       let idx = 1;
       for (const item of batch) {
         const details = { item_name: item.item_name };
+        if (item.gender) details.Gender = item.gender;
         if (item.details?.Tier != null) details.Tier = item.details.Tier;
         if (item.details?.TierIncreaseRate != null) details.TierIncreaseRate = item.details.TierIncreaseRate;
         if (item.details?.QualityRating != null) details.QualityRating = item.details.QualityRating;
