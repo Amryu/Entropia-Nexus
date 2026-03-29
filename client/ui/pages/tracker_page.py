@@ -74,10 +74,14 @@ def _waypoint_copy_string(m: dict) -> str | None:
     loc = m.get("start_location")
     if loc and loc.get("longitude") is not None:
         planet = m.get("planet", "?")
-        return (
-            f"/wp [{planet}, {loc['longitude']:.0f}, {loc['latitude']:.0f},"
-            f" {loc.get('altitude', 100):.0f}, {loc.get('name') or m.get('name', '?')}]"
-        )
+        try:
+            lon = float(loc["longitude"])
+            lat = float(loc["latitude"])
+            alt = float(loc["altitude"]) if loc.get("altitude") is not None else 100
+        except (TypeError, ValueError, KeyError):
+            return None
+        label = loc.get("name") or m.get("name", "?")
+        return f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {label}]"
     # Fallback: raw waypoint string for custom dailies
     wp = m.get("waypoint", "")
     if wp:
@@ -238,6 +242,7 @@ _MISSION_HEADERS = ["Mission", "Planet", "Cooldown", "Starts On", "Status", ""]
 
 class TrackerPage(QWidget):
     navigation_changed = pyqtSignal(object)
+    _data_loaded = pyqtSignal()
 
     def __init__(self, *, signals, config, config_path, data_client, event_bus, oauth, db):
         super().__init__()
@@ -291,6 +296,7 @@ class TrackerPage(QWidget):
         self._events_upcoming: list[dict] = []
         self._events_past: list[dict] = []
 
+        self._data_loaded.connect(self._on_data_loaded)
         self._build_ui()
         self._load_data_async()
         self._tick_timer.start()
@@ -1244,8 +1250,8 @@ class TrackerPage(QWidget):
         except Exception as e:
             log.warning("Failed to fetch events: %s", e)
 
-        # Schedule UI update on main thread
-        QTimer.singleShot(0, self._on_data_loaded)
+        # Schedule UI update on main thread via signal (safe from background thread)
+        self._data_loaded.emit()
 
     def _on_data_loaded(self):
         self._refresh_events_table()

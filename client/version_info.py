@@ -18,8 +18,8 @@ print(f"""\
 # UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    fileVers=({_VER_TUPLE}),
-    prodVers=({_VER_TUPLE}),
+    filevers=({_VER_TUPLE}),
+    prodvers=({_VER_TUPLE}),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,

@@ -3323,9 +3323,13 @@ def _overlay_waypoint_btn(planet: str, coords: dict, name: str) -> QPushButton:
     """Compact waypoint copy button for the overlay."""
     from PyQt6.QtWidgets import QApplication
 
-    lon = coords.get("Longitude", 0)
-    lat = coords.get("Latitude", 0)
-    alt = coords.get("Altitude", 100)
+    try:
+        lon = float(coords["Longitude"])
+        lat = float(coords["Latitude"])
+        alt = float(coords["Altitude"]) if coords.get("Altitude") is not None else 100
+    except (TypeError, ValueError, KeyError):
+        lon = lat = 0
+        alt = 100
     wp = f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {name}]"
     btn = QPushButton()
     btn.setFixedSize(20, 18)
