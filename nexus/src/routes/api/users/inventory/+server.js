@@ -5,9 +5,6 @@ import { getSlimItemLookup, getSlimNameLookup } from '$lib/market/cache.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { requireGrantAPI } from '$lib/server/auth.js';
 
-/** @type {import('./$types').RequestConfig} */
-export const config = { body: { maxSize: '5mb' } };
-
 const MAX_IMPORT_ITEMS = 30000;
 const MAX_UNKNOWN_ITEMS = 500;
 const MAX_ITEM_NAME_LENGTH = 200;
@@ -73,7 +70,15 @@ export async function PUT({ request, locals }) {
 
   let body;
   try {
-    body = await request.json();
+    const contentType = request.headers.get('content-type') || '';
+    if (contentType.includes('gzip')) {
+      const compressed = await request.arrayBuffer();
+      const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+      const text = await new Response(stream).text();
+      body = JSON.parse(text);
+    } else {
+      body = await request.json();
+    }
   } catch (err) {
     return getResponse({ error: `Invalid JSON: ${err.message}` }, 400);
   }

@@ -548,11 +548,18 @@
     importResult = null;
 
     try {
-      const res = await fetch('/api/users/inventory', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: [...parsedItems, ...unresolvedItems], sync: true }),
-      });
+      const jsonBody = JSON.stringify({ items: [...parsedItems, ...unresolvedItems], sync: true });
+      // Compress large payloads to stay within server body size limits
+      let body, headers;
+      if (jsonBody.length > 256_000 && typeof CompressionStream !== 'undefined') {
+        const stream = new Blob([jsonBody]).stream().pipeThrough(new CompressionStream('gzip'));
+        body = await new Response(stream).arrayBuffer();
+        headers = { 'Content-Type': 'application/gzip' };
+      } else {
+        body = jsonBody;
+        headers = { 'Content-Type': 'application/json' };
+      }
+      const res = await fetch('/api/users/inventory', { method: 'PUT', headers, body });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Import failed');
