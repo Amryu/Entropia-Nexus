@@ -409,14 +409,22 @@
             });
           }
         } else {
-          // Non-stackable (condition) items: keep each individual with a value-based instance_key
-          const baseKey = `stack:${item._planet || 'inventory'}:${item.value ?? 0}`;
+          // Non-stackable (condition) items must have quantity 1
+          const qty = item.quantity || 1;
+          if (qty > 1) {
+            parseError = `"${item.item_name}" has quantity ${qty} but is a condition item that should not be stacked. Please uncheck "Group Items by Container" on the Entropia Universe Inventory page before copying.`;
+            parsedItems = [];
+            unresolvedItems = [];
+            return;
+          }
+          // Keep each individual with a value-based instance_key
+          const baseKey = `stack:${item.container_path || item._planet || 'inventory'}:${item.value ?? 0}`;
           const count = (instanceKeyCounts.get(baseKey) || 0) + 1;
           instanceKeyCounts.set(baseKey, count);
           individuals.push({
             ...item,
             _itemId: itemId,
-            quantity: item.quantity || 1,
+            quantity: 1,
             instance_key: count > 1 ? `${baseKey}:${count}` : baseKey,
           });
         }
@@ -963,6 +971,7 @@
             <div class="help-method">
               <ol>
                 <li>Go to <a href="https://account.entropiauniverse.com/account/inventory" target="_blank" rel="noopener noreferrer">account.entropiauniverse.com/account/inventory</a> and log in</li>
+                <li>Uncheck <strong>"Group Items by Container"</strong> so each item appears as its own row</li>
                 <li>Click the <strong>"Copy to CSV"</strong> button</li>
                 <li>Paste the copied data into the text box below</li>
               </ol>

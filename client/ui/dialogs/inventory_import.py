@@ -411,14 +411,22 @@ def _process_items(
                         'instance_key': f"stack:{cp or 'inventory'}",
                     }
             else:
-                # Non-stackable (condition) items: keep each individual with a value-based instance_key
-                base_key = f"stack:{item.get('container') or 'inventory'}:{item.get('value') or 0}"
+                # Non-stackable (condition) items must have quantity 1
+                qty = item['quantity'] or 1
+                if qty > 1:
+                    return [], [], (
+                        f'"{item["item_name"]}" has quantity {qty} but is a condition item that should not be stacked. '
+                        'Please uncheck "Group Items by Container" on the Entropia Universe Inventory page before copying.'
+                    )
+                # Keep each individual with a value-based instance_key
+                cp = item.get('container_path') or item.get('container') or 'inventory'
+                base_key = f"stack:{cp}:{item.get('value') or 0}"
                 count = instance_key_counts.get(base_key, 0) + 1
                 instance_key_counts[base_key] = count
                 individuals.append({
                     **item,
                     '_item_id': item_id,
-                    'quantity': item['quantity'] or 1,
+                    'quantity': 1,
                     'instance_key': item['instance_key'] or (f"{base_key}:{count}" if count > 1 else base_key),
                 })
         else:
@@ -602,6 +610,7 @@ class InventoryImportDialog(QDialog):
             '<li>Go to <a href="https://account.entropiauniverse.com/account/inventory"'
             f' style="color: {ACCENT};">account.entropiauniverse.com/account/inventory</a>'
             ' and log in</li>'
+            '<li>Uncheck <b>"Group Items by Container"</b> so each item appears as its own row</li>'
             '<li>Click the <b>"Copy to CSV"</b> button</li>'
             '<li>Paste the copied data into the text box below</li>'
             '</ol>'
