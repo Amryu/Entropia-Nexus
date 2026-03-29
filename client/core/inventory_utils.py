@@ -26,7 +26,7 @@ CONDITION_TYPES = frozenset({
     'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet', 'Clothing',
 })
 
-ABSOLUTE_MARKUP_MATERIAL_TYPES = frozenset({'Deed', 'Token', 'Share'})
+ABSOLUTE_MARKUP_MATERIAL_TYPES = frozenset({'Deed', 'Share'})
 
 PET_DEFAULT_MAX_TT = 100
 

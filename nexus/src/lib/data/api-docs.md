@@ -1166,8 +1166,8 @@ Create an exchange order.
 **Planets:** `Calypso`, `Arkadia`, `Cyrene`, `Rocktropia`, `Next Island`, `Monria`, `Toulan`, `Howling Mine (Space)`
 
 **Markup types:**
-- **Percentage markup** (min 100%): Material, Consumable, Capsule, Enhancer, Strongbox — excluding Deed, Token, and Share subtypes
-- **Absolute markup** (PED): all other item types, including Deed, Token, and Share
+- **Percentage markup** (min 100%): Material, Consumable, Capsule, Enhancer, Strongbox — excluding Deed and Share subtypes
+- **Absolute markup** (PED): all other item types, including Deed and Share
 
 **Order details fields** (all optional):
 

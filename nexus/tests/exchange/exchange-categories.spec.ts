@@ -6,7 +6,7 @@ import { TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG, TIMEOUT_CACHE } from '../t
  *
  * Verifies:
  * 1. Ring sub-categories appear under Clothes with correct structure
- * 2. Deed/Token/Share materials have absolute markup (st field in slim payload)
+ * 2. Deed/Share materials have absolute markup (st field in slim payload)
  * 3. Regular materials do NOT have the st field
  * 4. Financial items only appear in financial category (not in materials)
  * 5. Untradeable items are present in data with .ut flag (for name lookups)
@@ -67,19 +67,19 @@ test.describe('Exchange categories and markup types', () => {
     }
   });
 
-  test('Token materials have st field for absolute markup', async ({ page }) => {
+  test('Deed materials have st field for absolute markup', async ({ page }) => {
     const response = await page.request.get(EXCHANGE_API);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
-    const tokens = collectItems(data).filter((item) =>
-      item?.t === 'Material' && item?.st === 'Token'
+    const deeds = collectItems(data).filter((item) =>
+      item?.t === 'Material' && item?.st === 'Deed'
     );
-    test.skip(tokens.length === 0, 'No token materials in current test dataset');
+    test.skip(deeds.length === 0, 'No deed materials in current test dataset');
 
-    for (const token of tokens) {
-      expect(token.st).toBe('Token');
-      expect(token.t).toBe('Material');
+    for (const deed of deeds) {
+      expect(deed.st).toBe('Deed');
+      expect(deed.t).toBe('Material');
     }
   });
 

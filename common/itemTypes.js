@@ -97,7 +97,7 @@ export const TIERABLE_TYPES = new Set([
 ]);
 
 /** Material sub-types (from Materials.Type) that use absolute markup despite being stackable */
-export const ABSOLUTE_MARKUP_MATERIAL_TYPES = new Set(['Deed', 'Token', 'Share']);
+export const ABSOLUTE_MARKUP_MATERIAL_TYPES = new Set(['Deed', 'Share']);
 
 /** Item types that require gender selection in exchange */
 export const GENDERED_TYPES = new Set(['Armor', 'ArmorSet', 'Clothing']);

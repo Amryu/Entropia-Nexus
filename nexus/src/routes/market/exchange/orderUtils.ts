@@ -51,7 +51,7 @@ export function isPercentMarkup(item: any): boolean {
   if (isItemStackable(item)) {
     // Deed/Token materials use absolute markup despite being stackable
     // Check both Properties.Type and st: the /items/ API returns Properties.Type as the
-    // top-level type ("Material") while st carries the actual sub-type ("Token"/"Deed"/"Share")
+    // top-level type ("Material") while st carries the actual sub-type ("Deed"/"Share")
     const subType = item?.Properties?.Type ?? item?.st;
     if (ABSOLUTE_MARKUP_MATERIAL_TYPES.has(subType)) return false;
     if (item?.st && ABSOLUTE_MARKUP_MATERIAL_TYPES.has(item.st)) return false;

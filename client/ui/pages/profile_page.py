@@ -224,7 +224,7 @@ def _social_icon_button(svg_path: str, color: str, tooltip: str, size: int = 20)
 _STACKABLE_TYPES = frozenset({
     'Material', 'Consumable', 'Capsule', 'Enhancer', 'Strongbox',
 })
-_ABSOLUTE_MARKUP_MATERIAL_SUBTYPES = frozenset({'Deed', 'Token', 'Share'})
+_ABSOLUTE_MARKUP_MATERIAL_SUBTYPES = frozenset({'Deed', 'Share'})
 _LIMITED_RE = re.compile(r'\(.*L.*\)')
 
 
@@ -232,7 +232,7 @@ def _is_absolute_markup_order(item_type: str, item_name: str, item_sub_type: str
     """Determine if an order uses absolute (+PED) markup from order fields."""
     if not item_type:
         return False
-    # Stackable items use % markup (except Deed/Token/Share sub-types which use absolute)
+    # Stackable items use % markup (except Deed/Share sub-types which use absolute)
     if item_type in _STACKABLE_TYPES:
         if item_sub_type and item_sub_type in _ABSOLUTE_MARKUP_MATERIAL_SUBTYPES:
             return True
