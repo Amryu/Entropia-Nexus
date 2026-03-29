@@ -54,10 +54,12 @@
   // Find the maximum damage value for bar scaling
   let maxDamage = $derived(Math.max(...damageTypes.map(type => damage[type.key] || 0), 0));
 
-  // In edit mode, always show all types so they can be edited
-  let visibleTypes = $derived(($editMode || showZeros)
-    ? damageTypes
-    : damageTypes.filter(type => damage[type.key] > 0));
+  // Mining: only show Mining (Impact). Edit mode: show all unless mining. View: non-zero only.
+  let visibleTypes = $derived(isMining
+    ? damageTypes.filter(type => type.key === 'Impact')
+    : ($editMode || showZeros)
+      ? damageTypes
+      : damageTypes.filter(type => damage[type.key] > 0));
 
   // In edit mode, always show the grid even if no damage
   let hasAnyDamage = $derived($editMode || visibleTypes.length > 0);

@@ -41,10 +41,12 @@
   // Check if has any damage values
   let hasDamage = $derived(totalDamage > 0 || $editMode);
 
-  // Filter to only show non-zero values in view mode
-  let visibleTypes = $derived($editMode
-    ? damageTypes
-    : damageTypes.filter(type => (damage?.[type] ?? 0) > 0));
+  // Mining: only show Mining (Impact). Edit mode: show all unless mining. View: non-zero only.
+  let visibleTypes = $derived(isMining
+    ? damageTypes.filter(type => type === 'Impact')
+    : $editMode
+      ? damageTypes
+      : damageTypes.filter(type => (damage?.[type] ?? 0) > 0));
 
   function updateDamageValue(type, value) {
     const newDamage = {

@@ -1259,7 +1259,8 @@ class WeaponDetailView(WikiDetailView):
                 sep.setFixedHeight(1)
                 sep.setStyleSheet(f"background-color: {BORDER}; margin: 4px 0;")
                 dmg_section.add_widget(sep)
-            for dt in _DAMAGE_TYPES:
+            visible_types = ["Impact"] if is_mining_weapon else _DAMAGE_TYPES
+            for dt in visible_types:
                 val = damage.get(dt) or 0
                 if val > 0:
                     color = DAMAGE_COLORS.get(dt, TEXT_MUTED)
