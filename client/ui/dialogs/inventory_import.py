@@ -411,21 +411,16 @@ def _process_items(
                         'instance_key': f"stack:{cp or 'inventory'}",
                     }
             else:
-                # Non-stackable (condition) items: split stacks into individual entries
-                qty = item['quantity'] or 1
-                unit_value = (item['value'] / qty) if (item.get('value') is not None and qty > 0) else item.get('value')
-                for _j in range(qty):
-                    cp = item.get('container_path') or item.get('container') or 'inventory'
-                    base_key = f"stack:{cp}:{unit_value or 0}"
-                    count = instance_key_counts.get(base_key, 0) + 1
-                    instance_key_counts[base_key] = count
-                    individuals.append({
-                        **item,
-                        '_item_id': item_id,
-                        'quantity': 1,
-                        'value': unit_value,
-                        'instance_key': item['instance_key'] or (f"{base_key}:{count}" if count > 1 else base_key),
-                    })
+                # Non-stackable (condition) items: keep each individual with a value-based instance_key
+                base_key = f"stack:{item.get('container') or 'inventory'}:{item.get('value') or 0}"
+                count = instance_key_counts.get(base_key, 0) + 1
+                instance_key_counts[base_key] = count
+                individuals.append({
+                    **item,
+                    '_item_id': item_id,
+                    'quantity': item['quantity'] or 1,
+                    'instance_key': item['instance_key'] or (f"{base_key}:{count}" if count > 1 else base_key),
+                })
         else:
             individuals.append({**item, '_item_id': item_id})
 
