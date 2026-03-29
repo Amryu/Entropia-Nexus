@@ -155,10 +155,16 @@
 
   function handleFilterSave(filter) {
     if (filterModalNode) {
+      const path = filterModalNode.path;
       if (filter) {
-        nodeFilters.set(filterModalNode.path, filter);
+        nodeFilters.set(path, filter);
+        // Ensure inherited nodes are explicitly included so their filter is persisted
+        if (!nodeStates.has(path)) {
+          nodeStates.set(path, 'included');
+          nodeStates = new Map(nodeStates);
+        }
       } else {
-        nodeFilters.delete(filterModalNode.path);
+        nodeFilters.delete(path);
       }
       nodeFilters = new Map(nodeFilters);
     }
@@ -435,7 +441,7 @@
 
                 <span class="tree-count">{node.totalCount}</span>
 
-                {#if isIncluded && !isExcluded && directState === 'included'}
+                {#if isIncluded && !isExcluded}
                   <button
                     class="configure-btn"
                     class:has-filter={hasFilter}
