@@ -82,7 +82,7 @@
       {#if $editMode}
         <!-- Edit mode: compact 3-column grid with short labels -->
         <div class="damage-edit-grid">
-          {#each damageTypes as type}
+          {#each visibleTypes as type}
             {@const value = damage[type.key] || 0}
             <div class="damage-edit-item" class:has-value={value > 0}>
               <span class="damage-edit-label" style="color: var({type.colorVar})" title={type.label}>
