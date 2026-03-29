@@ -15,55 +15,53 @@ GRANT SELECT ON "ItemProperties" TO nexus_bot;
 -- Each source table uses its own offset to compute the global ItemId.
 
 INSERT INTO "ItemProperties" ("ItemId", "IsUntradeable")
-SELECT "Id" + 1000000, TRUE FROM "Materials"          WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 1000000,  TRUE FROM ONLY "Materials"               WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 2000000, TRUE FROM "Weapons"            WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 2000000,  TRUE FROM ONLY "Weapons"                 WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 3000000, TRUE FROM "Armors"             WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 3000000,  TRUE FROM ONLY "Armors"                  WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4100000, TRUE FROM "MedicalTools"       WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4100000,  TRUE FROM ONLY "MedicalTools"            WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4200000, TRUE FROM "MiscTools"          WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4200000,  TRUE FROM ONLY "MiscTools"               WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4300000, TRUE FROM "Refiners"           WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4300000,  TRUE FROM ONLY "Refiners"                WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4400000, TRUE FROM "Scanners"           WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4400000,  TRUE FROM ONLY "Scanners"                WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4500000, TRUE FROM "Finders"            WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4500000,  TRUE FROM ONLY "Finders"                 WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4600000, TRUE FROM "Excavators"         WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4600000,  TRUE FROM ONLY "Excavators"              WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4800000, TRUE FROM "MedicalChips"       WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4800000,  TRUE FROM ONLY "MedicalChips"            WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4810000, TRUE FROM "TeleportationChips" WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4810000,  TRUE FROM ONLY "TeleportationChips"      WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 4820000, TRUE FROM "EffectChips"        WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 4820000,  TRUE FROM ONLY "EffectChips"             WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5100000, TRUE FROM "WeaponAmplifiers"   WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 5100000,  TRUE FROM ONLY "WeaponAmplifiers"        WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5200000, TRUE FROM "WeaponVisionAttachments" WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 5200000,  TRUE FROM ONLY "WeaponVisionAttachments" WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5300000, TRUE FROM "Absorbers"          WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 5300000,  TRUE FROM ONLY "Absorbers"               WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5400000, TRUE FROM "FinderAmplifiers"   WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 5400000,  TRUE FROM ONLY "FinderAmplifiers"        WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5500000, TRUE FROM "ArmorPlatings"      WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 5500000,  TRUE FROM ONLY "ArmorPlatings"           WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5600000, TRUE FROM "Enhancers"          WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 5700000,  TRUE FROM ONLY "MindforceImplants"       WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 5700000, TRUE FROM "MindforceImplants"  WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 6000000,  TRUE FROM ONLY "Blueprints"              WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 6000000, TRUE FROM "Blueprints"         WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 7000000,  TRUE FROM ONLY "Vehicles"                WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 7000000, TRUE FROM "Vehicles"           WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 8000000,  TRUE FROM ONLY "Clothes"                 WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 8000000, TRUE FROM "Clothes"            WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 10000000, TRUE FROM ONLY "Consumables"             WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 10000000, TRUE FROM "Consumables"       WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 10100000, TRUE FROM ONLY "CreatureControlCapsules" WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 10100000, TRUE FROM "CreatureControlCapsules" WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 11000000, TRUE FROM ONLY "Pets"                    WHERE "Description" ILIKE '%Untradeable%'
 UNION ALL
-SELECT "Id" + 11000000, TRUE FROM "Pets"              WHERE "Description" ILIKE '%Untradeable%'
-UNION ALL
-SELECT "Id" + 12000000, TRUE FROM "Strongboxes"       WHERE "Description" ILIKE '%Untradeable%'
+SELECT "Id" + 12000000, TRUE FROM ONLY "Strongboxes"             WHERE "Description" ILIKE '%Untradeable%'
 ON CONFLICT ("ItemId") DO UPDATE SET "IsUntradeable" = TRUE;
