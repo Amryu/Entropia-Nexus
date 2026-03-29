@@ -375,7 +375,7 @@
       return false;
     }
 
-    // 4. Combine stackable items by (item_id, planet); keep non-stackable individual
+    // 4. Combine stackable items by (item_id, container_path); keep non-stackable individual
     const stackMap = new Map();
     const individuals = [];
     const instanceKeyCounts = new Map(); // track duplicates for stable keys
@@ -392,8 +392,8 @@
       if (itemId > 0) {
         const stackable = isStackable(itemId, item.item_name);
         if (stackable) {
-          // Combine stackable items by (item_id, planet)
-          const key = `${itemId}::${item._planet || ''}`;
+          // Combine stackable items within the same container
+          const key = `${itemId}::${item.container_path || item._planet || ''}`;
           if (stackMap.has(key)) {
             const existing = stackMap.get(key);
             existing.quantity += item.quantity || 1;
@@ -405,6 +405,7 @@
               ...item,
               _itemId: itemId,
               quantity: item.quantity || 1,
+              instance_key: `stack:${item.container_path || item._planet || 'inventory'}`,
             });
           }
         } else {

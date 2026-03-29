@@ -380,7 +380,7 @@ def _process_items(
     # 3. Resolve name → item_id
     name_lookup = _build_name_lookup(slim_items)
 
-    # 4. Combine stackable items; keep non-stackable individual
+    # 4. Combine stackable items per container; keep non-stackable individual
     stack_map: dict[str, dict] = {}
     individuals: list[dict] = []
     instance_key_counts: dict[str, int] = {}
@@ -395,7 +395,9 @@ def _process_items(
         if item_id > 0:
             stackable = _is_stackable(item_id, item['item_name'])
             if stackable:
-                key = f"{item_id}::{item.get('container') or ''}"
+                # Combine stackable items within the same container
+                cp = item.get('container_path') or item.get('container') or ''
+                key = f"{item_id}::{cp}"
                 if key in stack_map:
                     existing = stack_map[key]
                     existing['quantity'] += item['quantity'] or 1
@@ -406,6 +408,7 @@ def _process_items(
                         **item,
                         '_item_id': item_id,
                         'quantity': item['quantity'] or 1,
+                        'instance_key': f"stack:{cp or 'inventory'}",
                     }
             else:
                 # Non-stackable (condition) items: keep each individual with a value-based instance_key

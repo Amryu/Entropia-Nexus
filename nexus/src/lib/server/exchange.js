@@ -904,7 +904,7 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
   }
 
   const results = [];
-  const seen = new Map(); // key → item (dedup: item_id::planet)
+  const seen = new Map(); // key → results index (for merge/dedup)
 
   for (const node of includedNodes) {
     for (const item of inventoryItems) {
@@ -943,25 +943,47 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
         else if (hasItemTag(item.item_name, 'F')) gender = 'Female';
       }
 
-      // Non-stackable (condition) items get unique keys; stackable items dedup by planet+gender
       const genderSuffix = gender ? `::${gender}` : '';
-      const dedupKey = !stackable
-        ? `${item.item_id}::${planet}::${item.instance_key || item.id}`
-        : `${item.item_id}::${planet}${genderSuffix}`;
 
-      if (seen.has(dedupKey)) continue;
+      if (stackable) {
+        // Stackable items: merge all stacks on the same planet into one listing
+        const mergeKey = `${item.item_id}::${planet}${genderSuffix}`;
+        if (seen.has(mergeKey)) {
+          const existing = results[seen.get(mergeKey)];
+          existing.quantity += item.quantity || 1;
+          if (item.value != null) {
+            existing.value = (existing.value ?? 0) + Number(item.value);
+          }
+        } else {
+          seen.set(mergeKey, results.length);
+          results.push({
+            item_id: item.item_id,
+            item_name: itemName,
+            quantity: item.quantity || 1,
+            value: item.value != null ? Number(item.value) : null,
+            details: item.details || null,
+            planet,
+            instance_key: null,
+            gender,
+          });
+        }
+      } else {
+        // Non-stackable (condition) items: each gets its own listing
+        const dedupKey = `${item.item_id}::${planet}::${item.instance_key || item.id}`;
+        if (seen.has(dedupKey)) continue;
 
-      seen.set(dedupKey, true);
-      results.push({
-        item_id: item.item_id,
-        item_name: itemName,
-        quantity: item.quantity || 1,
-        value: item.value ?? null,
-        details: item.details || null,
-        planet,
-        instance_key: item.instance_key || null,
-        gender,
-      });
+        seen.set(dedupKey, results.length);
+        results.push({
+          item_id: item.item_id,
+          item_name: itemName,
+          quantity: item.quantity || 1,
+          value: item.value ?? null,
+          details: item.details || null,
+          planet,
+          instance_key: item.instance_key || null,
+          gender,
+        });
+      }
     }
   }
 
