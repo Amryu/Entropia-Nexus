@@ -135,4 +135,7 @@ class LoadoutCalculator:
         stats.defensive_effects = effects.get("defensive") or []
         stats.utility_effects = effects.get("utility") or []
 
+        # Flags
+        stats.is_mining_weapon = bool(js_stats.get("isMiningWeapon"))
+
         return stats

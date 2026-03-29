@@ -2549,6 +2549,7 @@ CREATE TABLE public."WeaponAmplifiers" (
     "Cold" numeric,
     "Acid" numeric,
     "Electric" numeric,
+    "Absorption" numeric,
     "Description" text
 );
 

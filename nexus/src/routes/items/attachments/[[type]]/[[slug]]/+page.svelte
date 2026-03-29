@@ -176,6 +176,7 @@
         base.Properties.Economy.Decay = 0;
         base.Properties.Economy.AmmoBurn = 0;
         base.Properties.Economy.Efficiency = 0;
+        base.Properties.Economy.Absorption = 0;
         base.Properties.Damage = {
           Impact: 0, Cut: 0, Stab: 0, Penetration: 0,
           Shrapnel: 0, Burn: 0, Cold: 0, Acid: 0, Electric: 0
@@ -705,6 +706,38 @@
                 />
               </span>
             </div>
+            {#if activeEntity?.Properties?.Type === 'Mining'}
+              <div class="stat-row">
+                <span class="stat-label">Absorption</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <span class="inline-edit editable">
+                      <span class="edit-wrapper">
+                        <input
+                          type="number"
+                          class="edit-input"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={activeEntity?.Properties?.Economy?.Absorption != null
+                            ? (activeEntity.Properties.Economy.Absorption * 100).toFixed(1)
+                            : ''}
+                          oninput={(e) => {
+                            const value = e.target.value === '' ? null : parseFloat(e.target.value) / 100;
+                            updateField('Properties.Economy.Absorption', value);
+                          }}
+                        />
+                        <span class="suffix">%</span>
+                      </span>
+                    </span>
+                  {:else}
+                    {activeEntity?.Properties?.Economy?.Absorption != null
+                      ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%`
+                      : 'N/A'}
+                  {/if}
+                </span>
+              </div>
+            {/if}
           {:else if additional.type === 'absorbers'}
             <div class="stat-row">
               <span class="stat-label">Absorption</span>
@@ -765,7 +798,7 @@
         {#if additional.type === 'weaponamplifiers' && (totalDamage > 0 || $editMode)}
           <div class="stats-section damage-section">
             <h4 class="section-title">Damage Breakdown</h4>
-            <DamageBreakdownGrid weapon={activeEntity} />
+            <DamageBreakdownGrid weapon={activeEntity} isMining={activeEntity?.Properties?.Type === 'Mining'} />
           </div>
         {/if}
 

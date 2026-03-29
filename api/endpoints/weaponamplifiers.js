@@ -25,7 +25,8 @@ function formatWeaponAmplifier(x, effectsMap, classIds){
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
-        AmmoBurn: x.Ammo !== null ? Number(x.Ammo) : null
+        AmmoBurn: x.Ammo !== null ? Number(x.Ammo) : null,
+        Absorption: x.Absorption !== null ? Number(x.Absorption) : null,
       },
       Damage: {
         Stab: x.Stab !== null ? Number(x.Stab) : null,

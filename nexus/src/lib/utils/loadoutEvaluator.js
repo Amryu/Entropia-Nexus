@@ -348,6 +348,15 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
   // ---------- Stats ----------
   const weapon = findByName(entities.weapons, loadout?.Gear?.Weapon?.Name);
   const weaponClass = weapon?.Properties?.Class || null;
+  const isMiningWeapon = weapon?.Properties?.Type?.startsWith('Mining Laser') ?? false;
+
+  // Mining weapons don't benefit from offensive buffs (reload, crit, damage)
+  if (isMiningWeapon) {
+    offensiveTotals.damage = 0;
+    offensiveTotals.reload = 0;
+    offensiveTotals.critChance = 0;
+    offensiveTotals.critDamage = 0;
+  }
   const amplifier = findByName(entities.amplifiers, loadout?.Gear?.Weapon?.Amplifier?.Name);
   const absorber = findByName(entities.absorbers, loadout?.Gear?.Weapon?.Absorber?.Name);
   const implant = findByName(entities.implants, loadout?.Gear?.Weapon?.Implant?.Name);
@@ -563,6 +572,7 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
       utility
     },
     stats: {
+      isMiningWeapon,
       totalDamage,
       effectiveDamage,
       damageInterval,

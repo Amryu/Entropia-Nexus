@@ -27,11 +27,13 @@
     damage = {},
     fieldPath = 'Properties.Damage',
     title = 'Damage',
-    compact = false
+    compact = false,
+    isMining = false,
   } = $props();
 
-  // Damage types in order
+  // Damage types in order (key is always the DB column, label overrides for display)
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+  const labelOverrides = $derived(isMining ? { Impact: 'Mining' } : {});
 
   // Calculate total damage
   let totalDamage = $derived(damageTypes.reduce((sum, type) => sum + (damage?.[type] ?? 0), 0));
@@ -95,7 +97,7 @@
     <div class="damage-items">
       {#each visibleTypes as type}
         <div class="damage-item" style="--damage-color: {getDamageColor(type)}">
-          <span class="damage-label">{type}</span>
+          <span class="damage-label">{labelOverrides[type] || type}</span>
           {#if $editMode}
             <input
               type="number"

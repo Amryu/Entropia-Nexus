@@ -2376,6 +2376,11 @@
     return weapons.find(x => x.Name === name);
   }
 
+  let isMining = $derived(getWeapon(loadout?.Gear?.Weapon?.Name)?.Properties?.Type?.startsWith('Mining Laser') ?? false);
+  let isAttached = $derived(['Mounted', 'Hanging'].includes(getWeapon(loadout?.Gear?.Weapon?.Name)?.Properties?.Category));
+  let isMiningShared = $derived(getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Type?.startsWith('Mining Laser') ?? false);
+  let isAttachedShared = $derived(['Mounted', 'Hanging'].includes(getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Category));
+
   function getAmplifier(name) {
     return amplifiers.find(x => x.Name === name);
   }
@@ -3541,6 +3546,22 @@
     });
   });
   let stats = $derived(evaluation?.stats || {});
+  // Clear incompatible weapon slots when switching to a mining laser
+  $effect(() => {
+    if (!isMining || !loadout?.Gear?.Weapon) return;
+    const gear = loadout.Gear.Weapon;
+    let changed = false;
+    if (gear.Enhancers?.Damage || gear.Enhancers?.Accuracy || gear.Enhancers?.Range || gear.Enhancers?.Economy || gear.Enhancers?.SkillMod) {
+      gear.Enhancers = { Damage: 0, Accuracy: 0, Range: 0, Economy: 0, SkillMod: 0 };
+      changed = true;
+    }
+    if (gear.Absorber?.Name) { gear.Absorber = { Name: null }; changed = true; }
+    if (gear.Implant?.Name) { gear.Implant = { Name: null }; changed = true; }
+    if (gear.Scope) { gear.Scope = null; changed = true; }
+    if (gear.Sight) { gear.Sight = null; changed = true; }
+    if (gear.Matrix) { gear.Matrix = null; changed = true; }
+    if (changed) markDirty();
+  });
   let nonActiveHotBonuses = $derived((() => {
     if (!loadout?.Sets?.Healing || loadout.Sets.Healing.length <= 1) return [];
     const activeIdx = activeSetIndices.Healing;
@@ -4396,6 +4417,7 @@
                     </div>
                   {/if}
                 </div>
+                {#if !isMiningShared}
                 <div class="form-label">Absorber</div>
                 <div class="control-row">
                   {#if sharedLoadoutData?.Gear?.Weapon?.Name == null}
@@ -4414,7 +4436,8 @@
                     </div>
                   {/if}
                 </div>
-                {#if getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Class === 'Ranged'}
+                {/if}
+                {#if getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Class === 'Ranged' && !isAttachedShared}
                   <div class="form-label">Scope</div>
                   <div class="control-row">
                     {#if sharedLoadoutData?.Gear?.Weapon?.Scope?.Name}
@@ -4491,6 +4514,7 @@
                     {/if}
                   </div>
                 {/if}
+                {#if !isMiningShared}
                 <div class="form-label">Implant</div>
                 <div class="control-row">
                   {#if sharedLoadoutData?.Gear?.Weapon?.Implant?.Name}
@@ -4507,6 +4531,7 @@
                     </div>
                   {/if}
                 </div>
+                {/if}
                 <div class="form-label">Ammo</div>
                 <div class="control-row">
                   {#if sharedLoadoutData?.Gear?.Weapon?.Name == null}
@@ -4520,36 +4545,43 @@
                 </div>
               </div>
             </div>
-            <div class="panel-block">
-              <h3 class="panel-title">Enhancers & Options</h3>
-              <div class="enhancer-grid">
-                <div class="enhancer-field">
-                  <label>Damage
-                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Damage ?? 0} />
-                  </label>
-                </div>
-                <div class="enhancer-field">
-                  <label>Accuracy
-                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Accuracy ?? 0} />
-                  </label>
-                </div>
-                <div class="enhancer-field">
-                  <label>Range
-                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Range ?? 0} />
-                  </label>
-                </div>
-                <div class="enhancer-field">
-                  <label>Economy
-                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Economy ?? 0} />
-                  </label>
-                </div>
-                <div class="enhancer-field">
-                  <label>Skill Mod
-                    <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.SkillMod ?? 0} />
-                  </label>
+            {#if isMiningShared}
+              <div class="panel-block">
+                <h3 class="panel-title">Enhancers & Options</h3>
+                <p class="mining-notice">Mining lasers are not tierable and cannot use enhancers.</p>
+              </div>
+            {:else}
+              <div class="panel-block">
+                <h3 class="panel-title">Enhancers & Options</h3>
+                <div class="enhancer-grid">
+                  <div class="enhancer-field">
+                    <label>Damage
+                      <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Damage ?? 0} />
+                    </label>
+                  </div>
+                  <div class="enhancer-field">
+                    <label>Accuracy
+                      <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Accuracy ?? 0} />
+                    </label>
+                  </div>
+                  <div class="enhancer-field">
+                    <label>Range
+                      <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Range ?? 0} />
+                    </label>
+                  </div>
+                  <div class="enhancer-field">
+                    <label>Economy
+                      <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.Economy ?? 0} />
+                    </label>
+                  </div>
+                  <div class="enhancer-field">
+                    <label>Skill Mod
+                      <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Weapon?.Enhancers?.SkillMod ?? 0} />
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
+            {/if}
           </div>
         </DataSection>
 
@@ -4925,7 +4957,7 @@
               <div class="buff-empty">No effects are active</div>
             {:else}
               {#if offensiveEffects.length > 0}
-                <div class="buff-panel">
+                <div class="buff-panel" class:mining-disabled={stats.isMiningWeapon}>
                   <div class="buff-panel-title">Offensive Effects</div>
                   <ul class="effects-list">
                     {#each offensiveEffects as effect}
@@ -5365,6 +5397,7 @@
                       </div>
                     {/if}
                   </div>
+                  {#if !isMining}
                   <div class="form-label">Absorber</div>
                   <div class="control-row">
                     <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} oncontextmenu={e => clearSlot(e, "absorber")} onclick={() => openPicker('absorber')}>
@@ -5385,7 +5418,8 @@
                       </div>
                     {/if}
                   </div>
-                  {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Ranged'}
+                  {/if}
+                  {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Ranged' && !isAttached}
                     <div class="form-label">Scope</div>
                     <div class="control-row">
                       <button class="slot select-button" disabled={loadout?.Gear.Weapon.Name == null} oncontextmenu={e => clearSlot(e, "scope")} onclick={() => openPicker('scope')}>
@@ -5464,6 +5498,7 @@
                       {/if}
                     </div>
                   {/if}
+                  {#if !isMining}
                   <div class="form-label">Implant</div>
                   <div class="control-row">
                     <button class="slot select-button" oncontextmenu={e => clearSlot(e, "implant")} onclick={() => openPicker('implant')}>
@@ -5480,6 +5515,7 @@
                       </div>
                     {/if}
                   </div>
+                  {/if}
                   <div class="form-label">Ammo</div>
                   <div class="control-row">
                     {#if loadout?.Gear.Weapon.Name == null}
@@ -5496,63 +5532,67 @@
               </div>
               <div class="panel-block">
                 <h3 class="panel-title">Enhancers & Options</h3>
-                <div class="enhancer-grid">
-                  <div class="enhancer-field">
-                    <label>Damage
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        bind:value={loadout.Gear.Weapon.Enhancers.Damage}
-                        oninput={(e) => enforceEnhancerCap('weapon', 'Damage', e.target.value)}
-                      />
-                    </label>
+                {#if isMining}
+                  <p class="mining-notice">Mining lasers are not tierable and cannot use enhancers.</p>
+                {:else}
+                  <div class="enhancer-grid">
+                    <div class="enhancer-field">
+                      <label>Damage
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          bind:value={loadout.Gear.Weapon.Enhancers.Damage}
+                          oninput={(e) => enforceEnhancerCap('weapon', 'Damage', e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div class="enhancer-field">
+                      <label>Accuracy
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          bind:value={loadout.Gear.Weapon.Enhancers.Accuracy}
+                          oninput={(e) => enforceEnhancerCap('weapon', 'Accuracy', e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div class="enhancer-field">
+                      <label>Range
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          bind:value={loadout.Gear.Weapon.Enhancers.Range}
+                          oninput={(e) => enforceEnhancerCap('weapon', 'Range', e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div class="enhancer-field">
+                      <label>Economy
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          bind:value={loadout.Gear.Weapon.Enhancers.Economy}
+                          oninput={(e) => enforceEnhancerCap('weapon', 'Economy', e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div class="enhancer-field">
+                      <label>Skill Mod
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          bind:value={loadout.Gear.Weapon.Enhancers.SkillMod}
+                          oninput={(e) => enforceEnhancerCap('weapon', 'SkillMod', e.target.value)}
+                        />
+                      </label>
+                    </div>
                   </div>
-                  <div class="enhancer-field">
-                    <label>Accuracy
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        bind:value={loadout.Gear.Weapon.Enhancers.Accuracy}
-                        oninput={(e) => enforceEnhancerCap('weapon', 'Accuracy', e.target.value)}
-                      />
-                    </label>
-                  </div>
-                  <div class="enhancer-field">
-                    <label>Range
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        bind:value={loadout.Gear.Weapon.Enhancers.Range}
-                        oninput={(e) => enforceEnhancerCap('weapon', 'Range', e.target.value)}
-                      />
-                    </label>
-                  </div>
-                  <div class="enhancer-field">
-                    <label>Economy
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        bind:value={loadout.Gear.Weapon.Enhancers.Economy}
-                        oninput={(e) => enforceEnhancerCap('weapon', 'Economy', e.target.value)}
-                      />
-                    </label>
-                  </div>
-                  <div class="enhancer-field">
-                    <label>Skill Mod
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        bind:value={loadout.Gear.Weapon.Enhancers.SkillMod}
-                        oninput={(e) => enforceEnhancerCap('weapon', 'SkillMod', e.target.value)}
-                      />
-                    </label>
-                  </div>
-                </div>
+                {/if}
                 <div class="panel-divider compact"></div>
               </div>
             </div>
@@ -6152,6 +6192,17 @@
 {/if}
 
 <style>
+  .mining-notice {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 0.5rem;
+  }
+
+  .mining-disabled {
+    opacity: 0.4;
+  }
+
   .picker-dialog {
     width: min(1100px, 96vw);
     max-height: 90vh;

@@ -305,6 +305,7 @@ export const UpsertConfigs = {
       { name: "Decay", value: x => x.Properties.Economy.Decay },
       { name: "Ammo", value: x => x.Properties.Economy.AmmoBurn },
       { name: "Efficiency", value: x => x.Properties.Economy.Efficiency },
+      { name: "Absorption", value: x => x.Properties.Economy.Absorption },
       { name: "Stab", value: x => x.Properties.Damage.Stab },
       { name: "Cut", value: x => x.Properties.Damage.Cut },
       { name: "Impact", value: x => x.Properties.Damage.Impact },

@@ -129,11 +129,13 @@ class AmplifierDetailView(WikiDetailView):
                 from ..theme import BORDER
                 sep.setStyleSheet(f"background-color: {BORDER}; margin: 4px 0;")
                 dmg_section.add_widget(sep)
+            is_mining_amp = amp_type == "Mining"
             for dt in _DAMAGE_TYPES:
                 val = damage.get(dt) or 0
                 if val > 0:
                     color = DAMAGE_COLORS.get(dt, TEXT_MUTED)
-                    dmg_section.add_row(StatRow(dt, f"{val:.1f}", label_color=color))
+                    label = "Mining" if is_mining_amp and dt == "Impact" else dt
+                    dmg_section.add_row(StatRow(label, f"{val:.1f}", label_color=color))
         self._add_section(dmg_section)
 
         # --- Effects ---

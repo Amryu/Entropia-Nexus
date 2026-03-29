@@ -56,6 +56,9 @@ class LoadoutStats:
     lifesteal_percent: float = 0
     lifesteal_hps: float | None = None
 
+    # Flags
+    is_mining_weapon: bool = False
+
 
 def create_empty_loadout() -> dict:
     """Create an empty loadout matching the website's data format."""

@@ -1278,7 +1278,7 @@
         <!-- Damage Breakdown (bars) -->
         <div class="stats-section damage-section">
           <h4 class="section-title">Damage Breakdown</h4>
-          <DamageBreakdownGrid weapon={activeWeapon} />
+          <DamageBreakdownGrid weapon={activeWeapon} isMining={activeWeapon?.Properties?.Type?.startsWith('Mining Laser')} />
         </div>
 
         <!-- Effects (if any) -->

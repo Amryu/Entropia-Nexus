@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSlot, QTimer
 from PyQt6.QtGui import QColor, QBrush
+from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
 from ...core.logger import get_logger
 from ...core.thread_utils import invoke_on_main
@@ -105,7 +106,7 @@ def _fmt_stat(val, suffix, fmt):
 def _prepare_display_data(stats):
     """Pre-compute all formatted strings for stats display.
 
-    Safe to call from any thread.  Returns (stat_texts, effect_groups).
+    Safe to call from any thread.  Returns (stat_texts, effect_groups, is_mining_weapon).
     """
     # --- Format stat label values ---
     hot = stats.hot_breakdown or {}
@@ -218,7 +219,7 @@ def _prepare_display_data(stats):
             })
         effect_groups.append((cat_name, rows))
 
-    return stat_texts, effect_groups
+    return stat_texts, effect_groups, getattr(stats, "is_mining_weapon", False)
 
 
 MAX_SETS = 10
@@ -704,10 +705,21 @@ class LoadoutPage(QWidget):
 
         # Enhancers (wrapping grid)
         self._weapon_enhancers: dict[str, QSpinBox] = {}
-        outer.addWidget(self._make_enhancer_group(
+        self._weapon_enhancer_group = self._make_enhancer_group(
             "Enhancers", ["Damage", "Accuracy", "Range", "Economy", "SkillMod"],
             self._weapon_enhancers,
-        ))
+        )
+        outer.addWidget(self._weapon_enhancer_group)
+
+        # Mining weapon notice (hidden by default)
+        self._mining_enhancer_notice = QLabel(
+            "Mining lasers are not tierable and cannot use enhancers."
+        )
+        self._mining_enhancer_notice.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; font-style: italic; padding: 4px 0;"
+        )
+        self._mining_enhancer_notice.setVisible(False)
+        outer.addWidget(self._mining_enhancer_notice)
 
         outer.addStretch()
         self._editor_tabs.addTab(self._scrollable_tab(tab), "Weapon")
@@ -1557,33 +1569,68 @@ class LoadoutPage(QWidget):
         """Show/hide weapon attachment fields based on weapon class."""
         weapon_name = self._weapon_field.current_value()
         weapon_class = None
+        weapon = None
         if weapon_name:
             weapons = self._entity_data.get("weapons", [])
             weapon = next((w for w in weapons if w.get("Name") == weapon_name), None)
             if weapon:
                 weapon_class = (weapon.get("Properties") or {}).get("Class")
 
+        # Mining / attached detection
+        weapon_type = (weapon.get("Properties") or {}).get("Type") or "" if weapon else ""
+        weapon_category = (weapon.get("Properties") or {}).get("Category") or "" if weapon else ""
+        is_mining = weapon_type.startswith("Mining Laser")
+        is_attached = weapon_category in ("Mounted", "Hanging")
+
         # Ammo MU% visible when weapon selected
         ammo_container = self._markup_containers.get("Ammo")
         if ammo_container:
             ammo_container.setVisible(bool(weapon_name))
 
-        # Ranged: Absorber, Scope, ScopeSight, Sight
+        # Ranged: Scope, ScopeSight, Sight — hidden for attached weapons
         is_ranged = weapon_class == "Ranged"
-        for key in ("Absorber", "Scope", "ScopeSight", "Sight"):
+        for key in ("Scope", "ScopeSight", "Sight"):
             row = self._weapon_field_rows.get(key)
             if row:
-                row.setVisible(is_ranged)
+                row.setVisible(is_ranged and not is_attached)
+
+        # Absorber — hidden for mining weapons
+        row = self._weapon_field_rows.get("Absorber")
+        if row:
+            row.setVisible(is_ranged and not is_mining)
 
         # Melee: Matrix
         row = self._weapon_field_rows.get("Matrix")
         if row:
             row.setVisible(weapon_class == "Melee")
 
-        # Implant — always visible (effects apply to all weapons; absorption is Mindforce-only)
+        # Implant — hidden for mining weapons
         row = self._weapon_field_rows.get("Implant")
         if row:
-            row.setVisible(True)
+            row.setVisible(not is_mining)
+
+        # Enhancers — hidden for mining weapons
+        if hasattr(self, '_weapon_enhancer_group'):
+            self._weapon_enhancer_group.setVisible(not is_mining)
+        if hasattr(self, '_mining_enhancer_notice'):
+            self._mining_enhancer_notice.setVisible(is_mining)
+
+        if is_mining:
+            # Zero out enhancer values
+            for spin in self._weapon_enhancers.values():
+                spin.blockSignals(True)
+                spin.setValue(0)
+                spin.blockSignals(False)
+
+            # Clear incompatible attachment slots
+            for field in (
+                self._absorber_field, self._implant_field,
+                self._scope_field, self._scope_sight_field,
+                self._sight_field, self._matrix_field,
+            ):
+                field.blockSignals(True)
+                field.clear_selection()
+                field.blockSignals(False)
 
         # Update markup for weapon/amp (they're always visible)
         self._update_markup("Weapon", weapon_name)
@@ -2995,7 +3042,7 @@ class LoadoutPage(QWidget):
         All formatting is done in the background thread by _prepare_display_data.
         This method only calls setText / setVisible on existing widgets.
         """
-        stat_texts, effect_groups = display_data
+        stat_texts, effect_groups, is_mining_weapon = display_data
 
         all_labels = (
             self._tier1_stats, self._off_stats, self._econ_stats,
@@ -3009,11 +3056,12 @@ class LoadoutPage(QWidget):
                     vlbl.setText(text)
 
         try:
-            self._apply_effects_display(effect_groups)
+            self._apply_effects_display(effect_groups, is_mining_weapon)
         except Exception as e:
             log.error("Effects display update failed: %s", e)
 
-    def _apply_effects_display(self, effect_groups: list):
+    def _apply_effects_display(self, effect_groups: list,
+                               is_mining_weapon: bool = False):
         """Apply pre-computed effect data to the effects panel, reusing pooled widgets.
 
         All HTML/style strings are pre-computed by _prepare_display_data.
@@ -3045,22 +3093,31 @@ class LoadoutPage(QWidget):
         row_idx = 0
 
         for cat_name, rows in effect_groups:
+            dimmed = is_mining_weapon and cat_name == "Offensive Effects"
+
             # Reuse or create header
             if header_idx < len(self._effect_header_pool):
                 header = self._effect_header_pool[header_idx]
                 header.setText(cat_name)
             else:
                 header = QLabel(cat_name)
-                header.setStyleSheet(
-                    f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;"
-                    f" padding: 4px 0 2px 0;"
-                )
                 self._effect_header_pool.append(header)
+            header.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;"
+                f" padding: 4px 0 2px 0;"
+            )
+            if dimmed:
+                eff = QGraphicsOpacityEffect(header)
+                eff.setOpacity(0.4)
+                header.setGraphicsEffect(eff)
+            else:
+                header.setGraphicsEffect(None)
             header.setVisible(True)
             layout.addWidget(header)
             header_idx += 1
 
             for rd in rows:
+                rd["dimmed"] = dimmed
                 self._apply_effect_row(layout, rd, row_idx)
                 row_idx += 1
 
@@ -3082,6 +3139,7 @@ class LoadoutPage(QWidget):
         has_caps = rd["has_caps"]
         effect_key = rd["effect_key"]
         cap_htmls = rd["cap_htmls"]
+        dimmed = rd.get("dimmed", False)
 
         if row_idx < len(self._effect_row_pool):
             btn, row_label, cap_widget, cap_labels = self._effect_row_pool[row_idx]
@@ -3130,6 +3188,14 @@ class LoadoutPage(QWidget):
                 cap_labels.append(lbl)
 
             self._effect_row_pool.append((btn, row_label, cap_widget, cap_labels))
+
+        # Apply dimmed opacity for mining weapon offensive effects
+        if dimmed:
+            eff = QGraphicsOpacityEffect(btn)
+            eff.setOpacity(0.4)
+            btn.setGraphicsEffect(eff)
+        else:
+            btn.setGraphicsEffect(None)
 
         btn.setVisible(True)
         layout.addWidget(btn)

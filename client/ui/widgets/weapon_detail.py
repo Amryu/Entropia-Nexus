@@ -1248,6 +1248,7 @@ class WeaponDetailView(WikiDetailView):
 
         # --- Damage Breakdown ---
         damage = deep_get(item, "Properties", "Damage")
+        is_mining_weapon = weapon_type.startswith("Mining Laser")
         dmg_section = InfoboxSection("Damage")
         if damage:
             total = sum(damage.get(dt) or 0 for dt in _DAMAGE_TYPES)
@@ -1262,7 +1263,8 @@ class WeaponDetailView(WikiDetailView):
                 val = damage.get(dt) or 0
                 if val > 0:
                     color = DAMAGE_COLORS.get(dt, TEXT_MUTED)
-                    dmg_section.add_row(StatRow(dt, f"{val:.1f}", label_color=color))
+                    label = "Mining" if is_mining_weapon and dt == "Impact" else dt
+                    dmg_section.add_row(StatRow(label, f"{val:.1f}", label_color=color))
         self._add_section(dmg_section)
 
         # --- Effects (conditional) ---

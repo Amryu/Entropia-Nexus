@@ -243,6 +243,13 @@ export function calculateDecay(
     weaponDecay -= implantDecay;
   }
 
+  // Mining amplifier absorption (mining amps act as absorber for mining weapons)
+  if (weapon?.Properties?.Type?.startsWith('Mining Laser') && amplifier?.Properties?.Economy?.Absorption != null) {
+    const miningAmpAbsorption = weaponDecay * amplifier.Properties.Economy.Absorption;
+    decay += miningAmpAbsorption * (markups.Amplifier ?? 100) / 100;
+    weaponDecay -= miningAmpAbsorption;
+  }
+
   decay += weaponDecay * (markups.Weapon ?? 100) / 100;
 
   if (amplifier?.Properties?.Economy?.Decay != null) {
@@ -406,7 +413,10 @@ export function calculateLowestTotalUses(
 
   // Implant absorption only applies with Mindforce weapons
   const implantAbsorption = (weaponClass === 'Mindforce' && implant != null) ? 1 - implant.Properties.Economy.Absorption : 1;
-  const decayFactor = (absorber != null ? 1 - absorber.Properties.Economy.Absorption : 1) * implantAbsorption;
+  // Mining amplifier absorption (mining amps act as absorber)
+  const miningAmpAbsorption = (weapon?.Properties?.Type?.startsWith('Mining Laser') && amplifier?.Properties?.Economy?.Absorption != null)
+    ? 1 - amplifier.Properties.Economy.Absorption : 1;
+  const decayFactor = (absorber != null ? 1 - absorber.Properties.Economy.Absorption : 1) * implantAbsorption * miningAmpAbsorption;
 
   const weaponMaxTT = weapon.Properties?.Economy?.MaxTT ?? null;
   const weaponMinTT = weapon.Properties?.Economy?.MinTT ?? 0;

@@ -267,7 +267,7 @@ function categorizeRangedWeapon(item, ranged, category, type) {
     if (damageType === 'gauss') damageType = 'laser';
     ranged.support[damageType].push(item);
   } else if (category === 'hanging' || category === 'mounted' || category === 'turret') {
-    if (type === 'mining') ranged.attached.mining.push(item);
+    if (type.startsWith('mining laser')) ranged.attached.mining.push(item);
     else if (type === 'support') ranged.attached.support.push(item);
     else ranged.attached[damageType].push(item);
   } else if (category === 'cannon') {

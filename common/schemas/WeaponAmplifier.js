@@ -51,6 +51,12 @@ export const WeaponAmplifier = {
             "AmmoBurn": {
               "type": ["integer", "null"],
               "default": null
+            },
+            "Absorption": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "maximum": 1,
+              "default": null
             }
           },
           "required": [

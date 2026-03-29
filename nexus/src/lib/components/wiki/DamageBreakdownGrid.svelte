@@ -21,13 +21,22 @@
    * @property {boolean} [compact]
    */
 
+  /**
+   * @typedef {Object} Props
+   * @property {object} [weapon]
+   * @property {boolean} [showZeros]
+   * @property {boolean} [compact]
+   * @property {boolean} [isMining]
+   */
+
   /** @type {Props} */
-  let { weapon = null, showZeros = false, compact = false } = $props();
+  let { weapon = null, showZeros = false, compact = false, isMining = false } = $props();
 
   // Damage type definitions with CSS variable references for colors
   // Colors are defined globally in style.css as --damage-{type}
-  const damageTypes = [
-    { key: 'Impact', label: 'Impact', short: 'Imp', colorVar: '--damage-impact' },
+  // Mining weapons/amps use the Impact column but display as "Mining"
+  let damageTypes = $derived([
+    { key: 'Impact', label: isMining ? 'Mining' : 'Impact', short: isMining ? 'Min' : 'Imp', colorVar: '--damage-impact' },
     { key: 'Cut', label: 'Cut', short: 'Cut', colorVar: '--damage-cut' },
     { key: 'Stab', label: 'Stab', short: 'Stb', colorVar: '--damage-stab' },
     { key: 'Penetration', label: 'Penetration', short: 'Pen', colorVar: '--damage-penetration' },
@@ -36,7 +45,7 @@
     { key: 'Cold', label: 'Cold', short: 'Cld', colorVar: '--damage-cold' },
     { key: 'Acid', label: 'Acid', short: 'Acd', colorVar: '--damage-acid' },
     { key: 'Electric', label: 'Electric', short: 'Elc', colorVar: '--damage-electric' },
-  ];
+  ]);
 
   let damage = $derived(weapon?.Properties?.Damage || {});
 
