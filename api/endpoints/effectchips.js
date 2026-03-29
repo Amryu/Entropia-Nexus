@@ -1,7 +1,7 @@
 const { pool } = require('./dbClient');
 const pgp = require('pg-promise')();
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { loadEffectsOnUseByItemIds } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -16,9 +16,10 @@ const queries = {
   // EffectsOnUse loaded via shared helper
 };
 
-function formatEffectChip(x, effectsMap, classIds){
+function formatEffectChip(x, effectsMap, classIds, itemProps){
   const itemId = x.Id + idOffsets.EffectChips;
   const effects = effectsMap[itemId] ?? [];
+  const props = itemProps[itemId];
   return {
     Id: x.Id,
     ClassId: classIds[x.Id] || null,
@@ -46,7 +47,9 @@ function formatEffectChip(x, effectsMap, classIds){
         LearningIntervalStart: (x.MinLevel ?? x.MinLvl) !== null ? Number(x.MinLevel ?? x.MinLvl) : null,
         LearningIntervalEnd: (x.MaxLevel ?? x.MaxLvl) !== null ? Number(x.MaxLevel ?? x.MaxLvl) : null,
         IsSiB: (x.IsSib === 1) || (x.SiB === 1)
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Ammo: x.AmmoId ? { Name: x.Ammo, Links: { "$Url": `/materials/${x.AmmoId}` } } : null,
     Profession: x.ProfessionId ? { Name: x.Profession, Links: { "$Url": `/professions/${x.ProfessionId}` } } : null,
@@ -58,22 +61,24 @@ function formatEffectChip(x, effectsMap, classIds){
 async function getEffectChips(){
   const { rows } = await pool.query(queries.EffectChips);
   const itemIds = rows.map(r => r.Id + idOffsets.EffectChips);
-  const [effects, classIds] = await Promise.all([
+  const [effects, classIds, itemProps] = await Promise.all([
     loadEffectsOnUseByItemIds(itemIds),
-    loadClassIds('EffectChip', rows.map(r => r.Id))
+    loadClassIds('EffectChip', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
   ]);
-  return rows.map(r => formatEffectChip(r, effects, classIds));
+  return rows.map(r => formatEffectChip(r, effects, classIds, itemProps));
 }
 
 async function getEffectChip(idOrName){
   const row = await getObjectByIdOrName(queries.EffectChips, 'EffectChips', idOrName);
   if (!row) return null;
   const itemIds = [row.Id + idOffsets.EffectChips];
-  const [effects, classIds] = await Promise.all([
+  const [effects, classIds, itemProps] = await Promise.all([
     loadEffectsOnUseByItemIds(itemIds),
-    loadClassIds('EffectChip', [row.Id])
+    loadClassIds('EffectChip', [row.Id]),
+    loadItemProperties(itemIds)
   ]);
-  return formatEffectChip(row, effects, classIds);
+  return formatEffectChip(row, effects, classIds, itemProps);
 }
 
 function register(app){
@@ -86,7 +91,7 @@ function register(app){
    *      '200':
    *        description: A list of effect chips
    */
-  app.get('/effectchips', async (req,res) => { res.json(await withCache('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects', 'ClassIds'], getEffectChips)); });
+  app.get('/effectchips', async (req,res) => { res.json(await withCache('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects', 'ClassIds', 'ItemProperties'], getEffectChips)); });
   /**
    * @swagger
    * /effectchips/{effectChip}:
@@ -105,7 +110,7 @@ function register(app){
    *      '404':
    *        description: Effect chip not found
    */
-  app.get('/effectchips/:effectChip', async (req,res) => { const r = await withCachedLookup('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects', 'ClassIds'], getEffectChips, req.params.effectChip); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/effectchips/:effectChip', async (req,res) => { const r = await withCachedLookup('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects', 'ClassIds', 'ItemProperties'], getEffectChips, req.params.effectChip); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getEffectChips, getEffectChip, formatEffectChip };

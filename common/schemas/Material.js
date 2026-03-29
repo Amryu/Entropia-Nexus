@@ -25,6 +25,14 @@ export const Material = {
           "type": ["string", "null"],
           "default": null
         },
+        "IsUntradeable": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "IsRare": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null

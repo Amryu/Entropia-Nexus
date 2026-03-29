@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -11,11 +11,13 @@ function toNumberOrNull(v) {
   return v === null || v === undefined ? null : Number(v);
 }
 
-function formatArmorPlating(x, classIds){
+function formatArmorPlating(x, data){
+  const itemId = x.Id + idOffsets.ArmorPlatings;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.ArmorPlatings,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -36,7 +38,9 @@ function formatArmorPlating(x, classIds){
         Cold: toNumberOrNull(x.Cold),
         Acid: toNumberOrNull(x.Acid),
         Electric: toNumberOrNull(x.Electric),
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Links: { "$Url": `/armorplatings/${x.Id}` }
   };

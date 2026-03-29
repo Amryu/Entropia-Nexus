@@ -1,15 +1,17 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Refiners: 'SELECT * FROM ONLY "Refiners"' };
 
-function formatRefiner(x, classIds){
+function formatRefiner(x, data){
+  const itemId = x.Id + idOffsets.Refiners;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.Refiners,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -20,6 +22,8 @@ function formatRefiner(x, classIds){
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
       },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Links: { "$Url": `/refiners/${x.Id}` },
   };
@@ -27,10 +31,15 @@ function formatRefiner(x, classIds){
 
 async function getRefiners() {
   const { rows } = await pool.query(queries.Refiners);
-  const classIds = await loadClassIds('Refiner', rows.map(r => r.Id));
-  return rows.map(r => formatRefiner(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.Refiners);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('Refiner', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatRefiner(r, data));
 }
-const getRefiner = async (idOrName) => { const row = await getObjectByIdOrName(queries.Refiners, 'Refiners', idOrName); if (!row) return null; const classIds = await loadClassIds('Refiner', [row.Id]); return formatRefiner(row, classIds); };
+const getRefiner = async (idOrName) => { const row = await getObjectByIdOrName(queries.Refiners, 'Refiners', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.Refiners; const [classIds, itemProps] = await Promise.all([loadClassIds('Refiner', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatRefiner(row, data); };
 
 function register(app){
   /**
@@ -43,7 +52,7 @@ function register(app){
    *        description: A list of refiners
    */
   app.get('/refiners', async (req,res) => {
-    res.json(await withCache('/refiners', ['Refiners', 'ClassIds'], getRefiners));
+    res.json(await withCache('/refiners', ['Refiners', 'ClassIds', 'ItemProperties'], getRefiners));
   });
   /**
    * @swagger
@@ -64,7 +73,7 @@ function register(app){
    *        description: Refiner not found
    */
   app.get('/refiners/:refiner', async (req,res) => {
-    const r = await withCachedLookup('/refiners', ['Refiners', 'ClassIds'], getRefiners, req.params.refiner);
+    const r = await withCachedLookup('/refiners', ['Refiners', 'ClassIds', 'ItemProperties'], getRefiners, req.params.refiner);
     if (r) res.json(r); else res.status(404).send();
   });
 }

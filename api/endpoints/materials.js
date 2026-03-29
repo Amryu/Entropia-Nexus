@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 const { idOffsets } = require('./constants');
 
@@ -7,17 +7,21 @@ const queries = {
   Materials: 'SELECT * FROM ONLY "Materials"',
 };
 
-function formatMaterial(x, classIds){
+function formatMaterial(x, data){
+  const itemId = x.Id + idOffsets.Materials;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ItemId: x.Id + idOffsets.Materials,
-    ClassId: classIds[x.Id] || null,
+    ItemId: itemId,
+    ClassId: data.ClassIds[x.Id] || null,
     Name: x.Name,
     Properties: {
       Description: x.Description,
       Type: x.Type,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
-      Economy: { MaxTT: x.Value !== null ? Number(x.Value) : null }
+      Economy: { MaxTT: x.Value !== null ? Number(x.Value) : null },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Links: { "$Url": `/materials/${x.Id}` }
   };
@@ -26,10 +30,15 @@ function formatMaterial(x, classIds){
 // DB methods
 async function getMaterials() {
   const { rows } = await pool.query(queries.Materials);
-  const classIds = await loadClassIds('Material', rows.map(r => r.Id));
-  return rows.map(r => formatMaterial(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.Materials);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('Material', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatMaterial(r, data));
 }
-const getMaterial = async (idOrName) => { const row = await getObjectByIdOrName(queries.Materials, 'Materials', idOrName); if (!row) return null; const classIds = await loadClassIds('Material', [row.Id]); return formatMaterial(row, classIds); };
+const getMaterial = async (idOrName) => { const row = await getObjectByIdOrName(queries.Materials, 'Materials', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.Materials; const [classIds, itemProps] = await Promise.all([loadClassIds('Material', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatMaterial(row, data); };
 
 // Endpoints
 function register(app){
@@ -42,7 +51,7 @@ function register(app){
    *      '200':
    *        description: A list of materials
    */
-  app.get('/materials', async (req,res) => { res.json(await withCache('/materials', ['Materials', 'ClassIds'], getMaterials)); });
+  app.get('/materials', async (req,res) => { res.json(await withCache('/materials', ['Materials', 'ClassIds', 'ItemProperties'], getMaterials)); });
 
   /**
    * @swagger
@@ -62,7 +71,7 @@ function register(app){
    *      '404':
    *        description: Material not found
    */
-  app.get('/materials/:material', async (req,res) => { const r = await withCachedLookup('/materials', ['Materials', 'ClassIds'], getMaterials, req.params.material); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/materials/:material', async (req,res) => { const r = await withCachedLookup('/materials', ['Materials', 'ClassIds', 'ItemProperties'], getMaterials, req.params.material); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMaterials, getMaterial, formatMaterial };

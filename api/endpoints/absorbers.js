@@ -1,16 +1,17 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Absorbers: 'SELECT * FROM ONLY "Absorbers"' };
 
-function formatAbsorber(x, classIds) {
-  // Parity with legacy db.js formatAbsorber (field names, numeric coercion, Link path)
+function formatAbsorber(x, data) {
+  const itemId = x.Id + idOffsets.Absorbers;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.Absorbers,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -21,7 +22,9 @@ function formatAbsorber(x, classIds) {
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Absorption: x.Absorption !== null ? Number(x.Absorption) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Links: { "$Url": `/absorbers/${x.Id}` }
   };
@@ -29,10 +32,15 @@ function formatAbsorber(x, classIds) {
 
 async function getAbsorbers() {
   const { rows } = await pool.query(queries.Absorbers);
-  const classIds = await loadClassIds('Absorber', rows.map(r => r.Id));
-  return rows.map(r => formatAbsorber(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.Absorbers);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('Absorber', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatAbsorber(r, data));
 }
-const getAbsorber = async(idOrName) => { const row = await getObjectByIdOrName(queries.Absorbers,'Absorbers',idOrName); if (!row) return null; const classIds = await loadClassIds('Absorber', [row.Id]); return formatAbsorber(row, classIds); };
+const getAbsorber = async(idOrName) => { const row = await getObjectByIdOrName(queries.Absorbers,'Absorbers',idOrName); if (!row) return null; const itemId = row.Id + idOffsets.Absorbers; const [classIds, itemProps] = await Promise.all([loadClassIds('Absorber', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatAbsorber(row, data); };
 
 function register(app){
   /**
@@ -44,7 +52,7 @@ function register(app){
    *      '200':
    *        description: A list of absorbers
    */
-  app.get('/absorbers', async (req,res)=>{ res.json(await withCache('/absorbers', ['Absorbers', 'ClassIds'], getAbsorbers)); });
+  app.get('/absorbers', async (req,res)=>{ res.json(await withCache('/absorbers', ['Absorbers', 'ClassIds', 'ItemProperties'], getAbsorbers)); });
   /**
    * @swagger
    * /absorbers/{absorber}:
@@ -63,7 +71,7 @@ function register(app){
    *      '404':
    *        description: Absorber not found
    */
-  app.get('/absorbers/:absorber', async (req,res)=>{ const r = await withCachedLookup('/absorbers', ['Absorbers', 'ClassIds'], getAbsorbers, req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/absorbers/:absorber', async (req,res)=>{ const r = await withCachedLookup('/absorbers', ['Absorbers', 'ClassIds', 'ItemProperties'], getAbsorbers, req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getAbsorbers, getAbsorber, formatAbsorber };

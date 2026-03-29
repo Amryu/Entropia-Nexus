@@ -1,22 +1,26 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "BlueprintBooks"."Description", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM ONLY "BlueprintBooks" LEFT JOIN ONLY "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
 };
 
-function formatBlueprintBook(x, classIds){
+function formatBlueprintBook(x, data){
+  const itemId = x.Id + idOffsets.BlueprintBooks;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.BlueprintBooks,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: { Value: x.Value !== null ? Number(x.Value) : null },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Planet: { Name: x.Planet, Links: { "$Url": `/planets/${x.PlanetId}` } },
     Links: { "$Url": `/blueprintbooks/${x.Id}` },
@@ -26,10 +30,15 @@ function formatBlueprintBook(x, classIds){
 // DB methods
 async function getBlueprintBooks() {
   const { rows } = await pool.query(queries.BlueprintBooks);
-  const classIds = await loadClassIds('BlueprintBook', rows.map(r => r.Id));
-  return rows.map(r => formatBlueprintBook(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.BlueprintBooks);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('BlueprintBook', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatBlueprintBook(r, data));
 }
-const getBlueprintBook = async (idOrName) => { const row = await getObjectByIdOrName(queries.BlueprintBooks, 'BlueprintBooks', idOrName); if (!row) return null; const classIds = await loadClassIds('BlueprintBook', [row.Id]); return formatBlueprintBook(row, classIds); };
+const getBlueprintBook = async (idOrName) => { const row = await getObjectByIdOrName(queries.BlueprintBooks, 'BlueprintBooks', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.BlueprintBooks; const [classIds, itemProps] = await Promise.all([loadClassIds('BlueprintBook', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatBlueprintBook(row, data); };
 
 // Endpoints
 function register(app){
@@ -42,7 +51,7 @@ function register(app){
    *      '200':
    *        description: A list of blueprint books
    */
-  app.get('/blueprintbooks', async (req,res) => { res.json(await withCache('/blueprintbooks', ['BlueprintBooks', 'Planets', 'ClassIds'], getBlueprintBooks)); });
+  app.get('/blueprintbooks', async (req,res) => { res.json(await withCache('/blueprintbooks', ['BlueprintBooks', 'Planets', 'ClassIds', 'ItemProperties'], getBlueprintBooks)); });
   /**
    * @swagger
    * /blueprintbooks/{blueprintBook}:
@@ -62,7 +71,7 @@ function register(app){
    *        description: Blueprint book not found
    */
   app.get('/blueprintbooks/:blueprintBook', async (req,res) => {
-    const result = await withCachedLookup('/blueprintbooks', ['BlueprintBooks', 'Planets', 'ClassIds'], getBlueprintBooks, req.params.blueprintBook);
+    const result = await withCachedLookup('/blueprintbooks', ['BlueprintBooks', 'Planets', 'ClassIds', 'ItemProperties'], getBlueprintBooks, req.params.blueprintBook);
     if (result) res.json(result); else res.status(404).send();
   });
 }

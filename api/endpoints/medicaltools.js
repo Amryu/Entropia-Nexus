@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const {
   loadEffectsOnEquipByItemIds,
@@ -17,6 +17,7 @@ function formatMedicalTool(x, data){
   const effectsOnUse = data.EffectsOnUse[itemId] || [];
   const effectsOnEquip = data.EffectsOnEquip[itemId] || [];
   const tiers = data.Tiers[itemId] || [];
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
     ClassId: data.ClassIds[x.Id] || null,
@@ -38,6 +39,8 @@ function formatMedicalTool(x, data){
         LearningIntervalEnd: x.MaxLvl != null ? Number(x.MaxLvl) : null,
         IsSiB: (x.SIB === 1) || (x.SiB === 1),
       },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     EffectsOnUse: effectsOnUse,
     EffectsOnEquip: effectsOnEquip,
@@ -50,13 +53,14 @@ async function getMedicalTools(){
   const { rows } = await pool.query(queries.MedicalTools);
   const ids = rows.map(r=>r.Id);
   const itemIds = ids.map(id => id + idOffsets.MedicalTools);
-  const [effectsOnUse, effectsOnEquip, tiers, classIds] = await Promise.all([
+  const [effectsOnUse, effectsOnEquip, tiers, classIds, itemProps] = await Promise.all([
     loadEffectsOnUseByItemIds(itemIds),
     loadEffectsOnEquipByItemIds(itemIds),
     getTiersByItemIds(itemIds, 0),
-    loadClassIds('MedicalTool', rows.map(r => r.Id))
+    loadClassIds('MedicalTool', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
   ]);
-  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, Tiers: tiers, ClassIds: classIds };
+  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, Tiers: tiers, ClassIds: classIds, ItemProps: itemProps };
   return rows.map(r => formatMedicalTool(r, data));
 }
 async function getMedicalTool(idOrName){
@@ -64,13 +68,14 @@ async function getMedicalTool(idOrName){
   if (!row) return null;
   const id = row.Id;
   const itemIds = [id + idOffsets.MedicalTools];
-  const [effectsOnUse, effectsOnEquip, tiers, classIds] = await Promise.all([
+  const [effectsOnUse, effectsOnEquip, tiers, classIds, itemProps] = await Promise.all([
     loadEffectsOnUseByItemIds(itemIds),
     loadEffectsOnEquipByItemIds(itemIds),
     getTiersByItemIds(itemIds, 0),
-    loadClassIds('MedicalTool', [row.Id])
+    loadClassIds('MedicalTool', [row.Id]),
+    loadItemProperties(itemIds)
   ]);
-  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, Tiers: tiers, ClassIds: classIds };
+  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, Tiers: tiers, ClassIds: classIds, ItemProps: itemProps };
   return formatMedicalTool(row, data);
 }
 
@@ -84,7 +89,7 @@ function register(app){
    *      '200':
    *        description: A list of medical tools
    */
-  app.get('/medicaltools', async (req,res) => { res.json(await withCache('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getMedicalTools)); });
+  app.get('/medicaltools', async (req,res) => { res.json(await withCache('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds', 'ItemProperties'], getMedicalTools)); });
   /**
    * @swagger
    * /medicaltools/{medicalTool}:
@@ -103,7 +108,7 @@ function register(app){
    *      '404':
    *        description: Medical tool not found
    */
-  app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await withCachedLookup('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getMedicalTools, req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await withCachedLookup('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds', 'ItemProperties'], getMedicalTools, req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMedicalTools, getMedicalTool, formatMedicalTool };

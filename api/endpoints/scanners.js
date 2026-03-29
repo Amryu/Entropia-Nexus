@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -7,25 +7,29 @@ const queries = {
   Scanners: 'SELECT * FROM ONLY "Scanners"',
 };
 
-function formatScanner(x, classIds){
+function formatScanner(x, data){
+  const itemId = x.Id + idOffsets.Scanners;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.Scanners,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Range: x.Range !== null ? Number(x.Range) : null,
-      Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null, MinTT: x.MinTT !== null ? Number(x.MinTT) : null, Decay: x.Decay !== null ? Number(x.Decay) : null }
+      Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null, MinTT: x.MinTT !== null ? Number(x.MinTT) : null, Decay: x.Decay !== null ? Number(x.Decay) : null },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Links: { "$Url": `/scanners/${x.Id}` }
   };
 }
 
-async function getScanners(){ const { rows } = await pool.query(queries.Scanners); const classIds = await loadClassIds('Scanner', rows.map(r => r.Id)); return rows.map(r => formatScanner(r, classIds)); }
-async function getScanner(idOrName){ const row = await getObjectByIdOrName(queries.Scanners, 'Scanners', idOrName); if (!row) return null; const classIds = await loadClassIds('Scanner', [row.Id]); return formatScanner(row, classIds); }
+async function getScanners(){ const { rows } = await pool.query(queries.Scanners); const itemIds = rows.map(r => r.Id + idOffsets.Scanners); const [classIds, itemProps] = await Promise.all([loadClassIds('Scanner', rows.map(r => r.Id)), loadItemProperties(itemIds)]); const data = { ClassIds: classIds, ItemProps: itemProps }; return rows.map(r => formatScanner(r, data)); }
+async function getScanner(idOrName){ const row = await getObjectByIdOrName(queries.Scanners, 'Scanners', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.Scanners; const [classIds, itemProps] = await Promise.all([loadClassIds('Scanner', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatScanner(row, data); }
 
 function register(app){
   /**
@@ -37,7 +41,7 @@ function register(app){
    *      '200':
    *        description: A list of scanners
    */
-  app.get('/scanners', async (req,res) => { res.json(await withCache('/scanners', ['Scanners', 'ClassIds'], getScanners)); });
+  app.get('/scanners', async (req,res) => { res.json(await withCache('/scanners', ['Scanners', 'ClassIds', 'ItemProperties'], getScanners)); });
   /**
    * @swagger
    * /scanners/{scanner}:
@@ -56,7 +60,7 @@ function register(app){
    *      '404':
    *        description: Scanner not found
    */
-  app.get('/scanners/:scanner', async (req,res) => { const r = await withCachedLookup('/scanners', ['Scanners', 'ClassIds'], getScanners, req.params.scanner); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/scanners/:scanner', async (req,res) => { const r = await withCachedLookup('/scanners', ['Scanners', 'ClassIds', 'ItemProperties'], getScanners, req.params.scanner); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getScanners, getScanner, formatScanner };

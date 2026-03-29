@@ -20,6 +20,14 @@ export const Strongbox = {
         "Description": {
           "type": ["string", "null"],
           "default": null
+        },
+        "IsUntradeable": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "IsRare": {
+          "type": ["boolean", "null"],
+          "default": null
         }
       },
       "required": [

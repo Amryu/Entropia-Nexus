@@ -20,6 +20,14 @@ export const Blueprint = {
           "type": ["string", "null"],
           "default": null
         },
+        "IsUntradeable": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "IsRare": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
         "Type": {
           "type": "string",
           "enum": ["Weapon", "Textile", "Vehicle", "Enhancer", "Furniture", "Tool", "Armor", "Attachment", "Metal Component", "Electrical Component", "Mechanical Component", "Chemistry"]

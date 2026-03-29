@@ -21,6 +21,14 @@ export const Pet = {
           "type": ["string", "null"],
           "default": null
         },
+        "IsUntradeable": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "IsRare": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
         "Rarity": {
           "type": "string",
           "enum": ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Unique"]

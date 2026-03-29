@@ -20,6 +20,14 @@ export const ArmorSet = {
           "type": ["string", "null"],
           "default": null
         },
+        "IsUntradeable": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "IsRare": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
         "Economy": {
           "type": "object",
           "additionalProperties": false,

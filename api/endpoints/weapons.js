@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadEffectsOnUseByItemIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -12,6 +12,7 @@ function formatWeapon(x,data){
   const equip = data.EffectsOnEquip[itemId] || [];
   const use = data.EffectsOnUse[itemId] || [];
   const tiers = data.Tiers[itemId] || [];
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
     ClassId: data.ClassIds[x.Id] || null,
@@ -55,6 +56,8 @@ function formatWeapon(x,data){
         Dmg: { LearningIntervalStart: x.MinDmg != null ? Number(x.MinDmg) : null, LearningIntervalEnd: x.MaxDmg != null ? Number(x.MaxDmg) : null },
         IsSiB: x.SIB === 1,
       },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Ammo: x.Ammo ? { Name: x.Ammo, Links: { "$Url": `/materials/${x.AmmoId}` } } : { Name: null },
     ProfessionHit: { Name: x.ProfessionHit, Links: { "$Url": `/professions/${x.ProfessionHitId}` } },
@@ -69,25 +72,27 @@ function formatWeapon(x,data){
 async function getWeapons(){
   const { rows } = await pool.query(queries.Weapons);
   const itemIds = rows.map(r => r.Id + idOffsets.Weapons);
-  const [equip, use, tiers, classIds] = await Promise.all([
+  const [equip, use, tiers, classIds, itemProps] = await Promise.all([
     loadEffectsOnEquipByItemIds(itemIds),
     loadEffectsOnUseByItemIds(itemIds),
     getTiersByItemIds(itemIds, 0),
-    loadClassIds('Weapon', rows.map(r => r.Id))
+    loadClassIds('Weapon', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
   ]);
-  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers, ClassIds: classIds };
+  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers, ClassIds: classIds, ItemProps: itemProps };
   return rows.map(r=>formatWeapon(r,data));
 }
 async function getWeapon(idOrName){
   const row = await getObjectByIdOrName(queries.Weapons,'Weapons',idOrName); if(!row) return null;
   const itemId = row.Id + idOffsets.Weapons;
-  const [equip, use, tiers, classIds] = await Promise.all([
+  const [equip, use, tiers, classIds, itemProps] = await Promise.all([
     loadEffectsOnEquipByItemIds([itemId]),
     loadEffectsOnUseByItemIds([itemId]),
     getTiersByItemIds([itemId], 0),
-    loadClassIds('Weapon', [row.Id])
+    loadClassIds('Weapon', [row.Id]),
+    loadItemProperties([itemId])
   ]);
-  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers, ClassIds: classIds };
+  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers, ClassIds: classIds, ItemProps: itemProps };
   return formatWeapon(row,data);
 }
 function register(app){
@@ -100,7 +105,7 @@ function register(app){
    *      '200':
    *        description: A list of weapons
    */
-  app.get('/weapons', async (req,res)=>{ res.json(await withCache('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getWeapons)); });
+  app.get('/weapons', async (req,res)=>{ res.json(await withCache('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds', 'ItemProperties'], getWeapons)); });
   /**
    * @swagger
    * /weapons/{weapon}:
@@ -119,6 +124,6 @@ function register(app){
    *      '404':
    *        description: Weapon not found
    */
-  app.get('/weapons/:weapon', async (req,res)=>{ const r = await withCachedLookup('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getWeapons, req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/weapons/:weapon', async (req,res)=>{ const r = await withCachedLookup('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds', 'ItemProperties'], getWeapons, req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getWeapons, getWeapon, formatWeapon, queries };

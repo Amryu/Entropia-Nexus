@@ -1,4 +1,4 @@
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -14,11 +14,13 @@ const queries = {
   LEFT JOIN ONLY "Materials"   ON "TeleportationChips"."AmmoId" = "Materials"."Id"',
 };
 
-function formatTeleportationChip(x, classIds){
+function formatTeleportationChip(x, data){
+  const itemId = x.Id + idOffsets.TeleportationChips;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.TeleportationChips,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -40,7 +42,9 @@ function formatTeleportationChip(x, classIds){
       Skill: {
         LearningIntervalStart: (x.MinLvl ?? x.MinLevel) !== null ? Number(x.MinLvl ?? x.MinLevel) : null,
         LearningIntervalEnd: (x.MaxLvl ?? x.MaxLevel) !== null ? Number(x.MaxLvl ?? x.MaxLevel) : null,
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Ammo: {
       Name: x.Ammo,
@@ -56,15 +60,25 @@ function formatTeleportationChip(x, classIds){
 
 async function getTeleportationChips(){
   const { rows } = await pool.query(queries.TeleportationChips);
-  const classIds = await loadClassIds('TeleportationChip', rows.map(r => r.Id));
-  return rows.map(r => formatTeleportationChip(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.TeleportationChips);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('TeleportationChip', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatTeleportationChip(r, data));
 }
 
 async function getTeleportationChip(idOrName){
   const row = await getObjectByIdOrName(queries.TeleportationChips, 'TeleportationChips', idOrName);
   if (!row) return null;
-  const classIds = await loadClassIds('TeleportationChip', [row.Id]);
-  return formatTeleportationChip(row, classIds);
+  const itemId = row.Id + idOffsets.TeleportationChips;
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('TeleportationChip', [row.Id]),
+    loadItemProperties([itemId])
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return formatTeleportationChip(row, data);
 }
 
 function register(app){
@@ -78,7 +92,7 @@ function register(app){
    *        description: A list of teleportation chips
    */
   app.get('/teleportationchips', async (req,res) => {
-    res.json(await withCache('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials', 'ClassIds'], getTeleportationChips));
+    res.json(await withCache('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials', 'ClassIds', 'ItemProperties'], getTeleportationChips));
   });
   /**
    * @swagger
@@ -99,7 +113,7 @@ function register(app){
    *        description: Teleportation chip not found
    */
   app.get('/teleportationchips/:teleportationChip', async (req,res) => {
-    const r = await withCachedLookup('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials', 'ClassIds'], getTeleportationChips, req.params.teleportationChip);
+    const r = await withCachedLookup('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials', 'ClassIds', 'ItemProperties'], getTeleportationChips, req.params.teleportationChip);
     if (r) res.json(r); else res.status(404).send();
   });
 }
