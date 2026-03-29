@@ -417,7 +417,7 @@
             return;
           }
           // Keep each individual with a value-based instance_key
-          const baseKey = `stack:${item.container_path || item._planet || 'inventory'}:${item.value ?? 0}`;
+          const baseKey = `stack:${item._planet || 'inventory'}:${item.value ?? 0}`;
           const count = (instanceKeyCounts.get(baseKey) || 0) + 1;
           instanceKeyCounts.set(baseKey, count);
           individuals.push({

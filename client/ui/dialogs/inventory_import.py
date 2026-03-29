@@ -408,8 +408,7 @@ def _process_items(
                         'Please uncheck "Group Items by Container" on the Entropia Universe Inventory page before copying.'
                     )
                 # Keep each individual with a value-based instance_key
-                cp = item.get('container_path') or item.get('container') or 'inventory'
-                base_key = f"stack:{cp}:{item.get('value') or 0}"
+                base_key = f"stack:{item.get('container') or 'inventory'}:{item.get('value') or 0}"
                 count = instance_key_counts.get(base_key, 0) + 1
                 instance_key_counts[base_key] = count
                 individuals.append({
