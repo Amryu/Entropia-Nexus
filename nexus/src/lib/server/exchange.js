@@ -1,5 +1,5 @@
 //@ts-nocheck
-import { pool } from './db.js';
+import { pool, nexusPool } from './db.js';
 
 // Staleness thresholds (days)
 const STALE_DAYS = 3;
@@ -193,6 +193,26 @@ export async function closeOrder(orderId) {
   `;
   const { rows } = await pool.query(query, [orderId]);
   return rows[0] || null;
+}
+
+/**
+ * Close active exchange orders for items marked as untradeable in ItemProperties.
+ * Runs periodically to clean up orders that became invalid after entity updates.
+ */
+export async function closeUntradeableOrders() {
+  if (!nexusPool) return 0;
+  const { rows: untradeable } = await nexusPool.query(
+    `SELECT "ItemId" FROM "ItemProperties" WHERE "IsUntradeable" = TRUE`
+  );
+  if (untradeable.length === 0) return 0;
+  const itemIds = untradeable.map(r => r.ItemId);
+  const { rowCount } = await pool.query(
+    `UPDATE trade_offers SET state = 'closed', updated = NOW()
+     WHERE item_id = ANY($1) AND state != 'closed'`,
+    [itemIds]
+  );
+  if (rowCount > 0) console.log(`[exchange] Closed ${rowCount} orders for untradeable items`);
+  return rowCount;
 }
 
 /**

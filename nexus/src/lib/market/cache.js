@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
-import { getAllOrderCounts, getLatestExchangePriceMap, getOrderPlanets } from "$lib/server/exchange.js";
+import { getAllOrderCounts, getLatestExchangePriceMap, getOrderPlanets, closeUntradeableOrders } from "$lib/server/exchange.js";
 import { ABSOLUTE_MARKUP_MATERIAL_TYPES } from "$lib/common/itemTypes.js";
 import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
@@ -45,6 +45,7 @@ let deltaPromise = null;   // items delta lock
 const FULL_REBUILD_MS = 24 * 60 * 60 * 1000; // 24h
 const ITEMS_REFRESH_MS = 15 * 60 * 1000;     // 15m
 const OFFER_COUNTS_MS = 5 * 60 * 1000;       // 5m
+const UNTRADEABLE_CLEANUP_MS = 60 * 60 * 1000; // 1h
 const STALE_MAX_MS = 30 * 60 * 1000;         // 30m — max time to serve stale data
 
 async function fetchAllDatasets(fetch) {
@@ -572,9 +573,18 @@ if (typeof window === 'undefined') {
         scheduleOfferCounts();
       }, jitter);
     };
+    const scheduleUntradeableCleanup = () => {
+      setTimeout(async () => {
+        try {
+          await closeUntradeableOrders();
+        } catch {}
+        scheduleUntradeableCleanup();
+      }, UNTRADEABLE_CLEANUP_MS);
+    };
     scheduleFull();
     scheduleItems();
     scheduleOfferCounts();
+    scheduleUntradeableCleanup();
   } catch {}
 }
 
