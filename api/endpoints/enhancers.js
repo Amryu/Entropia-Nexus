@@ -7,11 +7,13 @@ const queries = {
   Enhancers: 'SELECT "Enhancers".*, "EnhancerType"."Name" AS "Type", "EnhancerType"."Tool" AS "Tool" FROM ONLY "Enhancers" LEFT JOIN ONLY "EnhancerType" ON "Enhancers"."TypeId" = "EnhancerType"."Id"',
 };
 
-function formatEnhancer(x, classIds){
+function formatEnhancer(x, data){
+  const itemId = x.Id + idOffsets.Enhancers;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
-    ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.Enhancers,
+    ClassId: data.ClassIds[x.Id] || null,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
@@ -20,7 +22,9 @@ function formatEnhancer(x, classIds){
       Type: x.Type,
       Economy: {
         MaxTT: x.Value !== null ? Number(x.Value) : null,
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Links: { "$Url": `/enhancers/${x.Id}` }
   };
@@ -28,10 +32,15 @@ function formatEnhancer(x, classIds){
 
 async function getEnhancers() {
   const { rows } = await pool.query(queries.Enhancers);
-  const classIds = await loadClassIds('Enhancer', rows.map(r => r.Id));
-  return rows.map(r => formatEnhancer(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.Enhancers);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('Enhancer', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatEnhancer(r, data));
 }
-const getEnhancer = async (idOrName) => { const row = await getObjectByIdOrName(queries.Enhancers, 'Enhancers', idOrName); if (!row) return null; const classIds = await loadClassIds('Enhancer', [row.Id]); return formatEnhancer(row, classIds); };
+const getEnhancer = async (idOrName) => { const row = await getObjectByIdOrName(queries.Enhancers, 'Enhancers', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.Enhancers; const [classIds, itemProps] = await Promise.all([loadClassIds('Enhancer', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatEnhancer(row, data); };
 
 function register(app){
   /**
@@ -43,7 +52,7 @@ function register(app){
    *      '200':
    *        description: A list of enhancers
    */
-  app.get('/enhancers', async (req,res) => { res.json(await withCache('/enhancers', ['Enhancers', 'ClassIds'], getEnhancers)); });
+  app.get('/enhancers', async (req,res) => { res.json(await withCache('/enhancers', ['Enhancers', 'ClassIds', 'ItemProperties'], getEnhancers)); });
   /**
    * @swagger
    * /enhancers/{enhancer}:
@@ -62,7 +71,7 @@ function register(app){
    *      '404':
    *        description: Enhancer not found
    */
-  app.get('/enhancers/:enhancer', async (req,res) => { const r = await withCachedLookup('/enhancers', ['Enhancers', 'ClassIds'], getEnhancers, req.params.enhancer); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/enhancers/:enhancer', async (req,res) => { const r = await withCachedLookup('/enhancers', ['Enhancers', 'ClassIds', 'ItemProperties'], getEnhancers, req.params.enhancer); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getEnhancers, getEnhancer };

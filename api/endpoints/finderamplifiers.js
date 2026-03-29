@@ -89,7 +89,7 @@ function register(app){
    *      '404':
    *        description: Finder amplifier not found
    */
-  app.get('/finderamplifiers/:finderAmplifier', async (req,res) => { const r = await withCachedLookup('/finderamplifiers', ['FinderAmplifiers', 'ClassIds'], getFinderAmplifiers, req.params.finderAmplifier); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/finderamplifiers/:finderAmplifier', async (req,res) => { const r = await withCachedLookup('/finderamplifiers', ['FinderAmplifiers', 'ClassIds', 'ItemProperties'], getFinderAmplifiers, req.params.finderAmplifier); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getFinderAmplifiers, getFinderAmplifier, formatFinderAmplifier };

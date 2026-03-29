@@ -1,14 +1,15 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { MindforceImplants: 'SELECT * FROM ONLY "MindforceImplants"' };
 
-function formatMindforceImplant(x, effectsMap, classIds){
+function formatMindforceImplant(x, effectsMap, classIds, itemProps){
   const itemId = x.Id + idOffsets.MindforceImplants;
   const effects = effectsMap?.[itemId] ?? [];
+  const props = itemProps[itemId];
   return {
     Id: x.Id,
     ClassId: classIds[x.Id] || null,
@@ -22,7 +23,9 @@ function formatMindforceImplant(x, effectsMap, classIds){
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Absorption: x.Absorption !== null ? Number(x.Absorption) : null,
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     EffectsOnEquip: effects,
     Links: { "$Url": `/mindforceimplants/${x.Id}` }
@@ -32,22 +35,24 @@ function formatMindforceImplant(x, effectsMap, classIds){
 async function getMindforceImplants(){
   const { rows } = await pool.query(queries.MindforceImplants);
   const itemIds = rows.map(r => r.Id + idOffsets.MindforceImplants);
-  const [effects, classIds] = await Promise.all([
+  const [effects, classIds, itemProps] = await Promise.all([
     loadEffectsOnEquipByItemIds(itemIds),
-    loadClassIds('MindforceImplant', rows.map(r => r.Id))
+    loadClassIds('MindforceImplant', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
   ]);
-  return rows.map(r => formatMindforceImplant(r, effects, classIds));
+  return rows.map(r => formatMindforceImplant(r, effects, classIds, itemProps));
 }
 
 async function getMindforceImplant(idOrName){
   const row = await getObjectByIdOrName(queries.MindforceImplants, 'MindforceImplants', idOrName);
   if (!row) return null;
   const itemId = row.Id + idOffsets.MindforceImplants;
-  const [effects, classIds] = await Promise.all([
+  const [effects, classIds, itemProps] = await Promise.all([
     loadEffectsOnEquipByItemIds([itemId]),
-    loadClassIds('MindforceImplant', [row.Id])
+    loadClassIds('MindforceImplant', [row.Id]),
+    loadItemProperties([itemId])
   ]);
-  return formatMindforceImplant(row, effects, classIds);
+  return formatMindforceImplant(row, effects, classIds, itemProps);
 }
 
 function register(app){
@@ -60,7 +65,7 @@ function register(app){
    *      '200':
    *        description: A list of Mindforce implants
    */
-  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['MindforceImplants', 'EffectsOnEquip', 'ClassIds'], getMindforceImplants)); });
+  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['MindforceImplants', 'EffectsOnEquip', 'ClassIds', 'ItemProperties'], getMindforceImplants)); });
 
   /**
    * @swagger
@@ -81,7 +86,7 @@ function register(app){
    *        description: Mindforce implant not found
    */
   app.get('/mindforceimplants/:mindforceImplant', async (req,res) => {
-    const r = await withCachedLookup('/mindforce', ['MindforceImplants', 'EffectsOnEquip', 'ClassIds'], getMindforceImplants, req.params.mindforceImplant);
+    const r = await withCachedLookup('/mindforce', ['MindforceImplants', 'EffectsOnEquip', 'ClassIds', 'ItemProperties'], getMindforceImplants, req.params.mindforceImplant);
     if (r) res.json(r); else res.status(404).send();
   });
 }

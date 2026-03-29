@@ -1,7 +1,7 @@
 const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadSetEffectsBySetIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -136,6 +136,7 @@ async function collectArmorSetData(setIds) {
       setEffectsBySetId: {},
       tiersBySetId: {},
       classIds: {},
+      itemProps: {},
     };
   }
 
@@ -154,9 +155,11 @@ async function collectArmorSetData(setIds) {
   const setEffectsBySetId = await loadSetEffectsBySetIds(setIds);
 
   // Tiers for armor sets (grouped by ItemId and Tier) via shared helper
-  const [tiersBySetId, classIds] = await Promise.all([
+  const armorSetItemIds = setIds.map(id => id + idOffsets.ArmorSets);
+  const [tiersBySetId, classIds, itemProps] = await Promise.all([
     getTiersByItemIds(setIds, 1),
-    loadClassIds('ArmorSet', setIds)
+    loadClassIds('ArmorSet', setIds),
+    loadItemProperties(armorSetItemIds)
   ]);
 
   return {
@@ -165,10 +168,13 @@ async function collectArmorSetData(setIds) {
     setEffectsBySetId,
     tiersBySetId,
     classIds,
+    itemProps,
   };
 }
 
 function formatArmorSetsResponse(row, data) {
+  const itemId = row.Id + idOffsets.ArmorSets;
+  const props = data.itemProps[itemId];
   const piecesRaw = data.armorsBySetId[row.Id] || [];
 
   const pieces = piecesRaw.map(piece =>
@@ -229,6 +235,8 @@ function formatArmorSetsResponse(row, data) {
         Acid: toNumberOrNull(row.Acid),
         Electric: toNumberOrNull(row.Electric),
       },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     EffectsOnSetEquip: setEffects,
     Armors: piecesGrouped,
@@ -265,7 +273,7 @@ function register(app){
    *      '200':
    *        description: A list of armor sets
    */
-  app.get('/armorsets', async (req,res) => { res.json(await withCache('/armorsets', ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getArmorSets)); });
+  app.get('/armorsets', async (req,res) => { res.json(await withCache('/armorsets', ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds', 'ItemProperties'], getArmorSets)); });
   /**
    * @swagger
    * /armorsets/{armorset}:
@@ -284,7 +292,7 @@ function register(app){
    *      '404':
    *        description: Armor set not found
    */
-  app.get('/armorsets/:armorset', async (req,res) => { const r = await withCachedLookup('/armorsets', ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getArmorSets, req.params.armorset); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/armorsets/:armorset', async (req,res) => { const r = await withCachedLookup('/armorsets', ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds', 'ItemProperties'], getArmorSets, req.params.armorset); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getArmorSets, getArmorSet, formatArmorSetsResponse, queries };

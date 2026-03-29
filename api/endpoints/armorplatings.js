@@ -48,10 +48,15 @@ function formatArmorPlating(x, data){
 
 async function getArmorPlatings() {
   const { rows } = await pool.query(queries.ArmorPlatings);
-  const classIds = await loadClassIds('ArmorPlating', rows.map(r => r.Id));
-  return rows.map(r => formatArmorPlating(r, classIds));
+  const itemIds = rows.map(r => r.Id + idOffsets.ArmorPlatings);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('ArmorPlating', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return rows.map(r => formatArmorPlating(r, data));
 }
-const getArmorPlating = async (idOrName) => { const row = await getObjectByIdOrName(queries.ArmorPlatings, 'ArmorPlatings', idOrName); if (!row) return null; const classIds = await loadClassIds('ArmorPlating', [row.Id]); return formatArmorPlating(row, classIds); };
+const getArmorPlating = async (idOrName) => { const row = await getObjectByIdOrName(queries.ArmorPlatings, 'ArmorPlatings', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.ArmorPlatings; const [classIds, itemProps] = await Promise.all([loadClassIds('ArmorPlating', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatArmorPlating(row, data); };
 
 function register(app){
   /**
@@ -63,7 +68,7 @@ function register(app){
    *      '200':
    *        description: A list of armor platings
    */
-  app.get('/armorplatings', async (req,res) => { res.json(await withCache('/armorplatings', ['ArmorPlatings', 'ClassIds'], getArmorPlatings)); });
+  app.get('/armorplatings', async (req,res) => { res.json(await withCache('/armorplatings', ['ArmorPlatings', 'ClassIds', 'ItemProperties'], getArmorPlatings)); });
   /**
    * @swagger
    * /armorplatings/{armorPlating}:
@@ -82,7 +87,7 @@ function register(app){
    *      '404':
    *        description: Armor plating not found
    */
-  app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await withCachedLookup('/armorplatings', ['ArmorPlatings', 'ClassIds'], getArmorPlatings, req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await withCachedLookup('/armorplatings', ['ArmorPlatings', 'ClassIds', 'ItemProperties'], getArmorPlatings, req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getArmorPlatings, getArmorPlating, formatArmorPlating };

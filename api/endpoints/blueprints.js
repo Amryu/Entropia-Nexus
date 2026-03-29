@@ -1,6 +1,6 @@
 const pgp = require('pg-promise')();
 const { idOffsets, ITEM_TABLES, BLUEPRINT_DROP_CATEGORIES, BLUEPRINT_DROP_LEVEL_RANGE } = require('./constants');
-const { parseItemList, loadClassIds } = require('./utils');
+const { parseItemList, loadClassIds, loadItemProperties } = require('./utils');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -22,12 +22,14 @@ function _formatBlueprintMaterial(x){
   };
 }
 
-function formatBlueprint(x, materials, classIds){
+function formatBlueprint(x, materials, classIds, itemProps){
   const mats = (materials[x.Id] ?? []).map(_formatBlueprintMaterial);
+  const itemId = x.Id + idOffsets.Blueprints;
+  const props = itemProps[itemId];
   return {
     Id: x.Id,
     ClassId: classIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.Blueprints,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -43,6 +45,8 @@ function formatBlueprint(x, materials, classIds){
         LearningIntervalEnd: x.MaxLvl !== null ? Number(x.MaxLvl) : null,
         IsSiB: x.IsSib === 1,
       },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Profession: { Name: x.Profession, Links: { "$Url": `/professions/${x.ProfessionId}` } },
     Book: { Name: x.Book, Links: { "$Url": `/blueprintbooks/${x.BookId}` } },
@@ -150,8 +154,12 @@ async function getBlueprints(products = null, materials = null){
   const { pool } = require('./dbClient');
   const { rows } = await pool.query(combinedSql);
   const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
-  const classIds = await loadClassIds('Blueprint', uniqueRows.map(r => r.Id));
-  return uniqueRows.map(r => formatBlueprint(r, materialsMap, classIds));
+  const itemIds = uniqueRows.map(r => r.Id + idOffsets.Blueprints);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('Blueprint', uniqueRows.map(r => r.Id)),
+    loadItemProperties(itemIds)
+  ]);
+  return uniqueRows.map(r => formatBlueprint(r, materialsMap, classIds, itemProps));
 }
 
 async function getBlueprint(idOrName){
@@ -171,8 +179,12 @@ async function getBlueprint(idOrName){
   const { rows } = await pool.query(combinedSql);
   if (!rows || rows.length === 0) return null;
   const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
-  const classIds = await loadClassIds('Blueprint', [uniqueRows[0].Id]);
-  return formatBlueprint(uniqueRows[0], materialsMap, classIds);
+  const itemId = uniqueRows[0].Id + idOffsets.Blueprints;
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds('Blueprint', [uniqueRows[0].Id]),
+    loadItemProperties([itemId])
+  ]);
+  return formatBlueprint(uniqueRows[0], materialsMap, classIds, itemProps);
 }
 
 // Endpoints
@@ -207,7 +219,7 @@ function register(app){
         if (products.length === 0) return res.status(400).send('Products cannot be empty');
         res.json(await getBlueprints(products));
       } else {
-        res.json(await withCache('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'ClassIds'], getBlueprints));
+        res.json(await withCache('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'ClassIds', 'ItemProperties'], getBlueprints));
       }
     } catch (e){ next(e); }
   });
@@ -231,7 +243,7 @@ function register(app){
    *        description: Blueprint not found
    */
   app.get('/blueprints/:blueprint', async (req,res) => {
-    const result = await withCachedLookup('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'ClassIds'], getBlueprints, req.params.blueprint);
+    const result = await withCachedLookup('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'ClassIds', 'ItemProperties'], getBlueprints, req.params.blueprint);
     if (!result) return res.status(404).send('Blueprint not found');
     const drops = await computeDropsForBlueprint(result.Properties.Level, result.Properties.Type, result.Id);
     res.json({ ...result, Drops: drops });

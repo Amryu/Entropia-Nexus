@@ -1,4 +1,4 @@
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { idOffsets } = require('./constants');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -14,18 +14,20 @@ async function getLoots(ids){
 function formatLoot(x){ return { Rarity: x.Rarity, AvailableFrom: x.AvailableFrom, AvailableUntil: x.AvailableUntil, Item: { Name: x.Name, Properties: { Type: x.Type, Economy: { MaxTT: x.Value != null ? Number(x.Value) : null } }, Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.ItemId % 100000}` } } }; }
 function formatStrongbox(x,data){
   const loots = (data.Loots[x.Id]||[]).map(formatLoot);
+  const itemId = x.Id + idOffsets.Strongboxes;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
     ClassId: data.ClassIds[x.Id] || null,
-    ItemId: x.Id + idOffsets.Strongboxes,
+    ItemId: itemId,
     Name: x.Name,
-    Properties: { Description: x.Description },
+    Properties: { Description: x.Description, IsUntradeable: props?.IsUntradeable || false, IsRare: props?.IsRare || false },
     Loots: loots,
     Links: { "$Url": `/strongboxes/${x.Id}` },
   };
 }
-async function getStrongboxes(){ const { rows } = await pool.query(queries.Strongboxes); const [loots, classIds] = await Promise.all([getLoots(rows.map(r=>r.Id)), loadClassIds('Strongbox', rows.map(r=>r.Id))]); const data = { ...loots, ClassIds: classIds }; return rows.map(r=>formatStrongbox(r,data)); }
-async function getStrongbox(idOrName){ const row = await getObjectByIdOrName(queries.Strongboxes,'Strongboxes',idOrName); if(!row) return null; const [loots, classIds] = await Promise.all([getLoots([row.Id]), loadClassIds('Strongbox', [row.Id])]); const data = { ...loots, ClassIds: classIds }; return formatStrongbox(row,data); }
+async function getStrongboxes(){ const { rows } = await pool.query(queries.Strongboxes); const itemIds = rows.map(r => r.Id + idOffsets.Strongboxes); const [loots, classIds, itemProps] = await Promise.all([getLoots(rows.map(r=>r.Id)), loadClassIds('Strongbox', rows.map(r=>r.Id)), loadItemProperties(itemIds)]); const data = { ...loots, ClassIds: classIds, ItemProps: itemProps }; return rows.map(r=>formatStrongbox(r,data)); }
+async function getStrongbox(idOrName){ const row = await getObjectByIdOrName(queries.Strongboxes,'Strongboxes',idOrName); if(!row) return null; const itemId = row.Id + idOffsets.Strongboxes; const [loots, classIds, itemProps] = await Promise.all([getLoots([row.Id]), loadClassIds('Strongbox', [row.Id]), loadItemProperties([itemId])]); const data = { ...loots, ClassIds: classIds, ItemProps: itemProps }; return formatStrongbox(row,data); }
 function register(app){
   /**
    * @swagger
@@ -36,7 +38,7 @@ function register(app){
    *      '200':
    *        description: A list of strongboxes
    */
-  app.get('/strongboxes', async (req,res)=>{ res.json(await withCache('/strongboxes', ['Strongboxes', 'ClassIds'], getStrongboxes)); });
+  app.get('/strongboxes', async (req,res)=>{ res.json(await withCache('/strongboxes', ['Strongboxes', 'ClassIds', 'ItemProperties'], getStrongboxes)); });
   /**
    * @swagger
    * /strongboxes/{strongbox}:
@@ -55,6 +57,6 @@ function register(app){
    *      '404':
    *        description: Strongbox not found
    */
-  app.get('/strongboxes/:strongbox', async (req,res)=>{ const r = await withCachedLookup('/strongboxes', ['Strongboxes', 'ClassIds'], getStrongboxes, req.params.strongbox); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/strongboxes/:strongbox', async (req,res)=>{ const r = await withCachedLookup('/strongboxes', ['Strongboxes', 'ClassIds', 'ItemProperties'], getStrongboxes, req.params.strongbox); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getStrongboxes, getStrongbox };

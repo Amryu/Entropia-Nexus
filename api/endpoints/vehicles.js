@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, loadClassIds, loadItemProperties } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Vehicles: 'SELECT "Vehicles".*, "Materials"."Name" AS "Fuel" FROM ONLY "Vehicles" LEFT JOIN ONLY "Materials" ON "Vehicles"."FuelMaterialId" = "Materials"."Id"' };
@@ -13,6 +13,8 @@ function formatAttachmentSlot(x){ return { Name: x.Type, Links: { "$Url": `/vehi
 
 function formatVehicle(x,data){
   const slots = (data.Slots[x.Id]||[]).map(formatAttachmentSlot);
+  const itemId = x.Id + idOffsets.Vehicles;
+  const props = data.ItemProps[itemId];
   return {
     Id: x.Id,
     ClassId: data.ClassIds[x.Id] || null,
@@ -49,6 +51,8 @@ function formatVehicle(x,data){
         Acid: x.Acid != null ? Number(x.Acid) : null,
         Electric: x.Electric != null ? Number(x.Electric) : null,
       },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     AttachmentSlots: slots,
     Fuel: { Name: x.Fuel, Links: { "$Url": `/materials/${x.FuelMaterialId}` } },
@@ -56,8 +60,8 @@ function formatVehicle(x,data){
   };
 }
 
-async function getVehicles(){ const { rows } = await pool.query(queries.Vehicles); const [slots, classIds] = await Promise.all([getAttachmentSlots(rows.map(r=>r.Id)), loadClassIds('Vehicle', rows.map(r=>r.Id))]); const data = { Slots: slots, ClassIds: classIds }; return rows.map(r=>formatVehicle(r,data)); }
-async function getVehicle(idOrName){ const row = await getObjectByIdOrName(queries.Vehicles,'Vehicles',idOrName); if(!row) return null; const [slots, classIds] = await Promise.all([getAttachmentSlots([row.Id]), loadClassIds('Vehicle', [row.Id])]); const data = { Slots: slots, ClassIds: classIds }; return formatVehicle(row,data); }
+async function getVehicles(){ const { rows } = await pool.query(queries.Vehicles); const itemIds = rows.map(r => r.Id + idOffsets.Vehicles); const [slots, classIds, itemProps] = await Promise.all([getAttachmentSlots(rows.map(r=>r.Id)), loadClassIds('Vehicle', rows.map(r=>r.Id)), loadItemProperties(itemIds)]); const data = { Slots: slots, ClassIds: classIds, ItemProps: itemProps }; return rows.map(r=>formatVehicle(r,data)); }
+async function getVehicle(idOrName){ const row = await getObjectByIdOrName(queries.Vehicles,'Vehicles',idOrName); if(!row) return null; const itemId = row.Id + idOffsets.Vehicles; const [slots, classIds, itemProps] = await Promise.all([getAttachmentSlots([row.Id]), loadClassIds('Vehicle', [row.Id]), loadItemProperties([itemId])]); const data = { Slots: slots, ClassIds: classIds, ItemProps: itemProps }; return formatVehicle(row,data); }
 
 function register(app){
   /**
@@ -69,7 +73,7 @@ function register(app){
    *      '200':
    *        description: A list of vehicles
    */
-  app.get('/vehicles', async (req,res)=>{ res.json(await withCache('/vehicles', ['Vehicles', 'ClassIds'], getVehicles)); });
+  app.get('/vehicles', async (req,res)=>{ res.json(await withCache('/vehicles', ['Vehicles', 'ClassIds', 'ItemProperties'], getVehicles)); });
   /**
    * @swagger
    * /vehicles/{vehicle}:
@@ -88,7 +92,7 @@ function register(app){
    *      '404':
    *        description: Vehicle not found
    */
-  app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await withCachedLookup('/vehicles', ['Vehicles', 'ClassIds'], getVehicles, req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await withCachedLookup('/vehicles', ['Vehicles', 'ClassIds', 'ItemProperties'], getVehicles, req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getVehicles, getVehicle, formatVehicle };

@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, generateGenderAliases, loadClassIds } = require('./utils');
+const { getObjectByIdOrName, generateGenderAliases, loadClassIds, loadItemProperties } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadSetEffectsByItemIdsFromEquipSets, formatEffectOnSetEquip } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -8,7 +8,7 @@ const queries = { Clothings: 'SELECT * FROM ONLY "Clothes"' };
 
 function toNumberOrNull(v){ return v === null || v === undefined ? null : Number(v); }
 
-function formatClothing(x, effectsByItemId, setEffectsByItemId, classIds){
+function formatClothing(x, effectsByItemId, setEffectsByItemId, classIds, itemProps){
   const itemId = x.Id + idOffsets.Clothings;
   const onEquip = effectsByItemId[itemId] || [];
   const onSetRaw = setEffectsByItemId[itemId] || [];
@@ -18,6 +18,7 @@ function formatClothing(x, effectsByItemId, setEffectsByItemId, classIds){
     Links: { "$Url": `/equipsets/${onSetRaw[0].SetId}` }
   } : null;
   const aliases = generateGenderAliases(x.Name, x.Gender);
+  const props = itemProps[itemId];
 
   return {
     Id: x.Id,
@@ -34,7 +35,9 @@ function formatClothing(x, effectsByItemId, setEffectsByItemId, classIds){
       Economy: {
         MaxTT: toNumberOrNull(x.MaxTT),
         MinTT: toNumberOrNull(x.MinTT),
-      }
+      },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
     },
     Set: setBlock,
     EffectsOnEquip: onEquip,
@@ -45,24 +48,26 @@ function formatClothing(x, effectsByItemId, setEffectsByItemId, classIds){
 async function getClothings(){
   const { rows } = await pool.query(queries.Clothings);
   const itemIds = rows.map(r => r.Id + idOffsets.Clothings);
-  const [effectsByItemId, setEffectsByItemId, classIds] = await Promise.all([
+  const [effectsByItemId, setEffectsByItemId, classIds, itemProps] = await Promise.all([
     loadEffectsOnEquipByItemIds(itemIds),
     loadSetEffectsByItemIdsFromEquipSets(itemIds),
-    loadClassIds('Clothing', rows.map(r => r.Id))
+    loadClassIds('Clothing', rows.map(r => r.Id)),
+    loadItemProperties(itemIds)
   ]);
-  return rows.map(r => formatClothing(r, effectsByItemId, setEffectsByItemId, classIds));
+  return rows.map(r => formatClothing(r, effectsByItemId, setEffectsByItemId, classIds, itemProps));
 }
 
 async function getClothing(idOrName){
   const row = await getObjectByIdOrName(queries.Clothings, 'Clothes', idOrName);
   if (!row) return null;
   const itemId = row.Id + idOffsets.Clothings;
-  const [effectsByItemId, setEffectsByItemId, classIds] = await Promise.all([
+  const [effectsByItemId, setEffectsByItemId, classIds, itemProps] = await Promise.all([
     loadEffectsOnEquipByItemIds([itemId]),
     loadSetEffectsByItemIdsFromEquipSets([itemId]),
-    loadClassIds('Clothing', [row.Id])
+    loadClassIds('Clothing', [row.Id]),
+    loadItemProperties([itemId])
   ]);
-  return formatClothing(row, effectsByItemId, setEffectsByItemId, classIds);
+  return formatClothing(row, effectsByItemId, setEffectsByItemId, classIds, itemProps);
 }
 
 function register(app){
@@ -75,7 +80,7 @@ function register(app){
    *      '200':
    *        description: A list of clothings
    */
-  app.get('/clothings', async (req,res) => { res.json(await withCache('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets', 'ClassIds'], getClothings)); });
+  app.get('/clothings', async (req,res) => { res.json(await withCache('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets', 'ClassIds', 'ItemProperties'], getClothings)); });
   /**
    * @swagger
    * /clothings/{clothing}:
@@ -94,7 +99,7 @@ function register(app){
    *      '404':
    *        description: Clothing not found
    */
-  app.get('/clothings/:clothing', async (req,res) => { const r = await withCachedLookup('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets', 'ClassIds'], getClothings, req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/clothings/:clothing', async (req,res) => { const r = await withCachedLookup('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets', 'ClassIds', 'ItemProperties'], getClothings, req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getClothings, getClothing, formatClothing };
