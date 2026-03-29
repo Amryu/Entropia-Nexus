@@ -82,7 +82,8 @@ export const UpsertConfigs = {
     relationChangeFunc: async (client, id, x) => await Promise.all([
       applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
       applyEffectsOnUseChanges(client, id, x.EffectsOnUse),
-      applyTierChanges(client, id, x.Tiers)
+      applyTierChanges(client, id, x.Tiers),
+      applyItemProperties(client, id, x)
     ])
   },
   ArmorSet: {
@@ -101,11 +102,20 @@ export const UpsertConfigs = {
       { name: "Electric", value: x => x.Properties.Defense.Electric }
     ],
     table: "ArmorSets",
-    relationChangeFunc: async (client, id, x) => await Promise.all([
-      applyEffectsOnSetEquipChanges(client, id, x.EffectsOnSetEquip),
-      applyArmorChanges(client, id, x.Armors.flat()),
-      applyTierChanges(client, id, x.Tiers, true)
-    ])
+    relationChangeFunc: async (client, id, x) => {
+      await Promise.all([
+        applyEffectsOnSetEquipChanges(client, id, x.EffectsOnSetEquip),
+        applyArmorChanges(client, id, x.Armors.flat()),
+        applyTierChanges(client, id, x.Tiers, true),
+        applyItemProperties(client, id + 13000000, x)
+      ]);
+      // Propagate IsUntradeable/IsRare to each armor piece in the set
+      const armorOffset = 3000000;
+      const pieces = await client.query(
+        `SELECT "Id" FROM ONLY "Armors" WHERE "SetId" = $1`, [id]
+      );
+      await Promise.all(pieces.rows.map(r => applyItemProperties(client, r.Id + armorOffset, x)));
+    }
   },
   MedicalTool: {
     columns: [
@@ -127,7 +137,8 @@ export const UpsertConfigs = {
     relationChangeFunc: async (client, id, x) => await Promise.all([
       applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
       applyEffectsOnUseChanges(client, id, x.EffectsOnUse),
-      applyTierChanges(client, id, x.Tiers)
+      applyTierChanges(client, id, x.Tiers),
+      applyItemProperties(client, id, x)
     ])
   },
   MedicalChip: {
@@ -156,7 +167,8 @@ export const UpsertConfigs = {
     table: "MedicalChips",
     relationChangeFunc: async (client, id, x) => await Promise.all([
       applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
-      applyEffectsOnUseChanges(client, id, x.EffectsOnUse)
+      applyEffectsOnUseChanges(client, id, x.EffectsOnUse),
+      applyItemProperties(client, id, x)
     ])
   },
   Refiner: {
@@ -169,7 +181,9 @@ export const UpsertConfigs = {
       { name: "MinTT", value: x => x.Properties.Economy.MinTT },
       { name: "Decay", value: x => x.Properties.Economy.Decay },
     ],
-    table: "Refiners"
+    offset: 4300000,
+    table: "Refiners",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   Scanner: {
     columns: [
@@ -182,7 +196,9 @@ export const UpsertConfigs = {
       { name: "MinTT", value: x => x.Properties.Economy.MinTT },
       { name: "Decay", value: x => x.Properties.Economy.Decay }
     ],
-    table: "Scanners"
+    offset: 4400000,
+    table: "Scanners",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   Finder: {
     columns: [
@@ -203,7 +219,8 @@ export const UpsertConfigs = {
     table: "Finders",
     relationChangeFunc: async (client, id, x) => await Promise.all([
       applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
-      applyTierChanges(client, id, x.Tiers)
+      applyTierChanges(client, id, x.Tiers),
+      applyItemProperties(client, id, x)
     ])
   },
   Excavator: {
@@ -223,7 +240,8 @@ export const UpsertConfigs = {
     table: "Excavators",
     relationChangeFunc: async (client, id, x) => await Promise.all([
       applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
-      applyTierChanges(client, id, x.Tiers)
+      applyTierChanges(client, id, x.Tiers),
+      applyItemProperties(client, id, x)
     ])
   },
   TeleportationChip: {
@@ -246,7 +264,8 @@ export const UpsertConfigs = {
       { name: "AmmoId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1`, [x.Ammo.Name]).then(res => res.rows[0]?.Id) },
     ],
     offset: 4810000,
-    table: "TeleportationChips"
+    table: "TeleportationChips",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   get TeleportChip() { return this.TeleportationChip; },
   EffectChip: {
@@ -272,7 +291,10 @@ export const UpsertConfigs = {
     ],
     offset: 4820000,
     table: "EffectChips",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnUseChanges(client, id, x.EffectsOnUse)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnUseChanges(client, id, x.EffectsOnUse),
+      applyItemProperties(client, id, x)
+    ])
   },
   MiscTool: {
     columns: [
@@ -292,7 +314,8 @@ export const UpsertConfigs = {
       { name: "MaxLevel", value: x => x.Properties.Skill?.LearningIntervalEnd ?? null }
     ],
     offset: 4200000,
-    table: "MiscTools"
+    table: "MiscTools",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   WeaponAmplifier: {
     columns: [
@@ -318,7 +341,10 @@ export const UpsertConfigs = {
     ],
     offset: 5100000,
     table: "WeaponAmplifiers",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
+      applyItemProperties(client, id, x)
+    ])
   },
   WeaponVisionAttachment: {
     columns: [
@@ -336,7 +362,10 @@ export const UpsertConfigs = {
     ],
     offset: 5200000,
     table: "WeaponVisionAttachments",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
+      applyItemProperties(client, id, x)
+    ])
   },
   Absorber: {
     columns: [
@@ -350,7 +379,8 @@ export const UpsertConfigs = {
       { name: "Decay", value: x => x.Properties.Economy.Decay },
     ],
     offset: 5300000,
-    table: "Absorbers"
+    table: "Absorbers",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   FinderAmplifier: {
     columns: [
@@ -365,7 +395,10 @@ export const UpsertConfigs = {
     ],
     offset: 5400000,
     table: "FinderAmplifiers",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
+      applyItemProperties(client, id, x)
+    ])
   },
   ArmorPlating: {
     columns: [
@@ -388,7 +421,10 @@ export const UpsertConfigs = {
     ],
     offset: 5500000,
     table: "ArmorPlatings",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
+      applyItemProperties(client, id, x)
+    ])
   },
   MindforceImplant: {
     columns: [
@@ -402,7 +438,10 @@ export const UpsertConfigs = {
     ],
     offset: 5700000,
     table: "MindforceImplants",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
+      applyItemProperties(client, id, x)
+    ])
   },
   Blueprint: {
     columns: [
@@ -426,7 +465,10 @@ export const UpsertConfigs = {
     table: "Blueprints",
     relationChangeFunc: async (client, id, x) => {
       const bpId = id - 6000000;
-      await applyBlueprintMaterialsChanges(client, bpId, x.Materials);
+      await Promise.all([
+        applyBlueprintMaterialsChanges(client, bpId, x.Materials),
+        applyItemProperties(client, id, x)
+      ]);
     }
   },
   Material: {
@@ -439,9 +481,10 @@ export const UpsertConfigs = {
     offset: 1000000,
     table: "Materials",
     relationChangeFunc: async (client, id, x) => {
-      if (x.RefiningRecipes) {
-        await applyRefiningRecipesChanges(client, id - 1000000, x.RefiningRecipes);
-      }
+      await Promise.all([
+        x.RefiningRecipes ? applyRefiningRecipesChanges(client, id - 1000000, x.RefiningRecipes) : null,
+        applyItemProperties(client, id, x)
+      ]);
     }
   },
   Pet: {
@@ -458,7 +501,10 @@ export const UpsertConfigs = {
     ],
     offset: 11000000,
     table: "Pets",
-    relationChangeFunc: async (client, id, x) => await applyPetEffectChanges(client, id - 11000000, x.Effects)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyPetEffectChanges(client, id - 11000000, x.Effects),
+      applyItemProperties(client, id, x)
+    ])
   },
   Consumable: {
     columns: [
@@ -470,7 +516,10 @@ export const UpsertConfigs = {
     ],
     offset: 10000000,
     table: "Consumables",
-    relationChangeFunc: async (client, id, x) => await applyEffectsOnConsumeChanges(client, id - 10000000, x.EffectsOnConsume)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyEffectsOnConsumeChanges(client, id - 10000000, x.EffectsOnConsume),
+      applyItemProperties(client, id, x)
+    ])
   },
   Capsule: {
     columns: [
@@ -483,7 +532,8 @@ export const UpsertConfigs = {
       { name: "ScanningProfessionId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.Profession.Name]).then(res => res.rows[0]?.Id) },
     ],
     offset: 10100000,
-    table: "CreatureControlCapsules"
+    table: "CreatureControlCapsules",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   get CreatureControlCapsule() { return this.Capsule; },
   Vehicle: {
@@ -519,7 +569,10 @@ export const UpsertConfigs = {
     ],
     offset: 7000000,
     table: "Vehicles",
-    relationChangeFunc: async (client, id, x) => await applyAttachmentSlotChanges(client, id - 7000000, x.AttachmentSlots)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyAttachmentSlotChanges(client, id - 7000000, x.AttachmentSlots),
+      applyItemProperties(client, id, x)
+    ])
   },
   Furniture: {
     columns: [
@@ -530,7 +583,8 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
     ],
     offset: 9100000,
-    table: "Furniture"
+    table: "Furniture",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   Decoration: {
     columns: [
@@ -540,7 +594,8 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
     ],
     offset: 9200000,
-    table: "Decorations"
+    table: "Decorations",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   StorageContainer: {
     columns: [
@@ -552,7 +607,8 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
     ],
     offset: 9300000,
-    table: "StorageContainers"
+    table: "StorageContainers",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   Strongbox: {
     columns: [
@@ -561,7 +617,10 @@ export const UpsertConfigs = {
     ],
     offset: 12000000,
     table: "Strongboxes",
-    relationChangeFunc: async (client, id, x) => await applyStrongboxLootsChanges(client, id - 12000000, x.Loots)
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyStrongboxLootsChanges(client, id - 12000000, x.Loots),
+      applyItemProperties(client, id, x)
+    ])
   },
   Sign: {
     columns: [
@@ -579,7 +638,8 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
     ],
     offset: 9400000,
-    table: "Signs"
+    table: "Signs",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
   },
   Clothing: {
     columns: [
@@ -641,7 +701,8 @@ export const UpsertConfigs = {
 
       await Promise.all([
         applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip),
-        newSetId ? await applyEffectsOnSetEquipChanges(client, newSetId + equipSetOffset, x.Set.EffectsOnSetEquip) : Promise.resolve(null)
+        newSetId ? await applyEffectsOnSetEquipChanges(client, newSetId + equipSetOffset, x.Set.EffectsOnSetEquip) : Promise.resolve(null),
+        applyItemProperties(client, id, x)
       ])
     }
   },
@@ -820,6 +881,25 @@ export const UpsertConfigs = {
   },
   // Backwards compatibility: existing pending changes may use entity='Area'
   get Area() { return this.Location; }
+}
+
+/**
+ * Upsert or delete an ItemProperties row for the given global ItemId.
+ * Deletes the row when both flags are falsy (only rows with at least one TRUE flag are kept).
+ */
+async function applyItemProperties(client, itemId, x) {
+  const isUntradeable = x.Properties?.IsUntradeable || false;
+  const isRare = x.Properties?.IsRare || false;
+  if (isUntradeable || isRare) {
+    await client.query(
+      `INSERT INTO "ItemProperties" ("ItemId", "IsUntradeable", "IsRare")
+       VALUES ($1, $2, $3)
+       ON CONFLICT ("ItemId") DO UPDATE SET "IsUntradeable" = $2, "IsRare" = $3`,
+      [itemId, isUntradeable, isRare]
+    );
+  } else {
+    await client.query(`DELETE FROM "ItemProperties" WHERE "ItemId" = $1`, [itemId]);
+  }
 }
 
 async function applyMissionStepsChanges(client, missionId, steps) {

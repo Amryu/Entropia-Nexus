@@ -581,7 +581,8 @@ if (typeof window === 'undefined') {
 // Slim client payload
 function slimItem(item) {
   if (!item || typeof item !== 'object') return item;
-  const ut = item.Properties?.Description?.includes('Untradeable') || undefined;
+  const ut = item.Properties?.IsUntradeable || item.Properties?.Description?.includes('Untradeable') || undefined;
+  const rare = item.Properties?.IsRare || undefined;
   const id = item.ItemId ?? item.Id ?? null;
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   const planets = id != null && cache.orderPlanets ? cache.orderPlanets.get(id) : null;
@@ -620,6 +621,7 @@ function slimItem(item) {
     ...(g !== undefined && { g }),
     ...(st && { st }),
     ...(ut && { ut }),
+    ...(rare && { rare }),
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,

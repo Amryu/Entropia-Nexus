@@ -133,4 +133,20 @@ function generateGenderAliases(name, gender) {
   }
 }
 
-module.exports = { isId, isClassId, getObjects, getObjectByIdOrName, loadClassIds, parseItemList, generateGenderAliases };
+/**
+ * Load ItemProperties (IsUntradeable, IsRare) for a set of global ItemIds.
+ * @param {number[]} itemIds - Global item IDs (entity Id + offset)
+ * @returns {Object.<number, {IsUntradeable: boolean, IsRare: boolean}>}
+ */
+async function loadItemProperties(itemIds) {
+  if (!itemIds.length) return {};
+  const { rows } = await pool.query(
+    'SELECT "ItemId", "IsUntradeable", "IsRare" FROM "ItemProperties" WHERE "ItemId" = ANY($1)',
+    [itemIds]
+  );
+  const map = {};
+  for (const r of rows) map[r.ItemId] = { IsUntradeable: r.IsUntradeable, IsRare: r.IsRare };
+  return map;
+}
+
+module.exports = { isId, isClassId, getObjects, getObjectByIdOrName, loadClassIds, loadItemProperties, parseItemList, generateGenderAliases };
