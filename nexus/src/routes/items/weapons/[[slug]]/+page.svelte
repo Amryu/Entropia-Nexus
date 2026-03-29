@@ -853,7 +853,6 @@
             <span class="type-badge">{activeWeapon.Properties?.Class || 'Unknown'}</span>
             {#if activeWeapon.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
             {#if activeWeapon.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
-            <span>{activeWeapon.Properties?.Category || ''} &bull; {activeWeapon.Properties?.Type || ''}</span>
           </div>
         </div>
 
