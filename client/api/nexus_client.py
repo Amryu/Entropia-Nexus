@@ -383,10 +383,20 @@ class NexusClient:
             headers = self._auth_headers("import inventory")
             if headers is None:
                 return None
-            resp = self._session.put(self._url("/users/inventory"),
-                                     headers=headers,
-                                     json={"items": items, "sync": sync},
-                                     timeout=30)
+            import json as _json, gzip as _gzip
+            raw = _json.dumps({"items": items, "sync": sync}).encode()
+            if len(raw) > 256_000:
+                headers["Content-Type"] = "application/gzip"
+                resp = self._session.put(self._url("/users/inventory"),
+                                         headers=headers,
+                                         data=_gzip.compress(raw),
+                                         timeout=30)
+            else:
+                headers["Content-Type"] = "application/json"
+                resp = self._session.put(self._url("/users/inventory"),
+                                         headers=headers,
+                                         data=raw,
+                                         timeout=30)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
