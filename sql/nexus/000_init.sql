@@ -2155,6 +2155,7 @@ CREATE TABLE public."Absorbers" (
     "Name" text NOT NULL,
     "Weight" numeric,
     "Absorption" numeric,
+    "Decay" numeric,
     "MaxTT" integer,
     "MinTT" integer,
     "Efficiency" integer,

@@ -232,8 +232,12 @@ export function calculateDecay(
 
   if (absorber?.Properties?.Economy?.Absorption != null) {
     const absorberDecay = weaponDecay * absorber.Properties.Economy.Absorption;
-    decay += absorberDecay * (markups.Implant ?? 100) / 100;
+    decay += absorberDecay * (markups.Absorber ?? 100) / 100;
     weaponDecay -= absorberDecay;
+  }
+
+  if (absorber?.Properties?.Economy?.Decay != null) {
+    decay += absorber.Properties.Economy.Decay * (markups.Absorber ?? 100) / 100;
   }
 
   // Implant absorption only applies with Mindforce weapons; effects apply to all
@@ -332,10 +336,12 @@ export function calculateEfficiency(
 
   if (absorber?.Properties?.Economy?.Absorption != null && absorber?.Properties?.Economy?.Efficiency != null) {
     const weaponDecay = weapon.Properties.Economy.Decay * (1 + damageEnhancers * 0.1) * (1 - economyEnhancers * 0.01111);
-    const absorberCost = weaponDecay * absorber.Properties.Economy.Absorption;
-    cost -= absorberCost;
-    efficiency = weightedAverage(cost, efficiency, absorberCost, absorber.Properties.Economy.Efficiency);
-    cost += absorberCost;
+    const absorberAbsCost = weaponDecay * absorber.Properties.Economy.Absorption;
+    const absorberFlatDecay = absorber.Properties.Economy.Decay ?? 0;
+    const absorberTotalCost = absorberAbsCost + absorberFlatDecay;
+    cost -= absorberAbsCost; // remove absorbed portion from weapon side
+    efficiency = weightedAverage(cost, efficiency, absorberTotalCost, absorber.Properties.Economy.Efficiency);
+    cost += absorberTotalCost;
   }
 
   // Mining amplifier absorption cost (separate from flat amp decay)
@@ -477,11 +483,13 @@ export function calculateLowestTotalUses(
   if (absorber != null) {
     const absorberMaxTT = absorber.Properties?.Economy?.MaxTT || null;
     const absorberMinTT = absorber.Properties?.Economy?.MinTT ?? 0;
-    const absorberDecay = absorber.Properties?.Economy?.Absorption != null 
+    const absDecayFromAbsorption = absorber.Properties?.Economy?.Absorption != null
       ? weapon.Properties?.Economy?.Decay * absorber.Properties?.Economy?.Absorption
-      : null;
+      : 0;
+    const absDecayFlat = absorber.Properties?.Economy?.Decay ?? 0;
+    const absorberDecay = absDecayFromAbsorption + absDecayFlat;
 
-    const absorberUses = absorberMaxTT != null && absorberDecay != null
+    const absorberUses = absorberMaxTT != null && absorberDecay > 0
       ? Math.floor((absorberMaxTT - absorberMinTT) / (absorberDecay / 100))
       : null;
 
