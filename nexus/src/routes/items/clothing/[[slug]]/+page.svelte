@@ -578,7 +578,7 @@
         </div>
 
         <!-- Market Prices Section -->
-        {#if !isCreateMode}
+        {#if !isCreateMode && !activeClothing?.Properties?.IsUntradeable}
           <MarketPriceSection
             itemId={activeClothing?.ItemId}
             itemName={activeClothing?.Name}

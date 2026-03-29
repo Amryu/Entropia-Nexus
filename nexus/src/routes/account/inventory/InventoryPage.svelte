@@ -415,6 +415,7 @@
   let markupSaveTimer = null;
 
   function startMarkupEdit(item) {
+    if (item._slim?.ut) return;
     editingMarkupId = item.item_id;
     editingMarkupValue = item._markup != null ? String(item._markup) : '';
   }

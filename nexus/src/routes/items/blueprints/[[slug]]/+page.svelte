@@ -925,12 +925,14 @@
         {/if}
 
         <!-- Market Prices Section -->
+        {#if !activeEntity?.Properties?.IsUntradeable}
         <MarketPriceSection
           itemId={activeEntity?.ItemId}
           itemName={activeEntity?.Name}
           bind:expanded={panelStates.marketPrices}
           ontoggle={savePanelStates}
         />
+        {/if}
 
         <!-- Acquisition Section -->
         {#if additional.acquisition}

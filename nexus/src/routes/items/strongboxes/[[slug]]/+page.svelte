@@ -538,7 +538,7 @@
         {/if}
 
         <!-- Market Prices Section -->
-        {#if !data.isCreateMode}
+        {#if !data.isCreateMode && !activeStrongbox?.Properties?.IsUntradeable}
           <MarketPriceSection
             itemId={activeStrongbox?.ItemId}
             itemName={activeStrongbox?.Name}

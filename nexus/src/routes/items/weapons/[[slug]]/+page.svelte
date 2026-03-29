@@ -1370,6 +1370,7 @@
         {/if}
 
         <!-- Market Prices Section -->
+        {#if !activeWeapon?.Properties?.IsUntradeable}
         <MarketPriceSection
           itemId={activeWeapon?.ItemId}
           itemName={activeWeapon?.Name}
@@ -1377,6 +1378,7 @@
           bind:expanded={panelStates.marketPrices}
           ontoggle={savePanelStates}
         />
+        {/if}
 
         <!-- Acquisition Section -->
         {#if additional.acquisition}

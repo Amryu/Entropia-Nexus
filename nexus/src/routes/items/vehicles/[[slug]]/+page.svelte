@@ -702,7 +702,7 @@
         </div>
 
         <!-- Market Prices Section -->
-        {#if !isCreateMode}
+        {#if !isCreateMode && !activeVehicle?.Properties?.IsUntradeable}
           <MarketPriceSection
             itemId={activeVehicle?.ItemId}
             itemName={activeVehicle?.Name}

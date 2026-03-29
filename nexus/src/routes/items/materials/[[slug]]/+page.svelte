@@ -434,7 +434,7 @@
         {/if}
 
         <!-- Market Prices Section -->
-        {#if !data.isCreateMode}
+        {#if !data.isCreateMode && !activeMaterial?.Properties?.IsUntradeable}
           <MarketPriceSection
             itemId={activeMaterial?.ItemId}
             itemName={activeMaterial?.Name}
