@@ -196,7 +196,8 @@ export async function closeOrder(orderId) {
 }
 
 /**
- * Close active exchange orders for items marked as untradeable in ItemProperties.
+ * Remove exchange offers for items marked as untradeable in ItemProperties.
+ * Negotiable offers (markup IS NULL) are deleted; priced orders are closed.
  * Runs periodically to clean up orders that became invalid after entity updates.
  */
 export async function closeUntradeableOrders() {
@@ -206,13 +207,20 @@ export async function closeUntradeableOrders() {
   );
   if (untradeable.length === 0) return 0;
   const itemIds = untradeable.map(r => r.ItemId);
-  const { rowCount } = await pool.query(
+  // Delete negotiable offers (no markup)
+  const { rowCount: deleted } = await pool.query(
+    `DELETE FROM trade_offers WHERE item_id = ANY($1) AND markup IS NULL AND state != 'closed'`,
+    [itemIds]
+  );
+  // Close priced orders
+  const { rowCount: closed } = await pool.query(
     `UPDATE trade_offers SET state = 'closed', updated = NOW()
      WHERE item_id = ANY($1) AND state != 'closed'`,
     [itemIds]
   );
-  if (rowCount > 0) console.log(`[exchange] Closed ${rowCount} orders for untradeable items`);
-  return rowCount;
+  const total = deleted + closed;
+  if (total > 0) console.log(`[exchange] Untradeable cleanup: deleted ${deleted} negotiable, closed ${closed} priced orders`);
+  return total;
 }
 
 /**
