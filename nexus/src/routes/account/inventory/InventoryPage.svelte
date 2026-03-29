@@ -415,7 +415,10 @@
   let markupSaveTimer = null;
 
   function startMarkupEdit(item) {
-    if (item._slim?.ut) return;
+    if (item._slim?.ut) {
+      addToast('This item is untradeable and cannot have a markup.', 'warning');
+      return;
+    }
     editingMarkupId = item.item_id;
     editingMarkupValue = item._markup != null ? String(item._markup) : '';
   }
