@@ -16,7 +16,7 @@
   import { browser } from '$app/environment';
   import DataSection from './DataSection.svelte';
   import MarketPriceChart from './MarketPriceChart.svelte';
-  import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
+  import { TIERABLE_TYPES, STACKABLE_TYPES, CONDITION_TYPES } from '$lib/common/itemTypes.js';
 
   
 
@@ -76,6 +76,15 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
 
   // Determine if tier selector should be shown
   let showTierSelector = $derived(entityType && TIERABLE_TYPES.has(entityType));
+
+  // Absolute markup items: non-stackable UL condition items, non-L blueprints
+  let isAbsMarkup = $derived(() => {
+    if (!entityType) return false;
+    if (STACKABLE_TYPES.has(entityType)) return false;
+    if (entityType === 'Blueprint') return !/\(.*L.*\)/.test(itemName || '');
+    if (CONDITION_TYPES.has(entityType)) return !/\(.*L.*\)/.test(itemName || '');
+    return true;
+  });
 
   function toggleSection() {
     ontoggle?.({ expanded });
@@ -225,7 +234,7 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
 
   function formatMarkup(val) {
     if (val == null) return '\u2014';
-    return `${Number(val).toFixed(2)}%`;
+    return isAbsMarkup() ? `+${Number(val).toFixed(2)}` : `${Number(val).toFixed(2)}%`;
   }
 
   function formatSales(val) {
@@ -508,7 +517,7 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
 
   /* Latest values table */
   .mps-table {
-    width: 100%;
+    width: auto;
     border-collapse: collapse;
     font-size: 14px;
   }
