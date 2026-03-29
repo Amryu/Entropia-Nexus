@@ -248,8 +248,8 @@
     let valueSource = 'default'; // 'custom' | 'ingame' | 'exchange' | 'default'
     if (markup != null) {
       let unitPrice = slim ? computeUnitPrice(slim, markup, orderLike) : null;
-      // Fallback for items not in exchange DB: use inventory TT value directly
-      if (unitPrice == null && ttValue != null) {
+      // Fallback when exchange MaxTT is 0 or unknown: use inventory TT value
+      if ((!unitPrice) && ttValue != null && ttValue > 0) {
         const isAbs = slim ? isAbsoluteMarkup(slim) : true;
         const unitTT = (item.quantity > 0 && isItemStackable(slim)) ? ttValue / item.quantity : ttValue;
         unitPrice = isAbs ? unitTT + Number(markup) : unitTT * (Number(markup) / 100);
