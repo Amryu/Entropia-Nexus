@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS "ItemProperties" (
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON "ItemProperties" TO nexus;
-GRANT SELECT ON "ItemProperties" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "ItemProperties" TO nexus_bot;
 
 -- Seed IsUntradeable from existing item descriptions.
 -- Each source table uses its own offset to compute the global ItemId.
