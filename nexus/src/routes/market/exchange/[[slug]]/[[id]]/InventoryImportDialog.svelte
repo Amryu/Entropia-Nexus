@@ -409,16 +409,21 @@
             });
           }
         } else {
-          // Non-stackable (condition) items: keep each individual with a value-based instance_key
-          const baseKey = `stack:${item._planet || 'inventory'}:${item.value ?? 0}`;
-          const count = (instanceKeyCounts.get(baseKey) || 0) + 1;
-          instanceKeyCounts.set(baseKey, count);
-          individuals.push({
-            ...item,
-            _itemId: itemId,
-            quantity: item.quantity || 1,
-            instance_key: count > 1 ? `${baseKey}:${count}` : baseKey,
-          });
+          // Non-stackable (condition) items: split stacks into individual entries
+          const qty = item.quantity || 1;
+          const unitValue = (item.value != null && qty > 0) ? item.value / qty : item.value;
+          for (let j = 0; j < qty; j++) {
+            const baseKey = `stack:${item.container_path || item._planet || 'inventory'}:${unitValue ?? 0}`;
+            const count = (instanceKeyCounts.get(baseKey) || 0) + 1;
+            instanceKeyCounts.set(baseKey, count);
+            individuals.push({
+              ...item,
+              _itemId: itemId,
+              quantity: 1,
+              value: unitValue,
+              instance_key: count > 1 ? `${baseKey}:${count}` : baseKey,
+            });
+          }
         }
       } else {
         // Unresolved: keep individual
