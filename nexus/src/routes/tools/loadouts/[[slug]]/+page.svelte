@@ -2959,15 +2959,18 @@
       const weapon = getWeapon(loadout?.Gear?.Weapon?.Name);
       const weaponDamage = weapon ? LoadoutCalc.calculateItemTotalDamage(weapon) : 0;
       const cap = weaponDamage / 2;
+      const miningPicker = isMining;
+      const columns = [
+        { key: 'name', header: 'Name', main: true },
+        { key: 'damage', header: 'Damage', width: '100px' },
+        ...(miningPicker ? [] : [{ key: 'overamp', header: overampMode === 'delta' ? 'Over Δ' : 'Over %', width: '90px' }]),
+        ...(miningPicker ? [{ key: 'absorption', header: 'Absorption', width: '100px' }] : []),
+        { key: 'dpp', header: 'DPP', width: '70px' },
+        { key: 'efficiency', header: 'Efficiency', width: '110px' }
+      ];
       return {
         title: 'Select Amplifier',
-        columns: finalizePickerColumns(kind, [
-          { key: 'name', header: 'Name', main: true },
-          { key: 'damage', header: 'Damage', width: '100px' },
-          { key: 'overamp', header: overampMode === 'delta' ? 'Over Δ' : 'Over %', width: '90px' },
-          { key: 'dpp', header: 'DPP', width: '70px' },
-          { key: 'efficiency', header: 'Efficiency', width: '110px' }
-        ]),
+        columns: finalizePickerColumns(kind, columns),
         rows: buildPickerRows(getFilteredAmplifiers(), item => {
           const ampDamage = LoadoutCalc.calculateItemTotalDamage(item) || 0;
           const effectiveDamage = cap > 0 ? Math.min(ampDamage, cap) : ampDamage;
@@ -2983,6 +2986,7 @@
             name: item.Name,
             damage: effectiveDamage > 0 ? effectiveDamage.toFixed(1) : 'N/A',
             overamp: overampText,
+            absorption: item.Properties?.Economy?.Absorption != null ? `${(item.Properties.Economy.Absorption * 100).toFixed(1)}%` : '—',
             dpp: compareDpp(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A',
             efficiency: compareEfficiency(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A'
           };
