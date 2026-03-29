@@ -18,20 +18,12 @@ from ..theme import (
     TEXT, TEXT_MUTED, ERROR, TABLE_ROW_ALT,
     DIFF_ADDED, DIFF_CHANGED, DIFF_REMOVED,
 )
-from ...core.inventory_utils import format_ped
+from ...core.inventory_utils import format_ped, is_stackable as _is_slim_stackable
 from ...core.logger import get_logger
 
 log = get_logger("InventoryImport")
 
 MAX_IMPORT_ITEMS = 30_000
-
-# Item ID ranges for stackability checks (must match web frontend)
-_MATERIAL_MIN = 1_000_000
-_MATERIAL_MAX = 2_000_000
-_BLUEPRINT_MIN = 6_000_000
-_BLUEPRINT_MAX = 7_000_000
-_CONSUMABLE_MIN = 10_000_000
-_CONSUMABLE_MAX = 10_200_000
 
 # Colours for diff status badges
 _CLR_ADDED = DIFF_ADDED
@@ -86,18 +78,18 @@ def _generate_gender_aliases(name: str) -> list[str]:
     return [f"{name} (M)", f"{name} (F)"]
 
 
-def _build_name_lookup(slim_items: list[dict]) -> dict[str, int]:
-    """Build case-insensitive name→item_id map from slim exchange items."""
-    lookup: dict[str, int] = {}
+def _build_name_lookup(slim_items: list[dict]) -> dict[str, dict]:
+    """Build case-insensitive name→slim dict map from slim exchange items."""
+    lookup: dict[str, dict] = {}
     for s in slim_items:
         item_id = s.get('i')
         name = s.get('n')
         if item_id and name:
-            lookup[_normalize_name(name)] = item_id
+            lookup[_normalize_name(name)] = s
             # Gender aliases for Armor/Clothing with Both gender
             if s.get('t') in ('Armor', 'Clothing') and s.get('g') == 'Both':
                 for alias in _generate_gender_aliases(name):
-                    lookup[_normalize_name(alias)] = item_id
+                    lookup[_normalize_name(alias)] = s
     return lookup
 
 
@@ -111,40 +103,27 @@ def _has_item_tag(name: str, tag: str) -> bool:
     return tag in m.group(2).split(',')
 
 
-def _is_stackable(item_id: int, item_name: str) -> bool:
-    """Only Materials, (L) Blueprints, and Consumables/Capsules are stackable.
 
-    Must match the web frontend's isStackable() in InventoryImportDialog.svelte.
-    """
-    if item_id <= 0:
-        return False
-    if _MATERIAL_MIN <= item_id < _MATERIAL_MAX:
-        return True
-    if _BLUEPRINT_MIN <= item_id < _BLUEPRINT_MAX:
-        return _has_item_tag(item_name, 'L')
-    if _CONSUMABLE_MIN <= item_id < _CONSUMABLE_MAX:
-        return True
-    return False
-
-
-def _resolve_item_id(name: str, name_lookup: dict[str, int]) -> int:
-    """Resolve an item name to its ID using the slim name lookup."""
+def _resolve_item(name: str, name_lookup: dict[str, dict]) -> dict | None:
+    """Resolve an item name to its slim dict using the name lookup."""
     norm = _normalize_name(name)
-    item_id = name_lookup.get(norm, 0)
-    if item_id > 0:
-        return item_id
+    slim = name_lookup.get(norm)
+    if slim:
+        return slim
     # Try stripping gender tags
     stripped = re.sub(r'\s*\((M|F)\)', '', name)
-    item_id = name_lookup.get(_normalize_name(stripped), 0)
-    if item_id > 0:
-        return item_id
+    slim = name_lookup.get(_normalize_name(stripped))
+    if slim:
+        return slim
     # Try stripping " Pet" suffix
     if norm.endswith(' pet'):
-        item_id = name_lookup.get(norm[:-4], 0)
+        slim = name_lookup.get(norm[:-4])
+        if slim:
+            return slim
     # Try removing apostrophes
-    if item_id == 0 and "'" in norm:
-        item_id = name_lookup.get(norm.replace("'", ""), 0)
-    return item_id
+    if "'" in norm:
+        slim = name_lookup.get(norm.replace("'", ""))
+    return slim
 
 
 # --- Container hierarchy helpers ---
@@ -386,14 +365,15 @@ def _process_items(
     instance_key_counts: dict[str, int] = {}
 
     for item in normalized:
-        item_id = _resolve_item_id(item['item_name'], name_lookup)
+        slim = _resolve_item(item['item_name'], name_lookup)
+        item_id = slim.get('i', 0) if slim else 0
 
         if item['instance_key']:
             individuals.append({**item, '_item_id': item_id})
             continue
 
         if item_id > 0:
-            stackable = _is_stackable(item_id, item['item_name'])
+            stackable = _is_slim_stackable(slim)
             if stackable:
                 # Combine stackable items within the same container
                 cp = item.get('container_path') or item.get('container') or ''

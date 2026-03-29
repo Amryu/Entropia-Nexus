@@ -3,6 +3,7 @@
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
+  import { isStackableType } from '$lib/common/itemTypes.js';
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { formatPedRaw } from '../../orderUtils';
 
@@ -55,11 +56,11 @@
     const map = new Map();
     for (const item of (allItems || [])) {
       if (item.i && item.n) {
-        map.set(normalizeName(item.n), item.i);
+        map.set(normalizeName(item.n), item);
         // Generate gender aliases for Armor/Clothing with Gender: Both
         if ((item.t === 'Armor' || item.t === 'Clothing') && item.g === 'Both') {
           for (const alias of generateGenderAliases(item.n)) {
-            map.set(normalizeName(alias), item.i);
+            map.set(normalizeName(alias), item);
           }
         }
       }
@@ -347,32 +348,20 @@
     // 3. Resolve name → item_id (before combining, so we know item types)
     const nameLookup = buildNameLookup();
 
-    function resolveItemId(itemName) {
+    function resolveItem(itemName) {
       const lookupName = normalizeName(itemName);
-      let itemId = nameLookup.get(lookupName) ?? 0;
-      if (itemId === 0 && (hasItemTag(itemName, 'M') || hasItemTag(itemName, 'F'))) {
+      let slim = nameLookup.get(lookupName) ?? null;
+      if (!slim && (hasItemTag(itemName, 'M') || hasItemTag(itemName, 'F'))) {
         const stripped = removeItemTag(removeItemTag(itemName, 'M'), 'F');
-        itemId = nameLookup.get(normalizeName(stripped)) ?? 0;
+        slim = nameLookup.get(normalizeName(stripped)) ?? null;
       }
-      if (itemId === 0 && lookupName.endsWith(' pet')) {
-        itemId = nameLookup.get(lookupName.slice(0, -4)) ?? 0;
+      if (!slim && lookupName.endsWith(' pet')) {
+        slim = nameLookup.get(lookupName.slice(0, -4)) ?? null;
       }
-      if (itemId === 0 && lookupName.includes("'")) {
-        itemId = nameLookup.get(lookupName.replace(/'/g, '')) ?? 0;
+      if (!slim && lookupName.includes("'")) {
+        slim = nameLookup.get(lookupName.replace(/'/g, '')) ?? null;
       }
-      return itemId;
-    }
-
-    // Stackable item types by ID range (from api/endpoints/constants.js offsets)
-    // Non-(L) blueprints are non-fungible (individual QR) and should not be stacked
-    function isStackable(itemId, itemName) {
-      if (itemId === 0) return false;
-      if (itemId >= 1000000 && itemId < 2000000) return true;    // Materials
-      if (itemId >= 6000000 && itemId < 7000000) {               // Blueprints
-        return hasItemTag(itemName, 'L');                           // Only (L) blueprints stack
-      }
-      if (itemId >= 10000000 && itemId < 10200000) return true;  // Consumables, Capsules
-      return false;
+      return slim;
     }
 
     // 4. Combine stackable items by (item_id, container_path); keep non-stackable individual
@@ -381,7 +370,9 @@
     const instanceKeyCounts = new Map(); // track duplicates for stable keys
 
     for (const item of normalized) {
-      const itemId = resolveItemId(item.item_name);
+      const slim = resolveItem(item.item_name);
+      const itemId = slim?.i ?? 0;
+      const itemType = slim?.t ?? null;
 
       if (item.instance_key) {
         // Already has an instance key — keep as-is
@@ -390,7 +381,7 @@
       }
 
       if (itemId > 0) {
-        const stackable = isStackable(itemId, item.item_name);
+        const stackable = isStackableType(itemType, item.item_name);
         if (stackable) {
           // Combine stackable items within the same container
           const key = `${itemId}::${item.container_path || item._planet || ''}`;
