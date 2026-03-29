@@ -246,10 +246,17 @@
       : undefined;
     let totalValue = null;
     let valueSource = 'default'; // 'custom' | 'ingame' | 'exchange' | 'default'
-    if (markup != null && slim) {
-      const unitPrice = computeUnitPrice(slim, markup, orderLike);
+    if (markup != null) {
+      let unitPrice = slim ? computeUnitPrice(slim, markup, orderLike) : null;
+      // Fallback for items not in exchange DB: use inventory TT value directly
+      if (unitPrice == null && ttValue != null) {
+        const isAbs = slim ? isAbsoluteMarkup(slim) : true;
+        const unitTT = (item.quantity > 0 && isItemStackable(slim)) ? ttValue / item.quantity : ttValue;
+        unitPrice = isAbs ? unitTT + Number(markup) : unitTT * (Number(markup) / 100);
+      }
       if (unitPrice != null) {
-        totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
+        totalValue = (slim && isItemStackable(slim)) || (!slim && item.quantity > 1)
+          ? unitPrice * item.quantity : unitPrice;
         valueSource = 'custom';
       }
     }
