@@ -127,7 +127,6 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
     return tt != null ? tt + mu : mu;
   }
   const maxTT = getMaxTT(item);
-  if (maxTT == null) return null;
   // For stackable items, always use MaxTT (CurrentTT is total stack value, not per-unit)
   // For non-stackable condition items (qty=1), prefer CurrentTT if available
   let tt = maxTT;
@@ -136,6 +135,7 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
     const ct = rawCt != null ? Number(rawCt) : NaN;
     if (!isNaN(ct)) tt = ct;
   }
+  if (tt == null) return null;
   // Armor plate sets: TT value covers all 7 plates
   const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
   if (type === 'ArmorPlating' && Number(order?.quantity) === PLATE_SET_SIZE) {
