@@ -416,17 +416,27 @@ def enrich_item(
             total_value = unit_price * quantity if is_stackable(slim) else unit_price
             value_source = 'custom'
 
+    def _apply_pct_markup(pct):
+        """In-game and exchange markups are always percentages.
+        For absolute-markup items, compute tt * (pct / 100) directly."""
+        if pct is None:
+            return None
+        if not is_stackable(slim) and is_absolute_markup(slim):
+            tt = current_tt if current_tt is not None else get_max_tt(slim)
+            return tt * (float(pct) / 100) if tt is not None else None
+        return compute_unit_price(slim, pct, current_tt)
+
     if value_source == 'default' and ingame_lookup is not None and slim:
         item_name = _get_name(slim)
         igm_mu = ingame_lookup.get(item_name) if item_name else None
         if igm_mu is not None:
-            unit_price = compute_unit_price(slim, igm_mu, current_tt)
+            unit_price = _apply_pct_markup(igm_mu)
             if unit_price is not None and unit_price > 0:
                 total_value = unit_price * quantity if is_stackable(slim) else unit_price
                 value_source = 'ingame'
 
     if value_source == 'default' and market_price is not None and slim:
-        unit_price = compute_unit_price(slim, market_price, current_tt)
+        unit_price = _apply_pct_markup(market_price)
         if unit_price is not None and unit_price > 0:
             total_value = unit_price * quantity if is_stackable(slim) else unit_price
             value_source = 'exchange'

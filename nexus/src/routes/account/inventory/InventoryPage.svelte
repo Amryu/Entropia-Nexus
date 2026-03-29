@@ -253,11 +253,24 @@
       }
     }
     // Apply selected markup source (in-game or exchange)
+    // Both sources provide percentage values, so for absolute-markup items
+    // we must compute tt * (pct / 100) directly instead of using computeUnitPrice
+    // which would interpret the value as +PED.
+    function applyPercentMarkup(pctMarkup) {
+      if (pctMarkup == null) return null;
+      const pct = Number(pctMarkup);
+      if (!isItemStackable(slim) && isAbsoluteMarkup(slim)) {
+        // Absolute-markup item but source is always a percentage
+        const tt = orderLike?.details?.CurrentTT ?? (slim ? getMaxTT(slim) : null);
+        return tt != null ? tt * (pct / 100) : null;
+      }
+      return computeUnitPrice(slim, pct, orderLike);
+    }
     if (valueSource === 'default' && markupSource === 'ingame' && slim) {
       const itemName = slim.n || item.item_name;
       const igm = itemName ? inGameLookup.get(itemName) : null;
       if (igm != null) {
-        const unitPrice = computeUnitPrice(slim, Number(igm), orderLike);
+        const unitPrice = applyPercentMarkup(igm);
         if (unitPrice != null && unitPrice > 0) {
           totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
           valueSource = 'ingame';
@@ -265,7 +278,7 @@
       }
     }
     if (valueSource === 'default' && markupSource === 'exchange' && marketPrice != null && slim) {
-      const unitPrice = computeUnitPrice(slim, Number(marketPrice), orderLike);
+      const unitPrice = applyPercentMarkup(marketPrice);
       if (unitPrice != null && unitPrice > 0) {
         totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
         valueSource = 'exchange';
