@@ -706,38 +706,6 @@
                 />
               </span>
             </div>
-            {#if activeEntity?.Properties?.Type === 'Mining'}
-              <div class="stat-row">
-                <span class="stat-label">Absorption</span>
-                <span class="stat-value">
-                  {#if $editMode}
-                    <span class="inline-edit editable">
-                      <span class="edit-wrapper">
-                        <input
-                          type="number"
-                          class="edit-input"
-                          min="0"
-                          max="100"
-                          step="0.1"
-                          value={activeEntity?.Properties?.Economy?.Absorption != null
-                            ? (activeEntity.Properties.Economy.Absorption * 100).toFixed(1)
-                            : ''}
-                          oninput={(e) => {
-                            const value = e.target.value === '' ? null : parseFloat(e.target.value) / 100;
-                            updateField('Properties.Economy.Absorption', value);
-                          }}
-                        />
-                        <span class="suffix">%</span>
-                      </span>
-                    </span>
-                  {:else}
-                    {activeEntity?.Properties?.Economy?.Absorption != null
-                      ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%`
-                      : 'N/A'}
-                  {/if}
-                </span>
-              </div>
-            {/if}
           {:else if additional.type === 'absorbers'}
             <div class="stat-row">
               <span class="stat-label">Absorption</span>
@@ -863,7 +831,7 @@
             </div>
           {/if}
 
-          {#if additional.type === 'mindforceimplants'}
+          {#if additional.type === 'mindforceimplants' || (additional.type === 'weaponamplifiers' && activeEntity?.Properties?.Type === 'Mining')}
             <div class="stat-row">
               <span class="stat-label">Absorption</span>
               <span class="stat-value">
