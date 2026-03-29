@@ -252,29 +252,13 @@
         valueSource = 'custom';
       }
     }
-    // Apply selected markup source (in-game or exchange)
-    // Both sources provide percentage values, so for absolute-markup items
-    // we must compute tt * (pct / 100) directly instead of using computeUnitPrice
-    // which would interpret the value as +PED.
-    function applyPercentMarkup(pctMarkup) {
-      if (pctMarkup == null) return null;
-      const pct = Number(pctMarkup);
-      if (!isItemStackable(slim) && isAbsoluteMarkup(slim)) {
-        // Absolute-markup item but source is always a percentage
-        const tt = orderLike?.details?.CurrentTT ?? (slim ? getMaxTT(slim) : null);
-        return tt != null ? tt * (pct / 100) : null;
-      }
-      return computeUnitPrice(slim, pct, orderLike);
-    }
     // Resolve in-game markup for display regardless of whether it's used for value
     const igmName = slim?.n || item.item_name;
     const ingameMarkup = (igmName && slim) ? (inGameLookup.get(igmName) ?? null) : null;
 
     if (valueSource === 'default' && markupSource === 'ingame' && slim) {
-      const itemName = slim.n || item.item_name;
-      const igm = itemName ? inGameLookup.get(itemName) : null;
-      if (igm != null) {
-        const unitPrice = applyPercentMarkup(igm);
+      if (ingameMarkup != null) {
+        const unitPrice = computeUnitPrice(slim, Number(ingameMarkup), orderLike);
         if (unitPrice != null && unitPrice > 0) {
           totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
           valueSource = 'ingame';
@@ -282,7 +266,7 @@
       }
     }
     if (valueSource === 'default' && markupSource === 'exchange' && marketPrice != null && slim) {
-      const unitPrice = applyPercentMarkup(marketPrice);
+      const unitPrice = computeUnitPrice(slim, Number(marketPrice), orderLike);
       if (unitPrice != null && unitPrice > 0) {
         totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
         valueSource = 'exchange';
@@ -971,9 +955,9 @@
                         {#if row._markup != null}
                           {formatMarkupValue(row._markup, row._isAbsolute)}
                         {:else if markupSource === 'ingame' && row._ingameMarkup != null}
-                          {formatMarkupValue(row._ingameMarkup, false)}
+                          {formatMarkupValue(row._ingameMarkup, row._isAbsolute)}
                         {:else if markupSource === 'exchange' && row._marketPrice != null}
-                          {formatMarkupValue(row._marketPrice, false)}
+                          {formatMarkupValue(row._marketPrice, row._isAbsolute)}
                         {:else}
                           <span class="text-muted">{row._isAbsolute ? '+0' : '100%'}</span>
                         {/if}
