@@ -1,6 +1,7 @@
 <script>
   //@ts-nocheck
   import { onMount } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import FancyTable from '$lib/components/FancyTable.svelte';
@@ -32,11 +33,11 @@
   // --- Data state ---
   let inventoryItems = $state([]);
   let allSlimItems = $state([]);       // Flat array of all exchange slim items
-  let itemLookup = $state(new Map());  // item_id → slim item
-  let userMarkups = $state(new Map()); // item_id → markup value
+  let itemLookup = $state(new SvelteMap());  // item_id → slim item
+  let userMarkups = $state(new SvelteMap()); // item_id → markup value
   let importHistory = [];
-  let userSellOrders = $state(new Map()); // item_id → [{ id, planet, computed_state }]
-  let containerNames = $state(new Map()); // container_path → custom_name
+  let userSellOrders = $state(new SvelteMap()); // item_id → [{ id, planet, computed_state }]
+  let containerNames = $state(new SvelteMap()); // container_path → custom_name
   let rawInGameSnapshots = $state([]);   // Raw in-game price snapshots for period switching
   let loading = $state(true);
   let error = $state(null);
@@ -130,7 +131,7 @@
         const categorized = await exchangeRes.json();
         // Flatten categorized items into a single array
         allSlimItems = flattenCategorized(categorized);
-        itemLookup = new Map();
+        itemLookup = new SvelteMap();
         for (const item of allSlimItems) {
           if (item?.i != null) itemLookup.set(item.i, item);
         }
@@ -138,7 +139,7 @@
 
       if (markupRes?.ok) {
         const markups = await markupRes.json();
-        userMarkups = new Map();
+        userMarkups = new SvelteMap();
         for (const m of markups) {
           userMarkups.set(m.item_id, m.markup);
         }
@@ -153,7 +154,7 @@
 
       if (ordersRes?.ok) {
         const orders = await ordersRes.json();
-        userSellOrders = new Map();
+        userSellOrders = new SvelteMap();
         for (const o of orders) {
           if (o.type !== 'SELL' || o.state === 'closed' || o.computed_state === 'terminated') continue;
           const list = userSellOrders.get(o.item_id) || [];
@@ -164,7 +165,7 @@
 
       if (containerNamesRes?.ok) {
         const names = await containerNamesRes.json();
-        containerNames = new Map();
+        containerNames = new SvelteMap();
         for (const entry of names) {
           containerNames.set(entry.container_path, entry.custom_name);
         }
