@@ -375,9 +375,10 @@
       return false;
     }
 
-    // 4. Combine all resolved items by (item_id, planet); keep unresolved individual
+    // 4. Combine stackable items by (item_id, planet); keep non-stackable individual
     const stackMap = new Map();
     const individuals = [];
+    const instanceKeyCounts = new Map(); // track duplicates for stable keys
 
     for (const item of normalized) {
       const itemId = resolveItemId(item.item_name);
@@ -389,22 +390,33 @@
       }
 
       if (itemId > 0) {
-        // Combine by (item_id, planet)
-        const key = `${itemId}::${item._planet || ''}`;
         const stackable = isStackable(itemId, item.item_name);
-        if (stackMap.has(key)) {
-          const existing = stackMap.get(key);
-          existing.quantity += item.quantity || 1;
-          if (item.value != null) {
-            existing.value = (existing.value || 0) + item.value;
+        if (stackable) {
+          // Combine stackable items by (item_id, planet)
+          const key = `${itemId}::${item._planet || ''}`;
+          if (stackMap.has(key)) {
+            const existing = stackMap.get(key);
+            existing.quantity += item.quantity || 1;
+            if (item.value != null) {
+              existing.value = (existing.value || 0) + item.value;
+            }
+          } else {
+            stackMap.set(key, {
+              ...item,
+              _itemId: itemId,
+              quantity: item.quantity || 1,
+            });
           }
         } else {
-          stackMap.set(key, {
+          // Non-stackable (condition) items: keep each individual with a value-based instance_key
+          const baseKey = `stack:${item._planet || 'inventory'}:${item.value ?? 0}`;
+          const count = (instanceKeyCounts.get(baseKey) || 0) + 1;
+          instanceKeyCounts.set(baseKey, count);
+          individuals.push({
             ...item,
             _itemId: itemId,
             quantity: item.quantity || 1,
-            // Non-stackable items use planet-based instance_key for DB uniqueness
-            instance_key: stackable ? null : `stack:${item._planet || 'inventory'}`,
+            instance_key: count > 1 ? `${baseKey}:${count}` : baseKey,
           });
         }
       } else {

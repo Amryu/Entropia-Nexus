@@ -933,10 +933,6 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
       const itemType = slim?.t || null;
       const itemName = slim?.n || item.item_name;
       const stackable = itemType ? isStackableType(itemType, itemName) : false;
-      const hasMetadata = item.details && (
-        item.details.Tier != null || item.details.TierIncreaseRate != null ||
-        item.details.QualityRating != null
-      );
 
       // Determine gender for gendered item types
       let gender;
@@ -947,10 +943,9 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
         else if (hasItemTag(item.item_name, 'F')) gender = 'Female';
       }
 
-      // Condition items with metadata can have multiple listings; others get 1 per planet
-      const allowMultiple = !stackable && hasMetadata;
+      // Non-stackable (condition) items get unique keys; stackable items dedup by planet+gender
       const genderSuffix = gender ? `::${gender}` : '';
-      const dedupKey = allowMultiple
+      const dedupKey = !stackable
         ? `${item.item_id}::${planet}::${item.instance_key || item.id}`
         : `${item.item_id}::${planet}${genderSuffix}`;
 
@@ -969,6 +964,9 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
       });
     }
   }
+
+  // Prefer highest-TT condition items when per-item limits apply
+  results.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
   return results;
 }
@@ -1005,20 +1003,22 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
     [userId]
   );
 
-  // Build lookup of existing offers (include gender in key for gendered items)
+  // Build lookup of existing offers
+  // For non-stackable items, include instance_key in the key to allow multiple per item+planet
   const pricedByItemPlanet = new Set();
-  const negotiableByItemPlanet = new Map(); // key → offer row
+  const negotiableByKey = new Map(); // key → offer row
   const orderCountByItem = new Map(); // item_id → count of all active sell offers
   for (const offer of existingOffers) {
     const offerGender = offer.details?.Gender;
     const genderSuffix = offerGender ? `::${offerGender}` : '';
-    const key = `${offer.item_id}::${offer.planet}${genderSuffix}`;
+    const instanceSuffix = offer.details?.instance_key ? `::${offer.details.instance_key}` : '';
+    const key = `${offer.item_id}::${offer.planet}${genderSuffix}${instanceSuffix}`;
     const cnt = orderCountByItem.get(offer.item_id) || 0;
     orderCountByItem.set(offer.item_id, cnt + 1);
     if (offer.markup != null) {
-      pricedByItemPlanet.add(key);
+      pricedByItemPlanet.add(`${offer.item_id}::${offer.planet}${genderSuffix}`);
     } else {
-      negotiableByItemPlanet.set(key, offer);
+      negotiableByKey.set(key, offer);
     }
   }
 
@@ -1029,13 +1029,15 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
 
   for (const item of resolved) {
     const genderSuffix = item.gender ? `::${item.gender}` : '';
-    const key = `${item.item_id}::${item.planet}${genderSuffix}`;
+    const instanceSuffix = item.instance_key ? `::${item.instance_key}` : '';
+    const key = `${item.item_id}::${item.planet}${genderSuffix}${instanceSuffix}`;
+    const pricedKey = `${item.item_id}::${item.planet}${genderSuffix}`;
     resolvedKeys.add(key);
 
     // Skip if priced sell offer already exists
-    if (pricedByItemPlanet.has(key)) { skipped++; continue; }
+    if (pricedByItemPlanet.has(pricedKey)) { skipped++; continue; }
     // Skip if negotiable offer already exists
-    if (negotiableByItemPlanet.has(key)) continue;
+    if (negotiableByKey.has(key)) continue;
     // Check per-item limit
     const currentCount = orderCountByItem.get(item.item_id) || 0;
     if (currentCount >= MAX_ORDERS_PER_ITEM) { skipped++; continue; }
@@ -1048,7 +1050,7 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
 
   // Close negotiable offers that are no longer in the resolved set
   const toClose = [];
-  for (const [key, offer] of negotiableByItemPlanet) {
+  for (const [key, offer] of negotiableByKey) {
     if (!resolvedKeys.has(key)) toClose.push(offer.id);
   }
 
@@ -1075,6 +1077,7 @@ export async function syncNegotiableListings(userId, { slimLookup } = {}) {
       for (const item of batch) {
         const details = { item_name: item.item_name };
         if (item.gender) details.Gender = item.gender;
+        if (item.instance_key) details.instance_key = item.instance_key;
         if (item.details?.Tier != null) details.Tier = item.details.Tier;
         if (item.details?.TierIncreaseRate != null) details.TierIncreaseRate = item.details.TierIncreaseRate;
         if (item.details?.QualityRating != null) details.QualityRating = item.details.QualityRating;

@@ -380,9 +380,10 @@ def _process_items(
     # 3. Resolve name → item_id
     name_lookup = _build_name_lookup(slim_items)
 
-    # 4. Combine stackable items
+    # 4. Combine stackable items; keep non-stackable individual
     stack_map: dict[str, dict] = {}
     individuals: list[dict] = []
+    instance_key_counts: dict[str, int] = {}
 
     for item in normalized:
         item_id = _resolve_item_id(item['item_name'], name_lookup)
@@ -392,21 +393,31 @@ def _process_items(
             continue
 
         if item_id > 0:
-            key = f"{item_id}::{item.get('container') or ''}"
             stackable = _is_stackable(item_id, item['item_name'])
-            if key in stack_map:
-                existing = stack_map[key]
-                existing['quantity'] += item['quantity'] or 1
-                if item['value'] is not None:
-                    existing['value'] = (existing['value'] or 0) + item['value']
+            if stackable:
+                key = f"{item_id}::{item.get('container') or ''}"
+                if key in stack_map:
+                    existing = stack_map[key]
+                    existing['quantity'] += item['quantity'] or 1
+                    if item['value'] is not None:
+                        existing['value'] = (existing['value'] or 0) + item['value']
+                else:
+                    stack_map[key] = {
+                        **item,
+                        '_item_id': item_id,
+                        'quantity': item['quantity'] or 1,
+                    }
             else:
-                stack_map[key] = {
+                # Non-stackable (condition) items: keep each individual with a value-based instance_key
+                base_key = f"stack:{item.get('container') or 'inventory'}:{item.get('value') or 0}"
+                count = instance_key_counts.get(base_key, 0) + 1
+                instance_key_counts[base_key] = count
+                individuals.append({
                     **item,
                     '_item_id': item_id,
                     'quantity': item['quantity'] or 1,
-                    # Non-stackable items get a planet-based instance_key for DB uniqueness
-                    'instance_key': None if stackable else f"stack:{item.get('container') or 'inventory'}",
-                }
+                    'instance_key': item['instance_key'] or (f"{base_key}:{count}" if count > 1 else base_key),
+                })
         else:
             individuals.append({**item, '_item_id': item_id})
 
