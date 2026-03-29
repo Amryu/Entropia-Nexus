@@ -2963,7 +2963,7 @@
       const columns = [
         { key: 'name', header: 'Name', main: true },
         { key: 'damage', header: 'Damage', width: '100px' },
-        ...(miningPicker ? [] : [{ key: 'overamp', header: overampMode === 'delta' ? 'Over Δ' : 'Over %', width: '90px' }]),
+        { key: 'overamp', header: overampMode === 'delta' ? 'Over Δ' : 'Over %', width: '90px' },
         ...(miningPicker ? [{ key: 'absorption', header: 'Absorption', width: '100px' }] : []),
         { key: 'dpp', header: 'DPP', width: '70px' },
         { key: 'efficiency', header: 'Efficiency', width: '110px' }
