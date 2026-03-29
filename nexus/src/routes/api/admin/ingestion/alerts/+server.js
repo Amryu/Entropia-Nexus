@@ -9,7 +9,7 @@ export async function GET({ url, locals }) {
   const page = parseInt(url.searchParams.get('page') || '1');
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
   const days = url.searchParams.get('days');
-  const periodDays = days === '30' ? 30 : days === '90' ? 90 : null;
+  const periodDays = { '1': 1, '7': 7, '30': 30, '90': 90 }[days] ?? null;
 
   try {
     const result = await getAlerts(page, limit, periodDays);

@@ -411,7 +411,7 @@
   {#if activeTab === 'alerts'}
     <div class="section">
       <div class="alert-period-filter">
-        {#each [['30', '30 days'], ['90', '90 days'], ['all', 'All time']] as [value, label]}
+        {#each [['1', '24h'], ['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['all', 'All time']] as [value, label]}
           <button class="period-btn" class:active={alertPeriod === value} onclick={() => { alertPeriod = value; loadAlertPage(1); }}>
             {label}
           </button>
