@@ -338,6 +338,17 @@ export function calculateEfficiency(
     cost += absorberCost;
   }
 
+  // Mining amplifier absorption cost (separate from flat amp decay)
+  if (weapon?.Properties?.Type?.startsWith('Mining Laser')
+      && amplifier?.Properties?.Economy?.Absorption != null
+      && amplifier?.Properties?.Economy?.Efficiency != null) {
+    const weaponDecayForAbs = weapon.Properties.Economy.Decay * (1 + damageEnhancers * 0.1) * (1 - economyEnhancers * 0.01111);
+    const miningAbsCost = weaponDecayForAbs * amplifier.Properties.Economy.Absorption;
+    cost -= miningAbsCost; // remove from weapon side
+    efficiency = weightedAverage(cost, efficiency, miningAbsCost, amplifier.Properties.Economy.Efficiency);
+    cost += miningAbsCost;
+  }
+
   if (amplifier?.Properties?.Economy?.Efficiency != null && amplifier?.Properties?.Economy?.Decay != null) {
     const ampCost = (amplifier.Properties?.Economy?.AmmoBurn == undefined || amplifier.Properties?.Economy?.AmmoBurn >= 0)
       ? (amplifier.Properties.Economy.Decay + (amplifier.Properties?.Economy?.AmmoBurn ?? 0) / 100)
