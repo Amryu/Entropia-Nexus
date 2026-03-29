@@ -581,6 +581,8 @@
           <div class="infobox-subtitle">
             <span class="type-badge">Armor Set</span>
             <span>{pieceCount} pieces</span>
+            {#if activeEntity.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
+            {#if activeEntity.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>
         </div>
 
@@ -637,6 +639,18 @@
           <div class="stat-row">
             <span class="stat-label">Weight</span>
             <span class="stat-value">{activeEntity?.Properties?.Weight?.toFixed(1) ?? 'N/A'} kg</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Rare</span>
+            <span class="stat-value" class:highlight-yes={activeEntity.Properties?.IsRare}>
+              <InlineEdit value={activeEntity.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Untradeable</span>
+            <span class="stat-value" class:highlight-yes={activeEntity.Properties?.IsUntradeable}>
+              <InlineEdit value={activeEntity.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
+            </span>
           </div>
         </div>
 

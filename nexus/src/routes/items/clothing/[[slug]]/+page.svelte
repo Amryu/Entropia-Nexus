@@ -385,6 +385,8 @@
           <div class="infobox-subtitle">
             <span class="type-badge">{activeClothing?.Properties?.Type || 'Clothing'}</span>
             <span class="type-badge">{activeClothing?.Properties?.Slot || 'Body'}</span>
+            {#if activeClothing.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
+            {#if activeClothing.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>
         </div>
 
@@ -456,6 +458,18 @@
                 step={0.1}
                 suffix=" kg"
               />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Rare</span>
+            <span class="stat-value" class:highlight-yes={activeClothing.Properties?.IsRare}>
+              <InlineEdit value={activeClothing.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Untradeable</span>
+            <span class="stat-value" class:highlight-yes={activeClothing.Properties?.IsUntradeable}>
+              <InlineEdit value={activeClothing.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
             </span>
           </div>
         </div>

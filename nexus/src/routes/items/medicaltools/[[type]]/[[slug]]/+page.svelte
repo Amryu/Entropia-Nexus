@@ -643,6 +643,8 @@
             {#if activeEntity?.Properties?.Skill?.IsSiB}
               <span class="sib-badge">SiB</span>
             {/if}
+            {#if activeEntity.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
+            {#if activeEntity.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>
         </div>
 
@@ -716,6 +718,18 @@
               </span>
             </div>
           {/if}
+          <div class="stat-row">
+            <span class="stat-label">Rare</span>
+            <span class="stat-value" class:highlight-yes={activeEntity.Properties?.IsRare}>
+              <InlineEdit value={activeEntity.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Untradeable</span>
+            <span class="stat-value" class:highlight-yes={activeEntity.Properties?.IsUntradeable}>
+              <InlineEdit value={activeEntity.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
+            </span>
+          </div>
         </div>
 
         <!-- Healing Stats -->

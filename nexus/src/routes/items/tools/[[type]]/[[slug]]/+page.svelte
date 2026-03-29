@@ -659,6 +659,8 @@
           </div>
           <div class="infobox-subtitle">
             <span class="type-badge">{getTypeName(additional.type)}</span>
+            {#if activeEntity.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
+            {#if activeEntity.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>
         </div>
 
@@ -792,6 +794,18 @@
           <div class="stat-row">
             <span class="stat-label">Total Uses</span>
             <span class="stat-value">{totalUses != null ? totalUses.toLocaleString() : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Rare</span>
+            <span class="stat-value" class:highlight-yes={activeEntity.Properties?.IsRare}>
+              <InlineEdit value={activeEntity.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Untradeable</span>
+            <span class="stat-value" class:highlight-yes={activeEntity.Properties?.IsUntradeable}>
+              <InlineEdit value={activeEntity.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
+            </span>
           </div>
         </div>
 

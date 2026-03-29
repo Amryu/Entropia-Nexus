@@ -290,6 +290,8 @@
           </div>
           <div class="infobox-subtitle">
             <span class="type-badge">Material</span>
+            {#if activeMaterial.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
+            {#if activeMaterial.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>
         </div>
 
@@ -340,6 +342,18 @@
               {:else}
                 {formatWeight(activeMaterial?.Properties?.Weight)}
               {/if}
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Rare</span>
+            <span class="stat-value" class:highlight-yes={activeMaterial.Properties?.IsRare}>
+              <InlineEdit value={activeMaterial.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Untradeable</span>
+            <span class="stat-value" class:highlight-yes={activeMaterial.Properties?.IsUntradeable}>
+              <InlineEdit value={activeMaterial.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
             </span>
           </div>
         </div>
