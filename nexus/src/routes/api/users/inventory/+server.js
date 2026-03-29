@@ -71,8 +71,8 @@ export async function PUT({ request, locals }) {
   let body;
   try {
     body = await request.json();
-  } catch {
-    return getResponse({ error: 'Invalid JSON' }, 400);
+  } catch (err) {
+    return getResponse({ error: `Invalid JSON: ${err.message}` }, 400);
   }
 
   if (!Array.isArray(body.items) || body.items.length === 0) {
@@ -93,22 +93,22 @@ export async function PUT({ request, locals }) {
 
     const itemId = parseInt(item.item_id, 10);
     if (!Number.isFinite(itemId) || itemId < 0) {
-      return getResponse({ error: `items[${i}].item_id must be a non-negative integer` }, 400);
+      return getResponse({ error: `items[${i}].item_id must be a non-negative integer (got ${JSON.stringify(item.item_id)})` }, 400);
     }
 
     if (itemId === 0) unknownCount++;
 
     const itemName = typeof item.item_name === 'string' ? item.item_name.trim() : '';
     if (!itemName) {
-      return getResponse({ error: `items[${i}].item_name is required` }, 400);
+      return getResponse({ error: `items[${i}].item_name is required (got ${JSON.stringify(item.item_name)})` }, 400);
     }
     if (itemName.length > MAX_ITEM_NAME_LENGTH) {
-      return getResponse({ error: `items[${i}].item_name exceeds maximum length of ${MAX_ITEM_NAME_LENGTH}` }, 400);
+      return getResponse({ error: `items[${i}] "${itemName}": item_name exceeds maximum length of ${MAX_ITEM_NAME_LENGTH}` }, 400);
     }
 
     const quantity = item.quantity != null ? parseInt(item.quantity, 10) : 0;
     if (!Number.isFinite(quantity) || quantity < 0) {
-      return getResponse({ error: `items[${i}].quantity must be a non-negative integer` }, 400);
+      return getResponse({ error: `items[${i}] "${itemName}": quantity must be a non-negative integer (got ${JSON.stringify(item.quantity)})` }, 400);
     }
 
     let instanceKey = item.instance_key || null;
@@ -117,12 +117,12 @@ export async function PUT({ request, locals }) {
 
     const value = item.value != null ? parseFloat(item.value) : null;
     if (value != null && !Number.isFinite(value)) {
-      return getResponse({ error: `items[${i}].value must be a number` }, 400);
+      return getResponse({ error: `items[${i}] "${itemName}": value must be a number (got ${JSON.stringify(item.value)})` }, 400);
     }
 
     const container = typeof item.container === 'string' ? item.container.trim() || null : null;
     if (container && container.length > MAX_CONTAINER_LENGTH) {
-      return getResponse({ error: `items[${i}].container exceeds maximum length of ${MAX_CONTAINER_LENGTH}` }, 400);
+      return getResponse({ error: `items[${i}] "${itemName}": container exceeds maximum length of ${MAX_CONTAINER_LENGTH}` }, 400);
     }
 
     // Unresolved items (item_id=0) get a name+container instance_key for uniqueness
@@ -132,12 +132,12 @@ export async function PUT({ request, locals }) {
         : `unresolved:${itemName}`;
     }
     if (instanceKey && instanceKey.length > MAX_INSTANCE_KEY_LENGTH) {
-      return getResponse({ error: `items[${i}].instance_key exceeds maximum length of ${MAX_INSTANCE_KEY_LENGTH}` }, 400);
+      return getResponse({ error: `items[${i}] "${itemName}": instance_key exceeds maximum length of ${MAX_INSTANCE_KEY_LENGTH} (got ${instanceKey.length})` }, 400);
     }
 
     const containerPath = typeof item.container_path === 'string' ? item.container_path.trim() || null : null;
     if (containerPath && containerPath.length > MAX_CONTAINER_PATH_LENGTH) {
-      return getResponse({ error: `items[${i}].container_path exceeds maximum length of ${MAX_CONTAINER_PATH_LENGTH}` }, 400);
+      return getResponse({ error: `items[${i}] "${itemName}": container_path exceeds maximum length of ${MAX_CONTAINER_PATH_LENGTH}` }, 400);
     }
 
     validated.push({ item_id: itemId, item_name: itemName, quantity, instance_key: instanceKey, details, value, container, container_path: containerPath });
