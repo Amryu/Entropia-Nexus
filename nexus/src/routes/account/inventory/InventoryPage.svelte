@@ -224,16 +224,15 @@
 
   // --- Enriched items ---
   let enrichedItems = $derived(inventoryItems.map(item => {
-    const slim = itemLookup.get(item.item_id);
+    const rawSlim = itemLookup.get(item.item_id);
+    const rawMaxTT = rawSlim ? getMaxTT(rawSlim) : null;
+    // Stackable items with missing/zero MaxTT: derive per-unit TT from inventory value
+    const derivedTT = (!rawMaxTT) && isItemStackable(rawSlim) && item.value != null && item.quantity > 0
+      ? Number(item.value) / item.quantity : null;
+    const slim = derivedTT != null && rawSlim ? { ...rawSlim, v: derivedTT } : rawSlim;
+    const maxTT = derivedTT ?? rawMaxTT;
     const type = slim?.t || null;
     const category = getTopCategory(type);
-    let maxTT = slim ? getMaxTT(slim) : null;
-    // Stackable items with missing/zero MaxTT: derive per-unit TT from inventory value
-    if ((!maxTT) && isItemStackable(slim) && item.value != null && item.quantity > 0) {
-      maxTT = Number(item.value) / item.quantity;
-      // Patch slim so computeUnitPrice sees the derived MaxTT
-      if (slim) slim = { ...slim, v: maxTT };
-    }
     const markup = userMarkups.get(item.item_id) ?? null;
     const marketPrice = slim?.w ?? slim?.m ?? null;
 
