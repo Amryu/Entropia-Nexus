@@ -34,6 +34,7 @@
   let selectedIds = $state(new Set());
   let substring = $state('');
   let useRegex = $state(false);
+  let negateMatch = $state(false);
   let selectedTypes = $state(new Set());
   let searchTerm = $state('');
   let regexError = $state(null);
@@ -57,10 +58,12 @@
         if (mode === 'match') {
           substring = existingFilter.substring || '';
           useRegex = !!existingFilter.useRegex;
+          negateMatch = !!existingFilter.negate;
           selectedTypes = new Set(existingFilter.itemTypes || []);
         } else {
           substring = '';
           useRegex = false;
+          negateMatch = false;
           selectedTypes = new Set();
         }
       }
@@ -98,11 +101,11 @@
     return uniqueItems.filter(i => i.item_name.toLowerCase().includes(lower));
   })());
 
-  // Compute match preview count
-  let matchCount = $derived((() => {
-    if (mode === 'all') return uniqueItems.length;
-    if (mode === 'whitelist') return selectedIds.size;
-    if (mode === 'blacklist') return uniqueItems.length - selectedIds.size;
+  // Items matching the current filter criteria
+  let matchedItems = $derived((() => {
+    if (mode === 'all') return uniqueItems;
+    if (mode === 'whitelist') return uniqueItems.filter(i => selectedIds.has(i.item_id));
+    if (mode === 'blacklist') return uniqueItems.filter(i => !selectedIds.has(i.item_id));
     if (mode === 'match') {
       return uniqueItems.filter(item => {
         let nameMatch = true;
@@ -117,11 +120,14 @@
         if (selectedTypes.size > 0) {
           typeMatch = item.category ? selectedTypes.has(item.category) : false;
         }
-        return nameMatch && typeMatch;
-      }).length;
+        const result = nameMatch && typeMatch;
+        return negateMatch ? !result : result;
+      });
     }
-    return 0;
+    return [];
   })());
+
+  let matchCount = $derived(matchedItems.length);
 
   // Validate regex
   $effect(() => {
@@ -160,6 +166,7 @@
         mode: 'match',
         substring: substring.replace(/[\x00-\x1f]/g, '').trim().slice(0, 200),
         useRegex,
+        negate: negateMatch,
         itemTypes: [...selectedTypes],
       });
     }
@@ -250,6 +257,10 @@
                 <input type="checkbox" bind:checked={useRegex} />
                 Regex
               </label>
+              <label class="regex-toggle">
+                <input type="checkbox" bind:checked={negateMatch} />
+                Negate
+              </label>
             </div>
             {#if regexError}
               <p class="error-text">{regexError}</p>
@@ -271,6 +282,27 @@
               </div>
               {#if selectedTypes.size === 0}
                 <span class="type-hint">No type filter = all types included</span>
+              {/if}
+            </div>
+
+          </div>
+        {/if}
+
+        {#if mode === 'all' || mode === 'match'}
+          <div class="match-preview">
+            <span class="match-preview-label">{matchedItems.length} item{matchedItems.length !== 1 ? 's' : ''}</span>
+            <div class="match-preview-list">
+              {#each matchedItems as item (item.item_id)}
+                <div class="match-preview-row">
+                  <span class="item-name">{item.item_name}</span>
+                  {#if item.category}
+                    <span class="item-type-badge">{item.category}</span>
+                  {/if}
+                  <span class="item-qty">x{item.quantity.toLocaleString()}</span>
+                </div>
+              {/each}
+              {#if matchedItems.length === 0 && mode === 'match'}
+                <p class="empty-text">No items match the current pattern</p>
               {/if}
             </div>
           </div>
@@ -524,6 +556,37 @@
     font-size: 0.72rem;
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  .match-preview {
+    margin-top: 0.5rem;
+  }
+
+  .match-preview-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .match-preview-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--secondary-color);
+  }
+
+  .match-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .match-preview-row:hover {
+    background: var(--hover-color);
   }
 
   .filter-actions {

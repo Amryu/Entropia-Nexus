@@ -196,7 +196,8 @@
           const cat = slim?.t ? getTopCategory(slim.t) : 'Other';
           typeMatch = filter.itemTypes.includes(cat);
         }
-        return nameMatch && typeMatch;
+        const result = nameMatch && typeMatch;
+        return filter.negate ? !result : result;
       }
       return true;
     }

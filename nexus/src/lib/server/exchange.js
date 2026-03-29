@@ -842,6 +842,7 @@ export function validateNegotiableConfig(config) {
           }
           try { new RegExp(sub); } catch { throw new Error(`nodes[${i}].filter.substring is not a valid regex`); }
         }
+        sanitizedFilter.negate = !!f.negate;
         if (Array.isArray(f.itemTypes)) {
           sanitizedFilter.itemTypes = f.itemTypes.filter(t => VALID_ITEM_TYPES.includes(t));
         } else {
@@ -926,7 +927,8 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
         const itemType = slim?.t || null;
         typeMatch = itemType ? filter.itemTypes.includes(itemType) : false;
       }
-      return nameMatch && typeMatch;
+      const result = nameMatch && typeMatch;
+      return filter.negate ? !result : result;
     }
     return true;
   }
