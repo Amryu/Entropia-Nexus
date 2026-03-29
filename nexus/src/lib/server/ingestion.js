@@ -710,20 +710,21 @@ export async function getIngestionStats() {
 
 // --- Admin: Alerts ---
 
-export async function getAlerts(page = 1, limit = 20) {
+export async function getAlerts(page = 1, limit = 20, periodDays = null) {
   const offset = (page - 1) * limit;
+  const periodClause = periodDays ? `AND a.created_at >= NOW() - INTERVAL '${parseInt(periodDays)} days'` : '';
   const { rows } = await pool.query(
     `SELECT a.*, array_agg(u.username) AS user_names
      FROM ingestion_alerts a
      LEFT JOIN ONLY users u ON u.id = ANY(a.user_ids)
-     WHERE NOT a.resolved
+     WHERE NOT a.resolved ${periodClause}
      GROUP BY a.id
      ORDER BY a.created_at DESC
      LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
   const { rows: countRows } = await pool.query(
-    'SELECT count(*) AS total FROM ingestion_alerts WHERE NOT resolved'
+    `SELECT count(*) AS total FROM ingestion_alerts WHERE NOT resolved ${periodClause}`
   );
   return { rows, total: parseInt(countRows[0].total) };
 }

@@ -11,6 +11,7 @@
   let alerts = $state((() => data.alerts)());
   let alertTotal = $state((() => data.alertTotal || 0)());
   let alertPage = $state(1);
+  let alertPeriod = $state('30'); // '30', '90', or 'all'
   const ALERTS_PER_PAGE = 10;
   let alertsLoading = $state(false);
   let users = $state((() => data.users)());
@@ -62,7 +63,8 @@
   async function loadAlertPage(page) {
     alertsLoading = true;
     try {
-      const res = await fetch(`/api/admin/ingestion/alerts?page=${page}&limit=${ALERTS_PER_PAGE}`);
+      const daysParam = alertPeriod !== 'all' ? `&days=${alertPeriod}` : '';
+      const res = await fetch(`/api/admin/ingestion/alerts?page=${page}&limit=${ALERTS_PER_PAGE}${daysParam}`);
       if (res.ok) {
         const d = await res.json();
         alerts = d.rows;
@@ -405,6 +407,13 @@
   <!-- Alerts Tab -->
   {#if activeTab === 'alerts'}
     <div class="section">
+      <div class="alert-period-filter">
+        {#each [['30', '30 days'], ['90', '90 days'], ['all', 'All time']] as [value, label]}
+          <button class="period-btn" class:active={alertPeriod === value} onclick={() => { alertPeriod = value; loadAlertPage(1); }}>
+            {label}
+          </button>
+        {/each}
+      </div>
       {#if alerts.length === 0 && !alertsLoading}
         <p class="empty-state">No pending alerts</p>
       {:else}
@@ -929,6 +938,26 @@
     text-align: center;
     padding: 40px 0;
     font-size: 14px;
+  }
+
+  .alert-period-filter {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .period-btn {
+    padding: 4px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--secondary-color);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .period-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
   }
 
   /* Alert Cards */

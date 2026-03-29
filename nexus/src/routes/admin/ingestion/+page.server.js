@@ -7,7 +7,7 @@ export async function load({ locals }) {
 
   const [stats, alertsResult, users, allowedResult, channelRows] = await Promise.all([
     getIngestionStats(),
-    getAlerts(1, 10),
+    getAlerts(1, 10, 30),
     getIngestionUsers(1, 20),
     getAllowedClients(1, 50),
     getTradeChannels(),

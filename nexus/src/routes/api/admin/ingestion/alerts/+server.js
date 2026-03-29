@@ -8,9 +8,11 @@ export async function GET({ url, locals }) {
 
   const page = parseInt(url.searchParams.get('page') || '1');
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
+  const days = url.searchParams.get('days');
+  const periodDays = days === '30' ? 30 : days === '90' ? 90 : null;
 
   try {
-    const result = await getAlerts(page, limit);
+    const result = await getAlerts(page, limit, periodDays);
     return getResponse(result, 200);
   } catch (e) {
     console.error('[admin/ingestion] Failed to get alerts:', e);
