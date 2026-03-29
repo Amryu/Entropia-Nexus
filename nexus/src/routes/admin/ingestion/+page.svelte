@@ -8,12 +8,12 @@
   let { data } = $props();
 
   let stats = $state((() => data.stats)());
-  let alerts = $state((() => data.alerts)());
-  let alertTotal = $state((() => data.alertTotal || 0)());
+  let alerts = $state([]);
+  let alertTotal = $state(0);
   let alertPage = $state(1);
   let alertPeriod = $state('30'); // '30', '90', or 'all'
   const ALERTS_PER_PAGE = 10;
-  let alertsLoading = $state(false);
+  let alertsLoading = $state(true);
   let users = $state((() => data.users)());
   let allowedClients = $state((() => data.allowedClients || [])());
   let tradeChannels = $state((() => data.tradeChannels || [])());
@@ -43,6 +43,9 @@
 
   // Active section tab
   let activeTab = $state('alerts');
+
+  // Load alerts asynchronously after mount (don't block page load)
+  loadAlertPage(1);
 
   function formatNumber(n) {
     return parseInt(n || 0).toLocaleString();

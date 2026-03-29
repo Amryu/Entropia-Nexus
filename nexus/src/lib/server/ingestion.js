@@ -481,6 +481,11 @@ export async function ingestGlobals(userId, events) {
       return t < min ? t : min;
     }, new Date());
     invalidateGlobalsCache(minTs);
+
+    // Auto-resolve fraud alerts whose conditions are no longer met (best-effort, non-blocking)
+    autoResolveStaleAlerts().catch(err => {
+      console.error('[ingestion] autoResolveStaleAlerts failed:', err);
+    });
   }
 
   return { accepted, duplicates };
@@ -736,6 +741,93 @@ export async function resolveAlert(alertId, resolvedBy, notes) {
      WHERE id = $3`,
     [resolvedBy, notes || null, alertId]
   );
+}
+
+/**
+ * Auto-resolve global fraud alerts whose conditions are no longer met.
+ * Called after processing a confirmation batch.
+ * - collusion_pattern: re-checks exclusive event rate between the user pair
+ * - solo_fabrication: re-checks solo event rate for the user
+ */
+async function autoResolveStaleAlerts() {
+  try {
+    // --- Collusion alerts ---
+    const { rows: collusionAlerts } = await pool.query(
+      `SELECT id, user_ids FROM ingestion_alerts
+       WHERE NOT resolved AND type = 'collusion_pattern'`
+    );
+    for (const alert of collusionAlerts) {
+      if (!alert.user_ids || alert.user_ids.length < 2) continue;
+      const [userA, userB] = alert.user_ids;
+      const { rows: [stats] } = await pool.query(`
+        WITH shared AS (
+          SELECT a.global_id
+          FROM ingested_global_submissions a
+          JOIN ingested_global_submissions b ON a.global_id = b.global_id
+          WHERE a.user_id = $1 AND b.user_id = $2
+            AND a.submitted_at > now() - interval '7 days'
+        ),
+        exclusive AS (
+          SELECT s.global_id FROM shared s
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ingested_global_submissions x
+            WHERE x.global_id = s.global_id AND x.user_id NOT IN ($1, $2)
+          )
+        )
+        SELECT (SELECT count(*) FROM shared) AS shared_count,
+               (SELECT count(*) FROM exclusive) AS exclusive_count
+      `, [userA, userB]);
+
+      const shared = parseInt(stats.shared_count) || 0;
+      const exclusive = parseInt(stats.exclusive_count) || 0;
+      if (shared === 0 || exclusive < COLLUSION_MIN_EXCLUSIVE
+          || (exclusive / shared) < COLLUSION_MIN_EXCLUSIVE_RATE) {
+        await pool.query(
+          `UPDATE ingestion_alerts
+           SET resolved = true, resolved_at = now(),
+               resolution_notes = 'Auto-resolved: conditions no longer met'
+           WHERE id = $1`,
+          [alert.id]
+        );
+      }
+    }
+
+    // --- Solo fabrication alerts ---
+    const { rows: soloAlerts } = await pool.query(
+      `SELECT id, user_ids FROM ingestion_alerts
+       WHERE NOT resolved AND type = 'solo_fabrication'`
+    );
+    for (const alert of soloAlerts) {
+      if (!alert.user_ids || alert.user_ids.length < 1) continue;
+      const userId = alert.user_ids[0];
+      const { rows: [stats] } = await pool.query(`
+        SELECT count(*) AS submission_count,
+               count(*) FILTER (
+                 WHERE ig.confirmation_count <= gs.weight
+                   AND ig.first_seen_at < now() - ($2 * interval '1 hour')
+               ) AS solo_count
+        FROM ingested_global_submissions gs
+        JOIN ingested_globals ig ON ig.id = gs.global_id
+        WHERE gs.user_id = $1
+          AND gs.submitted_at > now() - interval '7 days'
+      `, [userId, SOLO_AGE_HOURS]);
+
+      const total = parseInt(stats.submission_count) || 0;
+      const solo = parseInt(stats.solo_count) || 0;
+      if (total === 0 || solo < SOLO_MIN_SOLO_COUNT
+          || (total >= SOLO_MIN_SUBMISSIONS && (solo / total) < SOLO_MAX_RATE)) {
+        await pool.query(
+          `UPDATE ingestion_alerts
+           SET resolved = true, resolved_at = now(),
+               resolution_notes = 'Auto-resolved: conditions no longer met'
+           WHERE id = $1`,
+          [alert.id]
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[ingestion] Error auto-resolving alerts:', err);
+  }
 }
 
 // --- Admin: Per-user Stats ---
