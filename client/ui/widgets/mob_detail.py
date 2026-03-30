@@ -267,14 +267,14 @@ def _spawn_maturities_for_mob(spawn: dict, mob_name: str) -> str:
         mats.append({
             "name": mat.get("Name", ""),
             "level": props.get("Level"),
-            "health": props.get("Health", 0),
+            "health": props.get("Health") or 0,
             "boss": props.get("Boss", False),
         })
     if not mats:
         return "All"
     mats.sort(key=lambda m: (
         m["level"] if m["level"] is not None else float("inf"),
-        m["health"],
+        m["health"] if m["health"] is not None else 0,
     ))
     return _format_maturity_range(mats) or "All"
 

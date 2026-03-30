@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.4.4",
+    "date": "2026-03-30",
+    "changes": [
+      {"type": "feat", "text": "Mining amplifier support and mining weapon loadout restrictions with non-Mining damage types hidden"},
+      {"type": "feat", "text": "Gzip compression for inventory import payloads"},
+      {"type": "feat", "text": "Token markup changed from absolute to percentage"},
+      {"type": "fix", "text": "Mob detail overlay crashed when spawn maturity had null Health value from API"},
+      {"type": "fix", "text": "Inventory import stacked TT incorrectly for condition items"},
+      {"type": "fix", "text": "Inventory stacking now groups per container and merges per planet for negotiable listings"},
+      {"type": "fix", "text": "Reject inventory imports with grouped condition items instead of silently miscounting"},
+      {"type": "fix", "text": "Inventory import uses type-based stackability check instead of name heuristics"},
+      {"type": "fix", "text": "UL blueprint QualityRating was incorrectly exported as quantity"},
+      {"type": "fix", "text": "Instance key could exceed max length for condition items"},
+      {"type": "fix", "text": "Inflated total values for absolute-markup items in inventory"},
+      {"type": "fix", "text": "Markup source handling: both in-game and exchange now use native type"}
+    ]
+  },
+  {
     "version": "0.4.3",
     "date": "2026-03-29",
     "changes": [
