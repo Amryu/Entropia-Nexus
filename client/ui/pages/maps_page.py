@@ -125,6 +125,21 @@ def _mob_area_display_name(loc: dict) -> str:
     return ", ".join(mobs) if mobs else loc.get("Name", "Unknown")
 
 
+def _mob_area_waypoint_name(loc: dict) -> str:
+    """Build a compact waypoint name for a mob area: 'Atrox Young-Old / Snablesnot'."""
+    mat_groups = _format_mob_area_maturities(loc)
+    if mat_groups:
+        parts = []
+        for g in mat_groups:
+            if g["display"]:
+                parts.append(f"{g['mob']} {g['display']}")
+            else:
+                parts.append(g["mob"])
+        return " / ".join(parts) if parts else loc.get("Name", "Unknown")
+    mobs = _parse_mob_area_name(loc.get("Name", ""))
+    return " / ".join(mobs) if mobs else loc.get("Name", "Unknown")
+
+
 def _format_mob_area_maturities(loc: dict) -> list[dict]:
     """Format mob maturity listings for info panel display.
 
@@ -146,14 +161,17 @@ def _format_mob_area_maturities(loc: dict) -> list[dict]:
         by_mob[mob_name].append({
             "name": mat.get("Name", ""),
             "level": props.get("Level"),
-            "health": props.get("Health", 0),
+            "health": props.get("Health") or 0,
             "boss": props.get("Boss", False),
         })
 
     result = []
     for mob_name, mats in by_mob.items():
         # Sort by level, then health
-        mats.sort(key=lambda m: (m["level"] if m["level"] is not None else float("inf"), m["health"]))
+        mats.sort(key=lambda m: (
+            m["level"] if m["level"] is not None else float("inf"),
+            m["health"] if m["health"] is not None else 0,
+        ))
         display = _format_maturity_range(mats)
         result.append({"mob": mob_name, "display": display})
     return result
@@ -745,7 +763,9 @@ class _LocationInfoPanel(QWidget):
                     f"QPushButton:hover {{ background: {HOVER}; }}"
                 )
                 alt = coords.get("Altitude") or 100
-                wp_text = f"/wp [{self._planet_name}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {name}]"
+                wp_name = _mob_area_waypoint_name(loc) if loc_type == "MobArea" else name
+                clean_name = wp_name.replace(",", "").strip()[:50]
+                wp_text = f"/wp [{self._planet_name}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {clean_name}]"
                 wp_btn.clicked.connect(lambda _, t=wp_text: self._copy_to_clipboard(t, wp_btn))
                 self._layout.addWidget(wp_btn)
 

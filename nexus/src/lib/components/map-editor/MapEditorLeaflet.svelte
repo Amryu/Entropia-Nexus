@@ -93,7 +93,8 @@
         if (!payload) return;
         const coords = payload.Properties?.Coordinates;
         if (!coords) return;
-        const wp = `/wp [${planet?.Name || ''}, ${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}, ${payload.Name || ''}]`;
+        const wpName = (payload.Name || '').replace(/,/g, '').trim().slice(0, 50);
+        const wp = `/wp [${planet?.Name || ''}, ${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}, ${wpName}]`;
         navigator.clipboard?.writeText(wp);
       }
     }

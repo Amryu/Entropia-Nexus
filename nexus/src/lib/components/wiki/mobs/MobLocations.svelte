@@ -83,7 +83,8 @@
 
   function getWaypoint(planet, x, y, z, name) {
     const technicalName = planet?.Properties?.TechnicalName || getPlanetName(planet) || 'Unknown';
-    return `[${technicalName}, ${x}, ${y}, ${z}, ${name}]`;
+    const clean = (name || '').replace(/,/g, '').trim().slice(0, 50);
+    return `[${technicalName}, ${x}, ${y}, ${z}, ${clean}]`;
   }
 
   // Transform data for FancyTable
@@ -93,7 +94,9 @@
     const x = coords.Longitude || coords.x || 0;
     const y = coords.Latitude || coords.y || 0;
     const z = coords.Altitude || 0;
-    const waypoint = getWaypoint(location?.Planet, x, y, z, mobName);
+    const matRange = formatMaturitiesRange(spawn.Maturities, mobName);
+    const wpName = matRange && matRange !== 'All' ? `${mobName} ${matRange}` : mobName;
+    const waypoint = getWaypoint(location?.Planet, x, y, z, wpName);
     const density = location?.Properties?.Density;
     const otherMobs = [...new Set(spawn.Maturities?.map(sm => sm.Maturity?.Mob?.Name).filter(n => n && n !== mobName) || [])];
     const difficulty = getMobAreaDifficulty(spawn.Maturities);

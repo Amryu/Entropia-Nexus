@@ -316,7 +316,7 @@
     parts.push(value?.z ?? '?');
 
     // Always include a name for in-game compatibility, default to "Waypoint"
-    parts.push(value?.name || 'Waypoint');
+    parts.push((value?.name || 'Waypoint').replace(/,/g, '').trim().slice(0, 50) || 'Waypoint');
 
     return `[${parts.join(', ')}]`;
   }

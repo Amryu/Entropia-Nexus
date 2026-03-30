@@ -307,16 +307,30 @@ export function copyLocation(location) {
 export function getWaypointFromLocation(location) {
   if (!location) return '';
   const areaType = location.Properties?.AreaType;
-  const name = areaType === 'MobArea'
-    ? (location.Name || '').split(',').map(x => x.trim().split(' - ')[0].trim()).join('/')
-    : (location.Name || '');
+  let name;
+  if (areaType === 'MobArea') {
+    // "Atrox - Young/Mature/Old, Snablesnot - Provider/Guardian" → "Atrox Young-Old / Snablesnot Provider-Guardian"
+    name = (location.Name || '').split(',').map(x => {
+      const parts = x.trim().split(' - ');
+      const mob = parts[0].trim();
+      if (parts.length > 1) {
+        const mats = parts[1].trim().split('/').map(m => m.trim()).filter(Boolean);
+        if (mats.length >= 2) return `${mob} ${mats[0]}-${mats[mats.length - 1]}`;
+        if (mats.length === 1) return `${mob} ${mats[0]}`;
+      }
+      return mob;
+    }).join(' / ');
+  } else {
+    name = location.Name || '';
+  }
   const planet = location.Planet?.Properties?.TechnicalName ?? location.Planet?.Name ?? '';
   const coords = location.Properties?.Coordinates || {};
   return `${getWaypoint(planet, coords.Longitude, coords.Latitude, coords.Altitude, name)}`;
 }
 
 export function getWaypoint(planet, x, y, z, name) {
-  return `[${planet}, ${x}, ${y}, ${z}, ${name}]`;
+  const clean = (name || '').replace(/,/g, '').trim().slice(0, 50);
+  return `[${planet}, ${x}, ${y}, ${z}, ${clean}]`;
 }
 
 // Fuzzy scoring - adapted from wiki navigation

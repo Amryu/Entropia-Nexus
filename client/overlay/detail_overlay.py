@@ -1718,7 +1718,8 @@ class DetailOverlayWidget(OverlayWidget):
                 brl = QHBoxLayout(btn_row)
                 brl.setContentsMargins(0, 0, 0, 0)
                 brl.setSpacing(4)
-                brl.addWidget(_overlay_waypoint_btn(planet, coords, spawn_name))
+                wp_name = f"{mob_name} {mat_str}" if mat_str and mat_str != "All" else mob_name
+                brl.addWidget(_overlay_waypoint_btn(planet, coords, wp_name))
                 brl.addWidget(_overlay_map_btn(planet, spawn.get("Id")))
                 brl.addStretch(1)
                 bl.addWidget(btn_row)
@@ -3330,7 +3331,8 @@ def _overlay_waypoint_btn(planet: str, coords: dict, name: str) -> QPushButton:
     except (TypeError, ValueError, KeyError):
         lon = lat = 0
         alt = 100
-    wp = f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {name}]"
+    clean_name = name.replace(",", "").strip()[:50]
+    wp = f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {clean_name}]"
     btn = QPushButton()
     btn.setFixedSize(20, 18)
     btn.setIcon(svg_icon(_COPY_SVG, TEXT_DIM, 14))

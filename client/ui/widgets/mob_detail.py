@@ -337,7 +337,8 @@ def _build_waypoint(spawn: dict, mob_name: str) -> str:
         or deep_get(spawn, "Planet", "Name")
         or ""
     )
-    return f"/wp [{planet}, {x}, {y}, {z}, {mob_name}]"
+    clean_name = mob_name.replace(",", "").strip()[:50]
+    return f"/wp [{planet}, {x}, {y}, {z}, {clean_name}]"
 
 
 _ICON_SIZE = 14
@@ -721,8 +722,9 @@ class MobDetailView(WikiDetailView):
                 else:
                     table.setItem(r, 3, QTableWidgetItem("N/A"))
 
-                # Copy waypoint button
-                waypoint = _build_waypoint(s, name)
+                # Copy waypoint button (include maturity range in name)
+                wp_name = f"{name} {mat_text}" if mat_text and mat_text != "All" else name
+                waypoint = _build_waypoint(s, wp_name)
                 table.setCellWidget(r, 4, _make_copy_button(waypoint))
 
                 # Open on map button

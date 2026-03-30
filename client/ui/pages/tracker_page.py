@@ -80,7 +80,7 @@ def _waypoint_copy_string(m: dict) -> str | None:
             alt = float(loc["altitude"]) if loc.get("altitude") is not None else 100
         except (TypeError, ValueError, KeyError):
             return None
-        label = loc.get("name") or m.get("name", "?")
+        label = (loc.get("name") or m.get("name", "?")).replace(",", "").strip()[:50]
         return f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {label}]"
     # Fallback: raw waypoint string for custom dailies
     wp = m.get("waypoint", "")
