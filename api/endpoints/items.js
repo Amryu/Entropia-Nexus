@@ -1,4 +1,4 @@
-const { getObjects, getObjectByIdOrName, isClassId, loadClassIds, generateGenderAliases } = require('./utils');
+const { getObjects, getObjectByIdOrName, isClassId, loadClassIds, loadItemProperties, generateGenderAliases } = require('./utils');
 const { pool } = require('./dbClient');
 const { idOffsets, ITEM_TABLES, TABLE_TO_ENTITY_TYPE } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -15,9 +15,10 @@ const queries = {
   LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}`
 };
 
-function formatItem(x, classIdMap){
+function formatItem(x, classIdMap, itemProps){
   const rawId = x.Id % 100000;
   const classId = classIdMap ? (classIdMap[`${x.Type}:${rawId}`] || null) : null;
+  const props = itemProps ? itemProps[x.Id] : undefined;
   const aliases = (x.Type === 'Armor' || x.Type === 'Clothing')
     ? generateGenderAliases(x.Name, x.Gender)
     : [];
@@ -30,6 +31,8 @@ function formatItem(x, classIdMap){
       Type: x.Type,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: { Value: x.Value !== null ? Number(x.Value) : null },
+      IsUntradeable: props?.IsUntradeable || false,
+      IsRare: props?.IsRare || false,
       ...(x.Gender != null && { Gender: x.Gender })
     },
     Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.Id % 100000}` }
@@ -43,7 +46,8 @@ async function getItems() {
   ]);
   const classIdMap = {};
   for (const r of classIdRows) classIdMap[`${r.EntityType}:${r.EntityId}`] = String(r.ClassId);
-  return rows.map(r => formatItem(r, classIdMap));
+  const itemProps = await loadItemProperties(rows.map(r => r.Id));
+  return rows.map(r => formatItem(r, classIdMap, itemProps));
 }
 
 async function getItem(idOrName) {
@@ -63,10 +67,13 @@ async function getItem(idOrName) {
   }
   if (!row) return null;
   const rawId = row.Id % 100000;
-  const classIds = await loadClassIds(row.Type, [rawId]);
+  const [classIds, itemProps] = await Promise.all([
+    loadClassIds(row.Type, [rawId]),
+    loadItemProperties([row.Id]),
+  ]);
   const classIdMap = {};
   if (classIds[rawId]) classIdMap[`${row.Type}:${rawId}`] = classIds[rawId];
-  return formatItem(row, classIdMap);
+  return formatItem(row, classIdMap, itemProps);
 }
 
 async function getItemsByIds(ids) {
@@ -97,7 +104,8 @@ async function getItemsByIds(ids) {
       classIdMap[`${typeEntries[i][0]}:${eid}`] = cid;
     }
   }
-  return rows.map(r => formatItem(r, classIdMap));
+  const itemProps = await loadItemProperties(rows.map(r => r.Id));
+  return rows.map(r => formatItem(r, classIdMap, itemProps));
 }
 
 function register(app){
@@ -122,7 +130,7 @@ function register(app){
       const ids = req.query.Ids.split(',').map(s => s.trim()).filter(Boolean);
       res.json(await getItemsByIds(ids));
     } else {
-      res.json(await withCache('/items', [...ITEM_TABLES, 'ClassIds'], getItems));
+      res.json(await withCache('/items', [...ITEM_TABLES, 'ClassIds', 'ItemProperties'], getItems));
     }
   });
   app.get('/items/:item', async (req,res) => {
@@ -144,7 +152,7 @@ function register(app){
      *      '404':
      *        description: Item not found
      */
-    const it = await withCachedLookup('/items', [...ITEM_TABLES, 'ClassIds'], getItems, req.params.item);
+    const it = await withCachedLookup('/items', [...ITEM_TABLES, 'ClassIds', 'ItemProperties'], getItems, req.params.item);
     if (it) res.json(it); else res.status(404).send('Item not found');
   });
 }
