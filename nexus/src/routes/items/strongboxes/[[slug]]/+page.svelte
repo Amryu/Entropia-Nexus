@@ -310,8 +310,8 @@
           </div>
           <div class="infobox-subtitle">
             <span class="type-badge">Strongbox</span>
-            {#if activeStrongbox.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
-            {#if activeStrongbox.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
+            {#if activeStrongbox?.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
+            {#if activeStrongbox?.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>
         </div>
 
@@ -328,14 +328,14 @@
           <h4 class="section-title">Properties</h4>
           <div class="stat-row">
             <span class="stat-label">Rare</span>
-            <span class="stat-value" class:highlight-yes={activeStrongbox.Properties?.IsRare}>
-              <InlineEdit value={activeStrongbox.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
+            <span class="stat-value" class:highlight-yes={activeStrongbox?.Properties?.IsRare}>
+              <InlineEdit value={activeStrongbox?.Properties?.IsRare} path="Properties.IsRare" type="checkbox" />
             </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Untradeable</span>
-            <span class="stat-value" class:highlight-yes={activeStrongbox.Properties?.IsUntradeable}>
-              <InlineEdit value={activeStrongbox.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
+            <span class="stat-value" class:highlight-yes={activeStrongbox?.Properties?.IsUntradeable}>
+              <InlineEdit value={activeStrongbox?.Properties?.IsUntradeable} path="Properties.IsUntradeable" type="checkbox" />
             </span>
           </div>
         </div>
