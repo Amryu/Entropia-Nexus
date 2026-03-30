@@ -3,7 +3,7 @@ import { test as base, type Page, type Browser, type BrowserContext } from '@pla
 type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
 
 // Test user IDs - must match the migration file
-export const TEST_USERS = {
+const TEST_USERS = {
   verified1: 'verified1',
   verified2: 'verified2',
   verified3: 'verified3',
@@ -13,7 +13,7 @@ export const TEST_USERS = {
   admin: 'admin'
 } as const;
 
-export type TestUser = keyof typeof TEST_USERS;
+type TestUser = keyof typeof TEST_USERS;
 
 interface TestFixtures {
   loginAs: (user: TestUser) => Promise<void>;
@@ -28,8 +28,6 @@ interface WorkerFixtures {
   unverifiedStorageState: StorageState;
   adminStorageState: StorageState;
 }
-
-export type AuthFixtures = TestFixtures & WorkerFixtures;
 
 /**
  * Login as a test user via the mock login API

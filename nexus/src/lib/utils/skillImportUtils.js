@@ -8,7 +8,7 @@
  * @param {Array<{Name: string}>} skills - skills from the API
  * @returns {Map<string, string>} kebabName → properName
  */
-export function buildKebabToNameMap(skills) {
+function buildKebabToNameMap(skills) {
   const map = new Map();
   for (const skill of skills) {
     const kebab = skill.Name.toLowerCase().replace(/\s+/g, '-');
@@ -40,7 +40,7 @@ export function buildNameToKebabMap(skills) {
  * @param {Map<string, string>} kebabToName - mapping from buildKebabToNameMap
  * @returns {{ skills: Object<string, number>, health: number|null, unrecognized: string[] }}
  */
-export function parseExternalFormat(data, kebabToName) {
+function parseExternalFormat(data, kebabToName) {
   /** @type {{ [key: string]: number }} */
   const skills = {};
   let health = null;
@@ -73,7 +73,7 @@ export function parseExternalFormat(data, kebabToName) {
  * @param {Set<string>} validNames - set of valid skill names from DB
  * @returns {{ skills: Object<string, number>, health: number|null, unrecognized: string[] }}
  */
-export function parseNexusFormat(data, validNames) {
+function parseNexusFormat(data, validNames) {
   const raw = data.skills || data;
   /** @type {{ [key: string]: number }} */
   const skills = {};

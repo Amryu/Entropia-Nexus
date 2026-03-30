@@ -109,7 +109,7 @@ export const CONDITION_MAX = 100;
  * @param {number} conditionPercent - Condition percentage (0-100)
  * @returns {number} - Condition multiplier (1.0 at 0%, 7.5 at 100%)
  */
-export function getConditionMultiplier(conditionPercent) {
+function getConditionMultiplier(conditionPercent) {
   const clamped = Math.max(CONDITION_MIN, Math.min(CONDITION_MAX, conditionPercent));
   return 1 + (clamped / 100) * 6.5;
 }
@@ -175,7 +175,7 @@ export const SUCCESS_THRESHOLD = 1.0;
 export const MAX_OUTPUT_MULTIPLIER = 7;
 
 /** Output range low cap — output range low is min(effectiveMult * 0.9, this) */
-export const OUTPUT_RANGE_LOW_CAP = 3;
+const OUTPUT_RANGE_LOW_CAP = 3;
 
 /**
  * Compute the product output range for a given effective value multiplier.
@@ -185,7 +185,7 @@ export const OUTPUT_RANGE_LOW_CAP = 3;
  * @param {number} effectiveMult - Effective value multiplier (hotspot.multiplier * conditionMult)
  * @returns {[number, number]} - [low, high] output range
  */
-export function computeOutputRange(effectiveMult) {
+function computeOutputRange(effectiveMult) {
   return [
     Math.min(effectiveMult * 0.9, OUTPUT_RANGE_LOW_CAP),
     Math.min(effectiveMult * 1.1, MAX_OUTPUT_MULTIPLIER)
@@ -376,7 +376,7 @@ export function buildProductToBlueprintMap(blueprintCache) {
  * @param {object} materialCraftConfig - Config for material crafting preferences
  * @returns {object|null} - Selected blueprint or null if not craftable/not enabled
  */
-export function getMaterialBlueprint(materialName, productMap, materialCraftConfig = {}) {
+function getMaterialBlueprint(materialName, productMap, materialCraftConfig = {}) {
   const entry = productMap.get(materialName);
   if (!entry) return null;
 
@@ -625,7 +625,7 @@ function calculateWeightedIntegerAverage(lowRaw, highRaw) {
  * @param {number} conditionPercent - Condition slider value (0-20), defaults to 0
  * @returns {{ estimatedAttempts: number, avgOutput: number, avgOutputPerAttempt: number, successRate: number, nearSuccessRate: number, failRate: number, nonFailChance: number, effectiveNonFailChance: number, conditionMultiplier: number }}
  */
-export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance = null, certainty = DEFAULT_CONFIG.certainty, conditionPercent = 0) {
+function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance = null, certainty = DEFAULT_CONFIG.certainty, conditionPercent = 0) {
   const conditionMult = getConditionMultiplier(conditionPercent);
 
   // Products with condition (e.g., need residue) implicitly have maxOutput = 1
@@ -785,7 +785,7 @@ function sampleTruncatedHotspotMultiplier(multiplier, upperBound) {
  * @param {number} [conditionMult=1] - Condition multiplier: scales refund pool and per-material refund cap
  * @returns {Map<string, number>} - materialName → expected refund fraction (0-1) per near-success
  */
-export function simulateRefundRates(materials, rollChance, iterations = SIMULATION_ITERATIONS, conditionMult = 1) {
+function simulateRefundRates(materials, rollChance, iterations = SIMULATION_ITERATIONS, conditionMult = 1) {
   // Filter out zero-cost materials (they would cause infinite refunds)
   const validMaterials = materials.filter(m => m.unitTT > 0);
   if (validMaterials.length === 0) {
@@ -898,7 +898,7 @@ export function simulateRefundRates(materials, rollChance, iterations = SIMULATI
  * @param {number} [conditionMult=1] - Condition multiplier: scales refund pool and per-material cap
  * @returns {Map<string, {multiplier: number, refundFraction: number}>} - materialName → multiplier data
  */
-export function calculatePerMaterialMultipliers(blueprintMaterials, nonFailChance, rollChance, conditionMult = 1) {
+function calculatePerMaterialMultipliers(blueprintMaterials, nonFailChance, rollChance, conditionMult = 1) {
   const { nearSuccessRate } = calculateSuccessRates(nonFailChance);
 
   // Prepare materials for simulation
@@ -928,7 +928,7 @@ export function calculatePerMaterialMultipliers(blueprintMaterials, nonFailChanc
  * @param {object} blueprint - Blueprint object
  * @returns {boolean}
  */
-export function productNeedsResidue(blueprint) {
+function productNeedsResidue(blueprint) {
   if (!blueprint?.Product) return false;
   // Limited blueprints don't need residue (they're consumed)
   if (isLimitedBlueprint(blueprint)) return false;
@@ -942,7 +942,7 @@ export function productNeedsResidue(blueprint) {
  * @param {object} blueprint - Blueprint object with Materials and Product
  * @returns {number} - Residue TT per click (0 if no residue needed)
  */
-export function calculateResiduePerClick(blueprint) {
+function calculateResiduePerClick(blueprint) {
   if (!productNeedsResidue(blueprint)) return 0;
 
   const productTT = blueprint.Product?.Properties?.Economy?.MaxTT || 0;
@@ -1428,31 +1428,3 @@ export function createEmptyPlan(name = 'New Plan') {
   };
 }
 
-/**
- * Validate a crafting plan structure
- * @param {object} plan - Plan to validate
- * @returns {{ valid: boolean, error?: string }}
- */
-export function validatePlan(plan) {
-  if (!plan || typeof plan !== 'object') {
-    return { valid: false, error: 'Invalid plan object' };
-  }
-  if (!plan.name || typeof plan.name !== 'string') {
-    return { valid: false, error: 'Plan must have a name' };
-  }
-  if (!plan.data || typeof plan.data !== 'object') {
-    return { valid: false, error: 'Plan must have data object' };
-  }
-  if (!Array.isArray(plan.data.targets)) {
-    return { valid: false, error: 'Plan data must have targets array' };
-  }
-  for (const target of plan.data.targets) {
-    if (typeof target.blueprintId !== 'number') {
-      return { valid: false, error: 'Target must have blueprintId (number)' };
-    }
-    if (typeof target.quantity !== 'number' || target.quantity < 1) {
-      return { valid: false, error: 'Target must have quantity >= 1' };
-    }
-  }
-  return { valid: true };
-}

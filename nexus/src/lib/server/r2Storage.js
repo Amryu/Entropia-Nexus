@@ -14,7 +14,6 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
-  HeadObjectCommand,
   DeleteObjectCommand,
   CopyObjectCommand,
   ListObjectsV2Command
@@ -53,7 +52,7 @@ function getClient() {
  * @param {string} [contentType='image/webp'] - MIME type
  * @returns {Promise<boolean>} true on success, false if R2 is unavailable or fails
  */
-export async function uploadToR2(key, buffer, contentType = 'image/webp') {
+async function uploadToR2(key, buffer, contentType = 'image/webp') {
   const s3 = getClient();
   if (!s3) return false;
 
@@ -96,47 +95,6 @@ export async function getFromR2(key) {
     if (err?.name === 'NoSuchKey') return null;
     console.error(`[R2] Get failed for ${key}:`, err?.message);
     return null;
-  }
-}
-
-/**
- * Check if an object exists in R2.
- * @param {string} key - Object key
- * @returns {Promise<boolean>}
- */
-export async function existsInR2(key) {
-  const s3 = getClient();
-  if (!s3) return false;
-
-  try {
-    await s3.send(new HeadObjectCommand({
-      Bucket: BUCKET,
-      Key: key
-    }));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Delete a single object from R2.
- * @param {string} key - Object key
- * @returns {Promise<boolean>}
- */
-export async function deleteFromR2(key) {
-  const s3 = getClient();
-  if (!s3) return false;
-
-  try {
-    await s3.send(new DeleteObjectCommand({
-      Bucket: BUCKET,
-      Key: key
-    }));
-    return true;
-  } catch (/** @type {any} */ err) {
-    console.error(`[R2] Delete failed for ${key}:`, err?.message);
-    return false;
   }
 }
 
@@ -197,34 +155,6 @@ export async function copyInR2(sourceKey, destKey) {
   } catch (/** @type {any} */ err) {
     console.error(`[R2] Copy failed ${sourceKey} → ${destKey}:`, err?.message);
     return false;
-  }
-}
-
-/**
- * List objects under a prefix.
- * @param {string} prefix - Key prefix
- * @param {number} [maxKeys=1000] - Max results
- * @returns {Promise<Array<{key: string, size: number, lastModified: Date}>>}
- */
-export async function listR2Objects(prefix, maxKeys = 1000) {
-  const s3 = getClient();
-  if (!s3) return [];
-
-  try {
-    const response = await s3.send(new ListObjectsV2Command({
-      Bucket: BUCKET,
-      Prefix: prefix,
-      MaxKeys: maxKeys
-    }));
-
-    return (response.Contents || []).map(obj => ({
-      key: obj.Key || '',
-      size: obj.Size || 0,
-      lastModified: obj.LastModified || new Date()
-    }));
-  } catch (/** @type {any} */ err) {
-    console.error(`[R2] List failed for prefix ${prefix}:`, err?.message);
-    return [];
   }
 }
 

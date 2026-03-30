@@ -83,16 +83,6 @@ export function getUnitTT(item: any, order?: any): number | null {
   return getMaxTT(item);
 }
 
-/** Get the display value for an order: CurrentTT from details if available, otherwise getUnitTT */
-export function getOrderValue(item: any, order?: any): number | null {
-  const raw = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
-  if (raw != null) {
-    const ct = Number(raw);
-    if (!isNaN(ct)) return ct;
-  }
-  return getUnitTT(item, order);
-}
-
 /** Get the total stack TT value for an order (always returns total, not per-unit) */
 export function getOrderStackValue(item: any, order?: any): number | null {
   const qty = order?.quantity || 1;

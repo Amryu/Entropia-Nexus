@@ -9,14 +9,14 @@ export function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-export function getLerpProgress(start, end, current) {
+function getLerpProgress(start, end, current) {
   // Just a hack to avoid making fully maxed weapons unusable just because we don't know the max value
   if (start == null || end == null) return 1;
   
   return clamp((current - start) / (end - start), 0, 1);
 }
 
-export function weightedAverage(weightA, valueA, weightB, valueB) {
+function weightedAverage(weightA, valueA, weightB, valueB) {
   return (valueA * weightA + valueB * weightB) / (weightA + weightB);
 }
 
@@ -769,20 +769,20 @@ export function calculateItemTotalDamage(item) {
     + item.Properties.Damage.Electric) || null;
 }
 
-export function calculateItemEffectiveDamagePreview(item) {
+function calculateItemEffectiveDamagePreview(item) {
   const totalDamage = calculateItemTotalDamage(item);
   return totalDamage != null
     ? totalDamage * (0.88 * 0.75 + 0.02 * 1.75)
     : null;
 }
 
-export function calculateItemReloadSeconds(item) {
+function calculateItemReloadSeconds(item) {
   return item?.Properties?.UsesPerMinute != null
     ? 60 / item.Properties.UsesPerMinute
     : null;
 }
 
-export function calculateItemCostPerUse(item) {
+function calculateItemCostPerUse(item) {
   const decay = item?.Properties?.Economy?.Decay;
   const ammoBurn = item?.Properties?.Economy?.AmmoBurn;
   if (decay == null) return null;
@@ -848,21 +848,11 @@ export function calculateItemTotalDefense(item) {
     + (item.Properties.Defense.Electric ?? 0);
 }
 
-export function calculateItemMaxDefenseDecay(item) {
+function calculateItemMaxDefenseDecay(item) {
   const durability = item?.Properties?.Economy?.Durability;
   const totalDefense = calculateItemTotalDefense(item);
   return durability && totalDefense
     ? totalDefense * ((100000 - durability) / 100000) * 0.05
-    : null;
-}
-
-export function calculateItemTotalAbsorptionPreview(item) {
-  const maxTT = item?.Properties?.Economy?.MaxTT;
-  const minTT = item?.Properties?.Economy?.MinTT ?? 0;
-  const maxDecay = calculateItemMaxDefenseDecay(item);
-  const totalDefense = calculateItemTotalDefense(item);
-  return maxTT && maxDecay && totalDefense
-    ? totalDefense * ((maxTT - minTT) / (maxDecay / 100))
     : null;
 }
 

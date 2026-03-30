@@ -271,7 +271,7 @@ export function getSlimNameLookup() {
 }
 
 // Full rebuild (24h): fetch all datasets, categorize, annotate
-export async function rebuildMarketCache(fetch) {
+async function rebuildMarketCache(fetch) {
   if (rebuildPromise) return rebuildPromise;
   rebuildPromise = (async () => {
     const { items, detailed } = await fetchAllDatasets(fetch);
@@ -499,7 +499,7 @@ export function invalidateOfferCounts() {
   }, 500);
 }
 
-export async function getExchangeCategorization(fetch) {
+async function getExchangeCategorization(fetch) {
   // First request: block on initial build
   if (!cache.annotated) {
     return await rebuildMarketCache(fetch);

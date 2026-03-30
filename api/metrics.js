@@ -62,4 +62,4 @@ function snapshotAndReset() {
   return snap;
 }
 
-module.exports = { metrics, recordRequest, recordQuery, snapshotAndReset };
+module.exports = { recordRequest, recordQuery, snapshotAndReset };

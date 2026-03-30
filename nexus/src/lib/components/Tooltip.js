@@ -21,21 +21,21 @@ export function tooltip(node, { tooltip, payload }) {
   };
 }
 
-export function onElementHover(e, tooltip, payload) {
+function onElementHover(e, tooltip, payload) {
   tooltip.tooltipPos = { x: e.clientX, y: e.clientY - tooltip.element.offsetHeight };
   tooltip.show = true;
   tooltip.dispatch('show', { payload });
 }
 
-export function onElementOut(tooltip, payload) {
+function onElementOut(tooltip, payload) {
   tooltip.show = false;
   tooltip.dispatch('hide', { payload });
 }
 
-export function onElementMove(e, tooltip) {
+function onElementMove(e, tooltip) {
   tooltip.tooltipPos = { x: e.clientX, y: e.clientY - tooltip.element.offsetHeight };
 }
 
-export function onElementClick(e, tooltip, payload) {
+function onElementClick(e, tooltip, payload) {
   tooltip.dispatch('elementClick', { button: e.button, payload });
 }

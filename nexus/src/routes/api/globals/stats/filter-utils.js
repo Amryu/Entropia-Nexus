@@ -14,12 +14,12 @@ export const PERIOD_INTERVALS = {
   '1y': "interval '1 year'",
 };
 
-export const VALID_GLOBAL_TYPES = new Set([
+const VALID_GLOBAL_TYPES = new Set([
   'kill', 'team_kill', 'deposit', 'craft', 'rare_item',
   'discovery', 'tier', 'examine', 'pvp',
 ]);
 
-export function escapeLike(str) {
+function escapeLike(str) {
   return str.replace(/[%_\\]/g, '\\$&');
 }
 

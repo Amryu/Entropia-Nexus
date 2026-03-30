@@ -7,7 +7,7 @@
  * @param {Object} flight - Flight object with status and scheduled_departure
  * @returns {boolean}
  */
-export function isWithinRestoreGracePeriod(flight) {
+function isWithinRestoreGracePeriod(flight) {
   if (flight.status !== 'cancelled' || !flight.scheduled_departure) return false;
   const scheduledDeparture = new Date(flight.scheduled_departure);
   const now = new Date();

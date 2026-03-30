@@ -7,7 +7,7 @@
  */
 
 import { browser } from '$app/environment';
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 
 // Cache for loaded entities (persists for session)
 const entityCache = new Map();
@@ -86,7 +86,7 @@ export async function loadEntity(entityType) {
  * @param {string[]} entityTypes - Array of entity types to load
  * @returns {Promise<Object>} - Object with entity types as keys and data as values
  */
-export async function loadEntities(entityTypes) {
+async function loadEntities(entityTypes) {
   const results = {};
 
   // Filter out already cached entities
@@ -112,62 +112,6 @@ export async function loadEntities(entityTypes) {
   }
 
   return results;
-}
-
-/**
- * Check if an entity type is currently loading
- * @param {string} entityType - The entity type to check
- * @returns {boolean}
- */
-export function isLoading(entityType) {
-  return get(loadingStates)[entityType] || false;
-}
-
-/**
- * Get the loading states store
- * @returns {import('svelte/store').Writable}
- */
-export function getLoadingStates() {
-  return loadingStates;
-}
-
-/**
- * Check if any entities are loading
- * @param {string[]} entityTypes - Entity types to check
- * @returns {boolean}
- */
-export function isAnyLoading(entityTypes) {
-  const states = get(loadingStates);
-  return entityTypes.some(type => states[type]);
-}
-
-/**
- * Clear the entity cache (useful for testing or forced refresh)
- * @param {string} [entityType] - Specific type to clear, or all if not specified
- */
-export function clearCache(entityType) {
-  if (entityType) {
-    entityCache.delete(entityType);
-  } else {
-    entityCache.clear();
-  }
-}
-
-/**
- * Preload commonly used entities for service pages
- * This can be called early to start loading in background
- */
-export function preloadServiceEntities() {
-  // Load common entities used across service types
-  const commonEntities = [
-    'clothings',
-    'consumables',
-    'armorSets',
-    'pets'
-  ];
-
-  // Start loading but don't await
-  loadEntities(commonEntities);
 }
 
 /**

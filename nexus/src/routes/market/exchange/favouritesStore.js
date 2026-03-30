@@ -35,7 +35,7 @@ export function toggleFavourite(itemId) {
  * @param {number} itemId
  * @param {string|null} [folderId] - Optional folder ID; null = root
  */
-export function addFavourite(itemId, folderId = null) {
+function addFavourite(itemId, folderId = null) {
   if (isFavourite(itemId)) return;
   favourites.update(fav => {
     const next = { ...fav, folders: [...(fav.folders || [])], items: [...(fav.items || [])] };
@@ -154,23 +154,3 @@ export function moveToFolder(itemId, folderId) {
   });
 }
 
-/**
- * Reorder folders by providing an ordered array of folder IDs.
- * @param {string[]} orderedIds
- */
-export function reorderFolders(orderedIds) {
-  favourites.update(fav => {
-    const folderMap = {};
-    for (const f of (fav.folders || [])) folderMap[f.id] = f;
-    const reordered = orderedIds
-      .filter(id => folderMap[id])
-      .map((id, i) => ({ ...folderMap[id], order: i }));
-    // Append any folders not in orderedIds
-    for (const f of (fav.folders || [])) {
-      if (!orderedIds.includes(f.id)) {
-        reordered.push({ ...f, order: reordered.length });
-      }
-    }
-    return { ...fav, folders: reordered };
-  });
-}

@@ -4,7 +4,7 @@ import { CONDITION_TYPES, ABSOLUTE_MARKUP_MATERIAL_TYPES } from '$lib/common/ite
 /**
  * @param {any} item
  */
-export function isNonStackable(item) {
+function isNonStackable(item) {
   const t = item?.Properties?.Type || item?.Type || item?.type || item?.t || '';
   // Items with condition/TT that can be damaged
   if (CONDITION_TYPES.has(t)) return true;
@@ -21,18 +21,3 @@ export function hasCondition(item) {
   return isNonStackable(item);
 }
 
-// Build display text for stacks and markup
-/**
- * @param {any} entry
- * @param {any} item
- */
-export function buildStackMuDisplay(entry, item) {
-  const stack = Number(entry.StackSize ?? entry.stack_size ?? 0);
-  const mu = Number(entry.Markup ?? entry.markup ?? 0);
-  const stackText = stack > 0 ? `stacks: ${stack}` : '';
-  let muText = '';
-  if (!Number.isNaN(mu) && mu > 0) {
-    muText = isNonStackable(item) ? `+${mu.toFixed(2)}` : `${mu.toFixed(2)}%`;
-  }
-  return { stackText, muText };
-}

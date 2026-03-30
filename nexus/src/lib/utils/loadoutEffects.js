@@ -4,19 +4,19 @@
 
 import { clamp } from '$lib/utils/loadoutCalculations.js';
 
-export const SUFFIX_RULES = [
+const SUFFIX_RULES = [
   { positive: 'Increased', negative: 'Decreased', type: 'mult' },
   { positive: 'Added', negative: 'Reduced', type: 'add' }
 ];
 
-export const OFFENSIVE_EFFECTS = [
+const OFFENSIVE_EFFECTS = [
   { key: 'reload', type: 'mult', base: 'Reload Speed', name: 'Reload Speed Increased' },
   { key: 'critChance', type: 'add', base: 'Critical Chance', name: 'Critical Chance Added' },
   { key: 'critDamage', type: 'add', base: 'Critical Damage', name: 'Critical Damage Added' },
   { key: 'damage', type: 'mult', base: 'Damage Done', name: 'Damage Done Increased' }
 ];
 
-export const DEFENSIVE_EFFECT_NAMES = new Set([
+const DEFENSIVE_EFFECT_NAMES = new Set([
   'Health Added',
   'Lifesteal Added',
   'Damage Taken Decreased',

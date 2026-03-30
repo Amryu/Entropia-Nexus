@@ -33,7 +33,7 @@ export function countDays(startDate, endDate) {
  * @param {number} totalDays - Number of rental days
  * @returns {{ percent: number, minDays: number } | null}
  */
-export function findApplicableDiscount(discounts, totalDays) {
+function findApplicableDiscount(discounts, totalDays) {
   if (!Array.isArray(discounts) || discounts.length === 0) return null;
 
   let best = null;

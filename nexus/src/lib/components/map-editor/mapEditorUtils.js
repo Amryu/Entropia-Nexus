@@ -22,7 +22,7 @@ export const DEFAULT_ALTITUDE = 100;
 
 // ─── Type Colors (matches Map.svelte getColorByType) ─────────────────────────
 
-export const TYPE_COLORS = {
+const TYPE_COLORS = {
   Teleporter:     '#00ffff',
   Npc:            '#ff69b4',
   Interactable:   '#dda0dd',
@@ -217,24 +217,11 @@ function pointToPolygonDist(px, py, ring) {
  * Returns the projection point, clamped parameter t ∈ [0,1], and squared distance.
  * @returns {{ projX: number, projY: number, t: number, distSq: number }}
  */
-export function projectPointOnSegment(px, py, ax, ay, bx, by) {
+function projectPointOnSegment(px, py, ax, ay, bx, by) {
   const edx = bx - ax, edy = by - ay;
   let t = 0;
   if (edx !== 0 || edy !== 0) {
     t = Math.max(0, Math.min(1, ((px - ax) * edx + (py - ay) * edy) / (edx * edx + edy * edy)));
-  }
-  const projX = ax + t * edx;
-  const projY = ay + t * edy;
-  const dx = px - projX, dy = py - projY;
-  return { projX, projY, t, distSq: dx * dx + dy * dy };
-}
-
-/** Project point onto infinite line through A-B. Same as projectPointOnSegment but t is NOT clamped. */
-export function projectPointOnLine(px, py, ax, ay, bx, by) {
-  const edx = bx - ax, edy = by - ay;
-  let t = 0;
-  if (edx !== 0 || edy !== 0) {
-    t = ((px - ax) * edx + (py - ay) * edy) / (edx * edx + edy * edy);
   }
   const projX = ax + t * edx;
   const projY = ay + t * edy;
@@ -262,7 +249,7 @@ function polygonCentroid(vertices) {
 export const SERVER_TILE_SIZE = 8192;
 export const VERTEX_SNAP_THRESHOLD_PX = 10;
 export const VERTEX_SNAP_THRESHOLD_MAX_EU = 100; // Max snap range for vertex editing
-export const MIN_GRID_DISPLAY_PX = 50; // Minimum pixel spacing between displayed grid lines
+const MIN_GRID_DISPLAY_PX = 50; // Minimum pixel spacing between displayed grid lines
 
 /**
  * Compute the finest grid spacing (power of 2) that keeps lines ≥ MIN_GRID_DISPLAY_PX apart.
@@ -281,36 +268,6 @@ export function getGridSpacing(zoom, ratio) {
 }
 
 // ─── Snap Utilities ─────────────────────────────────────────────────────────
-
-/**
- * Get bounding box of a location's shape in Entropia coordinates.
- * Works with the location object directly (reads Properties.Shape + Properties.Data).
- * @param {object} loc — location object with Properties.Shape and Properties.Data
- * @returns {{ minX: number, maxX: number, minY: number, maxY: number } | null}
- */
-export function getShapeBounds(loc) {
-  const data = loc?.Properties?.Data;
-  const shape = loc?.Properties?.Shape;
-  if (!data || !shape) return null;
-
-  if (shape === 'Circle') {
-    const r = data.radius || 0;
-    return { minX: data.x - r, maxX: data.x + r, minY: data.y - r, maxY: data.y + r };
-  } else if (shape === 'Rectangle') {
-    return { minX: data.x, maxX: data.x + data.width, minY: data.y, maxY: data.y + data.height };
-  } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (let i = 0; i < data.vertices.length; i += 2) {
-      const vx = data.vertices[i], vy = data.vertices[i + 1];
-      if (vx < minX) minX = vx;
-      if (vx > maxX) maxX = vx;
-      if (vy < minY) minY = vy;
-      if (vy > maxY) maxY = vy;
-    }
-    return { minX, maxX, minY, maxY };
-  }
-  return null;
-}
 
 /**
  * Get server tile border positions for a planet.

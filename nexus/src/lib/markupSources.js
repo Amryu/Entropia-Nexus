@@ -62,7 +62,7 @@ export async function fetchExchangeWapByName() {
  * Fetch raw in-game market price snapshots from the API.
  * Returns the raw array of snapshot objects (no markup resolution).
  */
-export async function fetchInGamePriceSnapshots() {
+async function fetchInGamePriceSnapshots() {
   try {
     const res = await fetch('/api/market/prices/snapshots/latest?all=true');
     if (!res.ok) return [];

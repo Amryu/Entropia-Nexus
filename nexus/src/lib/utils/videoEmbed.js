@@ -113,14 +113,5 @@ export function parseVideoUrl(input, parentHost) {
   return null;
 }
 
-/**
- * Check if a URL is a valid video URL from a supported platform.
- * @param {string} input
- * @returns {boolean}
- */
-export function isValidVideoUrl(input) {
-  return parseVideoUrl(input) !== null;
-}
-
 /** List of supported platform display names for error messages. */
 export const SUPPORTED_PLATFORM_NAMES = PLATFORMS.map(p => p.displayName);

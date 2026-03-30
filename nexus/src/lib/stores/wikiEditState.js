@@ -18,7 +18,7 @@ export const originalEntity = writable(null);
 // Pending changes - tracks all field modifications
 // Structure: { fieldPath: newValue, ... }
 // e.g., { 'Properties.Weight': 3.5, 'Name': 'New Name' }
-export const pendingChanges = writable({});
+const pendingChanges = writable({});
 
 // Validation errors - tracks field-level errors
 // Structure: { fieldPath: errorMessage, ... }
@@ -383,13 +383,6 @@ export function setExistingPendingChange(change) {
 }
 
 /**
- * Toggle between viewing pending change and original
- */
-export function togglePendingChangeView() {
-  viewingPendingChange.update(v => !v);
-}
-
-/**
  * Set whether to view the pending change
  * @param {boolean} viewing - True to view pending change, false for original
  */
@@ -397,10 +390,3 @@ export function setViewingPendingChange(viewing) {
   viewingPendingChange.set(viewing);
 }
 
-/**
- * Reset pending change state
- */
-export function resetPendingChangeState() {
-  existingPendingChange.set(null);
-  viewingPendingChange.set(false);
-}

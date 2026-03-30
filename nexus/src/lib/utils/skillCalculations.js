@@ -5,7 +5,7 @@
 import { REWARD_DIVISORS, getCodexCategory } from './codexUtils.js';
 
 /** Base HP before skill contributions */
-export const BASE_HP = 80;
+const BASE_HP = 80;
 
 /**
  * Build a Set of attribute skill names from skill metadata.
@@ -27,7 +27,7 @@ export function buildAttributeSkillSet(skillMetadata) {
  * @param {Set<string>} attributeSkills - set of attribute skill names
  * @returns {number}
  */
-export function getEffectivePoints(points, skillName, attributeSkills) {
+function getEffectivePoints(points, skillName, attributeSkills) {
   if (attributeSkills && attributeSkills.has(skillName)) return points * 10;
   return points;
 }
@@ -44,7 +44,7 @@ export const CHIP_OUT_LOSS_PERCENT = 0;
  * @param {number[]} skillPointsArray
  * @returns {Promise<number[]>}
  */
-export async function fetchSkillPEDValues(skillPointsArray) {
+async function fetchSkillPEDValues(skillPointsArray) {
   const res = await fetch('/api/tools/skills/values', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -53,22 +53,6 @@ export async function fetchSkillPEDValues(skillPointsArray) {
   if (!res.ok) throw new Error(`Skill value API error: ${res.status}`);
   const data = await res.json();
   return data.skillPointsToPED;
-}
-
-/**
- * Fetch PED → skill-point conversions from the server.
- * @param {number[]} pedArray
- * @returns {Promise<number[]>}
- */
-export async function fetchPEDToSkillPoints(pedArray) {
-  const res = await fetch('/api/tools/skills/values', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pedToSkillPoints: pedArray })
-  });
-  if (!res.ok) throw new Error(`Skill value API error: ${res.status}`);
-  const data = await res.json();
-  return data.pedToSkillPoints;
 }
 
 /**
@@ -105,7 +89,7 @@ export async function fetchAllSkillPEDValues(skillValues) {
  * @param {Set<string>} [attributeSkills] - set of attribute skill names (×10 multiplier)
  * @returns {number}
  */
-export function calculateProfessionLevel(skillValues, professionSkills, attributeSkills = new Set()) {
+function calculateProfessionLevel(skillValues, professionSkills, attributeSkills = new Set()) {
   let sum = 0;
   for (const { Name, Weight } of professionSkills) {
     const points = skillValues[Name] || 0;
@@ -154,40 +138,6 @@ export function calculateHP(skillValues, skillMetadata) {
     }
   }
   return hp;
-}
-
-/**
- * Calculate the PED cost to chip in a skill (buy an ESI from the market).
- * @param {number} pedNeeded - PED value of the skill implant needed
- * @param {number} markupPercent - markup percentage (e.g., 150 = 150%)
- * @returns {number} total PED cost
- */
-export function calculateChipInCost(pedNeeded, markupPercent) {
-  return pedNeeded * (markupPercent / 100);
-}
-
-/**
- * Calculate the PED received from chipping out (extracting and selling an ESI).
- * Accounts for chip-out loss.
- * @param {number} pedExtracted - PED value of skill extracted
- * @param {number} markupPercent - markup percentage for selling
- * @returns {number} PED received
- */
-export function calculateChipOutValue(pedExtracted, markupPercent) {
-  const afterLoss = pedExtracted * (1 - CHIP_OUT_LOSS_PERCENT / 100);
-  return afterLoss * (markupPercent / 100);
-}
-
-/**
- * Calculate the PED cycle cost to gain skill via codex.
- * @param {number} pedOfSkill - PED of skill to gain
- * @param {string} category - codex category ('cat1', 'cat2', 'cat3', 'cat4')
- * @returns {number} PED cycle cost
- */
-export function calculateCodexCost(pedOfSkill, category) {
-  const divisor = REWARD_DIVISORS[category];
-  if (!divisor) return Infinity;
-  return pedOfSkill * divisor;
 }
 
 /**

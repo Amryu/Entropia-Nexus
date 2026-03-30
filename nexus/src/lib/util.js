@@ -5,27 +5,6 @@ import { browser } from "$app/environment";
 import { MAX_PENDING_CREATES } from "$lib/constants";
 import { TYPE_ID_OFFSETS, isPercentMarkupType, PLATE_SET_SIZE } from "$lib/common/itemTypes.js";
 
-export function addItemTag(currentName, tag) {
-  // Extract the base name and the existing tags
-  const match = currentName.match(/^(.*) \((.*)\)$/);
-  const baseName = match ? match[1] : currentName;
-  let existingTags = match ? match[2].split(',') : [];
-
-  // Add the tag if it doesn't already exist
-  if (!existingTags.includes(tag)) {
-    existingTags.push(tag);
-  }
-
-  // Sort the tags in the order M or F, C, L, P
-  const order = ['M', 'F', 'C', 'L', 'P'];
-  existingTags.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-
-  // Add the tags to the base name
-  const newName = `${baseName} (${existingTags.join(',')})`;
-
-  return newName;
-}
-
 export function removeItemTag(currentName, tag) {
   // Extract the base name and the existing tags
   const match = currentName.match(/^(.*) \((.*)\)$/);
@@ -113,7 +92,7 @@ export function clampDecimals(num, minDecimals = 0, maxDecimals = 10) {
   return str;
 }
 
-export async function getAcquisitionInfo(fetch, itemName) {
+async function getAcquisitionInfo(fetch, itemName) {
   if (!itemName || itemName.length === 0) {
     return {
       Blueprints: [],
@@ -130,7 +109,7 @@ export async function getAcquisitionInfo(fetch, itemName) {
   return await apiCall(fetch, `/acquisition/${encodeURIComponent(itemName)}`);
 }
 
-export async function getUsageInfo(fetch, itemName) {
+async function getUsageInfo(fetch, itemName) {
   if (!itemName || itemName.length === 0) {
     return {
       Blueprints: [],
@@ -144,69 +123,6 @@ export async function getUsageInfo(fetch, itemName) {
   }
 
   return await apiCall(fetch, `/usage/${encodeURIComponent(itemName)}`);
-}
-
-export function getPlanetName(planetName) {
-  if (planetName === 'calypso') {
-    return 'Calypso';
-  }
-  else if (planetName === 'aris') {
-    return 'ARIS';
-  }
-  else if (planetName === 'arkadia') {
-    return 'Arkadia';
-  }
-  else if (planetName === 'arkadiaunderground') {
-    return 'Arkadia Underground';
-  }
-  else if (planetName === 'arkadiamoon') {
-    return 'Arkadia Moon';
-  }
-  else if (planetName === 'rocktropia') {
-    return 'ROCKtropia';
-  }
-  else if (planetName === 'huntthething') {
-    return 'Hunt The THING';
-  }
-  else if (planetName === 'hell') {
-    return 'HELL';
-  }
-  else if (planetName === 'secretisland') {
-    return 'Secret Island';
-  }
-  else if (planetName === 'nextisland') {
-    return 'Next Island';
-  }
-  else if (planetName === 'ancientgreece') {
-    return 'Ancient Greece';
-  }
-  else if (planetName === 'monria') {
-    return 'Monria';
-  }
-  else if (planetName === 'dsec9') {
-    return 'DSEC9';
-  }
-  else if (planetName === 'cyrene') {
-    return 'Cyrene';
-  }
-  else if (planetName === 'toulan') {
-    return 'Toulan';
-  }
-  else if (planetName === 'space') {
-    return 'Space';
-  }
-  else if (planetName === 'asteroidfoma') {
-    return 'Asteroid F.O.M.A.';
-  }
-  else if (planetName === 'crystalpalace') {
-    return 'Crystal Palace';
-  }
-  else if (planetName === 'setesh') {
-    return 'Setesh';
-  }
-  else {
-    return null;
-  }
 }
 
 export function getMainPlanetName(planetName) {
@@ -965,15 +881,6 @@ export function decodeURIComponentSafe(str) {
     // Fallback for names containing % which cause invalid percent-encoding sequences
     return str.replace(/~/g, ' ');
   }
-}
-
-export function getParams(page) {
-  return Object.fromEntries(
-    Object.entries(page.params).map(([key, value]) => [
-      key,
-      value != null ? decodeURIComponentSafe(value) : null
-    ])
-  );
 }
 
 // Cache for resolved item links

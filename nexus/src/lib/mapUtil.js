@@ -249,19 +249,6 @@ export function getMainPlanetNames() {
 }
 
 /**
- * Get the main (parent) planet name for any planet/sub-planet name.
- * e.g. 'ARIS' → 'Calypso', 'Arkadia Moon' → 'Arkadia', 'Calypso' → 'Calypso'
- */
-export function getMainPlanet(planetName) {
-  for (const planets of Object.values(planetGroups)) {
-    if (planets.some(p => p.Name === planetName)) {
-      return planets[0].Name;
-    }
-  }
-  return planetName;
-}
-
-/**
  * Build a planet nav filter config for WikiNavigation.
  * Shows main planets as buttons; filterFn includes sub-planets.
  * @param {string} key - Dot-notation path to planet name on items (e.g. 'Planet.Name' or 'Planet')

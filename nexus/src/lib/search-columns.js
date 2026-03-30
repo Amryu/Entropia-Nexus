@@ -108,7 +108,7 @@ const fmtTrim = (maxDecimals) => (v) => {
  * Column definitions per entity type.
  * Keyed by pageTypeId (matches localStorage wiki-nav-columns-{pageTypeId}).
  */
-export const SEARCH_COLUMN_DEFS = {
+const SEARCH_COLUMN_DEFS = {
   weapons: {
     class:        { key: 'class',        header: 'Class',    width: '70px',  getValue: (item) => item.Properties?.Class, format: fmtStr },
     type:         { key: 'type',         header: 'Type',     width: '70px',  getValue: (item) => item.Properties?.Type, format: fmtStr },
@@ -303,7 +303,7 @@ export const SEARCH_COLUMN_DEFS = {
  * Default column keys per type (used when no localStorage config exists).
  * Matches the navTableColumns defaults from each entity page.
  */
-export const DEFAULT_SEARCH_COLUMNS = {
+const DEFAULT_SEARCH_COLUMNS = {
   weapons:     ['class', 'type', 'dps', 'dpp', 'eff'],
   materials:   ['type', 'weight', 'value'],
   blueprints:  ['type', 'profession', 'level'],
@@ -333,7 +333,7 @@ export const DEFAULT_SEARCH_COLUMNS = {
 /**
  * Map search result Type → pageTypeId for column lookup.
  */
-export const SEARCH_TYPE_TO_PAGE_TYPE_ID = {
+const SEARCH_TYPE_TO_PAGE_TYPE_ID = {
   Weapon:                 'weapons',
   Material:               'materials',
   Blueprint:              'blueprints',

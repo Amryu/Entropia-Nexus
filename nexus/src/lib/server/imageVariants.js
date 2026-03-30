@@ -6,7 +6,7 @@
 import sharp from 'sharp';
 
 /** Standard resize sizes matching the /api/img/ endpoint */
-export const VALID_SIZES = [32, 48, 64, 128];
+const VALID_SIZES = [32, 48, 64, 128];
 
 /**
  * Generate all standard size variants from an icon and/or thumbnail buffer.

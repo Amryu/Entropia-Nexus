@@ -12,7 +12,7 @@
  * @param {string} queryWord
  * @returns {number} 0-100
  */
-export function scoreWordPair(nameWord, queryWord) {
+function scoreWordPair(nameWord, queryWord) {
   if (nameWord === queryWord) return 100;
   if (nameWord.startsWith(queryWord)) return 85 - Math.min(nameWord.length - queryWord.length, 15);
   if (nameWord.includes(queryWord)) return 60;
@@ -32,7 +32,7 @@ export function scoreWordPair(nameWord, queryWord) {
  * @param {string[]} queryWords - Array of lowercase query words
  * @returns {number} 0 or 550+
  */
-export function scoreMultiWord(nameLower, queryWords) {
+function scoreMultiWord(nameLower, queryWords) {
   const nameWords = nameLower.split(/[\s,]+/).filter(w => w.length > 0);
   let totalScore = 0;
   let matchedCount = 0;
