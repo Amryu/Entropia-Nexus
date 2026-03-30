@@ -6,6 +6,7 @@
 -->
 <script>
   // @ts-nocheck
+  import { untrack } from 'svelte';
   import { apiCall } from '$lib/util';
   import { isPercentMarkupType } from '$lib/common/itemTypes.js';
   import SearchInput from '$lib/components/SearchInput.svelte';
@@ -68,15 +69,15 @@
   let groupEditMode = $state(false);
 
 
-  function initializeGroups() {
+  function initializeFromSnapshot(groups, details) {
     // Copy existing inventory groups (user-defined, not estate-based)
-    if (inventoryGroups && inventoryGroups.length > 0) {
-      localGroups = inventoryGroups.map(group => ({
+    if (groups && groups.length > 0) {
+      localGroups = groups.map(group => ({
         Name: group.Name || group.name || 'Inventory',
         Items: (group.Items || []).map(item => {
           const itemId = item.ItemId ?? item.item_id;
           // Look up item name from itemDetails map
-          const itemInfo = itemDetails[itemId];
+          const itemInfo = details[itemId];
           const itemName = item.ItemName || item.itemName || itemInfo?.Name || 'Unknown';
           return {
             ItemId: itemId,
@@ -373,19 +374,22 @@
     }
   }
 
-  // Initialize groups when dialog opens
+  // Initialize groups when dialog opens — untrack prop reads so changing
+  // inventoryGroups/itemDetails while open doesn't reset the editing state
   $effect(() => {
     if (open) {
-      initializeGroups();
-      error = null;
-      success = null;
-      itemSearchQuery = '';
-      editingItemIndex = null;
-      editingGroupIndex = null;
-      editGroupName = '';
-      showNewGroupInput = false;
-      newGroupName = '';
-      groupEditMode = false; // Reset edit mode when dialog opens
+      untrack(() => {
+        initializeFromSnapshot(inventoryGroups, itemDetails);
+        error = null;
+        success = null;
+        itemSearchQuery = '';
+        editingItemIndex = null;
+        editingGroupIndex = null;
+        editGroupName = '';
+        showNewGroupInput = false;
+        newGroupName = '';
+        groupEditMode = false;
+      });
     }
   });
   // Reactive total items count - updates when localGroups changes

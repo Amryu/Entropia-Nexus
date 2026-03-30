@@ -328,10 +328,11 @@
   let itemsLoading = $state(false);
 
   async function fetchItemDetails() {
-    if (!shop?.InventoryGroups) return;
+    const groups = localInventoryGroups || shop?.InventoryGroups;
+    if (!groups) return;
 
     const ids = Array.from(new Set(
-      shop.InventoryGroups
+      groups
         .flatMap(g => (g?.Items || []).map(i => i.ItemId ?? i.item_id))
         .filter(Boolean)
     ));
@@ -462,12 +463,14 @@
     window.location.reload();
   }
 
-  function handleInventorySaved(data) {
-    const { inventoryGroups } = data;
-    if (shop && inventoryGroups) {
-      // Update the shop object directly — the external API cache may still
-      // serve stale data, so a page reload would show old inventory.
-      shop.InventoryGroups = inventoryGroups.map(g => ({
+  // Local inventory override — avoids mutating the $derived shop object which
+  // causes effect_update_depth_exceeded by re-triggering initEditState.
+  let localInventoryGroups = $state(null);
+
+  function handleInventorySaved(savedData) {
+    const { inventoryGroups } = savedData;
+    if (inventoryGroups) {
+      localInventoryGroups = inventoryGroups.map(g => ({
         Name: g.Name,
         Items: g.Items.map((item, idx) => ({
           ItemId: item.ItemId,
@@ -549,9 +552,10 @@
       fetchItemDetails();
     }
   });
-  // Reactive calculations - use activeEntity for display
-  let totalItems = $derived(getTotalItems(activeEntity));
-  let totalGroups = $derived(getTotalGroups(activeEntity));
+  // Reactive calculations - prefer local inventory override after save
+  let effectiveInventory = $derived(localInventoryGroups || activeEntity?.InventoryGroups);
+  let totalItems = $derived(effectiveInventory?.reduce((acc, g) => acc + (g?.Items?.length || 0), 0) || 0);
+  let totalGroups = $derived(effectiveInventory?.filter(g => g?.Items?.length > 0).length || 0);
   let hasLocation = $derived(hasCoordinates(activeEntity));
   let coordinates = $derived(formatCoordinates(activeEntity));
   let waypointValue = $derived({
@@ -927,7 +931,7 @@
             <div class="loading-indicator">Loading inventory...</div>
           {:else}
             <ShopInventory
-              inventoryGroups={activeEntity?.InventoryGroups}
+              inventoryGroups={localInventoryGroups || activeEntity?.InventoryGroups}
               {itemDetails}
             />
           {/if}
@@ -964,7 +968,7 @@
   <ShopInventoryDialog
     shopName={shop.Name}
     bind:open={inventoryDialogOpen}
-    inventoryGroups={shop.InventoryGroups || []}
+    inventoryGroups={localInventoryGroups || shop.InventoryGroups || []}
     {itemDetails}
     onclose={() => inventoryDialogOpen = false}
     onsaved={handleInventorySaved}
