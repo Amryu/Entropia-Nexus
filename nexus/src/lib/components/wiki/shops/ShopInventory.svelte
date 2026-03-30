@@ -35,8 +35,9 @@
       const itemLink = itemData ? getItemLink(itemData) : null;
       const stackSize = item.StackSize ?? item.stack_size ?? 0;
       const markup = item.Markup ?? item.markup ?? 0;
-      const itemType = itemData?.Type || null;
-      const isPercent = isPercentMarkupType(itemType, itemName);
+      const itemType = itemData?.Properties?.Type || itemData?.Type || null;
+      const itemSubType = itemData?.Properties?.SubType || itemData?.SubType || null;
+      const isPercent = isPercentMarkupType(itemType, itemName, itemSubType);
       const unit = isPercent ? '%' : ' PED';
 
       return {
@@ -45,7 +46,8 @@
         stackSize,
         stackSizeFormatted: stackSize.toLocaleString(),
         markup,
-        markupFormatted: `${markup.toFixed(2)}${unit}`
+        isPercent,
+        markupFormatted: isPercent ? `${markup.toFixed(2)}%` : `+${markup.toFixed(2)} PED`
       };
     });
   }
@@ -72,7 +74,8 @@
       header: 'Markup',
       sortable: true,
       formatter: (value, row) => {
-        const color = value > 100 ? 'var(--success-color, #22c55e)' : 'var(--text-color)';
+        const hasMarkup = row.isPercent ? value > 100 : value > 0;
+        const color = hasMarkup ? 'var(--success-color, #22c55e)' : 'var(--text-color)';
         return `<span style="font-family: monospace; color: ${color};">${row.markupFormatted}</span>`;
       }
     }

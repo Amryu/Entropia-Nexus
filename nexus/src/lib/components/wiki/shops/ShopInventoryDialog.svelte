@@ -82,8 +82,8 @@
           return {
             ItemId: itemId,
             ItemName: itemName,
-            ItemType: itemInfo?.Type || null,
-            ItemSubType: itemInfo?.SubType || null,
+            ItemType: itemInfo?.Properties?.Type || itemInfo?.Type || null,
+            ItemSubType: itemInfo?.Properties?.SubType || itemInfo?.SubType || null,
             StackSize: item.StackSize ?? item.stack_size ?? 1,
             Markup: item.Markup ?? item.markup ?? 100,
             SortOrder: item.SortOrder ?? item.sort_order ?? 0
