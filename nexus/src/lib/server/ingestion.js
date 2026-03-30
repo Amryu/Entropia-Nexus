@@ -9,7 +9,7 @@ import { TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 // --- Constants ---
 
 const GLOBAL_CONFIRM_THRESHOLD = 3;
-const HOF_CONFIRM_THRESHOLD = 10;
+const HOF_CONFIRM_THRESHOLD = 6;
 const TIMESTAMP_WINDOW_MS = 60_000; // ±60 seconds for matching (trades)
 const GLOBAL_DEDUP_WINDOW_MS = 5 * 60 * 1000; // ±5 min for occurrence-based dedup (globals)
 const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
