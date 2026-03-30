@@ -16,6 +16,7 @@
     editingMarkupId = null,
     editingMarkupValue = $bindable(''),
     containerNames = new Map(),
+    markupSource = 'none',
     onrowClick,
     onstartMarkupEdit,
     onmarkupInput,
@@ -288,7 +289,7 @@
               <span
                 class="mu-cell"
                 class:has-mu={row.item._markup != null}
-                class:has-market={row.item._markup == null && row.item._marketPrice != null}
+                class:has-market={row.item._markup == null && (row.item._ingameMarkup != null || row.item._marketPrice != null)}
                 onclick={(e) => { e.stopPropagation(); row.item.item_id > 0 && startMarkupEdit(row.item); }}
                 onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); row.item.item_id > 0 && startMarkupEdit(row.item); } }}
                 title="Click to edit markup"
@@ -296,9 +297,11 @@
                 tabindex="0"
               >
                 {#if row.item._markup != null}
-                  {row.item._isAbsolute ? formatMarkupValue(row.item._markup, true) : formatMarkupValue(row.item._markup, false)}
-                {:else if row.item._marketPrice != null}
-                  {row.item._isAbsolute ? formatMarkupValue(row.item._marketPrice, true) : formatMarkupValue(row.item._marketPrice, false)}
+                  {formatMarkupValue(row.item._markup, row.item._isAbsolute)}
+                {:else if markupSource === 'ingame' && row.item._ingameMarkup != null}
+                  {formatMarkupValue(row.item._ingameMarkup, row.item._isAbsolute)}
+                {:else if markupSource === 'exchange' && row.item._marketPrice != null}
+                  {formatMarkupValue(row.item._marketPrice, row.item._isAbsolute)}
                 {:else}
                   <span class="text-muted">{row.item._isAbsolute ? '+0' : '100%'}</span>
                 {/if}

@@ -1091,6 +1091,7 @@
               {editingMarkupId}
               {editingMarkupValue}
               {containerNames}
+              {markupSource}
               onrowClick={(data) => openItemDialog(data.row)}
               onstartMarkupEdit={(data) => startMarkupEdit(data.item)}
               onmarkupInput={(data) => { editingMarkupValue = data.value; handleMarkupInput(); }}
