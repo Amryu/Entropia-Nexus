@@ -27,7 +27,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { browser } from '$app/environment';
 
   
@@ -80,26 +80,42 @@
   let localZ = $state('');
   let localName = $state('');
 
-  // Sync local values with prop
+  // Sync local values with prop — only update when individual values actually
+  // change, to avoid cascading effects when the parent passes a new object ref
   $effect(() => {
-    localX = value?.x != null ? String(value.x) : '';
-    localY = value?.y != null ? String(value.y) : '';
-    localZ = value?.z != null ? String(value.z) : '';
-    localName = value?.name ?? '';
-    planetSearchValue = value?.planet ?? '';
+    const vx = value?.x;
+    const vy = value?.y;
+    const vz = value?.z;
+    const vn = value?.name;
+    const vp = value?.planet;
+    untrack(() => {
+      const newX = vx != null ? String(vx) : '';
+      const newY = vy != null ? String(vy) : '';
+      const newZ = vz != null ? String(vz) : '';
+      const newName = vn ?? '';
+      const newPlanet = vp ?? '';
+      if (localX !== newX) localX = newX;
+      if (localY !== newY) localY = newY;
+      if (localZ !== newZ) localZ = newZ;
+      if (localName !== newName) localName = newName;
+      if (planetSearchValue !== newPlanet) planetSearchValue = newPlanet;
+    });
   });
 
   // Filter planets based on search
   $effect(() => {
     const search = planetSearchValue.toLowerCase().trim();
-    if (search.length === 0) {
-      filteredPlanets = planets;
-    } else {
-      filteredPlanets = planets.filter(p =>
-        p.Name.toLowerCase().includes(search)
-      );
-    }
-    highlightedPlanetIndex = filteredPlanets.length > 0 ? 0 : -1;
+    const pl = planets;
+    untrack(() => {
+      if (search.length === 0) {
+        filteredPlanets = pl;
+      } else {
+        filteredPlanets = pl.filter(p =>
+          p.Name.toLowerCase().includes(search)
+        );
+      }
+      highlightedPlanetIndex = filteredPlanets.length > 0 ? 0 : -1;
+    });
   });
 
   // Load planets on mount
