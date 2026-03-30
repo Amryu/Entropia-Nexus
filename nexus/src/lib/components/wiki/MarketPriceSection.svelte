@@ -78,7 +78,7 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
   let showTierSelector = $derived(entityType && TIERABLE_TYPES.has(entityType));
 
   // Absolute markup items: non-stackable UL condition items, non-L blueprints
-  let isAbsMarkup = $derived(() => {
+  let isAbsMarkup = $derived.by(() => {
     if (!entityType) return false;
     if (STACKABLE_TYPES.has(entityType)) return false;
     if (entityType === 'Blueprint') return !/\(.*L.*\)/.test(itemName || '');
@@ -234,7 +234,7 @@ When provided, a slot/gender selector is shown and prices are fetched per piece.
 
   function formatMarkup(val) {
     if (val == null) return '\u2014';
-    return isAbsMarkup() ? `+${Number(val).toFixed(2)}` : `${Number(val).toFixed(2)}%`;
+    return isAbsMarkup ? `+${Number(val).toFixed(2)}` : `${Number(val).toFixed(2)}%`;
   }
 
   function formatSales(val) {
