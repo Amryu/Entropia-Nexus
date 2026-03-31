@@ -613,15 +613,15 @@
               <span class="stat-value">{dpp != null ? dpp.toFixed(4) : 'N/A'}</span>
             </div>
 
-          <!-- Scopes/Sights: Efficiency, Zoom -->
+          <!-- Scopes/Sights: Efficiency, Skill Mod -->
           {:else if additional.type === 'weaponvisionattachments'}
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
               <span class="stat-value">{activeEntity?.Properties?.Economy?.Efficiency != null ? `${activeEntity.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
-              <span class="stat-label">Zoom</span>
-              <span class="stat-value">{activeEntity?.Properties?.Zoom != null ? `${activeEntity.Properties.Zoom.toFixed(1)}x` : 'N/A'}</span>
+              <span class="stat-label">Skill Mod.</span>
+              <span class="stat-value">{activeEntity?.Properties?.SkillModification != null ? activeEntity.Properties.SkillModification.toFixed(1) : 'N/A'}</span>
             </div>
 
           <!-- Absorbers: Efficiency, Absorption -->
@@ -755,6 +755,21 @@
                 />
               </span>
             </div>
+            {#if activeEntity?.Properties?.Type === 'Scope'}
+              <div class="stat-row">
+                <span class="stat-label">Zoom</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Zoom}
+                    path="Properties.Zoom"
+                    type="number"
+                    suffix="x"
+                    min={0}
+                    step={0.1}
+                  />
+                </span>
+              </div>
+            {/if}
           {:else if additional.type === 'enhancers'}
             <div class="stat-row">
               <span class="stat-label">Socket</span>
