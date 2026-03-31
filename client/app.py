@@ -461,9 +461,11 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
     _tl_workers = _start_target_lock_detector(config, event_bus, frame_distributor)
     _ps_workers = _start_player_status_detector(config, event_bus, frame_distributor, data_client)
     _mp_workers = _start_market_price_detector(config, event_bus, frame_distributor, data_client)
+    _mc_workers = _start_market_clipboard_monitor(config, event_bus)
     workers.extend(_tl_workers)
     workers.extend(_ps_workers)
     workers.extend(_mp_workers)
+    workers.extend(_mc_workers)
     # workers.extend(_start_radar_detector(config, event_bus, frame_distributor, config_path))
 
     frame_distributor.start()
@@ -480,6 +482,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
         "market_price": (_mp_workers[0] if _mp_workers else None,
                          "market_price_enabled",
                          lambda: _start_market_price_detector(config, event_bus, frame_distributor, data_client)),
+        "market_clipboard": (_mc_workers[0] if _mc_workers else None,
+                             "market_clipboard_enabled",
+                             lambda: _start_market_clipboard_monitor(config, event_bus)),
     }
 
     def _on_detector_config_changed(new_config):
@@ -1586,6 +1591,21 @@ def _start_market_price_detector(config, event_bus, frame_cache=None, data_clien
         log.info("Market price detector started")
     except Exception as e:
         log.error("Market price detector failed to start: %s", e)
+    return workers
+
+
+def _start_market_clipboard_monitor(config, event_bus):
+    """Start the clipboard monitor for copied market data. Returns list of stoppable workers."""
+    workers = []
+    if not getattr(config, "market_clipboard_enabled", True):
+        return workers
+    try:
+        from .ocr.market_clipboard import MarketClipboardMonitor
+        monitor = MarketClipboardMonitor(event_bus)
+        monitor.start()
+        workers.append(monitor)
+    except Exception as e:
+        log.error("Market clipboard monitor failed to start: %s", e)
     return workers
 
 

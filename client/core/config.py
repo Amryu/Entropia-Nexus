@@ -204,6 +204,7 @@ class AppConfig:
     market_price_text_threshold: int = 80  # brightness cutoff for text vs background noise
     market_price_review_enabled: bool = True  # show review dialog for overflow/ambiguous items
     market_price_review_tutorial_shown: bool = False  # first-time tutorial has been displayed
+    market_clipboard_enabled: bool = True  # monitor clipboard for copied market data
 
     # Player status (heart) detection
     player_status_enabled: bool = False
@@ -463,6 +464,7 @@ DEFAULTS = {
     "market_price_text_threshold": 80,
     "market_price_review_enabled": True,
     "market_price_review_tutorial_shown": False,
+    "market_clipboard_enabled": True,
     "player_status_enabled": False,
     "player_status_match_threshold": 0.90,
     "player_status_roi_health": {"dx": 30, "dy": -9, "w": 315, "h": 12},
