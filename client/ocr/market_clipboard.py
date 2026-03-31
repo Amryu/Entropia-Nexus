@@ -10,9 +10,6 @@ Format (tab-separated, one header + N data rows):
 
 Markup values: "125.5%" (percent mode), "3469.540" (absolute mode), "N/A", ">999999%"
 Sales values:  "3.000 PEC", "1.890 PED", "25.260 PED", "0.000", "1.600K", "N/A"
-
-Known game bug: multi-item copies can concatenate rows, corrupting field boundaries.
-The parser extracts what it can and discards corrupted items.
 """
 
 import logging
@@ -53,9 +50,6 @@ BARE_SUFFIX_MULTIPLIERS = {
 _RE_OVERFLOW = re.compile(r"^>999999%?$")
 _RE_NA = re.compile(r"^N/A$", re.IGNORECASE)
 _RE_TIER = re.compile(r"^\d{1,2}$")
-_RE_MARKUP_LIKE = re.compile(
-    r"^(?:[+-]?[\d,]+\.?\d*%?|>999999%?|N/A)$", re.IGNORECASE
-)
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +115,6 @@ def _is_tier(s):
     return bool(_RE_TIER.match(s.strip()))
 
 
-def _looks_like_markup(s):
-    return bool(_RE_MARKUP_LIKE.match(s.strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +130,8 @@ def _parse_item_fields(fields):
         return None
 
     name = fields[0].strip()
-    if not name or not name[0].isalpha():
-        return None  # reject empty or corrupted names (e.g. "1.8ster Strongbox")
+    if not name:
+        return None
 
     tier_str = fields[1].strip()
     if not _is_tier(tier_str):
@@ -164,34 +156,10 @@ def _parse_item_fields(fields):
         markup_val = _parse_markup(markup_raw, mode)
         sales_val = _parse_sales(sales_raw)
 
-        # Validate: markup field should look plausible
-        if markup_raw and not _RE_MARKUP_LIKE.match(markup_raw):
-            return None  # corrupted field → discard whole item
-
         result[f"markup_{period}"] = markup_val
         result[f"sales_{period}"] = sales_val
 
     return result
-
-
-# ---------------------------------------------------------------------------
-# Multi-item line splitting
-# ---------------------------------------------------------------------------
-
-def _split_multi_item_line(fields):
-    """Try to extract 12-field item groups from a corrupted merged line.
-
-    Finds tier-field boundaries (small int followed by markup-like value)
-    and extracts 12-field slices.
-    """
-    results = []
-    for i in range(1, len(fields) - 1):
-        if _is_tier(fields[i]) and _looks_like_markup(fields[i + 1]):
-            name_idx = i - 1
-            end_idx = i + 11  # tier + 10 data fields
-            if end_idx <= len(fields):
-                results.append(fields[name_idx:end_idx])
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -216,17 +184,11 @@ def parse_market_clipboard(text):
         if not line.strip():
             continue
         fields = line.split("\t")
-
-        if len(fields) == EXPECTED_FIELDS:
-            item = _parse_item_fields(fields)
-            if item:
-                items.append(item)
-        elif len(fields) > EXPECTED_FIELDS:
-            for group in _split_multi_item_line(fields):
-                item = _parse_item_fields(group)
-                if item:
-                    items.append(item)
-        # < EXPECTED_FIELDS → partial/truncated, skip
+        if len(fields) != EXPECTED_FIELDS:
+            continue
+        item = _parse_item_fields(fields)
+        if item:
+            items.append(item)
 
     return items
 
