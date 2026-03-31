@@ -77,8 +77,9 @@
     const seen = new Map();
     for (const item of items) {
       if (!item.item_id || item.item_id === 0) continue;
+      const slim = itemLookup.get(item.item_id);
+      if (slim?.ut) continue; // skip untradeable items
       if (!seen.has(item.item_id)) {
-        const slim = itemLookup.get(item.item_id);
         seen.set(item.item_id, {
           item_id: item.item_id,
           item_name: slim?.n || item.item_name,

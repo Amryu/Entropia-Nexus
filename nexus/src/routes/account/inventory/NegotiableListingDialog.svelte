@@ -232,6 +232,8 @@
 
       for (const item of node.items) {
         if (!item.item_id || item.item_id === 0) continue;
+        const slim = itemLookup.get(item.item_id);
+        if (slim?.ut) continue; // skip untradeable items
         if (!matchesFilter(item, filter)) continue;
         // Non-stackable items have instance_key — include it to avoid merging condition items
         const key = item.instance_key
@@ -239,7 +241,6 @@
           : `${item.item_id}::${item.container || ''}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const slim = itemLookup.get(item.item_id);
         items.push({
           _key: key,
           item_id: item.item_id,

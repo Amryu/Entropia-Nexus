@@ -112,9 +112,13 @@ export const UpsertConfigs = {
       // Propagate IsUntradeable/IsRare to each armor piece in the set
       const armorOffset = 3000000;
       const pieces = await client.query(
-        `SELECT "Id" FROM ONLY "Armors" WHERE "SetId" = $1`, [id]
+        `SELECT "Id", "Name" FROM ONLY "Armors" WHERE "SetId" = $1`, [id]
       );
-      await Promise.all(pieces.rows.map(r => applyItemProperties(client, r.Id + armorOffset, x)));
+      const flatArmors = x.Armors.flat();
+      await Promise.all(pieces.rows.map(r => {
+        const pieceData = flatArmors.find(a => a.Name === r.Name);
+        return applyItemProperties(client, r.Id + armorOffset, pieceData || x);
+      }));
     }
   },
   MedicalTool: {
