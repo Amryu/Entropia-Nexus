@@ -5174,7 +5174,7 @@ class _OverlayTiersWidget(QWidget):
                 continue
             if isinstance(mu_list, list):
                 self._markups[tier_num] = {
-                    i: float(v) for i, v in enumerate(mu_list)
+                    i: float(v) for i, v in enumerate(mu_list) if v is not None
                 }
 
     def _save_markups(self):
