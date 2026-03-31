@@ -183,6 +183,7 @@
         };
         break;
       case 'weaponvisionattachments':
+        base.Properties.Type = null;
         base.Properties.Zoom = 0;
         base.Properties.Economy.Decay = 0;
         base.Properties.Economy.Efficiency = 0;
@@ -737,6 +738,21 @@
                     ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%`
                     : 'N/A'}
                 {/if}
+              </span>
+            </div>
+          {:else if additional.type === 'weaponvisionattachments'}
+            <div class="stat-row">
+              <span class="stat-label">Type</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Type}
+                  path="Properties.Type"
+                  type="select"
+                  options={[
+                    { value: 'Scope', label: 'Scope' },
+                    { value: 'Sight', label: 'Sight' }
+                  ]}
+                />
               </span>
             </div>
           {:else if additional.type === 'enhancers'}
