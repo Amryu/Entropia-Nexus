@@ -202,8 +202,6 @@ class AppConfig:
     market_price_digit_stpk: str = "market_digits.stpk"
     market_price_text_stpk: str = "market_text.stpk"
     market_price_text_threshold: int = 80  # brightness cutoff for text vs background noise
-    market_price_review_enabled: bool = True  # show review dialog for overflow/ambiguous items
-    market_price_review_tutorial_shown: bool = False  # first-time tutorial has been displayed
     market_clipboard_enabled: bool = True  # monitor clipboard for copied market data
 
     # Player status (heart) detection
@@ -462,8 +460,6 @@ DEFAULTS = {
     "market_price_digit_stpk": "market_digits.stpk",
     "market_price_text_stpk": "market_text.stpk",
     "market_price_text_threshold": 80,
-    "market_price_review_enabled": True,
-    "market_price_review_tutorial_shown": False,
     "market_clipboard_enabled": True,
     "player_status_enabled": False,
     "player_status_match_threshold": 0.90,
@@ -637,6 +633,8 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         "custom_grid_overlay_position", "custom_grid_overlay_cols",
         "custom_grid_overlay_rows", "custom_grid_overlay_tile_size",
         "custom_grid_overlay_widgets",
+        "market_price_review_enabled",
+        "market_price_review_tutorial_shown",
     ):
         merged.pop(_old_key, None)
 

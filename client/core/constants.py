@@ -93,7 +93,6 @@ EVENT_MARKET_PRICE_SCAN = "market_price_scan"
 EVENT_MARKET_PRICE_ERROR = "market_price_error"
 EVENT_MARKET_PRICE_DEBUG = "market_price_debug"
 EVENT_MARKET_PRICE_LOST = "market_price_lost"
-EVENT_MARKET_PRICE_REVIEW = "market_price_review"  # needs manual review (overflow/ambiguity)
 
 # Event names — Player status (heart) detection
 EVENT_PLAYER_STATUS_UPDATE = "player_status_update"

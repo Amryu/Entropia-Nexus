@@ -1622,7 +1622,8 @@ export function validateMarketPrice(entry) {
 
     if (mu != null) {
       if (typeof mu !== 'number' || !Number.isFinite(mu)) return `Invalid markup_${period}`;
-      if (mu < 0 || mu > MAX_MARKUP_VALUE) return `markup_${period} out of range`;
+      // -1 is the overflow sentinel (game displays ">999999%")
+      if (mu !== -1 && (mu < 0 || mu > MAX_MARKUP_VALUE)) return `markup_${period} out of range`;
     }
     if (sales != null) {
       if (typeof sales !== 'number' || !Number.isFinite(sales)) return `Invalid sales_${period}`;

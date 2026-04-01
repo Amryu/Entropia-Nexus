@@ -24,7 +24,6 @@ from .core.constants import (
     EVENT_AUTH_STATE_CHANGED,
     EVENT_CLIP_SAVED,
     EVENT_CONFIG_CHANGED,
-    EVENT_MARKET_PRICE_REVIEW,
     EVENT_MARKET_PRICE_SCAN,
     EVENT_OCR_MANUAL_TRIGGER,
     EVENT_SCREENSHOT_SAVED,
@@ -353,7 +352,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
     # splash closes.  Declared here so the outer scope can reference them.
     _search_overlay = None
     _scan_summary = None
-    _review_dialog = None
 
     if start_minimized:
         # Show briefly off-screen so Qt initialises native handles and
@@ -1123,54 +1121,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
 
         # Scan highlight overlay (click-through, shows scanned rows + target lock)
         _create_scan_overlays()
-
-        # Market price review dialog — created lazily on first review request
-        def _ensure_review_dialog():
-            """Create and wire the MarketReviewDialog on first use."""
-            nonlocal _review_dialog
-            if _review_dialog is not None:
-                return _review_dialog
-            try:
-                from .ui.dialogs.market_review_dialog import MarketReviewDialog
-                _review_dialog = MarketReviewDialog(
-                    config=config, parent=main_window,
-                )
-
-                def _on_reviewed(original_data, corrections, reviewed_fields):
-                    merged = dict(original_data)
-                    merged.update(corrections)
-                    merged.pop("_match_result", None)
-                    merged["manually_reviewed"] = reviewed_fields
-                    event_bus.publish(EVENT_MARKET_PRICE_SCAN, merged)
-
-                def _on_skipped(original_data):
-                    data = dict(original_data)
-                    data.pop("_match_result", None)
-                    event_bus.publish(EVENT_MARKET_PRICE_SCAN, data)
-
-                _review_dialog.reviewed.connect(_on_reviewed)
-                _review_dialog.skipped.connect(_on_skipped)
-
-                def _on_review_config_changed():
-                    save_config(config, config_path)
-                    event_bus.publish(EVENT_CONFIG_CHANGED, config)
-
-                _review_dialog.config_changed.connect(_on_review_config_changed)
-            except Exception as e:
-                log.warning("Market review dialog creation failed: %s", e)
-            return _review_dialog
-
-        def _on_market_review_request(review_request):
-            """Bridge from event bus (background thread) → main thread dialog."""
-            from .core.thread_utils import invoke_on_main
-            invoke_on_main(lambda: _handle_review_on_main(review_request))
-
-        def _handle_review_on_main(review_request):
-            dlg = _ensure_review_dialog()
-            if dlg is not None:
-                dlg.enqueue(review_request)
-
-        event_bus.subscribe(EVENT_MARKET_PRICE_REVIEW, _on_market_review_request)
 
         # All overlay wiring is complete — start the focus-detection timer.
         # This is deferred from OverlayManager.__init__ to avoid showing

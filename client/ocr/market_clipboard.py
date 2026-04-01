@@ -56,11 +56,15 @@ _RE_TIER = re.compile(r"^\d{1,2}$")
 # Value parsers
 # ---------------------------------------------------------------------------
 
+MARKUP_OVERFLOW = -1  # sentinel for ">999999%" overflow
+
 def _parse_markup(raw, mode):
-    """Parse a markup cell. Returns float or None."""
+    """Parse a markup cell. Returns float, MARKUP_OVERFLOW (-1), or None."""
     raw = raw.strip()
-    if not raw or _RE_NA.match(raw) or _RE_OVERFLOW.match(raw):
+    if not raw or _RE_NA.match(raw):
         return None
+    if _RE_OVERFLOW.match(raw):
+        return MARKUP_OVERFLOW
     s = raw.rstrip("%").replace(",", "")
     try:
         return float(s)
@@ -245,8 +249,17 @@ class MarketClipboardMonitor:
         if not items:
             return
 
+        from .market_heuristics import heuristic_confidence_penalty
+
         log.info("Parsed %d market price item(s) from clipboard", len(items))
         for item in items:
-            log.debug("  %s (tier %s, mode=%s)", item["item_name"],
-                       item.get("tier"), item.get("markup_mode"))
+            # Clipboard data is exact (ocr_confidence=1.0) but apply
+            # heuristic checks (sales monotonicity, markup stability)
+            penalty = heuristic_confidence_penalty(item)
+            item["ocr_confidence"] = 1.0 * penalty
+            if penalty < 1.0:
+                item["heuristic_penalty"] = penalty
+            log.debug("  %s (tier %s, mode=%s, conf=%.2f)",
+                       item["item_name"], item.get("tier"),
+                       item.get("markup_mode"), item["ocr_confidence"])
             self._event_bus.publish(EVENT_MARKET_PRICE_SCAN, item)

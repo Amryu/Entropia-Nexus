@@ -217,12 +217,8 @@ class IngestionUploader:
         if not name:
             return
 
-        # Sanitize: convert overflow sentinel (-1) to null, strip transient keys
+        # Strip transient keys (prefixed with _)
         clean = {k: v for k, v in data.items() if not k.startswith("_")}
-        for key in ("markup_1d", "markup_7d", "markup_30d",
-                     "markup_365d", "markup_3650d"):
-            if clean.get(key) == -1:
-                clean[key] = None
 
         # Use OCR confidence (aggregated cell-reading quality) as the
         # submission confidence, not the template match confidence.
