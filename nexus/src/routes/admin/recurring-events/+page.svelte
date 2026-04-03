@@ -1,7 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount } from 'svelte';
-  import { addNotification } from '$lib/notifications.js';
+  import { addToast } from '$lib/stores/toasts.js';
 
   let events = $state([]);
   let isLoading = $state(true);
@@ -50,10 +50,10 @@
       newName = '';
       newDescription = '';
       newColor = '#ff6b35';
-      addNotification('Recurring event created', 'success');
+      addToast('Recurring event created', 'success');
       await loadEvents();
     } catch (err) {
-      addNotification(err.message, 'error');
+      addToast(err.message, 'error');
     } finally {
       creating = false;
     }
@@ -82,10 +82,10 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update');
       editingId = null;
-      addNotification('Recurring event updated', 'success');
+      addToast('Recurring event updated', 'success');
       await loadEvents();
     } catch (err) {
-      addNotification(err.message, 'error');
+      addToast(err.message, 'error');
     } finally {
       saving = false;
     }
@@ -97,10 +97,10 @@
       const res = await fetch(`/api/admin/recurring-events/${event.Id}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete');
-      addNotification('Recurring event deleted', 'success');
+      addToast('Recurring event deleted', 'success');
       await loadEvents();
     } catch (err) {
-      addNotification(err.message, 'error');
+      addToast(err.message, 'error');
     }
   }
 </script>
