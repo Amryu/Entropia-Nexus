@@ -403,6 +403,101 @@ async function refreshSummaryTables() {
 }
 
 // ------------------------------------------------------------------
+// Targeted rebuild (admin-triggered, for specific player/target/mob)
+// ------------------------------------------------------------------
+
+/**
+ * Rebuild aggregation data for a specific player, target, mob, or everything.
+ * Deletes affected rows from all rollup/summary tables and re-aggregates from raw data.
+ *
+ * @param {{ player?: string, target?: string, mobId?: number }} [filter]
+ *   If omitted, does a full rebuild of everything.
+ */
+export async function rebuildTargeted(filter) {
+  if (!filter?.player && !filter?.target && !filter?.mobId) {
+    // Full rebuild
+    await pool.query('TRUNCATE globals_rollup, globals_rollup_player, globals_rollup_target, globals_player_agg, globals_target_agg');
+    await fullRebuild();
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('SET statement_timeout = 300000'); // 5 min
+    await client.query('BEGIN');
+
+    if (filter.player) {
+      // Delete all rollup/summary data for this player
+      await client.query(`DELETE FROM globals_rollup_player WHERE player_name = $1`, [filter.player]);
+      await client.query(`DELETE FROM globals_player_agg WHERE player_name = $1`, [filter.player]);
+
+      // Re-aggregate from raw data
+      await client.query(
+        `INSERT INTO globals_rollup_player (granularity, period_start, player_name, global_type, event_count, sum_value, max_value, hof_count, ath_count)
+         SELECT 'daily', date_trunc('day', event_timestamp), player_name, global_type,
+                count(*), COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0),
+                count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
+         FROM ingested_globals
+         WHERE confirmed = true AND player_name = $1
+         GROUP BY date_trunc('day', event_timestamp), player_name, global_type`,
+        [filter.player]
+      );
+    }
+
+    if (filter.target) {
+      // Delete rollup/summary data for this specific target
+      await client.query(`DELETE FROM globals_rollup_target WHERE target_name = $1`, [filter.target]);
+      await client.query(`DELETE FROM globals_target_agg WHERE target_name = $1`, [filter.target]);
+
+      // Re-aggregate from raw data
+      await client.query(
+        `INSERT INTO globals_rollup_target (granularity, period_start, target_name, mob_id, global_type, event_count, sum_value, max_value, hof_count, ath_count)
+         SELECT 'daily', date_trunc('day', event_timestamp), target_name, MAX(mob_id), global_type,
+                count(*), COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0),
+                count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
+         FROM ingested_globals
+         WHERE confirmed = true AND target_name = $1
+         GROUP BY date_trunc('day', event_timestamp), target_name, global_type`,
+        [filter.target]
+      );
+    }
+
+    if (filter.mobId) {
+      // Delete rollup/summary data for ALL targets with this mob_id (all maturities)
+      // The mob_id lives in both ingested_globals and the rollup tables
+      await client.query(`DELETE FROM globals_rollup_target WHERE mob_id = $1`, [filter.mobId]);
+      await client.query(`DELETE FROM globals_target_agg WHERE mob_id = $1`, [filter.mobId]);
+
+      // Re-aggregate all targets that belong to this mob
+      await client.query(
+        `INSERT INTO globals_rollup_target (granularity, period_start, target_name, mob_id, global_type, event_count, sum_value, max_value, hof_count, ath_count)
+         SELECT 'daily', date_trunc('day', event_timestamp), target_name, MAX(mob_id), global_type,
+                count(*), COALESCE(sum(${VALUE_PED}), 0), COALESCE(max(${VALUE_PED}), 0),
+                count(*) FILTER (WHERE is_hof), count(*) FILTER (WHERE is_ath)
+         FROM ingested_globals
+         WHERE confirmed = true AND mob_id = $1
+         GROUP BY date_trunc('day', event_timestamp), target_name, global_type`,
+        [filter.mobId]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
+    client.release();
+  }
+
+  // Rebuild coarse granularities and summary tables from the updated daily data
+  for (const { granularity, truncUnit } of COARSE_GRANULARITIES) {
+    await rebuildCoarseGranularity(granularity, truncUnit);
+  }
+  await refreshSummaryTables();
+}
+
+// ------------------------------------------------------------------
 // Public API
 // ------------------------------------------------------------------
 

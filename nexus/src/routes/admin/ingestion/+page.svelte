@@ -44,6 +44,38 @@
   // Active section tab
   let activeTab = $state('alerts');
 
+  // Rebuild state
+  let rebuildMode = $state('player');
+  let rebuildValue = $state('');
+  let rebuilding = $state(false);
+  /** @type {{ type: string, message: string } | null} */
+  let rebuildResult = $state(null);
+
+  async function handleRebuild() {
+    if (rebuildMode !== 'all' && !rebuildValue.trim()) return;
+    if (rebuildMode === 'all' && !confirm('Rebuild ALL global aggregation? This may take several minutes.')) return;
+    rebuilding = true;
+    rebuildResult = null;
+    try {
+      const body = { mode: rebuildMode };
+      if (rebuildMode === 'player') body.player = rebuildValue.trim();
+      else if (rebuildMode === 'target') body.target = rebuildValue.trim();
+      else if (rebuildMode === 'mob') body.mobId = rebuildValue.trim();
+      const res = await fetch('/api/admin/globals/rebuild', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Rebuild failed');
+      rebuildResult = { type: 'success', message: `Rebuild complete in ${data.elapsed}` };
+    } catch (err) {
+      rebuildResult = { type: 'error', message: err.message };
+    } finally {
+      rebuilding = false;
+    }
+  }
+
   // Load alerts asynchronously after mount (don't block page load)
   loadAlertPage(1);
 
@@ -405,6 +437,9 @@
     <button class="tab" class:active={activeTab === 'channels'} onclick={() => activeTab = 'channels'}>
       Trade Channels ({formatNumber(stats.configured_channels)})
     </button>
+    <button class="tab" class:active={activeTab === 'rebuild'} onclick={() => activeTab = 'rebuild'}>
+      Rebuild
+    </button>
   </div>
 
   <!-- Alerts Tab -->
@@ -642,6 +677,58 @@
           </tbody>
         </table>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Rebuild Tab -->
+  {#if activeTab === 'rebuild'}
+    <div class="section">
+      <p class="section-description">Recalculate global aggregation data (rollups, summaries, ATH leaderboard). Use this after maturity changes or data corrections.</p>
+
+      <div class="rebuild-controls">
+        <div class="rebuild-mode">
+          <label class="radio-label">
+            <input type="radio" bind:group={rebuildMode} value="player" />
+            Player
+          </label>
+          <label class="radio-label">
+            <input type="radio" bind:group={rebuildMode} value="target" />
+            Target
+          </label>
+          <label class="radio-label">
+            <input type="radio" bind:group={rebuildMode} value="mob" />
+            Mob (all maturities)
+          </label>
+          <label class="radio-label">
+            <input type="radio" bind:group={rebuildMode} value="all" />
+            Everything
+          </label>
+        </div>
+
+        {#if rebuildMode !== 'all'}
+          <div class="rebuild-input-row">
+            <input
+              type={rebuildMode === 'mob' ? 'number' : 'text'}
+              bind:value={rebuildValue}
+              class="rebuild-input"
+              placeholder={rebuildMode === 'player' ? 'Player name (exact)' : rebuildMode === 'target' ? 'Target name (exact, e.g. Atrox Young)' : 'Mob ID'}
+            />
+            <button class="btn btn-primary" onclick={handleRebuild} disabled={rebuilding || !rebuildValue.trim()}>
+              {rebuilding ? 'Rebuilding...' : 'Rebuild'}
+            </button>
+          </div>
+        {:else}
+          <button class="btn btn-danger" onclick={handleRebuild} disabled={rebuilding}>
+            {rebuilding ? 'Rebuilding...' : 'Rebuild Everything'}
+          </button>
+        {/if}
+
+        {#if rebuildResult}
+          <div class="rebuild-result" class:success={rebuildResult.type === 'success'} class:error={rebuildResult.type === 'error'}>
+            {rebuildResult.message}
+          </div>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>
@@ -1349,5 +1436,58 @@
     .actions-cell {
       flex-direction: column;
     }
+  }
+
+  .rebuild-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 500px;
+  }
+
+  .rebuild-mode {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    color: var(--text-color);
+  }
+
+  .rebuild-input-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .rebuild-input {
+    flex: 1;
+    padding: 0.4rem 0.75rem;
+    background: var(--primary-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+
+  .rebuild-result {
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+
+  .rebuild-result.success {
+    background: var(--success-bg);
+    color: var(--success-color);
+  }
+
+  .rebuild-result.error {
+    background: var(--error-bg);
+    color: var(--error-color);
   }
 </style>

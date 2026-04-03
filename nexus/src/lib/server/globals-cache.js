@@ -450,6 +450,24 @@ async function rebuildAthLeaderboard() {
   return athRebuildPromise;
 }
 
+/**
+ * Force a full ATH leaderboard rebuild (admin-triggered).
+ * Resets internal state so the next rebuild is a full DELETE+INSERT.
+ */
+export async function forceAthRebuild() {
+  athLastCutoff = null;
+  athLastRebuiltAt = 0;
+  athLastFullRebuildAt = 0;
+  await rebuildAthLeaderboard();
+}
+
+/**
+ * Rebuild in-memory caches (admin-triggered, after rollup changes).
+ */
+export async function forceRefreshCaches() {
+  await rebuildAll();
+}
+
 // ------------------------------------------------------------------
 // Main rebuild (all in-memory caches)
 // ------------------------------------------------------------------
