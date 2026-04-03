@@ -125,6 +125,9 @@
                 {#if active}
                   <span class="event-active-badge">Live</span>
                 {/if}
+                {#if event.recurring_event_name}
+                  <span class="event-recurring-badge">{event.recurring_event_name}</span>
+                {/if}
                 <span class="event-type-badge" class:official={event.type === 'official'}>
                   {event.type === 'official' ? 'Official' : 'Player Event'}
                 </span>
@@ -164,6 +167,9 @@
             <div class="event-info">
               <div class="event-title-row">
                 <h3 class="event-title">{event.title}</h3>
+                {#if event.recurring_event_name}
+                  <span class="event-recurring-badge">{event.recurring_event_name}</span>
+                {/if}
                 <span class="event-type-badge" class:official={event.type === 'official'}>
                   {event.type === 'official' ? 'Official' : 'Player Event'}
                 </span>
@@ -386,6 +392,16 @@
   .event-type-badge.official {
     background-color: rgba(59, 130, 246, 0.15);
     color: var(--accent-color);
+  }
+
+  .event-recurring-badge {
+    font-size: 0.6875rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background-color: rgba(255, 107, 53, 0.15);
+    color: #ff6b35;
   }
 
   .event-details {

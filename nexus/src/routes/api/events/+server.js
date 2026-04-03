@@ -83,7 +83,8 @@ export async function POST({ request, locals }) {
     type: body.type === 'official' ? 'official' : 'player_run',
     link: body.link?.trim() || null,
     image_url: body.image_url?.trim() || null,
-    submitted_by: user.id
+    submitted_by: user.id,
+    recurring_event_name: body.recurring_event_name?.trim() || null
   });
 
   const displayName = user.eu_name || user.global_name || user.username;

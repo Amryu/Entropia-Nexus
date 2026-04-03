@@ -596,6 +596,7 @@ export function entityToModified(data, fallback = null) {
     taxRateShops: props.TaxRateShops ?? fbProps?.TaxRateShops ?? null,
     isShared: props.IsShared ?? fbProps?.IsShared ?? null,
     isEvent: props.IsEvent ?? fbProps?.IsEvent ?? null,
+    recurringEventId: props.RecurringEventId ?? fbProps?.RecurringEventId ?? null,
   };
 
   // MobArea density + maturities
@@ -664,6 +665,8 @@ export function modifiedToEntity(mod, original = null, extra = {}) {
     else if (origProps?.IsEvent != null) props.IsEvent = origProps.IsEvent;
     if (mod.isShared != null) props.IsShared = mod.isShared;
     else if (origProps?.IsShared != null) props.IsShared = origProps.IsShared;
+    if (mod.recurringEventId !== undefined) props.RecurringEventId = mod.recurringEventId;
+    else if (origProps?.RecurringEventId != null) props.RecurringEventId = origProps.RecurringEventId;
   }
 
   const body = {
@@ -716,6 +719,7 @@ export function modifiedToLocation(mod, loc) {
       Description: mod.description !== undefined ? mod.description : loc.Properties?.Description,
       ...(mod.isShared != null ? { IsShared: mod.isShared } : {}),
       ...(mod.isEvent != null ? { IsEvent: mod.isEvent } : {}),
+      ...(mod.recurringEventId !== undefined ? { RecurringEventId: mod.recurringEventId } : {}),
       ...(mod.density != null ? { Density: mod.density } : {}),
       TaxRateHunting: mod.taxRateHunting !== undefined ? mod.taxRateHunting : loc.Properties?.TaxRateHunting,
       TaxRateMining: mod.taxRateMining !== undefined ? mod.taxRateMining : loc.Properties?.TaxRateMining,

@@ -48,7 +48,10 @@ const queries = {
            ms."Density" AS "MobSpawnDensity",
            ms."IsShared" AS "MobSpawnIsShared",
            ms."IsEvent" AS "MobSpawnIsEvent",
-           ms."Notes" AS "MobSpawnNotes"
+           ms."Notes" AS "MobSpawnNotes",
+           ms."RecurringEventId" AS "MobSpawnRecurringEventId",
+           re."Name" AS "MobSpawnRecurringEventName",
+           re."Color" AS "MobSpawnRecurringEventColor"
     FROM ONLY "Locations" l
     LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
     LEFT JOIN ONLY "Locations" parent ON l."ParentLocationId" = parent."Id"
@@ -56,6 +59,7 @@ const queries = {
     LEFT JOIN ONLY "Estates" e ON l."Id" = e."LocationId"
     LEFT JOIN ONLY "LandAreas" la ON l."Id" = la."LocationId"
     LEFT JOIN ONLY "MobSpawns" ms ON l."Id" = ms."LocationId"
+    LEFT JOIN ONLY "RecurringEvents" re ON ms."RecurringEventId" = re."Id"
   `,
   Facilities: `
     SELECT lf."LocationId", f."Id" AS "FacilityId", f."Name", f."Description", f."Icon"
@@ -228,6 +232,9 @@ function formatLocation(x, add = {}) {
       result.Properties.IsShared = x.MobSpawnIsShared === 1 || x.MobSpawnIsShared === true;
       result.Properties.IsEvent = x.MobSpawnIsEvent === 1 || x.MobSpawnIsEvent === true;
       result.Properties.Notes = x.MobSpawnNotes ?? null;
+      result.Properties.RecurringEventId = x.MobSpawnRecurringEventId ?? null;
+      result.Properties.RecurringEventName = x.MobSpawnRecurringEventName ?? null;
+      result.Properties.RecurringEventColor = x.MobSpawnRecurringEventColor ?? null;
     }
     if (x.AreaType === 'LandArea') {
       result.Properties.TaxRateHunting = x.LandAreaTaxRateHunting ?? null;
@@ -508,7 +515,7 @@ function register(app) {
       if (hasFilters) {
         res.json(await getLocations(options));
       } else {
-        res.json(await withCache('/locations', ['Locations', 'Planets', 'Areas', 'Estates', 'LandAreas', 'LocationFacilities', 'Facilities', 'WaveEventWaves', 'MobSpawns', 'MobSpawnMaturities', 'MobMaturities', 'Mobs'], getLocations));
+        res.json(await withCache('/locations', ['Locations', 'Planets', 'Areas', 'Estates', 'LandAreas', 'LocationFacilities', 'Facilities', 'WaveEventWaves', 'MobSpawns', 'MobSpawnMaturities', 'MobMaturities', 'Mobs', 'RecurringEvents'], getLocations));
       }
     } catch (e) {
       console.error('Error fetching locations:', e);

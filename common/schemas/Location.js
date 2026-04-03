@@ -98,6 +98,18 @@ export const Location = {
           "type": ["boolean", "null"],
           "default": null
         },
+        "RecurringEventId": {
+          "type": ["integer", "null"],
+          "default": null
+        },
+        "RecurringEventName": {
+          "type": ["string", "null"],
+          "default": null
+        },
+        "RecurringEventColor": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Notes": {
           "type": ["string", "null"],
           "default": null

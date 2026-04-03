@@ -4422,7 +4422,7 @@ export async function deleteAnnouncement(id) {
 export async function getUpcomingEvents(limit = 5) {
   const result = await pool.query(
     `SELECT e.id, e.title, e.description, e.start_date, e.end_date,
-            e.location, e.type, e.link, e.image_url,
+            e.location, e.type, e.link, e.image_url, e.recurring_event_name,
             u.global_name AS submitted_by_name
      FROM events e
      LEFT JOIN users u ON u.id = e.submitted_by
@@ -4439,7 +4439,7 @@ export async function getUpcomingEvents(limit = 5) {
 export async function getPastEvents(limit = 50) {
   const result = await pool.query(
     `SELECT e.id, e.title, e.description, e.start_date, e.end_date,
-            e.location, e.type, e.link, e.image_url,
+            e.location, e.type, e.link, e.image_url, e.recurring_event_name,
             u.global_name AS submitted_by_name
      FROM events e
      LEFT JOIN users u ON u.id = e.submitted_by
@@ -4494,11 +4494,11 @@ export async function getEventById(id) {
   return result.rows[0] || null;
 }
 
-export async function createEvent({ title, description, start_date, end_date, location, type, link, image_url, submitted_by }) {
+export async function createEvent({ title, description, start_date, end_date, location, type, link, image_url, submitted_by, recurring_event_name }) {
   const result = await pool.query(
-    `INSERT INTO events (title, description, start_date, end_date, location, type, link, image_url, submitted_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [title, description || null, start_date, end_date || null, location || null, type || 'player_run', link || null, image_url || null, submitted_by]
+    `INSERT INTO events (title, description, start_date, end_date, location, type, link, image_url, submitted_by, recurring_event_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [title, description || null, start_date, end_date || null, location || null, type || 'player_run', link || null, image_url || null, submitted_by, recurring_event_name || null]
   );
   return result.rows[0];
 }
@@ -4513,7 +4513,7 @@ export async function updateEventState(id, state, approved_by, admin_note = null
 }
 
 export async function updateEvent(id, fields) {
-  const allowedFields = ['title', 'description', 'start_date', 'end_date', 'location', 'type', 'link', 'image_url'];
+  const allowedFields = ['title', 'description', 'start_date', 'end_date', 'location', 'type', 'link', 'image_url', 'recurring_event_name'];
   const sets = [];
   const values = [];
   let paramIndex = 1;
@@ -4546,6 +4546,18 @@ export async function countPendingEventsByUser(userId) {
     [userId]
   );
   return result.rows[0].count;
+}
+
+export async function getActiveRecurringEventNames() {
+  const result = await pool.query(
+    `SELECT DISTINCT recurring_event_name
+     FROM events
+     WHERE state = 'approved'
+       AND recurring_event_name IS NOT NULL
+       AND start_date <= NOW()
+       AND (end_date >= NOW() OR (end_date IS NULL AND start_date >= NOW() - INTERVAL '1 day'))`
+  );
+  return result.rows.map(r => r.recurring_event_name);
 }
 
 // =============================================================================

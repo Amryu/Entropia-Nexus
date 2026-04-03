@@ -47,6 +47,7 @@ const usage = require('./usage');
 const enumerations = require('./enumerations');
 const audit = require('./audit');
 const entitychanges = require('./entitychanges');
+const recurringevents = require('./recurringevents');
 // Newly added (migration phase 3)
 let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspecies, mobs;
 try { absorbers = require('./absorbers'); } catch {}
@@ -116,6 +117,7 @@ function registerAll(app){
   enumerations.register(app);
   audit.register(app);
   entitychanges.register(app);
+  recurringevents.register(app);
   // Conditionally register new modules if present
   absorbers?.register(app);
   misctools?.register(app);

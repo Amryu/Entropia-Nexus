@@ -10,8 +10,12 @@
   /** @type {typeof import('$lib/components/wiki/RichTextEditor.svelte').default|null} */
   let RichTextEditor = $state(null);
   onMount(async () => {
-    const mod = await import('$lib/components/wiki/RichTextEditor.svelte');
+    const [mod, reData] = await Promise.all([
+      import('$lib/components/wiki/RichTextEditor.svelte'),
+      apiCall(fetch, '/recurringevents')
+    ]);
     RichTextEditor = mod.default;
+    if (reData) recurringEvents = reData;
   });
 
   
@@ -82,6 +86,8 @@
   // MobArea state
   let isEvent = $state(false);
   let isShared = $state(false);
+  let recurringEventId = $state(null);
+  let recurringEvents = $state([]);
 
   // LandArea state
   let landAreaOwner = $state('');
@@ -254,6 +260,7 @@
       description: description || null,
       isEvent: isMobArea ? isEvent : null,
       isShared: isMobArea ? isShared : null,
+      recurringEventId: isMobArea ? recurringEventId : null,
       landAreaOwner: (isLandArea && landAreaOwner) ? landAreaOwner : null,
       taxRateHunting: isLandArea ? taxRateHunting : null,
       taxRateMining: isLandArea ? taxRateMining : null,
@@ -414,6 +421,7 @@
       parentLocationName = location.ParentLocation?.Name || '';
       description = location.Properties?.Description || '';
       isEvent = location.Properties?.IsEvent ?? false;
+      recurringEventId = location.Properties?.RecurringEventId ?? null;
       isShared = location.Properties?.IsShared ?? false;
       landAreaOwner = location.Owner?.Name || location.Properties?.LandAreaOwnerName || '';
       taxRateHunting = location.Properties?.TaxRateHunting ?? null;
@@ -583,7 +591,7 @@
         ...(locationType === 'Area' ? { Shape: shape, Data: buildShapeData(shape) } : {}),
         ...(location?.Properties?.TechnicalId ? { TechnicalId: location.Properties.TechnicalId } : {}),
         ...(isLandArea ? { TaxRateHunting: taxRateHunting, TaxRateMining: taxRateMining, TaxRateShops: taxRateShops } : {}),
-        ...(isMobArea ? { IsEvent: isEvent, IsShared: isShared } : {}),
+        ...(isMobArea ? { IsEvent: isEvent, IsShared: isShared, RecurringEventId: recurringEventId } : {}),
         ...(pendingMobData ? { Density: pendingMobData.density } : {})
       },
       ...(location?.Planet ? { Planet: location.Planet } : {}),
@@ -729,6 +737,14 @@
     cursor: pointer;
   }
   .toggle-label input[type="checkbox"] { cursor: pointer; }
+  .event-select {
+    padding: 2px 4px;
+    font-size: 12px;
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+  }
 
   .description-editor :global(.rich-text-editor) {
     font-size: 13px;
@@ -1023,8 +1039,12 @@
         {/if}
         <div class="toggle-row">
           <label class="toggle-label">
-            <input type="checkbox" bind:checked={isEvent} disabled={readOnly} onchange={scheduleAutoSave} />
-            Event
+            <select bind:value={recurringEventId} disabled={readOnly} onchange={() => { isEvent = recurringEventId != null; scheduleAutoSave(); }} class="event-select">
+              <option value={null}>No Event</option>
+              {#each recurringEvents as re}
+                <option value={re.Id}>{re.Name}</option>
+              {/each}
+            </select>
           </label>
           <label class="toggle-label">
             <input type="checkbox" bind:checked={isShared} disabled={readOnly} onchange={scheduleAutoSave} />

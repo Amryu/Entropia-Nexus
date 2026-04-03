@@ -691,6 +691,7 @@
   let userPendingUpdates = $derived(data.userPendingUpdates || []);
   let hasPendingChanges = $derived(userPendingCreates.length + userPendingUpdates.length > 0);
   let locations = $derived(data?.additional?.locations || []);
+  let activeRecurringEvents = $derived(new Set(data?.additional?.activeRecurringEvents || []));
   $effect(() => {
     if (locations) {
       const slug = $page.params.slug;
@@ -926,6 +927,7 @@
           mapName={currentPlanet?.Name}
           planet={currentPlanet}
           locations={locations}
+          {activeRecurringEvents}
           bind:selected={selectedLocation}
           bind:hovered={hoveredLocation}
           searchResults={isEmbed && embedHighlightLocations.length > 0

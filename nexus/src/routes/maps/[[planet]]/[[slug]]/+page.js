@@ -25,7 +25,12 @@ export async function load({ fetch, params, url, parent }) {
   const mode = url.searchParams.get('mode') || 'view';
   const changeId = url.searchParams.get('changeId');
 
-  let locations = await apiCall(fetch, '/locations?Planet=' + planet.Name) || [];
+  const [locationsData, activeEventsData] = await Promise.all([
+    apiCall(fetch, '/locations?Planet=' + planet.Name),
+    apiCall(fetch, '/api/events/active')
+  ]);
+  let locations = locationsData || [];
+  const activeRecurringEvents = activeEventsData?.active || [];
 
   if (!params.planet && !params.slug) {
     return pageResponse(
@@ -34,6 +39,7 @@ export async function load({ fetch, params, url, parent }) {
       {
         locations,
         planet,
+        activeRecurringEvents,
       }
     );
   }
@@ -46,7 +52,8 @@ export async function load({ fetch, params, url, parent }) {
       null,
       {
         locations,
-        planet
+        planet,
+        activeRecurringEvents,
       },
       404);
   }
@@ -56,7 +63,8 @@ export async function load({ fetch, params, url, parent }) {
     location,
     {
       locations,
-      planet
+      planet,
+      activeRecurringEvents,
     }
   );
 

@@ -251,6 +251,7 @@
     selected = $bindable(),
     hovered = $bindable(),
     searchResults = [],
+    activeRecurringEvents = new Set(),
     embedMode = false,
     hideLayerToggles = false
   } = $props();
@@ -1487,6 +1488,9 @@
       case 'WaveEventArea':
         return { color: '#da70d6', pattern: null };
       case 'MobArea': {
+        // Event mob areas use their recurring event color
+        const reColor = loc?.Properties?.RecurringEventColor;
+        if (reColor) return { color: reColor, pattern: null };
         // Use difficulty color if available, otherwise yellow
         const diff = loc?._difficulty;
         return { color: diff?.color || 'yellow', pattern: null };
@@ -1510,7 +1514,7 @@
   // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
   $effect(() => {
     // Touch all toggle variables to establish reactive dependencies
-    const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected, searchResults];
+    const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected, searchResults, activeRecurringEvents];
     const searchResultIds = new Set(searchResults.map(sr => sr.Id));
     filteredLocations = locations ? locations.filter(loc => {
       // Always show the selected location regardless of layer toggles
@@ -1528,7 +1532,13 @@
       if (areaType === 'LandArea') return showLandAreas;
 
       // Mob Areas (creatures) & Wave Event Areas
-      if (areaType === 'MobArea' || areaType === 'WaveEventArea') return showMobAreas;
+      if (areaType === 'MobArea' || areaType === 'WaveEventArea') {
+        if (!showMobAreas) return false;
+        // Event mob areas: only show when their event is active
+        const reName = loc.Properties?.RecurringEventName;
+        if (reName) return activeRecurringEvents.has(reName);
+        return true;
+      }
 
       // PvP Areas (PvpArea and PvpLootArea)
       if (areaType === 'PvpArea' || areaType === 'PvpLootArea') return showPvpAreas;

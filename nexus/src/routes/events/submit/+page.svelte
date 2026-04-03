@@ -1,7 +1,9 @@
 <script>
   // @ts-nocheck
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { addToast } from '$lib/stores/toasts';
+  import { apiCall } from '$lib/util.js';
 
   let title = $state('');
   let description = $state('');
@@ -10,9 +12,16 @@
   let location = $state('');
   let type = $state('player_run');
   let link = $state('');
+  let recurring_event_name = $state('');
+  let recurringEvents = $state([]);
 
   let submitting = $state(false);
   let error = $state(null);
+
+  onMount(async () => {
+    const data = await apiCall(fetch, '/recurringevents');
+    if (data) recurringEvents = data;
+  });
 
   async function handleSubmit() {
     if (!title.trim()) {
@@ -35,7 +44,8 @@
         end_date: end_date ? new Date(end_date).toISOString() : null,
         location: location.trim() || null,
         type,
-        link: link.trim() || null
+        link: link.trim() || null,
+        recurring_event_name: recurring_event_name || null
       };
 
       const response = await fetch('/api/events', {
@@ -117,6 +127,19 @@
         </select>
       </div>
     </div>
+
+    {#if recurringEvents.length > 0}
+      <div class="form-group">
+        <label for="recurring_event">Recurring Event</label>
+        <select id="recurring_event" bind:value={recurring_event_name}>
+          <option value="">None</option>
+          {#each recurringEvents as re}
+            <option value={re.Name}>{re.Name}</option>
+          {/each}
+        </select>
+        <span class="hint">Associate with a known recurring game event</span>
+      </div>
+    {/if}
 
     <div class="form-group">
       <label for="link">Link (optional)</label>

@@ -317,7 +317,8 @@ export const Mob = {
               },
               "IsShared": { "type": "boolean" },
               "IsEvent": { "type": "boolean" },
-              "Shape": { 
+              "RecurringEventId": { "type": ["integer", "null"] },
+              "Shape": {
                 "type": "string",
                 "enum": ["Point", "Circle", "Rectangle", "Polygon"]
               },

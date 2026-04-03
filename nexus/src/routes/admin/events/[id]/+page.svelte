@@ -22,6 +22,9 @@
   let link = $state('');
   let image_url = $state('');
 
+  let recurring_event_name = $state('');
+  let recurringEvents = $state([]);
+
   let denyReason = $state('');
   let showDenyDialog = $state(false);
   let approving = $state(false);
@@ -30,9 +33,12 @@
 
   onMount(async () => {
     try {
-      const response = await fetch(`/api/admin/events/${id}`);
-      if (!response.ok) throw new Error('Event not found');
-      const data = await response.json();
+      const [eventRes, reRes] = await Promise.all([
+        fetch(`/api/admin/events/${id}`),
+        fetch('/api/admin/recurring-events')
+      ]);
+      if (!eventRes.ok) throw new Error('Event not found');
+      const data = await eventRes.json();
       event = data;
       title = data.title || '';
       description = data.description || '';
@@ -42,6 +48,8 @@
       type = data.type || 'player_run';
       link = data.link || '';
       image_url = data.image_url || '';
+      recurring_event_name = data.recurring_event_name || '';
+      if (reRes.ok) recurringEvents = await reRes.json();
     } catch (err) {
       error = err.message;
     } finally {
@@ -81,7 +89,8 @@
         location: location.trim() || null,
         type,
         link: link.trim() || null,
-        image_url: image_url.trim() || null
+        image_url: image_url.trim() || null,
+        recurring_event_name: recurring_event_name || null
       };
 
       const response = await fetch(`/api/admin/events/${id}`, {
@@ -265,6 +274,16 @@
             <option value="official">Official</option>
           </select>
         </div>
+      </div>
+
+      <div class="form-group">
+        <label for="recurring_event">Recurring Event</label>
+        <select id="recurring_event" bind:value={recurring_event_name}>
+          <option value="">None</option>
+          {#each recurringEvents as re}
+            <option value={re.Name}>{re.Name}</option>
+          {/each}
+        </select>
       </div>
 
       <div class="form-group">

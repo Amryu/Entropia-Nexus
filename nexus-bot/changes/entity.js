@@ -1418,14 +1418,16 @@ async function applyLocationExtensionChanges(client, locationId, x) {
     const density = x.Properties?.Density ?? null;
     const isShared = x.Properties?.IsShared ? 1 : 0;
     const isEvent = x.Properties?.IsEvent ? 1 : 0;
+    const recurringEventId = x.Properties?.RecurringEventId ?? null;
     await client.query(
-      `INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent")
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent", "RecurringEventId")
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT ("LocationId") DO UPDATE SET
          "Density" = COALESCE($2, "MobSpawns"."Density"),
          "IsShared" = $3,
-         "IsEvent" = $4`,
-      [locationId, density, isShared, isEvent]
+         "IsEvent" = $4,
+         "RecurringEventId" = $5`,
+      [locationId, density, isShared, isEvent, recurringEventId]
     );
 
     const mobData = x.Maturities;
@@ -2059,14 +2061,15 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
         // Update the spawn properties that might have changed
         await client.query(`
           UPDATE "MobSpawns"
-          SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5
-          WHERE "LocationId" = $6
+          SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5, "RecurringEventId" = $6
+          WHERE "LocationId" = $7
         `, [
           spawn.Properties.Density || 3,
           spawn.Properties.IsShared ? 1 : 0,
           spawn.Properties.IsEvent ? 1 : 0,
           derivedName || null,
           spawn.Properties.Description || null,
+          spawn.Properties.RecurringEventId ?? null,
           areaId
         ]);
       } else {
@@ -2108,17 +2111,19 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
         // Create new MobSpawn (LocationId is the PK and FK to Locations)
         await client.query(`
-          INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent")
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent", "RecurringEventId")
+          VALUES ($1, $2, $3, $4, $5)
           ON CONFLICT ("LocationId") DO UPDATE SET
             "Density" = EXCLUDED."Density",
             "IsShared" = EXCLUDED."IsShared",
-            "IsEvent" = EXCLUDED."IsEvent"
+            "IsEvent" = EXCLUDED."IsEvent",
+            "RecurringEventId" = EXCLUDED."RecurringEventId"
         `, [
           areaId,
           spawn.Properties.Density || 3,
           spawn.Properties.IsShared ? 1 : 0,
-          spawn.Properties.IsEvent ? 1 : 0
+          spawn.Properties.IsEvent ? 1 : 0,
+          spawn.Properties.RecurringEventId ?? null
         ]);
       }
 
