@@ -17,6 +17,11 @@ ALTER TABLE "MobSpawns" ADD COLUMN "RecurringEventId" INTEGER
 CREATE INDEX idx_mobspawns_recurring_event
   ON "MobSpawns"("RecurringEventId") WHERE "RecurringEventId" IS NOT NULL;
 
+-- TableChanges tracking (required for API response cache invalidation)
+CREATE TRIGGER zz_track_change
+AFTER INSERT OR UPDATE OR DELETE ON "RecurringEvents"
+FOR EACH STATEMENT EXECUTE FUNCTION track_table_change();
+
 -- Grants for public API (nexus role needs write for admin CRUD via proxy)
 GRANT SELECT, INSERT, UPDATE, DELETE ON "RecurringEvents" TO "nexus";
 GRANT USAGE, SELECT ON SEQUENCE "RecurringEvents_Id_seq" TO "nexus";
