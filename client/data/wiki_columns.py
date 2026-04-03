@@ -684,7 +684,7 @@ COLUMN_DEFS: dict[str, dict[str, dict]] = {
         "zoom":       {"key": "zoom",       "header": "Zoom",        "get_value": lambda i: deep_get(i, "Properties", "Zoom"), "format": _fmt_zoom},
         "decay":      {"key": "decay",      "header": "Decay",       "get_value": lambda i: deep_get(i, "Properties", "Economy", "Decay"), "format": fmt(2)},
         "skillMod":   {"key": "skillMod",   "header": "Skill Mod",   "get_value": lambda i: deep_get(i, "Properties", "SkillModification"), "format": _fmt_skill_pct},
-        "skillBonus": {"key": "skillBonus", "header": "Skill Bonus", "get_value": lambda i: deep_get(i, "Properties", "SkillBonus"), "format": _fmt_skill_pct},
+        "skillBonus": {"key": "skillBonus", "header": "Skill Bonus", "get_value": lambda i: deep_get(i, "Properties", "SkillBonus"), "format": lambda v: "-" if v is None else f"{v}"},
         "maxTT":      {"key": "maxTT",      "header": "Max TT",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
         "weight":     {"key": "weight",     "header": "Weight",      "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
     },

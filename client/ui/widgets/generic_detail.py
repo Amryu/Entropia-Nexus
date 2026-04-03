@@ -313,7 +313,7 @@ def _type_config_sightsscopes() -> dict:
             ]),
             ("Skill", [
                 ("Skill Mod", lambda i: _fmt_skill_pct(deep_get(i, "Properties", "SkillModification"))),
-                ("Skill Bonus", lambda i: _fmt_skill_pct(deep_get(i, "Properties", "SkillBonus"))),
+                ("Skill Bonus", lambda i: (lambda v: "-" if v is None else f"{v}")(deep_get(i, "Properties", "SkillBonus"))),
             ]),
         ],
         "effects_keys": ["EffectsOnEquip"],

@@ -282,7 +282,7 @@
     dur: { key: 'dur', header: 'Durability', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.Durability, format: (v) => v != null ? v : '-' },
     zoom: { key: 'zoom', header: 'Zoom', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Zoom, format: (v) => v != null ? `${v.toFixed(1)}x` : '-' },
     skillMod: { key: 'skillMod', header: 'Skill Mod', width: '65px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.SkillModification, format: (v) => v != null ? `${v}%` : '-' },
-    skillBonus: { key: 'skillBonus', header: 'Skill Bonus', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.SkillBonus, format: (v) => v != null ? `${v}%` : '-' },
+    skillBonus: { key: 'skillBonus', header: 'Skill Bonus', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.SkillBonus, format: (v) => v != null ? `${v}` : '-' },
     maxTT: { key: 'maxTT', header: 'Max TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
     minTT: { key: 'minTT', header: 'Min TT', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MinTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
     totalUses: { key: 'totalUses', header: 'Uses', width: '55px', filterPlaceholder: '>100', getValue: (item) => getTotalUses(item), format: (v) => v != null ? v : '-' },

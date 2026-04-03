@@ -4337,7 +4337,7 @@
             <div class="stat-row"><span class="stat-label">Hit Ability</span><span class="stat-value">{stats.hitAbility != null ? `${stats.hitAbility.toFixed(1)}/10.0` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Crit Ability</span><span class="stat-value">{stats.critAbility != null ? `${stats.critAbility.toFixed(1)}/10.0` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Skill Modification</span><span class="stat-value">{stats.skillModification != null ? `${stats.skillModification.toFixed(1)}%` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Skill Bonus</span><span class="stat-value">{stats.skillBonus != null ? `${stats.skillBonus.toFixed(1)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Skill Bonus</span><span class="stat-value">{stats.skillBonus != null ? stats.skillBonus.toFixed(1) : 'N/A'}</span></div>
           </div>
         </div>
         {#if sharedLoadoutData}
@@ -5252,7 +5252,7 @@
             <div class="stat-row"><span class="stat-label">Hit Ability</span><span class="stat-value">{stats.hitAbility != null ? `${stats.hitAbility.toFixed(1)}/10.0` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Crit Ability</span><span class="stat-value">{stats.critAbility != null ? `${stats.critAbility.toFixed(1)}/10.0` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Skill Modification</span><span class="stat-value">{stats.skillModification != null ? `${stats.skillModification.toFixed(1)}%` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Skill Bonus</span><span class="stat-value">{stats.skillBonus != null ? `${stats.skillBonus.toFixed(1)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Skill Bonus</span><span class="stat-value">{stats.skillBonus != null ? stats.skillBonus.toFixed(1) : 'N/A'}</span></div>
           </div>
         {:else}
           <div class="stats-empty">Select a loadout to view stats.</div>
