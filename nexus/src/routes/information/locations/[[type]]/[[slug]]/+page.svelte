@@ -161,6 +161,8 @@
 
 
 
+  const entityType = 'location';
+
   onDestroy(() => {
     resetEditState();
   });

@@ -30,7 +30,15 @@ export async function load({ fetch, params, url, parent }) {
       // Fetch by name - may return disambiguation object if multiple matches
       const result = await apiCall(fetch, `/locations/${encodeURIComponent(name)}`);
       if (result && result.disambiguation) {
-        disambiguation = result.matches;
+        // If the URL includes a type slug, try to auto-resolve the correct match
+        const typeMatch = type
+          ? result.matches.find(m => m.Properties?.Type?.toLowerCase() === type)
+          : null;
+        if (typeMatch) {
+          object = typeMatch;
+        } else {
+          disambiguation = result.matches;
+        }
       } else {
         object = result;
       }
