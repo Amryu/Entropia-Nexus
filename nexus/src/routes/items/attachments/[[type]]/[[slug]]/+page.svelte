@@ -997,7 +997,6 @@
                   value={activeEntity?.Properties?.SkillBonus}
                   path="Properties.SkillBonus"
                   type="number"
-                  suffix="%"
                   step={0.1}
                 />
               </span>
