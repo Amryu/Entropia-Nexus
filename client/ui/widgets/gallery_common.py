@@ -245,23 +245,24 @@ class ThumbnailLoader(QThread):
         if self._cancelled:
             return
 
-        # Phase 2: generate thumbnails (using cache)
+        # Phase 2: serve cached thumbnails first, then generate misses.
+        # Two passes ensure all previously-cached items appear immediately
+        # even if the loader is cancelled during slow generation I/O.
         cache = get_thumbnail_cache()
         tw, th = self._thumb_width, self._thumb_height
         existing_paths = set()
+        misses: list[dict] = []
 
+        # Pass 1: serve cache hits (fast — SQLite lookups only)
         for item in items:
             if self._cancelled:
                 break
 
             path = item["path"]
-            mtime = item["mtime"]
-            file_type = item["type"]
             existing_paths.add(path)
 
-            # Try cache first
             if cache:
-                cached = cache.get(path, mtime, tw, th)
+                cached = cache.get(path, item["mtime"], tw, th)
                 if cached:
                     jpeg_bytes, iw, ih = cached
                     qimg = _jpeg_to_qimage(jpeg_bytes, iw, ih)
@@ -270,15 +271,23 @@ class ThumbnailLoader(QThread):
                         self.thumbnail_ready.emit(path, qimg)
                         continue
 
-            # Cache miss — generate
+            misses.append(item)
+
+        # Pass 2: generate thumbnails for cache misses (slow I/O)
+        for item in misses:
+            if self._cancelled:
+                break
+
+            path = item["path"]
+            file_type = item["type"]
             try:
                 result = _generate_thumbnail_bytes(path, file_type, tw, th)
                 if result:
                     jpeg_bytes, sw, sh = result
-                    # Store in cache
                     if cache:
                         try:
-                            cache.put(path, mtime, tw, th, sw, sh, jpeg_bytes)
+                            cache.put(path, item["mtime"], tw, th,
+                                      sw, sh, jpeg_bytes)
                         except Exception:
                             pass
                     qimg = _jpeg_to_qimage(jpeg_bytes, sw, sh)

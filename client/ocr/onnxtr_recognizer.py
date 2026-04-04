@@ -205,6 +205,15 @@ def _ensure_session():
                 return None
 
             log.info("CRNN model loaded (%s, 1 thread)", model_path.name)
+        except ImportError as e:
+            log.warning("Failed to load CRNN model: %s", e)
+            if "DLL" in str(e):
+                log.warning(
+                    "This usually means the Visual C++ 2015-2022 Redistributable "
+                    "is missing or corrupted. Download it from: "
+                    "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                )
+            _session = None
         except Exception as e:
             log.warning("Failed to load CRNN model: %s", e)
             _session = None

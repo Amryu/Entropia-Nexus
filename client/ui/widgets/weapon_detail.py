@@ -556,7 +556,7 @@ class _TiersWidget(QWidget):
                 f"}}"
             )
 
-    def _get_resolved_markup(self, mat_name: str, sorted_idx: int,
+    def _get_resolved_markup(self, mat_name: str, mat_idx: int,
                               tier_markups: dict | None = None) -> float:
         """Resolve markup for a material based on current source mode."""
         if self._markup_source == "exchange":
@@ -574,7 +574,7 @@ class _TiersWidget(QWidget):
                 if inv is not None:
                     return inv
         # Fallback to custom markup
-        mu = (tier_markups or {}).get(sorted_idx, 100)
+        mu = (tier_markups or {}).get(mat_idx, 100)
         return mu
 
     def _load_source_data(self):
@@ -700,6 +700,7 @@ class _TiersWidget(QWidget):
             if isinstance(mu_list, list):
                 self._markups[tier_num] = {
                     i: float(v) for i, v in enumerate(mu_list)
+                    if v is not None
                 }
 
     def _save_markups(self):
@@ -891,8 +892,9 @@ class _TiersWidget(QWidget):
         is_custom = self._markup_source == "custom"
 
         for row, entry in enumerate(entries):
+            oi = entry["orig_idx"]
             mu = self._get_resolved_markup(
-                entry["name"], row, tier_markups
+                entry["name"], oi, tier_markups
             )
             cost = entry["tt"] * entry["amount"] * mu / 100
 
@@ -929,10 +931,10 @@ class _TiersWidget(QWidget):
                 f"}}"
             )
             spinbox.valueChanged.connect(
-                lambda val, si=row: self._on_markup_changed(si, val)
+                lambda val, si=oi: self._on_markup_changed(si, val)
             )
             table.setCellWidget(row, 3, spinbox)
-            self._mu_spinboxes.append((row, spinbox))
+            self._mu_spinboxes.append((oi, spinbox))
 
             # Cost
             table.setItem(row, 4, QTableWidgetItem(_fmt_ped(cost)))
@@ -972,14 +974,14 @@ class _TiersWidget(QWidget):
         self._recalculate()
         self._materials_container.setMinimumHeight(0)
 
-    def _on_markup_changed(self, sorted_idx: int, value: float):
+    def _on_markup_changed(self, mat_idx: int, value: float):
         """Store markup and recalculate costs (only in custom mode)."""
         if self._markup_source != "custom":
             return
         tier = self._selected_tier
         if tier not in self._markups:
             self._markups[tier] = {}
-        self._markups[tier][sorted_idx] = value
+        self._markups[tier][mat_idx] = value
         self._recalculate()
         self._schedule_save()
 
@@ -994,8 +996,9 @@ class _TiersWidget(QWidget):
         tier_tt = 0.0
         tier_total = 0.0
         for row, entry in enumerate(self._sorted_entries):
+            oi = entry["orig_idx"]
             mu = self._get_resolved_markup(
-                entry["name"], row, tier_markups
+                entry["name"], oi, tier_markups
             )
             base = entry["tt"] * entry["amount"]
             cost = base * mu / 100
@@ -1008,7 +1011,7 @@ class _TiersWidget(QWidget):
 
             # Update spinbox value when source changes
             for si, spinbox in self._mu_spinboxes:
-                if si == row:
+                if si == oi:
                     spinbox.blockSignals(True)
                     spinbox.setValue(mu)
                     spinbox.blockSignals(False)
@@ -1032,21 +1035,19 @@ class _TiersWidget(QWidget):
             t_mats = t_data.get("Materials", [])
             t_markups = self._markups.get(t, {})
 
-            # Sort the same way to match stored markup indices
             t_entries = []
-            for mat in t_mats:
+            for orig_idx, mat in enumerate(t_mats):
                 mat_name = deep_get(mat, "Material", "Name") or "Unknown"
                 t_entries.append({
+                    "orig_idx": orig_idx,
                     "name": mat_name,
                     "tt": deep_get(mat, "Material", "Properties", "Economy", "MaxTT") or 0,
                     "amount": mat.get("Amount", 0),
-                    "sort": _classify_material(mat_name),
                 })
-            t_entries.sort(key=lambda e: e["sort"])
 
-            for sorted_idx, entry in enumerate(t_entries):
+            for entry in t_entries:
                 mu = self._get_resolved_markup(
-                    entry["name"], sorted_idx, t_markups
+                    entry["name"], entry["orig_idx"], t_markups
                 )
                 base = entry["tt"] * entry["amount"]
                 cumul_tt += base

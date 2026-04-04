@@ -316,24 +316,29 @@ class GalleryPage(QWidget):
     # Data loading
     # ------------------------------------------------------------------
 
+    def _retire_loader(self, loader: "ThumbnailLoader") -> None:
+        """Cancel a loader and let it self-destruct without blocking."""
+        loader.cancel()
+        try:
+            loader.items_ready.disconnect(self._on_items_ready)
+        except TypeError:
+            pass
+        try:
+            loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
+        except TypeError:
+            pass
+        try:
+            loader.loaded.disconnect(self._on_loaded)
+        except TypeError:
+            pass
+        if loader.isRunning():
+            loader.finished.connect(loader.deleteLater)
+        else:
+            loader.deleteLater()
+
     def _reload(self):
-        # Disconnect old loader to prevent stale results; wait briefly for cleanup
         if self._loader is not None:
-            self._loader.cancel()
-            try:
-                self._loader.items_ready.disconnect(self._on_items_ready)
-            except TypeError:
-                pass
-            try:
-                self._loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
-            except TypeError:
-                pass
-            try:
-                self._loader.loaded.disconnect(self._on_loaded)
-            except TypeError:
-                pass
-            if self._loader.isRunning():
-                self._loader.wait(3000)
+            self._retire_loader(self._loader)
             self._loader = None
 
         self._items_by_path = {}
@@ -764,19 +769,7 @@ class GalleryPage(QWidget):
     def closeEvent(self, event):
         if self._loader is not None:
             self._loader.cancel()
-            try:
-                self._loader.items_ready.disconnect(self._on_items_ready)
-            except TypeError:
-                pass
-            try:
-                self._loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
-            except TypeError:
-                pass
-            try:
-                self._loader.loaded.disconnect(self._on_loaded)
-            except TypeError:
-                pass
             if self._loader.isRunning():
-                self._loader.wait(3000)
+                self._loader.wait(500)
             self._loader = None
         super().closeEvent(event)

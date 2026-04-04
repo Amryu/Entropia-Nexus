@@ -112,6 +112,7 @@ EVENT_RECORDING_STARTED = "recording_started"
 EVENT_RECORDING_STOPPED = "recording_stopped"
 EVENT_CLIP_ENCODING_STARTED = "clip_encoding_started"
 EVENT_CLIP_ENCODING_PROGRESS = "clip_encoding_progress"
+EVENT_CLIP_BUFFER_PROGRESS = "clip_buffer_progress"
 
 # Event names — OBS integration
 EVENT_OBS_CONNECTED = "obs_connected"

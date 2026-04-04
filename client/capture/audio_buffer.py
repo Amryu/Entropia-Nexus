@@ -252,32 +252,129 @@ class AudioBuffer:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _enumerate_wasapi_devices(p, direction: str) -> list[dict]:
+        """Enumerate active WASAPI audio endpoints (matching OBS approach).
+
+        Uses ``get_device_info_generator_by_host_api(paWASAPI)`` which
+        mirrors OBS's ``IMMDeviceEnumerator::EnumAudioEndpoints`` — each
+        endpoint appears exactly once, no deduplication needed.
+
+        Falls back to sounddevice if WASAPI enumeration fails.
+        """
+        result = []
+        try:
+            for dev in p.get_device_info_generator_by_host_api(
+                host_api_type=pyaudio.paWASAPI,
+            ):
+                if dev.get("isLoopbackDevice", False):
+                    continue
+                if direction == "output" and dev["maxOutputChannels"] <= 0:
+                    continue
+                if direction == "input" and dev["maxInputChannels"] <= 0:
+                    continue
+                result.append(dev)
+        except Exception as e:
+            log.warning("WASAPI device enumeration failed: %s", e)
+
+        if not result and sd is not None:
+            # Fallback: sounddevice queries all PortAudio host APIs
+            log.info("Falling back to sounddevice for device enumeration")
+            try:
+                seen = set()
+                for dev in sd.query_devices():
+                    name = dev.get("name", "")
+                    if not name or name in seen:
+                        continue
+                    if direction == "output" and dev.get("max_output_channels", 0) <= 0:
+                        continue
+                    if direction == "input" and dev.get("max_input_channels", 0) <= 0:
+                        continue
+                    seen.add(name)
+                    result.append({
+                        "index": dev.get("index", -1),
+                        "name": name,
+                        "maxOutputChannels": dev.get("max_output_channels", 0),
+                        "maxInputChannels": dev.get("max_input_channels", 0),
+                    })
+            except Exception as e:
+                log.warning("sounddevice fallback failed: %s", e)
+
+        return result
+
+    @staticmethod
+    def _sounddevice_devices(direction: str) -> list[dict]:
+        """Fallback device enumeration via sounddevice when PyAudioWPatch
+        is unavailable.
+
+        sounddevice returns one entry per host-API per device, so the same
+        physical device appears multiple times with slightly different names
+        (DirectSound truncates to ~31 chars, MME to ~32, WASAPI uses the
+        full name).  We deduplicate by keeping the longest name and checking
+        whether a shorter name is a prefix of an already-seen longer one.
+        """
+        if sd is None:
+            return []
+        # Collect all matching devices, longest names first so they win
+        # Windows meta-devices that just redirect to the current default —
+        # redundant with the "System Default" entry the UI already provides.
+        _meta_prefixes = ("Microsoft Sound Mapper", "Primärer Sound")
+        candidates = []
+        try:
+            for dev in sd.query_devices():
+                name = dev.get("name", "")
+                if not name or any(name.startswith(p) for p in _meta_prefixes):
+                    continue
+                if direction == "output" and dev.get("max_output_channels", 0) <= 0:
+                    continue
+                if direction == "input" and dev.get("max_input_channels", 0) <= 0:
+                    continue
+                candidates.append({
+                    "index": dev.get("index", -1),
+                    "name": name,
+                    "max_output_channels": dev.get("max_output_channels", 0),
+                    "max_input_channels": dev.get("max_input_channels", 0),
+                })
+        except Exception as e:
+            log.warning("sounddevice device enumeration failed: %s", e)
+            return []
+
+        # Deduplicate: a name is a duplicate if it is a prefix of (or
+        # equal to) an already-accepted longer name.  Sort longest-first
+        # so the full WASAPI name wins over truncated DirectSound/MME.
+        candidates.sort(key=lambda d: len(d["name"]), reverse=True)
+        result = []
+        accepted_names: list[str] = []
+        for dev in candidates:
+            name = dev["name"]
+            is_dup = any(longer.startswith(name) for longer in accepted_names)
+            if not is_dup:
+                accepted_names.append(name)
+                result.append(dev)
+        return result
+
+    @staticmethod
     def get_output_devices() -> list[dict]:
         """Return list of audio output devices (for WASAPI loopback source).
 
-        Excludes ``[Loopback]`` virtual devices — those are used internally.
+        Excludes ``[Loopback]`` virtual devices.  Falls back to sounddevice
+        if PyAudioWPatch is unavailable or WASAPI enumeration returns empty.
         """
         if pyaudio is None:
-            return []
+            return AudioBuffer._sounddevice_devices("output")
         p = None
         try:
             p = pyaudio.PyAudio()
             result = []
-            for dev in p.get_device_info_generator_by_host_api(
-                host_api_type=pyaudio.paWASAPI,
-            ):
-                if dev["maxOutputChannels"] <= 0:
-                    continue
-                if dev.get("isLoopbackDevice", False):
-                    continue
+            for dev in AudioBuffer._enumerate_wasapi_devices(p, "output"):
                 result.append({
                     "index": dev["index"],
                     "name": dev["name"],
                     "max_output_channels": dev["maxOutputChannels"],
                 })
-            return result
-        except Exception:
-            return []
+            return result if result else AudioBuffer._sounddevice_devices("output")
+        except Exception as e:
+            log.warning("get_output_devices failed: %s", e)
+            return AudioBuffer._sounddevice_devices("output")
         finally:
             if p is not None:
                 try:
@@ -289,29 +386,25 @@ class AudioBuffer:
     def get_input_devices() -> list[dict]:
         """Return list of audio input devices (microphones).
 
-        Excludes ``[Loopback]`` virtual devices.
+        Excludes ``[Loopback]`` virtual devices.  Falls back to sounddevice
+        if PyAudioWPatch is unavailable or WASAPI enumeration returns empty.
         """
         if pyaudio is None:
-            return []
+            return AudioBuffer._sounddevice_devices("input")
         p = None
         try:
             p = pyaudio.PyAudio()
             result = []
-            for dev in p.get_device_info_generator_by_host_api(
-                host_api_type=pyaudio.paWASAPI,
-            ):
-                if dev["maxInputChannels"] <= 0:
-                    continue
-                if dev.get("isLoopbackDevice", False):
-                    continue
+            for dev in AudioBuffer._enumerate_wasapi_devices(p, "input"):
                 result.append({
                     "index": dev["index"],
                     "name": dev["name"],
                     "max_input_channels": dev["maxInputChannels"],
                 })
-            return result
-        except Exception:
-            return []
+            return result if result else AudioBuffer._sounddevice_devices("input")
+        except Exception as e:
+            log.warning("get_input_devices failed: %s", e)
+            return AudioBuffer._sounddevice_devices("input")
         finally:
             if p is not None:
                 try:
@@ -321,30 +414,33 @@ class AudioBuffer:
 
     @staticmethod
     def get_devices() -> list[dict]:
-        """Return list of all WASAPI audio devices for the settings UI.
+        """Return list of all audio devices for the settings UI.
 
         Excludes ``[Loopback]`` virtual devices.
         """
         if pyaudio is None:
-            return []
+            return AudioBuffer._sounddevice_devices("output") + AudioBuffer._sounddevice_devices("input")
         p = None
         try:
             p = pyaudio.PyAudio()
+            by_name: dict[str, dict] = {}
+            for dev in AudioBuffer._enumerate_wasapi_devices(p, "output"):
+                by_name[dev["name"]] = dev
+            for dev in AudioBuffer._enumerate_wasapi_devices(p, "input"):
+                if dev["name"] not in by_name:
+                    by_name[dev["name"]] = dev
             result = []
-            for dev in p.get_device_info_generator_by_host_api(
-                host_api_type=pyaudio.paWASAPI,
-            ):
-                if dev.get("isLoopbackDevice", False):
-                    continue
+            for dev in by_name.values():
                 result.append({
                     "index": dev["index"],
                     "name": dev["name"],
                     "max_input_channels": dev["maxInputChannels"],
                     "max_output_channels": dev["maxOutputChannels"],
                 })
-            return result
-        except Exception:
-            return []
+            return result if result else AudioBuffer._sounddevice_devices("output") + AudioBuffer._sounddevice_devices("input")
+        except Exception as e:
+            log.warning("get_devices failed: %s", e)
+            return AudioBuffer._sounddevice_devices("output") + AudioBuffer._sounddevice_devices("input")
         finally:
             if p is not None:
                 try:

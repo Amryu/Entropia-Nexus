@@ -209,6 +209,167 @@ def ensure_rnnoise_model() -> str | None:
     return download_rnnoise_model()
 
 
+# ---------------------------------------------------------------------------
+# Hardware encoder detection and codec argument building
+# ---------------------------------------------------------------------------
+
+# Supported encoders in preference order.  Each entry:
+#   (config_key, ffmpeg_codec, display_name, type)
+# Grouped: GPU H.264 → GPU H.265 → CPU
+ENCODERS = [
+    # GPU — H.264
+    ("h264_nvenc",  "h264_nvenc",  "NVIDIA NVENC H.264",     "gpu"),
+    ("h264_amf",    "h264_amf",    "AMD AMF H.264",          "gpu"),
+    ("h264_qsv",    "h264_qsv",    "Intel QuickSync H.264",  "gpu"),
+    # GPU — H.265 (better compression, same hardware cost)
+    ("hevc_nvenc",  "hevc_nvenc",  "NVIDIA NVENC H.265",     "gpu"),
+    ("hevc_amf",    "hevc_amf",    "AMD AMF H.265",          "gpu"),
+    ("hevc_qsv",    "hevc_qsv",    "Intel QuickSync H.265",  "gpu"),
+    # CPU
+    ("libx264",     "libx264",     "x264 H.264 (CPU)",       "cpu"),
+    ("libx265",     "libx265",     "x265 H.265 (CPU, slow)", "cpu"),
+]
+
+# Cache: maps ffmpeg_path -> set of encoder names that actually work
+_encoder_cache: dict[str, set[str]] = {}
+
+
+def _probe_encoder(ffmpeg_path: str, codec: str) -> bool:
+    """Test whether an encoder actually works by encoding one black frame.
+
+    FFmpeg may list hardware encoders (e.g. h264_nvenc) that fail at
+    runtime due to driver version mismatches or missing hardware.
+    """
+    from .constants import SUBPROCESS_FLAGS
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, "-hide_banner", "-loglevel", "error",
+             "-f", "lavfi", "-i", "color=black:s=256x256:d=0.04:r=25",
+             "-frames:v", "1", "-c:v", codec,
+             "-f", "null", os.devnull],
+            capture_output=True, timeout=10,
+            **SUBPROCESS_FLAGS,
+        )
+        if result.returncode != 0:
+            log.debug("Probe %s failed (rc=%s): %s",
+                      codec, result.returncode,
+                      (result.stderr or b"").decode(errors="replace").strip())
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def detect_encoders(ffmpeg_path: str) -> list[tuple[str, str, str]]:
+    """Probe FFmpeg for available and *working* encoders.
+
+    Hardware encoders are tested with a 1-frame trial encode to verify
+    driver compatibility.  CPU encoders are trusted if FFmpeg lists them.
+    Results are cached.
+    """
+    cached = _encoder_cache.get(ffmpeg_path)
+    if cached is None:
+        # First pass: collect all encoders FFmpeg claims to have
+        listed: set[str] = set()
+        try:
+            from .constants import SUBPROCESS_FLAGS
+            result = subprocess.run(
+                [ffmpeg_path, "-hide_banner", "-encoders"],
+                capture_output=True, text=True, timeout=10,
+                **SUBPROCESS_FLAGS,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        listed.add(parts[1])
+        except Exception as e:
+            log.debug("Encoder listing failed: %s", e)
+
+        # Second pass: verify GPU encoders with a trial encode
+        cached = set()
+        for key, codec, name, enc_type in ENCODERS:
+            if codec not in listed:
+                continue
+            if enc_type == "gpu":
+                if _probe_encoder(ffmpeg_path, codec):
+                    cached.add(codec)
+                    log.info("Encoder %s: available", codec)
+                else:
+                    log.info("Encoder %s: listed but failed probe (driver too old?)", codec)
+            else:
+                cached.add(codec)
+
+        _encoder_cache[ffmpeg_path] = cached
+
+    available = []
+    for key, codec, name, _ in ENCODERS:
+        if codec in cached:
+            available.append((key, codec, name))
+    return available
+
+
+def get_encoder_args(
+    encoder: str,
+    bitrate: str,
+    threads: int = 0,
+    realtime: bool = False,
+) -> list[str]:
+    """Build FFmpeg codec arguments for the given encoder.
+
+    Args:
+        encoder: Config key (e.g. ``"libx264"``, ``"h264_nvenc"``).
+        bitrate: Bitrate string (e.g. ``"6M"``).
+        threads: Thread count for CPU encoders (0 = auto).
+        realtime: True for recording/segments (faster preset), False for
+                  clip encoding (better quality preset).
+
+    Returns a list of FFmpeg arguments (``["-c:v", ..., "-pix_fmt", ...]``).
+    """
+    from .constants import get_encode_thread_count
+
+    args = []
+
+    if encoder == "h264_nvenc" or encoder == "hevc_nvenc":
+        args.extend(["-c:v", encoder])
+        args.extend(["-preset", "p1" if realtime else "p4"])
+        args.extend(["-tune", "ll" if realtime else "hq"])
+        args.extend(["-b:v", bitrate])
+        args.extend(["-pix_fmt", "yuv420p"])
+
+    elif encoder == "h264_amf" or encoder == "hevc_amf":
+        args.extend(["-c:v", encoder])
+        args.extend(["-quality", "speed" if realtime else "balanced"])
+        args.extend(["-b:v", bitrate])
+        args.extend(["-pix_fmt", "yuv420p"])
+
+    elif encoder == "h264_qsv" or encoder == "hevc_qsv":
+        args.extend(["-c:v", encoder])
+        args.extend(["-preset", "veryfast" if realtime else "faster"])
+        args.extend(["-b:v", bitrate])
+        args.extend(["-pix_fmt", "yuv420p"])
+
+    elif encoder == "libx265":
+        args.extend(["-c:v", "libx265"])
+        args.extend(["-preset", "ultrafast" if realtime else "fast"])
+        args.extend(["-b:v", bitrate])
+        args.extend(["-pix_fmt", "yuv420p"])
+        args.extend(["-threads", str(get_encode_thread_count(threads))])
+        if realtime:
+            args.extend(["-tune", "zerolatency"])
+
+    else:
+        # Default: libx264
+        args.extend(["-c:v", "libx264"])
+        args.extend(["-preset", "ultrafast" if realtime else "fast"])
+        args.extend(["-b:v", bitrate])
+        args.extend(["-pix_fmt", "yuv420p"])
+        args.extend(["-threads", str(get_encode_thread_count(threads))])
+        if realtime:
+            args.extend(["-tune", "zerolatency"])
+
+    return args
+
+
 def _is_executable(path: str) -> bool:
     """Check if a file exists and is likely executable."""
     if not os.path.isfile(path):

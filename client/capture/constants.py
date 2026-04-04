@@ -32,6 +32,28 @@ def get_ffmpeg_flags(priority: str = "normal") -> dict:
         flags |= _IDLE_PRIORITY_CLASS
     return {"creationflags": flags}
 
+
+def get_encode_thread_count(configured: int = 0) -> int:
+    """Return the number of threads FFmpeg should use for encoding.
+
+    If *configured* is 0 (auto), returns 1/4 of available CPU cores
+    (minimum 1).  Otherwise returns the configured value clamped to
+    ``[1, cpu_count]``.
+    """
+    import os
+    cores = os.cpu_count() or 4
+    if configured <= 0:
+        return max(1, cores // 4)
+    return max(1, min(configured, cores))
+
+
+# ---------------------------------------------------------------------------
+# Encode-first segment configuration
+# ---------------------------------------------------------------------------
+SEGMENT_DURATION_S = 2          # seconds per H.264 segment (keyframe interval)
+SEGMENT_FORMAT = "mpegts"       # container for segments (.ts)
+SEGMENT_TEMP_PREFIX = "nexus_segments_"
+
 # Default output directories
 if sys.platform == "win32":
     _PICTURES = Path("~/Pictures").expanduser()
@@ -50,7 +72,7 @@ DEFAULT_SCREENSHOT_DELAY_S = 1.0
 DEFAULT_CAPTURE_FPS = 30
 
 # JPEG quality for frame buffer (0-100, higher = bigger + better)
-JPEG_QUALITY = 80
+JPEG_QUALITY = 70
 
 # Audio
 AUDIO_SAMPLE_RATE = 48000

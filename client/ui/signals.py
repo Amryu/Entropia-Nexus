@@ -52,6 +52,7 @@ from ..core.constants import (
     EVENT_RECORDING_STARTED,
     EVENT_RECORDING_STOPPED,
     EVENT_CLIP_ENCODING_STARTED,
+    EVENT_CLIP_BUFFER_PROGRESS,
     EVENT_CLIP_ENCODING_PROGRESS,
     EVENT_OBS_CONNECTED,
     EVENT_OBS_DISCONNECTED,
@@ -152,6 +153,7 @@ class AppSignals(QObject):
     recording_stopped = pyqtSignal(object)  # {"path": str, "duration": float}
     clip_encoding_started = pyqtSignal(object)   # {"path": str, "frames": int}
     clip_encoding_progress = pyqtSignal(object)  # {"path": str, "written": int, "total": int}
+    clip_buffer_progress = pyqtSignal(object)    # {"fill_pct": int, "seconds": float, "max_seconds": int}
 
     # OBS integration
     obs_connected = pyqtSignal(object)       # {"host": str, "port": int}
@@ -220,6 +222,7 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_RECORDING_STOPPED: signals.recording_stopped,
         EVENT_CLIP_ENCODING_STARTED: signals.clip_encoding_started,
         EVENT_CLIP_ENCODING_PROGRESS: signals.clip_encoding_progress,
+        EVENT_CLIP_BUFFER_PROGRESS: signals.clip_buffer_progress,
         EVENT_OBS_CONNECTED: signals.obs_connected,
         EVENT_OBS_DISCONNECTED: signals.obs_disconnected,
         EVENT_OBS_ERROR: signals.obs_error,

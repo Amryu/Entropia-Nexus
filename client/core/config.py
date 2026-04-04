@@ -262,12 +262,16 @@ class AppConfig:
     clip_bitrate: str = "medium"            # low | medium | high | ultra
     clip_scaling: str = "cubic"             # lanczos | linear | cubic | area | nearest
     clip_encode_priority: str = "below_normal"  # normal | below_normal | idle
+    clip_encode_threads: int = 0               # 0 = auto (1/4 of CPU cores)
+    clip_encode_first: bool = True             # encode-first pipeline (instant clip saves)
+    clip_video_encoder: str = "libx264"        # libx264 | h264_nvenc | hevc_nvenc | h264_amf | h264_qsv | ...
     hotkey_save_clip: str = "ctrl+shift+space"
     hotkey_toggle_recording: str = "ctrl+shift+r"
     ffmpeg_path: str = ""                   # manual override for FFmpeg binary
 
     # Audio — Game/system audio (for video clips)
     clip_audio_enabled: bool = False
+    clip_audio_process_capture: bool = True  # capture game audio only (Win10 2004+)
     clip_audio_device: str = ""             # empty = system default loopback
     clip_audio_game_gain: float = 1.0       # 0.0 to 3.0 (1.0 = unity)
     clip_audio_noise_suppression: bool = True
@@ -501,10 +505,15 @@ DEFAULTS = {
     "clip_resolution": "source",
     "clip_bitrate": "medium",
     "clip_scaling": "cubic",
+    "clip_encode_priority": "below_normal",
+    "clip_encode_threads": 0,
+    "clip_encode_first": True,
+    "clip_video_encoder": "libx264",
     "hotkey_save_clip": "ctrl+shift+space",
     "hotkey_toggle_recording": "ctrl+shift+r",
     "ffmpeg_path": "",
     "clip_audio_enabled": False,
+    "clip_audio_process_capture": True,
     "clip_audio_device": "",
     "clip_audio_game_gain": 1.0,
     "clip_audio_noise_suppression": True,

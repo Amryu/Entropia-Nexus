@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.4.5",
+    "date": "2026-04-05",
+    "changes": [
+      {"type": "feat", "text": "Encode-first clip pipeline — clips save instantly by remuxing pre-encoded segments instead of re-encoding the JPEG buffer on every save"},
+      {"type": "feat", "text": "Game-only audio capture via WASAPI Process Loopback — records only the game's audio instead of all system audio (Windows 10 2004+)"},
+      {"type": "feat", "text": "Hardware video encoder selection (NVENC, AMF, QuickSync, x264/x265) with auto-probe; near-zero CPU impact on supported hardware"},
+      {"type": "feat", "text": "Configurable encoder thread count with auto mode (¼ of CPU cores) to minimize game lag"},
+      {"type": "feat", "text": "Clip buffer fill progress shown in recording bar overlay"},
+      {"type": "feat", "text": "Market price clipboard monitor reads values from the game's copy-to-clipboard buttons"},
+      {"type": "fix", "text": "Mob material cost markup used sorted-row indices, breaking persistence when the list was re-sorted; now uses stable material index"},
+      {"type": "fix", "text": "Gallery reload blocked the UI for up to 3 seconds waiting for old thumbnail loader; now retires loaders asynchronously"},
+      {"type": "fix", "text": "Gallery thumbnails serve cache hits first, then generate misses — previously-cached items appear immediately on reload"},
+      {"type": "fix", "text": "Clearer error message when OCR fails to load due to missing Visual C++ Redistributable"},
+      {"type": "fix", "text": "Removed manual review dialog for unreadable market prices — heuristic checks catch overflow values automatically"}
+    ]
+  },
+  {
     "version": "0.4.4",
     "date": "2026-03-30",
     "changes": [

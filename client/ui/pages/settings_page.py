@@ -1,5 +1,6 @@
 """Settings page — all app configuration in organized sections."""
 
+import os
 import sys
 import threading
 import time
@@ -833,20 +834,6 @@ class SettingsPage(QWidget):
         self._market_price_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._market_price_cb)
 
-        self._market_price_review_cb = QCheckBox(
-            "Ask for manual review when values can't be read"
-        )
-        self._market_price_review_cb.setToolTip(
-            "When enabled, a dialog prompts you to fill in markup values\n"
-            "that the game shows as >999999%, or to pick the correct item\n"
-            "when the name is ambiguous (e.g. ArMatrix LR-10 vs LR-15)."
-        )
-        self._market_price_review_cb.setChecked(
-            self._config.market_price_review_enabled
-        )
-        self._market_price_review_cb.stateChanged.connect(self._schedule_save)
-        layout.addWidget(self._market_price_review_cb)
-
         mp_grid = QGridLayout()
         mp_grid.setColumnStretch(0, 0)
         mp_grid.setColumnStretch(1, 0)
@@ -1615,6 +1602,43 @@ class SettingsPage(QWidget):
         grid.addWidget(self._encode_priority, row, 1)
         row += 1
 
+        # Encoder thread limit
+        grid.addWidget(QLabel("Encoder threads:"), row, 0)
+        self._encode_threads = QSpinBox()
+        self._encode_threads.setFixedWidth(_INPUT_MAX_W)
+        self._encode_threads.setMinimum(0)
+        self._encode_threads.setMaximum(os.cpu_count() or 16)
+        self._encode_threads.setValue(getattr(self._config, "clip_encode_threads", 0))
+        self._encode_threads.setSpecialValueText("Auto (¼ of cores)")
+        _auto_threads = max(1, (os.cpu_count() or 4) // 4)
+        self._encode_threads.setToolTip(
+            f"Number of CPU threads used by the video encoder.\n"
+            f"0 = Auto: uses ¼ of your CPU cores to minimize game lag.\n"
+            f"Your system has {os.cpu_count()} cores → auto = {_auto_threads} threads."
+        )
+        self._encode_threads.valueChanged.connect(self._schedule_save)
+        grid.addWidget(self._encode_threads, row, 1)
+        row += 1
+
+        # Video encoder
+        grid.addWidget(QLabel("Video encoder:"), row, 0)
+        self._video_encoder = QComboBox()
+        self._video_encoder.setFixedWidth(_INPUT_MAX_W)
+        self._video_encoder.addItem("x264 (CPU)", "libx264")
+        self._populate_encoders()
+        _ve = getattr(self._config, "clip_video_encoder", "libx264")
+        _ve_idx = self._video_encoder.findData(_ve)
+        if _ve_idx >= 0:
+            self._video_encoder.setCurrentIndex(_ve_idx)
+        self._video_encoder.setToolTip(
+            "Video encoder for clips and recordings.\n"
+            "GPU encoders (NVENC, AMF, QuickSync) have near-zero CPU impact\n"
+            "but require compatible hardware. Only available encoders are shown."
+        )
+        self._video_encoder.currentIndexChanged.connect(self._schedule_save)
+        grid.addWidget(self._video_encoder, row, 1)
+        row += 1
+
         # FFmpeg path
         grid.addWidget(QLabel("FFmpeg path:"), row, 0)
         ff_w = QWidget()
@@ -1652,19 +1676,43 @@ class SettingsPage(QWidget):
         self._clip_audio_cb.stateChanged.connect(self._schedule_save)
         layout.addWidget(self._clip_audio_cb)
 
+        # Process audio capture toggle
+        self._process_audio_cb = QCheckBox("Capture game audio only")
+        self._process_audio_cb.setChecked(
+            getattr(self._config, "clip_audio_process_capture", True)
+        )
+        self._process_audio_cb.setToolTip(
+            "Records only audio from the game process instead of all system audio.\n"
+            "Requires Windows 10 version 2004 or later.\n"
+            "When disabled, uses the output device below to capture all audio."
+        )
+        self._process_audio_cb.stateChanged.connect(self._on_process_audio_toggled)
+        layout.addWidget(self._process_audio_cb)
+
+        # Check availability and show hint
+        self._process_audio_hint = QLabel()
+        self._process_audio_hint.setStyleSheet(
+            "color: #888888; font-size: 11px; margin-left: 20px;"
+        )
+        self._process_audio_hint.setWordWrap(True)
+        layout.addWidget(self._process_audio_hint)
+        self._update_process_audio_hint()
+
         audio_grid = QGridLayout()
         audio_grid.setColumnStretch(0, 0)
         audio_grid.setColumnStretch(1, 0)
         audio_grid.setColumnStretch(2, 1)
         audio_grid.setHorizontalSpacing(8)
 
-        audio_grid.addWidget(QLabel("Output device:"), 0, 0)
+        self._audio_device_label = QLabel("Output device:")
+        audio_grid.addWidget(self._audio_device_label, 0, 0)
         self._clip_audio_device = QComboBox()
         self._clip_audio_device.setFixedWidth(_INPUT_MAX_W)
         self._clip_audio_device.addItem("System Default", "")
         self._populate_output_devices()
         self._clip_audio_device.currentIndexChanged.connect(self._on_audio_device_changed)
         audio_grid.addWidget(self._clip_audio_device, 0, 1)
+        self._update_device_dropdown_state()
 
         # System audio gain
         audio_grid.addWidget(QLabel("Game volume:"), 1, 0)
@@ -1771,9 +1819,9 @@ class SettingsPage(QWidget):
         self._internal_capture_widgets = [
             self._clip_dir, cbrowse,
             self._clip_daily_cb,
-            self._encode_priority,
+            self._encode_priority, self._encode_threads, self._video_encoder,
             self._ffmpeg_path, self._ffmpeg_status,
-            self._clip_audio_cb, self._clip_audio_device,
+            self._clip_audio_cb, self._process_audio_cb, self._clip_audio_device,
             self._game_gain_slider,
             self._clip_mic_cb, self._clip_mic_device,
             self._mic_gain_slider,
@@ -1824,34 +1872,71 @@ class SettingsPage(QWidget):
     # --- Audio device helpers ---
 
     def _populate_output_devices(self):
-        """Populate the system audio output device dropdown."""
+        """Populate the system audio output device dropdown.
+
+        Safe to call repeatedly — clears existing entries (except
+        "System Default") and re-enumerates, preserving the selection.
+        """
         try:
             from ...capture.audio_buffer import AudioBuffer
             devices = AudioBuffer.get_output_devices()
-            current = self._config.clip_audio_device
+            current = self._clip_audio_device.currentData() or self._config.clip_audio_device
+            self._clip_audio_device.blockSignals(True)
+            # Keep "System Default" (index 0), remove the rest
+            while self._clip_audio_device.count() > 1:
+                self._clip_audio_device.removeItem(1)
             for dev in devices:
                 name = dev.get("name", f"Device {dev['index']}")
                 self._clip_audio_device.addItem(name, name)
             idx = self._clip_audio_device.findData(current)
             if idx >= 0:
                 self._clip_audio_device.setCurrentIndex(idx)
+            self._clip_audio_device.blockSignals(False)
         except Exception:
             pass
 
     def _populate_input_devices(self):
-        """Populate the microphone input device dropdown."""
+        """Populate the microphone input device dropdown.
+
+        Safe to call repeatedly — clears existing entries (except
+        "System Default") and re-enumerates, preserving the selection.
+        """
         try:
             from ...capture.audio_buffer import AudioBuffer
             devices = AudioBuffer.get_input_devices()
-            current = self._config.clip_mic_device
+            current = self._clip_mic_device.currentData() or self._config.clip_mic_device
+            self._clip_mic_device.blockSignals(True)
+            while self._clip_mic_device.count() > 1:
+                self._clip_mic_device.removeItem(1)
             for dev in devices:
                 name = dev.get("name", f"Device {dev['index']}")
                 self._clip_mic_device.addItem(name, name)
             idx = self._clip_mic_device.findData(current)
             if idx >= 0:
                 self._clip_mic_device.setCurrentIndex(idx)
+            self._clip_mic_device.blockSignals(False)
         except Exception:
             pass
+
+    def _populate_encoders(self):
+        """Detect available hardware encoders and add them to the combo box."""
+        try:
+            from ...capture.ffmpeg import detect_encoders, ensure_ffmpeg
+            ffmpeg = ensure_ffmpeg(self._config.ffmpeg_path)
+            if not ffmpeg:
+                return
+            for key, _codec, name in detect_encoders(ffmpeg):
+                if key == "libx264":
+                    continue  # already added as default
+                if self._video_encoder.findData(key) < 0:
+                    self._video_encoder.addItem(name, key)
+        except Exception:
+            pass
+
+    def _refresh_audio_devices(self):
+        """Re-enumerate audio devices (called when the page becomes visible)."""
+        self._populate_output_devices()
+        self._populate_input_devices()
 
     # --- Gain slider handlers ---
 
@@ -1862,6 +1947,47 @@ class SettingsPage(QWidget):
     def _on_mic_gain_changed(self, value):
         self._mic_gain_label.setText(f"{value}%")
         self._schedule_save()
+
+    def _on_process_audio_toggled(self, _state):
+        """Handle process capture checkbox toggle."""
+        self._update_device_dropdown_state()
+        self._update_process_audio_hint()
+        self._schedule_save()
+
+    def _update_device_dropdown_state(self):
+        """Enable/disable device dropdown based on process capture setting."""
+        process_active = self._process_audio_cb.isChecked()
+        try:
+            from ..capture.process_audio import is_supported
+            supported = is_supported()
+        except Exception:
+            supported = False
+        # Dim device dropdown when process capture is active and available
+        dim = process_active and supported
+        self._clip_audio_device.setEnabled(not dim)
+        self._audio_device_label.setEnabled(not dim)
+
+    def _update_process_audio_hint(self):
+        """Show availability info below the process capture checkbox."""
+        try:
+            from ..capture.process_audio import is_supported
+            supported = is_supported()
+        except Exception:
+            supported = False
+
+        if not self._process_audio_cb.isChecked():
+            self._process_audio_hint.setText(
+                "All audio from the selected output device will be recorded."
+            )
+        elif supported:
+            self._process_audio_hint.setText(
+                "Only audio from the game will be recorded — other apps are excluded."
+            )
+        else:
+            self._process_audio_hint.setText(
+                "Not available (requires Windows 10 2004+ and pycaw). "
+                "Falling back to the output device below."
+            )
 
     def _on_audio_device_changed(self, _idx):
         """Update system audio device and restart meter."""
@@ -2042,6 +2168,7 @@ class SettingsPage(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._refresh_audio_devices()
         self._start_meters()
 
     def hideEvent(self, event):
@@ -2348,7 +2475,6 @@ class SettingsPage(QWidget):
 
         # Market Price Detection
         self._config.market_price_enabled = self._market_price_cb.isChecked()
-        self._config.market_price_review_enabled = self._market_price_review_cb.isChecked()
         self._config.market_price_match_threshold = self._market_price_threshold.value()
         self._config.market_price_text_threshold = self._market_price_text_threshold.value()
 
@@ -2387,10 +2513,13 @@ class SettingsPage(QWidget):
         self._config.clip_daily_subfolder = self._clip_daily_cb.isChecked()
         self._config.clip_sound_enabled = self._clip_sound_cb.isChecked()
         self._config.clip_encode_priority = self._encode_priority.currentData() or "below_normal"
+        self._config.clip_encode_threads = self._encode_threads.value()
+        self._config.clip_video_encoder = self._video_encoder.currentData() or "libx264"
         self._config.ffmpeg_path = self._ffmpeg_path.text()
 
         # System Audio
         self._config.clip_audio_enabled = self._clip_audio_cb.isChecked()
+        self._config.clip_audio_process_capture = self._process_audio_cb.isChecked()
         self._config.clip_audio_device = self._clip_audio_device.currentData() or ""
         self._config.clip_audio_game_gain = self._game_gain_slider.value() / 100.0
 

@@ -191,6 +191,7 @@ class RecordingBarOverlay(OverlayWidget):
 
         # Clip encoding progress state
         self._encoding_pct: int = 0  # 0-100, 0 = no active encoding
+        self._buffer_fill_pct: int = 0  # 0-100, buffer fill progress
 
         # OBS connection state
         self._obs_connected = False
@@ -205,6 +206,7 @@ class RecordingBarOverlay(OverlayWidget):
         signals.clip_encoding_progress.connect(self._on_encoding_progress)
         signals.clip_saved.connect(self._on_encoding_done)
         signals.capture_error.connect(self._on_encoding_done)
+        signals.clip_buffer_progress.connect(self._on_buffer_progress)
 
         # Listen for config changes to update clip button state
         event_bus.subscribe(EVENT_CONFIG_CHANGED, self._on_config_changed)
@@ -501,6 +503,8 @@ class RecordingBarOverlay(OverlayWidget):
             text = f"{prefix}00:00"
         if self._encoding_pct > 0:
             text += f"  \u2022 Clip {self._encoding_pct}%"
+        elif 0 < self._buffer_fill_pct < 100:
+            text += f"  \u2022 Buffer {self._buffer_fill_pct}%"
         self._time_label.setText(text)
 
     # ------------------------------------------------------------------
@@ -586,6 +590,11 @@ class RecordingBarOverlay(OverlayWidget):
         written = data.get("written", 0)
         self._encoding_pct = min(100, int(written * 100 / total)) if total else 1
         if not self._capture_manager.is_recording:
+            self._update_idle_display()
+
+    def _on_buffer_progress(self, data):
+        self._buffer_fill_pct = data.get("fill_pct", 0)
+        if not self._capture_manager.is_recording and self._encoding_pct == 0:
             self._update_idle_display()
 
     def _on_encoding_done(self, data):

@@ -3,7 +3,6 @@
 import os
 import subprocess
 import tempfile
-import wave
 
 import numpy as np
 
@@ -13,91 +12,20 @@ except ImportError:
     cv2 = None
 
 from ..core.logger import get_logger
+from .audio_utils import apply_gain, build_mic_filter, write_wav
 from .constants import (
-    AUDIO_CHANNELS,
-    AUDIO_SAMPLE_RATE,
     BITRATE_TABLE,
     RESOLUTION_PRESETS,
-    WEBCAM_OVERLAY_SCALE,
+    get_encode_thread_count,
     get_ffmpeg_flags,
     get_ffmpeg_scale_flag,
     get_interpolation,
 )
-from .ffmpeg import ensure_ffmpeg, find_rnnoise_model
+from .ffmpeg import ensure_ffmpeg, find_rnnoise_model, get_encoder_args
 from .screenshot import apply_blur_regions, compose_on_background
+from .video_effects import composite_webcam
 
 log = get_logger("ClipWriter")
-
-
-def _write_wav(pcm: np.ndarray, path: str, sample_rate: int = AUDIO_SAMPLE_RATE,
-               channels: int = AUDIO_CHANNELS) -> None:
-    """Write float32 PCM data to a WAV file.
-
-    *channels* is used as a fallback; the actual channel count is inferred
-    from *pcm*'s shape so the WAV header always matches the data (important
-    when WASAPI loopback negotiates a different count than the default).
-    """
-    if pcm.size == 0:
-        return
-    actual_channels = pcm.shape[1] if pcm.ndim > 1 else 1
-    # Convert float32 [-1, 1] to int16
-    int16_data = np.clip(pcm * np.float32(32767), -32768, 32767).astype(np.int16)
-    with wave.open(path, "wb") as wf:
-        wf.setnchannels(actual_channels)
-        wf.setsampwidth(2)  # 16-bit
-        wf.setframerate(sample_rate)
-        wf.writeframes(int16_data.tobytes())
-
-
-def _apply_gain(pcm: np.ndarray, gain: float) -> np.ndarray:
-    """Apply gain to PCM audio data."""
-    if gain == 1.0:
-        return pcm
-    return np.clip(pcm * gain, -1.0, 1.0).astype(np.float32)
-
-
-def _safe_float(val, default: float) -> float:
-    """Coerce to float, falling back to *default* on any failure."""
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return default
-
-
-def _build_mic_filter(filters: dict, rnnoise_model: str | None = None) -> str:
-    """Build FFmpeg audio filter chain for the microphone track.
-
-    Accepts a dict with boolean toggles and parameter values.
-    All numeric parameters are coerced to float to prevent injection
-    of arbitrary FFmpeg filter options via config values.
-    """
-    parts = []
-    if filters.get("noise_suppression") and rnnoise_model:
-        mix = _safe_float(filters.get("ns_mix"), 1.0)
-        # Use just the filename — FFmpeg cwd must be set to the model directory
-        # because Windows drive letters contain ':' which FFmpeg's filter parser
-        # treats as an option separator and cannot be escaped.
-        model_name = os.path.basename(rnnoise_model)
-        parts.append(f"arnndn=m={model_name}:mix={mix:.4f}")
-    if filters.get("noise_gate"):
-        thresh = _safe_float(filters.get("gate_threshold"), 0.01)
-        ratio = _safe_float(filters.get("gate_ratio"), 2.0)
-        attack = _safe_float(filters.get("gate_attack"), 10.0)
-        release = _safe_float(filters.get("gate_release"), 100.0)
-        parts.append(
-            f"agate=threshold={thresh:.6f}:ratio={ratio:.2f}"
-            f":attack={attack:.2f}:release={release:.2f}"
-        )
-    if filters.get("compressor"):
-        thresh = _safe_float(filters.get("comp_threshold"), -20.0)
-        ratio = _safe_float(filters.get("comp_ratio"), 4.0)
-        attack = _safe_float(filters.get("comp_attack"), 5.0)
-        release = _safe_float(filters.get("comp_release"), 100.0)
-        parts.append(
-            f"acompressor=threshold={thresh:.2f}dB:ratio={ratio:.2f}"
-            f":attack={attack:.2f}:release={release:.2f}"
-        )
-    return ",".join(parts) if parts else ""
 
 
 def write_clip(
@@ -123,6 +51,8 @@ def write_clip(
     scaling: str = "lanczos",
     on_progress=None,
     encode_priority: str = "normal",
+    encode_threads: int = 0,
+    video_encoder: str = "libx264",
 ) -> None:
     """Encode a video clip from buffered frames + optional audio.
 
@@ -189,9 +119,9 @@ def write_clip(
     has_mic = mic_pcm is not None and len(mic_pcm) > 0
 
     if has_game:
-        audio_pcm = _apply_gain(audio_pcm, game_gain)
+        audio_pcm = apply_gain(audio_pcm, game_gain)
     if has_mic:
-        mic_pcm = _apply_gain(mic_pcm, mic_gain)
+        mic_pcm = apply_gain(mic_pcm, mic_gain)
 
     # Look up bitrate
     bitrate_val = BITRATE_TABLE.get((resolution, bitrate), "8M")
@@ -229,13 +159,13 @@ def write_clip(
     try:
         if has_game:
             temp_game_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            _write_wav(audio_pcm, temp_game_wav.name)
+            write_wav(audio_pcm, temp_game_wav.name)
             temp_game_wav.close()
             cmd.extend(["-i", temp_game_wav.name])  # input 1
 
         if has_mic:
             temp_mic_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            _write_wav(mic_pcm, temp_mic_wav.name)
+            write_wav(mic_pcm, temp_mic_wav.name)
             temp_mic_wav.close()
             cmd.extend(["-i", temp_mic_wav.name])  # input 1 or 2
 
@@ -253,18 +183,16 @@ def write_clip(
         if vf_parts:
             cmd.extend(["-vf", ",".join(vf_parts)])
 
-        cmd.extend([
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-b:v", bitrate_val,
-            "-pix_fmt", "yuv420p",
-        ])
+        cmd.extend(get_encoder_args(
+            video_encoder, bitrate_val,
+            threads=encode_threads, realtime=False,
+        ))
 
         # Audio encoding — filters apply to mic only
         rnnoise_model = find_rnnoise_model() if (mic_filters or {}).get("noise_suppression") else None
         if (mic_filters or {}).get("noise_suppression") and not rnnoise_model:
             log.warning("Noise suppression requested but RNNoise model not found — skipping")
-        mic_af = _build_mic_filter(mic_filters or {}, rnnoise_model=rnnoise_model)
+        mic_af = build_mic_filter(mic_filters or {}, rnnoise_model=rnnoise_model)
 
         if has_game and has_mic:
             # Two separate audio tracks: game (track 1) + filtered mic (track 2)
@@ -336,6 +264,7 @@ def write_clip(
         from concurrent.futures import ThreadPoolExecutor
 
         def _process_frame(item):
+            cv2.setNumThreads(1)
             ts, jpeg_bytes, webcam_jpeg = item
             frame_bgr = cv2.imdecode(
                 np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR,
@@ -354,7 +283,7 @@ def write_clip(
                     np.frombuffer(webcam_jpeg, dtype=np.uint8), cv2.IMREAD_COLOR,
                 )
                 if webcam_bgr is not None:
-                    frame_bgr = _composite_webcam(
+                    frame_bgr = composite_webcam(
                         frame_bgr, webcam_bgr, webcam_position_x, webcam_position_y,
                         crop=webcam_crop, chroma=webcam_chroma, scale=webcam_scale,
                         scaling=scaling,
@@ -498,99 +427,3 @@ def write_clip(
                     temp_output.unlink()
             except OSError:
                 pass
-
-
-def _apply_chroma_key(
-    webcam: np.ndarray,
-    chroma: dict,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Apply chroma key to a webcam BGR frame.
-
-    Returns (bgr_frame, alpha_mask) where alpha_mask is 0-255.
-    """
-    color_hex = chroma.get("color", "#00ff00").lstrip("#")
-    r = int(color_hex[0:2], 16)
-    g = int(color_hex[2:4], 16)
-    b = int(color_hex[4:6], 16)
-    threshold = chroma.get("threshold", 40)
-    smoothing = chroma.get("smoothing", 5)
-
-    # Convert key color to float array (BGR order)
-    key_bgr = np.array([b, g, r], dtype=np.float32)
-
-    # Compute per-pixel color distance
-    diff = np.linalg.norm(
-        webcam.astype(np.float32) - key_bgr, axis=2,
-    )
-
-    # Create mask: 255 = keep, 0 = transparent
-    alpha = np.where(diff > threshold, 255, 0).astype(np.uint8)
-
-    # Smooth edges
-    if smoothing > 1:
-        ksize = smoothing | 1  # ensure odd
-        alpha = cv2.GaussianBlur(alpha, (ksize, ksize), 0)
-
-    return webcam, alpha
-
-
-def _composite_webcam(
-    frame: np.ndarray,
-    webcam: np.ndarray,
-    position_x: float,
-    position_y: float,
-    crop: dict | None = None,
-    chroma: dict | None = None,
-    scale: float = WEBCAM_OVERLAY_SCALE,
-    scaling: str = "lanczos",
-) -> np.ndarray:
-    """Overlay a webcam frame at a normalized (center) position on the main frame.
-
-    Args:
-        crop: Optional {x, y, w, h} normalized crop region within the webcam.
-        chroma: Optional {enabled, color, threshold, smoothing} for chroma key.
-        scale: Webcam width as fraction of frame width (after crop).
-    """
-    # Apply crop if configured
-    if crop:
-        wh, ww = webcam.shape[:2]
-        cx = int(crop.get("x", 0.0) * ww)
-        cy = int(crop.get("y", 0.0) * wh)
-        cw = int(crop.get("w", 1.0) * ww)
-        ch = int(crop.get("h", 1.0) * wh)
-        # Clamp
-        cx = max(0, min(cx, ww - 1))
-        cy = max(0, min(cy, wh - 1))
-        cw = max(1, min(cw, ww - cx))
-        ch = max(1, min(ch, wh - cy))
-        webcam = webcam[cy:cy + ch, cx:cx + cw]
-
-    fh, fw = frame.shape[:2]
-    target_w = int(fw * scale)
-    wh, ww = webcam.shape[:2]
-    target_h = int(target_w * wh / ww)
-
-    resized = cv2.resize(webcam, (target_w, target_h), interpolation=get_interpolation(scaling))
-
-    # Convert normalized center position to top-left pixel position
-    px = int(position_x * fw)
-    py = int(position_y * fh)
-    x = px - target_w // 2
-    y = py - target_h // 2
-
-    # Clamp to frame bounds
-    x = max(0, min(x, fw - target_w))
-    y = max(0, min(y, fh - target_h))
-
-    # Chroma key compositing
-    if chroma and chroma.get("enabled"):
-        resized, alpha = _apply_chroma_key(resized, chroma)
-        alpha_f = alpha.astype(np.float32) / 255.0
-        alpha_3 = alpha_f[:, :, np.newaxis]
-        roi = frame[y:y + target_h, x:x + target_w].astype(np.float32)
-        blended = roi * (1.0 - alpha_3) + resized.astype(np.float32) * alpha_3
-        frame[y:y + target_h, x:x + target_w] = np.clip(blended, 0, 255).astype(np.uint8)
-    else:
-        frame[y:y + target_h, x:x + target_w] = resized
-
-    return frame

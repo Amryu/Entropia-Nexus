@@ -5250,11 +5250,12 @@ class _OverlayTiersWidget(QWidget):
 
         # Parse and sort
         entries = []
-        for mat in materials:
+        for orig_idx, mat in enumerate(materials):
             mat_name = deep_get(mat, "Material", "Name") or "Unknown"
             mat_tt = deep_get(mat, "Material", "Properties", "Economy", "MaxTT") or 0
             amount = mat.get("Amount", 0)
             entries.append({
+                "orig_idx": orig_idx,
                 "name": mat_name, "tt": mat_tt, "amount": amount,
                 "sort": self._classify(mat_name),
             })
@@ -5294,8 +5295,9 @@ class _OverlayTiersWidget(QWidget):
         is_custom = self._markup_source == "custom"
 
         for row_idx, entry in enumerate(entries):
+            oi = entry["orig_idx"]
             mu = self._get_resolved_markup(
-                entry["name"], row_idx, tier_markups,
+                entry["name"], oi, tier_markups,
             )
             cost = entry["tt"] * entry["amount"] * mu / 100
 
@@ -5332,10 +5334,10 @@ class _OverlayTiersWidget(QWidget):
             spinbox.setEnabled(is_custom)
             spinbox.setStyleSheet(_OVERLAY_SPIN_STYLE)
             spinbox.valueChanged.connect(
-                lambda val, si=row_idx: self._on_markup_changed(si, val)
+                lambda val, si=oi: self._on_markup_changed(si, val)
             )
             rl.addWidget(spinbox)
-            self._mu_spinboxes.append((row_idx, spinbox))
+            self._mu_spinboxes.append((oi, spinbox))
 
             # Cost
             cost_lbl = QLabel(self._fmt_ped(cost))
@@ -5376,8 +5378,9 @@ class _OverlayTiersWidget(QWidget):
             if mat_container.layout().itemAt(i).widget()
         ]
         for row_idx, entry in enumerate(self._sorted_entries):
+            oi = entry["orig_idx"]
             mu = self._get_resolved_markup(
-                entry["name"], row_idx, tier_markups,
+                entry["name"], oi, tier_markups,
             )
             base = entry["tt"] * entry["amount"]
             cost = base * mu / 100
@@ -5386,7 +5389,7 @@ class _OverlayTiersWidget(QWidget):
 
             # Update spinbox
             for si, spinbox in self._mu_spinboxes:
-                if si == row_idx:
+                if si == oi:
                     spinbox.blockSignals(True)
                     spinbox.setValue(mu)
                     spinbox.blockSignals(False)
@@ -5418,17 +5421,16 @@ class _OverlayTiersWidget(QWidget):
             t_mats = t_data.get("Materials", [])
             t_markups = self._markups.get(t, {})
             t_entries = []
-            for mat in t_mats:
+            for orig_idx, mat in enumerate(t_mats):
                 mn = deep_get(mat, "Material", "Name") or "Unknown"
                 t_entries.append({
+                    "orig_idx": orig_idx,
                     "name": mn,
                     "tt": deep_get(mat, "Material", "Properties", "Economy", "MaxTT") or 0,
                     "amount": mat.get("Amount", 0),
-                    "sort": self._classify(mn),
                 })
-            t_entries.sort(key=lambda e: e["sort"])
-            for si, en in enumerate(t_entries):
-                mu = self._get_resolved_markup(en["name"], si, t_markups)
+            for en in t_entries:
+                mu = self._get_resolved_markup(en["name"], en["orig_idx"], t_markups)
                 base = en["tt"] * en["amount"]
                 cumul_tt += base
                 cumul_total += base * mu / 100

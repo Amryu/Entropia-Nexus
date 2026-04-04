@@ -26,6 +26,7 @@ except ImportError:
 from ..core.constants import (
     EVENT_AUTH_STATE_CHANGED,
     EVENT_CAPTURE_ERROR,
+    EVENT_CLIP_BUFFER_PROGRESS,
     EVENT_CLIP_ENCODING_PROGRESS,
     EVENT_CLIP_ENCODING_STARTED,
     EVENT_CLIP_SAVED,
@@ -48,6 +49,8 @@ from .constants import (
     DEFAULT_SCREENSHOT_DIR,
     FILENAME_TIMESTAMP_FMT,
     RESOLUTION_PRESETS,
+    SEGMENT_DURATION_S,
+    get_encode_thread_count,
     get_ffmpeg_flags,
     get_ffmpeg_scale_flag,
     get_interpolation,
@@ -80,11 +83,20 @@ class CaptureManager:
         self._running = False
         self._frame_sub = None  # FrameSubscription for video buffer
 
-        # Frame buffer for video clips
+        # Frame buffer for video clips (JPEG fallback)
         self._frame_buffer = FrameBuffer(
             max_seconds=config.clip_buffer_seconds,
             fps=config.clip_fps,
         )
+
+        # Encode-first pipeline (replaces JPEG buffer when active)
+        self._effects_processor = None   # EffectsProcessor | None
+        self._segment_encoder = None     # SegmentEncoder | None
+        self._segment_buffer = None      # SegmentBuffer | None
+        self._encode_first = False       # True when encode-first pipeline is active
+        self._ef_pending = None          # Deferred config when waiting for first frame
+        self._ef_needs_resize = False    # True when target_res != source dimensions
+        self._process_audio_pending = False  # Retry process loopback when game window found
 
         # Audio / webcam / mic (initialized later when clip features are built)
         self._audio_buffer = None
@@ -145,9 +157,14 @@ class CaptureManager:
         self._prev_clip_webcam_keep_ready = config.clip_webcam_keep_ready
         self._prev_clip_audio_enabled = config.clip_audio_enabled
         self._prev_clip_audio_device = config.clip_audio_device
+        self._prev_clip_audio_process_capture = getattr(config, "clip_audio_process_capture", True)
         self._prev_clip_mic_enabled = config.clip_mic_enabled
         self._prev_clip_mic_device = config.clip_mic_device
         self._prev_capture_bg = getattr(config, "capture_preview_background", "")
+        self._prev_clip_video_encoder = getattr(config, "clip_video_encoder", "libx264")
+        self._prev_clip_resolution = config.clip_resolution
+        self._prev_clip_bitrate = config.clip_bitrate
+        self._prev_clip_encode_first = getattr(config, "clip_encode_first", True)
 
         # Track auth state for own-global detection
         if oauth and hasattr(oauth, "auth_state"):
@@ -231,20 +248,217 @@ class CaptureManager:
             "capture-buffer", self._on_capture_frame, hz=fps,
         )
 
+        # Try to start encode-first pipeline
+        if getattr(self._config, "clip_encode_first", True):
+            self._start_encode_first_pipeline(fps)
+        else:
+            log.info("Encode-first disabled in config — using JPEG buffer")
+
     def _stop_frame_subscription(self) -> None:
         """Unsubscribe from the frame distributor and remove boost."""
         if self._frame_sub is not None:
             self._frame_distributor.unsubscribe(self._frame_sub)
             self._frame_sub = None
         self._frame_distributor.unboost("capture_manager")
+        self._stop_encode_first_pipeline()
+
+    def _start_encode_first_pipeline(self, fps: int) -> None:
+        """Initialize the encode-first pipeline (effects → segments → buffer).
+
+        When the resolution is "source", the encoder dimensions are unknown
+        until the first frame arrives.  In that case we store the pending
+        config and start the encoder lazily from ``_on_capture_frame``.
+        """
+        from .ffmpeg import ensure_ffmpeg
+
+        ffmpeg = ensure_ffmpeg(self._config.ffmpeg_path)
+        if not ffmpeg:
+            log.warning("FFmpeg not available — falling back to JPEG buffer")
+            return
+
+        cfg = self._config
+        resolution_key = cfg.clip_resolution
+        from .constants import RESOLUTION_PRESETS, SEGMENT_DURATION_S
+        target_res = RESOLUTION_PRESETS.get(resolution_key)
+
+        # Store config for deferred or immediate start
+        self._ef_pending = {
+            "ffmpeg": ffmpeg,
+            "fps": fps,
+            "target_res": target_res,
+            "resolution_key": resolution_key,
+            "bitrate": BITRATE_TABLE.get((resolution_key, cfg.clip_bitrate), "8M"),
+            "seg_duration": SEGMENT_DURATION_S,
+            "encode_priority": getattr(cfg, "clip_encode_priority", "below_normal"),
+            "encode_threads": getattr(cfg, "clip_encode_threads", 0),
+            "video_encoder": getattr(cfg, "clip_video_encoder", "libx264"),
+            "buffer_seconds": cfg.clip_buffer_seconds,
+        }
+
+        if target_res is not None:
+            # Dimensions known — start immediately
+            self._launch_encode_first(target_res[0], target_res[1])
+        else:
+            # "source" resolution — defer until first frame
+            log.info("Encode-first deferred: waiting for first frame to determine dimensions")
+
+    def _launch_encode_first(self, frame_w: int, frame_h: int) -> None:
+        """Actually start the encoder, effects processor, and segment buffer.
+
+        If any component fails to start, the entire pipeline is torn down
+        and we fall back to the JPEG buffer path.
+        """
+        from .effects_pipeline import EffectsProcessor
+        from .segment_buffer import SegmentBuffer
+        from .segment_encoder import SegmentEncoder
+
+        p = self._ef_pending
+        if p is None:
+            return
+
+        target_res = p["target_res"] or (frame_w, frame_h)
+        # Track whether frames need resizing (target != source dimensions)
+        self._ef_needs_resize = target_res != (frame_w, frame_h)
+        self._ef_pending = None
+
+        try:
+            self._segment_buffer = SegmentBuffer(
+                max_seconds=p["buffer_seconds"],
+                segment_duration=p["seg_duration"],
+            )
+
+            self._segment_encoder = SegmentEncoder(
+                ffmpeg_path=p["ffmpeg"],
+                width=frame_w,
+                height=frame_h,
+                fps=p["fps"],
+                bitrate=p["bitrate"],
+                on_segment=self._on_segment_complete,
+                encode_priority=p["encode_priority"],
+                encode_threads=p["encode_threads"],
+                segment_duration=p["seg_duration"],
+                video_encoder=p["video_encoder"],
+                on_error=lambda msg: self._event_bus.publish(
+                    EVENT_CAPTURE_ERROR, {"error": msg},
+                ),
+                blur_regions=copy.deepcopy(self._config.capture_blur_regions),
+            )
+
+            effects_cfg = self._build_effects_config(target_res)
+
+            self._effects_processor = EffectsProcessor(
+                config=effects_cfg,
+                on_frame=self._segment_encoder.write_frame,
+            )
+
+            self._segment_encoder.start()
+
+            # _launch() sets _running=False if Popen itself failed
+            if not self._segment_encoder._running:
+                raise RuntimeError("FFmpeg process failed to start — check logs")
+
+            self._effects_processor.start()
+            self._encode_first = True
+            log.info("Encode-first pipeline active: %dx%d @%dfps %s",
+                     frame_w, frame_h, p["fps"], p["bitrate"])
+
+        except Exception:
+            log.exception("Encode-first pipeline failed to start — using JPEG fallback")
+            self._event_bus.publish(EVENT_CAPTURE_ERROR, {
+                "error": "Encode-first pipeline failed — clips will use slower re-encode. Check logs.",
+            })
+            self._stop_encode_first_pipeline()
+
+    def _on_segment_complete(self, path, start_time, end_time) -> None:
+        """Called by SegmentEncoder when a segment file finishes."""
+        if self._segment_buffer is not None:
+            self._segment_buffer.on_segment_complete(path, start_time, end_time)
+            count = self._segment_buffer.segment_count
+            max_segs = self._segment_buffer._max_segments
+            fill_pct = min(100, int(count * 100 / max_segs)) if max_segs > 0 else 100
+            buf_seconds = getattr(self._config, "clip_buffer_seconds", 15)
+            self._event_bus.publish(EVENT_CLIP_BUFFER_PROGRESS, {
+                "fill_pct": fill_pct,
+                "seconds": count * SEGMENT_DURATION_S,
+                "max_seconds": buf_seconds,
+            })
+
+    def _stop_encode_first_pipeline(self) -> None:
+        """Shut down the encode-first pipeline."""
+        self._ef_pending = None
+        if self._effects_processor is not None:
+            self._effects_processor.stop()
+            self._effects_processor = None
+        if self._segment_encoder is not None:
+            self._segment_encoder.cleanup()
+            self._segment_encoder = None
+        if self._segment_buffer is not None:
+            self._segment_buffer.cleanup()
+            self._segment_buffer = None
+        self._encode_first = False
+
+    def _build_effects_config(self, target_res: tuple[int, int] | None = None) -> dict:
+        """Build the effects configuration dict from current config."""
+        cfg = self._config
+        return {
+            "background": self._background.copy() if self._background is not None else None,
+            "target_res": target_res,
+            "blur_regions": copy.deepcopy(cfg.capture_blur_regions) if cfg.capture_blur_regions else None,
+            "scaling": getattr(cfg, "clip_scaling", "cubic"),
+            "webcam_position_x": cfg.clip_webcam_position_x,
+            "webcam_position_y": cfg.clip_webcam_position_y,
+            "webcam_scale": cfg.clip_webcam_scale,
+            "webcam_crop": {
+                "x": cfg.clip_webcam_crop_x,
+                "y": cfg.clip_webcam_crop_y,
+                "w": cfg.clip_webcam_crop_w,
+                "h": cfg.clip_webcam_crop_h,
+            },
+            "webcam_chroma": {
+                "enabled": cfg.clip_webcam_chroma_enabled,
+                "color": cfg.clip_webcam_chroma_color,
+                "threshold": cfg.clip_webcam_chroma_threshold,
+                "smoothing": cfg.clip_webcam_chroma_smoothing,
+            },
+        }
 
     def _on_capture_frame(self, frame: np.ndarray, timestamp: float) -> None:
         """Callback from FrameDistributor — push frame into the rolling buffer."""
+        # Deferred process audio: upgrade to game-only capture once window is found
+        if getattr(self, "_process_audio_pending", False):
+            self._process_audio_pending = False
+            buf = self._try_process_audio()
+            if buf is not None:
+                self._stop_audio()
+                self._audio_buffer = buf
+
+        # Deferred encode-first start: first frame tells us the dimensions
+        if self._ef_pending is not None and not self._encode_first:
+            h, w = frame.shape[:2]
+            self._launch_encode_first(w, h)
+
         webcam_frame = None
         wc = self._webcam_capture  # snapshot ref (main thread may set to None)
         if wc is not None:
             webcam_frame = wc.get_latest_frame()
-        self._frame_buffer.push(frame, timestamp, webcam_frame)
+
+        if self._encode_first and self._segment_encoder is not None:
+            # Encode-first: feed the segment encoder.
+            # Bypass the effects processor when no processing is needed
+            # (no blur, webcam, background, or resize) to avoid the queue
+            # overhead and thread context switch on every frame.
+            if self._effects_processor is not None and (
+                webcam_frame is not None
+                or self._background is not None
+                or self._ef_needs_resize
+            ):
+                self._effects_processor.push(frame, timestamp, webcam_frame)
+            else:
+                self._segment_encoder.write_frame(frame, timestamp)
+        else:
+            # Fallback: JPEG buffer for later re-encoding on clip save
+            self._frame_buffer.push(frame, timestamp, webcam_frame)
+
         if self._recording:
             self._write_recording_frame(frame.copy(), timestamp)
 
@@ -331,9 +545,24 @@ class CaptureManager:
     # ------------------------------------------------------------------
 
     def _start_audio(self) -> None:
-        """Start system audio capture (WASAPI loopback) if enabled."""
+        """Start system audio capture (WASAPI loopback) if enabled.
+
+        When ``clip_audio_process_capture`` is True (default) and the
+        game window is known, uses WASAPI Process Loopback to capture
+        only the game's audio.  Falls back to regular device loopback
+        if process capture is unavailable or the game hasn't been found.
+        """
         if not self._config.clip_audio_enabled:
             return
+
+        # Try process loopback first (game audio only)
+        if self._config.clip_audio_process_capture:
+            buf = self._try_process_audio()
+            if buf is not None:
+                self._audio_buffer = buf
+                return
+
+        # Fallback: regular WASAPI loopback
         try:
             from .audio_buffer import AudioBuffer
             self._audio_buffer = AudioBuffer(
@@ -346,6 +575,45 @@ class CaptureManager:
         except Exception as e:
             log.warning("System audio capture unavailable: %s", e)
             self._audio_buffer = None
+
+    def _try_process_audio(self):
+        """Attempt to start process-specific audio capture.
+
+        Returns the buffer on success, None on failure (caller falls back).
+        """
+        try:
+            from .process_audio import is_supported, ProcessAudioBuffer, get_pid_for_hwnd
+        except ImportError:
+            return None
+
+        if not is_supported():
+            log.info("Process audio capture not supported on this Windows version")
+            return None
+
+        hwnd = self._frame_distributor.game_hwnd
+        if not hwnd:
+            log.info("Process audio: game window not found yet — will retry when found")
+            self._process_audio_pending = True
+            return None
+
+        pid = get_pid_for_hwnd(hwnd)
+        if not pid:
+            log.warning("Process audio: could not get PID for hwnd %s", hwnd)
+            return None
+
+        try:
+            buf = ProcessAudioBuffer(pid=pid)
+            buf.start()
+            buf.wait_ready(timeout=5.0)
+            log.info("Process audio capture active (PID=%d, game audio only)", pid)
+            return buf
+        except Exception as e:
+            log.warning("Process audio capture failed, falling back to device: %s", e)
+            try:
+                buf.stop()
+            except Exception:
+                pass
+            return None
 
     def _stop_audio(self) -> None:
         buf = self._audio_buffer
@@ -457,9 +725,14 @@ class CaptureManager:
         self._prev_clip_webcam_keep_ready = cfg.clip_webcam_keep_ready
         self._prev_clip_audio_enabled = cfg.clip_audio_enabled
         self._prev_clip_audio_device = cfg.clip_audio_device
+        self._prev_clip_audio_process_capture = getattr(cfg, "clip_audio_process_capture", True)
         self._prev_clip_mic_enabled = cfg.clip_mic_enabled
         self._prev_clip_mic_device = cfg.clip_mic_device
         self._prev_capture_bg = getattr(cfg, "capture_preview_background", "")
+        self._prev_clip_video_encoder = getattr(cfg, "clip_video_encoder", "libx264")
+        self._prev_clip_resolution = cfg.clip_resolution
+        self._prev_clip_bitrate = cfg.clip_bitrate
+        self._prev_clip_encode_first = getattr(cfg, "clip_encode_first", True)
 
     def _on_config_changed(self, config) -> None:
         """Reconfigure capture buffers when video settings change.
@@ -566,18 +839,28 @@ class CaptureManager:
             self._update_config_snapshot(config)
             return
 
-        # --- Frame buffer: FPS or buffer duration changed ---
+        # --- Frame buffer / encode pipeline: detect setting changes ---
         fps_changed = cfg.clip_fps != self._prev_clip_fps
         buf_changed = cfg.clip_buffer_seconds != self._prev_clip_buffer_seconds
+        # Settings that require restarting the encode-first pipeline
+        pipeline_changed = (
+            getattr(cfg, "clip_video_encoder", "libx264")
+            != self._prev_clip_video_encoder
+            or cfg.clip_resolution != self._prev_clip_resolution
+            or cfg.clip_bitrate != self._prev_clip_bitrate
+            or getattr(cfg, "clip_encode_first", True)
+            != self._prev_clip_encode_first
+        )
 
         if fps_changed or buf_changed:
             log.info("Resizing frame buffer: %ds @ %dfps",
                      cfg.clip_buffer_seconds, cfg.clip_fps)
             self._frame_buffer.resize(cfg.clip_buffer_seconds, cfg.clip_fps)
+            if buf_changed and self._segment_buffer is not None:
+                self._segment_buffer.resize(cfg.clip_buffer_seconds)
 
-        if fps_changed:
-            log.info("FPS changed %d -> %d, restarting frame subscription",
-                     self._prev_clip_fps, cfg.clip_fps)
+        if fps_changed or pipeline_changed:
+            log.info("Video settings changed, restarting capture pipeline")
             self._stop_frame_subscription()
             self._start_frame_subscription()
 
@@ -611,6 +894,10 @@ class CaptureManager:
         # --- System audio ---
         audio_toggled = cfg.clip_audio_enabled != self._prev_clip_audio_enabled
         audio_dev_changed = cfg.clip_audio_device != self._prev_clip_audio_device
+        process_capture_toggled = (
+            getattr(cfg, "clip_audio_process_capture", True)
+            != self._prev_clip_audio_process_capture
+        )
 
         if audio_toggled:
             if cfg.clip_audio_enabled:
@@ -619,6 +906,10 @@ class CaptureManager:
             else:
                 log.info("System audio disabled")
                 self._stop_audio()
+        elif cfg.clip_audio_enabled and process_capture_toggled:
+            log.info("Process capture toggled — restarting audio")
+            self._stop_audio()
+            self._start_audio()
         elif cfg.clip_audio_enabled and audio_dev_changed and self._audio_buffer:
             log.info("Audio device changed — switching device")
             self._audio_buffer.set_device(cfg.clip_audio_device or None)
@@ -1018,7 +1309,55 @@ class CaptureManager:
         global_event: dict | None = None,
         thumb_time: float = 0,
     ) -> None:
-        """Snapshot the buffer and encode a clip in a background thread."""
+        """Snapshot the buffer and encode/remux a clip in a background thread."""
+
+        # ── Encode-first path: instant remux ──
+        if self._encode_first and self._segment_buffer is not None:
+            segments = self._segment_buffer.get_segments()
+            if not segments:
+                self._event_bus.publish(EVENT_CAPTURE_ERROR,
+                                        {"error": "No segments in buffer for clip"})
+                return
+            start_time = segments[0].start_time
+            end_time = segments[-1].end_time
+
+            audio_data = self._audio_buffer.snapshot(start_time, end_time) if self._audio_buffer else None
+            mic_data = self._mic_buffer.snapshot(start_time, end_time) if self._mic_buffer else None
+
+            output_path = self._build_clip_path(target_name, amount, timestamp)
+
+            cfg = self._config
+            clip_cfg = {
+                "mic_filters": {
+                    "noise_suppression": cfg.clip_audio_noise_suppression,
+                    "noise_gate": cfg.clip_audio_noise_gate,
+                    "compressor": cfg.clip_audio_compressor,
+                    "ns_mix": cfg.clip_audio_ns_mix,
+                    "gate_threshold": cfg.clip_audio_gate_threshold,
+                    "gate_ratio": cfg.clip_audio_gate_ratio,
+                    "gate_attack": cfg.clip_audio_gate_attack,
+                    "gate_release": cfg.clip_audio_gate_release,
+                    "comp_threshold": cfg.clip_audio_comp_threshold,
+                    "comp_ratio": cfg.clip_audio_comp_ratio,
+                    "comp_attack": cfg.clip_audio_comp_attack,
+                    "comp_release": cfg.clip_audio_comp_release,
+                },
+                "game_gain": cfg.clip_audio_game_gain,
+                "mic_gain": cfg.clip_audio_mic_gain,
+                "encode_priority": getattr(cfg, "clip_encode_priority", "below_normal"),
+                "ffmpeg_path": cfg.ffmpeg_path,
+            }
+
+            threading.Thread(
+                target=self._remux_clip,
+                args=(segments, audio_data, mic_data, output_path,
+                      start_time, end_time, global_event, thumb_time, clip_cfg),
+                daemon=True,
+                name="clip-remux",
+            ).start()
+            return
+
+        # ── Fallback path: JPEG buffer → full re-encode ──
         frames = self._frame_buffer.snapshot()
         if not frames:
             self._event_bus.publish(EVENT_CAPTURE_ERROR,
@@ -1037,21 +1376,7 @@ class CaptureManager:
         if self._mic_buffer:
             mic_data = self._mic_buffer.snapshot(start_time, end_time)
 
-        # Build output path
-        ts = timestamp or datetime.now()
-        base = Path(self._config.clip_directory or DEFAULT_CLIP_DIR)
-        if self._config.clip_daily_subfolder:
-            base = base / ts.strftime("%Y-%m-%d")
-
-        from .screenshot import _sanitize_filename
-        ts_str = ts.strftime(FILENAME_TIMESTAMP_FMT)
-        parts = [ts_str]
-        if target_name:
-            parts.append(_sanitize_filename(target_name))
-        if amount > 0:
-            parts.append(f"{amount:.2f}")
-        filename = "_".join(parts) + ".mp4"
-        output_path = base / filename
+        output_path = self._build_clip_path(target_name, amount, timestamp)
 
         # Snapshot config on the main thread so the encode thread doesn't
         # race with live settings changes.
@@ -1095,6 +1420,8 @@ class CaptureManager:
             "mic_gain": cfg.clip_audio_mic_gain,
             "scaling": getattr(cfg, "clip_scaling", "lanczos"),
             "encode_priority": getattr(cfg, "clip_encode_priority", "normal"),
+            "encode_threads": getattr(cfg, "clip_encode_threads", 0),
+            "video_encoder": getattr(cfg, "clip_video_encoder", "libx264"),
         }
 
         # Encode in background thread (webcam frames are stored per-frame in the buffer)
@@ -1105,6 +1432,86 @@ class CaptureManager:
             daemon=True,
             name="clip-encode",
         ).start()
+
+    def _build_clip_path(
+        self,
+        target_name: str = "",
+        amount: float = 0.0,
+        timestamp: datetime | None = None,
+    ) -> Path:
+        """Build the output path for a clip file."""
+        ts = timestamp or datetime.now()
+        base = Path(self._config.clip_directory or DEFAULT_CLIP_DIR)
+        if self._config.clip_daily_subfolder:
+            base = base / ts.strftime("%Y-%m-%d")
+        from .screenshot import _sanitize_filename
+        ts_str = ts.strftime(FILENAME_TIMESTAMP_FMT)
+        parts = [ts_str]
+        if target_name:
+            parts.append(_sanitize_filename(target_name))
+        if amount > 0:
+            parts.append(f"{amount:.2f}")
+        filename = "_".join(parts) + ".mp4"
+        return base / filename
+
+    def _remux_clip(
+        self,
+        segments,
+        audio_data,
+        mic_data,
+        output_path: Path,
+        clip_start: float,
+        clip_end: float,
+        global_event: dict | None = None,
+        thumb_time: float = 0,
+        clip_cfg: dict | None = None,
+    ) -> None:
+        """Remux pre-encoded segments into a clip (runs in background thread)."""
+        path_str = str(output_path)
+        self._event_bus.publish(EVENT_CLIP_ENCODING_STARTED, {
+            "path": path_str,
+            "frames": 0,
+        })
+
+        try:
+            from .clip_remuxer import remux_clip
+            from .ffmpeg import ensure_ffmpeg
+
+            c = clip_cfg or {}
+            ffmpeg = ensure_ffmpeg(c.get("ffmpeg_path", ""))
+            if not ffmpeg:
+                raise RuntimeError("FFmpeg not found for remux")
+
+            remux_clip(
+                segments=segments,
+                audio_pcm=audio_data,
+                output_path=output_path,
+                ffmpeg_path=ffmpeg,
+                clip_start=clip_start,
+                clip_end=clip_end,
+                mic_pcm=mic_data,
+                mic_filters=c.get("mic_filters"),
+                game_gain=c.get("game_gain", 1.0),
+                mic_gain=c.get("mic_gain", 1.0),
+                encode_priority=c.get("encode_priority", "below_normal"),
+                segment_buffer=self._segment_buffer,
+                thumb_time=thumb_time,
+            )
+
+            duration = clip_end - clip_start
+            payload = {
+                "path": path_str,
+                "timestamp": datetime.now().isoformat(),
+                "duration": duration,
+                "frames": 0,
+            }
+            if global_event:
+                payload["global_event"] = global_event
+            self._event_bus.publish(EVENT_CLIP_SAVED, payload)
+
+        except Exception as e:
+            log.exception("Clip remux failed: %s", e)
+            self._event_bus.publish(EVENT_CAPTURE_ERROR, {"error": str(e)})
 
     def _encode_clip(
         self,
@@ -1172,6 +1579,8 @@ class CaptureManager:
                 scaling=c.get("scaling", "lanczos"),
                 on_progress=_on_progress,
                 encode_priority=c.get("encode_priority", "normal"),
+                encode_threads=c.get("encode_threads", 0),
+                video_encoder=c.get("video_encoder", "libx264"),
             )
 
             payload = {
@@ -1272,9 +1681,13 @@ class CaptureManager:
         if vf_parts:
             cmd.extend(["-vf", ",".join(vf_parts)])
 
-        cmd.extend(["-c:v", "libx264", "-preset", "fast",
-                     "-b:v", bitrate_val, "-pix_fmt", "yuv420p",
-                     "-an", str(self._rec_temp_video)])
+        from .ffmpeg import get_encoder_args
+        encoder = getattr(self._config, "clip_video_encoder", "libx264")
+        threads = getattr(self._config, "clip_encode_threads", 0)
+        cmd.extend(get_encoder_args(
+            encoder, bitrate_val, threads=threads, realtime=True,
+        ))
+        cmd.extend(["-an", str(self._rec_temp_video)])
 
         try:
             self._rec_proc = subprocess.Popen(
@@ -1494,8 +1907,8 @@ class CaptureManager:
         if self._webcam_capture:
             wf = self._webcam_capture.get_latest_frame()
             if wf is not None:
-                from .clip_writer import _composite_webcam
-                frame_bgr = _composite_webcam(
+                from .video_effects import composite_webcam
+                frame_bgr = composite_webcam(
                     frame_bgr, wf,
                     c.get("clip_webcam_position_x", 0), c.get("clip_webcam_position_y", 0),
                     crop={"x": c.get("clip_webcam_crop_x", 0), "y": c.get("clip_webcam_crop_y", 0),
@@ -1775,7 +2188,7 @@ class CaptureManager:
         itsscale: float = 1.0,
     ) -> None:
         """Mux recorded video with audio tracks via a second FFmpeg pass (copy video)."""
-        from .clip_writer import _write_wav, _apply_gain, _build_mic_filter
+        from .audio_utils import write_wav, apply_gain, build_mic_filter
         from .ffmpeg import find_rnnoise_model
 
         temp_files: list[str] = []
@@ -1796,17 +2209,17 @@ class CaptureManager:
             c = self._rec_cfg  # config snapshot from recording start
 
             if has_game:
-                game_pcm = _apply_gain(game_pcm, c.get("clip_audio_game_gain", 0.0))
+                game_pcm = apply_gain(game_pcm, c.get("clip_audio_game_gain", 0.0))
                 tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                _write_wav(game_pcm, tmp.name)
+                write_wav(game_pcm, tmp.name)
                 tmp.close()
                 temp_files.append(tmp.name)
                 cmd.extend(["-i", tmp.name])
 
             if has_mic:
-                mic_pcm = _apply_gain(mic_pcm, c.get("clip_audio_mic_gain", 0.0))
+                mic_pcm = apply_gain(mic_pcm, c.get("clip_audio_mic_gain", 0.0))
                 tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                _write_wav(mic_pcm, tmp.name)
+                write_wav(mic_pcm, tmp.name)
                 tmp.close()
                 temp_files.append(tmp.name)
                 cmd.extend(["-i", tmp.name])
@@ -1817,7 +2230,7 @@ class CaptureManager:
             rnnoise_model = find_rnnoise_model() if c.get("clip_audio_noise_suppression") else None
             if c.get("clip_audio_noise_suppression") and not rnnoise_model:
                 log.warning("Noise suppression requested but RNNoise model not found — skipping")
-            mic_af = _build_mic_filter({
+            mic_af = build_mic_filter({
                 "noise_suppression": c.get("clip_audio_noise_suppression", False),
                 "noise_gate": c.get("clip_audio_noise_gate", False),
                 "compressor": c.get("clip_audio_compressor", False),
