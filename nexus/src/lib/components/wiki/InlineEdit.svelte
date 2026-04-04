@@ -10,6 +10,7 @@
     updateField,
     setFieldError,
     validationErrors,
+    fieldWarnings,
     getNestedValue
   } from '$lib/stores/wikiEditState.js';
 
@@ -95,10 +96,12 @@
     localValue = value;
   });
 
-  // Get error from store
+  // Get error and warning from store
   $effect(() => {
     error = path ? $validationErrors[path] : null;
   });
+
+  let warning = $derived(path ? $fieldWarnings[path] : null);
 
   function handleInput(event) {
     let newValue = event.target.value;
@@ -208,7 +211,7 @@
   }
 </script>
 
-<span class="inline-edit" class:editable={isEditable} class:has-error={error}>
+<span class="inline-edit" class:editable={isEditable} class:has-error={error} class:has-warning={warning && !error}>
   {#if isEditable}
     <span class="edit-wrapper">
       {#if prefix}
@@ -309,6 +312,8 @@
 
     {#if error}
       <span class="error-message">{error}</span>
+    {:else if warning}
+      <span class="warning-message" title={warning}>&#9888;</span>
     {/if}
   {:else}
     <span class="display-value">
@@ -419,6 +424,18 @@
   .error-message {
     font-size: 12px;
     color: var(--error-color, #ff6b6b);
+  }
+
+  .warning-message {
+    font-size: 14px;
+    color: var(--warning-color, #fbbf24);
+    cursor: help;
+  }
+
+  .has-warning .edit-input,
+  .has-warning .edit-textarea,
+  .has-warning .edit-select {
+    border-color: var(--warning-color, #fbbf24);
   }
 
   /* Editable styling hint */

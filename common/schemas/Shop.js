@@ -29,6 +29,7 @@ export const Shop = {
       "type": ["integer", "null"],
       "default": null
     },
+    "Owner": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "OwnerId": {
       "type": ["string", "null"],
       "default": null

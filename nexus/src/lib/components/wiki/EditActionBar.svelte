@@ -13,13 +13,17 @@
     isCreateMode,
     hasChanges,
     hasErrors,
+    hasWarnings,
     changeMetadata,
     currentEntity,
+    originalEntity,
     existingPendingChange,
+    fieldWarnings,
     getChangeForSubmission,
     cancelEdit,
     markSaved,
     setFieldError,
+    setFieldWarning,
     setViewingPendingChange
   } from '$lib/stores/wikiEditState.js';
   import { apiPost, apiPut, encodeURIComponentSafe } from '$lib/util';
@@ -69,8 +73,69 @@
   let statusMessage = $state('');
   let statusType = $state(''); // success, error
   let pollTimer = null;
+  let similarCheckTimer = null;
+  // Track the name the user already confirmed so we don't re-prompt
+  let confirmedSimilarName = $state('');
 
-  onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });
+  onDestroy(() => {
+    if (pollTimer) clearInterval(pollTimer);
+    if (similarCheckTimer) clearTimeout(similarCheckTimer);
+  });
+
+  // Debounced similarity check when the Name field changes
+  $effect(() => {
+    const name = $currentEntity?.Name?.trim();
+    const entity = $changeMetadata?.entity;
+    const origName = $originalEntity?.Name?.trim();
+
+    if (!name || name.length < 3 || !entity) {
+      setFieldWarning('Name', null);
+      return;
+    }
+
+    // Skip check when name is unchanged from the original (update mode, just entered edit)
+    if (origName && name === origName) {
+      setFieldWarning('Name', null);
+      return;
+    }
+
+    if (similarCheckTimer) clearTimeout(similarCheckTimer);
+    similarCheckTimer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ name, entity });
+        // Exclude original name for updates so the entity doesn't match itself
+        if (origName) params.set('exclude', origName);
+
+        const res = await fetch(`/api/changes/check-similar?${params}`);
+        if (!res.ok) { setFieldWarning('Name', null); return; }
+        const data = await res.json();
+
+        if (data.similar?.length > 0) {
+          setFieldWarning('Name', `Similar: ${data.similar.join(', ')}`);
+        } else {
+          setFieldWarning('Name', null);
+        }
+      } catch {
+        setFieldWarning('Name', null);
+      }
+    }, 600);
+  });
+
+  /**
+   * If the Name field has a similarity warning the user hasn't confirmed yet,
+   * show a confirmation dialog.  Returns true to proceed, false to abort.
+   */
+  function confirmSimilarIfNeeded() {
+    const name = $currentEntity?.Name?.trim();
+    const warning = $fieldWarnings['Name'];
+    if (!warning || name === confirmedSimilarName) return true;
+
+    const ok = confirm(
+      `Entities with a similar name already exist:\n\n${warning.replace('Similar: ', '').split(', ').map(n => `  \u2022 ${n}`).join('\n')}\n\nAre you sure this is not a duplicate?`
+    );
+    if (ok) confirmedSimilarName = name;
+    return ok;
+  }
 
   // Admin-only: allow Direct Apply (pass-through without review)
   let isUserAdmin = $derived(user?.grants?.includes('admin.panel') || user?.administrator);
@@ -103,6 +168,8 @@
       statusType = 'error';
       return;
     }
+
+    if (!confirmSimilarIfNeeded()) return;
 
     saving = true;
     statusMessage = '';
@@ -188,6 +255,8 @@
       statusType = 'error';
       return;
     }
+
+    if (!confirmSimilarIfNeeded()) return;
 
     submitting = true;
     statusMessage = '';
@@ -275,6 +344,8 @@
       statusType = 'error';
       return;
     }
+
+    if (!confirmSimilarIfNeeded()) return;
 
     directApplying = true;
     statusMessage = '';

@@ -24,6 +24,10 @@ const pendingChanges = writable({});
 // Structure: { fieldPath: errorMessage, ... }
 export const validationErrors = writable({});
 
+// Field-level warnings (non-blocking, unlike validationErrors)
+// Used for similarity checks and other advisory messages
+export const fieldWarnings = writable({});
+
 // Change metadata (for API submission)
 export const changeMetadata = writable({
   id: null,
@@ -51,11 +55,16 @@ export const hasErrors = derived(validationErrors, ($errors) => {
   return Object.keys($errors).length > 0;
 });
 
+// Derived: Check if there are any field warnings
+export const hasWarnings = derived(fieldWarnings, ($warnings) => {
+  return Object.keys($warnings).length > 0;
+});
+
 const NAMED_ENTITY_PATHS = {
   Apartment: ['Planet'],
   Area: ['Planet'],
   Location: ['Planet', 'ParentLocation', 'Facilities[]'],
-  Shop: ['Planet'],
+  Shop: ['Planet', 'Owner'],
   Vendor: ['Planet', 'Offers[].Item', 'Offers[].Prices[].Item'],
   Pet: ['Planet'],
   Mob: [
@@ -296,6 +305,21 @@ export function setFieldError(path, error) {
 }
 
 /**
+ * Set a non-blocking warning for a field (e.g. similar name detected)
+ * @param {string} path - Dot notation path to the field
+ * @param {string|null} warning - The warning message, or null to clear
+ */
+export function setFieldWarning(path, warning) {
+  fieldWarnings.update(warnings => {
+    if (warning === null) {
+      const { [path]: _, ...rest } = warnings;
+      return rest;
+    }
+    return { ...warnings, [path]: warning };
+  });
+}
+
+/**
  * Mark changes as saved — rebase originalEntity to include pending changes and clear dirty state.
  * Called after a successful save (Draft, DirectApply, etc.) so the form reflects the persisted state.
  */
@@ -316,6 +340,7 @@ export function cancelEdit() {
   editMode.set(false);
   pendingChanges.set({});
   validationErrors.set({});
+  fieldWarnings.set({});
   viewingPendingChange.set(false);
 }
 
@@ -335,6 +360,7 @@ export function resetEditState() {
   originalEntity.set(null);
   pendingChanges.set({});
   validationErrors.set({});
+  fieldWarnings.set({});
   changeMetadata.set({
     id: null,
     state: 'Draft',
