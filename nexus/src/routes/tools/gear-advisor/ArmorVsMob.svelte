@@ -1568,6 +1568,12 @@
     white-space: nowrap;
   }
 
+  .fancy-table th[title] {
+    text-decoration: underline dotted var(--text-muted);
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+
   .fancy-table td {
     padding: 6px 10px;
     border-bottom: 1px solid var(--border-color);

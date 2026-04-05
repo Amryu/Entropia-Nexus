@@ -737,15 +737,14 @@
     white-space: nowrap;
   }
   .cmp-table thead th {
-    position: sticky;
-    top: 0;
     background-color: var(--primary-color);
     color: var(--text-muted);
     font-weight: 500;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
-    z-index: 2;
+    line-height: 1.1;
+    vertical-align: middle;
   }
   .cmp-table thead tr:first-child th.set-group {
     border-left: 1px solid var(--border-color);
@@ -754,10 +753,14 @@
     background-color: color-mix(in srgb, var(--accent-color) 14%, var(--primary-color));
   }
   .cmp-table thead tr:nth-child(2) th {
-    top: 32px;
     border-bottom: 1px solid var(--border-color);
   }
   .cmp-table thead th.sub { font-size: 10px; }
+  .cmp-table thead th[title] {
+    text-decoration: underline dotted var(--text-muted);
+    text-underline-offset: 3px;
+    cursor: help;
+  }
   .cmp-table tbody tr:nth-child(even) td {
     background-color: color-mix(in srgb, var(--primary-color) 40%, var(--secondary-color));
   }
