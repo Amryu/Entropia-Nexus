@@ -15,8 +15,9 @@
     MAX_ENHANCERS,
     computeEffectiveDefense,
     computeAttackBreakdown,
+    computeDecayRate,
     rankMobs,
-    rankArmors,
+    rankArmorsChunked,
     buildDetails,
     hasDamageData
   } from './armorVsMob.js';
@@ -32,6 +33,7 @@
   let mob = $state(null);
   let scope = $state('average'); // 'lowest' | 'average' | 'highest'
   let rankBy = $state('mitigation'); // 'typeMatch' | 'mitigation' | 'damageTaken'
+  let includePlates = $state(true); // include top-3 plate pairings in armor ranking
 
   // Derived: effective defense for current armor config (null if no armor)
   let defense = $derived(armorSet
@@ -40,6 +42,9 @@
 
   // Pre-mitigation damage multiplier (clamped to ≥ 0)
   let dmgMultiplier = $derived(Math.max(0, 1 - (Number(dmgReduction) || 0) / 100));
+
+  // Decay rate (PEC per unit of damage absorbed) for current armor + plating
+  let decayRate = $derived(armorSet ? computeDecayRate(armorSet, plating) : 0);
 
   // Derived: details breakdown for mob x defense (null if either missing)
   let details = $derived(mob && defense ? buildDetails(mob, defense, dmgMultiplier) : null);
@@ -92,6 +97,7 @@
           takenMax: br.takenMax,
           mitigation: br.mitigation,
           critTaken: br.critTaken,
+          decayThisAttack: br.expectedBlocked * decayRate,
           hasData: br.totalAvg > 0
         });
       }
@@ -102,11 +108,50 @@
   // Derived rankings — auto-computed based on which side has a selection.
   // Only one side ranks at a time; once both are filled we switch to details view.
   let mobRanking = $derived(
-    armorSet && !mob ? rankMobs(mobs, defense, scope, dmgMultiplier, rankBy) : []
+    armorSet && !mob ? rankMobs(mobs, defense, scope, dmgMultiplier, rankBy, decayRate) : []
   );
-  let armorRanking = $derived(
-    !armorSet && mob ? rankArmors(armorSets, mob, { plating, iceShield, enhancers, dmgMultiplier }, scope, rankBy) : []
-  );
+  // Armor ranking is computed asynchronously in chunks so the UI stays
+  // responsive — loading spinner shows while hundreds of armor/plate combos
+  // are evaluated.
+  let armorRanking = $state([]);
+  let armorRankingLoading = $state(false);
+
+  $effect(() => {
+    // declare reactive deps
+    const _mob = mob;
+    const _armorSet = armorSet;
+    const _scope = scope;
+    const _rankBy = rankBy;
+    const _iceShield = iceShield;
+    const _enhancers = enhancers;
+    const _dmgMultiplier = dmgMultiplier;
+    const _includePlates = includePlates;
+
+    if (_armorSet || !_mob) {
+      armorRanking = [];
+      armorRankingLoading = false;
+      return;
+    }
+
+    armorRankingLoading = true;
+    const controller = { aborted: false };
+
+    rankArmorsChunked(
+      armorSets, armorPlatings, _mob,
+      { iceShield: _iceShield, enhancers: _enhancers, dmgMultiplier: _dmgMultiplier },
+      _scope, _rankBy,
+      { includePlates: _includePlates, platesPerArmor: 3 },
+      { chunkSize: 40, signal: controller }
+    ).then(result => {
+      if (controller.aborted) return;
+      armorRanking = result ?? [];
+      armorRankingLoading = false;
+    }).catch(() => {
+      if (!controller.aborted) armorRankingLoading = false;
+    });
+
+    return () => { controller.aborted = true; };
+  });
 
   // Derived panel modes: 'input' | 'ranking' | 'details'
   // - both empty → both inputs
@@ -217,22 +262,39 @@
 
       {#if armorPanelMode === 'ranking'}
         <div class="panel-body">
-          <p class="panel-caption">Armor sets ranked vs <strong>{mob?.Name}</strong> ({scope}):</p>
-          {#if armorRanking.length === 0}
+          <div class="ranking-header">
+            <p class="panel-caption">Armor sets ranked vs <strong>{mob?.Name}</strong> ({scope}):</p>
+            <label class="inline-check">
+              <input type="checkbox" bind:checked={includePlates} />
+              <span>Include top-3 plate pairings</span>
+            </label>
+            {#if armorRankingLoading && armorRanking.length > 0}
+              <span class="refresh-indicator"><span class="spinner small"></span> updating…</span>
+            {/if}
+          </div>
+          {#if armorRankingLoading && armorRanking.length === 0}
+            <div class="loading-state">
+              <span class="spinner"></span>
+              <span>Ranking armors…</span>
+            </div>
+          {:else if armorRanking.length === 0}
             <p class="empty-msg">No candidates — this mob has no attack data.</p>
           {:else}
             <div class="ranking-list" role="list">
-              {#each armorRanking.slice(0, 100) as r, i (r.name + i)}
+              {#each armorRanking.slice(0, 150) as r, i (r.name + '|' + (r.plating?.Name || '') + '|' + i)}
                 <button
                   type="button"
                   class="ranking-row"
                   class:no-damage={!r.hasTotalDamage && r.hasComposition}
                   class:no-data={!r.hasComposition}
-                  onclick={() => { armorSet = r.armorSet; }}
+                  class:with-plate={!!r.plating}
+                  onclick={() => { armorSet = r.armorSet; plating = r.plating; }}
                 >
                   <span class="rank-idx">#{i + 1}</span>
                   <span class="rank-name">
-                    <span class="name-main">{r.name}</span>
+                    <span class="name-main">
+                      {r.name}{#if r.plating}&nbsp;<span class="plate-tag">+ {r.plating.Name}</span>{/if}
+                    </span>
                     {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null} · L{r.maturityLevel}{/if}</span>{/if}
                   </span>
                   <span class="rank-metric">
@@ -240,6 +302,13 @@
                       <span class="mit" title="Avg damage blocked vs avg damage incoming">{formatPct(r.mitigationPct, 1)} blocked</span>
                       <span class="type-score" title="Composition-weighted armor defense (works even without total-damage data)">{formatNum(r.typeScore, 0)} type-match</span>
                       <span class="taken" title="Avg damage taken per hit">–{formatNum(r.damageTaken)}/hit</span>
+                      {#if r.decayPerAttack != null}
+                        {#if r.decayPerAttackMin != null && r.decayPerAttackMax != null && Math.abs(r.decayPerAttackMax - r.decayPerAttackMin) > 0.0005}
+                          <span class="decay" title="Armor/plate decay per attack across maturities (PEC)">{formatNum(r.decayPerAttackMin, 3)}–{formatNum(r.decayPerAttackMax, 3)} PEC decay</span>
+                        {:else}
+                          <span class="decay" title="Armor/plate decay per attack (PEC)">{formatNum(r.decayPerAttack, 3)} PEC decay</span>
+                        {/if}
+                      {/if}
                     {:else if r.hasComposition}
                       <span class="type-score primary" title="Composition-weighted armor defense (total damage unknown for this mob)">{formatNum(r.typeScore, 0)} type-match</span>
                       <span class="warn" title="This mob has no TotalDamage recorded — mitigation % can't be computed">⚠ no total dmg</span>
@@ -326,6 +395,13 @@
                       <span class="mit" title="Avg damage blocked vs avg damage incoming">{formatPct(r.mitigationPct, 1)} blocked</span>
                       <span class="type-score" title="Composition-weighted armor defense (works even without total-damage data)">{formatNum(r.typeScore, 0)} type-match</span>
                       <span class="taken" title="Avg damage taken per hit">–{formatNum(r.damageTaken)}/hit</span>
+                      {#if r.decayPerAttack != null}
+                        {#if r.decayPerAttackMin != null && r.decayPerAttackMax != null && Math.abs(r.decayPerAttackMax - r.decayPerAttackMin) > 0.0005}
+                          <span class="decay" title="Armor/plate decay per attack across maturities (PEC)">{formatNum(r.decayPerAttackMin, 3)}–{formatNum(r.decayPerAttackMax, 3)} PEC decay</span>
+                        {:else}
+                          <span class="decay" title="Armor/plate decay per attack (PEC)">{formatNum(r.decayPerAttack, 3)} PEC decay</span>
+                        {/if}
+                      {/if}
                     {:else if r.hasComposition}
                       <span class="type-score primary" title="Composition-weighted armor defense (total damage unknown for this mob)">{formatNum(r.typeScore, 0)} type-match</span>
                       <span class="warn" title="This mob has no TotalDamage recorded — mitigation % can't be computed">⚠ no total dmg</span>
@@ -361,6 +437,7 @@
                   <th class="num">Dmg</th>
                   <th class="num" title="Damage taken at lowest roll / expected avg / max roll (armor caps per-type)">Taken (min/exp/max)</th>
                   <th class="num" title="Max crit damage taken (2× max damage, 20% armor pierce)">Max Crit Dmg</th>
+                  <th class="num" title="Armor/plate decay per attack (PEC)">Decay</th>
                   <th class="num">Mit</th>
                 </tr>
               </thead>
@@ -378,8 +455,10 @@
                     {#if row.hasData}
                       <td class="num">{formatNum(row.takenMin)} / {formatNum(row.takenAvg)} / {formatNum(row.takenMax)}</td>
                       <td class="num crit-cell">{formatNum(row.critTaken)}</td>
+                      <td class="num decay-cell">{formatNum(row.decayThisAttack, 3)}</td>
                       <td class="num mit-cell">{formatPct(row.mitigation * 100, 0)}</td>
                     {:else}
+                      <td class="num muted">—</td>
                       <td class="num muted">—</td>
                       <td class="num muted">—</td>
                       <td class="num muted">—</td>
@@ -619,6 +698,12 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .rank-metric .decay {
+    font-size: 10px;
+    color: var(--warning-color, #fbbf24);
+    font-variant-numeric: tabular-nums;
+  }
+
   .rank-metric .warn {
     font-size: 10px;
     color: var(--warning-color, #fbbf24);
@@ -651,6 +736,73 @@
 
   .ranking-row.no-data .rank-name {
     font-style: italic;
+  }
+
+  .plate-tag {
+    font-size: 10px;
+    color: var(--accent-color);
+    font-weight: 400;
+  }
+
+  .ranking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+
+  .inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .inline-check input[type="checkbox"] {
+    margin: 0;
+  }
+
+  .loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .refresh-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .spinner.small {
+    width: 10px;
+    height: 10px;
+    border-width: 1.5px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   /* Details */
@@ -788,6 +940,10 @@
   .fancy-table .crit-cell {
     font-weight: 600;
     color: var(--damage-cut, #e06060);
+  }
+
+  .fancy-table .decay-cell {
+    color: var(--warning-color, #fbbf24);
   }
 
   .fancy-table .muted {
