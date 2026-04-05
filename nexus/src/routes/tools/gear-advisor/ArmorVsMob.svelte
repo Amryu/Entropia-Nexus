@@ -265,6 +265,14 @@
     <section class="avm-panel" aria-label="Armor side">
       <header class="panel-header">
         <h3>Armor</h3>
+        {#if armorSet && mob}
+          <button
+            type="button"
+            class="back-btn"
+            onclick={() => { armorSet = null; plating = null; }}
+            title="Clear armor to return to the armor ranking for this mob"
+          >← Back to armor results</button>
+        {/if}
       </header>
 
       {#if armorPanelMode === 'input' || armorPanelMode === 'details'}
@@ -430,6 +438,14 @@
     <section class="avm-panel" aria-label="Mob side">
       <header class="panel-header">
         <h3>Mob</h3>
+        {#if armorSet && mob}
+          <button
+            type="button"
+            class="back-btn"
+            onclick={() => { mob = null; }}
+            title="Clear mob to return to the mob ranking for this armor"
+          >← Back to mob results</button>
+        {/if}
       </header>
 
       {#if mobPanelMode === 'input' || mobPanelMode === 'details'}
@@ -943,6 +959,25 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--accent-color);
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+
+  .back-btn:hover {
+    background-color: var(--hover-color);
   }
 
   /* Details */
