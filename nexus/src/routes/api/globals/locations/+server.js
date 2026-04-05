@@ -30,14 +30,21 @@ export async function GET({ url }) {
   const escaped = `%${escapeLike(query)}%`;
 
   try {
+    // Fuzzy match: substring ILIKE OR trigram/word similarity (same as menu-bar search).
+    // % catches short-name typos; <% catches query words appearing within longer names.
+    // Uses idx_ingested_globals_location_trgm (migration 126).
     const result = await pool.query(
       `SELECT location AS name, count(*) AS cnt
        FROM ingested_globals
-       WHERE confirmed = true AND location IS NOT NULL AND location ILIKE $1
+       WHERE confirmed = true AND location IS NOT NULL
+         AND (location ILIKE $1 OR location % $2 OR $2 <% location)
        GROUP BY location
-       ORDER BY count(*) DESC
-       LIMIT $2`,
-      [escaped, MAX_RESULTS]
+       ORDER BY
+         CASE WHEN location ILIKE $1 THEN 0 ELSE 1 END,
+         GREATEST(similarity(location, $2), word_similarity($2, location)) DESC,
+         count(*) DESC
+       LIMIT $3`,
+      [escaped, query, MAX_RESULTS]
     );
 
     const results = result.rows.map((row, i) => ({

@@ -11,6 +11,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
+import { scoreSearchResult } from '$lib/search.js';
 
 const MAX_RESULTS_PER_CATEGORY = 10;
 const MAX_RAW_TARGETS = 80;
@@ -90,25 +91,35 @@ export async function GET({ url }) {
   const escaped = `%${escapeLike(query)}%`;
 
   try {
+    // Fuzzy match: substring ILIKE OR trigram/word similarity (same as menu-bar search).
+    // % catches short-name typos; <% catches query words appearing within longer names.
     const [playersResult, targetsResult] = await Promise.all([
       // Players & Teams — from pre-aggregated table
       pool.query(
         `SELECT player_name AS name, has_team, has_solo, event_count AS cnt
          FROM globals_player_agg
-         WHERE period = 'all' AND player_name ILIKE $1
-         ORDER BY event_count DESC
-         LIMIT $2`,
-        [escaped, MAX_RESULTS_PER_CATEGORY]
+         WHERE period = 'all'
+           AND (player_name ILIKE $1 OR player_name % $2 OR $2 <% player_name)
+         ORDER BY
+           CASE WHEN player_name ILIKE $1 THEN 0 ELSE 1 END,
+           GREATEST(similarity(player_name, $2), word_similarity($2, player_name)) DESC,
+           event_count DESC
+         LIMIT $3`,
+        [escaped, query, MAX_RESULTS_PER_CATEGORY]
       ),
 
       // Targets — from pre-aggregated table
       pool.query(
         `SELECT target_name AS name, primary_type, event_count AS cnt
          FROM globals_target_agg
-         WHERE period = 'all' AND target_name ILIKE $1
-         ORDER BY event_count DESC
-         LIMIT $2`,
-        [escaped, MAX_RAW_TARGETS]
+         WHERE period = 'all'
+           AND (target_name ILIKE $1 OR target_name % $2 OR $2 <% target_name)
+         ORDER BY
+           CASE WHEN target_name ILIKE $1 THEN 0 ELSE 1 END,
+           GREATEST(similarity(target_name, $2), word_similarity($2, target_name)) DESC,
+           event_count DESC
+         LIMIT $3`,
+        [escaped, query, MAX_RAW_TARGETS]
       ),
     ]);
 
@@ -128,7 +139,6 @@ export async function GET({ url }) {
     }
 
     // Build mob group results by extracting base names from hunting targets
-    const queryLower = query.toLowerCase();
     const mobGroups = {};
     for (const row of targetsResult.rows) {
       if (row.primary_type === 'kill' || row.primary_type === 'team_kill') {
@@ -142,9 +152,9 @@ export async function GET({ url }) {
 
     const addedNames = new Set();
 
-    // Add mob group results (only if >1 maturity variant and name matches query)
+    // Add mob group results (only if >1 maturity variant and base name fuzzy-matches query)
     for (const [name, group] of Object.entries(mobGroups)) {
-      if (group.variants > 1 && name.toLowerCase().includes(queryLower)) {
+      if (group.variants > 1 && scoreSearchResult(name, query) > 0) {
         results.push({
           Id: id++,
           Name: name,

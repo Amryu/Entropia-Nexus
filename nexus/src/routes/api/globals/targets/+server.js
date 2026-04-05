@@ -5,6 +5,7 @@
  * Results are compatible with SearchInput component format.
  */
 import { pool } from '$lib/server/db.js';
+import { scoreSearchResult } from '$lib/search.js';
 
 const MAX_RESULTS = 20;
 const MAX_RAW_RESULTS = 80;
@@ -54,17 +55,23 @@ export async function GET({ url }) {
   const escaped = `%${escapeLike(query)}%`;
 
   try {
+    // Fuzzy match: substring ILIKE OR trigram/word similarity (same as menu-bar search).
+    // % catches short-name typos; <% catches query words appearing within longer names.
+    // All three paths use idx_globals_target_agg_name_trgm.
     const result = await pool.query(
       `SELECT target_name AS name, event_count AS cnt
        FROM globals_target_agg
-       WHERE period = 'all' AND target_name ILIKE $1
-       ORDER BY event_count DESC
-       LIMIT $2`,
-      [escaped, MAX_RAW_RESULTS]
+       WHERE period = 'all'
+         AND (target_name ILIKE $1 OR target_name % $2 OR $2 <% target_name)
+       ORDER BY
+         CASE WHEN target_name ILIKE $1 THEN 0 ELSE 1 END,
+         GREATEST(similarity(target_name, $2), word_similarity($2, target_name)) DESC,
+         event_count DESC
+       LIMIT $3`,
+      [escaped, query, MAX_RAW_RESULTS]
     );
 
     // Build mob group results by extracting base names
-    const queryLower = query.toLowerCase();
     const mobGroups = {};
     for (const row of result.rows) {
       const baseName = extractMobName(row.name);
@@ -78,9 +85,9 @@ export async function GET({ url }) {
     let id = 1;
     const addedNames = new Set();
 
-    // Add mob group results (only if >1 maturity variant and name matches query)
+    // Add mob group results (only if >1 maturity variant and base name fuzzy-matches query)
     for (const [name, group] of Object.entries(mobGroups)) {
-      if (group.variants > 1 && name.toLowerCase().includes(queryLower)) {
+      if (group.variants > 1 && scoreSearchResult(name, query) > 0) {
         results.push({
           Id: id++,
           Name: name,
