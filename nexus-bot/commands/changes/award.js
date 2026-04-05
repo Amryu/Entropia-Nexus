@@ -74,4 +74,6 @@ export async function execute(interaction) {
   });
 
   await interaction.reply(`Manual reward assigned: **${amount.toFixed(2)} PED**${score > 0 ? ` (+${score} score)` : ''} — ${note}`);
+
+  await interaction.channel.setArchived(true).catch(() => {});
 }
