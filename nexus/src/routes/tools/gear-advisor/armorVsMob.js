@@ -179,14 +179,16 @@ function scoreMaturityAll(maturity, defense, dmgMultiplier = 1) {
   for (const atk of attacks) {
     const totalDmg = (atk?.TotalDamage ?? 0) * dmgMultiplier;
     let hasComp = false;
-    let attackTypeScoreVal = 0;
+    let weightedDef = 0;
+    let totalDef = 0;
     let incomingAvg = 0, expectedTaken = 0;
 
     for (const type of DEFENSE_TYPES) {
       const pct = (atk?.Damage?.[type] ?? 0) / 100;
       if (pct > 0) hasComp = true;
       const def = defense?.[type] ?? 0;
-      attackTypeScoreVal += pct * def;
+      totalDef += def;
+      weightedDef += pct * def;
 
       if (totalDmg > 0 && pct > 0) {
         const base = totalDmg * pct;
@@ -195,7 +197,11 @@ function scoreMaturityAll(maturity, defense, dmgMultiplier = 1) {
       }
     }
 
+    // type-match = weighted-avg armor defense / total armor defense.
+    // 0..1 fraction: how well the armor's defenses align with the mob's
+    // damage composition. 1.0 = all defense is in types the mob uses.
     if (hasComp) {
+      const attackTypeScoreVal = totalDef > 0 ? weightedDef / totalDef : 0;
       typeScoreSum += attackTypeScoreVal;
       typeScoreCount++;
     }
@@ -387,6 +393,40 @@ function makeSortByMetric(rankBy = 'mitigation') {
  * @returns {Array} sorted: damage-known first (by mitigation % desc),
  *                  then damage-unknown (by type score desc)
  */
+/** Async/chunked mob ranking that yields to the browser every N mobs. */
+export async function rankMobsChunked(mobs, defense, scope, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
+  const results = [];
+  const sortFn = makeSortByMetric(rankBy);
+  const list = mobs || [];
+  for (let i = 0; i < list.length; i++) {
+    if (signal?.aborted) return null;
+    const mob = list[i];
+    const score = scoreMob(mob, defense, scope, dmgMultiplier);
+    if (score != null) {
+      results.push({
+        mob,
+        name: mob.Name,
+        typeScore: score.typeScore,
+        mitigationPct: score.mitigation != null ? score.mitigation * 100 : null,
+        damageTaken: score.damageTaken,
+        decayPerAttack: score.blockedPerAttack != null ? score.blockedPerAttack * decayRate : null,
+        decayPerAttackMin: score.blockedPerAttackMin != null ? score.blockedPerAttackMin * decayRate : null,
+        decayPerAttackMax: score.blockedPerAttackMax != null ? score.blockedPerAttackMax * decayRate : null,
+        hasTotalDamage: score.hasTotalDamage,
+        hasComposition: score.hasComposition,
+        maturityLabel: score.maturityLabel,
+        maturityLevel: score.maturityLevel
+      });
+    }
+    if ((i + 1) % chunkSize === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (signal?.aborted) return null;
+    }
+  }
+  results.sort(sortFn);
+  return results;
+}
+
 export function rankMobs(mobs, defense, scope, dmgMultiplier = 1, rankBy = 'mitigation', decayRate = 0) {
   const results = [];
   for (const mob of mobs || []) {
@@ -426,10 +466,25 @@ export function rankMobs(mobs, defense, scope, dmgMultiplier = 1, rankBy = 'miti
  *  so the UI stays responsive (loading spinner can render, events can dispatch). */
 export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, scope, rankBy, options = {}, { chunkSize = 40, signal } = {}) {
   const { iceShield, enhancers, dmgMultiplier = 1 } = config;
-  const { includePlates = true, platesPerArmor = 3, ulPlatesOnly = false } = options;
+  const {
+    includePlates = true,
+    platesPerArmor = 3,
+    ulPlatesOnly = false,
+    armorFilter = null,     // Set<string> of armor names — if set, only those are ranked
+    plateFilter = null,     // Set<string> of plate names — if set, only those are used
+    armorEnhancers = null   // Record<armorName, number> — per-armor enhancer overrides
+  } = options;
   const sortFn = makeSortByMetric(rankBy);
-  const enhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
+  const defaultEnhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
   const ICE_SHIELD_SET = new Set(['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn']);
+
+  function enhancerMultFor(armorName) {
+    if (armorEnhancers && armorName in armorEnhancers) {
+      const v = Math.max(0, Math.min(MAX_ENHANCERS, armorEnhancers[armorName] ?? 0));
+      return 1 + v * ENHANCER_BONUS_PER_LEVEL;
+    }
+    return defaultEnhancerMult;
+  }
 
   // Pre-filter plates: drop those without defense in the mob's damage types,
   // and optionally drop "(L)" Limited plates (ulPlatesOnly).
@@ -446,6 +501,7 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
     if (mobTypes.size > 0) {
       platesToUse = (armorPlatings || []).filter(plate => {
         if (ulPlatesOnly && hasItemTag(plate?.Name, 'L')) return false;
+        if (plateFilter && !plateFilter.has(plate?.Name)) return false;
         for (const type of mobTypes) {
           if ((plate?.Properties?.Defense?.[type] ?? 0) > 0) return true;
         }
@@ -475,15 +531,18 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
 
   const results = [];
   const combinedDef = {};
-  const sets = armorSets || [];
+  const sets = (armorFilter
+    ? (armorSets || []).filter(a => armorFilter.has(a?.Name))
+    : (armorSets || []));
 
   for (let i = 0; i < sets.length; i++) {
     if (signal?.aborted) return null;
     const armorSet = sets[i];
+    const thisEnhancerMult = enhancerMultFor(armorSet?.Name);
 
     const baseDef = {};
     for (const type of DEFENSE_TYPES) {
-      const armorVal = (armorSet?.Properties?.Defense?.[type] ?? 0) * enhancerMult;
+      const armorVal = (armorSet?.Properties?.Defense?.[type] ?? 0) * thisEnhancerMult;
       const iceVal = iceShield && ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
       baseDef[type] = armorVal + iceVal;
     }

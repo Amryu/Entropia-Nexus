@@ -8,6 +8,7 @@
 <script>
   // @ts-nocheck
   import EntityPicker from './EntityPicker.svelte';
+  import PoolSelectionDialog from './PoolSelectionDialog.svelte';
   import MobDamageGrid from '$lib/components/wiki/mobs/MobDamageGrid.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
   import {
@@ -17,6 +18,7 @@
     computeAttackBreakdown,
     computeDecayRate,
     rankMobs,
+    rankMobsChunked,
     rankArmorsChunked,
     buildDetails,
     hasDamageData
@@ -35,6 +37,12 @@
   let rankBy = $state('mitigation'); // 'typeMatch' | 'mitigation' | 'damageTaken'
   let includePlates = $state(true); // include top-3 plate pairings in armor ranking
   let ulPlatesOnly = $state(false); // restrict plates to unlimited (non-"(L)")
+
+  // Candidate-pool filters (empty = use all)
+  let poolArmorNames = $state([]);
+  let poolPlateNames = $state([]);
+  let poolArmorEnhancers = $state({}); // per-armor enhancer overrides
+  let showPoolDialog = $state(false);
 
   // Derived: effective defense for current armor config (null if no armor)
   let defense = $derived(armorSet
@@ -106,11 +114,43 @@
     return rows;
   });
 
-  // Derived rankings — auto-computed based on which side has a selection.
-  // Only one side ranks at a time; once both are filled we switch to details view.
-  let mobRanking = $derived(
-    armorSet && !mob ? rankMobs(mobs, defense, scope, dmgMultiplier, rankBy, decayRate) : []
-  );
+  // Mob ranking — computed asynchronously in chunks so the UI stays responsive
+  // when ranking ~500+ mobs against a selected armor.
+  let mobRanking = $state([]);
+  let mobRankingLoading = $state(false);
+
+  $effect(() => {
+    // declare reactive deps
+    const _mob = mob;
+    const _armorSet = armorSet;
+    const _defense = defense;
+    const _scope = scope;
+    const _rankBy = rankBy;
+    const _dmgMultiplier = dmgMultiplier;
+    const _decayRate = decayRate;
+
+    if (!_armorSet || _mob) {
+      mobRanking = [];
+      mobRankingLoading = false;
+      return;
+    }
+
+    mobRankingLoading = true;
+    const controller = { aborted: false };
+
+    rankMobsChunked(
+      mobs, _defense, _scope, _dmgMultiplier, _rankBy, _decayRate,
+      { chunkSize: 100, signal: controller }
+    ).then(result => {
+      if (controller.aborted) return;
+      mobRanking = result ?? [];
+      mobRankingLoading = false;
+    }).catch(() => {
+      if (!controller.aborted) mobRankingLoading = false;
+    });
+
+    return () => { controller.aborted = true; };
+  });
   // Armor ranking is computed asynchronously in chunks so the UI stays
   // responsive — loading spinner shows while hundreds of armor/plate combos
   // are evaluated.
@@ -128,6 +168,9 @@
     const _dmgMultiplier = dmgMultiplier;
     const _includePlates = includePlates;
     const _ulPlatesOnly = ulPlatesOnly;
+    const _poolArmorNames = poolArmorNames;
+    const _poolPlateNames = poolPlateNames;
+    const _poolArmorEnhancers = poolArmorEnhancers;
 
     if (_armorSet || !_mob) {
       armorRanking = [];
@@ -138,11 +181,23 @@
     armorRankingLoading = true;
     const controller = { aborted: false };
 
+    // If user narrowed the armor pool explicitly, deepen plate search to 10/armor
+    const hasArmorPool = _poolArmorNames.length > 0;
+    const hasPlatePool = _poolPlateNames.length > 0;
+    const platesPerArmor = hasArmorPool ? 10 : 3;
+
     rankArmorsChunked(
       armorSets, armorPlatings, _mob,
       { iceShield: _iceShield, enhancers: _enhancers, dmgMultiplier: _dmgMultiplier },
       _scope, _rankBy,
-      { includePlates: _includePlates, platesPerArmor: 3, ulPlatesOnly: _ulPlatesOnly },
+      {
+        includePlates: _includePlates,
+        platesPerArmor,
+        ulPlatesOnly: _ulPlatesOnly,
+        armorFilter: hasArmorPool ? new Set(_poolArmorNames) : null,
+        plateFilter: hasPlatePool ? new Set(_poolPlateNames) : null,
+        armorEnhancers: hasArmorPool ? _poolArmorEnhancers : null
+      },
       { chunkSize: 40, signal: controller }
     ).then(result => {
       if (controller.aborted) return;
@@ -181,6 +236,9 @@
     scope = 'average';
     rankBy = 'mitigation';
     ulPlatesOnly = false;
+    poolArmorNames = [];
+    poolPlateNames = [];
+    poolArmorEnhancers = {};
   }
 
   function formatNum(n, digits = 1) {
@@ -275,6 +333,18 @@
               <input type="checkbox" bind:checked={ulPlatesOnly} disabled={!includePlates} />
               <span>UL plates only</span>
             </label>
+            <button
+              type="button"
+              class="pool-btn"
+              onclick={() => { showPoolDialog = true; }}
+              disabled={!includePlates}
+              title="Restrict the candidate pool to specific armors / plates"
+            >
+              Restrict Pool…
+              {#if poolArmorNames.length > 0 || poolPlateNames.length > 0}
+                <span class="pool-badge">{poolArmorNames.length || '·'}/{poolPlateNames.length || '·'}</span>
+              {/if}
+            </button>
             {#if armorRankingLoading && armorRanking.length > 0}
               <span class="refresh-indicator"><span class="spinner small"></span> updating…</span>
             {/if}
@@ -306,8 +376,8 @@
                   </span>
                   <span class="rank-metric">
                     {#if r.hasTotalDamage}
-                      <span class="mit" title="Avg damage blocked vs avg damage incoming">{formatPct(r.mitigationPct, 1)} blocked</span>
-                      <span class="type-score" title="Composition-weighted armor defense (works even without total-damage data)">{formatNum(r.typeScore, 0)} type-match</span>
+                      <span class="mit" title="Expected damage mitigated vs incoming (integrated over the damage roll range)">{formatPct(r.mitigationPct, 1)} mitigated</span>
+                      <span class="type-score" title="How well armor's defenses align with the mob's damage composition (fraction of total armor defense deployed vs this mob)">{formatPct(r.typeScore * 100, 1)} type-match</span>
                       <span class="taken" title="Avg damage taken per hit">–{formatNum(r.damageTaken)}/hit</span>
                       {#if r.decayPerAttack != null}
                         {#if r.decayPerAttackMin != null && r.decayPerAttackMax != null && Math.abs(r.decayPerAttackMax - r.decayPerAttackMin) > 0.0005}
@@ -317,7 +387,7 @@
                         {/if}
                       {/if}
                     {:else if r.hasComposition}
-                      <span class="type-score primary" title="Composition-weighted armor defense (total damage unknown for this mob)">{formatNum(r.typeScore, 0)} type-match</span>
+                      <span class="type-score primary" title="How well armor's defenses align with the mob's damage composition (total damage unknown for this mob)">{formatPct(r.typeScore * 100, 1)} type-match</span>
                       <span class="warn" title="This mob has no TotalDamage recorded — mitigation % can't be computed">⚠ no total dmg</span>
                     {:else}
                       <span class="err" title="This mob has no damage composition or total damage recorded — it cannot be scored">✕ no damage data</span>
@@ -379,8 +449,18 @@
 
       {#if mobPanelMode === 'ranking'}
         <div class="panel-body">
-          <p class="panel-caption">Mobs ranked vs <strong>{armorSet?.Name}</strong> ({scope}):</p>
-          {#if mobRanking.length === 0}
+          <p class="panel-caption">
+            Mobs ranked vs <strong>{armorSet?.Name}</strong> ({scope})
+            {#if mobRankingLoading && mobRanking.length > 0}
+              <span class="refresh-indicator"><span class="spinner small"></span> updating…</span>
+            {/if}
+          </p>
+          {#if mobRankingLoading && mobRanking.length === 0}
+            <div class="loading-state">
+              <span class="spinner"></span>
+              <span>Ranking mobs…</span>
+            </div>
+          {:else if mobRanking.length === 0}
             <p class="empty-msg">No ranked mobs — none have attack data.</p>
           {:else}
             <div class="ranking-list" role="list">
@@ -399,8 +479,8 @@
                   </span>
                   <span class="rank-metric">
                     {#if r.hasTotalDamage}
-                      <span class="mit" title="Avg damage blocked vs avg damage incoming">{formatPct(r.mitigationPct, 1)} blocked</span>
-                      <span class="type-score" title="Composition-weighted armor defense (works even without total-damage data)">{formatNum(r.typeScore, 0)} type-match</span>
+                      <span class="mit" title="Expected damage mitigated vs incoming (integrated over the damage roll range)">{formatPct(r.mitigationPct, 1)} mitigated</span>
+                      <span class="type-score" title="How well armor's defenses align with the mob's damage composition (fraction of total armor defense deployed vs this mob)">{formatPct(r.typeScore * 100, 1)} type-match</span>
                       <span class="taken" title="Avg damage taken per hit">–{formatNum(r.damageTaken)}/hit</span>
                       {#if r.decayPerAttack != null}
                         {#if r.decayPerAttackMin != null && r.decayPerAttackMax != null && Math.abs(r.decayPerAttackMax - r.decayPerAttackMin) > 0.0005}
@@ -410,7 +490,7 @@
                         {/if}
                       {/if}
                     {:else if r.hasComposition}
-                      <span class="type-score primary" title="Composition-weighted armor defense (total damage unknown for this mob)">{formatNum(r.typeScore, 0)} type-match</span>
+                      <span class="type-score primary" title="How well armor's defenses align with the mob's damage composition (total damage unknown for this mob)">{formatPct(r.typeScore * 100, 1)} type-match</span>
                       <span class="warn" title="This mob has no TotalDamage recorded — mitigation % can't be computed">⚠ no total dmg</span>
                     {:else}
                       <span class="err" title="This mob has no damage composition or total damage recorded — it cannot be scored">✕ no damage data</span>
@@ -514,6 +594,23 @@
     </div>
   </div>
 </div>
+
+{#if showPoolDialog}
+  <PoolSelectionDialog
+    {armorSets}
+    {armorPlatings}
+    initialArmorNames={poolArmorNames}
+    initialPlateNames={poolPlateNames}
+    initialArmorEnhancers={poolArmorEnhancers}
+    defaultEnhancers={enhancers}
+    onclose={() => { showPoolDialog = false; }}
+    onapply={(e) => {
+      poolArmorNames = e.armorNames;
+      poolPlateNames = e.plateNames;
+      poolArmorEnhancers = e.armorEnhancers;
+    }}
+  />
+{/if}
 
 <style>
   .avm-root {
@@ -777,6 +874,37 @@
   .inline-check.disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+
+  .pool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    cursor: pointer;
+  }
+  .pool-btn:hover:not(:disabled) {
+    background-color: var(--hover-color);
+  }
+  .pool-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .pool-badge {
+    display: inline-block;
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: 600;
+    background-color: var(--accent-color);
+    color: white;
+    border-radius: 8px;
+    font-variant-numeric: tabular-nums;
   }
 
   .loading-state {
