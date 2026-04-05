@@ -1059,10 +1059,12 @@
     border-radius: 4px;
     color: var(--text-color);
     -moz-appearance: textfield;
+    appearance: textfield;
   }
   .dmg-input::-webkit-inner-spin-button,
   .dmg-input::-webkit-outer-spin-button {
     -webkit-appearance: none;
+    appearance: none;
     margin: 0;
   }
   .dmg-input:focus {
