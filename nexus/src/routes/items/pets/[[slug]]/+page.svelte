@@ -297,6 +297,7 @@
         pendingChange={$existingPendingChange}
         viewing={$viewingPendingChange}
         onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="pet"
       />
     {/if}
     <div class="layout-a">

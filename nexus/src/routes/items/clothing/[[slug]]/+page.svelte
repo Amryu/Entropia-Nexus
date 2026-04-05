@@ -21,6 +21,7 @@
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import MarketPriceSection from '$lib/components/wiki/MarketPriceSection.svelte';
@@ -333,32 +334,12 @@
   {#if activeClothing || isCreateMode}
     <!-- Pending Change Banner -->
     {#if $existingPendingChange && !$editMode && !isCreateMode}
-      <div class="pending-change-banner">
-        <div class="banner-content">
-          <span class="banner-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-          </span>
-          <span class="banner-text">
-            This clothing has a pending change by <strong>{$existingPendingChange.author_name || 'Unknown'}</strong>
-            ({$existingPendingChange.state})
-          </span>
-        </div>
-        <div class="banner-actions">
-          {#if $viewingPendingChange}
-            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>
-              View Current
-            </button>
-          {:else}
-            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>
-              View Pending
-            </button>
-          {/if}
-        </div>
-      </div>
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="clothing item"
+      />
     {/if}
 
     <div class="layout-a">
@@ -609,67 +590,6 @@
 </WikiPage>
 
 <style>
-  .pending-change-banner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background-color: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-border, #f59e0b);
-    border-radius: 8px;
-    margin-bottom: 16px;
-  }
-
-  :global(.dark) .pending-change-banner {
-    background-color: rgba(245, 158, 11, 0.1);
-    border-color: rgba(245, 158, 11, 0.3);
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .banner-icon {
-    color: var(--warning-color, #d97706);
-  }
-
-  .banner-text {
-    font-size: 14px;
-    color: var(--text-color);
-  }
-
-  .banner-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .banner-btn {
-    padding: 6px 12px;
-    font-size: 13px;
-    border-radius: 4px;
-    border: 1px solid var(--border-color, #555);
-    background-color: var(--bg-color, var(--primary-color));
-    color: var(--text-color);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .banner-btn:hover {
-    background-color: var(--secondary-color);
-  }
-
-  .banner-btn.primary {
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
-  .banner-btn.primary:hover {
-    opacity: 0.9;
-  }
-
   .set-name {
     font-size: 14px;
     font-weight: 600;

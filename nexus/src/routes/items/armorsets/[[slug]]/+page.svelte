@@ -555,6 +555,7 @@
         pendingChange={$existingPendingChange}
         viewing={$viewingPendingChange}
         onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="armor set"
       />
     {/if}
     <div class="layout-a">

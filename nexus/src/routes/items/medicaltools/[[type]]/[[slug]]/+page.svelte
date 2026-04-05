@@ -614,6 +614,7 @@
         pendingChange={$existingPendingChange}
         viewing={$viewingPendingChange}
         onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="medical tool"
       />
     {/if}
 

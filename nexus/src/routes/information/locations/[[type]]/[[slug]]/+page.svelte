@@ -12,6 +12,7 @@
   import { getPlanetNavFilter } from '$lib/mapUtil';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiNavigation from '$lib/components/wiki/WikiNavigation.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
@@ -843,21 +844,12 @@
     </div>
   {:else if activeEntity || isCreateMode}
     {#if $existingPendingChange && !$editMode && !isCreateMode}
-      <div class="pending-change-banner">
-        <div class="banner-content">
-          <span class="banner-text">
-            This location has a pending change by <strong>{$existingPendingChange.author_name || 'Unknown'}</strong>
-            ({$existingPendingChange.state})
-          </span>
-        </div>
-        <div class="banner-actions">
-          {#if $viewingPendingChange}
-            <button class="banner-btn" onclick={() => setViewingPendingChange(false)}>View Current</button>
-          {:else}
-            <button class="banner-btn primary" onclick={() => setViewingPendingChange(true)}>View Pending</button>
-          {/if}
-        </div>
-      </div>
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="location"
+      />
     {/if}
 
     <div class="layout-a">
@@ -1483,48 +1475,6 @@
 </WikiPage>
 
 <style>
-  .pending-change-banner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background-color: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-border, #f59e0b);
-    border-radius: 8px;
-    margin-bottom: 16px;
-  }
-
-  .banner-content {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .banner-text {
-    font-size: 14px;
-  }
-
-  .banner-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .banner-btn {
-    padding: 6px 12px;
-    font-size: 13px;
-    border-radius: 4px;
-    border: 1px solid var(--border-color, #555);
-    background-color: var(--bg-color, var(--primary-color));
-    color: var(--text-color);
-    cursor: pointer;
-  }
-
-  .banner-btn.primary {
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
   /* Teleporter list in infobox */
   .teleporter-list {
     display: flex;

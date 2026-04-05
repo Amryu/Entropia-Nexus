@@ -14,6 +14,7 @@
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
@@ -400,24 +401,12 @@
 >
   <!-- Pending change banner -->
   {#if $existingPendingChange && !$editMode && !data.isCreateMode}
-    <div class="pending-change-banner" class:viewing={$viewingPendingChange}>
-      <div class="banner-content">
-        <span class="banner-icon">⏳</span>
-        <span class="banner-text">
-          {#if $existingPendingChange.state === 'Pending'}
-            This skill has changes pending review.
-          {:else}
-            This skill has a draft with unsaved changes.
-          {/if}
-        </span>
-        <button
-          class="banner-toggle"
-          onclick={() => setViewingPendingChange(!$viewingPendingChange)}
-        >
-          {$viewingPendingChange ? 'View Original' : 'View Changes'}
-        </button>
-      </div>
-    </div>
+    <PendingChangeBanner
+      pendingChange={$existingPendingChange}
+      viewing={$viewingPendingChange}
+      onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      entityLabel="skill"
+    />
   {/if}
 
   {#if activeSkill || data.isCreateMode}
@@ -693,52 +682,6 @@
 </WikiPage>
 
 <style>
-  .pending-change-banner {
-    background: linear-gradient(135deg, #3d4a5c 0%, #2d3748 100%);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-  }
-
-  .pending-change-banner.viewing {
-    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
-    border-color: var(--accent-color, #4a9eff);
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .banner-icon {
-    font-size: 20px;
-  }
-
-  .banner-text {
-    flex: 1;
-    min-width: 200px;
-    color: var(--text-color);
-  }
-
-  .banner-toggle {
-    padding: 6px 12px;
-    background-color: var(--accent-color, #4a9eff);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .banner-toggle:hover {
-    filter: brightness(1.1);
-  }
-
   /* Category-specific colors */
   .category-badge.category-attributes {
     background-color: #8b5cf6;
@@ -916,16 +859,4 @@
   }
 
 
-  /* Mobile adjustments */
-  @media (max-width: 899px) {
-    .banner-content {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .banner-toggle {
-      width: 100%;
-      text-align: center;
-    }
-  }
 </style>

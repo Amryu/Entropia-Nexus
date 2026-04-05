@@ -825,6 +825,7 @@
         pendingChange={$existingPendingChange}
         viewing={$viewingPendingChange}
         onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="weapon"
       />
     {/if}
 

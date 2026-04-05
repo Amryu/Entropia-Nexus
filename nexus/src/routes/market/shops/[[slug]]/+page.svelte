@@ -859,6 +859,7 @@
             pendingChange={$existingPendingChange}
             viewing={$viewingPendingChange}
             onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+            entityLabel="shop"
           />
         {/if}
 
@@ -1175,49 +1176,6 @@
   .points-label {
     font-size: 11px;
     color: var(--text-muted, #999);
-  }
-
-  /* Pending Change Banner */
-  .pending-change-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    background-color: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-border, #f59e0b);
-    border-radius: 8px;
-    margin-bottom: 16px;
-  }
-
-  .pending-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    color: var(--warning-text, #92400e);
-  }
-
-  .toggle-pending-btn {
-    padding: 6px 12px;
-    font-size: 13px;
-    font-weight: 500;
-    background-color: var(--bg-color, white);
-    border: 1px solid var(--warning-border, #f59e0b);
-    border-radius: 4px;
-    color: var(--warning-text, #92400e);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .toggle-pending-btn:hover {
-    background-color: var(--warning-border, #f59e0b);
-    color: white;
-  }
-
-  .toggle-pending-btn.active {
-    background-color: var(--warning-border, #f59e0b);
-    color: white;
   }
 
   .loading-indicator {

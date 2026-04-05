@@ -397,6 +397,7 @@
         pendingChange={$existingPendingChange}
         viewing={$viewingPendingChange}
         onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="consumable"
       />
     {/if}
     <div class="layout-a">

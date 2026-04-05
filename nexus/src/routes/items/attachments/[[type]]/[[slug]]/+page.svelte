@@ -616,6 +616,7 @@
         pendingChange={$existingPendingChange}
         viewing={$viewingPendingChange}
         onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        entityLabel="attachment"
       />
     {/if}
     <div class="layout-a">
