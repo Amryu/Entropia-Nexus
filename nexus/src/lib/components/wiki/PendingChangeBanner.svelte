@@ -21,7 +21,10 @@
 {#if showBanner}
   <div class="pending-change-banner" class:viewing>
     <div class="banner-content">
-      <span class="banner-icon">⏳</span>
+      <svg class="banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
       <span class="banner-text">
         This {entityLabel} has a pending change by <strong>{author}</strong> ({pendingChange.state})
       </span>
@@ -58,8 +61,8 @@
   }
 
   .banner-icon {
-    font-size: 18px;
     flex-shrink: 0;
+    color: var(--warning-color);
   }
 
   .banner-text {
