@@ -18,6 +18,7 @@
   import { untrack } from 'svelte';
   import { browser } from '$app/environment';
   import { darkMode } from '../../../stores.js';
+  import { hasChanges, cancelEdit } from '$lib/stores/wikiEditState.js';
   import ImageUploadDialog from './ImageUploadDialog.svelte';
 
   
@@ -116,6 +117,11 @@
       userPendingImage = null; // Clear old pending image since we just uploaded a new one
       imageExists = true;
       imageChecked = true;
+    }
+    // Image upload is a standalone action — if the user entered edit mode just
+    // to upload an image (no wiki edits pending), exit edit mode afterwards.
+    if (isEditMode && !isCreateMode && !$hasChanges) {
+      cancelEdit();
     }
   }
   // Can upload when editing existing entity (not create mode) and user is verified
