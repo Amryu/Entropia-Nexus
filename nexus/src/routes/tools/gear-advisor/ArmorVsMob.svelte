@@ -11,15 +11,19 @@
   import { page } from '$app/stores';
   import EntityPicker from './EntityPicker.svelte';
   import PoolSelectionDialog from './PoolSelectionDialog.svelte';
+  import ComparisonDialog from './ComparisonDialog.svelte';
+  import { exportCSV, exportJSON, exportTableAsImage } from './export-utils.js';
   import MobDamageGrid from '$lib/components/wiki/mobs/MobDamageGrid.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
   import { createPreference } from '$lib/preferences.js';
   import {
     DEFENSE_TYPES,
+    DEFAULT_ATTACK_NAME,
     MAX_ENHANCERS,
     computeEffectiveDefense,
     computeAttackBreakdown,
     computeDecayRate,
+    getMobAttackNames,
     rankMobs,
     rankMobsChunked,
     rankMaturitiesChunked,
@@ -57,6 +61,19 @@
   // Expected damage-taken range filter (null/empty = no bound)
   let damageMin = $state('');
   let damageMax = $state('');
+  // Which attack to display in details + comparison tables. Resets to the
+  // mob's preferred attack (DEFAULT_ATTACK_NAME if present, else first) when
+  // the mob changes.
+  let selectedAttackName = $state(null);
+  let availableAttackNames = $derived(mob ? getMobAttackNames(mob) : []);
+  $effect(() => {
+    const names = availableAttackNames;
+    if (names.length === 0) { selectedAttackName = null; return; }
+    if (!selectedAttackName || !names.includes(selectedAttackName)) {
+      selectedAttackName = names[0]; // getMobAttackNames puts DEFAULT first
+    }
+  });
+
   let mobPlanets = $derived.by(() => {
     const set = new Set();
     for (const m of mobs || []) {
@@ -66,15 +83,37 @@
     return ['All', ...Array.from(set).sort()];
   });
 
+  // Comparison dialog visibility + persisted column visibility state.
+  let showComparisonDialog = $state(false);
+  const DEFAULT_COMPARE_COLUMNS = {
+    maturity: true, dmg: true,
+    takenMin: false, takenExp: true, takenMax: false,
+    crit: true, decay: true, mit: true
+  };
+  let visibleCompareColumns = $state({ ...DEFAULT_COMPARE_COLUMNS });
+  let compareColumnsLoaded = $state(false);
+
+  // Details-table export menu
+  let showDetailsExportMenu = $state(false);
+
   const poolPref = createPreference('gear-advisor.pool', {
     armorNames: [],
     plateNames: [],
     armorEnhancers: {}
   }, { debounceMs: 400 });
 
+  const compareColumnsPref = createPreference(
+    'gear-advisor.compare-columns',
+    DEFAULT_COMPARE_COLUMNS,
+    { debounceMs: 400 }
+  );
+
   onMount(async () => {
     const userId = $page.data?.user?.id ?? null;
-    await poolPref.load(userId);
+    await Promise.all([
+      poolPref.load(userId),
+      compareColumnsPref.load(userId)
+    ]);
     let stored;
     poolPref.subscribe(v => stored = v)();
     if (stored) {
@@ -85,6 +124,13 @@
         : {};
     }
     poolLoaded = true;
+
+    let storedCols;
+    compareColumnsPref.subscribe(v => storedCols = v)();
+    if (storedCols && typeof storedCols === 'object') {
+      visibleCompareColumns = { ...DEFAULT_COMPARE_COLUMNS, ...storedCols };
+    }
+    compareColumnsLoaded = true;
   });
 
   // Persist pool filters whenever they change (after initial load)
@@ -98,6 +144,13 @@
       plateNames: _plates,
       armorEnhancers: _enh
     });
+  });
+
+  // Persist comparison column visibility
+  $effect(() => {
+    const _cols = visibleCompareColumns;
+    if (!compareColumnsLoaded) return;
+    compareColumnsPref.set({ ..._cols });
   });
 
   // Derived: effective defense for current armor config (null if no armor)
@@ -134,9 +187,13 @@
     return Array.from(seen.values());
   });
 
-  // Flat rows for the details table: one row per (maturity × attack).
+  // Flat rows for the details table: one row per maturity, showing the
+  // currently-selected attack (see selectedAttackName / availableAttackNames).
+  // If a maturity doesn't have the selected attack, its row shows "—".
   let flatRows = $derived.by(() => {
     if (!mob || !defense) return [];
+    const attackName = selectedAttackName;
+    if (!attackName) return [];
     const rows = [];
     // Sort maturities by level (nulls last, stable)
     const mats = Array.isArray(mob.Maturities)
@@ -150,22 +207,37 @@
         }).map(x => x.m)
       : [];
     for (const mat of mats) {
-      for (const atk of (mat.Attacks || [])) {
-        const br = computeAttackBreakdown(atk, defense, dmgMultiplier);
+      const atk = (mat.Attacks || []).find(
+        a => (a?.Name || DEFAULT_ATTACK_NAME) === attackName
+      );
+      if (!atk) {
         rows.push({
           maturityName: mat.Name || '',
           maturityLevel: mat?.Properties?.Level ?? null,
-          attackName: br.name,
-          totalDamage: atk?.TotalDamage ?? null,
-          takenMin: br.takenMin,
-          takenAvg: br.expectedTaken,
-          takenMax: br.takenMax,
-          mitigation: br.mitigation,
-          critTaken: br.critTaken,
-          decayThisAttack: br.expectedBlocked * decayRate,
-          hasData: br.totalAvg > 0
+          totalDamage: null,
+          takenMin: null,
+          takenAvg: null,
+          takenMax: null,
+          mitigation: null,
+          critTaken: null,
+          decayThisAttack: null,
+          hasData: false
         });
+        continue;
       }
+      const br = computeAttackBreakdown(atk, defense, dmgMultiplier);
+      rows.push({
+        maturityName: mat.Name || '',
+        maturityLevel: mat?.Properties?.Level ?? null,
+        totalDamage: atk?.TotalDamage ?? null,
+        takenMin: br.takenMin,
+        takenAvg: br.expectedTaken,
+        takenMax: br.takenMax,
+        mitigation: br.mitigation,
+        critTaken: br.critTaken,
+        decayThisAttack: br.expectedBlocked * decayRate,
+        hasData: br.totalAvg > 0
+      });
     }
     return rows;
   });
@@ -336,6 +408,66 @@
     return `${Number(n).toFixed(digits)}%`;
   }
 
+  function exportDetails(format) {
+    showDetailsExportMenu = false;
+    if (!mob || flatRows.length === 0) return;
+    const mobName = (mob?.Name || 'mob').replace(/[^A-Za-z0-9_-]+/g, '_');
+    const setName = armorSet?.Name?.replace(/[^A-Za-z0-9_-]+/g, '_') || 'armor';
+    const plateName = plating?.Name?.replace(/[^A-Za-z0-9_-]+/g, '_') || '';
+    const atk = (selectedAttackName || 'attack').replace(/[^A-Za-z0-9_-]+/g, '_');
+    const base = `gear-advisor_${mobName}_${setName}${plateName ? '+' + plateName : ''}_${atk}`;
+
+    const headers = ['Maturity', 'Dmg', 'Taken (min)', 'Taken (exp)', 'Taken (max)', 'Max Crit Dmg', 'Decay', 'Mit'];
+    const dataRows = flatRows.map(row => {
+      const lvl = row.maturityLevel != null ? ` (L${row.maturityLevel})` : '';
+      return [
+        `${row.maturityName}${lvl}`,
+        row.totalDamage != null ? formatNum(row.totalDamage, 0) : null,
+        row.hasData ? formatNum(row.takenMin) : null,
+        row.hasData ? formatNum(row.takenAvg) : null,
+        row.hasData ? formatNum(row.takenMax) : null,
+        row.hasData ? formatNum(row.critTaken) : null,
+        row.hasData ? formatNum(row.decayThisAttack, 3) : null,
+        row.hasData ? formatPct(row.mitigation * 100, 0) : null
+      ];
+    });
+
+    if (format === 'csv') {
+      exportCSV(base, headers, dataRows);
+    } else if (format === 'json') {
+      exportJSON(base, {
+        mob: mob?.Name ?? null,
+        armor: armorSet?.Name ?? null,
+        plating: plating?.Name ?? null,
+        iceShield,
+        enhancers,
+        dmgReduction,
+        attack: selectedAttackName,
+        rows: flatRows.map(row => ({
+          maturity: row.maturityName,
+          level: row.maturityLevel,
+          totalDamage: row.totalDamage,
+          ...(row.hasData ? {
+            takenMin: row.takenMin,
+            takenAvg: row.takenAvg,
+            takenMax: row.takenMax,
+            critTaken: row.critTaken,
+            decayPerAttack: row.decayThisAttack,
+            mitigation: row.mitigation
+          } : { hasData: false })
+        }))
+      });
+    } else if (format === 'png') {
+      const title = `${mob?.Name ?? ''} vs ${armorSet?.Name ?? ''}${plating ? ' + ' + plating.Name : ''}${selectedAttackName ? ` — ${selectedAttackName}` : ''}`;
+      exportTableAsImage(
+        base,
+        [headers],
+        dataRows,
+        { title, numericCols: [1, 2, 3, 4, 5, 6, 7] }
+      );
+    }
+  }
+
   function clampEnhancers(v) {
     const n = Number.parseInt(v, 10);
     if (!Number.isFinite(n) || n < 0) return 0;
@@ -343,6 +475,8 @@
     return n;
   }
 </script>
+
+<svelte:window onclick={() => { showDetailsExportMenu = false; }} />
 
 <div class="avm-root">
   <div class="avm-grid">
@@ -488,6 +622,15 @@
                   </span>
                 </button>
               {/each}
+            </div>
+            <div class="ranking-footer">
+              <button
+                type="button"
+                class="pool-btn"
+                onclick={() => { showComparisonDialog = true; }}
+                disabled={armorRanking.length === 0}
+                title="Side-by-side comparison of selected ranked sets across the mob's maturities"
+              >Compare…</button>
             </div>
           {/if}
         </div>
@@ -652,12 +795,43 @@
             </div>
           {/if}
 
+          <div class="details-toolbar">
+            {#if availableAttackNames.length > 1}
+              <fieldset class="attack-picker">
+                <legend>Attack</legend>
+                {#each availableAttackNames as name}
+                  <label class="attack-chip" class:active={selectedAttackName === name}>
+                    <input type="radio" bind:group={selectedAttackName} value={name} />
+                    <span>{name}</span>
+                  </label>
+                {/each}
+              </fieldset>
+            {/if}
+            {#if flatRows.length > 0}
+              <div class="export-wrap" onclick={(e) => e.stopPropagation()} role="presentation">
+                <button
+                  type="button"
+                  class="export-btn"
+                  onclick={(e) => { e.stopPropagation(); showDetailsExportMenu = !showDetailsExportMenu; }}
+                  aria-haspopup="menu"
+                  aria-expanded={showDetailsExportMenu}
+                >Export ▾</button>
+                {#if showDetailsExportMenu}
+                  <div class="export-menu" role="menu">
+                    <button role="menuitem" onclick={() => exportDetails('csv')}>CSV</button>
+                    <button role="menuitem" onclick={() => exportDetails('json')}>JSON</button>
+                    <button role="menuitem" onclick={() => exportDetails('png')}>PNG image</button>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+
           {#if flatRows.length > 0}
             <table class="fancy-table">
               <thead>
                 <tr>
                   <th>Maturity</th>
-                  <th>Attack</th>
                   <th class="num">Dmg</th>
                   <th class="num" title="Damage taken at lowest roll / expected avg / max roll (armor caps per-type)">Taken (min/exp/max)</th>
                   <th class="num" title="Max crit damage taken (2× max damage, 20% armor pierce)">Max Crit Dmg</th>
@@ -672,7 +846,6 @@
                       <span class="cell-main">{row.maturityName}</span>
                       {#if row.maturityLevel != null}<span class="cell-sub">L{row.maturityLevel}</span>{/if}
                     </td>
-                    <td>{row.attackName}</td>
                     <td class="num" class:muted={row.totalDamage == null}>
                       {row.totalDamage != null ? formatNum(row.totalDamage, 0) : '—'}
                     </td>
@@ -748,6 +921,23 @@
       poolPlateNames = e.plateNames;
       poolArmorEnhancers = e.armorEnhancers;
     }}
+  />
+{/if}
+
+{#if showComparisonDialog && mob}
+  <ComparisonDialog
+    {mob}
+    armorRanking={armorRanking}
+    {iceShield}
+    {enhancers}
+    {dmgMultiplier}
+    {poolArmorEnhancers}
+    poolArmorNamesActive={poolArmorNames.length > 0}
+    attackNames={availableAttackNames}
+    bind:selectedAttackName
+    initialVisibleColumns={visibleCompareColumns}
+    onclose={() => { showComparisonDialog = false; }}
+    oncolumnschange={(cols) => { visibleCompareColumns = cols; }}
   />
 {/if}
 
@@ -861,6 +1051,12 @@
     border-radius: 6px;
     padding: 4px;
     background-color: var(--primary-color);
+  }
+
+  .ranking-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
   }
 
   .ranking-row {
@@ -1249,6 +1445,105 @@
     border-radius: 6px;
     margin-bottom: 4px;
   }
+
+  .details-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 10px 0;
+  }
+
+  .details-toolbar .attack-picker {
+    margin: 0;
+  }
+
+  .export-wrap {
+    position: relative;
+    margin-left: auto;
+  }
+
+  .export-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    cursor: pointer;
+  }
+  .export-btn:hover:not(:disabled) { background-color: var(--hover-color); }
+  .export-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .export-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 140px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 4px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+  }
+  .export-menu button {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .export-menu button:hover { background-color: var(--hover-color); }
+
+  .attack-picker {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 10px 6px 8px;
+    margin: 0 0 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    background-color: var(--primary-color);
+  }
+
+  .attack-picker legend {
+    float: none;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 0 6px 0 4px;
+    width: auto;
+  }
+
+  .attack-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .attack-chip:hover { background-color: var(--hover-color); }
+  .attack-chip.active {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+  }
+  .attack-chip input { display: none; }
 
   .fancy-table {
     width: 100%;

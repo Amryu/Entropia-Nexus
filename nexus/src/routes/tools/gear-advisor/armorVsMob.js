@@ -20,6 +20,37 @@ export const DEFENSE_TYPES = [
   'Burn', 'Cold', 'Acid', 'Electric'
 ];
 
+// Default attack name from the Mob schema (see common/schemas/Mob.js).
+// Used as the preferred default when picking which attack to display.
+export const DEFAULT_ATTACK_NAME = 'Primary';
+
+/**
+ * Distinct attack names across all maturities of a mob, in stable first-seen
+ * order, with DEFAULT_ATTACK_NAME ("Primary") hoisted to the front when
+ * present. Missing/empty attack names fall back to DEFAULT_ATTACK_NAME.
+ * @param {object} mob
+ * @returns {string[]}
+ */
+export function getMobAttackNames(mob) {
+  const seen = new Set();
+  const ordered = [];
+  for (const mat of mob?.Maturities || []) {
+    for (const atk of mat?.Attacks || []) {
+      const name = atk?.Name || DEFAULT_ATTACK_NAME;
+      if (!seen.has(name)) {
+        seen.add(name);
+        ordered.push(name);
+      }
+    }
+  }
+  const idx = ordered.indexOf(DEFAULT_ATTACK_NAME);
+  if (idx > 0) {
+    ordered.splice(idx, 1);
+    ordered.unshift(DEFAULT_ATTACK_NAME);
+  }
+  return ordered;
+}
+
 const ICE_SHIELD_TYPES = ['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn'];
 export const ICE_SHIELD_VALUE = 75;
 export const MAX_ENHANCERS = 10;
