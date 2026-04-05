@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { hasItemTag } from '$lib/util';
+
 /**
  * Armor vs Mob calculations.
  *
@@ -424,12 +426,13 @@ export function rankMobs(mobs, defense, scope, dmgMultiplier = 1, rankBy = 'miti
  *  so the UI stays responsive (loading spinner can render, events can dispatch). */
 export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, scope, rankBy, options = {}, { chunkSize = 40, signal } = {}) {
   const { iceShield, enhancers, dmgMultiplier = 1 } = config;
-  const { includePlates = true, platesPerArmor = 3 } = options;
+  const { includePlates = true, platesPerArmor = 3, ulPlatesOnly = false } = options;
   const sortFn = makeSortByMetric(rankBy);
   const enhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
   const ICE_SHIELD_SET = new Set(['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn']);
 
-  // Pre-filter plates (same logic as sync version)
+  // Pre-filter plates: drop those without defense in the mob's damage types,
+  // and optionally drop "(L)" Limited plates (ulPlatesOnly).
   let platesToUse = [];
   if (includePlates) {
     const mobTypes = new Set();
@@ -442,6 +445,7 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
     }
     if (mobTypes.size > 0) {
       platesToUse = (armorPlatings || []).filter(plate => {
+        if (ulPlatesOnly && hasItemTag(plate?.Name, 'L')) return false;
         for (const type of mobTypes) {
           if ((plate?.Properties?.Defense?.[type] ?? 0) > 0) return true;
         }
@@ -516,13 +520,13 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
 
 export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy = 'mitigation', options = {}) {
   const { iceShield, enhancers, dmgMultiplier = 1 } = config;
-  const { includePlates = true, platesPerArmor = 3 } = options;
+  const { includePlates = true, platesPerArmor = 3, ulPlatesOnly = false } = options;
   const sortFn = makeSortByMetric(rankBy);
   const enhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
   const ICE_SHIELD_SET = new Set(['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn']);
 
-  // Pre-filter plates: only those with defense in at least one damage type
-  // this mob actually uses. Drops ~50-80% of plates for most mobs.
+  // Pre-filter plates: drop those without defense in the mob's damage types,
+  // and optionally drop "(L)" Limited plates (ulPlatesOnly).
   let platesToUse = [];
   if (includePlates) {
     const mobTypes = new Set();
@@ -535,6 +539,7 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
     }
     if (mobTypes.size > 0) {
       platesToUse = (armorPlatings || []).filter(plate => {
+        if (ulPlatesOnly && hasItemTag(plate?.Name, 'L')) return false;
         for (const type of mobTypes) {
           if ((plate?.Properties?.Defense?.[type] ?? 0) > 0) return true;
         }

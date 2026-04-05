@@ -34,6 +34,7 @@
   let scope = $state('average'); // 'lowest' | 'average' | 'highest'
   let rankBy = $state('mitigation'); // 'typeMatch' | 'mitigation' | 'damageTaken'
   let includePlates = $state(true); // include top-3 plate pairings in armor ranking
+  let ulPlatesOnly = $state(false); // restrict plates to unlimited (non-"(L)")
 
   // Derived: effective defense for current armor config (null if no armor)
   let defense = $derived(armorSet
@@ -126,6 +127,7 @@
     const _enhancers = enhancers;
     const _dmgMultiplier = dmgMultiplier;
     const _includePlates = includePlates;
+    const _ulPlatesOnly = ulPlatesOnly;
 
     if (_armorSet || !_mob) {
       armorRanking = [];
@@ -140,7 +142,7 @@
       armorSets, armorPlatings, _mob,
       { iceShield: _iceShield, enhancers: _enhancers, dmgMultiplier: _dmgMultiplier },
       _scope, _rankBy,
-      { includePlates: _includePlates, platesPerArmor: 3 },
+      { includePlates: _includePlates, platesPerArmor: 3, ulPlatesOnly: _ulPlatesOnly },
       { chunkSize: 40, signal: controller }
     ).then(result => {
       if (controller.aborted) return;
@@ -178,6 +180,7 @@
     mob = null;
     scope = 'average';
     rankBy = 'mitigation';
+    ulPlatesOnly = false;
   }
 
   function formatNum(n, digits = 1) {
@@ -267,6 +270,10 @@
             <label class="inline-check">
               <input type="checkbox" bind:checked={includePlates} />
               <span>Include top-3 plate pairings</span>
+            </label>
+            <label class="inline-check" class:disabled={!includePlates}>
+              <input type="checkbox" bind:checked={ulPlatesOnly} disabled={!includePlates} />
+              <span>UL plates only</span>
             </label>
             {#if armorRankingLoading && armorRanking.length > 0}
               <span class="refresh-indicator"><span class="spinner small"></span> updating…</span>
@@ -765,6 +772,11 @@
 
   .inline-check input[type="checkbox"] {
     margin: 0;
+  }
+
+  .inline-check.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .loading-state {
