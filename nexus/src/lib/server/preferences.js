@@ -17,6 +17,7 @@ const ALLOWED_KEY_PREFIXES = [
   'services.',
   'inventory.',
   'rewards.',
+  'gear-advisor.',
 ];
 
 /**

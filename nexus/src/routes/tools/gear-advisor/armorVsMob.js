@@ -393,6 +393,45 @@ function makeSortByMetric(rankBy = 'mitigation') {
  * @returns {Array} sorted: damage-known first (by mitigation % desc),
  *                  then damage-unknown (by type score desc)
  */
+/** Async/chunked per-maturity ranking — one entry per (mob × maturity). */
+export async function rankMaturitiesChunked(mobs, defense, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
+  const results = [];
+  const sortFn = makeSortByMetric(rankBy);
+  const list = mobs || [];
+  for (let i = 0; i < list.length; i++) {
+    if (signal?.aborted) return null;
+    const mob = list[i];
+    const mats = sortedMaturities(mob);
+    for (const mat of mats) {
+      const attacks = Array.isArray(mat?.Attacks) ? mat.Attacks : [];
+      if (attacks.length === 0) continue;
+      const s = scoreMaturityAll(mat, defense, dmgMultiplier);
+      if (s.typeScore == null) continue;
+      const blocked = s.blockedPerAttack;
+      results.push({
+        mob, maturity: mat,
+        name: mob.Name,
+        typeScore: s.typeScore,
+        mitigationPct: s.mitigation != null ? s.mitigation * 100 : null,
+        damageTaken: s.damageTaken,
+        decayPerAttack: blocked != null ? blocked * decayRate : null,
+        decayPerAttackMin: blocked != null ? blocked * decayRate : null,
+        decayPerAttackMax: blocked != null ? blocked * decayRate : null,
+        hasTotalDamage: s.mitigation != null,
+        hasComposition: s.typeScore != null,
+        maturityLabel: mat?.Name ?? null,
+        maturityLevel: mat?.Properties?.Level ?? null
+      });
+    }
+    if ((i + 1) % chunkSize === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (signal?.aborted) return null;
+    }
+  }
+  results.sort(sortFn);
+  return results;
+}
+
 /** Async/chunked mob ranking that yields to the browser every N mobs. */
 export async function rankMobsChunked(mobs, defense, scope, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
   const results = [];

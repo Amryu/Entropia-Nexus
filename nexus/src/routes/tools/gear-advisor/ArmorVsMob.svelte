@@ -7,10 +7,13 @@
 -->
 <script>
   // @ts-nocheck
+  import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import EntityPicker from './EntityPicker.svelte';
   import PoolSelectionDialog from './PoolSelectionDialog.svelte';
   import MobDamageGrid from '$lib/components/wiki/mobs/MobDamageGrid.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
+  import { createPreference } from '$lib/preferences.js';
   import {
     DEFENSE_TYPES,
     MAX_ENHANCERS,
@@ -19,6 +22,7 @@
     computeDecayRate,
     rankMobs,
     rankMobsChunked,
+    rankMaturitiesChunked,
     rankArmorsChunked,
     buildDetails,
     hasDamageData
@@ -38,11 +42,63 @@
   let includePlates = $state(true); // include top-3 plate pairings in armor ranking
   let ulPlatesOnly = $state(false); // restrict plates to unlimited (non-"(L)")
 
-  // Candidate-pool filters (empty = use all)
+  // Candidate-pool filters (empty = use all) — persisted to user preferences
+  // (DB when logged in, localStorage otherwise).
   let poolArmorNames = $state([]);
   let poolPlateNames = $state([]);
   let poolArmorEnhancers = $state({}); // per-armor enhancer overrides
   let showPoolDialog = $state(false);
+  let poolLoaded = $state(false);
+
+  // Mob ranking planet filter ('All' = no filter)
+  let mobPlanetFilter = $state('All');
+  // View mode for mob ranking: per-mob or per-maturity
+  let viewMaturities = $state(false);
+  // Expected damage-taken range filter (null/empty = no bound)
+  let damageMin = $state('');
+  let damageMax = $state('');
+  let mobPlanets = $derived.by(() => {
+    const set = new Set();
+    for (const m of mobs || []) {
+      const p = m?.Planet?.Name;
+      if (p) set.add(p);
+    }
+    return ['All', ...Array.from(set).sort()];
+  });
+
+  const poolPref = createPreference('gear-advisor.pool', {
+    armorNames: [],
+    plateNames: [],
+    armorEnhancers: {}
+  }, { debounceMs: 400 });
+
+  onMount(async () => {
+    const userId = $page.data?.user?.id ?? null;
+    await poolPref.load(userId);
+    let stored;
+    poolPref.subscribe(v => stored = v)();
+    if (stored) {
+      poolArmorNames = Array.isArray(stored.armorNames) ? stored.armorNames : [];
+      poolPlateNames = Array.isArray(stored.plateNames) ? stored.plateNames : [];
+      poolArmorEnhancers = stored.armorEnhancers && typeof stored.armorEnhancers === 'object'
+        ? stored.armorEnhancers
+        : {};
+    }
+    poolLoaded = true;
+  });
+
+  // Persist pool filters whenever they change (after initial load)
+  $effect(() => {
+    const _names = poolArmorNames;
+    const _plates = poolPlateNames;
+    const _enh = poolArmorEnhancers;
+    if (!poolLoaded) return;
+    poolPref.set({
+      armorNames: _names,
+      plateNames: _plates,
+      armorEnhancers: _enh
+    });
+  });
 
   // Derived: effective defense for current armor config (null if no armor)
   let defense = $derived(armorSet
@@ -128,6 +184,8 @@
     const _rankBy = rankBy;
     const _dmgMultiplier = dmgMultiplier;
     const _decayRate = decayRate;
+    const _planet = mobPlanetFilter;
+    const _viewMaturities = viewMaturities;
 
     if (!_armorSet || _mob) {
       mobRanking = [];
@@ -138,10 +196,21 @@
     mobRankingLoading = true;
     const controller = { aborted: false };
 
-    rankMobsChunked(
-      mobs, _defense, _scope, _dmgMultiplier, _rankBy, _decayRate,
-      { chunkSize: 100, signal: controller }
-    ).then(result => {
+    const filteredMobs = _planet === 'All'
+      ? mobs
+      : (mobs || []).filter(m => m?.Planet?.Name === _planet);
+
+    const promise = _viewMaturities
+      ? rankMaturitiesChunked(
+          filteredMobs, _defense, _dmgMultiplier, _rankBy, _decayRate,
+          { chunkSize: 100, signal: controller }
+        )
+      : rankMobsChunked(
+          filteredMobs, _defense, _scope, _dmgMultiplier, _rankBy, _decayRate,
+          { chunkSize: 100, signal: controller }
+        );
+
+    promise.then(result => {
       if (controller.aborted) return;
       mobRanking = result ?? [];
       mobRankingLoading = false;
@@ -150,6 +219,19 @@
     });
 
     return () => { controller.aborted = true; };
+  });
+
+  // Apply damage-range filter as a display filter on the ranking
+  let displayedMobRanking = $derived.by(() => {
+    const lo = damageMin === '' || damageMin == null ? null : Number(damageMin);
+    const hi = damageMax === '' || damageMax == null ? null : Number(damageMax);
+    if (lo == null && hi == null) return mobRanking;
+    return mobRanking.filter(r => {
+      if (r.damageTaken == null) return false;
+      if (lo != null && r.damageTaken < lo) return false;
+      if (hi != null && r.damageTaken > hi) return false;
+      return true;
+    });
   });
   // Armor ranking is computed asynchronously in chunks so the UI stays
   // responsive — loading spinner shows while hundreds of armor/plate combos
@@ -236,9 +318,12 @@
     scope = 'average';
     rankBy = 'mitigation';
     ulPlatesOnly = false;
-    poolArmorNames = [];
-    poolPlateNames = [];
-    poolArmorEnhancers = {};
+    mobPlanetFilter = 'All';
+    viewMaturities = false;
+    damageMin = '';
+    damageMax = '';
+    // Intentionally does NOT clear pool filters — those are persisted.
+    // Use "Clear all" inside the Restrict Pool dialog to clear them.
   }
 
   function formatNum(n, digits = 1) {
@@ -380,7 +465,7 @@
                     <span class="name-main">
                       {r.name}{#if r.plating}&nbsp;<span class="plate-tag">+ {r.plating.Name}</span>{/if}
                     </span>
-                    {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null} · L{r.maturityLevel}{/if}</span>{/if}
+                    {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null}&nbsp;· L{r.maturityLevel}{/if}</span>{/if}
                   </span>
                   <span class="rank-metric">
                     {#if r.hasTotalDamage}
@@ -465,12 +550,46 @@
 
       {#if mobPanelMode === 'ranking'}
         <div class="panel-body">
-          <p class="panel-caption">
-            Mobs ranked vs <strong>{armorSet?.Name}</strong> ({scope})
-            {#if mobRankingLoading && mobRanking.length > 0}
-              <span class="refresh-indicator"><span class="spinner small"></span> updating…</span>
-            {/if}
-          </p>
+          <div class="ranking-header">
+            <p class="panel-caption">
+              {viewMaturities ? 'Maturities' : 'Mobs'} ranked vs <strong>{armorSet?.Name}</strong>{viewMaturities ? '' : ` (${scope})`}
+              {#if mobRankingLoading && mobRanking.length > 0}
+                <span class="refresh-indicator"><span class="spinner small"></span> updating…</span>
+              {/if}
+            </p>
+          </div>
+          <div class="mob-filters">
+            <label class="inline-check">
+              <input type="checkbox" bind:checked={viewMaturities} />
+              <span>Per maturity</span>
+            </label>
+            <label class="planet-filter">
+              <span class="planet-label">Planet:</span>
+              <select bind:value={mobPlanetFilter} class="planet-select">
+                {#each mobPlanets as planet}
+                  <option value={planet}>{planet}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="dmg-range">
+              <span class="planet-label">Dmg/hit:</span>
+              <input
+                type="number"
+                class="dmg-input"
+                placeholder="min"
+                min="0"
+                bind:value={damageMin}
+              />
+              <span class="range-sep">–</span>
+              <input
+                type="number"
+                class="dmg-input"
+                placeholder="max"
+                min="0"
+                bind:value={damageMax}
+              />
+            </label>
+          </div>
           {#if mobRankingLoading && mobRanking.length === 0}
             <div class="loading-state">
               <span class="spinner"></span>
@@ -478,9 +597,11 @@
             </div>
           {:else if mobRanking.length === 0}
             <p class="empty-msg">No ranked mobs — none have attack data.</p>
+          {:else if displayedMobRanking.length === 0}
+            <p class="empty-msg">No results match the damage-range filter.</p>
           {:else}
             <div class="ranking-list" role="list">
-              {#each mobRanking.slice(0, 200) as r, i (r.name + i)}
+              {#each displayedMobRanking.slice(0, 200) as r, i (r.name + '|' + (r.maturityLabel || '') + '|' + i)}
                 <button
                   type="button"
                   class="ranking-row"
@@ -491,7 +612,7 @@
                   <span class="rank-idx">#{i + 1}</span>
                   <span class="rank-name">
                     <span class="name-main">{r.name}</span>
-                    {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null} · L{r.maturityLevel}{/if}</span>{/if}
+                    {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null}&nbsp;· L{r.maturityLevel}{/if}</span>{/if}
                   </span>
                   <span class="rank-metric">
                     {#if r.hasTotalDamage}
@@ -591,19 +712,21 @@
 
   <!-- Shared action row -->
   <div class="avm-actions">
-    <fieldset class="scope-group">
-      <legend>Maturity scope</legend>
-      <label><input type="radio" name="scope" value="lowest" bind:group={scope} /> Lowest</label>
-      <label><input type="radio" name="scope" value="average" bind:group={scope} /> Average</label>
-      <label><input type="radio" name="scope" value="highest" bind:group={scope} /> Highest</label>
-    </fieldset>
+    <div class="scope-stack">
+      <fieldset class="scope-group">
+        <legend>Maturity scope</legend>
+        <label><input type="radio" name="scope" value="lowest" bind:group={scope} /> Lowest</label>
+        <label><input type="radio" name="scope" value="average" bind:group={scope} /> Average</label>
+        <label><input type="radio" name="scope" value="highest" bind:group={scope} /> Highest</label>
+      </fieldset>
 
-    <fieldset class="scope-group">
-      <legend>Rank by</legend>
-      <label><input type="radio" name="rankBy" value="mitigation" bind:group={rankBy} /> % Mitigation</label>
-      <label><input type="radio" name="rankBy" value="damageTaken" bind:group={rankBy} /> Damage taken</label>
-      <label><input type="radio" name="rankBy" value="typeMatch" bind:group={rankBy} /> Type-match</label>
-    </fieldset>
+      <fieldset class="scope-group">
+        <legend>Rank by</legend>
+        <label><input type="radio" name="rankBy" value="mitigation" bind:group={rankBy} /> % Mitigation</label>
+        <label><input type="radio" name="rankBy" value="damageTaken" bind:group={rankBy} /> Damage taken</label>
+        <label><input type="radio" name="rankBy" value="typeMatch" bind:group={rankBy} /> Type-match</label>
+      </fieldset>
+    </div>
 
     <div class="btn-row">
       <button class="btn" onclick={handleReset}>Reset</button>
@@ -887,6 +1010,71 @@
     margin: 0;
   }
 
+  .planet-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .planet-select {
+    padding: 2px 6px;
+    font-size: 11px;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+  .planet-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .mob-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin-bottom: 6px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .dmg-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .dmg-input {
+    width: 52px;
+    padding: 2px 4px;
+    font-size: 11px;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    -moz-appearance: textfield;
+  }
+  .dmg-input::-webkit-inner-spin-button,
+  .dmg-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .dmg-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .range-sep {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
   .inline-check.disabled {
     opacity: 0.45;
     cursor: not-allowed;
@@ -1143,13 +1331,20 @@
   .avm-actions {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     gap: 16px;
     padding: 12px 14px;
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     flex-wrap: wrap;
+  }
+
+  .scope-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
   }
 
   .scope-group {
