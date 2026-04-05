@@ -1,0 +1,52 @@
+/* Gear Advisor - tool-specific styles */
+/* Shared sidebar/button styles come from ../tools.css via the .tool-gear-advisor selector */
+
+.tool-gear-advisor {
+  & .sidebar-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  & .subtool-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  & .subtool-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 10px;
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+  }
+
+  & .subtool-item:hover {
+    background-color: var(--hover-color);
+  }
+
+  & .subtool-item.active {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+  }
+
+  & .subtool-name {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  & .subtool-desc {
+    font-size: 11px;
+    opacity: 0.85;
+    line-height: 1.3;
+  }
+}

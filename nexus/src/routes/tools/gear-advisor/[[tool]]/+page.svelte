@@ -1,0 +1,97 @@
+<!--
+  @component Gear Advisor
+  Container for a collection of small gear-related calculators, selectable from the sidebar.
+  First sub-tool: Armor vs Mob.
+-->
+<script>
+  // @ts-nocheck
+  import '$lib/style.css';
+  import '../../tools.css';
+  import '../gear-advisor.css';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
+  import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import ArmorVsMob from '../ArmorVsMob.svelte';
+
+  let { data } = $props();
+
+  // Sub-tool registry — add new entries here as more calculators are built
+  const SUB_TOOLS = [
+    {
+      slug: 'armor-vs-mob',
+      label: 'Armor vs Mob',
+      description: 'Rank armor sets against a target mob (or vice versa).'
+    }
+  ];
+
+  let user = $derived($page.data?.user);
+  let drawerOpen = $state(false);
+
+  // Route sub-tool from URL (falls back to the first tool)
+  let activeToolSlug = $derived(
+    SUB_TOOLS.find(t => t.slug === data.additional?.tool)?.slug ?? SUB_TOOLS[0].slug
+  );
+  let activeTool = $derived(SUB_TOOLS.find(t => t.slug === activeToolSlug));
+
+  let breadcrumbs = $derived([
+    { label: 'Tools', href: '/tools' },
+    { label: 'Gear Advisor', href: '/tools/gear-advisor' },
+    ...(activeTool ? [{ label: activeTool.label, href: `/tools/gear-advisor/${activeTool.slug}` }] : [])
+  ]);
+
+  function selectSubTool(slug) {
+    drawerOpen = false;
+    goto(`/tools/gear-advisor/${slug}`);
+  }
+</script>
+
+<svelte:head>
+  <title>Gear Advisor - Entropia Nexus</title>
+  <meta name="description" content="Collection of small gear-related calculators for Entropia Universe: armor vs mob damage coverage and more." />
+  <link rel="canonical" href="https://entropianexus.com/tools/gear-advisor" />
+</svelte:head>
+
+<WikiPage
+  title="Gear Advisor"
+  {breadcrumbs}
+  entity={{ Name: 'Gear Advisor' }}
+  basePath="/tools/gear-advisor"
+  pageClass="tool-gear-advisor"
+  navItems={[]}
+  bind:drawerOpen
+  {user}
+  editable={false}
+  canEdit={false}
+>
+  {#snippet sidebar({ isMobile })}
+    <div class="sidebar-root">
+      <div class="nav-header">
+        <h2 class="nav-title">Gear Advisor</h2>
+      </div>
+      <div class="sidebar-body">
+        <div class="subtool-list">
+          {#each SUB_TOOLS as tool (tool.slug)}
+            <button
+              type="button"
+              class="subtool-item"
+              class:active={tool.slug === activeToolSlug}
+              onclick={() => selectSubTool(tool.slug)}
+            >
+              <span class="subtool-name">{tool.label}</span>
+              <span class="subtool-desc">{tool.description}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/snippet}
+
+  <!-- Main content: routed to the active sub-tool -->
+  {#if activeToolSlug === 'armor-vs-mob'}
+    <ArmorVsMob
+      armorSets={data.additional?.armorSets ?? []}
+      armorPlatings={data.additional?.armorPlatings ?? []}
+      mobs={data.additional?.mobs ?? []}
+    />
+  {/if}
+</WikiPage>

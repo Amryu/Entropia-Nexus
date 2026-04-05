@@ -1,7 +1,7 @@
 /* Shared Tools Styles - Used by Loadouts and Construction Calculator */
 /* Scoped under .tool-construction / .tool-loadouts to prevent CSS leaking via preload */
 
-:is(.tool-construction, .tool-loadouts, .tool-skills) {
+:is(.tool-construction, .tool-loadouts, .tool-skills, .tool-gear-advisor) {
   /* Sidebar Header - Wiki-style */
   & .nav-header {
     display: flex;
@@ -294,7 +294,7 @@
 
 /* Mobile - only hide labels, keep button sizes */
 @media (max-width: 767px) {
-  :is(.tool-construction, .tool-loadouts, .tool-skills) {
+  :is(.tool-construction, .tool-loadouts, .tool-skills, .tool-gear-advisor) {
     & .sidebar-body {
       padding: 10px 8px;
     }

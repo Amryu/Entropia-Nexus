@@ -21,6 +21,12 @@
       description: 'Calculate crafting requirements, materials, and costs for blueprints'
     },
     {
+      name: 'Gear Advisor',
+      href: '/tools/gear-advisor',
+      icon: 'GA',
+      description: 'Rank armor sets vs mob damage profiles and other small gear calculators'
+    },
+    {
       name: 'Client',
       href: '/tools/client',
       icon: 'CL',

@@ -652,6 +652,7 @@
       { label: 'Client', url: 'client', badge: 'Beta' },
       { label: 'Loadout Manager', url: 'loadouts' },
       { label: 'Construction Calculator', url: 'construction' },
+      { label: 'Gear Advisor', url: 'gear-advisor' },
       { label: 'Skills Calculator', url: 'skills', disabled: true },
       { label: 'API', url: 'api' },
     ],
