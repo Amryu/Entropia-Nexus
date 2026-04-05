@@ -258,13 +258,63 @@
   let navItems = $derived(allItems);
 
   // Navigation filters - uses selectedFilter for active state (local, not URL-based)
-  let navFilters = $derived(typeButtons.map(btn => ({
+  let typeNavFilters = $derived(typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
     active: selectedFilter === btn.type,
     href: selectedFilter === btn.type ? '/items/attachments' : `/items/attachments/${btn.type}`
   })));
+
+  // Defense-type multi-select filter for armor platings.
+  // Threshold scales with number of selected types (same rule as armor sets):
+  // 1 type: 20%, 2: 35%, 3: 45%, 4+: +10% per additional.
+  function getDefenseThreshold(count) {
+    if (count <= 0) return 0;
+    if (count === 1) return 0.20;
+    if (count === 2) return 0.35;
+    if (count === 3) return 0.45;
+    return 0.45 + (count - 3) * 0.10;
+  }
+
+  function defenseFilterFn(item, selectedTypes) {
+    if (!selectedTypes || selectedTypes.length === 0) return true;
+    const totalDef = getTotalDefense(item);
+    if (!totalDef) return false;
+    const selectedDefense = selectedTypes.reduce(
+      (sum, type) => sum + (item.Properties?.Defense?.[type] ?? 0), 0);
+    return (selectedDefense / totalDef) >= getDefenseThreshold(selectedTypes.length);
+  }
+
+  function defenseSortFn(item, selectedTypes) {
+    if (!selectedTypes || selectedTypes.length === 0) return 0;
+    return selectedTypes.reduce(
+      (sum, type) => sum + (item.Properties?.Defense?.[type] ?? 0), 0);
+  }
+
+  const defenseFilterHelp = [
+    '1 type selected: 20% of total defense',
+    '2 types selected: 35% of total defense',
+    '3 types selected: 45% of total defense',
+    '4+ types: +10% for each additional'
+  ];
+
+  // Combine type-navigation filters with the damage-type filter for armor platings
+  let navFilters = $derived(selectedFilter === 'armorplatings'
+    ? [
+        ...typeNavFilters,
+        {
+          key: 'defenseType',
+          label: 'Defense Type',
+          multiSelect: true,
+          filterFn: defenseFilterFn,
+          sortFn: defenseSortFn,
+          helpText: defenseFilterHelp,
+          values: ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric']
+            .map(type => ({ value: type, label: type.substring(0, 3) }))
+        }
+      ]
+    : typeNavFilters);
 
   // Full column definitions for attachments
   const columnDefs = {

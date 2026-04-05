@@ -87,6 +87,14 @@
   const ITEM_HEIGHT = 36;
   const BUFFER_SIZE = 5;
 
+  // Partition filters: link-style entries have href, value-style entries don't.
+  // This lets callers mix both kinds in the single `filters` prop.
+  let mergedLinkFilters = $derived([
+    ...linkFilters,
+    ...filters.filter(f => f?.href !== undefined)
+  ]);
+  let valueFilters = $derived(filters.filter(f => f?.href === undefined));
+
   // Initialize active filters (skip link-based navigation filters that have href instead of key)
   // Use untrack for reads to avoid read+write cycle on the same $state
   $effect(() => {
@@ -1316,12 +1324,12 @@
     {/if}
   </div>
 
-  {#if linkFilters.length > 0 || filters.length > 0 || (showTableView && allAvailableColumns)}
+  {#if mergedLinkFilters.length > 0 || valueFilters.length > 0 || (showTableView && allAvailableColumns)}
     <div class="filter-section">
       <!-- Link-based type navigation buttons (with column config inline) -->
-      {#if linkFilters.length > 0}
+      {#if mergedLinkFilters.length > 0}
         <div class="type-nav-buttons">
-          {#each linkFilters as btn}
+          {#each mergedLinkFilters as btn}
             <a
               href={btn.href}
               class="type-nav-btn"
@@ -1341,30 +1349,7 @@
             </span>
           {/if}
         </div>
-      {:else if filters.length > 0 && filters[0]?.href !== undefined}
-        <!-- Legacy: Link-based type navigation in filters prop -->
-        <div class="type-nav-buttons">
-          {#each filters as btn}
-            <a
-              href={btn.href}
-              class="type-nav-btn"
-              class:active={btn.active}
-              title={btn.title}
-            >
-              {btn.label}
-            </a>
-          {/each}
-          {#if showTableView && allAvailableColumns}
-            <span class="column-config-inline">
-              {@render beforeColumnConfig?.()}
-              <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
-              {#if hasCustomColumns}
-                <button class="column-config-btn reset" onclick={handleResetColumns} title="Reset to default columns">Reset</button>
-              {/if}
-            </span>
-          {/if}
-        </div>
-      {:else if showTableView && allAvailableColumns && filters.length === 0}
+      {:else if showTableView && allAvailableColumns && valueFilters.length === 0}
         <!-- Column config only (no filter buttons on this page) -->
         <div class="column-config-actions">
           {@render beforeColumnConfig?.()}
@@ -1375,10 +1360,10 @@
           {/if}
         </div>
       {/if}
-      {#if filters.length > 0 && filters[0]?.href === undefined}
+      {#if valueFilters.length > 0}
         <!-- Value-based category filters -->
         <div class="filter-groups-row">
-        {#each filters as filter, filterIdx}
+        {#each valueFilters as filter, filterIdx}
           <div class="filter-group">
             <div class="filter-label-row">
               <span class="filter-label">{filter.label}</span>
@@ -1419,7 +1404,7 @@
             </div>
           </div>
         {/each}
-        {#if showTableView && allAvailableColumns && linkFilters.length === 0}
+        {#if showTableView && allAvailableColumns && mergedLinkFilters.length === 0}
           <span class="column-config-inline">
             {@render beforeColumnConfig?.()}
             <button class="column-config-btn" onclick={handleOpenColumnDialog} title="Configure columns">Columns...</button>
