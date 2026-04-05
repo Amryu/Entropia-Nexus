@@ -308,12 +308,14 @@
       {#if suffix}
         <span class="suffix">{suffix}</span>
       {/if}
+
+      {#if warning && !error}
+        <span class="warning-message" title={warning}>&#9888;</span>
+      {/if}
     </span>
 
     {#if error}
       <span class="error-message">{error}</span>
-    {:else if warning}
-      <span class="warning-message" title={warning}>&#9888;</span>
     {/if}
   {:else}
     <span class="display-value">

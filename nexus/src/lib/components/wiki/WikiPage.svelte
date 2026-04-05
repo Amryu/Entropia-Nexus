@@ -8,7 +8,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { page, navigating } from '$app/stores';
   import { goto, afterNavigate, beforeNavigate } from '$app/navigation';
-  import { editMode, isCreateMode, hasChanges, resetEditState, startEdit, cancelEdit } from '$lib/stores/wikiEditState.js';
+  import { editMode, isCreateMode, hasChanges, resetEditState, startEdit, cancelEdit, consumeNavGuardSuppression } from '$lib/stores/wikiEditState.js';
   import { initialViewportWidth } from '../../../stores.js';
   import WikiNavigation from './WikiNavigation.svelte';
   import MobileDrawer from './MobileDrawer.svelte';
@@ -259,6 +259,7 @@
 
   beforeNavigate(({ cancel }) => {
     if (skipNavGuard) { skipNavGuard = false; return; }
+    if (consumeNavGuardSuppression()) return;
     if (!$editMode || !$hasChanges) return;
     if (!confirm('You have unsaved changes. Are you sure you want to leave?')) {
       cancel();
@@ -883,9 +884,10 @@
     pointer-events: none;
   }
 
-  /* Add bottom padding when edit action bar is visible */
+  /* Add bottom padding when edit action bar is visible.
+     Height is measured at runtime by EditActionBar and exposed as --edit-bar-height. */
   .content-body.editing {
-    padding-bottom: 100px;
+    padding-bottom: calc(var(--edit-bar-height, 60px) + 24px);
   }
 
   /* Tablet adjustments */
@@ -927,7 +929,8 @@
   }
 
   .wiki-page.mobile .content-body.editing {
-    padding-bottom: 120px; /* Taller on mobile due to stacked action bar layout */
+    /* Stacked action bar on mobile is ~2× taller; same CSS var still applies */
+    padding-bottom: calc(var(--edit-bar-height, 120px) + 24px);
   }
 
   /* Auth hint button */

@@ -24,7 +24,8 @@
     markSaved,
     setFieldError,
     setFieldWarning,
-    setViewingPendingChange
+    setViewingPendingChange,
+    suppressNextNavGuard
   } from '$lib/stores/wikiEditState.js';
   import { apiPost, apiPut, encodeURIComponentSafe } from '$lib/util';
 
@@ -77,16 +78,42 @@
   // Track the name the user already confirmed so we don't re-prompt
   let confirmedSimilarName = $state('');
 
+  // Ref + ResizeObserver so --edit-bar-height stays in sync with the actual rendered height.
+  // WikiPage uses this var to pad content so the bar never obscures page content.
+  let barEl = $state();
+  let resizeObserver = null;
+  $effect(() => {
+    if (!browser || !barEl) return;
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const h = Math.ceil(e.borderBoxSize?.[0]?.blockSize ?? e.contentRect.height);
+        document.documentElement.style.setProperty('--edit-bar-height', `${h}px`);
+      }
+    });
+    resizeObserver.observe(barEl);
+    return () => {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      document.documentElement.style.removeProperty('--edit-bar-height');
+    };
+  });
+
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (similarCheckTimer) clearTimeout(similarCheckTimer);
+    if (browser) document.documentElement.style.removeProperty('--edit-bar-height');
   });
+
+  // Derived so the similarity effect only re-runs when Name actually changes,
+  // not on every $currentEntity emission (e.g. when editing Description)
+  let currentName = $derived(($currentEntity?.Name ?? '').trim());
+  let originalName = $derived(($originalEntity?.Name ?? '').trim());
 
   // Debounced similarity check when the Name field changes
   $effect(() => {
-    const name = $currentEntity?.Name?.trim();
+    const name = currentName;
     const entity = $changeMetadata?.entity;
-    const origName = $originalEntity?.Name?.trim();
+    const origName = originalName;
 
     if (!name || name.length < 3 || !entity) {
       setFieldWarning('Name', null);
@@ -215,6 +242,7 @@
           if (browser) {
             await invalidateAll();
             if ($isCreateMode && response?.id) {
+              suppressNextNavGuard();
               await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
                 replaceState: true,
                 noScroll: true
@@ -297,6 +325,7 @@
           if (browser) {
             await invalidateAll();
             if ($isCreateMode && response?.id) {
+              suppressNextNavGuard();
               await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
                 replaceState: true,
                 noScroll: true
@@ -419,7 +448,21 @@
             statusMessage = 'Changes applied successfully!';
             statusType = 'success';
             if (browser) await invalidateAll();
-            if (!$isCreateMode) {
+            if ($isCreateMode) {
+              // Newly created entity now exists — navigate to its page so the URL
+              // bar reflects the real route instead of the ?mode=create draft URL.
+              const createdName = change?.data?.Name || $currentEntity?.Name;
+              setTimeout(() => {
+                cancelEdit();
+                if (createdName && basePath && browser) {
+                  suppressNextNavGuard();
+                  goto(`${basePath}/${encodeURIComponentSafe(createdName)}`);
+                } else if (basePath && browser) {
+                  suppressNextNavGuard();
+                  goto(basePath);
+                }
+              }, 1500);
+            } else {
               setTimeout(() => cancelEdit(), 1500);
             }
             directApplying = false;
@@ -442,9 +485,12 @@
 
   function handleCancel() {
     const doCancel = () => {
+      // Capture before cancelEdit() resets isCreateMode
+      const wasCreate = $isCreateMode;
       cancelEdit();
       // In create mode, navigate back to the base path
-      if ($isCreateMode && basePath) {
+      if (wasCreate && basePath) {
+        suppressNextNavGuard();
         goto(basePath);
       }
     };
@@ -495,11 +541,13 @@
       setTimeout(() => {
         if (changeType === 'Create') {
           // For creates, go back to base path
+          suppressNextNavGuard();
           goto(basePath);
         } else {
           // For updates, go to the entity view (remove edit mode)
           cancelEdit();
           if (entityName) {
+            suppressNextNavGuard();
             goto(`${basePath}/${encodeURIComponentSafe(entityName)}`);
           }
         }
@@ -514,7 +562,7 @@
 </script>
 
 {#if $editMode}
-  <div class="edit-action-bar">
+  <div class="edit-action-bar" bind:this={barEl}>
     <div class="action-bar-content">
       <div class="status-area">
         {#if statusMessage}

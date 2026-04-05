@@ -334,14 +334,28 @@ export function markSaved() {
 }
 
 /**
- * Clear all pending changes and exit edit mode
+ * Clear all pending changes and exit edit mode.
+ * Also resets create mode — otherwise afterNavigate re-enters edit mode on cancel.
  */
 export function cancelEdit() {
   editMode.set(false);
+  isCreateMode.set(false);
   pendingChanges.set({});
   validationErrors.set({});
   fieldWarnings.set({});
   viewingPendingChange.set(false);
+}
+
+// Flag consumed by WikiPage's beforeNavigate to skip the "unsaved changes" prompt
+// for programmatic navigations triggered by save/submit/direct-apply flows.
+let _skipNextNavGuard = false;
+export function suppressNextNavGuard() {
+  _skipNextNavGuard = true;
+}
+export function consumeNavGuardSuppression() {
+  const flag = _skipNextNavGuard;
+  _skipNextNavGuard = false;
+  return flag;
 }
 
 /**
