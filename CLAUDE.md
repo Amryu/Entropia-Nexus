@@ -76,6 +76,8 @@ Use **one** of these — nothing else:
 
 - **`{@const}` placement**: Must be a direct child of `{#each}`, `{#if}`, `{:else if}`, `{:else}`, `{#snippet}`, `{:then}`, `{:catch}`, `<svelte:fragment>`, `<svelte:boundary>` or `<Component>`. NEVER place inside `<tr>`, `<div>`, or other HTML elements. Place it right after `{#each ... as item}` before the `<tr>`/`<div>`.
 - **`$effect` does NOT run during SSR** — don't rely on it for initial state. For streamed data, initialize state to null and resolve promises in `$effect` on the client.
+- **Use `SvelteMap` / `SvelteSet` / `SvelteDate` / `SvelteURL`** from `svelte/reactivity` whenever you need a reactive Map/Set/Date/URL that's *mutated* (`.set`, `.add`, `.delete`, `.clear`). Plain `Map`/`Set` wrapped in `$state(...)` do NOT re-render on mutation — you'd have to reassign with a new instance each time. Only use plain collections in `$state` when you always replace them wholesale (never call their mutation methods).
+- **Capturing props in `$state(...)` initializers** triggers `state_referenced_locally` warnings because Svelte can't tell whether you wanted a live binding or a one-time snapshot. If a snapshot is genuinely intended, wrap the initializer in `untrack(() => ...)` from `svelte` to document the intent and silence the warning.
 
 # UI/Theming
 

@@ -6,6 +6,7 @@
 <script>
   // @ts-nocheck
   import { untrack } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { scoreSearchResult } from '$lib/search.js';
 
   const MAX_ENHANCERS = 10;
@@ -21,19 +22,24 @@
     onapply = () => {}
   } = $props();
 
-  // Working copies — committed to parent only on Apply
-  let selectedArmors = $state(new Set(initialArmorNames));
-  let selectedPlates = $state(new Set(initialPlateNames));
+  // Working copies — committed to parent only on Apply. The dialog
+  // intentionally snapshots the initial props once: re-opening the dialog
+  // creates a fresh instance so the captures are always correct.
+  // SvelteSet/reactive plain objects so mutations trigger reactivity without
+  // manual reassignment.
+  const selectedArmors = new SvelteSet(untrack(() => initialArmorNames));
+  const selectedPlates = new SvelteSet(untrack(() => initialPlateNames));
   // Per-armor enhancer count (overrides global when armor is selected)
-  let armorEnhancers = $state({ ...initialArmorEnhancers });
+  let armorEnhancers = $state(untrack(() => ({ ...initialArmorEnhancers })));
   let armorQuery = $state('');
   let plateQuery = $state('');
 
   // Snapshot of "what was selected last time the query changed". The list is
   // partitioned against this so the order stays stable while the user clicks
   // checkboxes; it only re-shuffles when they type/clear the search.
-  let armorSelectionSnapshot = $state(new Set(initialArmorNames));
-  let platesSelectionSnapshot = $state(new Set(initialPlateNames));
+  // These are reassigned wholesale (no mutation), so a plain Set in $state works.
+  let armorSelectionSnapshot = $state(untrack(() => new Set(initialArmorNames)));
+  let platesSelectionSnapshot = $state(untrack(() => new Set(initialPlateNames)));
   $effect(() => {
     const _q = armorQuery;
     armorSelectionSnapshot = new Set(untrack(() => selectedArmors));
@@ -99,7 +105,6 @@
         armorEnhancers[name] = defaultEnhancers;
       }
     }
-    selectedArmors = new Set(selectedArmors);
   }
 
   function setArmorEnhancer(name, raw) {
@@ -111,18 +116,17 @@
   function togglePlate(name) {
     if (selectedPlates.has(name)) selectedPlates.delete(name);
     else selectedPlates.add(name);
-    selectedPlates = new Set(selectedPlates);
   }
 
   function clearArmors() {
-    selectedArmors = new Set();
+    selectedArmors.clear();
   }
   function clearPlates() {
-    selectedPlates = new Set();
+    selectedPlates.clear();
   }
   function clearAll() {
-    selectedArmors = new Set();
-    selectedPlates = new Set();
+    selectedArmors.clear();
+    selectedPlates.clear();
   }
 
   function apply() {
@@ -146,8 +150,21 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="pool-dialog-backdrop" onclick={onclose} role="presentation">
-  <div class="pool-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Configure pool">
+<div
+  class="pool-dialog-backdrop"
+  onclick={onclose}
+  onkeydown={(e) => { if (e.key === 'Escape') onclose(); }}
+  role="presentation"
+>
+  <div
+    class="pool-dialog"
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => e.stopPropagation()}
+    role="dialog"
+    aria-modal="true"
+    aria-label="Configure pool"
+    tabindex="-1"
+  >
     <header class="dialog-header">
       <h3>Configure candidate pool</h3>
       <button class="close-btn" onclick={onclose} aria-label="Close">×</button>
