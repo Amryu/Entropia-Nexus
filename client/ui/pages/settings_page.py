@@ -1992,14 +1992,12 @@ class SettingsPage(QWidget):
     def _on_audio_device_changed(self, _idx):
         """Update system audio device and restart meter."""
         self._schedule_save()
-        if self._game_meter_buf is not None:
-            self._restart_game_meter()
+        self._restart_game_meter()
 
     def _on_mic_device_changed(self, _idx):
         """Update mic device immediately when the dropdown changes."""
         self._schedule_save()
-        if self._mic_filtered_meter is not None:
-            self._restart_mic_meter()
+        self._restart_mic_meter()
 
     # --- Audio level meters ---
 
@@ -2026,6 +2024,11 @@ class SettingsPage(QWidget):
         if self._meter_timer is not None:
             return  # already running
 
+        # Capture device values on the main thread — Qt widgets must not be
+        # accessed from background threads.
+        self._meter_game_device = self._clip_audio_device.currentData() or None
+        self._meter_mic_device = self._clip_mic_device.currentData() or None
+
         # Start buffers in background to avoid WASAPI device open lag
         threading.Thread(
             target=self._open_meter_buffers, daemon=True,
@@ -2038,13 +2041,16 @@ class SettingsPage(QWidget):
         self._meter_timer.start()
 
     def _open_meter_buffers(self) -> None:
-        """Open audio meter buffers (runs in background thread)."""
+        """Open audio meter buffers (runs in background thread).
+
+        Device values are captured on the main thread (via _start_meters)
+        and passed here to avoid Qt widget access from a background thread.
+        """
         from ...capture.audio_buffer import AudioBuffer
 
         # System audio (loopback)
         try:
-            device = self._clip_audio_device.currentData() or None
-            buf = AudioBuffer(device=device, loopback=True)
+            buf = AudioBuffer(device=self._meter_game_device, loopback=True)
             buf.start()
             self._game_meter_buf = buf
         except Exception as e:
@@ -2053,11 +2059,9 @@ class SettingsPage(QWidget):
         # Mic — filtered through FFmpeg pipeline
         try:
             from ..dialogs.audio_filter_dialogs import _FilteredMicMeter
-            mic_device = self._clip_mic_device.currentData() or None
-            mic_gain = self._config.clip_audio_mic_gain
             meter = _FilteredMicMeter(
-                mic_device=mic_device,
-                mic_gain=mic_gain,
+                mic_device=self._meter_mic_device,
+                mic_gain=self._config.clip_audio_mic_gain,
                 filters=self._build_mic_filter_dict(),
                 ffmpeg_path=self._config.ffmpeg_path,
             )
@@ -2097,6 +2101,8 @@ class SettingsPage(QWidget):
         """Restart system audio meter with the currently selected device."""
         old = self._game_meter_buf
         self._game_meter_buf = None
+        # Capture device on main thread — Qt widgets must not be read from BG threads
+        device = self._clip_audio_device.currentData() or None
 
         def _swap():
             if old is not None:
@@ -2106,7 +2112,6 @@ class SettingsPage(QWidget):
                     pass
             try:
                 from ...capture.audio_buffer import AudioBuffer
-                device = self._clip_audio_device.currentData() or None
                 buf = AudioBuffer(device=device, loopback=True)
                 buf.start()
                 self._game_meter_buf = buf
@@ -2119,6 +2124,8 @@ class SettingsPage(QWidget):
         """Restart filtered mic meter with current device and filters."""
         old = self._mic_filtered_meter
         self._mic_filtered_meter = None
+        # Capture device on main thread — Qt widgets must not be read from BG threads
+        mic_device = self._clip_mic_device.currentData() or None
 
         def _swap():
             if old is not None:
@@ -2128,11 +2135,9 @@ class SettingsPage(QWidget):
                     pass
             try:
                 from ..dialogs.audio_filter_dialogs import _FilteredMicMeter
-                mic_device = self._clip_mic_device.currentData() or None
-                mic_gain = self._config.clip_audio_mic_gain
                 meter = _FilteredMicMeter(
                     mic_device=mic_device,
-                    mic_gain=mic_gain,
+                    mic_gain=self._config.clip_audio_mic_gain,
                     filters=self._build_mic_filter_dict(),
                     ffmpeg_path=self._config.ffmpeg_path,
                 )
