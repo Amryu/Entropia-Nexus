@@ -16,6 +16,59 @@ REPORT_INTERVAL = 30  # seconds between reports
 MIN_CPU_PCT = 1.0     # only report threads using more than this % of one core
 
 
+def _get_thread_module(tid: int) -> str:
+    """Try to identify which DLL/module a native thread belongs to.
+
+    Uses NtQueryInformationThread to get the start address, then
+    GetModuleHandleEx + GetModuleFileName to resolve the module.
+    """
+    import sys
+    if sys.platform != "win32":
+        return ""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        ntdll = ctypes.windll.ntdll
+
+        THREAD_QUERY_INFORMATION = 0x0040
+        handle = kernel32.OpenThread(THREAD_QUERY_INFORMATION, False, tid)
+        if not handle:
+            return f"(OpenThread failed: {ctypes.get_last_error()})"
+
+        try:
+            # NtQueryInformationThread class 9 = ThreadQuerySetWin32StartAddress
+            start_addr = ctypes.c_void_p()
+            status = ntdll.NtQueryInformationThread(
+                handle, 9, ctypes.byref(start_addr),
+                ctypes.sizeof(start_addr), None,
+            )
+            if status != 0:
+                return f"(NtQuery failed: 0x{status:08x})"
+
+            addr = start_addr.value
+            if not addr:
+                return "(start address is NULL)"
+
+            # GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS = 4
+            mod_handle = wintypes.HMODULE()
+            ok = kernel32.GetModuleHandleExW(
+                4, ctypes.c_void_p(addr), ctypes.byref(mod_handle),
+            )
+            if not ok or not mod_handle:
+                return f"(module not found for addr 0x{addr:016x})"
+
+            buf = ctypes.create_unicode_buffer(260)
+            kernel32.GetModuleFileNameW(mod_handle, buf, 260)
+            kernel32.FreeLibrary(mod_handle)
+            return f"start=0x{addr:016x} module={buf.value}"
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception as e:
+        return f"(error: {e})"
+
+
 class ThreadProfiler:
     """Background thread that logs per-thread CPU usage."""
 
@@ -105,8 +158,15 @@ class ThreadProfiler:
                 all_tids = set(curr.keys())
                 py_tids = set(py_threads.keys())
                 native_tids = all_tids - py_tids
+                # Try to resolve the module for hot native threads
+                hot_tid = entries[0][1] if entries and entries[0][1] not in py_tids else None
+                mod_info = ""
+                if hot_tid:
+                    mod_info = _get_thread_module(hot_tid)
                 lines = [f"Thread inventory: {len(all_tids)} total, "
                          f"{len(py_tids)} Python, {len(native_tids)} native"]
+                if mod_info:
+                    lines.append(f"  HOT TID {hot_tid}: {mod_info}")
                 for tid in sorted(native_tids):
                     u, s = curr.get(tid, (0, 0))
                     lines.append(f"  native TID {tid:6d}  "
