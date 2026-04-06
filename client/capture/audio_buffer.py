@@ -223,11 +223,18 @@ class AudioBuffer:
         Conversion to numpy is deferred to :meth:`snapshot`.
         """
         owner = self
+        logged = [False]
 
         def _callback(in_data, frame_count, time_info, status_flags):
             if not owner._running:
                 return (None, pyaudio.paContinue)
             try:
+                if not logged[0]:
+                    logged[0] = True
+                    import ctypes
+                    tid = ctypes.windll.kernel32.GetCurrentThreadId()
+                    log.info("PortAudio callback thread TID=%d (ch=%d)",
+                             tid, channels)
                 ts = time.monotonic()
                 owner._last_callback_time = ts
                 with owner._lock:
