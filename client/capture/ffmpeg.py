@@ -356,7 +356,7 @@ def get_encoder_args(
 
     elif encoder == "libx265":
         args.extend(["-c:v", "libx265"])
-        args.extend(["-preset", "veryfast" if realtime else "fast"])
+        args.extend(["-preset", "superfast" if realtime else "fast"])
         args.extend(["-crf", q])
         args.extend(["-pix_fmt", "yuv420p"])
         args.extend(["-threads", str(get_encode_thread_count(threads))])
@@ -366,7 +366,7 @@ def get_encoder_args(
     else:
         # Default: libx264
         args.extend(["-c:v", "libx264"])
-        args.extend(["-preset", "veryfast" if realtime else "fast"])
+        args.extend(["-preset", "superfast" if realtime else "fast"])
         args.extend(["-crf", q])
         args.extend(["-pix_fmt", "yuv420p"])
         args.extend(["-threads", str(get_encode_thread_count(threads))])
