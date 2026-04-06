@@ -25,6 +25,10 @@ from ..core.logger import get_logger
 
 log = get_logger("CRNN")
 
+# Track import failures so we don't retry (a failed onnxruntime import
+# can leave behind a spinning native thread pool).
+_BROKEN_IMPORTS: set[str] = set()
+
 # ── Model download ───────────────────────────────────────────────────────────
 
 _MODEL_URL = (
@@ -172,7 +176,23 @@ def _ensure_session():
             return _session
         _load_attempted = True
         try:
-            import onnxruntime as ort
+            # Guard: a failed onnxruntime import (DLL init error) leaves
+            # behind a spinning native thread pool that burns an entire
+            # CPU core.  If a previous attempt already failed, don't retry.
+            if "onnxruntime" in _BROKEN_IMPORTS:
+                return None
+            try:
+                import onnxruntime as ort
+            except (ImportError, OSError) as e:
+                _BROKEN_IMPORTS.add("onnxruntime")
+                log.warning("onnxruntime unavailable: %s", e)
+                if "DLL" in str(e):
+                    log.warning(
+                        "This usually means the Visual C++ 2015-2022 "
+                        "Redistributable is missing or corrupted. "
+                        "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                    )
+                return None
 
             model_path = _download_model()
             if model_path is None:
@@ -205,15 +225,6 @@ def _ensure_session():
                 return None
 
             log.info("CRNN model loaded (%s, 1 thread)", model_path.name)
-        except ImportError as e:
-            log.warning("Failed to load CRNN model: %s", e)
-            if "DLL" in str(e):
-                log.warning(
-                    "This usually means the Visual C++ 2015-2022 Redistributable "
-                    "is missing or corrupted. Download it from: "
-                    "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-                )
-            _session = None
         except Exception as e:
             log.warning("Failed to load CRNN model: %s", e)
             _session = None
