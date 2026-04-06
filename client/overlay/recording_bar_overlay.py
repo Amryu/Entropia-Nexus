@@ -15,7 +15,7 @@ from .overlay_widget import OverlayWidget
 from ..core.config import save_config
 from ..core.constants import EVENT_CONFIG_CHANGED, EVENT_HOTKEY_TRIGGERED
 from ..core.logger import get_logger
-from ..capture.constants import DEFAULT_CLIP_DIR, get_bitrate
+from ..capture.constants import DEFAULT_CLIP_DIR, estimate_bitrate_bps
 from ..ui.icons import (
     svg_icon, SCREENSHOT, CLIP, RECORD_CIRCLE, STOP_SQUARE, GALLERY,
 )
@@ -557,20 +557,9 @@ class RecordingBarOverlay(OverlayWidget):
         except OSError:
             return None
 
-        br_str = get_bitrate(
+        bps = estimate_bitrate_bps(
             self._config.clip_resolution, self._config.clip_bitrate
         )
-        # Parse "8M" or "1500k" to bytes/sec
-        try:
-            if br_str.endswith("M"):
-                bps = float(br_str[:-1]) * 1_000_000
-            elif br_str.endswith("k"):
-                bps = float(br_str[:-1]) * 1_000
-            else:
-                bps = 8_000_000
-        except (ValueError, TypeError):
-            bps = 8_000_000
-
         bytes_per_sec = bps / 8
         if bytes_per_sec <= 0:
             return None

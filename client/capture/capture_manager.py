@@ -44,12 +44,12 @@ from ..core.logger import get_logger
 from ..ocr.capturer import resolve_clip_backend
 from ..platform import backend as _platform
 from .constants import (
-    BITRATE_TABLE,
     DEFAULT_CLIP_DIR,
     DEFAULT_SCREENSHOT_DIR,
     FILENAME_TIMESTAMP_FMT,
     RESOLUTION_PRESETS,
     SEGMENT_DURATION_S,
+    get_cqp,
     get_encode_thread_count,
     get_ffmpeg_flags,
     get_ffmpeg_scale_flag,
@@ -287,7 +287,7 @@ class CaptureManager:
             "fps": fps,
             "target_res": target_res,
             "resolution_key": resolution_key,
-            "bitrate": BITRATE_TABLE.get((resolution_key, cfg.clip_bitrate), "8M"),
+            "cqp": get_cqp(cfg.clip_bitrate),
             "seg_duration": SEGMENT_DURATION_S,
             "encode_priority": getattr(cfg, "clip_encode_priority", "below_normal"),
             "encode_threads": getattr(cfg, "clip_encode_threads", 0),
@@ -332,7 +332,7 @@ class CaptureManager:
                 width=frame_w,
                 height=frame_h,
                 fps=p["fps"],
-                bitrate=p["bitrate"],
+                cqp=p["cqp"],
                 on_segment=self._on_segment_complete,
                 encode_priority=p["encode_priority"],
                 encode_threads=p["encode_threads"],
@@ -359,8 +359,8 @@ class CaptureManager:
 
             self._effects_processor.start()
             self._encode_first = True
-            log.info("Encode-first pipeline active: %dx%d @%dfps %s",
-                     frame_w, frame_h, p["fps"], p["bitrate"])
+            log.info("Encode-first pipeline active: %dx%d @%dfps CQP %d",
+                     frame_w, frame_h, p["fps"], p["cqp"])
 
         except Exception:
             log.exception("Encode-first pipeline failed to start — using JPEG fallback")
@@ -1384,7 +1384,7 @@ class CaptureManager:
         clip_cfg = {
             "fps": cfg.clip_fps,
             "resolution": cfg.clip_resolution,
-            "bitrate": cfg.clip_bitrate,
+            "quality": cfg.clip_bitrate,
             "blur_regions": copy.deepcopy(cfg.capture_blur_regions),
             "mic_filters": {
                 "noise_suppression": cfg.clip_audio_noise_suppression,
@@ -1562,7 +1562,7 @@ class CaptureManager:
                 output_path=output_path,
                 fps=c.get("fps", 30),
                 resolution=c.get("resolution", "source"),
-                bitrate=c.get("bitrate", "medium"),
+                quality=c.get("quality", "medium"),
                 blur_regions=c.get("blur_regions"),
                 thumb_time=thumb_time,
                 mic_filters=c.get("mic_filters"),
@@ -1661,8 +1661,7 @@ class CaptureManager:
 
         # FFmpeg command — video-only, audio muxed on stop
         fps = max(1, self._config.clip_fps)
-        bitrate_val = BITRATE_TABLE.get(
-            (self._config.clip_resolution, self._config.clip_bitrate), "8M")
+        cqp_val = get_cqp(self._config.clip_bitrate)
 
         cmd = [ffmpeg, "-y",
                "-f", "rawvideo", "-pix_fmt", "bgr24",
@@ -1685,7 +1684,7 @@ class CaptureManager:
         encoder = getattr(self._config, "clip_video_encoder", "libx264")
         threads = getattr(self._config, "clip_encode_threads", 0)
         cmd.extend(get_encoder_args(
-            encoder, bitrate_val, threads=threads, realtime=True,
+            encoder, cqp_val, threads=threads, realtime=True,
         ))
         cmd.extend(["-an", str(self._rec_temp_video)])
 

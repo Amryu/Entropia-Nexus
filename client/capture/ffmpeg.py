@@ -310,15 +310,20 @@ def detect_encoders(ffmpeg_path: str) -> list[tuple[str, str, str]]:
 
 def get_encoder_args(
     encoder: str,
-    bitrate: str,
+    cqp: int,
     threads: int = 0,
     realtime: bool = False,
 ) -> list[str]:
     """Build FFmpeg codec arguments for the given encoder.
 
+    Uses constant-quality (CQP/CRF) rate control so every frame gets the
+    bits it needs — high-motion scenes automatically receive more bitrate.
+    This matches the approach used by OBS Studio for recording.
+
     Args:
         encoder: Config key (e.g. ``"libx264"``, ``"h264_nvenc"``).
-        bitrate: Bitrate string (e.g. ``"6M"``).
+        cqp: Quality value (CQP for HW encoders, CRF for libx264/libx265).
+             Lower = better quality + larger files.  Typical: 16–28.
         threads: Thread count for CPU encoders (0 = auto).
         realtime: True for recording/segments (faster preset), False for
                   clip encoding (better quality preset).
@@ -328,30 +333,31 @@ def get_encoder_args(
     from .constants import get_encode_thread_count
 
     args = []
+    q = str(cqp)
 
     if encoder == "h264_nvenc" or encoder == "hevc_nvenc":
         args.extend(["-c:v", encoder])
-        args.extend(["-preset", "p1" if realtime else "p4"])
+        args.extend(["-preset", "p5" if realtime else "p5"])
         args.extend(["-tune", "ll" if realtime else "hq"])
-        args.extend(["-b:v", bitrate])
+        args.extend(["-rc", "constqp", "-qp", q])
         args.extend(["-pix_fmt", "yuv420p"])
 
     elif encoder == "h264_amf" or encoder == "hevc_amf":
         args.extend(["-c:v", encoder])
-        args.extend(["-quality", "speed" if realtime else "balanced"])
-        args.extend(["-b:v", bitrate])
+        args.extend(["-quality", "speed" if realtime else "quality"])
+        args.extend(["-rc", "cqp", "-qp_i", q, "-qp_p", q, "-qp_b", q])
         args.extend(["-pix_fmt", "yuv420p"])
 
     elif encoder == "h264_qsv" or encoder == "hevc_qsv":
         args.extend(["-c:v", encoder])
-        args.extend(["-preset", "veryfast" if realtime else "faster"])
-        args.extend(["-b:v", bitrate])
+        args.extend(["-preset", "faster" if realtime else "faster"])
+        args.extend(["-global_quality", q])
         args.extend(["-pix_fmt", "yuv420p"])
 
     elif encoder == "libx265":
         args.extend(["-c:v", "libx265"])
-        args.extend(["-preset", "ultrafast" if realtime else "fast"])
-        args.extend(["-b:v", bitrate])
+        args.extend(["-preset", "veryfast" if realtime else "fast"])
+        args.extend(["-crf", q])
         args.extend(["-pix_fmt", "yuv420p"])
         args.extend(["-threads", str(get_encode_thread_count(threads))])
         if realtime:
@@ -360,8 +366,8 @@ def get_encoder_args(
     else:
         # Default: libx264
         args.extend(["-c:v", "libx264"])
-        args.extend(["-preset", "ultrafast" if realtime else "fast"])
-        args.extend(["-b:v", bitrate])
+        args.extend(["-preset", "veryfast" if realtime else "fast"])
+        args.extend(["-crf", q])
         args.extend(["-pix_fmt", "yuv420p"])
         args.extend(["-threads", str(get_encode_thread_count(threads))])
         if realtime:

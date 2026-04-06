@@ -53,7 +53,7 @@ class SegmentEncoder:
         width: Frame width in pixels.
         height: Frame height in pixels.
         fps: Target frame rate (used for keyframe interval and ``-r``).
-        bitrate: FFmpeg bitrate string (e.g. ``"6M"``).
+        cqp: Quality value (CQP/CRF).  Lower = better quality.
         on_segment: Callback ``(path: Path, start_time: float, end_time: float)``
                     invoked when a segment file is complete.
         encode_priority: Process priority.
@@ -68,7 +68,7 @@ class SegmentEncoder:
         width: int,
         height: int,
         fps: int,
-        bitrate: str,
+        cqp: int,
         on_segment,
         encode_priority: str = "below_normal",
         encode_threads: int = 0,
@@ -81,7 +81,7 @@ class SegmentEncoder:
         self._width = width
         self._height = height
         self._fps = max(1, fps)
-        self._bitrate = bitrate
+        self._cqp = cqp
         self._on_segment = on_segment
         self._on_error = on_error
         self._priority = encode_priority
@@ -268,7 +268,7 @@ class SegmentEncoder:
             cmd.extend(["-filter_complex", blur_vf])
 
         cmd.extend(get_encoder_args(
-            self._video_encoder, self._bitrate,
+            self._video_encoder, self._cqp,
             threads=self._threads, realtime=True,
         ))
         cmd.extend([
@@ -288,9 +288,9 @@ class SegmentEncoder:
         ])
 
         log.info(
-            "Starting segment encoder: %dx%d @%dfps, %s bitrate, %d threads, "
+            "Starting segment encoder: %dx%d @%dfps, CQP %d, %d threads, "
             "%ds segments, %d blur regions -> %s",
-            self._width, self._height, self._fps, self._bitrate,
+            self._width, self._height, self._fps, self._cqp,
             self._threads, self._seg_duration, len(self._blur_regions),
             self._seg_dir,
         )

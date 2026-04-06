@@ -14,8 +14,8 @@ except ImportError:
 from ..core.logger import get_logger
 from .audio_utils import apply_gain, build_mic_filter, write_wav
 from .constants import (
-    BITRATE_TABLE,
     RESOLUTION_PRESETS,
+    get_cqp,
     get_encode_thread_count,
     get_ffmpeg_flags,
     get_ffmpeg_scale_flag,
@@ -34,7 +34,7 @@ def write_clip(
     output_path,
     fps: int = 30,
     resolution: str = "source",
-    bitrate: str = "medium",
+    quality: str = "medium",
     blur_regions: list[dict] | None = None,
     mic_filters: dict | None = None,
     webcam_position_x: float = 0.88,
@@ -68,7 +68,7 @@ def write_clip(
         output_path: Where to write the MP4.
         fps: Target frame rate.
         resolution: Resolution preset key.
-        bitrate: Bitrate preset key.
+        quality: Quality preset key (low/medium/high/ultra).
         blur_regions: List of normalized blur region dicts.
         mic_filters: Dict of mic filter toggles + parameter values.
         webcam_position_x: Normalized X center for webcam overlay.
@@ -123,8 +123,8 @@ def write_clip(
     if has_mic:
         mic_pcm = apply_gain(mic_pcm, mic_gain)
 
-    # Look up bitrate
-    bitrate_val = BITRATE_TABLE.get((resolution, bitrate), "8M")
+    # Look up quality
+    cqp_val = get_cqp(quality)
 
     # Compute effective FPS from actual frame timestamps for proper A/V sync.
     # The configured fps is the target rate, but actual capture timing varies.
@@ -184,7 +184,7 @@ def write_clip(
             cmd.extend(["-vf", ",".join(vf_parts)])
 
         cmd.extend(get_encoder_args(
-            video_encoder, bitrate_val,
+            video_encoder, cqp_val,
             threads=encode_threads, realtime=False,
         ))
 
@@ -222,8 +222,8 @@ def write_clip(
 
         cmd.extend([str(temp_output)])
 
-        log.info("Encoding clip: %d frames, %s, %s bitrate -> %s",
-                 len(frames), resolution, bitrate_val, output_path)
+        log.info("Encoding clip: %d frames, %s, CQP %d -> %s",
+                 len(frames), resolution, cqp_val, output_path)
 
         # Run FFmpeg — set cwd to model directory so arnndn can find the model
         # by filename alone (avoids Windows drive-letter colon in filter path).

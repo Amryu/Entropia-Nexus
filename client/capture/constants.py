@@ -124,52 +124,50 @@ RESOLUTION_PRESETS["720p"] = (1280, 720)
 RESOLUTION_PRESETS["480p"] = (854, 480)
 
 # ---------------------------------------------------------------------------
-# Bitrate calculation
+# Quality presets (CQP / CRF)
 # ---------------------------------------------------------------------------
-# Reference bitrates at 1080p (2 073 600 pixels).  Other resolutions are
-# derived using a power-law scale (exponent 0.75) which tracks the
-# diminishing-returns of spatial redundancy at higher resolutions.
-_REF_PIXELS = 1920 * 1080
-_QUALITY_BPS = {
-    "low":    3_000_000,
-    "medium": 6_000_000,
-    "high":  12_000_000,
-    "ultra": 20_000_000,
+# Constant-quality encoding: each frame gets the bits it needs to maintain
+# the target quality level.  High-motion scenes (camera pans) automatically
+# receive a higher bitrate.  This matches OBS Studio's recording approach.
+#
+# CQP/CRF scale: lower = better quality + larger files.
+# OBS uses 23 for "Indistinguishable" and 16 for "High Quality".
+QUALITY_CQP = {
+    "low":    28,
+    "medium": 23,
+    "high":   18,
+    "ultra":  16,
 }
 
+DEFAULT_CQP = 23
 
-def get_bitrate(resolution_key: str, quality: str) -> str:
-    """Return a bitrate string (e.g. ``'6M'``, ``'1500k'``) for *resolution_key* + *quality*.
 
-    *resolution_key* is a RESOLUTION_PRESETS key (``"source"``, ``"1920x1080"``, etc.).
+def get_cqp(quality: str) -> int:
+    """Return the CQP/CRF value for a quality preset name.
+
     *quality* is one of ``"low"`` / ``"medium"`` / ``"high"`` / ``"ultra"``.
     """
-    ref_bps = _QUALITY_BPS.get(quality)
-    if ref_bps is None:
-        ref_bps = _QUALITY_BPS["medium"]
+    return QUALITY_CQP.get(quality, DEFAULT_CQP)
+
+
+# Rough average bitrate estimates per CQP level at 1080p (for disk-space UI).
+# Actual bitrate varies with scene complexity — these are conservative guesses.
+_REF_PIXELS = 1920 * 1080
+_CQP_EST_BPS = {28: 3_000_000, 23: 6_000_000, 18: 12_000_000, 16: 20_000_000}
+
+
+def estimate_bitrate_bps(resolution_key: str, quality: str) -> float:
+    """Estimate average bits-per-second for a CQP quality level + resolution.
+
+    Used only for disk-space remaining estimates in the UI — not for encoding.
+    """
+    cqp = get_cqp(quality)
+    ref_bps = _CQP_EST_BPS.get(cqp, 6_000_000)
     dims = RESOLUTION_PRESETS.get(resolution_key)
     if dims is None:
-        # "source" or unknown — use 1080p reference as-is
-        bps = ref_bps
-    else:
-        pixels = dims[0] * dims[1]
-        bps = int(ref_bps * (pixels / _REF_PIXELS) ** 0.75)
-    if bps >= 1_000_000:
-        return f"{round(bps / 1_000_000)}M"
-    return f"{round(bps / 1000)}k"
-
-
-# Legacy lookup kept as a thin wrapper so old ``BITRATE_TABLE[(key, quality)]``
-# call sites keep working until migrated.
-class _BitrateLookup:
-    """Dict-like object that delegates to :func:`get_bitrate`."""
-    def get(self, key: tuple[str, str], default: str = "8M") -> str:
-        try:
-            return get_bitrate(key[0], key[1])
-        except Exception:
-            return default
-
-BITRATE_TABLE = _BitrateLookup()
+        return float(ref_bps)
+    pixels = dims[0] * dims[1]
+    return ref_bps * (pixels / _REF_PIXELS) ** 0.75
 
 # ---------------------------------------------------------------------------
 # Scaling / interpolation
