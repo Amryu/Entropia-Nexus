@@ -225,8 +225,11 @@ class AudioBuffer:
         owner = self  # prevent lookup through changing self._buffer ref
 
         def _callback(in_data, frame_count, time_info, status_flags):
+            # Always return paContinue — stream termination is handled by
+            # stop_stream().  Returning paComplete on WASAPI can cause
+            # PortAudio to spin-call the callback in a tight loop.
             if not owner._running:
-                return (None, pyaudio.paComplete)
+                return (None, pyaudio.paContinue)
             try:
                 ts = time.monotonic()
                 owner._last_callback_time = ts
