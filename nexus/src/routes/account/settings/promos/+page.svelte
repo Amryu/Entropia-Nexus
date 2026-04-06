@@ -1,10 +1,12 @@
 <!--
   @component Promo Dashboard
   Overview cards showing promo stats and quick links.
+  Shows a landing page for logged-out users.
 -->
 <script>
   // @ts-nocheck
   import '$lib/style.css';
+  import { page } from '$app/stores';
 
   let { data } = $props();
 
@@ -14,8 +16,54 @@
   let totalViews = $derived(data.totalViews ?? 0);
   let totalClicks = $derived(data.totalClicks ?? 0);
   let ctr = $derived(totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(2) : '0.00');
+
+  let loginUrl = $derived(`/discord/login?redirect=${encodeURIComponent($page.url.pathname)}`);
 </script>
 
+{#if data.loggedOut}
+<div class="scroll-container">
+  <div class="landing-container">
+    <h1>Promote on Entropia Nexus</h1>
+    <p class="landing-subtitle">
+      Reach the Entropia Universe community with self-serve promotions.
+      Create ad creatives, book placement slots, and track performance — all from your dashboard.
+    </p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </span>
+        <h3>Create Promos</h3>
+        <p>Design placement banners or featured posts with your own images and text.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </span>
+        <h3>Book Slots</h3>
+        <p>Reserve weekly placement slots on high-traffic pages. Pay in PED.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </span>
+        <h3>Track Performance</h3>
+        <p>Monitor views, clicks, and click-through rate in real time.</p>
+      </div>
+    </div>
+
+    <div class="login-cta">
+      <a href={loginUrl} class="login-btn">
+        <svg width="20" height="20" viewBox="0 0 71 55" fill="currentColor">
+          <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.7 40.7 0 00-1.8 3.7 54 54 0 00-16.2 0A38 38 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 5a.2.2 0 00-.1 0C1.5 18.7-.9 32 .3 45.2v.1a58.9 58.9 0 0018 9.1.2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.8 38.8 0 01-5.5-2.7.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 42 42 0 0035.6 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .3 36.4 36.4 0 01-5.5 2.7.2.2 0 00-.1.3 47.2 47.2 0 003.6 5.9.2.2 0 00.2.1 58.7 58.7 0 0018-9.1v-.1c1.4-15-2.3-28-9.8-39.6a.2.2 0 00-.1-.1zM23.7 37c-3.4 0-6.2-3.1-6.2-7s2.7-7 6.2-7 6.3 3.2 6.2 7-2.8 7-6.2 7zm23 0c-3.4 0-6.2-3.1-6.2-7s2.7-7 6.2-7 6.3 3.2 6.2 7-2.8 7-6.2 7z"/>
+        </svg>
+        Log in with Discord to get started
+      </a>
+    </div>
+  </div>
+</div>
+{:else}
 <div class="scroll-container">
   <div class="page-container">
     <div class="breadcrumb">
@@ -88,6 +136,7 @@
     </div>
   </div>
 </div>
+{/if}
 
 <style>
   .scroll-container {
@@ -218,6 +267,96 @@
 
     .action-grid {
       grid-template-columns: 1fr;
+    }
+  }
+
+  /* Landing page for logged-out users */
+
+  .landing-container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem;
+    text-align: center;
+  }
+
+  .landing-container h1 {
+    font-size: 2rem;
+    margin: 0 0 1rem;
+    color: var(--text-color);
+  }
+
+  .landing-subtitle {
+    font-size: 1.05rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin: 0 0 2.5rem;
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+
+  .feature-card {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem 1rem;
+  }
+
+  .feature-icon {
+    display: inline-flex;
+    color: var(--accent-color);
+    margin-bottom: 0.75rem;
+  }
+
+  .feature-card h3 {
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+    color: var(--text-color);
+  }
+
+  .feature-card p {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .login-cta {
+    display: flex;
+    justify-content: center;
+  }
+
+  .login-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #5865F2;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+
+  .login-btn:hover {
+    background: #4752C4;
+  }
+
+  @media (max-width: 768px) {
+    .features-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .landing-container {
+      padding: 2rem 1rem;
     }
   }
 </style>

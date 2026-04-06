@@ -2,7 +2,8 @@
 import { getPromosByOwner, getPromoBookingsByUser } from '$lib/server/db.js';
 
 export async function load({ locals }) {
-  const user = locals.session.user;
+  const user = locals.session?.user;
+  if (!user) return { loggedOut: true };
 
   const [promos, bookings] = await Promise.all([
     getPromosByOwner(user.id),
