@@ -418,6 +418,13 @@ class FrameDistributor:
                 except Exception:
                     pass
 
+            # If no subscriber is active and we're not boosted, skip capture
+            if not self._boosts and not any(
+                s.enabled for s in self._subscriptions
+            ):
+                self._sleep_remainder(tick_start, IDLE_INTERVAL_S)
+                continue
+
             # Refresh geometry periodically (every ~1s worth of ticks)
             if self._tick_count % max(1, int(self._base_hz)) == 0:
                 self._game_geometry = _platform.get_window_geometry(self._game_hwnd)
