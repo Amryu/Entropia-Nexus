@@ -9,6 +9,8 @@
   /** @type {Props} */
   let { children } = $props();
 
+  let loggedIn = $derived(!!$page.data.session?.user);
+
   const navItems = [
     {
       heading: 'Promos',
@@ -40,6 +42,7 @@
 </svelte:head>
 
 <div class="settings-layout">
+  {#if loggedIn}
   <aside class="settings-sidebar" class:mobile-open={mobileSidebarOpen}>
     <h2 class="settings-title">Settings</h2>
     <nav>
@@ -73,6 +76,7 @@
     </svg>
     Settings
   </button>
+  {/if}
 
   <div class="settings-content">
     {@render children?.()}
