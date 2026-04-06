@@ -32,20 +32,20 @@ export async function execute(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`trade_done_yes_${tradeRequest.id}`)
-      .setLabel('Adjust order quantities')
+      .setLabel('Trade completed — adjust quantities')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`trade_done_no_${tradeRequest.id}`)
-      .setLabel('Close without adjusting')
+      .setLabel('No trade happened — cancel')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`trade_done_cancel_${tradeRequest.id}`)
-      .setLabel('Cancel')
+      .setLabel('Go back')
       .setStyle(ButtonStyle.Danger),
   );
 
   await interaction.reply({
-    content: '**Close Trade Thread** — Should the order quantities be adjusted to reflect traded amounts?',
+    content: '**Close Trade Thread** — Did the trade go through?',
     components: [row],
     flags: 64
   });

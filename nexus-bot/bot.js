@@ -250,11 +250,14 @@ client.on(Events.InteractionCreate, async interaction => {
           if (reduced.length > 0) parts.push(`${reduced.length} order(s) adjusted`);
           if (closed.length > 0) parts.push(`${closed.length} order(s) closed (quantity depleted)`);
           summary = parts.length > 0 ? `\n${parts.join(', ')}.` : '\nNo orders needed adjustment.';
+          publicMsg = `\ud83d\udd12 **Trade Completed** — This trade thread has been closed by <@${interaction.user.id}>. Thread will be locked and archived.`;
+          await updateTradeRequestStatus(requestId, 'completed');
+        } else {
+          summary = '\nTrade cancelled — no quantities adjusted.';
+          publicMsg = `\ud83d\udd12 **Trade Cancelled** — This trade thread has been closed by <@${interaction.user.id}>. Thread will be locked and archived.`;
+          await updateTradeRequestStatus(requestId, 'cancelled');
         }
 
-        publicMsg = `\ud83d\udd12 **Thread Closed** — This trade thread has been closed by <@${interaction.user.id}>. Thread will be locked and archived.`;
-
-        await updateTradeRequestStatus(requestId, 'completed');
         await interaction.update({ content: `Thread closed.${summary}`, components: [] });
 
         // Send public message and lock/archive the thread

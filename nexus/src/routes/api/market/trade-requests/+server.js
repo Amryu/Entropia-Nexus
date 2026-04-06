@@ -2,6 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import { hasGrant, isOAuthRequest } from '$lib/server/auth.js';
 import { getOrCreateTradeRequest, getUserTradeRequests } from '$lib/server/trade-requests.js';
+import { createNotification } from '$lib/server/db.js';
 import { PLANETS } from '$lib/server/exchange.js';
 
 function getVerifiedUser(locals) {
@@ -80,6 +81,19 @@ export async function POST({ request, locals, fetch }) {
 
   try {
     const result = await getOrCreateTradeRequest(user.id, targetId, planet, items, fetch);
+
+    if (result.isNew) {
+      const requesterName = user.eu_name || user.global_name || user.username || 'Someone';
+      const itemCount = items.length;
+      try {
+        await createNotification(
+          targetId,
+          'Trade',
+          `${requesterName} sent you a trade request with ${itemCount} item${itemCount !== 1 ? 's' : ''}.`
+        );
+      } catch { /* don't block response on notification failure */ }
+    }
+
     return getResponse(result, result.isNew ? 201 : 200);
   } catch (err) {
     // Unique constraint violation = open request already exists (race condition)
