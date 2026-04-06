@@ -80,8 +80,7 @@
   let singleNonCustomItem = $derived(!customized && itemSet && itemSet.items?.length === 1);
   let firstItemId = $derived(itemSet?.items?.[0]?.id || null);
 
-  function handleItemSetCreated(e) {
-    const result = e.detail;
+  function handleItemSetCreated(result) {
     itemSet = {
       id: result.id,
       items: result.data?.items || [],

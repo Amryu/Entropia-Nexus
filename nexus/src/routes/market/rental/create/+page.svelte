@@ -6,7 +6,7 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
-  import { goto } from '$app/navigation';
+  import { goto, beforeNavigate } from '$app/navigation';
   import { apiPost, apiCall, apiDelete } from '$lib/util';
   import { RENTAL_ALLOWED_ITEM_TYPES } from '$lib/common/itemTypes.js';
   import RentalPricingEditor from '$lib/components/rental/RentalPricingEditor.svelte';
@@ -29,8 +29,7 @@
   // The created item set for this rental (1:1 relationship)
   let itemSet = $state(null);       // { id, items, loadoutId? }
 
-  function handleItemSetCreated(e) {
-    const result = e.detail;
+  function handleItemSetCreated(result) {
     itemSet = {
       id: result.id,
       items: result.data?.items || []
@@ -205,6 +204,15 @@
     }
   }
 
+  // Clean up orphaned item set when navigating away without submitting
+  let submitted = false;
+
+  beforeNavigate(() => {
+    if (!submitted && itemSet) {
+      apiDelete(fetch, `/api/itemsets/${itemSet.id}`);
+    }
+  });
+
   // Form data
   let title = $state('');
   let description = $state('');
@@ -254,6 +262,7 @@
         return;
       }
 
+      submitted = true;
       addToast('Rental offer created as draft.', { type: 'success' });
       goto(`/market/rental/${result.id}/edit?new=1`);
     } catch (err) {
