@@ -371,20 +371,22 @@ class ProcessAudioBuffer:
                     break
                 try:
                     data, frames, flags, pos, qpc = cc.GetBuffer()
-                    if data and frames > 0:
-                        if flags & 0x2:  # AUDCLNT_BUFFERFLAGS_SILENT
-                            chunk = np.zeros((frames, self._channels),
-                                             dtype=np.float32)
-                        else:
-                            buf = (ctypes.c_char * (frames * bytes_per_frame)
-                                   ).from_address(data)
-                            chunk = np.frombuffer(
-                                bytes(buf), dtype=np.float32,
-                            ).reshape(-1, self._channels).copy()
-                        ts = time.monotonic()
-                        with self._lock:
-                            self._buffer.append((ts, chunk))
-                    cc.ReleaseBuffer(frames)
+                    try:
+                        if data and frames > 0:
+                            if flags & 0x2:  # AUDCLNT_BUFFERFLAGS_SILENT
+                                chunk = np.zeros((frames, self._channels),
+                                                 dtype=np.float32)
+                            else:
+                                buf = (ctypes.c_char * (frames * bytes_per_frame)
+                                       ).from_address(data)
+                                chunk = np.frombuffer(
+                                    bytes(buf), dtype=np.float32,
+                                ).reshape(-1, self._channels).copy()
+                            ts = time.monotonic()
+                            with self._lock:
+                                self._buffer.append((ts, chunk))
+                    finally:
+                        cc.ReleaseBuffer(frames)
                 except Exception:
                     log.debug("Process audio read error", exc_info=True)
                     break

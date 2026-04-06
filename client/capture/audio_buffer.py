@@ -61,6 +61,14 @@ class AudioBuffer:
         self._lock = threading.Lock()
         self._stream_lock = threading.Lock()  # protects stream open/close
 
+        # Callback liveness: updated by the callback, checked by the monitor.
+        # If the callback hasn't fired for STALL_TIMEOUT_S while the stream is
+        # supposedly active, the stream is silently dead (e.g. device pulled)
+        # and needs a restart.
+        self._last_callback_time: float = 0.0
+        STALL_TIMEOUT_S = 10  # seconds with no callbacks → restart
+        self._stall_timeout = STALL_TIMEOUT_S
+
         # Device monitoring
         self._monitor_thread: threading.Thread | None = None
         self._last_default_device = None
@@ -186,6 +194,7 @@ class AudioBuffer:
             )
             self._channels = channels
             self._sample_rate = sample_rate
+            self._last_callback_time = time.monotonic()
             # Resize buffer for actual sample rate
             max_chunks = int(MAX_AUDIO_BUFFER_S * sample_rate / BLOCK_SIZE) + 1
             with self._lock:
@@ -220,6 +229,7 @@ class AudioBuffer:
                 return (None, pyaudio.paComplete)
             try:
                 ts = time.monotonic()
+                owner._last_callback_time = ts
                 chunk = np.frombuffer(
                     in_data, dtype=np.float32,
                 ).reshape(-1, channels).copy()
@@ -527,15 +537,7 @@ class AudioBuffer:
         self._device = device
         if self._running:
             with self._stream_lock:
-                self._close_stream()
-                # Reinitialize PyAudio to refresh the device list
-                if self._pa:
-                    try:
-                        self._pa.terminate()
-                    except Exception:
-                        pass
-                self._pa = pyaudio.PyAudio()
-                self._open_stream()
+                self._restart_stream(f"device changed to: {device or 'default'}")
 
     def _start_device_monitor(self) -> None:
         """Start a thread that monitors for default device changes."""
@@ -545,32 +547,62 @@ class AudioBuffer:
         )
         self._monitor_thread.start()
 
+    def _restart_stream(self, reason: str) -> None:
+        """Reinitialize PyAudio and reopen the stream.
+
+        Called by the device monitor when a device change or stalled
+        callback is detected.  Must be called with ``_stream_lock`` held.
+        """
+        log.info("Restarting audio stream: %s", reason)
+        self._close_stream()
+        if self._pa:
+            try:
+                self._pa.terminate()
+            except Exception:
+                pass
+        self._pa = pyaudio.PyAudio()
+        self._open_stream()
+
     def _device_monitor_loop(self) -> None:
-        """Poll for changes to the default audio device.
+        """Poll for default-device changes and stalled callbacks.
 
         Uses sounddevice (lightweight) to check the current default,
         then reinitializes the PyAudioWPatch stream if it changed.
+        Also restarts the stream if the callback hasn't fired for
+        ``_stall_timeout`` seconds, which indicates a silently-dead
+        stream (e.g. device pulled or PortAudio error).
         """
         kind = "output" if self._loopback else "input"
         while self._running:
             try:
+                restart_reason = None
+
+                # Check default device change
                 if not self._device and sd is not None:
                     current = sd.query_devices(kind=kind)
                     current_name = current.get("name") if current else None
                     if (self._last_default_device is not None
                             and current_name != self._last_default_device):
-                        log.info("Default %s device changed to: %s",
-                                 kind, current_name)
-                        with self._stream_lock:
-                            self._close_stream()
-                            if self._pa:
-                                try:
-                                    self._pa.terminate()
-                                except Exception:
-                                    pass
-                            self._pa = pyaudio.PyAudio()
-                            self._open_stream()
+                        restart_reason = (
+                            f"default {kind} device changed to: {current_name}"
+                        )
                     self._last_default_device = current_name
+
+                # Check callback liveness — if the stream is open but
+                # the callback hasn't fired, the stream is silently dead.
+                if (restart_reason is None
+                        and self._stream is not None
+                        and self._last_callback_time > 0):
+                    silence = time.monotonic() - self._last_callback_time
+                    if silence > self._stall_timeout:
+                        restart_reason = (
+                            f"callback stalled for {silence:.0f}s"
+                        )
+
+                if restart_reason:
+                    with self._stream_lock:
+                        self._restart_stream(restart_reason)
+
             except Exception:
                 pass
             time.sleep(5)
