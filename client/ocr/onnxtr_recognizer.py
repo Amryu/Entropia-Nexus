@@ -25,9 +25,10 @@ from ..core.logger import get_logger
 
 log = get_logger("CRNN")
 
-# Track import failures so we don't retry (a failed onnxruntime import
-# can leave behind a spinning native thread pool).
-_BROKEN_IMPORTS: set[str] = set()
+# A failed onnxruntime import (DLL init error) leaves behind a native
+# thread pool that busy-loops at 100% CPU.  We use a sentinel file so
+# the broken import only happens once *ever*, not once per session.
+_ORT_BROKEN_SENTINEL = Path("~/.entropia-nexus/.ort_broken").expanduser()
 
 # ── Model download ───────────────────────────────────────────────────────────
 
@@ -177,14 +178,19 @@ def _ensure_session():
         _load_attempted = True
         try:
             # Guard: a failed onnxruntime import (DLL init error) leaves
-            # behind a spinning native thread pool that burns an entire
-            # CPU core.  If a previous attempt already failed, don't retry.
-            if "onnxruntime" in _BROKEN_IMPORTS:
+            # behind a native thread pool that busy-loops at 100% CPU.
+            # A sentinel file persists the failure across sessions so the
+            # broken import never happens again.
+            if _ORT_BROKEN_SENTINEL.exists():
+                log.info(
+                    "onnxruntime previously failed to load — skipping.  "
+                    "Delete %s to retry after installing VC++ runtime.",
+                    _ORT_BROKEN_SENTINEL,
+                )
                 return None
             try:
                 import onnxruntime as ort
             except (ImportError, OSError) as e:
-                _BROKEN_IMPORTS.add("onnxruntime")
                 log.warning("onnxruntime unavailable: %s", e)
                 if "DLL" in str(e):
                     log.warning(
@@ -192,6 +198,13 @@ def _ensure_session():
                         "Redistributable is missing or corrupted. "
                         "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe"
                     )
+                try:
+                    _ORT_BROKEN_SENTINEL.parent.mkdir(parents=True, exist_ok=True)
+                    _ORT_BROKEN_SENTINEL.write_text(
+                        "onnxruntime import failed. Delete this file to retry.\n"
+                    )
+                except OSError:
+                    pass
                 return None
 
             model_path = _download_model()
