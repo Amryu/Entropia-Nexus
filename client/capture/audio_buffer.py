@@ -57,7 +57,7 @@ class AudioBuffer:
         self._running = False
 
         max_chunks = int(MAX_AUDIO_BUFFER_S * sample_rate / BLOCK_SIZE) + 1
-        self._buffer: deque[tuple[float, np.ndarray]] = deque(maxlen=max_chunks)
+        self._buffer: deque[tuple[float, bytes]] = deque(maxlen=max_chunks)
         self._lock = threading.Lock()
         self._stream_lock = threading.Lock()  # protects stream open/close
 
@@ -217,27 +217,21 @@ class AudioBuffer:
     def _make_callback(self, channels: int):
         """Create a PortAudio stream callback with a fixed channel count.
 
-        Captures *channels* at stream-open time so the callback never reads
-        ``self._channels``, which can change during device switches.  The
-        entire body is wrapped in ``try/except`` because any unhandled
-        exception on the native PortAudio thread causes a segfault.
+        The callback stores raw bytes and a timestamp — nothing else.
+        PortAudio's WASAPI polling mode fires ~600 callbacks/sec with
+        small packets; numpy/GIL work at that rate saturates a core.
+        Conversion to numpy is deferred to :meth:`snapshot`.
         """
-        owner = self  # prevent lookup through changing self._buffer ref
+        owner = self
 
         def _callback(in_data, frame_count, time_info, status_flags):
-            # Always return paContinue — stream termination is handled by
-            # stop_stream().  Returning paComplete on WASAPI can cause
-            # PortAudio to spin-call the callback in a tight loop.
             if not owner._running:
                 return (None, pyaudio.paContinue)
             try:
                 ts = time.monotonic()
                 owner._last_callback_time = ts
-                chunk = np.frombuffer(
-                    in_data, dtype=np.float32,
-                ).reshape(-1, channels).copy()
                 with owner._lock:
-                    owner._buffer.append((ts, chunk))
+                    owner._buffer.append((ts, in_data))
             except Exception:
                 pass
             return (None, pyaudio.paContinue)
@@ -257,18 +251,23 @@ class AudioBuffer:
 
         Returns a float32 numpy array of shape (samples, channels), or None.
         """
+        ch = self._channels
         with self._lock:
             chunks = []
-            for ts, data in self._buffer:
+            for ts, raw in self._buffer:
                 if ts < start_time:
                     continue
                 if ts > end_time:
                     break
-                chunks.append(data)
+                chunks.append(raw)
 
         if not chunks:
             return None
-        return np.concatenate(chunks, axis=0)
+        # Decode raw bytes → numpy on the caller's thread (not PortAudio's)
+        pcm = np.frombuffer(b"".join(chunks), dtype=np.float32)
+        if ch > 1:
+            pcm = pcm.reshape(-1, ch)
+        return pcm
 
     def clear(self) -> None:
         with self._lock:
