@@ -86,15 +86,16 @@ class ThreadProfiler:
                 pct = (total / elapsed) * 100.0
                 if pct >= MIN_CPU_PCT:
                     name = py_threads.get(tid, f"TID-{tid}")
-                    entries.append((name, tid, du, ds, pct))
+                    entries.append((name, tid, du, ds, pct, u2, s2))
 
             if entries:
                 entries.sort(key=lambda e: -e[4])
                 lines = [f"Thread CPU usage ({elapsed:.0f}s window):"]
-                for name, tid, du, ds, pct in entries:
+                for name, tid, du, ds, pct, u_total, s_total in entries:
                     lines.append(
                         f"  {name:30s}  TID {tid:6d}  "
-                        f"user={du:.2f}s  sys={ds:.2f}s  ({pct:.1f}%)"
+                        f"user={du:.2f}s  sys={ds:.2f}s  ({pct:.1f}%)  "
+                        f"[total: user={u_total:.1f}s sys={s_total:.1f}s]"
                     )
                 log.info("\n".join(lines))
 
