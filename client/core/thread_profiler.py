@@ -54,6 +54,7 @@ class ThreadProfiler:
             return
 
         prev_time = time.monotonic()
+        first_report = True
 
         while self._running:
             time.sleep(REPORT_INTERVAL)
@@ -97,6 +98,19 @@ class ThreadProfiler:
                         f"user={du:.2f}s  sys={ds:.2f}s  ({pct:.1f}%)  "
                         f"[total: user={u_total:.1f}s sys={s_total:.1f}s]"
                     )
+                log.info("\n".join(lines))
+
+            if first_report:
+                first_report = False
+                all_tids = set(curr.keys())
+                py_tids = set(py_threads.keys())
+                native_tids = all_tids - py_tids
+                lines = [f"Thread inventory: {len(all_tids)} total, "
+                         f"{len(py_tids)} Python, {len(native_tids)} native"]
+                for tid in sorted(native_tids):
+                    u, s = curr.get(tid, (0, 0))
+                    lines.append(f"  native TID {tid:6d}  "
+                                 f"user={u:.1f}s  sys={s:.1f}s")
                 log.info("\n".join(lines))
 
             prev = curr
