@@ -1138,6 +1138,10 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
     freeze_detector = FreezeDetector()
     freeze_detector.start()
     freeze_detector.arm()
+
+    from .core.thread_profiler import ThreadProfiler
+    thread_profiler = ThreadProfiler()
+    thread_profiler.start()
     _sigint_extras.update(
         freeze_detector=freeze_detector,
         main_window=main_window,
