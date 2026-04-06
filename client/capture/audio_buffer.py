@@ -182,7 +182,7 @@ class AudioBuffer:
                 frames_per_buffer=BLOCK_SIZE,
                 input=True,
                 input_device_index=dev_info["index"],
-                stream_callback=self._audio_callback,
+                stream_callback=self._make_callback(channels),
             )
             self._channels = channels
             self._sample_rate = sample_rate
@@ -205,17 +205,31 @@ class AudioBuffer:
                 pass
             self._stream = None
 
-    def _audio_callback(self, in_data, frame_count, time_info, status_flags):
-        """Called by PyAudioWPatch on the audio thread with new PCM data."""
-        if status_flags:
-            log.debug("Audio status flags: %d", status_flags)
-        ts = time.monotonic()
-        chunk = np.frombuffer(in_data, dtype=np.float32).reshape(
-            -1, self._channels,
-        ).copy()
-        with self._lock:
-            self._buffer.append((ts, chunk))
-        return (None, pyaudio.paContinue)
+    def _make_callback(self, channels: int):
+        """Create a PortAudio stream callback with a fixed channel count.
+
+        Captures *channels* at stream-open time so the callback never reads
+        ``self._channels``, which can change during device switches.  The
+        entire body is wrapped in ``try/except`` because any unhandled
+        exception on the native PortAudio thread causes a segfault.
+        """
+        owner = self  # prevent lookup through changing self._buffer ref
+
+        def _callback(in_data, frame_count, time_info, status_flags):
+            if not owner._running:
+                return (None, pyaudio.paComplete)
+            try:
+                ts = time.monotonic()
+                chunk = np.frombuffer(
+                    in_data, dtype=np.float32,
+                ).reshape(-1, channels).copy()
+                with owner._lock:
+                    owner._buffer.append((ts, chunk))
+            except Exception:
+                pass
+            return (None, pyaudio.paContinue)
+
+        return _callback
 
     # ------------------------------------------------------------------
     # Buffer access
