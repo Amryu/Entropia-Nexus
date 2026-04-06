@@ -448,6 +448,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
 
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
+    workers.extend(_start_skill_data_collector(
+        config, event_bus, nexus_client, db, config_path, oauth))
     # Hunt tracker must subscribe to EVENT_CATCHUP_COMPLETE before the chat
     # watcher starts, otherwise a fast catchup (empty log) can race ahead.
     if is_dev_build():
@@ -1583,6 +1585,21 @@ def _start_radar_detector(config, event_bus, frame_cache=None, config_path="conf
     except Exception as e:
         log.error("Radar detector failed to start: %s", e)
     return workers
+
+
+def _start_skill_data_collector(config, event_bus, nexus_client, db, config_path, oauth):
+    """Start the anonymized skill data collector. Returns list of stoppable workers."""
+    try:
+        from .skills.skill_data_collector import SkillDataCollector
+        collector = SkillDataCollector(
+            event_bus=event_bus, nexus_client=nexus_client,
+            config=config, db=db, config_path=config_path, oauth=oauth,
+        )
+        collector.start()
+        return [collector]
+    except Exception as e:
+        log.error("Skill data collector failed to start: %s", e)
+        return []
 
 
 def _start_ingestion(config, event_bus, nexus_client, db=None):

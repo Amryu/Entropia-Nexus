@@ -894,6 +894,42 @@ class NexusClient:
             self._handle_error(e, "ingest market prices")
             return None
 
+    def ingest_skill_data(self, payload: dict) -> dict | None:
+        """POST /api/ingestion/skill-data — submit anonymized skill data.
+
+        Raises RateLimitError on 429, ServerError on 5xx/network errors.
+        Returns None on 4xx client errors (data is bad, no point retrying).
+        """
+        data = gzip.compress(json.dumps(payload).encode())
+        headers = self._auth_headers("ingest skill data")
+        if headers is None:
+            return None
+        headers["Content-Encoding"] = "gzip"
+        headers["Content-Type"] = "application/json"
+        try:
+            resp = self._session.post(
+                self._url("/ingestion/skill-data"),
+                headers=headers,
+                data=data,
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                retry_after = resp.json().get("retryAfter", 60)
+                raise RateLimitError(retry_after)
+            if resp.status_code >= 500:
+                raise ServerError(f"{resp.status_code} {resp.reason}")
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except requests.ConnectionError as e:
+            raise ServerError(str(e)) from e
+        except requests.Timeout as e:
+            raise ServerError(str(e)) from e
+        except Exception as e:
+            self._handle_error(e, "ingest skill data")
+            return None
+
     def get_ingame_prices(self) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?all=true — fetch latest market price snapshots."""
         try:

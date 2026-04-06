@@ -652,6 +652,22 @@ class Database:
             )
             return {row[0]: row[1] for row in cur.fetchall()}
 
+    def get_skill_gains_raw(self, since_ts: int = 0) -> list[dict]:
+        """Return raw skill gain events since a timestamp for skill data upload.
+
+        Returns [{"ts": int, "skill_id": int, "amount": float}, ...] ordered by ts.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT ts, skill_id, amount FROM skill_gains "
+                "WHERE ts >= ? ORDER BY ts",
+                (since_ts,)
+            )
+            return [
+                {"ts": row[0], "skill_id": row[1], "amount": row[2]}
+                for row in cur.fetchall()
+            ]
+
     def get_skill_gains_before(self, before_ts: int) -> dict[int, float]:
         """Sum skill gains per skill_id before a Unix timestamp.
 

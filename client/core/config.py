@@ -218,6 +218,12 @@ class AppConfig:
     ingestion_upload_interval_seconds: int = 30
     ingestion_receive_interval_seconds: int = 60
 
+    # Anonymized skill data collection
+    skill_data_opted_in: bool = False
+    skill_data_prompt_shown: bool = False
+    skill_data_accumulated_gains: float = 0.0
+    skill_data_last_upload_ts: int = 0
+
     # Character name (fallback for own-global detection when not logged in)
     character_name: str = ""
 
@@ -475,6 +481,10 @@ DEFAULTS = {
     "ingestion_enabled": True,
     "ingestion_upload_interval_seconds": 30,
     "ingestion_receive_interval_seconds": 60,
+    "skill_data_opted_in": False,
+    "skill_data_prompt_shown": False,
+    "skill_data_accumulated_gains": 0.0,
+    "skill_data_last_upload_ts": 0,
     "character_name": "",
     "screenshot_enabled": True,
     "screenshot_auto_on_global": True,

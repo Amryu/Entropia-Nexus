@@ -48,6 +48,9 @@ EVENT_TOOL_COST_FILTER_CHANGED = "tool_cost_filter_changed"
 # Event names — Skills upload
 EVENT_SKILLS_UPLOADED = "skills_uploaded"
 EVENT_SKILLS_UPLOAD_FAILED = "skills_upload_failed"
+EVENT_SKILL_DATA_OPTIN_PROMPT = "skill_data_optin_prompt"
+EVENT_SKILL_DATA_OPTIN_RESULT = "skill_data_optin_result"
+EVENT_SKILL_DATA_UPLOAD_STATUS = "skill_data_upload_status"
 
 # Event names — Config / Hotkeys
 EVENT_CONFIG_CHANGED = "config_changed"

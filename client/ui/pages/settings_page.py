@@ -728,6 +728,15 @@ class SettingsPage(QWidget):
         scan_roi_row.addStretch()
         layout.addLayout(scan_roi_row)
 
+        self._skill_data_cb = QCheckBox("Contribute anonymized skill data")
+        self._skill_data_cb.setToolTip(
+            "Share skill gain rates and current values (anonymized) to\n"
+            "help build community tools like a Time-to-Train calculator."
+        )
+        self._skill_data_cb.setChecked(self._config.skill_data_opted_in)
+        self._skill_data_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._skill_data_cb)
+
         # Separator
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
@@ -2441,6 +2450,7 @@ class SettingsPage(QWidget):
         self._config.overlay_opacity = self._opacity_slider.value() / 100.0
         self._config.auto_pin_detail_overlay = self._auto_pin_cb.isChecked()
         self._config.overlay_enabled = self._skill_scanner_cb.isChecked()
+        self._config.skill_data_opted_in = self._skill_data_cb.isChecked()
         self._config.ocr_capture_backend = (
             self._ocr_capture_backend.currentData() or "auto"
         )

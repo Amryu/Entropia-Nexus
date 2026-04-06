@@ -657,6 +657,7 @@ class SkillsPage(QWidget):
         if event_bus:
             signals.config_changed.connect(self._on_config_changed)
         signals.skill_gain.connect(self._on_skill_gain)
+        signals.skill_data_optin_prompt.connect(self._on_skill_data_optin_prompt)
 
         # Debounce resize → avoids rebuilding grid on every pixel
         self._resize_timer = QTimer(self)
@@ -3276,6 +3277,23 @@ class SkillsPage(QWidget):
         if self._scan_skill_rows:
             self._refresh_skills_display()
             self._refresh_prof_display()
+
+    # ── Skill Data Contribution ──────────────────────────────────────────
+
+    def _on_skill_data_optin_prompt(self, _scan_result):
+        """Show the opt-in dialog when the collector requests it."""
+        from ..dialogs.skill_data_optin_dialog import SkillDataOptinDialog
+        from ...core.constants import EVENT_SKILL_DATA_OPTIN_RESULT
+
+        dlg = SkillDataOptinDialog(parent=self)
+        dlg.exec()
+
+        result = {
+            "accepted": dlg.accepted_result,
+            "skills_changed": dlg.skills_changed,
+        }
+        if self._event_bus:
+            self._event_bus.publish(EVENT_SKILL_DATA_OPTIN_RESULT, result)
 
     # ── Import / Export ─────────────────────────────────────────────────
 

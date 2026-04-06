@@ -37,6 +37,8 @@ from ..core.constants import (
     EVENT_OCR_PROGRESS,
     EVENT_SKILL_GAIN,
     EVENT_SKILL_SCANNED,
+    EVENT_SKILL_DATA_OPTIN_PROMPT,
+    EVENT_SKILL_DATA_UPLOAD_STATUS,
     EVENT_SKILLS_UPLOADED,
     EVENT_SKILLS_UPLOAD_FAILED,
     EVENT_TRADE_CHAT,
@@ -93,6 +95,10 @@ class AppSignals(QObject):
     # Skills upload
     skills_uploaded = pyqtSignal(object)
     skills_upload_failed = pyqtSignal(object)
+
+    # Skill data collection
+    skill_data_optin_prompt = pyqtSignal(object)
+    skill_data_upload_status = pyqtSignal(object)
 
     # Hunt
     hunt_session_started = pyqtSignal(object)
@@ -187,6 +193,8 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_OCR_PAGE_CHANGED: signals.ocr_page_changed,
         EVENT_SKILLS_UPLOADED: signals.skills_uploaded,
         EVENT_SKILLS_UPLOAD_FAILED: signals.skills_upload_failed,
+        EVENT_SKILL_DATA_OPTIN_PROMPT: signals.skill_data_optin_prompt,
+        EVENT_SKILL_DATA_UPLOAD_STATUS: signals.skill_data_upload_status,
         EVENT_HUNT_SESSION_STARTED: signals.hunt_session_started,
         EVENT_HUNT_SESSION_STOPPED: signals.hunt_session_stopped,
         EVENT_HUNT_ENCOUNTER_STARTED: signals.hunt_encounter_started,
