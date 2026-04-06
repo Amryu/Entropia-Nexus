@@ -104,6 +104,10 @@ class ScanSummaryOverlay(OverlayWidget):
         self._total_visible_count = 0  # non-hidden skills count
         self._hidden_skill_names: set[str] = set()
         self._dismissed = False  # True after user/system dismiss; blocks auto-show
+        self._snooze_timer = QTimer(self)
+        self._snooze_timer.setSingleShot(True)
+        self._snooze_timer.setInterval(60_000)  # 1 minute
+        self._snooze_timer.timeout.connect(self._on_snooze_expired)
         self._skills: list[SkillReading] = []
         self._skill_set: set[str] = set()
         self._skill_rows: dict[str, QWidget] = {}  # skill_name → row widget
@@ -381,6 +385,7 @@ class ScanSummaryOverlay(OverlayWidget):
         """Skills window closed or lost — hide overlay (re-shows when scan resumes)."""
         # Allow auto-show again once the Skills window is reopened.
         self._dismissed = False
+        self._snooze_timer.stop()
         self._set_scan_idle()
         self.set_wants_visible(False)
 
@@ -482,6 +487,11 @@ class ScanSummaryOverlay(OverlayWidget):
     def _on_close(self):
         self._dismissed = True
         self.set_wants_visible(False)
+        self._snooze_timer.start()
+
+    def _on_snooze_expired(self):
+        """Re-allow auto-show after snooze period."""
+        self._dismissed = False
 
     def _on_clear(self):
         self._event_bus.publish(EVENT_OCR_CANCEL, None)
