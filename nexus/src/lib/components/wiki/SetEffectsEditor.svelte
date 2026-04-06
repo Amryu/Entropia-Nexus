@@ -77,8 +77,9 @@
   // Show section if has effects or in edit mode
   let shouldShow = $derived($editMode || (effects?.length > 0));
 
-  // Get unit for an effect name from availableEffects list
-  function getEffectUnit(effectName) {
+  // Get unit for an effect name from availableEffects list, with fallback to stored value
+  function getEffectUnit(effectName, storedUnit) {
+    if (storedUnit) return storedUnit;
     if (!effectName || !localAvailableEffects?.length) return '';
     const effect = localAvailableEffects.find(e => e.Name === effectName);
     return effect?.Properties?.Unit || '';
@@ -229,7 +230,7 @@
                       onchange={(e) => updateEffect(effect._originalIndex, 'Strength', parseFloat(e.target.value) || 0)}
                       title="Strength value"
                     />
-                    <span class="effect-unit-display">{getEffectUnit(effect.Name)}</span>
+                    <span class="effect-unit-display">{getEffectUnit(effect.Name, effect.Values?.Unit)}</span>
                   </div>
                 </div>
               {/each}
@@ -280,7 +281,7 @@
             <div class="effect-pieces">{group.pieces} {group.pieces === 1 ? 'Piece' : 'Pieces'}</div>
             {#each group.effects as effect}
               <div class="effect-row">
-                <span class="effect-value">{formatEffectValue(effect.Values?.Strength, getEffectUnit(effect.Name))}</span>
+                <span class="effect-value">{formatEffectValue(effect.Values?.Strength, getEffectUnit(effect.Name, effect.Values?.Unit))}</span>
                 <span class="effect-name">{effect.Name}</span>
               </div>
             {/each}
