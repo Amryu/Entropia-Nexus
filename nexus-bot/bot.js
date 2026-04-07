@@ -3,11 +3,11 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 // js-yaml no longer needed — diff format replaced YAML output
 import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, getChangeByThreadId, setChangeDenied, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
-import { handleReward, fetchEntityForReward } from './changes/rewards.js';
+import { handleReward, fetchEntityForReward, isAuthorizedReviewer, postRewardSummary } from './changes/rewards.js';
 import { getTypeLink, getStateLabel } from './util.js';
 import { renderMapChange } from './mapRenderer.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
@@ -360,6 +360,107 @@ client.on(Events.InteractionCreate, async interaction => {
       } catch (error) {
         console.error('Error handling check-in button:', error);
         await interaction.reply({ content: 'An error occurred.', flags: 64 }).catch(() => {});
+      }
+      return;
+    }
+
+    // Persistent Approve/Deny buttons in change review threads
+    if (customId.startsWith('review_approve_') || customId.startsWith('review_deny_')) {
+      const changeId = parseInt(customId.split('_')[2], 10);
+
+      if (!isAuthorizedReviewer(interaction)) {
+        return interaction.reply({ content: 'You do not have permission to use this.', flags: 64 });
+      }
+
+      const change = await getChangeByThreadId(interaction.channel.id);
+      if (!change || change.id !== changeId) {
+        return interaction.reply({ content: 'No matching change found for this thread.', flags: 64 });
+      }
+      if (change.state === 'Approved' || change.state === 'Denied') {
+        return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: 64 });
+      }
+
+      const thread = interaction.channel;
+
+      if (customId.startsWith('review_approve_')) {
+        const user = await getUserById(change.author_id);
+        if (!user?.verified) {
+          return interaction.reply({ content: 'This user is not verified.', flags: 64 });
+        }
+        if (!user.eu_name) {
+          return interaction.reply({ content: 'The user has not yet set his EU name.', flags: 64 });
+        }
+
+        await interaction.reply({ content: 'Applying changes...', flags: 64 });
+
+        try {
+          const preChangeEntity = await fetchEntityForReward(change);
+
+          if (!(await applyChange(change))) {
+            await thread.send('An error occurred while applying the changes. Please try again later.');
+            return;
+          }
+
+          await setChangeState(change.id, 'Approved');
+          await thread.setName(`[Approved] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+          await thread.send('The changes were approved!');
+
+          // Disable the review buttons
+          try {
+            const messages = await thread.messages.fetch({ limit: 50 });
+            const btnMsg = messages.find(m => m.author.id === interaction.client.user.id &&
+              m.components.some(row => row.components.some(c => c.customId?.startsWith('review_'))));
+            if (btnMsg) await btnMsg.edit({ components: [] });
+          } catch {}
+
+          const archived = await handleReward(interaction.client, thread, change, interaction, preChangeEntity);
+          if (!archived) {
+            const { sendChangeApprovalDm } = await import('./rewards.js');
+            await sendChangeApprovalDm(interaction.client, change.author_id, {
+              changeName: change.data.Name,
+              changeType: change.type,
+              entity: change.entity,
+              rewards: [],
+            });
+            await thread.setArchived(true);
+          }
+        } catch (e) {
+          console.error('[review_approve] Error during approval:', e);
+          try {
+            await thread.send('An error occurred during the approval process. The change may have been partially applied - please check.');
+          } catch {}
+        }
+      } else {
+        // review_deny
+        await interaction.reply({ content: 'Denying changes...', flags: 64 });
+
+        try {
+          await setChangeDenied(change.id, null);
+          await thread.setName(`[Denied] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+          await thread.send('The changes were denied!');
+
+          // Disable the review buttons
+          try {
+            const messages = await thread.messages.fetch({ limit: 50 });
+            const btnMsg = messages.find(m => m.author.id === interaction.client.user.id &&
+              m.components.some(row => row.components.some(c => c.customId?.startsWith('review_'))));
+            if (btnMsg) await btnMsg.edit({ components: [] });
+          } catch {}
+
+          const { sendChangeDenialDm } = await import('./rewards.js');
+          await sendChangeDenialDm(interaction.client, change.author_id, {
+            changeName: change.data.Name,
+            changeType: change.type,
+            entity: change.entity,
+            reason: null,
+          });
+          await thread.setArchived(true);
+        } catch (e) {
+          console.error('[review_deny] Error during denial:', e);
+          try {
+            await thread.send('An error occurred during the denial process.');
+          } catch {}
+        }
       }
       return;
     }
@@ -831,6 +932,23 @@ async function _checkChangesImpl() {
         await thread.send(`A new change has been submitted by <@${change.author_id}>.${reviewerMention} Please post proof to validate your changes and await approval.`);
       } catch (e) {
         console.error(`Failed to send submission message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+      }
+
+      // Post persistent Approve/Deny buttons
+      try {
+        const reviewRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`review_approve_${change.id}`)
+            .setLabel('Approve')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`review_deny_${change.id}`)
+            .setLabel('Deny')
+            .setStyle(ButtonStyle.Danger),
+        );
+        await thread.send({ content: 'Review this change:', components: [reviewRow] });
+      } catch (e) {
+        console.error(`Failed to send review buttons to thread ${thread.id}: ${e.message}`);
       }
 
       const entityPath = getTypeLink(change.data.Name, change.entity, change.data.Planet?.Name ?? null);

@@ -146,6 +146,19 @@ export async function setChangeState(id, state) {
   const values = [id, state];
   await poolUsers.query(query, values);
 }
+export async function setRewardSummaryMessageId(changeId, messageId) {
+  await poolUsers.query(
+    'UPDATE changes SET reward_summary_message_id = $2 WHERE id = $1',
+    [changeId, messageId]
+  );
+}
+export async function getRewardsForChange(changeId) {
+  const { rows } = await poolUsers.query(
+    'SELECT amount, contribution_score, note FROM contributor_rewards WHERE change_id = $1 ORDER BY id',
+    [changeId]
+  );
+  return rows;
+}
 
 export async function setChangeDenied(id, reason = null) {
   await poolUsers.query(

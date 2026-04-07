@@ -87,9 +87,9 @@ export async function execute(interaction) {
     await thread.setName(`[Approved] ${change.type}: ${change.data.Name.substring(0, 80)}`);
     await thread.send('The changes were approved!');
 
-    // Evaluate reward rules and auto-assign or prompt
+    // Evaluate reward rules and prompt ephemerally
     // handleReward sends the combined approval+rewards DM when all prompts resolve
-    const archived = await handleReward(interaction.client, thread, change, preChangeEntity);
+    const archived = await handleReward(interaction.client, thread, change, interaction, preChangeEntity);
     if (!archived) {
       // No matching reward rules — send approval-only DM
       await sendChangeApprovalDm(interaction.client, change.author_id, {

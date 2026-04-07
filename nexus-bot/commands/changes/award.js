@@ -6,6 +6,7 @@ import {
   getChangeByThreadId, assignChangeReward,
 } from '../../db.js';
 import { sendRewardDm } from '../../rewards.js';
+import { postRewardSummary } from '../../changes/rewards.js';
 
 export const data = new SlashCommandBuilder()
   .setName('award')
@@ -73,7 +74,11 @@ export async function execute(interaction) {
     amount, contribution_score: score, note,
   });
 
-  await interaction.reply(`Manual reward assigned: **${amount.toFixed(2)} PED**${score > 0 ? ` (+${score} score)` : ''} — ${note}`);
+  await interaction.reply({
+    content: `Manual reward assigned: **${amount.toFixed(2)} PED**${score > 0 ? ` (+${score} score)` : ''} - ${note}`,
+    flags: MessageFlags.Ephemeral,
+  });
 
-  await interaction.channel.setArchived(true).catch(() => {});
+  // Update the public reward summary message
+  await postRewardSummary(interaction.channel, change);
 }
