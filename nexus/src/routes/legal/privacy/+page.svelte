@@ -66,10 +66,10 @@
         </p>
         <ul>
           <li><strong>Essential cookies:</strong> Login/session functionality and basic site operation. These are always active.</li>
-          <li><strong>Advertising cookies:</strong> If you consent, Google AdSense may set cookies for ad personalization and measurement. No advertising cookies are set without your explicit consent.</li>
+          <li><strong>Advertising cookies:</strong> This site displays ads via Google AdSense to support its operation. Non-personalized ads are shown by default without tracking cookies. If you consent, Google may set cookies for ad personalization and measurement to show ads tailored to your interests.</li>
         </ul>
         <p>
-          When you first visit the site, a consent banner allows you to choose whether to allow advertising cookies.
+          When you first visit the site, a consent banner allows you to choose whether to allow personalized advertising.
           You can change your preferences at any time by clicking the button below.
         </p>
         <p>

@@ -35,9 +35,9 @@
     <div class="site-notice-inner">
       <div class="site-notice-content">
         <p class="site-notice-text">
-          This site uses cookies to function.
-          <strong class="site-notice-highlight">Allowing ads helps keep Entropia Nexus free</strong> -
-          no ads will be shown if you decline.
+          <strong class="site-notice-highlight">Ads help keep Entropia Nexus free.</strong>
+          Consenting allows personalized ads based on your interests. Declining still shows ads,
+          but they won't be tailored to you. You can also use an ad blocker if you prefer.
           <a href="/legal/privacy" class="site-notice-link">Privacy Policy</a>
         </p>
 
@@ -54,7 +54,7 @@
             <label class="site-notice-toggle">
               <span class="site-notice-toggle-info">
                 <strong>Advertising</strong>
-                <span class="site-notice-toggle-desc">Google AdSense - ad personalization and measurement</span>
+                <span class="site-notice-toggle-desc">Google AdSense - personalized ads and tracking cookies</span>
               </span>
               <input type="checkbox" bind:checked={adsToggle} />
               <span class="site-notice-switch" class:site-notice-switch-on={adsToggle}></span>
@@ -66,10 +66,10 @@
         {:else}
           <div class="site-notice-actions">
             <button class="site-notice-btn site-notice-btn-allow" onclick={handleAllow}>
-              Allow Google Ads
+              Allow Personalized Ads
             </button>
             <button class="site-notice-btn site-notice-btn-essential" onclick={handleEssential}>
-              Only Essential
+              Non-Personalized Only
             </button>
             <button class="site-notice-btn site-notice-btn-settings" onclick={toggleSettings}>
               Settings

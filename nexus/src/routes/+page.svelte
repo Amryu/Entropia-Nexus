@@ -9,23 +9,22 @@
   import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import PartnerSlot from '$lib/components/PartnerSlot.svelte';
-  import { getAdsConsent, hasDecision, resetConsent } from '$lib/stores/consent.svelte.js';
+  import { resetConsent } from '$lib/stores/consent.svelte.js';
   import { getRevenueBlocked, getRevenueChecked, runRevenueCheck } from '$lib/stores/revenue-state.svelte.js';
   import { browser } from '$app/environment';
 
   let { data } = $props();
 
-  // Run adblock check once ads consent is granted
+  // Run adblock check on mount (ads always load now)
   $effect(() => {
-    if (browser && getAdsConsent() === 'granted' && !getRevenueChecked()) {
+    if (browser && !getRevenueChecked()) {
       runRevenueCheck();
     }
   });
 
-  // During SSR, hide self-promo placeholders (consent state is client-only).
-  // On the client, hide once a consent decision has been made.
-  let selfPromoHidden = $derived(!browser || hasDecision());
-  let showSupportMessage = $derived(browser && getAdsConsent() === 'granted' && getRevenueBlocked());
+  // Self-promo placeholders always hidden on client (ads fill those spots now)
+  let selfPromoHidden = $derived(true);
+  let showSupportMessage = $derived(browser && getRevenueBlocked());
   let hasLeftPromo = $derived((promos?.placements?.left?.length ?? 0) > 0);
   let hasRightPromo = $derived((promos?.placements?.right?.length ?? 0) > 0);
 

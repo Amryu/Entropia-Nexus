@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { loadRevenueScript, activateConsent } from '$lib/revenue-loader.js';
+import { activateConsent } from '$lib/revenue-loader.js';
 
 const STORAGE_KEY = 'nexus.consent.ads';
 
@@ -29,10 +29,9 @@ if (browser) {
 		if (stored === 'granted' || stored === 'denied') {
 			_adsConsent = stored;
 		}
-		// Returning visitor with consent - activate and load script
+		// Returning visitor with consent - activate personalized ads
 		if (stored === 'granted') {
 			activateConsent();
-			loadRevenueScript();
 		}
 	} catch {}
 }
@@ -54,7 +53,6 @@ export function grantAds() {
 		localStorage.setItem('nexus.kofi.dismissed', '1');
 	} catch {}
 	activateConsent();
-	loadRevenueScript();
 	logConsent('granted');
 }
 
