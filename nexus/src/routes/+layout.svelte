@@ -9,6 +9,7 @@
   import ConsentBanner from "$lib/components/ConsentBanner.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
+  import { invalidateAll } from '$app/navigation';
   import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
 
   let { data, children } = $props();
@@ -39,6 +40,42 @@
     );
   });
   
+  // Poll verification status for unverified users every 30s
+  const VERIFICATION_POLL_MS = 30_000;
+  let verificationTimer = null;
+
+  function startVerificationPoll() {
+    stopVerificationPoll();
+    verificationTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/user/verified');
+        if (!res.ok) return;
+        const { verified } = await res.json();
+        if (verified) {
+          stopVerificationPoll();
+          await invalidateAll();
+        }
+      } catch { /* network error, retry next interval */ }
+    }, VERIFICATION_POLL_MS);
+  }
+
+  function stopVerificationPoll() {
+    if (verificationTimer) {
+      clearInterval(verificationTimer);
+      verificationTimer = null;
+    }
+  }
+
+  // Start/stop polling reactively based on user verification state
+  $effect(() => {
+    const user = data?.session?.user;
+    if (user && !user.verified) {
+      startVerificationPoll();
+    } else {
+      stopVerificationPoll();
+    }
+  });
+
   // Viewport cookie storage - debounced to avoid excessive cookie writes
   let viewportDebounceTimer = null;
   const VIEWPORT_COOKIE_NAME = 'nexus_viewport';
@@ -93,6 +130,7 @@
   });
 
   onDestroy(() => {
+    stopVerificationPoll();
     if (viewportDebounceTimer) {
       clearTimeout(viewportDebounceTimer);
     }
