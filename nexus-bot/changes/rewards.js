@@ -5,10 +5,22 @@
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle,
+  PermissionFlagsBits,
 } from 'discord.js';
+import { getConfigValue } from '../bot.js';
 import { getMatchingRewardRules, assignChangeReward } from '../db.js';
 import { compareJson, validate } from '../change.js';
 import { sendChangeApprovalDm } from '../rewards.js';
+
+/** Check if a button interaction is from an authorized reviewer/moderator/admin. */
+function isAuthorizedReviewer(interaction) {
+  const reviewerRoleId = getConfigValue('reviewerRoleId');
+  const moderatorRoleId = getConfigValue('moderatorRoleId');
+  const hasReviewer = reviewerRoleId && interaction.member?.roles?.cache?.has(reviewerRoleId);
+  const hasModerator = moderatorRoleId && interaction.member?.roles?.cache?.has(moderatorRoleId);
+  const isAdmin = interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+  return hasReviewer || hasModerator || isAdmin;
+}
 
 // ─── Entity API helpers ─────────────────────────────────────────────────────
 
@@ -202,6 +214,14 @@ async function promptFixedReward({ thread, change, rule, amount, onDone, rewardR
 
   collector.on('collect', async (btnInteraction) => {
     try {
+      if (!isAuthorizedReviewer(btnInteraction)) {
+        await btnInteraction.reply({
+          content: 'You do not have permission to assign rewards.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
       const customId = btnInteraction.customId;
 
       if (customId === skipButtonId) {
@@ -305,6 +325,14 @@ async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, o
 
   collector.on('collect', async (btnInteraction) => {
     try {
+      if (!isAuthorizedReviewer(btnInteraction)) {
+        await btnInteraction.reply({
+          content: 'You do not have permission to assign rewards.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
       const customId = btnInteraction.customId;
 
       if (customId === skipButtonId) {
