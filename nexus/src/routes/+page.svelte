@@ -9,8 +9,21 @@
   import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import PartnerSlot from '$lib/components/PartnerSlot.svelte';
+  import { getAdsConsent, hasDecision, resetConsent } from '$lib/stores/consent.svelte.js';
+  import { getRevenueBlocked, getRevenueChecked, runRevenueCheck } from '$lib/stores/revenue-state.svelte.js';
+  import { browser } from '$app/environment';
 
   let { data } = $props();
+
+  // Run adblock check once ads consent is granted
+  $effect(() => {
+    if (browser && getAdsConsent() === 'granted' && !getRevenueChecked()) {
+      runRevenueCheck();
+    }
+  });
+
+  let selfPromoHidden = $derived(hasDecision());
+  let showSupportMessage = $derived(getAdsConsent() === 'granted' && getRevenueBlocked());
 
   let { news, events, streams, videos, globals } = $derived(data);
   let promos = $derived(data.promos);
@@ -137,12 +150,12 @@
   <!-- Vertical partner slots for wide screens -->
   <aside class="partner-rail partner-rail-left" aria-label="Partner content">
     <div class="partner-slot partner-vertical" data-slot="left">
-      <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} />
+      <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} {selfPromoHidden} />
     </div>
   </aside>
   <aside class="partner-rail partner-rail-right" aria-label="Partner content">
     <div class="partner-slot partner-vertical" data-slot="right">
-      <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} />
+      <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
     </div>
   </aside>
 
@@ -252,16 +265,16 @@
     <!-- Inline partner slots (visible when side rails are hidden) -->
     <div class="partner-inline partner-inline-pair">
       <div class="partner-slot partner-horizontal" data-slot="top-1">
-        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
       </div>
       <div class="partner-slot partner-horizontal" data-slot="top-2">
-        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
       </div>
     </div>
     <!-- Mobile: single slot after news/events -->
     <div class="partner-inline partner-inline-mobile-1">
       <div class="partner-slot partner-horizontal" data-slot="mobile-1">
-        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
       </div>
     </div>
 
@@ -277,7 +290,7 @@
     <!-- Mobile: single slot after globals -->
     <div class="partner-inline partner-inline-mobile-2">
       <div class="partner-slot partner-horizontal" data-slot="mobile-2">
-        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
       </div>
     </div>
 
@@ -422,6 +435,8 @@
         <a href="/legal/privacy">Privacy Policy</a>
         <span class="footer-divider">|</span>
         <a href="/sitemap">Sitemap</a>
+        <span class="footer-divider">|</span>
+        <button class="footer-link-btn" onclick={resetConsent}>Cookie Preferences</button>
       </div>
       <p class="footer-copyright">&copy; 2024&ndash;2026 Entropia Nexus</p>
     </div>
@@ -1174,8 +1189,19 @@
     font-size: 0.8125rem;
   }
 
-  .footer-links a:hover {
+  .footer-links a:hover,
+  .footer-link-btn:hover {
     text-decoration: underline;
+  }
+
+  .footer-link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent-color);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    cursor: pointer;
   }
 
   .footer-divider {

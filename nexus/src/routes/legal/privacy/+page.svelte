@@ -5,7 +5,9 @@
 <script>
   import '$lib/style.css';
 
-  const lastUpdated = 'January 31, 2025';
+  import { resetConsent } from '$lib/stores/consent.svelte.js';
+
+  const lastUpdated = 'April 7, 2026';
 </script>
 
 <svelte:head>
@@ -60,14 +62,18 @@
 
         <h3>1.3 Cookies</h3>
         <p>
-          The Service may use cookies or similar technologies for:
+          The Service uses cookies or similar technologies for:
         </p>
         <ul>
-          <li>Login/session functionality</li>
-          <li>Basic site operation</li>
+          <li><strong>Essential cookies:</strong> Login/session functionality and basic site operation. These are always active.</li>
+          <li><strong>Advertising cookies:</strong> If you consent, Google AdSense may set cookies for ad personalization and measurement. No advertising cookies are set without your explicit consent.</li>
         </ul>
         <p>
-          We do not use cookies for advertising or tracking across websites.
+          When you first visit the site, a consent banner allows you to choose whether to allow advertising cookies.
+          You can change your preferences at any time by clicking the button below.
+        </p>
+        <p>
+          <button class="change-preferences-btn" onclick={resetConsent}>Change Cookie Preferences</button>
         </p>
       </section>
 
@@ -121,6 +127,12 @@
         <p>
           The Service relies on Discord for authentication. Use of Discord is subject to Discord's own
           Privacy Policy and Terms of Service.
+        </p>
+        <p>
+          If you consent to advertising cookies, the Service uses Google AdSense to display advertisements.
+          Google may collect data and use cookies for ad personalization and performance measurement,
+          subject to <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.
+          You may manage Google's ad personalization at <a href="https://adssettings.google.com" target="_blank" rel="noopener">Google Ad Settings</a>.
         </p>
         <p>
           We are not responsible for the privacy practices of third-party services.
@@ -272,6 +284,23 @@
 
   .legal-section a:hover {
     text-decoration: underline;
+  }
+
+  .change-preferences-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    background: var(--hover-color);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .change-preferences-btn:hover {
+    background: var(--border-color);
+    border-color: var(--accent-color);
   }
 
   .legal-nav {

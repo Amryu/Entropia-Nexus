@@ -84,8 +84,9 @@
       document.addEventListener('keydown', handleGlobalKeydown);
 
       // Ko-fi support prompt tracking
+      // Skip entirely if user already consented to ads (no double-dipping)
       try {
-        if (!localStorage.getItem('nexus.kofi.dismissed')) {
+        if (!localStorage.getItem('nexus.kofi.dismissed') && localStorage.getItem('nexus.consent.ads') !== 'granted') {
           const snoozed = localStorage.getItem('nexus.kofi.snoozed');
           const isSnoozed = snoozed && new Date(snoozed).getTime() > Date.now();
 

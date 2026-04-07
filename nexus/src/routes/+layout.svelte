@@ -6,6 +6,7 @@
 
   import Menu from "$lib/components/Menu.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
+  import ConsentBanner from "$lib/components/ConsentBanner.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
   import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
@@ -155,7 +156,7 @@
   <link rel="manifest" href="/site.webmanifest">
   <link rel="alternate" type="application/rss+xml" title="Entropia Nexus" href="/feed.xml">
 </svelte:head>
-{#if !isEmbed}<Toasts />{/if}
+{#if !isEmbed}<Toasts /><ConsentBanner />{/if}
 <div class="app-layout">
   {#if !isEmbed}
     <Menu user={data?.session?.user} realUser={data?.session?.realUser} />

@@ -1,14 +1,22 @@
 <!--
   @component PartnerSlot
-  Renders an active promo image or a self-promo placeholder.
+  Renders an active promo image, a self-promo placeholder, or a support message.
 
   Props:
   - promos: array of active promos for this slot (may be empty)
-  - variant: 'vertical' | 'horizontal' — determines which image to show
+  - variant: 'vertical' | 'horizontal' - determines which image to show
   - rotationIndex: number for picking which promo from the array
+  - selfPromoHidden: hide the self-promo placeholder (when ads are active or consent decided)
+  - showSupportMessage: show "support us" message instead (adblock detected)
 -->
 <script>
-  let { promos = [], variant = 'horizontal', rotationIndex = 0 } = $props();
+  let {
+    promos = [],
+    variant = 'horizontal',
+    rotationIndex = 0,
+    selfPromoHidden = false,
+    showSupportMessage = false
+  } = $props();
 
   let promo = $derived(
     promos.length > 0 ? promos[rotationIndex % promos.length] : null
@@ -34,7 +42,19 @@
     </a>
     <a href="/account/settings/promos" class="partner-promo-cta">Place yours here</a>
   </div>
-{:else}
+{:else if showSupportMessage}
+  <div
+    class="partner-content partner-support-msg"
+    class:partner-content-vertical={variant === 'vertical'}
+    class:partner-content-horizontal={variant === 'horizontal'}
+  >
+    <span class="partner-content-icon">EN</span>
+    <div class="partner-content-text">
+      <span class="partner-content-heading">Support Entropia Nexus</span>
+      <span class="partner-content-sub">We rely on ads to keep this resource free. Consider allowing our site in your content filter.</span>
+    </div>
+  </div>
+{:else if !selfPromoHidden}
   <a
     href="/account/settings/promos"
     class="partner-content"
@@ -203,6 +223,11 @@
   .partner-content-vertical .partner-content-text {
     align-items: center;
     gap: 6px;
+  }
+
+  /* Support message variant - not clickable, no hover underline */
+  .partner-support-msg {
+    cursor: default;
   }
 
   @media (max-width: 599px) {
