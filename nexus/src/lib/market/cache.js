@@ -584,6 +584,7 @@ if (typeof window === 'undefined') {
     scheduleFull();
     scheduleItems();
     scheduleOfferCounts();
+    closeUntradeableOrders().catch(() => {});
     scheduleUntradeableCleanup();
   } catch {}
 }
