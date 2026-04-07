@@ -146,6 +146,12 @@ export async function setChangeState(id, state) {
   const values = [id, state];
   await poolUsers.query(query, values);
 }
+export async function getPendingChangesWithThreads() {
+  const { rows } = await poolUsers.query(
+    `SELECT id, thread_id FROM changes WHERE state IN ('Draft', 'Pending') AND thread_id IS NOT NULL`
+  );
+  return rows;
+}
 export async function setRewardSummaryMessageId(changeId, messageId) {
   await poolUsers.query(
     'UPDATE changes SET reward_summary_message_id = $2 WHERE id = $1',

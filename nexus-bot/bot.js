@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 // js-yaml no longer needed — diff format replaced YAML output
 import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, getChangeByThreadId, setChangeDenied, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, getChangeByThreadId, setChangeDenied, getPendingChangesWithThreads, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
@@ -178,6 +178,8 @@ client.on(Events.ClientReady, async () => {
   console.log(`Logged in as ${client.user.tag}!`);
   // Fetch planets from API on startup
   await fetchPlanets();
+  // Backfill review buttons into existing pending change threads
+  backfillReviewButtons().catch(e => console.error('[backfill] Failed:', e));
 });
 
 process.on('unhandledRejection', async (error) => {
@@ -1043,6 +1045,45 @@ async function _checkChangesImpl() {
 
     await deleteChange(change.id);
   }
+}
+
+async function backfillReviewButtons() {
+  const changes = await getPendingChangesWithThreads();
+  if (!changes.length) return;
+  console.log(`[backfill] Checking ${changes.length} pending threads for review buttons...`);
+  let added = 0;
+
+  for (const { id: changeId, thread_id } of changes) {
+    try {
+      const thread = await client.channels.fetch(thread_id).catch(() => null);
+      if (!thread?.isThread()) continue;
+
+      // Check if review buttons already exist
+      const messages = await thread.messages.fetch({ limit: 50 });
+      const hasButtons = messages.some(m =>
+        m.author.id === client.user.id &&
+        m.components.some(row => row.components.some(c => c.customId?.startsWith('review_')))
+      );
+      if (hasButtons) continue;
+
+      const reviewRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`review_approve_${changeId}`)
+          .setLabel('Approve')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`review_deny_${changeId}`)
+          .setLabel('Deny')
+          .setStyle(ButtonStyle.Danger),
+      );
+      await thread.send({ content: 'Review this change:', components: [reviewRow] });
+      added++;
+    } catch (e) {
+      console.error(`[backfill] Failed for change ${changeId} / thread ${thread_id}:`, e.message);
+    }
+  }
+
+  if (added > 0) console.log(`[backfill] Added review buttons to ${added} thread(s).`);
 }
 
 async function syncReviewerRole() {
