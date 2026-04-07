@@ -35,7 +35,8 @@
     <div class="site-notice-inner">
       <div class="site-notice-content">
         <p class="site-notice-text">
-          This site uses cookies to function. Allowing ads helps keep Entropia Nexus free -
+          This site uses cookies to function.
+          <strong class="site-notice-highlight">Allowing ads helps keep Entropia Nexus free</strong> -
           no ads will be shown if you decline.
           <a href="/legal/privacy" class="site-notice-link">Privacy Policy</a>
         </p>
@@ -64,11 +65,11 @@
           </div>
         {:else}
           <div class="site-notice-actions">
+            <button class="site-notice-btn site-notice-btn-allow" onclick={handleAllow}>
+              Allow Google Ads
+            </button>
             <button class="site-notice-btn site-notice-btn-essential" onclick={handleEssential}>
               Only Essential
-            </button>
-            <button class="site-notice-btn site-notice-btn-allow" onclick={handleAllow}>
-              Allow Ads
             </button>
             <button class="site-notice-btn site-notice-btn-settings" onclick={toggleSettings}>
               Settings
@@ -115,6 +116,10 @@
     font-size: 0.8125rem;
     line-height: 1.5;
     color: var(--text-color);
+  }
+
+  .site-notice-highlight {
+    color: var(--accent-color);
   }
 
   .site-notice-link {
