@@ -880,6 +880,17 @@
             </div>
           {/if}
         </div>
+
+        <!-- Misc Stats -->
+        {#if cyclePerHour}
+          <div class="stats-section">
+            <h4 class="section-title">Misc</h4>
+            <div class="stat-row">
+              <span class="stat-label">PED/h</span>
+              <span class="stat-value">{cyclePerHour.toFixed(2)} PED</span>
+            </div>
+          </div>
+        {/if}
       </aside>
 
       <!-- Main content (center) -->

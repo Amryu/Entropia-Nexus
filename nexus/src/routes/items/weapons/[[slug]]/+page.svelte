@@ -655,6 +655,9 @@
   let costPerUse = $derived(getCostPerUse(activeWeapon));
   let reload = $derived(getReload(activeWeapon));
   let totalUses = $derived(getTotalUses(activeWeapon));
+  let cyclePerRepair = $derived(totalUses && costPerUse ? totalUses * (costPerUse / 100) : null);
+  let cyclePerHour = $derived(reload && costPerUse ? (3600 / reload) * (costPerUse / 100) : null);
+  let timeToBreak = $derived(cyclePerHour > 0 && cyclePerRepair ? cyclePerRepair / cyclePerHour : null);
   let totalDamage = $derived(getTotalDamage(activeWeapon));
   let effectiveDamage = $derived(getEffectiveDamage(activeWeapon));
   let skillInfo = $derived(getSkillInfo(activeWeapon));
@@ -1022,6 +1025,31 @@
             <span class="stat-value">{totalUses ?? 'N/A'}</span>
           </div>
         </div>
+
+        <!-- Misc Stats -->
+        {#if cyclePerRepair || cyclePerHour || timeToBreak}
+          <div class="stats-section">
+            <h4 class="section-title">Misc</h4>
+            {#if cyclePerRepair}
+              <div class="stat-row">
+                <span class="stat-label">PED/repair</span>
+                <span class="stat-value">{cyclePerRepair.toFixed(2)} PED</span>
+              </div>
+            {/if}
+            {#if cyclePerHour}
+              <div class="stat-row">
+                <span class="stat-label">PED/h</span>
+                <span class="stat-value">{cyclePerHour.toFixed(2)} PED</span>
+              </div>
+            {/if}
+            {#if timeToBreak}
+              <div class="stat-row">
+                <span class="stat-label">Time to break</span>
+                <span class="stat-value">{timeToBreak.toFixed(2)}h</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Properties -->
         <div class="stats-section">
