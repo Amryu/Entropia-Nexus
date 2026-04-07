@@ -102,7 +102,8 @@ export const SHORT_ROUTE_MAP = Object.freeze({
   bo: '/bounties',
   ap: '/account/settings/promos',
   apl: '/account/settings/promos/library',
-  apb: '/account/settings/promos/bookings'
+  apb: '/account/settings/promos/bookings',
+  fx: '/feed.xml'
 });
 
 /**
@@ -181,7 +182,8 @@ export const PREFERRED_SHORT_ROUTE_BY_PREFIX = Object.freeze({
   '/bounties': 'bo',
   '/account/settings/promos': 'ap',
   '/account/settings/promos/library': 'apl',
-  '/account/settings/promos/bookings': 'apb'
+  '/account/settings/promos/bookings': 'apb',
+  '/feed.xml': 'fx'
 });
 
 /**

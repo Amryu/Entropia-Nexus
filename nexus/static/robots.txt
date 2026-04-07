@@ -4,3 +4,4 @@ Disallow: /globals/
 Disallow: /market/exchange/
 
 Sitemap: https://entropianexus.com/sitemap.xml
+Feed: https://entropianexus.com/feed.xml
