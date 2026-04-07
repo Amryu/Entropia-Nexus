@@ -54,6 +54,9 @@ _STAT_DEFS: dict[str, tuple[str, str, str | None]] = {
     "Ammo Burn": ("ammo_burn", "", "int"),
     "Weapon Cost": ("weapon_cost", " PEC", "pec"),
     "Total Uses": ("lowest_total_uses", "", "int"),
+    "PED/repair": ("_ped_per_repair", " PED", None),
+    "PED/h": ("_ped_per_hour", " PED", None),
+    "Time to break": ("_time_to_break", "h", None),
     # Defense
     "Armor Defense": ("armor_defense", "", None),
     "Plate Defense": ("plate_defense", "", None),
@@ -121,6 +124,14 @@ def _prepare_display_data(stats):
         total_hps_parts += stats.lifesteal_hps
     if stats.lifesteal_hps or hot.get("hotHPS"):
         derived["_total_hps"] = total_hps_parts
+
+    # Misc economy derived stats
+    total_uses = stats.lowest_total_uses or 0
+    cost = stats.cost or 0
+    reload = stats.reload or 0
+    derived["_ped_per_repair"] = (total_uses * (cost / 100)) if total_uses and cost else None
+    derived["_ped_per_hour"] = ((3600 / reload) * (cost / 100)) if reload and cost else None
+    derived["_time_to_break"] = (total_uses * reload / 3600) if total_uses and reload else None
 
     stat_texts = {}
     for display_name, (attr, suffix, fmt) in _STAT_DEFS.items():
@@ -1131,6 +1142,7 @@ class LoadoutPage(QWidget):
         ])
         econ_grp, self._econ_stats = _make_group("Economy", [
             "Decay", "Ammo Burn", "Weapon Cost", "Total Uses",
+            "PED/repair", "PED/h", "Time to break",
         ])
         heal_grp, self._heal_stats = _make_group("Healing", [
             "Total Heal", "Effective Heal",

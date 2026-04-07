@@ -4286,6 +4286,15 @@
             <div class="stat-row"><span class="stat-label">Ammo</span><span class="stat-value">{stats.ammo != null ? Math.round(stats.ammo) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">{stats.cost != null ? `${stats.cost.toFixed(4)} PEC` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
+            {#if stats.lowestTotalUses && stats.cost}
+              <div class="stat-row"><span class="stat-label">PED/repair</span><span class="stat-value">{(stats.lowestTotalUses * (stats.cost / 100)).toFixed(2)} PED</span></div>
+            {/if}
+            {#if stats.reload && stats.cost}
+              <div class="stat-row"><span class="stat-label">PED/h</span><span class="stat-value">{((3600 / stats.reload) * (stats.cost / 100)).toFixed(2)} PED</span></div>
+            {/if}
+            {#if stats.lowestTotalUses && stats.cost && stats.reload}
+              <div class="stat-row"><span class="stat-label">Time to break</span><span class="stat-value">{(stats.lowestTotalUses * stats.reload / 3600).toFixed(2)}h</span></div>
+            {/if}
           </div>
           <div class="stats-section">
             <h4 class="section-title">Healing{stats.healMultiplier != null && Math.abs(stats.healMultiplier - 1) > 0.001 ? ` (${stats.healMultiplier > 1 ? '+' : ''}${((stats.healMultiplier - 1) * 100).toFixed(1)}%)` : ''}</h4>
@@ -5201,6 +5210,15 @@
             <div class="stat-row"><span class="stat-label">Ammo</span><span class="stat-value">{stats.ammo != null ? Math.round(stats.ammo) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">{stats.cost != null ? `${stats.cost.toFixed(4)} PEC` : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
+            {#if stats.lowestTotalUses && stats.cost}
+              <div class="stat-row"><span class="stat-label">PED/repair</span><span class="stat-value">{(stats.lowestTotalUses * (stats.cost / 100)).toFixed(2)} PED</span></div>
+            {/if}
+            {#if stats.reload && stats.cost}
+              <div class="stat-row"><span class="stat-label">PED/h</span><span class="stat-value">{((3600 / stats.reload) * (stats.cost / 100)).toFixed(2)} PED</span></div>
+            {/if}
+            {#if stats.lowestTotalUses && stats.cost && stats.reload}
+              <div class="stat-row"><span class="stat-label">Time to break</span><span class="stat-value">{(stats.lowestTotalUses * stats.reload / 3600).toFixed(2)}h</span></div>
+            {/if}
           </div>
           <div class="stats-section">
             <h4 class="section-title">Healing{stats.healMultiplier != null && Math.abs(stats.healMultiplier - 1) > 0.001 ? ` (${stats.healMultiplier > 1 ? '+' : ''}${((stats.healMultiplier - 1) * 100).toFixed(1)}%)` : ''}</h4>
