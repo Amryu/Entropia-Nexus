@@ -120,7 +120,8 @@
   })());
 
   // Sort inventory: items with active sell orders first, then items with buy demand
-  let sortedInventory = $derived([...($inventory || [])].sort((a, b) => {
+  // Filter out untradeable items so they never appear in the sell panel
+  let sortedInventory = $derived([...($inventory || [])].filter(item => !itemLookup.get(item.item_id)?.ut).sort((a, b) => {
     const aOrders = OrdersByItemId.get(a.item_id)?.sell || 0;
     const bOrders = OrdersByItemId.get(b.item_id)?.sell || 0;
     const aBuyDemand = itemLookup.get(a.item_id)?.b || 0;

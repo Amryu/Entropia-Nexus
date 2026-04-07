@@ -453,7 +453,11 @@ export const UpsertConfigs = {
       { name: "Description", value: x => x.Properties.Description },
       { name: "Type", value: x => x.Properties.Type },
       { name: "Level", value: x => x.Properties.Level },
-      { name: "ItemId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [x.Product.Name]).then(res => res.rows[0]?.Id) },
+      { name: "ItemId", value: async (x, c) => {
+        const res = await c.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [x.Product.Name]);
+        if (!res.rows[0]) throw new Error(`Blueprint product not found: "${x.Product.Name}"`);
+        return res.rows[0].Id;
+      } },
       { name: "ProfessionId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.Profession.Name]).then(res => res.rows[0]?.Id) },
       { name: "BookId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "BlueprintBooks" WHERE "Name" = $1`, [x.Book.Name]).then(res => res.rows[0]?.Id) },
       { name: "MinLvl", value: x => x.Properties.Skill.LearningIntervalStart },
