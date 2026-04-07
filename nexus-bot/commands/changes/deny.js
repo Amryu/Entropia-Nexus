@@ -1,7 +1,8 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
 import { getChangeByThreadId, setChangeDenied } from '../../db.js';
 import { sendChangeDenialDm } from '../../rewards.js';
+import { isAuthorizedReviewer, isDiscordAdmin } from '../../changes/rewards.js';
 
 const denyRow = new ActionRowBuilder()
   .addComponents(
@@ -25,14 +26,7 @@ export const data = new SlashCommandBuilder()
     .setMaxLength(500));
 
 export async function execute(interaction) {
-  const reviewerRoleId = getConfigValue('reviewerRoleId');
-  const moderatorRoleId = getConfigValue('moderatorRoleId');
-
-  const hasReviewerRole = reviewerRoleId && interaction.member.roles.cache.has(reviewerRoleId);
-  const hasModeratorRole = moderatorRoleId && interaction.member.roles.cache.has(moderatorRoleId);
-  const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
-
-  if (!hasReviewerRole && !hasModeratorRole && !isAdmin) {
+  if (!isAuthorizedReviewer(interaction)) {
     return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
@@ -56,10 +50,17 @@ export async function execute(interaction) {
     return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
   }
 
+  if (change.author_id.toString() === interaction.user.id && !isDiscordAdmin(interaction)) {
+    return interaction.reply({ content: 'You cannot deny your own changes.', flags: MessageFlags.Ephemeral });
+  }
+
   const reason = interaction.options.getString('reason');
 
   await promptModeratorForConfirmation(interaction, reason, async () => {
-    await setChangeDenied(change.id, reason);
+    if (!(await setChangeDenied(change.id, reason))) {
+      await thread.send('This change was already processed by another reviewer.');
+      return false;
+    }
     await thread.setName(`[Denied] ${change.type}: ${change.data.Name.substring(0, 80)}`);
     await thread.send(`The changes were denied!${reason ? ` Reason: ${reason}` : ''}`);
     await sendChangeDenialDm(interaction.client, change.author_id, {
@@ -82,7 +83,7 @@ async function promptModeratorForConfirmation(interaction, reason, onDeny) {
 
   await interaction.reply(prompt);
 
-  const filter = i => i.customId === 'yes' || i.customId === 'no';
+  const filter = i => (i.customId === 'yes' || i.customId === 'no') && i.user.id === interaction.user.id && isAuthorizedReviewer(i);
   const collector = interaction.channel.createMessageComponentCollector({ filter, time: 300_000 });
 
   collector.on('collect', async i => {

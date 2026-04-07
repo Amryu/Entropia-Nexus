@@ -28,6 +28,11 @@ export function isAuthorizedReviewer(interaction) {
   return hasReviewer || hasModerator || isAdmin;
 }
 
+/** Check if the interaction user has Discord Administrator permission. */
+export function isDiscordAdmin(interaction) {
+  return !!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+}
+
 // ─── Entity API helpers ─────────────────────────────────────────────────────
 
 export function getEntityApiCollection(entityType) {

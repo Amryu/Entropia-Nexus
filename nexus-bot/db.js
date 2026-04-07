@@ -142,9 +142,11 @@ export async function setChangeThreadId(id, threadId) {
   await poolUsers.query(query, values);
 }
 export async function setChangeState(id, state) {
-  const query = 'UPDATE changes SET state = $2 WHERE id = $1';
-  const values = [id, state];
-  await poolUsers.query(query, values);
+  const result = await poolUsers.query(
+    `UPDATE changes SET state = $2 WHERE id = $1 AND state NOT IN ('Approved', 'Denied') RETURNING id`,
+    [id, state]
+  );
+  return result.rowCount > 0;
 }
 export async function getPendingChangesWithThreads() {
   const { rows } = await poolUsers.query(
@@ -167,10 +169,11 @@ export async function getRewardsForChange(changeId) {
 }
 
 export async function setChangeDenied(id, reason = null) {
-  await poolUsers.query(
-    `UPDATE changes SET state = 'Denied', denial_reason = $2 WHERE id = $1`,
+  const result = await poolUsers.query(
+    `UPDATE changes SET state = 'Denied', denial_reason = $2 WHERE id = $1 AND state NOT IN ('Approved', 'Denied') RETURNING id`,
     [id, reason]
   );
+  return result.rowCount > 0;
 }
 
 // Reward functions

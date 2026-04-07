@@ -7,7 +7,7 @@ import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedCha
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
-import { handleReward, fetchEntityForReward, isAuthorizedReviewer, postRewardSummary } from './changes/rewards.js';
+import { handleReward, fetchEntityForReward, isAuthorizedReviewer, isDiscordAdmin, postRewardSummary } from './changes/rewards.js';
 import { getTypeLink, getStateLabel } from './util.js';
 import { renderMapChange } from './mapRenderer.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
@@ -382,6 +382,11 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: 64 });
       }
 
+      // Prevent self-approval/denial unless the user is a Discord admin
+      if (change.author_id.toString() === interaction.user.id && !isDiscordAdmin(interaction)) {
+        return interaction.reply({ content: 'You cannot approve or deny your own changes.', flags: 64 });
+      }
+
       const thread = interaction.channel;
 
       if (customId.startsWith('review_approve_')) {
@@ -403,7 +408,10 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
           }
 
-          await setChangeState(change.id, 'Approved');
+          if (!(await setChangeState(change.id, 'Approved'))) {
+            await thread.send('This change was already processed by another reviewer.');
+            return;
+          }
           await thread.setName(`[Approved] ${change.type}: ${change.data.Name.substring(0, 80)}`);
           await thread.send('The changes were approved!');
 
@@ -437,7 +445,10 @@ client.on(Events.InteractionCreate, async interaction => {
         await interaction.reply({ content: 'Denying changes...', flags: 64 });
 
         try {
-          await setChangeDenied(change.id, null);
+          if (!(await setChangeDenied(change.id, null))) {
+            await thread.send('This change was already processed by another reviewer.');
+            return;
+          }
           await thread.setName(`[Denied] ${change.type}: ${change.data.Name.substring(0, 80)}`);
           await thread.send('The changes were denied!');
 

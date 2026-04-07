@@ -1,6 +1,6 @@
 import {
   SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  MessageFlags, PermissionFlagsBits,
+  MessageFlags,
 } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
 import {
@@ -8,7 +8,7 @@ import {
 } from '../../db.js';
 import { applyChange } from '../../changes/util.js';
 import {
-  handleReward, fetchEntityForReward,
+  handleReward, fetchEntityForReward, isAuthorizedReviewer, isDiscordAdmin,
 } from '../../changes/rewards.js';
 import { sendChangeApprovalDm } from '../../rewards.js';
 
@@ -32,14 +32,7 @@ export const data = new SlashCommandBuilder()
     .setRequired(false));
 
 export async function execute(interaction) {
-  const reviewerRoleId = getConfigValue('reviewerRoleId');
-  const moderatorRoleId = getConfigValue('moderatorRoleId');
-
-  const hasReviewerRole = reviewerRoleId && interaction.member.roles.cache.has(reviewerRoleId);
-  const hasModeratorRole = moderatorRoleId && interaction.member.roles.cache.has(moderatorRoleId);
-  const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
-
-  if (!hasReviewerRole && !hasModeratorRole && !isAdmin) {
+  if (!isAuthorizedReviewer(interaction)) {
     return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
@@ -60,6 +53,10 @@ export async function execute(interaction) {
 
   if (change.state === 'Approved' || change.state === 'Denied') {
     return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
+  }
+
+  if (change.author_id.toString() === interaction.user.id && !isDiscordAdmin(interaction)) {
+    return interaction.reply({ content: 'You cannot approve your own changes.', flags: MessageFlags.Ephemeral });
   }
 
   let userChange = await getUserById(change.author_id);
@@ -83,7 +80,10 @@ export async function execute(interaction) {
       return false;
     }
 
-    await setChangeState(change.id, 'Approved');
+    if (!(await setChangeState(change.id, 'Approved'))) {
+      await thread.send('This change was already processed by another reviewer.');
+      return false;
+    }
     await thread.setName(`[Approved] ${change.type}: ${change.data.Name.substring(0, 80)}`);
     await thread.send('The changes were approved!');
 
@@ -109,7 +109,7 @@ async function promptModeratorForConfirmation(interaction, onApprove) {
 
   await interaction.reply(prompt);
 
-  const filter = i => i.customId === 'yes' || i.customId === 'no';
+  const filter = i => (i.customId === 'yes' || i.customId === 'no') && i.user.id === interaction.user.id && isAuthorizedReviewer(i);
   const collector = interaction.channel.createMessageComponentCollector({ filter, time: 300_000 });
 
   collector.on('collect', async i => {
