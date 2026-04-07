@@ -22,8 +22,12 @@
     }
   });
 
-  let selfPromoHidden = $derived(hasDecision());
-  let showSupportMessage = $derived(getAdsConsent() === 'granted' && getRevenueBlocked());
+  // During SSR, hide self-promo placeholders (consent state is client-only).
+  // On the client, hide once a consent decision has been made.
+  let selfPromoHidden = $derived(!browser || hasDecision());
+  let showSupportMessage = $derived(browser && getAdsConsent() === 'granted' && getRevenueBlocked());
+  let hasLeftPromo = $derived((promos?.placements?.left?.length ?? 0) > 0);
+  let hasRightPromo = $derived((promos?.placements?.right?.length ?? 0) > 0);
 
   let { news, events, streams, videos, globals } = $derived(data);
   let promos = $derived(data.promos);
@@ -148,16 +152,20 @@
 
 <div class="home-page">
   <!-- Vertical partner slots for wide screens -->
-  <aside class="partner-rail partner-rail-left" aria-label="Partner content">
-    <div class="partner-slot partner-vertical" data-slot="left">
-      <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} {selfPromoHidden} />
-    </div>
-  </aside>
-  <aside class="partner-rail partner-rail-right" aria-label="Partner content">
-    <div class="partner-slot partner-vertical" data-slot="right">
-      <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
-    </div>
-  </aside>
+  {#if hasLeftPromo || !selfPromoHidden}
+    <aside class="partner-rail partner-rail-left" aria-label="Partner content">
+      <div class="partner-slot partner-vertical" data-slot="left">
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} {selfPromoHidden} />
+      </div>
+    </aside>
+  {/if}
+  {#if hasRightPromo || !selfPromoHidden}
+    <aside class="partner-rail partner-rail-right" aria-label="Partner content">
+      <div class="partner-slot partner-vertical" data-slot="right">
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
+      </div>
+    </aside>
+  {/if}
 
   <main class="home-content">
     <!-- Hero -->
@@ -263,20 +271,24 @@
     </section>
 
     <!-- Inline partner slots (visible when side rails are hidden) -->
-    <div class="partner-inline partner-inline-pair">
-      <div class="partner-slot partner-horizontal" data-slot="top-1">
-        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
+    {#if hasLeftPromo || hasRightPromo || showSupportMessage || !selfPromoHidden}
+      <div class="partner-inline partner-inline-pair">
+        <div class="partner-slot partner-horizontal" data-slot="top-1">
+          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
+        </div>
+        <div class="partner-slot partner-horizontal" data-slot="top-2">
+          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
+        </div>
       </div>
-      <div class="partner-slot partner-horizontal" data-slot="top-2">
-        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
-      </div>
-    </div>
+    {/if}
     <!-- Mobile: single slot after news/events -->
-    <div class="partner-inline partner-inline-mobile-1">
-      <div class="partner-slot partner-horizontal" data-slot="mobile-1">
-        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
+    {#if hasLeftPromo || showSupportMessage || !selfPromoHidden}
+      <div class="partner-inline partner-inline-mobile-1">
+        <div class="partner-slot partner-horizontal" data-slot="mobile-1">
+          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
+        </div>
       </div>
-    </div>
+    {/if}
 
     <!-- Globals Feed -->
     <section class="section">
@@ -288,11 +300,13 @@
     </section>
 
     <!-- Mobile: single slot after globals -->
-    <div class="partner-inline partner-inline-mobile-2">
-      <div class="partner-slot partner-horizontal" data-slot="mobile-2">
-        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
+    {#if hasRightPromo || !selfPromoHidden}
+      <div class="partner-inline partner-inline-mobile-2">
+        <div class="partner-slot partner-horizontal" data-slot="mobile-2">
+          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
+        </div>
       </div>
-    </div>
+    {/if}
 
     <!-- Streams / Channels -->
     {#if streams && streams.length > 0}
@@ -492,6 +506,7 @@
     width: 160px;
     min-height: 600px;
   }
+
 
   /* Inline horizontal banners */
   .partner-inline {
