@@ -11,7 +11,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import {
     DEFAULT_ATTACK_NAME,
-    computeEffectiveDefense,
+    computeDefenseLayers,
     computeAttackBreakdown,
     computeDecayRate,
     sortedMaturities
@@ -90,7 +90,7 @@
       const effEnh = (poolArmorNamesActive && r.armorSet?.Name in (poolArmorEnhancers || {}))
         ? poolArmorEnhancers[r.armorSet.Name]
         : enhancers;
-      const def = computeEffectiveDefense(r.armorSet, r.plating, iceShield, effEnh);
+      const def = computeDefenseLayers(r.armorSet, r.plating, iceShield, effEnh);
       const decayRate = computeDecayRate(r.armorSet, r.plating);
       const label = r.plating
         ? `${r.armorSet?.Name ?? ''} + ${r.plating.Name}`

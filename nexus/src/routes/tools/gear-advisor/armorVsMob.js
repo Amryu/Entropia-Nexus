@@ -6,11 +6,11 @@ import { hasItemTag } from '$lib/util';
  *
  * Core model:
  *   - Armor is treated as a full set (not per-piece).
- *   - Effective defense per type = armorSet.Defense * (1 + 0.05 * enhancers)
- *                                + plating.Defense
- *                                + iceShieldBonus
+ *   - Defense is applied in sequential layers (ice shield -> plates -> armor).
+ *     Each layer reduces damage per type, then the remaining total damage is
+ *     redistributed over the original damage distribution before hitting the
+ *     next layer.
  *   - Mobs deal flat damage per type (50%-100% range).
- *   - Armor provides flat damage reduction per type, capped at incoming damage.
  *
  * Data shapes come from common/schemas/ArmorSet.js, ArmorPlating.js, Mob.js.
  */
@@ -65,28 +65,102 @@ export const CRIT_MULTIPLIER = 2.0;
 export const CRIT_ARMOR_PIERCE = 0.20;
 
 /**
- * Compute effective armor defense broken down by damage type.
+ * Compute defense as sequential layers: [iceShield?, plate?, armor].
+ * Each layer is a Record<string, number> of defense by type.
+ * Order: outermost (ice shield) to innermost (armor).
  * @param {object} armorSet - armor set entity
  * @param {object|null} plating - optional plating entity
  * @param {boolean} iceShield - whether Ice Shield buff is active
  * @param {number} enhancers - defense enhancers equipped (0..10)
- * @returns {Record<string, number>} defense by type
+ * @returns {Record<string, number>[]} defense layers
  */
-export function computeEffectiveDefense(armorSet, plating, iceShield, enhancers) {
+export function computeDefenseLayers(armorSet, plating, iceShield, enhancers) {
   const enhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
+  const layers = [];
+
+  if (iceShield) {
+    const iceDef = {};
+    for (const type of DEFENSE_TYPES) {
+      iceDef[type] = ICE_SHIELD_TYPES.includes(type) ? ICE_SHIELD_VALUE : 0;
+    }
+    layers.push(iceDef);
+  }
+
+  if (plating) {
+    const plateDef = {};
+    for (const type of DEFENSE_TYPES) {
+      plateDef[type] = plating?.Properties?.Defense?.[type] ?? 0;
+    }
+    layers.push(plateDef);
+  }
+
+  const armorDef = {};
+  for (const type of DEFENSE_TYPES) {
+    armorDef[type] = (armorSet?.Properties?.Defense?.[type] ?? 0) * enhancerMult;
+  }
+  layers.push(armorDef);
+
+  return layers;
+}
+
+/**
+ * Apply one defense layer: each type blocks up to its defense value,
+ * then the remaining total is returned (caller redistributes before
+ * feeding the next layer).
+ */
+function applyDefenseLayer(totalDamage, pctByType, layerDef) {
+  if (totalDamage <= 0) return 0;
+  let blocked = 0;
+  for (const type of DEFENSE_TYPES) {
+    const incoming = totalDamage * (pctByType[type] ?? 0);
+    blocked += Math.min(incoming, layerDef[type] ?? 0);
+  }
+  return totalDamage - blocked;
+}
+
+/**
+ * Process damage through sequential defense layers with redistribution.
+ * After each layer reduces per-type damage, the remaining total is
+ * redistributed over the original damage distribution for the next layer.
+ */
+function computeLayeredRemaining(totalDamage, pctByType, layers) {
+  let remaining = totalDamage;
+  for (const layer of layers) {
+    remaining = applyDefenseLayer(remaining, pctByType, layer);
+  }
+  return remaining;
+}
+
+const INTEGRATION_STEPS = 10;
+
+/**
+ * Expected damage taken with layered defense, integrated over uniform
+ * roll X in [DAMAGE_MIN_FRACTION, DAMAGE_MAX_FRACTION] using midpoint rule.
+ */
+function expectedTakenLayered(totalBase, pctByType, layers) {
+  if (totalBase <= 0) return 0;
+  const range = DAMAGE_MAX_FRACTION - DAMAGE_MIN_FRACTION;
+  let sum = 0;
+  for (let i = 0; i < INTEGRATION_STEPS; i++) {
+    const X = DAMAGE_MIN_FRACTION + (i + 0.5) * range / INTEGRATION_STEPS;
+    sum += computeLayeredRemaining(totalBase * X, pctByType, layers);
+  }
+  return sum / INTEGRATION_STEPS;
+}
+
+/** Sum all layers into a single defense-by-type map (for typeScore calculations). */
+function sumLayers(layers) {
   const result = {};
   for (const type of DEFENSE_TYPES) {
-    const armorVal = (armorSet?.Properties?.Defense?.[type] ?? 0) * enhancerMult;
-    const plateVal = plating?.Properties?.Defense?.[type] ?? 0;
-    const iceVal = iceShield && ICE_SHIELD_TYPES.includes(type) ? ICE_SHIELD_VALUE : 0;
-    result[type] = armorVal + plateVal + iceVal;
+    let s = 0;
+    for (const layer of layers) s += layer[type] ?? 0;
+    result[type] = s;
   }
   return result;
 }
 
 /**
- * Compute per-damage-type blocked/taken values for a single attack and
- * the three damage-range points (min/avg/max).
+ * Compute damage breakdown for a single attack vs layered defense.
  *
  * Data shape:
  *   attack.TotalDamage — scalar total damage per hit (e.g. 230)
@@ -96,86 +170,40 @@ export function computeEffectiveDefense(armorSet, plating, iceShield, enhancers)
  * Mob rolls are 50%–100% of base each hit (linear scaling).
  *
  * @param {object} attack - mob attack
- * @param {Record<string, number>} defense - effective armor defense by type
+ * @param {Record<string, number>[]} defenseLayers - sequential defense layers
  * @param {number} dmgMultiplier - pre-mitigation damage multiplier (1 = unmodified)
  */
-/**
- * Expected damage taken per damage type, integrated over a uniform roll
- * X ∈ [DAMAGE_MIN_FRACTION, DAMAGE_MAX_FRACTION].
- *
- *   B = base damage per type at 100% roll (= TotalDamage × pct)
- *   def = armor defense for this type
- *
- *   if B ≤ def                  → E[taken] = 0 (always fully blocked)
- *   if B × DAMAGE_MIN ≥ def     → E[taken] = B × DAMAGE_AVG − def (def never covers)
- *   otherwise (mixed)           → E[taken] = (B − def)² / (2·(DAMAGE_MAX − DAMAGE_MIN)·B)
- *                                          × (here: (B − def)² / B since range is 0.5)
- */
-function expectedTakenPerType(base, def) {
-  if (base <= 0) return 0;
-  const maxD = base * DAMAGE_MAX_FRACTION;
-  const minD = base * DAMAGE_MIN_FRACTION;
-  if (def >= maxD) return 0;                       // never pierces
-  if (def <= minD) return base * DAMAGE_AVG_FRACTION - def; // always pierces
-  // Mixed case. Crossover X* = def/base in (MIN, MAX).
-  // E[taken] = (1/(MAX-MIN)) × ∫[X*, MAX] (B·X − def) dX
-  //          = (1/0.5)       × [B·X²/2 − def·X] from X* to MAX
-  // Simplified: (B − def)² / B    (uses MIN=0.5, MAX=1.0, range=0.5)
-  return (base - def) * (base - def) / base;
-}
-
-export function computeAttackBreakdown(attack, defense, dmgMultiplier = 1) {
+export function computeAttackBreakdown(attack, defenseLayers, dmgMultiplier = 1) {
   const totalDmg = (attack?.TotalDamage ?? 0) * dmgMultiplier;
-  const byType = {};
-  let incomingMin = 0, incomingAvg = 0, incomingMax = 0;
-  let blockedMin = 0, blockedAvg = 0, blockedMax = 0;
-  let expectedTaken = 0;
-  let critIncoming = 0, critBlocked = 0;
-  const piercedDefMult = 1 - CRIT_ARMOR_PIERCE;
 
+  const pctByType = {};
   for (const type of DEFENSE_TYPES) {
-    const pct = (attack?.Damage?.[type] ?? 0) / 100;
-    const base = totalDmg * pct;
-    if (base === 0) continue;
-
-    const minD = base * DAMAGE_MIN_FRACTION;
-    const avgD = base * DAMAGE_AVG_FRACTION;
-    const maxD = base * DAMAGE_MAX_FRACTION;
-    const def = defense?.[type] ?? 0;
-    const bMin = Math.min(minD, def);
-    const bAvg = Math.min(avgD, def);
-    const bMax = Math.min(maxD, def);
-
-    // Crit: 2× max damage vs armor reduced by pierce fraction.
-    const critD = base * CRIT_MULTIPLIER;
-    const piercedDef = def * piercedDefMult;
-    const bCrit = Math.min(critD, piercedDef);
-
-    byType[type] = {
-      min: minD, avg: avgD, max: maxD,
-      blockedMin: bMin, blockedAvg: bAvg, blockedMax: bMax,
-      takenMin: minD - bMin, takenAvg: avgD - bAvg, takenMax: maxD - bMax
-    };
-
-    incomingMin += minD;
-    incomingAvg += avgD;
-    incomingMax += maxD;
-    blockedMin += bMin;
-    blockedAvg += bAvg;
-    blockedMax += bMax;
-    expectedTaken += expectedTakenPerType(base, def);
-    critIncoming += critD;
-    critBlocked += bCrit;
+    pctByType[type] = (attack?.Damage?.[type] ?? 0) / 100;
   }
 
-  const takenMin = incomingMin - blockedMin;
-  const takenAvg = incomingAvg - blockedAvg;
-  const takenMax = incomingMax - blockedMax;
-  // incomingAvg = 0.75 × totalDmg is the true expected incoming damage
-  // (mean of a uniform distribution on [0.5, 1.0] × TotalDamage).
+  const incomingMin = totalDmg * DAMAGE_MIN_FRACTION;
+  const incomingAvg = totalDmg * DAMAGE_AVG_FRACTION;
+  const incomingMax = totalDmg * DAMAGE_MAX_FRACTION;
+
+  const takenMin = computeLayeredRemaining(incomingMin, pctByType, defenseLayers);
+  const takenMax = computeLayeredRemaining(incomingMax, pctByType, defenseLayers);
+  const expectedTaken = expectedTakenLayered(totalDmg, pctByType, defenseLayers);
+
+  const blockedMin = incomingMin - takenMin;
+  const blockedAvg = incomingAvg - (incomingAvg > 0 ? computeLayeredRemaining(incomingAvg, pctByType, defenseLayers) : 0);
+  const blockedMax = incomingMax - takenMax;
   const expectedBlocked = incomingAvg - expectedTaken;
-  const mitigation = incomingAvg > 0 ? (expectedBlocked / incomingAvg) : 0;
-  const critTaken = critIncoming - critBlocked;
+  const mitigation = incomingAvg > 0 ? expectedBlocked / incomingAvg : 0;
+
+  // Crit: 2× max damage, all defense layers reduced by pierce fraction.
+  const critIncoming = totalDmg * CRIT_MULTIPLIER;
+  const piercedDefMult = 1 - CRIT_ARMOR_PIERCE;
+  const piercedLayers = defenseLayers.map(layer => {
+    const p = {};
+    for (const type of DEFENSE_TYPES) p[type] = (layer[type] ?? 0) * piercedDefMult;
+    return p;
+  });
+  const critTaken = computeLayeredRemaining(critIncoming, pctByType, piercedLayers);
 
   return {
     name: attack?.Name || 'Attack',
@@ -183,60 +211,55 @@ export function computeAttackBreakdown(attack, defense, dmgMultiplier = 1) {
     totalAvg: incomingAvg,
     totalMax: incomingMax,
     blockedMin, blockedAvg, blockedMax,
-    takenMin, takenAvg, takenMax,
-    expectedTaken,     // true average damage taken per hit
-    expectedBlocked,   // true average damage blocked per hit
-    mitigation,        // 0..1, expected-value based
+    takenMin, takenAvg: incomingAvg - blockedAvg, takenMax,
+    expectedTaken,
+    expectedBlocked,
+    mitigation,
     critIncoming,
-    critTaken,
-    byType
+    critTaken
   };
 }
 
 /**
  * Fast single-pass maturity scorer — computes typeScore, mitigation and
- * damageTaken in a single walk over the maturity's attacks. Used by
- * scoreMob() on the hot path (rankArmors loops thousands of armor/plate
- * combos, so this is 3× faster than calling three separate functions).
+ * damageTaken in a single walk over the maturity's attacks.
+ * Uses layered defense model with redistribution between layers.
  */
-function scoreMaturityAll(maturity, defense, dmgMultiplier = 1) {
+function scoreMaturityAll(maturity, defenseLayers, dmgMultiplier = 1) {
   const attacks = Array.isArray(maturity?.Attacks) ? maturity.Attacks : [];
   if (attacks.length === 0) return { typeScore: null, mitigation: null, damageTaken: null };
 
+  // Summed defense for typeScore calculation (composition alignment)
+  const summed = sumLayers(defenseLayers);
+
   let typeScoreSum = 0, typeScoreCount = 0;
-  let totalBlocked = 0, totalIncoming = 0; // damage-weighted mitigation
-  let takenSum = 0, takenCount = 0;         // per-attack mean damage taken
+  let totalBlocked = 0, totalIncoming = 0;
+  let takenSum = 0, takenCount = 0;
 
   for (const atk of attacks) {
     const totalDmg = (atk?.TotalDamage ?? 0) * dmgMultiplier;
     let hasComp = false;
     let weightedDef = 0;
     let totalDef = 0;
-    let incomingAvg = 0, expectedTaken = 0;
 
+    const pctByType = {};
     for (const type of DEFENSE_TYPES) {
       const pct = (atk?.Damage?.[type] ?? 0) / 100;
+      pctByType[type] = pct;
       if (pct > 0) hasComp = true;
-      const def = defense?.[type] ?? 0;
+      const def = summed[type];
       totalDef += def;
       weightedDef += pct * def;
-
-      if (totalDmg > 0 && pct > 0) {
-        const base = totalDmg * pct;
-        incomingAvg += base * DAMAGE_AVG_FRACTION;
-        expectedTaken += expectedTakenPerType(base, def);
-      }
     }
 
-    // type-match = weighted-avg armor defense / total armor defense.
-    // 0..1 fraction: how well the armor's defenses align with the mob's
-    // damage composition. 1.0 = all defense is in types the mob uses.
     if (hasComp) {
       const attackTypeScoreVal = totalDef > 0 ? weightedDef / totalDef : 0;
       typeScoreSum += attackTypeScoreVal;
       typeScoreCount++;
     }
-    if (incomingAvg > 0) {
+    if (totalDmg > 0 && hasComp) {
+      const incomingAvg = totalDmg * DAMAGE_AVG_FRACTION;
+      const expectedTaken = expectedTakenLayered(totalDmg, pctByType, defenseLayers);
       totalBlocked += (incomingAvg - expectedTaken);
       totalIncoming += incomingAvg;
       takenSum += expectedTaken;
@@ -281,7 +304,7 @@ export function sortedMaturities(mob) {
  *
  * Returns null only if the mob has NO usable composition on any attack.
  */
-export function scoreMob(mob, defense, scope = 'average', dmgMultiplier = 1) {
+export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 1) {
   const mats = sortedMaturities(mob);
   if (mats.length === 0) return null;
 
@@ -290,7 +313,7 @@ export function scoreMob(mob, defense, scope = 'average', dmgMultiplier = 1) {
   if (!anyAttacks) return null;
 
   function scoreOne(mat) {
-    const s = scoreMaturityAll(mat, defense, dmgMultiplier);
+    const s = scoreMaturityAll(mat, defenseLayers, dmgMultiplier);
     return {
       typeScore: s.typeScore,
       mitigation: s.mitigation,
@@ -425,7 +448,7 @@ function makeSortByMetric(rankBy = 'mitigation') {
  *                  then damage-unknown (by type score desc)
  */
 /** Async/chunked per-maturity ranking — one entry per (mob × maturity). */
-export async function rankMaturitiesChunked(mobs, defense, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
+export async function rankMaturitiesChunked(mobs, defenseLayers, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
   const results = [];
   const sortFn = makeSortByMetric(rankBy);
   const list = mobs || [];
@@ -436,7 +459,7 @@ export async function rankMaturitiesChunked(mobs, defense, dmgMultiplier, rankBy
     for (const mat of mats) {
       const attacks = Array.isArray(mat?.Attacks) ? mat.Attacks : [];
       if (attacks.length === 0) continue;
-      const s = scoreMaturityAll(mat, defense, dmgMultiplier);
+      const s = scoreMaturityAll(mat, defenseLayers, dmgMultiplier);
       if (s.typeScore == null) continue;
       const blocked = s.blockedPerAttack;
       results.push({
@@ -464,14 +487,14 @@ export async function rankMaturitiesChunked(mobs, defense, dmgMultiplier, rankBy
 }
 
 /** Async/chunked mob ranking that yields to the browser every N mobs. */
-export async function rankMobsChunked(mobs, defense, scope, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
+export async function rankMobsChunked(mobs, defenseLayers, scope, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
   const results = [];
   const sortFn = makeSortByMetric(rankBy);
   const list = mobs || [];
   for (let i = 0; i < list.length; i++) {
     if (signal?.aborted) return null;
     const mob = list[i];
-    const score = scoreMob(mob, defense, scope, dmgMultiplier);
+    const score = scoreMob(mob, defenseLayers, scope, dmgMultiplier);
     if (score != null) {
       results.push({
         mob,
@@ -497,10 +520,10 @@ export async function rankMobsChunked(mobs, defense, scope, dmgMultiplier, rankB
   return results;
 }
 
-export function rankMobs(mobs, defense, scope, dmgMultiplier = 1, rankBy = 'mitigation', decayRate = 0) {
+export function rankMobs(mobs, defenseLayers, scope, dmgMultiplier = 1, rankBy = 'mitigation', decayRate = 0) {
   const results = [];
   for (const mob of mobs || []) {
-    const score = scoreMob(mob, defense, scope, dmgMultiplier);
+    const score = scoreMob(mob, defenseLayers, scope, dmgMultiplier);
     if (score == null) continue;
     results.push({
       mob,
@@ -580,8 +603,17 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
     }
   }
 
-  function scoreFromDefense(armorSet, plating, defense) {
-    const score = scoreMob(mob, defense, scope, dmgMultiplier);
+  // Pre-build ice shield layer (reused across all combos)
+  let iceLayer = null;
+  if (iceShield) {
+    iceLayer = {};
+    for (const type of DEFENSE_TYPES) {
+      iceLayer[type] = ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
+    }
+  }
+
+  function scoreFromLayers(armorSet, plating, layers) {
+    const score = scoreMob(mob, layers, scope, dmgMultiplier);
     if (score == null) return null;
     const decayRate = computeDecayRate(armorSet, plating);
     return {
@@ -600,7 +632,6 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
   }
 
   const results = [];
-  const combinedDef = {};
   const sets = (armorFilter
     ? (armorSets || []).filter(a => armorFilter.has(a?.Name))
     : (armorSets || []));
@@ -610,24 +641,26 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
     const armorSet = sets[i];
     const thisEnhancerMult = enhancerMultFor(armorSet?.Name);
 
-    const baseDef = {};
+    const armorDef = {};
     for (const type of DEFENSE_TYPES) {
-      const armorVal = (armorSet?.Properties?.Defense?.[type] ?? 0) * thisEnhancerMult;
-      const iceVal = iceShield && ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
-      baseDef[type] = armorVal + iceVal;
+      armorDef[type] = (armorSet?.Properties?.Defense?.[type] ?? 0) * thisEnhancerMult;
     }
 
-    const bare = scoreFromDefense(armorSet, null, baseDef);
+    // Bare armor: [ice?, armor]
+    const bareLayers = iceLayer ? [iceLayer, armorDef] : [armorDef];
+    const bare = scoreFromLayers(armorSet, null, bareLayers);
     if (bare) results.push(bare);
 
     if (includePlates && platesToUse.length > 0) {
       const plateCombos = [];
       for (const plate of platesToUse) {
-        const plateDef = plate?.Properties?.Defense;
+        const plateDef = {};
         for (const type of DEFENSE_TYPES) {
-          combinedDef[type] = baseDef[type] + (plateDef?.[type] ?? 0);
+          plateDef[type] = plate?.Properties?.Defense?.[type] ?? 0;
         }
-        const combo = scoreFromDefense(armorSet, plate, combinedDef);
+        // Layers: [ice?, plate, armor]
+        const layers = iceLayer ? [iceLayer, plateDef, armorDef] : [plateDef, armorDef];
+        const combo = scoreFromLayers(armorSet, plate, layers);
         if (combo) plateCombos.push(combo);
       }
       plateCombos.sort(sortFn);
@@ -654,8 +687,7 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
   const enhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
   const ICE_SHIELD_SET = new Set(['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn']);
 
-  // Pre-filter plates: drop those without defense in the mob's damage types,
-  // and optionally drop "(L)" Limited plates (ulPlatesOnly).
+  // Pre-filter plates
   let platesToUse = [];
   if (includePlates) {
     const mobTypes = new Set();
@@ -677,8 +709,17 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
     }
   }
 
-  function scoreFromDefense(armorSet, plating, defense) {
-    const score = scoreMob(mob, defense, scope, dmgMultiplier);
+  // Pre-build ice shield layer (reused across all combos)
+  let iceLayer = null;
+  if (iceShield) {
+    iceLayer = {};
+    for (const type of DEFENSE_TYPES) {
+      iceLayer[type] = ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
+    }
+  }
+
+  function scoreFromLayers(armorSet, plating, layers) {
+    const score = scoreMob(mob, layers, scope, dmgMultiplier);
     if (score == null) return null;
     const decayRate = computeDecayRate(armorSet, plating);
     return {
@@ -699,32 +740,27 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
   }
 
   const results = [];
-  // Scratch buffer reused for combined (armor+plate) defense to avoid
-  // allocating a fresh object per plate per armor (~30k allocations).
-  const combinedDef = {};
 
   for (const armorSet of armorSets || []) {
-    // Precompute armor base defense once: (armor × enhancer) + ice shield
-    const baseDef = {};
+    const armorDef = {};
     for (const type of DEFENSE_TYPES) {
-      const armorVal = (armorSet?.Properties?.Defense?.[type] ?? 0) * enhancerMult;
-      const iceVal = iceShield && ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
-      baseDef[type] = armorVal + iceVal;
+      armorDef[type] = (armorSet?.Properties?.Defense?.[type] ?? 0) * enhancerMult;
     }
 
-    const bare = scoreFromDefense(armorSet, null, baseDef);
+    const bareLayers = iceLayer ? [iceLayer, armorDef] : [armorDef];
+    const bare = scoreFromLayers(armorSet, null, bareLayers);
     if (bare) results.push(bare);
 
     if (!includePlates || platesToUse.length === 0) continue;
 
-    // Top-N plate pairings — add plate defense on top of baseDef in-place
     const plateCombos = [];
     for (const plate of platesToUse) {
-      const plateDef = plate?.Properties?.Defense;
+      const plateDef = {};
       for (const type of DEFENSE_TYPES) {
-        combinedDef[type] = baseDef[type] + (plateDef?.[type] ?? 0);
+        plateDef[type] = plate?.Properties?.Defense?.[type] ?? 0;
       }
-      const combo = scoreFromDefense(armorSet, plate, combinedDef);
+      const layers = iceLayer ? [iceLayer, plateDef, armorDef] : [plateDef, armorDef];
+      const combo = scoreFromLayers(armorSet, plate, layers);
       if (combo) plateCombos.push(combo);
     }
     plateCombos.sort(sortFn);
@@ -741,13 +777,13 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
  * Build detailed per-maturity breakdown for the armor-vs-mob details view.
  * Each maturity entry contains all attacks with their computed breakdown.
  */
-export function buildDetails(mob, defense, dmgMultiplier = 1) {
+export function buildDetails(mob, defenseLayers, dmgMultiplier = 1) {
   const mats = sortedMaturities(mob);
   return mats.map(mat => ({
     name: mat?.Name ?? '',
     level: mat?.Properties?.Level ?? null,
     attacks: (Array.isArray(mat?.Attacks) ? mat.Attacks : [])
-      .map(atk => computeAttackBreakdown(atk, defense, dmgMultiplier))
+      .map(atk => computeAttackBreakdown(atk, defenseLayers, dmgMultiplier))
   }));
 }
 

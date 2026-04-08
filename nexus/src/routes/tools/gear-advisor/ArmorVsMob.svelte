@@ -20,7 +20,7 @@
     DEFENSE_TYPES,
     DEFAULT_ATTACK_NAME,
     MAX_ENHANCERS,
-    computeEffectiveDefense,
+    computeDefenseLayers,
     computeAttackBreakdown,
     computeDecayRate,
     getMobAttackNames,
@@ -153,9 +153,9 @@
     compareColumnsPref.set({ ..._cols });
   });
 
-  // Derived: effective defense for current armor config (null if no armor)
+  // Derived: defense layers for current armor config (null if no armor)
   let defense = $derived(armorSet
-    ? computeEffectiveDefense(armorSet, plating, iceShield, enhancers)
+    ? computeDefenseLayers(armorSet, plating, iceShield, enhancers)
     : null);
 
   // Pre-mitigation damage multiplier (clamped to ≥ 0)
