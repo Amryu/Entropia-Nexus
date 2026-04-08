@@ -47,6 +47,7 @@
   let filteredItems = $state([]);
   let selectedItems = $state([]);
   let savedOverviewFilters = $state(null); // snapshot of filters before entering detail view
+  let detailReturnUrl = '/market/exchange/listings'; // URL to navigate back to when leaving detail view
   let loading = false;
   let showOrderDialog = $state(false);
   let showBulkTradeDialog = $state(false);
@@ -248,7 +249,7 @@
     showFilterDialog = false;
     // Navigate — this triggers the route-sync reactive block
     // which will restore savedOverviewFilters
-    goto('/market/exchange/listings');
+    goto(detailReturnUrl || '/market/exchange/listings');
   }
 
   /** Close floating panel tabs without navigating — used by sidebar handlers */
@@ -1723,6 +1724,11 @@
         lastTirRangeMax = rangeMax;
       }
     });
+  });
+  // Track the last non-detail URL so back navigation returns to the correct page
+  $effect(() => {
+    const url = $page.url.pathname + ($page.url.search || '');
+    if (!isDetailView) detailReturnUrl = url;
   });
   $effect(() => {
     const detail = isDetailView;
