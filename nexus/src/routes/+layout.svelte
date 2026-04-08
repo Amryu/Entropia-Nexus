@@ -10,7 +10,7 @@
   import AdblockToast from "$lib/components/AdblockToast.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
-  import { invalidateAll } from '$app/navigation';
+  import { invalidateAll, afterNavigate } from '$app/navigation';
   import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
 
   let { data, children } = $props();
@@ -128,6 +128,14 @@
 
     // Analytics beacon: proves JS execution for bot detection (no cookies, no tracking)
     if (navigator.sendBeacon) navigator.sendBeacon('/api/beacon');
+  });
+
+  // Re-trigger AdSense auto ads on SPA navigation so Google re-scans the new page content
+  afterNavigate(() => {
+    try {
+      const adsbygoogle = /** @type {any} */ (window).adsbygoogle;
+      if (adsbygoogle) adsbygoogle.push({});
+    } catch { /* ad script not loaded or blocked */ }
   });
 
   onDestroy(() => {
