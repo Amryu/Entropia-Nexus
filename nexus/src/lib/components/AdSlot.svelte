@@ -46,8 +46,9 @@
   let blocked = $derived(browser && getRevenueBlocked());
 
   // Build inline style for the ins element
+  // Fixed-size ads (with width+height) use inline-block; responsive ads use block
   let insStyle = $derived.by(() => {
-    let s = 'display:block;';
+    let s = (width && height) ? 'display:inline-block;' : 'display:block;';
     if (width) s += `width:${width};`;
     if (height) s += `height:${height};`;
     if (style) s += style;

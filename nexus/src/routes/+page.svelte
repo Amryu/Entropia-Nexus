@@ -267,14 +267,14 @@
         {#if hasLeftPromo}
           <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
         {:else}
-          <AdSlot adSlot="9076572564" adFormat="horizontal" />
+          <AdSlot adSlot="9076572564" adFormat="auto" />
         {/if}
       </div>
       <div class="partner-slot partner-horizontal" data-slot="top-2">
         {#if hasRightPromo}
           <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
         {:else}
-          <AdSlot adSlot="9076572564" adFormat="horizontal" />
+          <AdSlot adSlot="9076572564" adFormat="auto" />
         {/if}
       </div>
     </div>
@@ -284,7 +284,7 @@
         {#if hasLeftPromo}
           <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
         {:else}
-          <AdSlot adSlot="9076572564" adFormat="rectangle" />
+          <AdSlot adSlot="9076572564" adFormat="auto" />
         {/if}
       </div>
     </div>
@@ -304,7 +304,7 @@
         {#if hasRightPromo}
           <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
         {:else}
-          <AdSlot adSlot="9076572564" adFormat="rectangle" />
+          <AdSlot adSlot="9076572564" adFormat="auto" />
         {/if}
       </div>
     </div>

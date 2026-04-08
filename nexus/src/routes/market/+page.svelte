@@ -183,7 +183,7 @@
   </section>
 
   <div class="ad-placement">
-    <AdSlot adSlot="9076572564" adFormat="horizontal" />
+    <AdSlot adSlot="9076572564" adFormat="auto" />
   </div>
 </div>
 
