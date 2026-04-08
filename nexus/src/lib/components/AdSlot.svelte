@@ -54,20 +54,49 @@
     return s;
   });
 
-  /** Svelte action: initialize the ad unit after DOM insertion */
+  /** Svelte action: initialize the ad unit after DOM insertion.
+   *  Uses IntersectionObserver to defer init until the slot is actually visible,
+   *  which handles responsive layouts where the container starts as display:none. */
   function initAd(node) {
     if (!browser) return;
-    // Small delay to let the DOM settle before pushing
-    const timer = setTimeout(() => {
+    let initialized = false;
+
+    function pushAd() {
+      if (initialized) return;
+      initialized = true;
       try {
         (/** @type {any} */ (window).adsbygoogle = /** @type {any} */ (window).adsbygoogle || []).push({});
       } catch {
         // Ad init failed (blocked, not loaded, etc.) - silent
       }
-    }, 100);
+    }
+
+    // Use IntersectionObserver to wait until the element is actually visible
+    // This handles responsive layouts where ads are in display:none containers
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && !initialized) {
+          // Small delay to let the DOM settle
+          setTimeout(pushAd, 100);
+          observer.disconnect();
+        }
+      }
+    }, { threshold: 0 });
+
+    observer.observe(node);
+
+    // Fallback: if the element is already visible, init after a short delay
+    const fallback = setTimeout(() => {
+      if (!initialized && node.offsetParent !== null) {
+        pushAd();
+        observer.disconnect();
+      }
+    }, 300);
+
     return {
       destroy() {
-        clearTimeout(timer);
+        observer.disconnect();
+        clearTimeout(fallback);
       }
     };
   }

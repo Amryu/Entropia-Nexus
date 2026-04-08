@@ -1,7 +1,6 @@
 /**
  * Detect whether ad content is being blocked.
- * Uses multiple signals: script global check + bait element probe.
- * Only meaningful after consent has been granted and script load attempted.
+ * Uses multiple signals for reliable detection.
  * @returns {Promise<boolean>} true if ads appear blocked
  */
 export async function checkRevenueBlocked() {
@@ -10,14 +9,27 @@ export async function checkRevenueBlocked() {
 		return true;
 	}
 
-	// Signal 2: Bait element probe - create an element that filter lists target
+	// Signal 2: Try to fetch the ad script - adblockers intercept this network request
+	try {
+		const resp = await fetch(
+			'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js',
+			{ method: 'HEAD', mode: 'no-cors', cache: 'no-store' }
+		);
+		// no-cors fetch returns opaque response (status 0) on success,
+		// but throws on network-level block
+	} catch {
+		return true;
+	}
+
+	// Signal 3: Bait element probe - create elements that filter lists target
 	return new Promise((resolve) => {
 		const bait = document.createElement('div');
-		bait.className = 'textads banner-ads';
-		bait.setAttribute('data-ad-slot', 'test');
+		bait.innerHTML = '&nbsp;';
+		bait.className = 'adsbox ad-placement ad-banner';
 		bait.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;';
 		document.body.appendChild(bait);
 
+		// Give filter lists time to act
 		setTimeout(() => {
 			const blocked =
 				bait.offsetHeight === 0 ||
