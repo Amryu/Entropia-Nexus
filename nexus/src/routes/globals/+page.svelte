@@ -114,6 +114,7 @@
   let topLootsPages = $state(1);
   let topLootsTotal = $state(0);
   let topLootsSort = $state({ col: '', asc: false }); // empty = default server sort
+  let topLootsFilter = $state(null); // { name, filterType: 'player'|'target'|'search' }
 
   // Remember type filter when switching to special tabs
   let savedTypeFilter = '';
@@ -194,6 +195,11 @@
       if (topLootsSort.col) {
         extra.sort = topLootsSort.col;
         extra.sort_dir = topLootsSort.asc ? 'asc' : 'desc';
+      }
+      if (topLootsFilter) {
+        if (topLootsFilter.filterType === 'player') extra.player = topLootsFilter.name;
+        else if (topLootsFilter.filterType === 'target') extra.target = topLootsFilter.name;
+        else extra.search = topLootsFilter.name;
       }
       // Get space filter from tab config
       const tabConfig = TOP_LOOTS_TABS.find(t => t.value === topLootsTab);
@@ -297,6 +303,7 @@
     topLootsTab = tab;
     topLootsPage = 1;
     topLootsSort = { col: '', asc: false };
+    topLootsFilter = null;
     fetchTopLoots();
   }
 
@@ -310,6 +317,29 @@
     topLootsSort = topLootsSort.col === col
       ? { col, asc: !topLootsSort.asc }
       : { col, asc: false };
+    topLootsPage = 1;
+    fetchTopLoots();
+  }
+
+  function handleTopLootsFilterSelect({ name, type }) {
+    topLootsFilter = (type === 'Player' || type === 'Team')
+      ? { name, filterType: 'player' }
+      : { name, filterType: 'target' };
+    topLootsPage = 1;
+    fetchTopLoots();
+  }
+
+  function handleTopLootsFilterSearch({ query }) {
+    const q = query?.trim();
+    if (q) {
+      topLootsFilter = { name: q, filterType: 'search' };
+      topLootsPage = 1;
+      fetchTopLoots();
+    }
+  }
+
+  function clearTopLootsFilter() {
+    topLootsFilter = null;
     topLootsPage = 1;
     fetchTopLoots();
   }
@@ -888,6 +918,27 @@
         </button>
       {/each}
     </div>
+    {#if topLootsTab === 'discovery' || topLootsTab === 'rare_item'}
+      <div class="top-loots-search">
+        {#if topLootsFilter}
+          <div class="filter-chip">
+            <span>{topLootsFilter.name}</span>
+            <button class="chip-clear" onclick={clearTopLootsFilter}>&times;</button>
+          </div>
+        {:else}
+          <SearchInput
+            placeholder="Search players, teams, {topLootsTab === 'discovery' ? 'discoveries' : 'rare items'}..."
+            endpoint="/api/globals/search"
+            apiPrefix={false}
+            maxPerCategory={10}
+            maxTotal={15}
+            onselect={handleTopLootsFilterSelect}
+            onsearch={handleTopLootsFilterSearch}
+            containerClass="top-loots-search-input"
+          />
+        {/if}
+      </div>
+    {/if}
     <div class:loading-fade={topLootsLoading}>
       {#if topLootsLoading && !topLoots}
         <div class="table-loading"><span class="spinner"></span></div>
@@ -962,7 +1013,7 @@
           </div>
         {/if}
       {:else}
-        <p class="empty-state-sm">No entries found for this category and period</p>
+        <p class="empty-state-sm">No entries found{topLootsFilter ? ` matching "${topLootsFilter.name}"` : ' for this category and period'}</p>
       {/if}
     </div>
   </div>
@@ -1496,6 +1547,11 @@
 
   .top-loots-tabs .sort-btn.special {
     border-left: 1px solid var(--border-color);
+  }
+
+  .top-loots-search {
+    padding: 8px 0;
+    max-width: 340px;
   }
 
   .top-loots-table {

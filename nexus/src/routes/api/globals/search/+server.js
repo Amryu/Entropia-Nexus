@@ -91,15 +91,18 @@ export async function GET({ url }) {
   const escaped = `%${escapeLike(query)}%`;
 
   try {
-    // Fuzzy match: substring ILIKE OR trigram/word similarity (same as menu-bar search).
-    // % catches short-name typos; <% catches query words appearing within longer names.
+    // Fuzzy match: substring ILIKE + trigram/word similarity with low thresholds
+    // to allow typos and partial matches. Aggregation tables are small enough
+    // that explicit function comparisons are fast without index support.
     const [playersResult, targetsResult] = await Promise.all([
       // Players & Teams — from pre-aggregated table
       pool.query(
         `SELECT player_name AS name, has_team, has_solo, event_count AS cnt
          FROM globals_player_agg
          WHERE period = 'all'
-           AND (player_name ILIKE $1 OR player_name % $2 OR $2 <% player_name)
+           AND (player_name ILIKE $1
+                OR similarity(player_name, $2) > 0.15
+                OR word_similarity($2, player_name) > 0.2)
          ORDER BY
            CASE WHEN player_name ILIKE $1 THEN 0 ELSE 1 END,
            GREATEST(similarity(player_name, $2), word_similarity($2, player_name)) DESC,
@@ -113,7 +116,9 @@ export async function GET({ url }) {
         `SELECT target_name AS name, primary_type, event_count AS cnt
          FROM globals_target_agg
          WHERE period = 'all'
-           AND (target_name ILIKE $1 OR target_name % $2 OR $2 <% target_name)
+           AND (target_name ILIKE $1
+                OR similarity(target_name, $2) > 0.15
+                OR word_similarity($2, target_name) > 0.2)
          ORDER BY
            CASE WHEN target_name ILIKE $1 THEN 0 ELSE 1 END,
            GREATEST(similarity(target_name, $2), word_similarity($2, target_name)) DESC,

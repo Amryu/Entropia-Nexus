@@ -30,14 +30,16 @@ export async function GET({ url }) {
   const escaped = `%${escapeLike(query)}%`;
 
   try {
-    // Fuzzy match: substring ILIKE OR trigram/word similarity (same as menu-bar search).
-    // % catches short-name typos; <% catches query words appearing within longer names.
-    // All three paths use idx_globals_player_agg_name_trgm.
+    // Fuzzy match: substring ILIKE + trigram/word similarity with low thresholds
+    // to allow typos and partial matches. The aggregation table is small enough
+    // that explicit function comparisons are fast without index support.
     const result = await pool.query(
       `SELECT player_name AS name, event_count AS cnt
        FROM globals_player_agg
        WHERE period = 'all'
-         AND (player_name ILIKE $1 OR player_name % $2 OR $2 <% player_name)
+         AND (player_name ILIKE $1
+              OR similarity(player_name, $2) > 0.15
+              OR word_similarity($2, player_name) > 0.2)
        ORDER BY
          CASE WHEN player_name ILIKE $1 THEN 0 ELSE 1 END,
          GREATEST(similarity(player_name, $2), word_similarity($2, player_name)) DESC,

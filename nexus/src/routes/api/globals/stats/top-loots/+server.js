@@ -21,6 +21,10 @@ const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 const MAX_PAGE = 500;
 
+function escapeLike(str) {
+  return str.replace(/[%_\\]/g, '\\$&');
+}
+
 export async function GET({ url, locals }) {
   const category = url.searchParams.get('category') || 'hunting';
   const tabConfig = TOP_LOOTS_TABS.find(t => t.value === category);
@@ -28,7 +32,19 @@ export async function GET({ url, locals }) {
     return getResponse({ error: 'Invalid category' }, 400);
   }
 
-  const { conditions, params } = buildGlobalsFilter(url);
+  const { conditions, params, paramIdx: nextIdx } = buildGlobalsFilter(url);
+  let paramIdx = nextIdx;
+
+  // Fuzzy search on target/item name (used by discovery tab search)
+  const search = url.searchParams.get('search')?.trim();
+  if (search && search.length >= 2) {
+    conditions.push(
+      `(target_name ILIKE $${paramIdx} OR similarity(target_name, $${paramIdx + 1}) > 0.15 OR word_similarity($${paramIdx + 1}, target_name) > 0.2)`
+    );
+    params.push(`%${escapeLike(search)}%`, search);
+    paramIdx += 2;
+  }
+
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   const limitParam = parseInt(url.searchParams.get('limit') || '');
