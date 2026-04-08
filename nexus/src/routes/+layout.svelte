@@ -10,7 +10,7 @@
   import SupportNotice from "$lib/components/SupportNotice.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
-  import { invalidateAll, afterNavigate } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
   import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
 
   let { data, children } = $props();
@@ -128,14 +128,23 @@
 
     // Analytics beacon: proves JS execution for bot detection (no cookies, no tracking)
     if (navigator.sendBeacon) navigator.sendBeacon('/api/beacon');
-  });
 
-  // Re-trigger AdSense auto ads on SPA navigation so Google re-scans the new page content
-  afterNavigate(() => {
-    try {
-      const adsbygoogle = /** @type {any} */ (window).adsbygoogle;
-      if (adsbygoogle) adsbygoogle.push({});
-    } catch { /* ad script not loaded or blocked */ }
+    // Guard against ad scripts injecting "height: auto !important" on layout
+    // containers (auto ads engine un-fixes heights to insert placements).
+    // Strip the injection on any critical element to preserve the flex chain.
+    const layoutEl = document.querySelector('.app-layout');
+    if (layoutEl) {
+      const layoutGuard = new MutationObserver(() => {
+        document.querySelectorAll('[style*="height: auto"]').forEach((el) => {
+          if (el.style.getPropertyPriority('height') === 'important') {
+            el.style.removeProperty('height');
+          }
+        });
+      });
+      layoutGuard.observe(layoutEl, { attributes: true, attributeFilter: ['style'], subtree: true });
+      // Also observe the layout element itself
+      layoutGuard.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: false });
+    }
   });
 
   onDestroy(() => {

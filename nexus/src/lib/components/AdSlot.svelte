@@ -65,10 +65,18 @@
     if (!browser) return;
     let initialized = false;
 
-    // Parent wrapper (e.g. .wiki-content-ad) starts hidden so unfilled ads
-    // never show a gap.  Reveal it only when AdSense confirms the fill.
+    // Collapse the parent wrapper (e.g. .wiki-content-ad) to zero height so
+    // unfilled ads don't leave a visible gap.  We use height:0 + overflow:hidden
+    // instead of display:none so the <ins> element stays in the DOM and the
+    // IntersectionObserver can still fire, allowing AdSense to process the slot.
     const wrapper = node.closest('.ad-slot-container')?.parentElement;
-    if (wrapper) wrapper.style.display = 'none';
+    const savedStyles = wrapper ? { height: wrapper.style.height, overflow: wrapper.style.overflow, margin: wrapper.style.margin, padding: wrapper.style.padding } : null;
+    if (wrapper) {
+      wrapper.style.height = '0';
+      wrapper.style.overflow = 'hidden';
+      wrapper.style.margin = '0';
+      wrapper.style.padding = '0';
+    }
 
     function pushAd() {
       if (initialized) return;
@@ -81,7 +89,16 @@
     }
 
     function revealWrapper() {
-      if (wrapper) wrapper.style.display = '';
+      if (wrapper && savedStyles) {
+        wrapper.style.height = savedStyles.height;
+        wrapper.style.overflow = savedStyles.overflow;
+        wrapper.style.margin = savedStyles.margin;
+        wrapper.style.padding = savedStyles.padding;
+      }
+    }
+
+    function collapseWrapper() {
+      if (wrapper) wrapper.style.display = 'none';
     }
 
     // Watch for AdSense setting data-ad-status on the <ins> element.
@@ -91,18 +108,21 @@
         revealWrapper();
         statusObserver.disconnect();
       } else if (status === 'unfilled') {
+        collapseWrapper();
         statusObserver.disconnect();
       }
     });
     statusObserver.observe(node, { attributes: true, attributeFilter: ['data-ad-status'] });
 
-    // Fallback: if data-ad-status is never set but an iframe appeared, reveal.
+    // Fallback: if data-ad-status is never set, check for content after 5s.
     const sizeFallback = setTimeout(() => {
       if (node.querySelector('iframe') || node.offsetHeight > 1) {
         revealWrapper();
+      } else {
+        collapseWrapper();
       }
       statusObserver.disconnect();
-    }, 3000);
+    }, 5000);
 
     // Use IntersectionObserver to wait until the element is actually visible
     // This handles responsive layouts where ads are in display:none containers
