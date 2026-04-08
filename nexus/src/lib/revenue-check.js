@@ -4,14 +4,10 @@
  * @returns {Promise<boolean>} true if ads appear blocked
  */
 export async function checkRevenueBlocked() {
-	// Signal 1: Check if the ad script global exists
-	if (typeof /** @type {any} */ (window).adsbygoogle === 'undefined') {
-		return true;
-	}
-
-	// Signal 2: Try to fetch the ad script - adblockers intercept this network request
+	// Signal 1: Try to fetch the ad script - adblockers intercept this network request.
+	// This is the most reliable signal since it doesn't depend on script load timing.
 	try {
-		const resp = await fetch(
+		await fetch(
 			'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js',
 			{ method: 'HEAD', mode: 'no-cors', cache: 'no-store' }
 		);
@@ -21,7 +17,7 @@ export async function checkRevenueBlocked() {
 		return true;
 	}
 
-	// Signal 3: Bait element probe - create elements that filter lists target
+	// Signal 2: Bait element probe - create elements that filter lists target
 	return new Promise((resolve) => {
 		const bait = document.createElement('div');
 		bait.innerHTML = '&nbsp;';
