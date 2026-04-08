@@ -58,7 +58,7 @@
   })());
 
   let vendorColumns = $derived([
-    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'name', header: 'Name', main: true, width: '120px', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'price', header: 'Price' },
     { key: 'specialPrice', header: 'Special Price' },
     { key: 'planet', header: 'Planet' },
@@ -81,7 +81,7 @@
   })());
 
   let lootColumns = $derived([
-    { key: 'mob', header: 'Mob', main: true, formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
+    { key: 'mob', header: 'Mob', main: true, width: '120px', formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
     ...(isMultiItem ? [{ key: 'item', header: 'Item', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v }] : []),
     { key: 'planet', header: 'Planet' },
     { key: 'maturity', header: 'Lowest Maturity' },
@@ -164,7 +164,7 @@
   let hasMarketData = $derived(marketData.length > 0);
 
   let marketColumns = $derived([
-    { key: 'name', header: 'Name', main: true, formatter: (v, row) => {
+    { key: 'name', header: 'Name', main: true, width: '120px', formatter: (v, row) => {
       const label = row.stale ? `<span class="stale-text">${v}</span>` : v;
       const setBadge = row.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
       return label + setBadge;
@@ -202,7 +202,7 @@
   })());
 
   let missionRewardColumns = $derived([
-    { key: 'mission', header: 'Mission', main: true, formatter: (v, row) => {
+    { key: 'mission', header: 'Mission', main: true, width: '120px', formatter: (v, row) => {
       let label = row.missionLink ? `<a href="${row.missionLink}">${v}</a>` : v;
       if (row.isChoice) label += ' <span class="badge badge-subtle badge-accent">Choice</span>';
       return label;
@@ -226,7 +226,7 @@
   })());
 
   let blueprintColumns = $derived([
-    { key: 'name', header: 'Blueprint', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'name', header: 'Blueprint', main: true, width: '120px', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'level', header: 'Level' },
     { key: 'profession', header: 'Profession', formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
   ]);
@@ -243,7 +243,7 @@
   })());
 
   let blueprintDropColumns = $derived([
-    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'name', header: 'Name', main: true, width: '120px', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'level', header: 'Level' },
     { key: 'rarity', header: 'Rarity' }
   ]);
@@ -263,7 +263,7 @@
   })());
 
   let forumColumns = $derived([
-    { key: 'title', header: 'Thread', main: true, formatter: (v, row) =>
+    { key: 'title', header: 'Thread', main: true, width: '120px', formatter: (v, row) =>
       `<a href="${row.url}" target="_blank" rel="noopener">${v}</a>` +
       ` <span class="badge badge-subtle ${row.forumType === 'selling' ? 'badge-accent' : 'badge-success'}">${row.typeLabel}</span>`
     },
