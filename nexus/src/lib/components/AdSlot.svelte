@@ -19,7 +19,7 @@
 <script>
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
-  import { getRevenueBlocked } from '$lib/stores/revenue-state.svelte.js';
+  import { getContentBlocked } from '$lib/stores/feature-state.svelte.js';
 
   const AD_CLIENT = 'ca-pub-9726361132383377';
 
@@ -46,7 +46,7 @@
     prevPath = newPath;
   });
 
-  let blocked = $derived(browser && getRevenueBlocked());
+  let blocked = $derived(browser && getContentBlocked());
 
   // Build inline style for the ins element
   // Fixed-size ads (with width+height) use inline-block; responsive ads use block

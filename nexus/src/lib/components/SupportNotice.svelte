@@ -1,24 +1,24 @@
 <!--
-  @component AdblockToast
-  Small branded toast (bottom-right) shown when an adblocker is detected.
+  @component SupportNotice
+  Small branded notice (bottom-right) shown when content delivery is blocked.
   Dismissible for 14 days via localStorage timestamp.
   Only appears after the consent banner has been dismissed.
 -->
 <script>
   import { browser } from '$app/environment';
-  import { getRevenueBlocked, getRevenueChecked, runRevenueCheck } from '$lib/stores/revenue-state.svelte.js';
+  import { getContentBlocked, getContentChecked, runContentCheck } from '$lib/stores/feature-state.svelte.js';
   import { hasDecision } from '$lib/stores/consent.svelte.js';
   import { fly } from 'svelte/transition';
 
-  const STORAGE_KEY = 'nexus.adblock-toast.dismissed';
+  const STORAGE_KEY = 'nexus.notice.ts';
   const DISMISS_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   let manuallyDismissed = $state(false);
 
-  // Run adblock check once on mount
+  // Run check once on mount
   $effect(() => {
-    if (browser && !getRevenueChecked()) {
-      runRevenueCheck();
+    if (browser && !getContentChecked()) {
+      runContentCheck();
     }
   });
 
@@ -43,8 +43,8 @@
 
   let visible = $derived(
     browser &&
-    getRevenueChecked() &&
-    getRevenueBlocked() &&
+    getContentChecked() &&
+    getContentBlocked() &&
     hasDecision() &&
     !manuallyDismissed &&
     !isDismissedRecently()
@@ -52,19 +52,19 @@
 </script>
 
 {#if visible}
-  <div class="site-support-toast" role="status" transition:fly={{ y: 20, duration: 250 }}>
-    <span class="site-support-icon">EN</span>
-    <div class="site-support-body">
-      <p class="site-support-text">
+  <div class="inline-notice" role="status" transition:fly={{ y: 20, duration: 250 }}>
+    <span class="notice-icon">EN</span>
+    <div class="notice-body">
+      <p class="notice-text">
         Entropia Nexus is supported by ads. Consider disabling your ad blocker to help keep this resource free.
       </p>
-      <button class="site-support-dismiss" onclick={dismiss}>Dismiss</button>
+      <button class="notice-action" onclick={dismiss}>Dismiss</button>
     </div>
   </div>
 {/if}
 
 <style>
-  .site-support-toast {
+  .inline-notice {
     position: fixed;
     bottom: 16px;
     right: 16px;
@@ -80,7 +80,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 
-  .site-support-icon {
+  .notice-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -95,20 +95,20 @@
     letter-spacing: 0.5px;
   }
 
-  .site-support-body {
+  .notice-body {
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
 
-  .site-support-text {
+  .notice-text {
     margin: 0;
     font-size: 0.8125rem;
     line-height: 1.45;
     color: var(--text-color);
   }
 
-  .site-support-dismiss {
+  .notice-action {
     align-self: flex-end;
     padding: 4px 12px;
     border: 1px solid var(--border-color);
@@ -121,13 +121,13 @@
     transition: color 0.15s, border-color 0.15s;
   }
 
-  .site-support-dismiss:hover {
+  .notice-action:hover {
     color: var(--text-color);
     border-color: var(--text-muted);
   }
 
   @media (max-width: 599px) {
-    .site-support-toast {
+    .inline-notice {
       right: 8px;
       bottom: 8px;
       left: 8px;

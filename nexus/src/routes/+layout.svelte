@@ -7,7 +7,7 @@
   import Menu from "$lib/components/Menu.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
   import ConsentBanner from "$lib/components/ConsentBanner.svelte";
-  import AdblockToast from "$lib/components/AdblockToast.svelte";
+  import SupportNotice from "$lib/components/SupportNotice.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
   import { invalidateAll, afterNavigate } from '$app/navigation';
@@ -203,7 +203,7 @@
   <link rel="manifest" href="/site.webmanifest">
   <link rel="alternate" type="application/rss+xml" title="Entropia Nexus" href="/feed.xml">
 </svelte:head>
-{#if !isEmbed}<Toasts /><ConsentBanner /><AdblockToast />{/if}
+{#if !isEmbed}<Toasts /><ConsentBanner /><SupportNotice />{/if}
 <div class="app-layout">
   {#if !isEmbed}
     <Menu user={data?.session?.user} realUser={data?.session?.realUser} />
