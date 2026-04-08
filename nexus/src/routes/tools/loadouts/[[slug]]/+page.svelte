@@ -1249,6 +1249,8 @@
       }
       onlineLoadouts = (data || []).map(row => {
         const normalized = ensureLoadoutIds([row.data || createEmptyLoadout()])[0];
+        // Sync authoritative DB name into the data object
+        if (row.name) normalized.Name = row.name;
         return {
           id: row.id,
           name: row.name,

@@ -23,6 +23,14 @@ function sanitizeNameObject(value) {
   return name ? { Name: name } : null;
 }
 
+function sanitizeScopeObject(value) {
+  if (!value || typeof value !== 'object') return null;
+  const name = sanitizeString(value.Name, null, 200);
+  const sight = sanitizeNameObject(value.Sight);
+  if (!name && !sight) return null;
+  return { Name: name, Sight: sight };
+}
+
 export function createEmptyLoadout() {
   const newArmorObject = () => ({
     Name: null,
@@ -149,7 +157,7 @@ export function sanitizeLoadoutData(input) {
 
   sanitized.Gear.Weapon.Name = sanitizeString(input?.Gear?.Weapon?.Name, null, 200);
   sanitized.Gear.Weapon.Amplifier = sanitizeNameObject(input?.Gear?.Weapon?.Amplifier);
-  sanitized.Gear.Weapon.Scope = sanitizeNameObject(input?.Gear?.Weapon?.Scope);
+  sanitized.Gear.Weapon.Scope = sanitizeScopeObject(input?.Gear?.Weapon?.Scope);
   sanitized.Gear.Weapon.Sight = sanitizeNameObject(input?.Gear?.Weapon?.Sight);
   sanitized.Gear.Weapon.Absorber = sanitizeNameObject(input?.Gear?.Weapon?.Absorber);
   sanitized.Gear.Weapon.Implant = sanitizeNameObject(input?.Gear?.Weapon?.Implant);
@@ -229,7 +237,7 @@ function sanitizeWeaponGear(weapon) {
   return {
     Name: sanitizeString(weapon?.Name, null, 200),
     Amplifier: sanitizeNameObject(weapon?.Amplifier),
-    Scope: sanitizeNameObject(weapon?.Scope),
+    Scope: sanitizeScopeObject(weapon?.Scope),
     Sight: sanitizeNameObject(weapon?.Sight),
     Absorber: sanitizeNameObject(weapon?.Absorber),
     Implant: sanitizeNameObject(weapon?.Implant),
