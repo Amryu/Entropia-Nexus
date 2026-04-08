@@ -247,9 +247,12 @@
     ordersLoadedKey = '';
     showPriceHistory = false;
     showFilterDialog = false;
-    // Navigate — this triggers the route-sync reactive block
-    // which will restore savedOverviewFilters
-    goto(detailReturnUrl || '/market/exchange/listings');
+    // Navigate back — only keep savedOverviewFilters when returning to listings
+    const returnUrl = detailReturnUrl || '/market/exchange/listings';
+    if (!returnUrl.startsWith('/market/exchange/listings')) {
+      savedOverviewFilters = null;
+    }
+    goto(returnUrl);
   }
 
   /** Close floating panel tabs without navigating — used by sidebar handlers */
