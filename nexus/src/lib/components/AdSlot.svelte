@@ -65,18 +65,9 @@
     if (!browser) return;
     let initialized = false;
 
-    // Collapse the parent wrapper (e.g. .wiki-content-ad) to zero height so
-    // unfilled ads don't leave a visible gap.  We use height:0 + overflow:hidden
-    // instead of display:none so the <ins> element stays in the DOM and the
-    // IntersectionObserver can still fire, allowing AdSense to process the slot.
+    // AdSense requires slots to be visible with real dimensions to process them.
+    // Render visible, then collapse only unfilled slots (Google's approved method).
     const wrapper = node.closest('.ad-slot-container')?.parentElement;
-    const savedStyles = wrapper ? { height: wrapper.style.height, overflow: wrapper.style.overflow, margin: wrapper.style.margin, padding: wrapper.style.padding } : null;
-    if (wrapper) {
-      wrapper.style.height = '0';
-      wrapper.style.overflow = 'hidden';
-      wrapper.style.margin = '0';
-      wrapper.style.padding = '0';
-    }
 
     function pushAd() {
       if (initialized) return;
@@ -88,38 +79,54 @@
       }
     }
 
-    function revealWrapper() {
-      if (wrapper && savedStyles) {
-        wrapper.style.height = savedStyles.height;
-        wrapper.style.overflow = savedStyles.overflow;
-        wrapper.style.margin = savedStyles.margin;
-        wrapper.style.padding = savedStyles.padding;
-      }
-    }
-
     function collapseWrapper() {
-      if (wrapper) wrapper.style.display = 'none';
+      // In dev mode, keep the wrapper visible so debug placeholders are shown
+      if (wrapper && !import.meta.env.DEV) wrapper.style.display = 'none';
     }
 
-    // Watch for AdSense setting data-ad-status on the <ins> element.
+    function showDebugPlaceholder(status) {
+      if (!wrapper || !import.meta.env.DEV) return;
+      const ph = document.createElement('div');
+      ph.style.cssText = 'border:2px dashed #4a9eff;background:#1a1a2e;color:#4a9eff;padding:12px;font:12px/1.4 sans-serif;border-radius:4px;text-align:center;margin:4px 0;';
+      ph.textContent = `AdSense: ${status} (slot ${adSlot})`;
+      node.closest('.ad-slot-container')?.appendChild(ph);
+    }
+
+    // Watch for AdSense setting status attributes on the <ins> element.
+    // data-ad-status = "filled" | "unfilled" (set on most slots)
+    // data-adsbygoogle-status = "done" (set on ALL processed slots)
+    // Some slots get "done" without data-ad-status - treat as unfilled.
+    let resolved = false;
     const statusObserver = new MutationObserver(() => {
-      const status = node.getAttribute('data-ad-status');
-      if (status === 'filled') {
-        revealWrapper();
+      if (resolved) return;
+      const adStatus = node.getAttribute('data-ad-status');
+      const doneStatus = node.getAttribute('data-adsbygoogle-status');
+
+      if (adStatus === 'filled') {
+        resolved = true;
+        showDebugPlaceholder('filled');
         statusObserver.disconnect();
-      } else if (status === 'unfilled') {
+      } else if (adStatus === 'unfilled') {
+        resolved = true;
         collapseWrapper();
+        showDebugPlaceholder('unfilled - no ad available');
+        statusObserver.disconnect();
+      } else if (doneStatus === 'done' && !adStatus) {
+        // AdSense processed but silently produced nothing
+        resolved = true;
+        collapseWrapper();
+        showDebugPlaceholder('done but empty - no ad rendered');
         statusObserver.disconnect();
       }
     });
-    statusObserver.observe(node, { attributes: true, attributeFilter: ['data-ad-status'] });
+    statusObserver.observe(node, { attributes: true, attributeFilter: ['data-ad-status', 'data-adsbygoogle-status'] });
 
-    // Fallback: if data-ad-status is never set, check for content after 5s.
+    // Fallback: if neither status is set (script blocked), collapse after 5s.
     const sizeFallback = setTimeout(() => {
-      if (node.querySelector('iframe') || node.offsetHeight > 1) {
-        revealWrapper();
-      } else {
+      if (resolved) return;
+      if (!node.querySelector('iframe') && node.offsetHeight <= 1) {
         collapseWrapper();
+        showDebugPlaceholder('no response - script blocked or not loaded');
       }
       statusObserver.disconnect();
     }, 5000);

@@ -371,7 +371,7 @@
         {/if}
         {#if !sidebarExpanded && !sidebarFullWidth}
           <div class="sidebar-ad">
-            <AdSlot adSlot="5222854398" adFormat="rectangle" />
+            <AdSlot adSlot="5222854398" adFormat="auto" />
           </div>
         {/if}
       </aside>
@@ -649,6 +649,10 @@
   .sidebar-ad {
     flex-shrink: 0;
     padding: 8px;
+    max-height: 200px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
   }
 
   .wiki-page.sidebar-expanded .wiki-sidebar {
