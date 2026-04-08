@@ -144,7 +144,7 @@
       {#if hasLeftPromo}
         <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} />
       {:else}
-        <AdSlot adSlot="2183861159" adFormat="vertical" width="160px" height="600px" />
+        <AdSlot adSlot="2183861159" adFormat="auto" />
       {/if}
     </div>
   </aside>
@@ -153,7 +153,7 @@
       {#if hasRightPromo}
         <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} />
       {:else}
-        <AdSlot adSlot="2183861159" adFormat="vertical" width="160px" height="600px" />
+        <AdSlot adSlot="2183861159" adFormat="auto" />
       {/if}
     </div>
   </aside>
@@ -493,6 +493,11 @@
     position: fixed;
     top: 80px;
     z-index: 10;
+    pointer-events: none;
+  }
+
+  .partner-rail :global(*) {
+    pointer-events: auto;
   }
 
   .partner-rail-left {
