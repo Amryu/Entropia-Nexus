@@ -53,6 +53,12 @@ export function getMobAttackNames(mob) {
 
 const ICE_SHIELD_TYPES = ['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn'];
 export const ICE_SHIELD_VALUE = 75;
+
+// Singleton ice shield defense layer — used by reference to identify and
+// exclude it from typeScore calculations (ice shield is a buff, not equipment).
+const _iceShieldLayer = Object.freeze(
+  Object.fromEntries(DEFENSE_TYPES.map(t => [t, ICE_SHIELD_TYPES.includes(t) ? ICE_SHIELD_VALUE : 0]))
+);
 export const MAX_ENHANCERS = 10;
 export const ENHANCER_BONUS_PER_LEVEL = 0.05;
 
@@ -79,11 +85,7 @@ export function computeDefenseLayers(armorSet, plating, iceShield, enhancers) {
   const layers = [];
 
   if (iceShield) {
-    const iceDef = {};
-    for (const type of DEFENSE_TYPES) {
-      iceDef[type] = ICE_SHIELD_TYPES.includes(type) ? ICE_SHIELD_VALUE : 0;
-    }
-    layers.push(iceDef);
+    layers.push(_iceShieldLayer);
   }
 
   if (plating) {
@@ -148,6 +150,27 @@ function expectedTakenLayered(totalBase, pctByType, layers) {
   return sum / INTEGRATION_STEPS;
 }
 
+/**
+ * Expected total decay (PEC) with layered defense, integrated over uniform
+ * roll X in [DAMAGE_MIN_FRACTION, DAMAGE_MAX_FRACTION].
+ * Each layer's blocked amount is multiplied by its own decay rate.
+ */
+function expectedDecayLayered(totalBase, pctByType, layers, decayRates) {
+  if (totalBase <= 0) return 0;
+  const range = DAMAGE_MAX_FRACTION - DAMAGE_MIN_FRACTION;
+  let decaySum = 0;
+  for (let i = 0; i < INTEGRATION_STEPS; i++) {
+    const X = DAMAGE_MIN_FRACTION + (i + 0.5) * range / INTEGRATION_STEPS;
+    let remaining = totalBase * X;
+    for (let j = 0; j < layers.length; j++) {
+      const prev = remaining;
+      remaining = applyDefenseLayer(remaining, pctByType, layers[j]);
+      decaySum += (prev - remaining) * (decayRates[j] ?? 0);
+    }
+  }
+  return decaySum / INTEGRATION_STEPS;
+}
+
 /** Sum all layers into a single defense-by-type map (for typeScore calculations). */
 function sumLayers(layers) {
   const result = {};
@@ -172,8 +195,9 @@ function sumLayers(layers) {
  * @param {object} attack - mob attack
  * @param {Record<string, number>[]} defenseLayers - sequential defense layers
  * @param {number} dmgMultiplier - pre-mitigation damage multiplier (1 = unmodified)
+ * @param {number[]} [decayRates] - per-layer decay rates (PEC/unit absorbed)
  */
-export function computeAttackBreakdown(attack, defenseLayers, dmgMultiplier = 1) {
+export function computeAttackBreakdown(attack, defenseLayers, dmgMultiplier = 1, decayRates = null) {
   const totalDmg = (attack?.TotalDamage ?? 0) * dmgMultiplier;
 
   const pctByType = {};
@@ -205,6 +229,10 @@ export function computeAttackBreakdown(attack, defenseLayers, dmgMultiplier = 1)
   });
   const critTaken = computeLayeredRemaining(critIncoming, pctByType, piercedLayers);
 
+  const expectedDecay = decayRates
+    ? expectedDecayLayered(totalDmg, pctByType, defenseLayers, decayRates)
+    : null;
+
   return {
     name: attack?.Name || 'Attack',
     totalMin: incomingMin,
@@ -214,6 +242,7 @@ export function computeAttackBreakdown(attack, defenseLayers, dmgMultiplier = 1)
     takenMin, takenAvg: incomingAvg - blockedAvg, takenMax,
     expectedTaken,
     expectedBlocked,
+    expectedDecay,
     mitigation,
     critIncoming,
     critTaken
@@ -224,17 +253,22 @@ export function computeAttackBreakdown(attack, defenseLayers, dmgMultiplier = 1)
  * Fast single-pass maturity scorer — computes typeScore, mitigation and
  * damageTaken in a single walk over the maturity's attacks.
  * Uses layered defense model with redistribution between layers.
+ * @param {number[]} [decayRates] - per-layer decay rates; when provided,
+ *   returns decayPerAttack computed from per-layer blocked amounts.
  */
-function scoreMaturityAll(maturity, defenseLayers, dmgMultiplier = 1) {
+function scoreMaturityAll(maturity, defenseLayers, dmgMultiplier = 1, decayRates = null) {
   const attacks = Array.isArray(maturity?.Attacks) ? maturity.Attacks : [];
-  if (attacks.length === 0) return { typeScore: null, mitigation: null, damageTaken: null };
+  if (attacks.length === 0) return { typeScore: null, mitigation: null, damageTaken: null, decayPerAttack: null };
 
-  // Summed defense for typeScore calculation (composition alignment)
-  const summed = sumLayers(defenseLayers);
+  // Sum only equipment layers (exclude ice shield) for typeScore — ice shield
+  // is a constant buff that doesn't reflect armor/plate composition quality.
+  const equipLayers = defenseLayers.filter(l => l !== _iceShieldLayer);
+  const equipDef = sumLayers(equipLayers);
 
   let typeScoreSum = 0, typeScoreCount = 0;
   let totalBlocked = 0, totalIncoming = 0;
   let takenSum = 0, takenCount = 0;
+  let decaySum = 0;
 
   for (const atk of attacks) {
     const totalDmg = (atk?.TotalDamage ?? 0) * dmgMultiplier;
@@ -247,7 +281,7 @@ function scoreMaturityAll(maturity, defenseLayers, dmgMultiplier = 1) {
       const pct = (atk?.Damage?.[type] ?? 0) / 100;
       pctByType[type] = pct;
       if (pct > 0) hasComp = true;
-      const def = summed[type];
+      const def = equipDef[type];
       totalDef += def;
       weightedDef += pct * def;
     }
@@ -264,6 +298,9 @@ function scoreMaturityAll(maturity, defenseLayers, dmgMultiplier = 1) {
       totalIncoming += incomingAvg;
       takenSum += expectedTaken;
       takenCount++;
+      if (decayRates) {
+        decaySum += expectedDecayLayered(totalDmg, pctByType, defenseLayers, decayRates);
+      }
     }
   }
 
@@ -271,7 +308,7 @@ function scoreMaturityAll(maturity, defenseLayers, dmgMultiplier = 1) {
     typeScore: typeScoreCount > 0 ? typeScoreSum / typeScoreCount : null,
     mitigation: totalIncoming > 0 ? totalBlocked / totalIncoming : null,
     damageTaken: takenCount > 0 ? takenSum / takenCount : null,
-    blockedPerAttack: takenCount > 0 ? totalBlocked / takenCount : null
+    decayPerAttack: takenCount > 0 && decayRates ? decaySum / takenCount : null
   };
 }
 
@@ -304,7 +341,7 @@ export function sortedMaturities(mob) {
  *
  * Returns null only if the mob has NO usable composition on any attack.
  */
-export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 1) {
+export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 1, decayRates = null) {
   const mats = sortedMaturities(mob);
   if (mats.length === 0) return null;
 
@@ -313,12 +350,12 @@ export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 
   if (!anyAttacks) return null;
 
   function scoreOne(mat) {
-    const s = scoreMaturityAll(mat, defenseLayers, dmgMultiplier);
+    const s = scoreMaturityAll(mat, defenseLayers, dmgMultiplier, decayRates);
     return {
       typeScore: s.typeScore,
       mitigation: s.mitigation,
       damageTaken: s.damageTaken,
-      blockedPerAttack: s.blockedPerAttack,
+      decayPerAttack: s.decayPerAttack,
       label: mat?.Name ?? null,
       level: mat?.Properties?.Level ?? null
     };
@@ -331,23 +368,23 @@ export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 
   if (scope === 'lowest' || scope === 'highest') {
     const mat = scope === 'lowest' ? mats[0] : mats[mats.length - 1];
     aggregated = scoreOne(mat);
-    // Single maturity → no range
-    aggregated.blockedPerAttackMin = aggregated.blockedPerAttack;
-    aggregated.blockedPerAttackMax = aggregated.blockedPerAttack;
+    aggregated.decayPerAttackMin = aggregated.decayPerAttack;
+    aggregated.decayPerAttackMax = aggregated.decayPerAttack;
     label = aggregated.label;
     level = aggregated.level;
   } else {
-    // Average across maturities. Fall back to all maturities if none have composition.
     const scored = mats.map(scoreOne);
     const withComp = scored.filter(s => s.typeScore != null);
     const chosen = withComp.length > 0 ? withComp : scored;
     const withDamage = chosen.filter(s => s.mitigation != null);
 
-    let blockedMin = null, blockedMax = null;
+    let decayMin = null, decayMax = null;
     if (withDamage.length > 0) {
       for (const s of withDamage) {
-        if (blockedMin == null || s.blockedPerAttack < blockedMin) blockedMin = s.blockedPerAttack;
-        if (blockedMax == null || s.blockedPerAttack > blockedMax) blockedMax = s.blockedPerAttack;
+        if (s.decayPerAttack != null) {
+          if (decayMin == null || s.decayPerAttack < decayMin) decayMin = s.decayPerAttack;
+          if (decayMax == null || s.decayPerAttack > decayMax) decayMax = s.decayPerAttack;
+        }
       }
     }
     aggregated = {
@@ -360,11 +397,11 @@ export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 
       damageTaken: withDamage.length > 0
         ? withDamage.reduce((a, s) => a + s.damageTaken, 0) / withDamage.length
         : null,
-      blockedPerAttack: withDamage.length > 0
-        ? withDamage.reduce((a, s) => a + s.blockedPerAttack, 0) / withDamage.length
+      decayPerAttack: withDamage.length > 0 && withDamage[0].decayPerAttack != null
+        ? withDamage.reduce((a, s) => a + (s.decayPerAttack ?? 0), 0) / withDamage.length
         : null,
-      blockedPerAttackMin: blockedMin,
-      blockedPerAttackMax: blockedMax
+      decayPerAttackMin: decayMin,
+      decayPerAttackMax: decayMax
     };
     label = chosen.length === 1 ? chosen[0].label : `avg of ${chosen.length}`;
   }
@@ -373,9 +410,9 @@ export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 
     typeScore: aggregated.typeScore,
     mitigation: aggregated.mitigation,
     damageTaken: aggregated.damageTaken,
-    blockedPerAttack: aggregated.blockedPerAttack,
-    blockedPerAttackMin: aggregated.blockedPerAttackMin,
-    blockedPerAttackMax: aggregated.blockedPerAttackMax,
+    decayPerAttack: aggregated.decayPerAttack,
+    decayPerAttackMin: aggregated.decayPerAttackMin,
+    decayPerAttackMax: aggregated.decayPerAttackMax,
     hasTotalDamage: aggregated.mitigation != null,
     hasComposition: aggregated.typeScore != null,
     maturityLabel: label,
@@ -384,35 +421,20 @@ export function scoreMob(mob, defenseLayers, scope = 'average', dmgMultiplier = 
 }
 
 /**
- * Per-unit-damage-absorbed decay rate (PEC per damage point) for a combined
- * armor + plating configuration. Mirrors the formula in loadoutCalculations.js
- * calculateTotalAbsorption, where the full-hit decay is
- *   maxDecay = totalDefense × (100000 − durability) / 100000 × 0.05
- * ⇒ per unit absorbed: (100000 − durability) / 100000 × 0.05.
- * Armor and plate contribute proportionally to their share of total defense.
+ * Compute per-layer decay rates (PEC per unit damage absorbed) matching
+ * the layer order from computeDefenseLayers: [iceShield?, plate?, armor].
+ * Ice shield: 0 (buff, no decay). Plate/armor: durability-based rate.
  */
-export function computeDecayRate(armorSet, plating) {
-  const sumDef = item => {
-    if (!item) return 0;
-    let s = 0;
-    for (const type of DEFENSE_TYPES) s += item?.Properties?.Defense?.[type] ?? 0;
-    return s;
-  };
-  const armorDef = sumDef(armorSet);
-  const plateDef = sumDef(plating);
-  const totalDef = armorDef + plateDef;
-  if (totalDef <= 0) return 0;
-
+export function computeLayerDecayRates(armorSet, plating, iceShield) {
+  const rates = [];
+  if (iceShield) rates.push(0);
+  if (plating) {
+    const dur = plating?.Properties?.Economy?.Durability ?? 0;
+    rates.push((100000 - dur) / 100000 * 0.05);
+  }
   const armorDur = armorSet?.Properties?.Economy?.Durability ?? 0;
-  const plateDur = plating?.Properties?.Economy?.Durability ?? 0;
-
-  const armorRate = armorDef > 0 ? (100000 - armorDur) / 100000 * 0.05 : 0;
-  const plateRate = plateDef > 0 ? (100000 - plateDur) / 100000 * 0.05 : 0;
-
-  const armorShare = armorDef / totalDef;
-  const plateShare = plateDef / totalDef;
-
-  return armorShare * armorRate + plateShare * plateRate;
+  rates.push((100000 - armorDur) / 100000 * 0.05);
+  return rates;
 }
 
 /**
@@ -448,7 +470,7 @@ function makeSortByMetric(rankBy = 'mitigation') {
  *                  then damage-unknown (by type score desc)
  */
 /** Async/chunked per-maturity ranking — one entry per (mob × maturity). */
-export async function rankMaturitiesChunked(mobs, defenseLayers, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
+export async function rankMaturitiesChunked(mobs, defenseLayers, dmgMultiplier, rankBy, decayRates, { chunkSize = 100, signal } = {}) {
   const results = [];
   const sortFn = makeSortByMetric(rankBy);
   const list = mobs || [];
@@ -459,18 +481,17 @@ export async function rankMaturitiesChunked(mobs, defenseLayers, dmgMultiplier, 
     for (const mat of mats) {
       const attacks = Array.isArray(mat?.Attacks) ? mat.Attacks : [];
       if (attacks.length === 0) continue;
-      const s = scoreMaturityAll(mat, defenseLayers, dmgMultiplier);
+      const s = scoreMaturityAll(mat, defenseLayers, dmgMultiplier, decayRates);
       if (s.typeScore == null) continue;
-      const blocked = s.blockedPerAttack;
       results.push({
         mob, maturity: mat,
         name: mob.Name,
         typeScore: s.typeScore,
         mitigationPct: s.mitigation != null ? s.mitigation * 100 : null,
         damageTaken: s.damageTaken,
-        decayPerAttack: blocked != null ? blocked * decayRate : null,
-        decayPerAttackMin: blocked != null ? blocked * decayRate : null,
-        decayPerAttackMax: blocked != null ? blocked * decayRate : null,
+        decayPerAttack: s.decayPerAttack,
+        decayPerAttackMin: s.decayPerAttack,
+        decayPerAttackMax: s.decayPerAttack,
         hasTotalDamage: s.mitigation != null,
         hasComposition: s.typeScore != null,
         maturityLabel: mat?.Name ?? null,
@@ -487,14 +508,14 @@ export async function rankMaturitiesChunked(mobs, defenseLayers, dmgMultiplier, 
 }
 
 /** Async/chunked mob ranking that yields to the browser every N mobs. */
-export async function rankMobsChunked(mobs, defenseLayers, scope, dmgMultiplier, rankBy, decayRate, { chunkSize = 100, signal } = {}) {
+export async function rankMobsChunked(mobs, defenseLayers, scope, dmgMultiplier, rankBy, decayRates, { chunkSize = 100, signal } = {}) {
   const results = [];
   const sortFn = makeSortByMetric(rankBy);
   const list = mobs || [];
   for (let i = 0; i < list.length; i++) {
     if (signal?.aborted) return null;
     const mob = list[i];
-    const score = scoreMob(mob, defenseLayers, scope, dmgMultiplier);
+    const score = scoreMob(mob, defenseLayers, scope, dmgMultiplier, decayRates);
     if (score != null) {
       results.push({
         mob,
@@ -502,9 +523,9 @@ export async function rankMobsChunked(mobs, defenseLayers, scope, dmgMultiplier,
         typeScore: score.typeScore,
         mitigationPct: score.mitigation != null ? score.mitigation * 100 : null,
         damageTaken: score.damageTaken,
-        decayPerAttack: score.blockedPerAttack != null ? score.blockedPerAttack * decayRate : null,
-        decayPerAttackMin: score.blockedPerAttackMin != null ? score.blockedPerAttackMin * decayRate : null,
-        decayPerAttackMax: score.blockedPerAttackMax != null ? score.blockedPerAttackMax * decayRate : null,
+        decayPerAttack: score.decayPerAttack,
+        decayPerAttackMin: score.decayPerAttackMin,
+        decayPerAttackMax: score.decayPerAttackMax,
         hasTotalDamage: score.hasTotalDamage,
         hasComposition: score.hasComposition,
         maturityLabel: score.maturityLabel,
@@ -520,10 +541,10 @@ export async function rankMobsChunked(mobs, defenseLayers, scope, dmgMultiplier,
   return results;
 }
 
-export function rankMobs(mobs, defenseLayers, scope, dmgMultiplier = 1, rankBy = 'mitigation', decayRate = 0) {
+export function rankMobs(mobs, defenseLayers, scope, dmgMultiplier = 1, rankBy = 'mitigation', decayRates = null) {
   const results = [];
   for (const mob of mobs || []) {
-    const score = scoreMob(mob, defenseLayers, scope, dmgMultiplier);
+    const score = scoreMob(mob, defenseLayers, scope, dmgMultiplier, decayRates);
     if (score == null) continue;
     results.push({
       mob,
@@ -531,9 +552,9 @@ export function rankMobs(mobs, defenseLayers, scope, dmgMultiplier = 1, rankBy =
       typeScore: score.typeScore,
       mitigationPct: score.mitigation != null ? score.mitigation * 100 : null,
       damageTaken: score.damageTaken,
-      decayPerAttack: score.blockedPerAttack != null ? score.blockedPerAttack * decayRate : null,
-      decayPerAttackMin: score.blockedPerAttackMin != null ? score.blockedPerAttackMin * decayRate : null,
-      decayPerAttackMax: score.blockedPerAttackMax != null ? score.blockedPerAttackMax * decayRate : null,
+      decayPerAttack: score.decayPerAttack,
+      decayPerAttackMin: score.decayPerAttackMin,
+      decayPerAttackMax: score.decayPerAttackMax,
       hasTotalDamage: score.hasTotalDamage,
       hasComposition: score.hasComposition,
       maturityLabel: score.maturityLabel,
@@ -569,7 +590,6 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
   } = options;
   const sortFn = makeSortByMetric(rankBy);
   const defaultEnhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
-  const ICE_SHIELD_SET = new Set(['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn']);
 
   function enhancerMultFor(armorName) {
     if (armorEnhancers && armorName in armorEnhancers) {
@@ -603,27 +623,20 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
     }
   }
 
-  // Pre-build ice shield layer (reused across all combos)
-  let iceLayer = null;
-  if (iceShield) {
-    iceLayer = {};
-    for (const type of DEFENSE_TYPES) {
-      iceLayer[type] = ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
-    }
-  }
+  const iceLayer = iceShield ? _iceShieldLayer : null;
+  const iceDecayRate = 0;
 
-  function scoreFromLayers(armorSet, plating, layers) {
-    const score = scoreMob(mob, layers, scope, dmgMultiplier);
+  function scoreFromLayers(armorSet, plating, layers, decayRates) {
+    const score = scoreMob(mob, layers, scope, dmgMultiplier, decayRates);
     if (score == null) return null;
-    const decayRate = computeDecayRate(armorSet, plating);
     return {
       armorSet, plating, name: armorSet.Name,
       typeScore: score.typeScore,
       mitigationPct: score.mitigation != null ? score.mitigation * 100 : null,
       damageTaken: score.damageTaken,
-      decayPerAttack: score.blockedPerAttack != null ? score.blockedPerAttack * decayRate : null,
-      decayPerAttackMin: score.blockedPerAttackMin != null ? score.blockedPerAttackMin * decayRate : null,
-      decayPerAttackMax: score.blockedPerAttackMax != null ? score.blockedPerAttackMax * decayRate : null,
+      decayPerAttack: score.decayPerAttack,
+      decayPerAttackMin: score.decayPerAttackMin,
+      decayPerAttackMax: score.decayPerAttackMax,
       hasTotalDamage: score.hasTotalDamage,
       hasComposition: score.hasComposition,
       maturityLabel: score.maturityLabel,
@@ -646,9 +659,12 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
       armorDef[type] = (armorSet?.Properties?.Defense?.[type] ?? 0) * thisEnhancerMult;
     }
 
+    const armorDecayRate = (100000 - (armorSet?.Properties?.Economy?.Durability ?? 0)) / 100000 * 0.05;
+
     // Bare armor: [ice?, armor]
     const bareLayers = iceLayer ? [iceLayer, armorDef] : [armorDef];
-    const bare = scoreFromLayers(armorSet, null, bareLayers);
+    const bareDecayRates = iceLayer ? [iceDecayRate, armorDecayRate] : [armorDecayRate];
+    const bare = scoreFromLayers(armorSet, null, bareLayers, bareDecayRates);
     if (bare) results.push(bare);
 
     if (includePlates && platesToUse.length > 0) {
@@ -658,9 +674,11 @@ export async function rankArmorsChunked(armorSets, armorPlatings, mob, config, s
         for (const type of DEFENSE_TYPES) {
           plateDef[type] = plate?.Properties?.Defense?.[type] ?? 0;
         }
+        const plateDecayRate = (100000 - (plate?.Properties?.Economy?.Durability ?? 0)) / 100000 * 0.05;
         // Layers: [ice?, plate, armor]
         const layers = iceLayer ? [iceLayer, plateDef, armorDef] : [plateDef, armorDef];
-        const combo = scoreFromLayers(armorSet, plate, layers);
+        const decayRates = iceLayer ? [iceDecayRate, plateDecayRate, armorDecayRate] : [plateDecayRate, armorDecayRate];
+        const combo = scoreFromLayers(armorSet, plate, layers, decayRates);
         if (combo) plateCombos.push(combo);
       }
       plateCombos.sort(sortFn);
@@ -685,8 +703,6 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
   const { includePlates = true, platesPerArmor = 3, ulPlatesOnly = false } = options;
   const sortFn = makeSortByMetric(rankBy);
   const enhancerMult = 1 + (Math.max(0, Math.min(MAX_ENHANCERS, enhancers ?? 0)) * ENHANCER_BONUS_PER_LEVEL);
-  const ICE_SHIELD_SET = new Set(['Impact', 'Stab', 'Cut', 'Shrapnel', 'Penetration', 'Burn']);
-
   // Pre-filter plates
   let platesToUse = [];
   if (includePlates) {
@@ -709,19 +725,12 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
     }
   }
 
-  // Pre-build ice shield layer (reused across all combos)
-  let iceLayer = null;
-  if (iceShield) {
-    iceLayer = {};
-    for (const type of DEFENSE_TYPES) {
-      iceLayer[type] = ICE_SHIELD_SET.has(type) ? ICE_SHIELD_VALUE : 0;
-    }
-  }
+  const iceLayer = iceShield ? _iceShieldLayer : null;
+  const iceDecayRate = 0;
 
-  function scoreFromLayers(armorSet, plating, layers) {
-    const score = scoreMob(mob, layers, scope, dmgMultiplier);
+  function scoreFromLayers(armorSet, plating, layers, decayRates) {
+    const score = scoreMob(mob, layers, scope, dmgMultiplier, decayRates);
     if (score == null) return null;
-    const decayRate = computeDecayRate(armorSet, plating);
     return {
       armorSet,
       plating,
@@ -729,9 +738,9 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
       typeScore: score.typeScore,
       mitigationPct: score.mitigation != null ? score.mitigation * 100 : null,
       damageTaken: score.damageTaken,
-      decayPerAttack: score.blockedPerAttack != null ? score.blockedPerAttack * decayRate : null,
-      decayPerAttackMin: score.blockedPerAttackMin != null ? score.blockedPerAttackMin * decayRate : null,
-      decayPerAttackMax: score.blockedPerAttackMax != null ? score.blockedPerAttackMax * decayRate : null,
+      decayPerAttack: score.decayPerAttack,
+      decayPerAttackMin: score.decayPerAttackMin,
+      decayPerAttackMax: score.decayPerAttackMax,
       hasTotalDamage: score.hasTotalDamage,
       hasComposition: score.hasComposition,
       maturityLabel: score.maturityLabel,
@@ -747,8 +756,11 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
       armorDef[type] = (armorSet?.Properties?.Defense?.[type] ?? 0) * enhancerMult;
     }
 
+    const armorDecayRate = (100000 - (armorSet?.Properties?.Economy?.Durability ?? 0)) / 100000 * 0.05;
+
     const bareLayers = iceLayer ? [iceLayer, armorDef] : [armorDef];
-    const bare = scoreFromLayers(armorSet, null, bareLayers);
+    const bareDecayRates = iceLayer ? [iceDecayRate, armorDecayRate] : [armorDecayRate];
+    const bare = scoreFromLayers(armorSet, null, bareLayers, bareDecayRates);
     if (bare) results.push(bare);
 
     if (!includePlates || platesToUse.length === 0) continue;
@@ -759,8 +771,10 @@ export function rankArmors(armorSets, armorPlatings, mob, config, scope, rankBy 
       for (const type of DEFENSE_TYPES) {
         plateDef[type] = plate?.Properties?.Defense?.[type] ?? 0;
       }
+      const plateDecayRate = (100000 - (plate?.Properties?.Economy?.Durability ?? 0)) / 100000 * 0.05;
       const layers = iceLayer ? [iceLayer, plateDef, armorDef] : [plateDef, armorDef];
-      const combo = scoreFromLayers(armorSet, plate, layers);
+      const decayRates = iceLayer ? [iceDecayRate, plateDecayRate, armorDecayRate] : [plateDecayRate, armorDecayRate];
+      const combo = scoreFromLayers(armorSet, plate, layers, decayRates);
       if (combo) plateCombos.push(combo);
     }
     plateCombos.sort(sortFn);

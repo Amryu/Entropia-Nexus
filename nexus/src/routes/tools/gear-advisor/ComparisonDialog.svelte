@@ -12,8 +12,8 @@
   import {
     DEFAULT_ATTACK_NAME,
     computeDefenseLayers,
+    computeLayerDecayRates,
     computeAttackBreakdown,
-    computeDecayRate,
     sortedMaturities
   } from './armorVsMob.js';
   import { exportCSV, exportJSON, exportTableAsImage } from './export-utils.js';
@@ -91,11 +91,11 @@
         ? poolArmorEnhancers[r.armorSet.Name]
         : enhancers;
       const def = computeDefenseLayers(r.armorSet, r.plating, iceShield, effEnh);
-      const decayRate = computeDecayRate(r.armorSet, r.plating);
+      const dr = computeLayerDecayRates(r.armorSet, r.plating, iceShield);
       const label = r.plating
         ? `${r.armorSet?.Name ?? ''} + ${r.plating.Name}`
         : (r.armorSet?.Name ?? '');
-      return { key, i, r, def, decayRate, label };
+      return { key, i, r, def, decayRates: dr, label };
     });
   });
 
@@ -110,7 +110,7 @@
       );
       const perSet = setContexts.map(ctx => {
         if (!atk) return { hasData: false };
-        const br = computeAttackBreakdown(atk, ctx.def, dmgMultiplier);
+        const br = computeAttackBreakdown(atk, ctx.def, dmgMultiplier, ctx.decayRates);
         if (!(br.totalAvg > 0)) return { hasData: false };
         return {
           hasData: true,
@@ -118,7 +118,7 @@
           takenExp: br.expectedTaken,
           takenMax: br.takenMax,
           crit: br.critTaken,
-          decay: br.expectedBlocked * ctx.decayRate,
+          decay: br.expectedDecay,
           mit: br.mitigation
         };
       });

@@ -21,8 +21,8 @@
     DEFAULT_ATTACK_NAME,
     MAX_ENHANCERS,
     computeDefenseLayers,
+    computeLayerDecayRates,
     computeAttackBreakdown,
-    computeDecayRate,
     getMobAttackNames,
     rankMobs,
     rankMobsChunked,
@@ -161,8 +161,8 @@
   // Pre-mitigation damage multiplier (clamped to ≥ 0)
   let dmgMultiplier = $derived(Math.max(0, 1 - (Number(dmgReduction) || 0) / 100));
 
-  // Decay rate (PEC per unit of damage absorbed) for current armor + plating
-  let decayRate = $derived(armorSet ? computeDecayRate(armorSet, plating) : 0);
+  // Per-layer decay rates matching defense layers order
+  let decayRates = $derived(armorSet ? computeLayerDecayRates(armorSet, plating, iceShield) : null);
 
   // Derived: details breakdown for mob x defense (null if either missing)
   let details = $derived(mob && defense ? buildDetails(mob, defense, dmgMultiplier) : null);
@@ -225,7 +225,7 @@
         });
         continue;
       }
-      const br = computeAttackBreakdown(atk, defense, dmgMultiplier);
+      const br = computeAttackBreakdown(atk, defense, dmgMultiplier, decayRates);
       rows.push({
         maturityName: mat.Name || '',
         maturityLevel: mat?.Properties?.Level ?? null,
@@ -235,7 +235,7 @@
         takenMax: br.takenMax,
         mitigation: br.mitigation,
         critTaken: br.critTaken,
-        decayThisAttack: br.expectedBlocked * decayRate,
+        decayThisAttack: br.expectedDecay,
         hasData: br.totalAvg > 0
       });
     }
@@ -255,7 +255,7 @@
     const _scope = scope;
     const _rankBy = rankBy;
     const _dmgMultiplier = dmgMultiplier;
-    const _decayRate = decayRate;
+    const _decayRates = decayRates;
     const _planet = mobPlanetFilter;
     const _viewMaturities = viewMaturities;
 
@@ -274,11 +274,11 @@
 
     const promise = _viewMaturities
       ? rankMaturitiesChunked(
-          filteredMobs, _defense, _dmgMultiplier, _rankBy, _decayRate,
+          filteredMobs, _defense, _dmgMultiplier, _rankBy, _decayRates,
           { chunkSize: 100, signal: controller }
         )
       : rankMobsChunked(
-          filteredMobs, _defense, _scope, _dmgMultiplier, _rankBy, _decayRate,
+          filteredMobs, _defense, _scope, _dmgMultiplier, _rankBy, _decayRates,
           { chunkSize: 100, signal: controller }
         );
 
