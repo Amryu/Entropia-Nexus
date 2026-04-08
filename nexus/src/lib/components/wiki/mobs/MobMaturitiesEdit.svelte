@@ -260,6 +260,14 @@
     const editedMat = cloneMaturity(newList[matIndex]);
     newList[matIndex] = editedMat;
 
+    // Track the original DB identity when Name or Level changes, so the backend
+    // can UPDATE in-place instead of delete+insert (which cascades FK references).
+    // Only capture once - subsequent edits keep the original identity.
+    if ((field === 'Name' || field === 'Properties.Level') && !('_oldName' in editedMat)) {
+      editedMat._oldName = editedMat.Name;
+      editedMat._oldLevel = editedMat.Properties?.Level ?? null;
+    }
+
     const parts = field.split('.');
     let target = editedMat;
 

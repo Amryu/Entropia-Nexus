@@ -59,6 +59,12 @@ export const Mob = {
           "Name": {
             "type": "string"
           },
+          "_oldName": {
+            "type": "string"
+          },
+          "_oldLevel": {
+            "type": ["integer", "null"]
+          },
           "NameMode": {
             "type": ["string", "null"],
             "enum": ["Suffix", "Prefix", "Verbatim", "Empty", null],

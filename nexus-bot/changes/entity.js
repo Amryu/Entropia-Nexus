@@ -1510,6 +1510,74 @@ async function applyWaveEventWavesChanges(client, locationId, waves) {
 }
 
 async function applyMobMaturityChanges(client, mobId, maturities) {
+  // Rename detection: UPDATE the (Name, DangerLevel) identity in-place so the Id
+  // (and all FK references in MobSpawnMaturities, MobLoots, etc.) is preserved
+  // instead of being cascade-deleted / set-null.
+  //
+  // Phase 1: Explicit renames - frontend sets _oldName + _oldLevel on the maturity
+  // object when the user changes a maturity's name or level.
+  for (const maturity of maturities) {
+    if (maturity._oldName === undefined) continue;
+    const oldLevel = maturity._oldLevel ?? -1;
+    const newLevel = maturity.Properties.Level ?? -1;
+    if (maturity._oldName !== maturity.Name || oldLevel !== newLevel) {
+      await client.query(
+        `UPDATE ONLY "MobMaturities" SET "Name" = $1, "DangerLevel" = NULLIF($2, -1)
+         WHERE "MobId" = $3 AND "Name" = $4 AND COALESCE("DangerLevel", -1) = $5`,
+        [maturity.Name, newLevel, mobId, maturity._oldName, oldLevel]
+      );
+    }
+  }
+
+  // Phase 2: Heuristic fallback for changes without explicit metadata (e.g. bot).
+  // Match disappearing→appearing by (Level, Health), then Level alone.
+  // Only match when exactly 1 candidate exists at that key to avoid wrong pairings.
+  const existing = await client.query(
+    `SELECT "Id", "Name", "Health", COALESCE("DangerLevel", -1) AS "Level" FROM ONLY "MobMaturities" WHERE "MobId" = $1`,
+    [mobId]
+  );
+  const newPairs = new Set(maturities.map(m => `${m.Name}\0${m.Properties.Level ?? -1}`));
+  const existingPairs = new Set(existing.rows.map(e => `${e.Name}\0${e.Level}`));
+  const disappearing = existing.rows.filter(e => !newPairs.has(`${e.Name}\0${e.Level}`));
+  const appearing = maturities.filter(m =>
+    m._oldName === undefined && !existingPairs.has(`${m.Name}\0${m.Properties.Level ?? -1}`)
+  );
+
+  if (disappearing.length > 0 && appearing.length > 0) {
+    const matched = new Set();
+    for (const pass of ['levelHealth', 'level']) {
+      const keyFnOld = pass === 'levelHealth' ? e => `${e.Level}\0${e.Health}` : e => `${e.Level}`;
+      const keyFnNew = pass === 'levelHealth' ? m => `${m.Properties.Level ?? -1}\0${m.Properties.Health}` : m => `${m.Properties.Level ?? -1}`;
+
+      const oldByKey = new Map();
+      for (const d of disappearing) {
+        if (matched.has(d.Id)) continue;
+        const k = keyFnOld(d);
+        if (!oldByKey.has(k)) oldByKey.set(k, []);
+        oldByKey.get(k).push(d);
+      }
+      const newByKey = new Map();
+      for (const a of appearing) {
+        if (matched.has(a.Name)) continue;
+        const k = keyFnNew(a);
+        if (!newByKey.has(k)) newByKey.set(k, []);
+        newByKey.get(k).push(a);
+      }
+
+      for (const [key, oldGroup] of oldByKey) {
+        const newGroup = newByKey.get(key);
+        if (oldGroup.length === 1 && newGroup?.length === 1) {
+          await client.query(
+            `UPDATE ONLY "MobMaturities" SET "Name" = $1 WHERE "Id" = $2`,
+            [newGroup[0].Name, oldGroup[0].Id]
+          );
+          matched.add(oldGroup[0].Id);
+          matched.add(newGroup[0].Name);
+        }
+      }
+    }
+  }
+
   maturities = await Promise.all([
     client.query(
       `DELETE FROM ONLY "MobMaturities"
@@ -2159,19 +2227,15 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
     // Get maturity IDs
     const maturitiesWithIds = await Promise.all(spawn.Maturities.map(async (maturity) => {
-      // Prefer direct Id if present; fallback to lookup by names
-      const maturityIdDirect = maturity?.Maturity?.Id;
-      if (maturityIdDirect) {
-        return { ...maturity, MaturityId: maturityIdDirect };
-      }
       if (!maturity.Maturity?.Mob?.Name || !maturity.Maturity?.Name) {
         console.warn('Skipping maturity with missing data:', maturity);
         return null;
       }
-      
+
+      // Always resolve by name - direct Ids from change data can be stale after renames
       const result = await client.query(`
-        SELECT "MobMaturities"."Id" 
-        FROM "MobMaturities" 
+        SELECT "MobMaturities"."Id"
+        FROM ONLY "MobMaturities"
         INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"
         WHERE "Mobs"."Name" = $1 AND "MobMaturities"."Name" = $2
       `, [maturity.Maturity.Mob.Name, maturity.Maturity.Name]);
