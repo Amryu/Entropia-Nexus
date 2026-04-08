@@ -11,6 +11,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -469,7 +470,7 @@
               placeholder="Enter a description for this vendor..."
               showWaypoints={true}
             />
-          {:else if activeVendor?.Properties?.Description}
+          {:else if hasVisibleText(activeVendor?.Properties?.Description)}
             <div class="description-content">{@html activeVendor.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

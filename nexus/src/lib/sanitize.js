@@ -30,3 +30,12 @@ export function stripHtml(text) {
   if (!text) return '';
   return `${text}`.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
 }
+
+/**
+ * Returns true if the string contains visible text after stripping HTML tags
+ * and whitespace. Useful for checking if a rich-text description has actual
+ * content vs. empty markup like `<p></p>` or `<br>`.
+ */
+export function hasVisibleText(html) {
+  return stripHtml(html).trim().length > 0;
+}

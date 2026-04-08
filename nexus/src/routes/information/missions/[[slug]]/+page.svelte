@@ -10,6 +10,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
@@ -187,13 +188,6 @@
     return opt?.label || '';
   }
 
-  // Check if HTML content has actual text (not just empty tags like <p></p>)
-  function hasActualText(html) {
-    if (!html) return false;
-    // Strip HTML tags and check if there's non-whitespace content
-    const text = html.replace(/<[^>]*>/g, '').trim();
-    return text.length > 0;
-  }
 
 
 
@@ -1505,7 +1499,7 @@
               placeholder={isChainView ? 'Describe this mission chain...' : 'Describe this mission...'}
               showWaypoints={true}
             />
-          {:else if hasActualText(activeEntity?.Properties?.Description)}
+          {:else if hasVisibleText(activeEntity?.Properties?.Description)}
             <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

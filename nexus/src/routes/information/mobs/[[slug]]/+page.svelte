@@ -12,6 +12,7 @@
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps, hasItemTag } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -1569,7 +1570,7 @@
               placeholder="Enter a description for this mob..."
               showWaypoints={true}
             />
-          {:else if activeMob?.Properties?.Description}
+          {:else if hasVisibleText(activeMob?.Properties?.Description)}
             <div class="description-content">{@html activeMob.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

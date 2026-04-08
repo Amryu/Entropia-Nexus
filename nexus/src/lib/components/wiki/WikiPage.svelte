@@ -639,6 +639,8 @@
     width: 280px;
     min-width: 280px;
     max-width: 280px;
+    min-height: 0; /* Allow flex to constrain height so content-body can scroll */
+    overflow: hidden;
     background-color: var(--secondary-color);
     border-right: 1px solid var(--border-color, #ccc);
     transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;

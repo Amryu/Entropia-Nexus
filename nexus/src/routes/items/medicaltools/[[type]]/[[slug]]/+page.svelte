@@ -10,6 +10,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { hasItemTag, clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -1017,7 +1018,7 @@
               placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
               showWaypoints={true}
             />
-          {:else if activeEntity?.Properties?.Description}
+          {:else if hasVisibleText(activeEntity?.Properties?.Description)}
             <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

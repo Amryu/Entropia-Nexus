@@ -11,6 +11,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -678,7 +679,7 @@
               placeholder="Enter a description for this vehicle..."
               showWaypoints={true}
             />
-          {:else if activeVehicle?.Properties?.Description}
+          {:else if hasVisibleText(activeVehicle?.Properties?.Description)}
             <div class="description-content">{@html activeVehicle.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

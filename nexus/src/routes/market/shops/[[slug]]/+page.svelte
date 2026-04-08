@@ -13,6 +13,7 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, apiCall, getLatestPendingUpdate } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -885,7 +886,7 @@
               onchange={(data) => updateField('Description', data)}
               placeholder="Describe this shop..."
             />
-          {:else if activeEntity?.Description}
+          {:else if hasVisibleText(activeEntity?.Description)}
             <div class="description-content">{@html activeEntity.Description}</div>
           {:else}
             <div class="description-content placeholder">

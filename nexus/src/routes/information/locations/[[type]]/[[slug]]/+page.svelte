@@ -10,6 +10,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
@@ -1413,7 +1414,7 @@
         {/if}
 
         <!-- Description Section -->
-        {#if $editMode || activeLocation?.Properties?.Description}
+        {#if $editMode || hasVisibleText(activeLocation?.Properties?.Description)}
           <DataSection title="Description" subtitle="" icon="">
             {#if $editMode}
               <RichTextEditor

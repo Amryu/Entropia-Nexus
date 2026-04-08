@@ -10,6 +10,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, hasItemTag, clampDecimals, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -1381,7 +1382,7 @@
               onchange={(data) => updateField('Properties.Description', data)}
               showWaypoints={true}
             />
-          {:else if activeWeapon.Properties?.Description}
+          {:else if hasVisibleText(activeWeapon.Properties?.Description)}
             <div class="description-content">{@html activeWeapon.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

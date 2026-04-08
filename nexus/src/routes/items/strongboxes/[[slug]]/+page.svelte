@@ -10,6 +10,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getItemLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -360,7 +361,7 @@
               placeholder="Enter a description for this strongbox..."
               showWaypoints={true}
             />
-          {:else if activeStrongbox?.Properties?.Description}
+          {:else if hasVisibleText(activeStrongbox?.Properties?.Description)}
             <div class="description-content">{@html activeStrongbox.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

@@ -8,15 +8,6 @@
   import { onMount, onDestroy, untrack } from 'svelte';
   import { getTypeConfig } from '$lib/data/globals-constants.js';
   import { timeAgo, formatValue } from '$lib/utils/globalsFormat.js';
-  import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
-
-  let showMediaDialog = $state(false);
-  let mediaDialogGlobal = $state(null);
-
-  function openMediaDialog(g) {
-    mediaDialogGlobal = g;
-    showMediaDialog = true;
-  }
 
 
   /**
@@ -105,23 +96,12 @@
               <span class="badge-hof">HoF</span>
             {/if}
           </span>
-          {#if g.media_image || g.media_video}
-            <button class="feed-media-btn" title="View media" onclick={(e) => { e.stopPropagation(); openMediaDialog(g); }}>
-              {#if g.media_image}
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-              {:else}
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-              {/if}
-            </button>
-          {/if}
           <span class="feed-time">{timeAgo(g.timestamp)}</span>
         </li>
       {/each}
     </ul>
   {/if}
 </div>
-
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} onclose={() => { showMediaDialog = false; mediaDialogGlobal = null; }} />
 
 <style>
   .globals-feed {
@@ -269,25 +249,6 @@
     font-size: 0.75rem;
     min-width: 50px;
     text-align: right;
-  }
-
-  .feed-media-btn {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    color: var(--accent-color);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: 3px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.6;
-    transition: opacity 0.15s;
-  }
-
-  .feed-media-btn:hover {
-    opacity: 1;
   }
 
   /* Responsive */

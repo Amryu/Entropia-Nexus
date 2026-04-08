@@ -11,6 +11,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -510,7 +511,7 @@
               placeholder="Enter pet description..."
               showWaypoints={true}
             />
-          {:else if activeEntity?.Properties?.Description}
+          {:else if hasVisibleText(activeEntity?.Properties?.Description)}
             <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

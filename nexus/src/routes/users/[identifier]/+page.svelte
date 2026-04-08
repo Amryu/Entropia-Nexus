@@ -18,9 +18,7 @@
   import { buildEffectCaps } from '$lib/utils/loadoutEffects';
   import { TYPE_FILTERS } from '$lib/data/globals-constants.js';
   import { formatPed, formatPedShort, timeAgo, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
-  import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
-  import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
-  import GzButton from '$lib/components/globals/GzButton.svelte';
+
 
   let { data } = $props();
 
@@ -139,8 +137,6 @@
     globalsData = null;
     globalsLoading = false;
     globalsLoaded = false;
-    showGlobalsMediaDialog = false;
-    globalsMediaDialogItem = null;
     globalsTypeFilter = '';
     globalsSpaceFilter = '';
     globalsSort = { col: 'total_value', asc: false };
@@ -156,42 +152,6 @@
     };
   }
 
-
-  // Session user for globals interactions (gz, media upload)
-  let globalsUser = $derived(data?.session?.user || null);
-
-  // Media dialog state for globals items
-  let showGlobalsMediaDialog = $state(false);
-  let globalsMediaDialogItem = $state(null);
-
-  function openGlobalsMediaDialog(g) {
-    globalsMediaDialogItem = g;
-    showGlobalsMediaDialog = true;
-  }
-
-  function onGlobalsMediaUploaded(uploadData) {
-    const { type, globalId } = uploadData;
-    const update = (arr) => arr ? arr.map(g => {
-      if (g.id === globalId) {
-        return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
-      }
-      return g;
-    }) : arr;
-    if (globalsData?.rare_items) globalsData.rare_items = update(globalsData.rare_items);
-    if (globalsData?.achievements) globalsData.achievements = update(globalsData.achievements);
-  }
-
-  function onGlobalsMediaDeleted(deleteData) {
-    const { globalId } = deleteData;
-    const update = (arr) => arr ? arr.map(g => {
-      if (g.id === globalId) return { ...g, media_image: null, media_video: null };
-      return g;
-    }) : arr;
-    if (globalsData?.rare_items) globalsData.rare_items = update(globalsData.rare_items);
-    if (globalsData?.achievements) globalsData.achievements = update(globalsData.achievements);
-    showGlobalsMediaDialog = false;
-    globalsMediaDialogItem = null;
-  }
 
   // Globals tab state (lazy-loaded)
   let globalsData = $state(null);
@@ -1689,20 +1649,6 @@
                     <span class="highlight-name">{item.target}</span>
                     <span class="highlight-value">{formatPedShort(item.value)} PED</span>
                     {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
-                    <span class="highlight-actions">
-                      {#if item.media_image || item.media_video}
-                        <button class="media-icon-btn" title="View media" onclick={() => openGlobalsMediaDialog(item)}>
-                          {#if item.media_image}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                          {:else}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          {/if}
-                        </button>
-                      {:else if globalsUser}
-                        <GlobalMediaUpload globalId={item.id} playerName={profile.euName} user={globalsUser} onuploaded={onGlobalsMediaUploaded} />
-                      {/if}
-                      <GzButton globalId={item.id} count={item.gz_count || 0} userGz={item.user_gz || false} user={globalsUser} compact />
-                    </span>
                     <span class="highlight-time">{timeAgo(item.timestamp)}</span>
                   </div>
                 {/each}
@@ -1717,20 +1663,6 @@
                   <div class="highlight-row">
                     <span class="highlight-name">{ach.target}</span>
                     {#if ach.ath}<span class="highlight-badge ath">ATH</span>{:else if ach.hof}<span class="highlight-badge hof">HoF</span>{/if}
-                    <span class="highlight-actions">
-                      {#if ach.media_image || ach.media_video}
-                        <button class="media-icon-btn" title="View media" onclick={() => openGlobalsMediaDialog(ach)}>
-                          {#if ach.media_image}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                          {:else}
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                          {/if}
-                        </button>
-                      {:else if globalsUser}
-                        <GlobalMediaUpload globalId={ach.id} playerName={profile.euName} user={globalsUser} onuploaded={onGlobalsMediaUploaded} />
-                      {/if}
-                      <GzButton globalId={ach.id} count={ach.gz_count || 0} userGz={ach.user_gz || false} user={globalsUser} compact />
-                    </span>
                     <span class="highlight-time">{timeAgo(ach.timestamp)}</span>
                   </div>
                 {/each}
@@ -1944,14 +1876,6 @@
     imageFailed = false;
     saveStatus = 'Profile image removed.';
   }}
-/>
-
-<GlobalMediaDialog
-  show={showGlobalsMediaDialog}
-  global={globalsMediaDialogItem}
-  user={globalsUser}
-  onclose={() => { showGlobalsMediaDialog = false; globalsMediaDialogItem = null; }}
-  ondeleted={onGlobalsMediaDeleted}
 />
 
 <style>
@@ -3259,36 +3183,11 @@
   .highlight-badge.hof { background: rgba(234, 179, 8, 0.15); color: #eab308; }
   .highlight-badge.ath { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 
-  .highlight-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
   .highlight-time {
     flex-shrink: 0;
     font-size: 0.6875rem;
     color: var(--text-muted);
     white-space: nowrap;
-  }
-
-  .media-icon-btn {
-    background: none;
-    border: none;
-    color: var(--accent-color);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: 3px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.7;
-    transition: opacity 0.15s;
-  }
-
-  .media-icon-btn:hover {
-    opacity: 1;
   }
 
   /* Globals tab — type filter buttons */

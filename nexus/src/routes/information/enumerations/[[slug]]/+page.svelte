@@ -2,6 +2,7 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
@@ -140,7 +141,7 @@
       <h1 class="article-title">{activeEnumeration.Name}</h1>
 
       <div class="description-panel">
-        {#if activeEnumeration?.Properties?.Description}
+        {#if hasVisibleText(activeEnumeration?.Properties?.Description)}
           <div class="description-content">{activeEnumeration.Properties.Description}</div>
         {:else}
           <div class="description-content placeholder">

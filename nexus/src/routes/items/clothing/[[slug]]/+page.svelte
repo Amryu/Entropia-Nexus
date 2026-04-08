@@ -17,6 +17,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -554,7 +555,7 @@
               placeholder="Enter a description for this clothing item..."
               showWaypoints={true}
             />
-          {:else if activeClothing?.Properties?.Description}
+          {:else if hasVisibleText(activeClothing?.Properties?.Description)}
             <div class="description-content">{@html activeClothing.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

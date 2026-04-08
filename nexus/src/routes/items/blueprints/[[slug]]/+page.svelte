@@ -29,6 +29,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
 
@@ -919,7 +920,7 @@
               placeholder="Enter blueprint description..."
               showWaypoints={true}
             />
-          {:else if activeEntity?.Properties?.Description}
+          {:else if hasVisibleText(activeEntity?.Properties?.Description)}
             <div class="description-content">{@html activeEntity.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">

@@ -3,6 +3,9 @@
   Renders a Google AdSense manual ad unit. Handles SPA re-initialization,
   adblock detection, and SSR safety.
 
+  The parent wrapper starts hidden and is revealed only when an ad actually
+  fills the slot, preventing empty gaps from margins on unfilled slots.
+
   Props:
   - adSlot: string - The AdSense ad unit slot ID
   - adFormat: 'auto' | 'rectangle' | 'vertical' | 'horizontal' | 'autorelaxed' - Ad format
@@ -62,6 +65,11 @@
     if (!browser) return;
     let initialized = false;
 
+    // Parent wrapper (e.g. .wiki-content-ad) starts hidden so unfilled ads
+    // never show a gap.  Reveal it only when AdSense confirms the fill.
+    const wrapper = node.closest('.ad-slot-container')?.parentElement;
+    if (wrapper) wrapper.style.display = 'none';
+
     function pushAd() {
       if (initialized) return;
       initialized = true;
@@ -71,6 +79,30 @@
         // Ad init failed (blocked, not loaded, etc.) - silent
       }
     }
+
+    function revealWrapper() {
+      if (wrapper) wrapper.style.display = '';
+    }
+
+    // Watch for AdSense setting data-ad-status on the <ins> element.
+    const statusObserver = new MutationObserver(() => {
+      const status = node.getAttribute('data-ad-status');
+      if (status === 'filled') {
+        revealWrapper();
+        statusObserver.disconnect();
+      } else if (status === 'unfilled') {
+        statusObserver.disconnect();
+      }
+    });
+    statusObserver.observe(node, { attributes: true, attributeFilter: ['data-ad-status'] });
+
+    // Fallback: if data-ad-status is never set but an iframe appeared, reveal.
+    const sizeFallback = setTimeout(() => {
+      if (node.querySelector('iframe') || node.offsetHeight > 1) {
+        revealWrapper();
+      }
+      statusObserver.disconnect();
+    }, 3000);
 
     // Use IntersectionObserver to wait until the element is actually visible
     // This handles responsive layouts where ads are in display:none containers
@@ -97,7 +129,9 @@
     return {
       destroy() {
         observer.disconnect();
+        statusObserver.disconnect();
         clearTimeout(fallback);
+        clearTimeout(sizeFallback);
       }
     };
   }
@@ -105,7 +139,7 @@
 
 {#if !blocked}
   {#key adKey}
-    <div class="ad-slot-container">
+    <div class="ad-slot-container" class:multiplex={adFormat === 'autorelaxed'}>
       <ins
         class="adsbygoogle"
         style={insStyle}
@@ -126,6 +160,12 @@
     overflow: hidden;
     /* Prevent ad iframes from capturing scroll events */
     touch-action: pan-y;
+  }
+
+  /* Multiplex (autorelaxed) ads render tall content grids - cap to a
+     reasonable height so they don't dominate the page. */
+  .ad-slot-container.multiplex {
+    max-height: 150px;
   }
 
   .ad-slot-container :global(iframe) {

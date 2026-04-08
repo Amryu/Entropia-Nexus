@@ -10,6 +10,7 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -432,7 +433,7 @@
               placeholder="Enter profession description..."
               showWaypoints={true}
             />
-          {:else if activeEntity?.Description}
+          {:else if hasVisibleText(activeEntity?.Description)}
             <div class="description-content">{@html activeEntity.Description}</div>
           {:else}
             <div class="description-content placeholder">

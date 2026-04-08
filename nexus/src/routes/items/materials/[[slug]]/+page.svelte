@@ -12,6 +12,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
+  import { hasVisibleText } from '$lib/sanitize.js';
 
 
   // Wiki components
@@ -401,7 +402,7 @@
               placeholder="Enter a description for this material..."
               showWaypoints={true}
             />
-          {:else if activeMaterial?.Properties?.Description}
+          {:else if hasVisibleText(activeMaterial?.Properties?.Description)}
             <div class="description-content">{@html activeMaterial.Properties.Description}</div>
           {:else}
             <div class="description-content placeholder">
