@@ -5,6 +5,7 @@
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   let { data } = $props();
 
@@ -148,6 +149,10 @@
         {/if}
       </div>
 
+      <div class="wiki-content-ad">
+        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
+      </div>
+
       <div class="meta-grid">
         <div class="meta-item">
           <span class="meta-label">Source</span>
@@ -178,11 +183,17 @@
       <h2>Enumerations</h2>
       <p>Select an enumeration from the list to view details.</p>
       <p class="hint">Built-in and custom enumerations are shown in a unified list.</p>
+      <div class="no-selection-ad">
+        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
+      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
+  .wiki-content-ad { margin: 16px 0; }
+  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
+
   .meta-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

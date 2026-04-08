@@ -9,22 +9,10 @@
   import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import PartnerSlot from '$lib/components/PartnerSlot.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
   import { resetConsent } from '$lib/stores/consent.svelte.js';
-  import { getRevenueBlocked, getRevenueChecked, runRevenueCheck } from '$lib/stores/revenue-state.svelte.js';
-  import { browser } from '$app/environment';
 
   let { data } = $props();
-
-  // Run adblock check on mount (ads always load now)
-  $effect(() => {
-    if (browser && !getRevenueChecked()) {
-      runRevenueCheck();
-    }
-  });
-
-  // Self-promo placeholders always hidden on client (ads fill those spots now)
-  let selfPromoHidden = $derived(true);
-  let showSupportMessage = $derived(browser && getRevenueBlocked());
   let hasLeftPromo = $derived((promos?.placements?.left?.length ?? 0) > 0);
   let hasRightPromo = $derived((promos?.placements?.right?.length ?? 0) > 0);
 
@@ -150,21 +138,25 @@
 </svelte:head>
 
 <div class="home-page">
-  <!-- Vertical partner slots for wide screens -->
-  {#if hasLeftPromo || !selfPromoHidden}
-    <aside class="partner-rail partner-rail-left" aria-label="Partner content">
-      <div class="partner-slot partner-vertical" data-slot="left">
-        <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} {selfPromoHidden} />
-      </div>
-    </aside>
-  {/if}
-  {#if hasRightPromo || !selfPromoHidden}
-    <aside class="partner-rail partner-rail-right" aria-label="Partner content">
-      <div class="partner-slot partner-vertical" data-slot="right">
-        <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
-      </div>
-    </aside>
-  {/if}
+  <!-- Vertical partner/ad slots for wide screens -->
+  <aside class="partner-rail partner-rail-left" aria-label="Partner content">
+    <div class="partner-slot partner-vertical" data-slot="left">
+      {#if hasLeftPromo}
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} />
+      {:else}
+        <AdSlot adSlot="2183861159" adFormat="vertical" width="160px" height="600px" />
+      {/if}
+    </div>
+  </aside>
+  <aside class="partner-rail partner-rail-right" aria-label="Partner content">
+    <div class="partner-slot partner-vertical" data-slot="right">
+      {#if hasRightPromo}
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} />
+      {:else}
+        <AdSlot adSlot="2183861159" adFormat="vertical" width="160px" height="600px" />
+      {/if}
+    </div>
+  </aside>
 
   <main class="home-content">
     <!-- Hero -->
@@ -269,25 +261,33 @@
       {/if}
     </section>
 
-    <!-- Inline partner slots (visible when side rails are hidden) -->
-    {#if hasLeftPromo || hasRightPromo || showSupportMessage || !selfPromoHidden}
-      <div class="partner-inline partner-inline-pair">
-        <div class="partner-slot partner-horizontal" data-slot="top-1">
-          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
-        </div>
-        <div class="partner-slot partner-horizontal" data-slot="top-2">
-          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
-        </div>
+    <!-- Inline partner/ad slots (visible when side rails are hidden) -->
+    <div class="partner-inline partner-inline-pair">
+      <div class="partner-slot partner-horizontal" data-slot="top-1">
+        {#if hasLeftPromo}
+          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
+        {:else}
+          <AdSlot adSlot="9076572564" adFormat="horizontal" />
+        {/if}
       </div>
-    {/if}
+      <div class="partner-slot partner-horizontal" data-slot="top-2">
+        {#if hasRightPromo}
+          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
+        {:else}
+          <AdSlot adSlot="9076572564" adFormat="horizontal" />
+        {/if}
+      </div>
+    </div>
     <!-- Mobile: single slot after news/events -->
-    {#if hasLeftPromo || showSupportMessage || !selfPromoHidden}
-      <div class="partner-inline partner-inline-mobile-1">
-        <div class="partner-slot partner-horizontal" data-slot="mobile-1">
-          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} {selfPromoHidden} {showSupportMessage} />
-        </div>
+    <div class="partner-inline partner-inline-mobile-1">
+      <div class="partner-slot partner-horizontal" data-slot="mobile-1">
+        {#if hasLeftPromo}
+          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
+        {:else}
+          <AdSlot adSlot="9076572564" adFormat="rectangle" />
+        {/if}
       </div>
-    {/if}
+    </div>
 
     <!-- Globals Feed -->
     <section class="section">
@@ -299,13 +299,15 @@
     </section>
 
     <!-- Mobile: single slot after globals -->
-    {#if hasRightPromo || !selfPromoHidden}
-      <div class="partner-inline partner-inline-mobile-2">
-        <div class="partner-slot partner-horizontal" data-slot="mobile-2">
-          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} {selfPromoHidden} />
-        </div>
+    <div class="partner-inline partner-inline-mobile-2">
+      <div class="partner-slot partner-horizontal" data-slot="mobile-2">
+        {#if hasRightPromo}
+          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
+        {:else}
+          <AdSlot adSlot="9076572564" adFormat="rectangle" />
+        {/if}
       </div>
-    {/if}
+    </div>
 
     <!-- Streams / Channels -->
     {#if streams && streams.length > 0}

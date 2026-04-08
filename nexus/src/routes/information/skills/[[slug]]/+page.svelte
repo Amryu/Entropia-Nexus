@@ -20,6 +20,7 @@
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   // Edit state management
   import {
@@ -534,6 +535,10 @@
             {/if}
           </div>
         {/if}
+
+        <div class="infobox-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
+        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -571,6 +576,10 @@
               {/if}
             </div>
           {/if}
+        </div>
+
+        <div class="wiki-content-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
         </div>
 
         <!-- Affected Professions Section -->
@@ -677,11 +686,27 @@
       <h2>Skills</h2>
       <p>Select a skill from the list to view details.</p>
       <p class="hint">Skills are trained by performing related activities and contribute to profession levels.</p>
+      <div class="no-selection-ad">
+        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
+      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
+  .infobox-ad {
+    margin-top: 12px;
+  }
+
+  .wiki-content-ad {
+    margin: 16px 0;
+  }
+
+  .no-selection-ad {
+    max-width: 728px;
+    margin: 32px auto 0;
+  }
+
   /* Category-specific colors */
   .category-badge.category-attributes {
     background-color: #8b5cf6;

@@ -20,48 +20,11 @@
   import GlobalsTabNav from '$lib/components/globals/GlobalsTabNav.svelte';
   import { TYPE_FILTERS, TOP_LOOTS_TABS, getTypeConfig } from '$lib/data/globals-constants.js';
   import { formatPedShort, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
-  import GlobalMediaDialog from '$lib/components/globals/GlobalMediaDialog.svelte';
-  import GlobalMediaUpload from '$lib/components/globals/GlobalMediaUpload.svelte';
-  import GzButton from '$lib/components/globals/GzButton.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   let { data } = $props();
 
   let user = $derived(data?.session?.user || null);
-
-  // Media dialog state
-  let showMediaDialog = $state(false);
-  let mediaDialogGlobal = $state(null);
-
-  function openMediaDialog(g) {
-    mediaDialogGlobal = g;
-    showMediaDialog = true;
-  }
-
-  function onMediaUploaded(data) {
-    const { type, globalId } = data;
-    const update = (arr) => arr.map(g => {
-      if (g.id === globalId) {
-        return { ...g, media_image: type === 'image' ? true : g.media_image, media_video: type === 'video' ? true : g.media_video };
-      }
-      return g;
-    });
-    globals = update(globals);
-    if (topLoots) topLoots = update(topLoots);
-  }
-
-  function onMediaDeleted(data) {
-    const { globalId } = data;
-    const update = (arr) => arr.map(g => {
-      if (g.id === globalId) {
-        return { ...g, media_image: null, media_video: null };
-      }
-      return g;
-    });
-    globals = update(globals);
-    if (topLoots) topLoots = update(topLoots);
-    showMediaDialog = false;
-    mediaDialogGlobal = null;
-  }
 
   const EMPTY_SUMMARY = {
     total_count: 0, total_value: 0, avg_value: 0, max_value: 0,
@@ -956,8 +919,6 @@
                   <th class="col-value right sortable" onclick={() => onTopLootsSort('value')}>Value{sortIcon(topLootsSort, 'value')}</th>
                 {/if}
                 <th class="col-badge"></th>
-                <th class="col-media"></th>
-                <th class="col-gz"></th>
                 <th class="col-time sortable" onclick={() => onTopLootsSort('time')}>Time{sortIcon(topLootsSort, 'time')}</th>
               </tr>
             </thead>
@@ -985,20 +946,6 @@
                       <span class="badge-hof">HoF</span>
                     {/if}
                   </td>
-                  <td class="col-media">
-                    {#if loot.media_image || loot.media_video}
-                      <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(loot)}>
-                        {#if loot.media_image}
-                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                        {:else}
-                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                        {/if}
-                      </button>
-                    {:else if user}
-                      <GlobalMediaUpload globalId={loot.id} playerName={loot.player} {user} onuploaded={onMediaUploaded} />
-                    {/if}
-                  </td>
-                  <td class="col-gz"><GzButton globalId={loot.id} count={loot.gz_count || 0} userGz={loot.user_gz || false} {user} compact /></td>
                   <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
                 </tr>
               {/each}
@@ -1064,8 +1011,6 @@
               <th class="sortable right col-value" onclick={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
               <th class="sortable col-location" onclick={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
               <th class="col-badges"></th>
-              <th class="col-media"></th>
-              <th class="col-gz"></th>
             </tr>
           </thead>
           <tbody>
@@ -1094,20 +1039,6 @@
                     <span class="badge-hof">HoF</span>
                   {/if}
                 </td>
-                <td class="col-media">
-                  {#if g.media_image || g.media_video}
-                    <button class="media-icon-btn" title="View media" onclick={() => openMediaDialog(g)}>
-                      {#if g.media_image}
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                      {:else}
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                      {/if}
-                    </button>
-                  {:else if user}
-                    <GlobalMediaUpload globalId={g.id} playerName={g.player} {user} onuploaded={onMediaUploaded} />
-                  {/if}
-                </td>
-                <td class="col-gz"><GzButton globalId={g.id} count={g.gz_count || 0} userGz={g.user_gz || false} {user} compact /></td>
               </tr>
             {/each}
           </tbody>
@@ -1123,11 +1054,18 @@
     {/if}
   </div>
   {/if}
+
+  <div class="ad-placement">
+    <AdSlot adSlot="9076572564" adFormat="horizontal" />
+  </div>
 </div>
 
-<GlobalMediaDialog show={showMediaDialog} global={mediaDialogGlobal} {user} onclose={() => { showMediaDialog = false; mediaDialogGlobal = null; }} ondeleted={onMediaDeleted} />
-
 <style>
+  .ad-placement {
+    max-width: 728px;
+    margin: 32px auto 0;
+  }
+
   .globals-page {
     max-width: 1200px;
     margin: 0 auto;
@@ -1561,8 +1499,6 @@
   .col-rank { width: 32px; }
   .col-badge, .col-badges { width: 48px; }
   .col-target-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .col-media { width: 20px; text-align: center; padding: 4px 2px !important; }
-  .col-gz { width: 40px; text-align: center; padding: 4px 4px !important; }
   .col-time { width: 70px; }
   .col-location { width: 120px; }
   .top-loots-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1883,7 +1819,7 @@
     }
 
     /* Hide less important columns on mobile */
-    .col-media, .col-gz, .col-time, .col-type, .col-rank, .col-location { display: none; }
+    .col-time, .col-type, .col-rank, .col-location { display: none; }
 
     /* Compact table cells */
     .globals-table th, .globals-table td { padding: 4px 6px; font-size: 0.75rem; }
@@ -1899,23 +1835,4 @@
     .chart-container { height: 160px; }
   }
 
-  /* Media icon */
-
-  .media-icon-btn {
-    background: none;
-    border: none;
-    color: var(--accent-color);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: 3px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.7;
-    transition: opacity 0.15s;
-  }
-
-  .media-icon-btn:hover {
-    opacity: 1;
-  }
 </style>

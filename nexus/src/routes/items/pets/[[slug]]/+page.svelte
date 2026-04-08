@@ -42,6 +42,7 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   let { data = $bindable() } = $props();
 
@@ -483,6 +484,10 @@
             </span>
           </div>
         </div>
+
+        <div class="infobox-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
+        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -512,6 +517,10 @@
               {activeEntity?.Name || 'This pet'} is a {activeEntity?.Properties?.Rarity?.toLowerCase() || ''} pet that can be tamed in Entropia Universe.
             </div>
           {/if}
+        </div>
+
+        <div class="wiki-content-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
         </div>
 
         <!-- Pet Skills/Effects Section -->
@@ -569,11 +578,18 @@
     <div class="no-selection">
       <h2>Pets</h2>
       <p>Select a pet from the list to view details.</p>
+      <div class="no-selection-ad">
+        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
+      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
+  .infobox-ad { margin-top: 12px; }
+  .wiki-content-ad { margin: 16px 0; }
+  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
+
   .pet-select {
     padding: 4px 6px;
     font-size: 12px;

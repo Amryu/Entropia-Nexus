@@ -40,6 +40,7 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   // Wiki edit state
   import {
@@ -667,6 +668,10 @@
             />
           </div>
         {/if}
+
+        <div class="infobox-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
+        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -696,6 +701,10 @@
               {activeEntity?.Name || 'This armor set'} is an armor set providing {totalDefense?.toFixed(1) || '?'} total defense.
             </div>
           {/if}
+        </div>
+
+        <div class="wiki-content-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
         </div>
 
         <!-- Set Pieces Section -->
@@ -767,11 +776,18 @@
     <div class="no-selection">
       <h2>Armor Sets</h2>
       <p>Select an armor set from the list to view details.</p>
+      <div class="no-selection-ad">
+        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
+      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
+  .infobox-ad { margin-top: 12px; }
+  .wiki-content-ad { margin: 16px 0; }
+  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
+
   /* Set Effects Styling */
   .set-effects {
     padding: 12px;

@@ -13,6 +13,7 @@
   import WikiNavigation from './WikiNavigation.svelte';
   import MobileDrawer from './MobileDrawer.svelte';
   import EditActionBar from './EditActionBar.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   /**
    * @typedef {Object} Props
@@ -368,6 +369,11 @@
             {userPendingUpdates}
           />
         {/if}
+        {#if !sidebarExpanded && !sidebarFullWidth}
+          <div class="sidebar-ad">
+            <AdSlot adSlot="5222854398" adFormat="rectangle" />
+          </div>
+        {/if}
       </aside>
     {/if}
 
@@ -638,6 +644,11 @@
     transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
   }
 
+  .sidebar-ad {
+    flex-shrink: 0;
+    padding: 8px;
+  }
+
   .wiki-page.sidebar-expanded .wiki-sidebar {
     width: 50%;
     min-width: 280px;
@@ -878,6 +889,20 @@
     transition: opacity 0.15s ease;
   }
 
+  /* Use media queries (not JS-driven .mobile/.tablet classes) so padding is
+     correct on the very first SSR paint and doesn't flicker on hydration. */
+  @media (max-width: 1399px) {
+    .content-body {
+      padding: 16px;
+    }
+  }
+
+  @media (max-width: 899px) {
+    .content-body {
+      padding: 12px;
+    }
+  }
+
   /* Fade content while navigating to show loading state */
   .wiki-content.navigating .content-body {
     opacity: 0.4;
@@ -890,18 +915,15 @@
     padding-bottom: calc(var(--edit-bar-height, 60px) + 24px);
   }
 
-  /* Tablet adjustments */
-  .wiki-page.tablet .content-body {
-    padding: 16px;
-  }
-
   /* Mobile adjustments */
   .wiki-page.mobile .wiki-layout {
     flex-direction: column;
   }
 
-  .wiki-page.mobile .content-header {
-    padding: 10px 12px;
+  @media (max-width: 899px) {
+    .content-header {
+      padding: 10px 12px;
+    }
   }
 
   .wiki-page.mobile .breadcrumbs {
@@ -922,10 +944,6 @@
 
   .wiki-page.mobile .create-dropdown {
     min-width: 160px;
-  }
-
-  .wiki-page.mobile .content-body {
-    padding: 12px;
   }
 
   .wiki-page.mobile .content-body.editing {

@@ -31,6 +31,7 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   // Wiki edit state
   import {
@@ -849,6 +850,10 @@
             <span>View on Map</span>
           </a>
         {/if}
+
+        <div class="infobox-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
+        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -895,6 +900,10 @@
               {/if}
             </div>
           {/if}
+        </div>
+
+        <div class="wiki-content-ad">
+          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
         </div>
 
         <!-- Inventory Section -->
@@ -952,6 +961,9 @@
         <p>Select a shop from the list to view details.</p>
         <p class="hint">Player-owned shops sell various items at player-set prices.</p>
       {/if}
+      <div class="no-selection-ad">
+        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
+      </div>
     </div>
   {/if}
 </WikiPage>
@@ -977,6 +989,10 @@
 {/if}
 
 <style>
+  .infobox-ad { margin-top: 12px; }
+  .wiki-content-ad { margin: 16px 0; }
+  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
+
   .entity-icon-wrapper {
     position: relative;
     width: 100%;

@@ -4,6 +4,7 @@
 -->
 <script>
   import '$lib/style.css';
+  import AdSlot from '$lib/components/AdSlot.svelte';
 
   const categories = [
     {
@@ -99,9 +100,18 @@
       </a>
     {/each}
   </div>
+
+  <div class="ad-placement">
+    <AdSlot adSlot="9076572564" adFormat="horizontal" />
+  </div>
 </div>
 
 <style>
+  .ad-placement {
+    max-width: 728px;
+    margin: 32px auto 0;
+  }
+
   .information-overview {
     max-width: 1200px;
     margin: 0 auto;
