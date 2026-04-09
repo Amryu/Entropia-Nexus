@@ -1,0 +1,364 @@
+<!--
+  @component EffectSlotCard
+  Reusable equipment slot card with EntityPicker, effect preview, MU config,
+  and per-slot suggestion button.
+-->
+<script>
+  // @ts-nocheck
+  import EntityPicker from './EntityPicker.svelte';
+  import { extractEquipEffects, extractArmorSetEffects, extractPetEffect, getPetEffectKey } from './effectOptimizer.js';
+  import { getEffectStrength } from '$lib/utils/loadoutEffects.js';
+
+  let {
+    label = '',
+    slotType = 'item',
+    entities = [],
+    selected = $bindable(null),
+    markupData = {},
+    markupSource = $bindable('custom'),
+    markupPercent = $bindable(100),
+    effectsCatalog = [],
+    armorSetPieces = $bindable(7),
+    petActiveEffect = $bindable(null),
+    excludeName = null,
+    onselect = () => {},
+    onclear = () => {},
+    onsuggest = null,
+    suggesting = false,
+    compact = false
+  } = $props();
+
+  let selectedEntity = $derived(
+    selected ? entities.find(e => e.Name === selected) || null : null
+  );
+
+  let effects = $derived.by(() => {
+    if (!selectedEntity) return [];
+    if (slotType === 'armorSet') {
+      return extractArmorSetEffects(selectedEntity, armorSetPieces);
+    }
+    if (slotType === 'pet') {
+      if (!petActiveEffect) return [];
+      const eff = extractPetEffect(selectedEntity, petActiveEffect);
+      return eff ? [eff] : [];
+    }
+    return extractEquipEffects(selectedEntity);
+  });
+
+  let allPetEffects = $derived(
+    slotType === 'pet' && selectedEntity?.Effects ? selectedEntity.Effects : []
+  );
+
+  // Filter out excluded items (e.g., prevent same ring in both slots)
+  let filteredEntities = $derived(
+    excludeName ? entities.filter(e => e.Name !== excludeName) : entities
+  );
+
+  function handleSelect(item) {
+    selected = item?.Name ?? null;
+    if (slotType === 'pet' && item?.Effects?.length > 0) {
+      petActiveEffect = getPetEffectKey(item.Effects[0]);
+    }
+    onselect(item);
+  }
+
+  function handleClear() {
+    selected = null;
+    if (slotType === 'pet') petActiveEffect = null;
+    onclear();
+  }
+
+  function resolveMarkup(itemName, source, customValue) {
+    if (source === 'custom' || !itemName) return customValue ?? 100;
+    if (source === 'inventory' && markupData.inventoryMap) {
+      const id = markupData.nameToId?.get(itemName);
+      if (id != null && markupData.inventoryMap.has(id)) return markupData.inventoryMap.get(id);
+    }
+    if (source === 'ingame' && markupData.ingameMap?.has(itemName)) return markupData.ingameMap.get(itemName);
+    if (source === 'exchange' && markupData.wapByName?.has(itemName)) return markupData.wapByName.get(itemName);
+    // Fallback chain for custom: try inventory -> ingame -> exchange
+    if (source === 'custom' || customValue == null || customValue === '') {
+      if (markupData.inventoryMap) {
+        const id = markupData.nameToId?.get(itemName);
+        if (id != null && markupData.inventoryMap.has(id)) return markupData.inventoryMap.get(id);
+      }
+      if (markupData.ingameMap?.has(itemName)) return markupData.ingameMap.get(itemName);
+      if (markupData.wapByName?.has(itemName)) return markupData.wapByName.get(itemName);
+    }
+    return customValue ?? 100;
+  }
+
+  let resolvedMarkup = $derived(resolveMarkup(selected, markupSource, markupPercent));
+
+  const MU_SOURCES = [
+    { key: 'custom', label: 'Custom' },
+    { key: 'inventory', label: 'Inv' },
+    { key: 'ingame', label: 'IGM' },
+    { key: 'exchange', label: 'Exch' },
+  ];
+</script>
+
+<div class="slot-card" class:compact>
+  <div class="slot-header">
+    <span class="slot-label">{label}</span>
+    {#if onsuggest}
+      <button
+        type="button"
+        class="btn-suggest"
+        onclick={onsuggest}
+        disabled={suggesting}
+        title="Suggest best item for this slot"
+      >
+        {suggesting ? '...' : 'Suggest'}
+      </button>
+    {/if}
+  </div>
+
+  <EntityPicker
+    entities={filteredEntities}
+    selected={selectedEntity}
+    placeholder="Search {label.toLowerCase()}..."
+    onselect={handleSelect}
+    onclear={handleClear}
+  />
+
+  {#if slotType === 'armorSet' && selectedEntity}
+    <div class="pieces-row">
+      <label class="pieces-label">Pieces equipped</label>
+      <select class="pieces-select" bind:value={armorSetPieces}>
+        {#each [1, 2, 3, 4, 5, 6, 7] as n}
+          <option value={n}>{n}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
+
+  {#if slotType === 'pet' && selectedEntity && allPetEffects.length > 0}
+    <div class="pet-effect-row">
+      <label class="pet-effect-label">Active buff</label>
+      <select
+        class="pet-effect-select"
+        value={petActiveEffect}
+        onchange={(e) => { petActiveEffect = e.target.value; }}
+      >
+        {#each allPetEffects as eff (getPetEffectKey(eff))}
+          <option value={getPetEffectKey(eff)}>
+            {eff.Name} ({getEffectStrength(eff)}{eff.Properties?.Unit || eff.Values?.Unit || ''})
+          </option>
+        {/each}
+      </select>
+    </div>
+  {/if}
+
+  {#if effects.length > 0}
+    <div class="effect-preview">
+      {#each effects as eff (eff.Name)}
+        <div class="effect-row">
+          <span class="effect-name">{eff.Name}</span>
+          <span class="effect-value">
+            {getEffectStrength(eff)}{eff.Values?.Unit || eff.Properties?.Unit || ''}
+          </span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  {#if selectedEntity && !compact}
+    <div class="mu-row">
+      <div class="mu-source-toggle">
+        {#each MU_SOURCES as src (src.key)}
+          <button
+            type="button"
+            class="mu-btn"
+            class:active={markupSource === src.key}
+            onclick={() => { markupSource = src.key; }}
+          >{src.label}</button>
+        {/each}
+      </div>
+      <div class="mu-value">
+        {#if markupSource === 'custom'}
+          <input
+            type="number"
+            class="mu-input"
+            bind:value={markupPercent}
+            min="100"
+            step="1"
+          />
+        {:else}
+          <span class="mu-resolved">{resolvedMarkup?.toFixed?.(1) ?? '100'}%</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .slot-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--secondary-color);
+  }
+
+  .slot-card.compact {
+    padding: 8px;
+    gap: 4px;
+  }
+
+  .slot-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .slot-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-suggest {
+    padding: 2px 8px;
+    font-size: 11px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: transparent;
+    color: var(--accent-color);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-suggest:hover:not(:disabled) {
+    background-color: var(--accent-color);
+    color: white;
+  }
+
+  .btn-suggest:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .pieces-row, .pet-effect-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pieces-label, .pet-effect-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .pieces-select {
+    width: 50px;
+    padding: 3px 6px;
+    font-size: 12px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .pet-effect-select {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    font-size: 12px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .effect-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 6px;
+    background-color: var(--bg-color);
+    border-radius: 4px;
+  }
+
+  .effect-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+  }
+
+  .effect-name {
+    color: var(--text-muted);
+  }
+
+  .effect-value {
+    color: var(--text-color);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mu-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mu-source-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .mu-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+    border: none;
+    border-right: 1px solid var(--border-color);
+    background-color: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.1s ease;
+  }
+
+  .mu-btn:last-child {
+    border-right: none;
+  }
+
+  .mu-btn:hover {
+    background-color: var(--hover-color);
+  }
+
+  .mu-btn.active {
+    background-color: var(--accent-color);
+    color: white;
+  }
+
+  .mu-value {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mu-input {
+    width: 70px;
+    padding: 3px 6px;
+    font-size: 12px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    text-align: right;
+  }
+
+  .mu-resolved {
+    font-size: 12px;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+  }
+</style>

@@ -13,6 +13,7 @@
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import ArmorVsMob from '../ArmorVsMob.svelte';
   import WeaponProfitability from '../WeaponProfitability.svelte';
+  import EffectOptimizer from '../EffectOptimizer.svelte';
 
   let { data } = $props();
 
@@ -27,6 +28,11 @@
       slug: 'weapon-profitability',
       label: '(L) Weapon Profitability',
       description: 'Evaluate (L) weapon purchases based on efficiency savings over their lifetime.'
+    },
+    {
+      slug: 'effect-optimizer',
+      label: 'Effect Optimizer',
+      description: 'Find optimal equipment to hit effect caps.'
     }
   ];
 
@@ -101,6 +107,18 @@
     />
   {:else if activeToolSlug === 'weapon-profitability'}
     <WeaponProfitability
+      weapons={data.additional?.weapons ?? []}
+      weaponAmplifiers={data.additional?.weaponAmplifiers ?? []}
+      weaponVisionAttachments={data.additional?.weaponVisionAttachments ?? []}
+      absorbers={data.additional?.absorbers ?? []}
+      mindforceImplants={data.additional?.mindforceImplants ?? []}
+    />
+  {:else if activeToolSlug === 'effect-optimizer'}
+    <EffectOptimizer
+      clothings={data.additional?.clothings ?? []}
+      pets={data.additional?.pets ?? []}
+      effectsCatalog={data.additional?.effects ?? []}
+      armorSets={data.additional?.armorSets ?? []}
       weapons={data.additional?.weapons ?? []}
       weaponAmplifiers={data.additional?.weaponAmplifiers ?? []}
       weaponVisionAttachments={data.additional?.weaponVisionAttachments ?? []}
