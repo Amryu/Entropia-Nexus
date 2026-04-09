@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import { addToast } from '$lib/stores/toasts.js';
-  import { apiCall } from '$lib/util.js';
+  import { apiCall, hasItemTag } from '$lib/util.js';
   import { getTopCategory } from '../../market/exchange/orderUtils';
   import NegotiableFilterModal from './NegotiableFilterModal.svelte';
 
@@ -177,29 +177,59 @@
     const items = [];
     const seen = new Set();
 
-    function matchesFilter(item, filter) {
-      if (!filter) return true;
-      const slim = itemLookup.get(item.item_id);
-      if (filter.mode === 'whitelist') return filter.itemIds?.includes(item.item_id);
-      if (filter.mode === 'blacklist') return !filter.itemIds?.includes(item.item_id);
-      if (filter.mode === 'match') {
-        let nameMatch = true;
-        if (filter.substring) {
-          if (filter.useRegex) {
-            try { nameMatch = new RegExp(filter.substring, 'i').test(item.item_name); } catch { nameMatch = false; }
-          } else {
-            nameMatch = item.item_name.toLowerCase().includes(filter.substring.toLowerCase());
-          }
+    /**
+     * Normalize legacy filter format to new rules-based format.
+     * Returns null if filter represents "include all".
+     */
+    function normalizeFilter(filter) {
+      if (!filter || typeof filter !== 'object') return null;
+      if (Array.isArray(filter.filters)) return filter;
+      // Legacy format
+      if (filter.mode === 'whitelist') return { filters: [{ action: 'include', itemIds: filter.itemIds || [] }] };
+      if (filter.mode === 'blacklist') return { filters: [{ action: 'exclude', itemIds: filter.itemIds || [] }, { action: 'include' }] };
+      if (filter.mode === 'match') return { filters: [{ action: 'include', substring: filter.substring || '', useRegex: !!filter.useRegex, negate: !!filter.negate, itemTypes: filter.itemTypes || [] }] };
+      return null;
+    }
+
+    function matchesRuleCriteria(item, rule, slim) {
+      if (rule.itemIds?.length > 0 && !rule.itemIds.includes(item.item_id)) return false;
+
+      let nameMatch = true;
+      if (rule.substring) {
+        if (rule.useRegex) {
+          try { nameMatch = new RegExp(rule.substring, 'i').test(item.item_name); } catch { nameMatch = false; }
+        } else {
+          nameMatch = item.item_name.toLowerCase().includes(rule.substring.toLowerCase());
         }
-        let typeMatch = true;
-        if (filter.itemTypes?.length > 0) {
-          const cat = slim?.t ? getTopCategory(slim.t) : 'Other';
-          typeMatch = filter.itemTypes.includes(cat);
-        }
-        const result = nameMatch && typeMatch;
-        return filter.negate ? !result : result;
       }
-      return true;
+
+      let typeMatch = true;
+      if (rule.itemTypes?.length > 0) {
+        const cat = slim?.t ? getTopCategory(slim.t) : 'Other';
+        typeMatch = rule.itemTypes.includes(cat);
+      }
+
+      let tagMatch = true;
+      if (rule.tags?.length > 0) {
+        tagMatch = rule.tags.every(tag => hasItemTag(item.item_name, tag));
+      }
+
+      const result = nameMatch && typeMatch && tagMatch;
+      return rule.negate ? !result : result;
+    }
+
+    function evaluateFilters(item, filter) {
+      const normalized = normalizeFilter(filter);
+      if (!normalized?.filters?.length) return true; // no rules = include all
+      const slim = itemLookup.get(item.item_id);
+      for (const rule of normalized.filters) {
+        if (matchesRuleCriteria(item, rule, slim)) {
+          if (rule.action === 'include') return true;
+          if (rule.action === 'exclude') return false;
+          // 'inherit' - continue
+        }
+      }
+      return false; // no rule matched
     }
 
     function isPathExcluded(path) {
@@ -234,7 +264,7 @@
         if (!item.item_id || item.item_id === 0) continue;
         const slim = itemLookup.get(item.item_id);
         if (slim?.ut) continue; // skip untradeable items
-        if (!matchesFilter(item, filter)) continue;
+        if (!evaluateFilters(item, filter)) continue;
         // Non-stackable items have instance_key — include it to avoid merging condition items
         const key = item.instance_key
           ? `${item.item_id}::${item.container || ''}::${item.instance_key}`

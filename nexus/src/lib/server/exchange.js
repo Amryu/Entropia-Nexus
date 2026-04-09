@@ -776,17 +776,113 @@ const MAX_CONFIG_NODES = 200;
 const MAX_PATH_LENGTH = 500;
 const MAX_SUBSTRING_LENGTH = 200;
 const MAX_WHITELIST_IDS = 1000;
-const VALID_FILTER_MODES = ['whitelist', 'blacklist', 'match'];
-const VALID_ITEM_TYPES = [
-  'Weapon', 'Armor', 'ArmorPlating', 'ArmorSet', 'Vehicle',
-  'WeaponAmplifier', 'WeaponVisionAttachment', 'Absorber',
-  'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
-  'TeleportationChip', 'EffectChip', 'MedicalChip',
-  'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet', 'Clothing',
-  'Material', 'Consumable', 'Capsule', 'Enhancer', 'Strongbox',
-  'Blueprint', 'BlueprintBook', 'SkillImplant',
-  'Furniture', 'Decoration', 'StorageContainer', 'Sign',
+const MAX_FILTERS_PER_NODE = 20;
+const MAX_TOTAL_FILTERS = 500;
+const VALID_ACTIONS = ['include', 'exclude', 'inherit'];
+const VALID_TAGS = ['L', 'M', 'F', 'C'];
+const VALID_CATEGORIES = [
+  'Weapons', 'Armor', 'Tools', 'Enhancers', 'Clothes',
+  'Blueprints', 'Materials', 'Consumables', 'Vehicles', 'Pets',
+  'Skill Implants', 'Furnishings', 'Strongboxes', 'Other',
 ];
+// Map raw item types to display categories (matches orderUtils.ts)
+const ITEM_TYPE_CATEGORY = {
+  'Weapon': 'Weapons', 'WeaponAmplifier': 'Weapons', 'WeaponVisionAttachment': 'Weapons',
+  'Absorber': 'Weapons', 'MindforceImplant': 'Weapons',
+  'Armor': 'Armor', 'ArmorSet': 'Armor', 'ArmorPlating': 'Armor',
+  'MedicalTool': 'Tools', 'MedicalChip': 'Tools', 'Finder': 'Tools',
+  'FinderAmplifier': 'Tools', 'Excavator': 'Tools', 'Scanner': 'Tools',
+  'MiscTool': 'Tools', 'Tool': 'Tools', 'EffectChip': 'Tools',
+  'TeleportationChip': 'Tools', 'Refiner': 'Tools',
+  'Enhancer': 'Enhancers', 'Clothing': 'Clothes',
+  'Blueprint': 'Blueprints', 'BlueprintBook': 'Blueprints',
+  'Material': 'Materials', 'Consumable': 'Consumables', 'Capsule': 'Consumables',
+  'Vehicle': 'Vehicles', 'Pet': 'Pets', 'SkillImplant': 'Skill Implants',
+  'Furniture': 'Furnishings', 'Decoration': 'Furnishings',
+  'StorageContainer': 'Furnishings', 'Sign': 'Furnishings',
+  'Strongbox': 'Strongboxes',
+};
+
+/**
+ * Convert legacy filter format (mode-based) to new format (filter rules array).
+ * Returns null if the filter represents "include all".
+ */
+function normalizeFilter(filter) {
+  if (!filter || typeof filter !== 'object') return null;
+
+  // Already new format
+  if (Array.isArray(filter.filters)) return filter;
+
+  // Legacy format conversion
+  if (filter.mode === 'whitelist') {
+    return { filters: [{ action: 'include', itemIds: filter.itemIds || [] }] };
+  }
+  if (filter.mode === 'blacklist') {
+    return { filters: [
+      { action: 'exclude', itemIds: filter.itemIds || [] },
+      { action: 'include' }, // catch-all include for the rest
+    ]};
+  }
+  if (filter.mode === 'match') {
+    // Legacy itemTypes may be raw type names - map to category display names
+    const legacyTypes = filter.itemTypes || [];
+    const mappedTypes = [...new Set(legacyTypes.map(t => ITEM_TYPE_CATEGORY[t] || t).filter(t => VALID_CATEGORIES.includes(t)))];
+    return { filters: [{
+      action: 'include',
+      substring: filter.substring || '',
+      useRegex: !!filter.useRegex,
+      negate: !!filter.negate,
+      itemTypes: mappedTypes,
+    }]};
+  }
+  return null;
+}
+
+function validateFilterRule(rule, prefix) {
+  if (!rule || typeof rule !== 'object') throw new Error(`${prefix} must be an object`);
+  if (!VALID_ACTIONS.includes(rule.action)) throw new Error(`${prefix}.action must be one of: ${VALID_ACTIONS.join(', ')}`);
+
+  const sanitized = { action: rule.action };
+
+  // Item IDs (for backwards-compat with legacy whitelist/blacklist)
+  if (Array.isArray(rule.itemIds)) {
+    if (rule.itemIds.length > MAX_WHITELIST_IDS) throw new Error(`${prefix}.itemIds exceeds maximum ${MAX_WHITELIST_IDS}`);
+    sanitized.itemIds = rule.itemIds.map(id => parseInt(id, 10)).filter(id => Number.isFinite(id) && id > 0);
+  }
+
+  // Text pattern
+  const sub = typeof rule.substring === 'string' ? rule.substring.replace(/[\x00-\x1f]/g, '').trim() : '';
+  if (sub.length > MAX_SUBSTRING_LENGTH) throw new Error(`${prefix}.substring exceeds maximum length`);
+  if (sub) {
+    sanitized.substring = sub;
+    sanitized.useRegex = !!rule.useRegex;
+    if (sanitized.useRegex) {
+      if (/(\.\*){3,}|\(\[?[^)]*\+\)\+|\(\[?[^)]*\*\)\+|\(\[?[^)]*\+\)\*/.test(sub)) {
+        throw new Error(`${prefix}.substring contains a potentially unsafe regex pattern`);
+      }
+      try { new RegExp(sub); } catch { throw new Error(`${prefix}.substring is not a valid regex`); }
+    }
+  }
+
+  // Negate
+  sanitized.negate = !!rule.negate;
+
+  // Item types (category display names)
+  if (Array.isArray(rule.itemTypes)) {
+    sanitized.itemTypes = rule.itemTypes.filter(t => VALID_CATEGORIES.includes(t));
+  } else {
+    sanitized.itemTypes = [];
+  }
+
+  // Tags
+  if (Array.isArray(rule.tags)) {
+    sanitized.tags = rule.tags.filter(t => VALID_TAGS.includes(t));
+  } else {
+    sanitized.tags = [];
+  }
+
+  return sanitized;
+}
 
 export function validateNegotiableConfig(config) {
   if (!config || typeof config !== 'object') throw new Error('Config must be an object');
@@ -794,6 +890,7 @@ export function validateNegotiableConfig(config) {
   if (config.nodes.length > MAX_CONFIG_NODES) throw new Error(`Maximum ${MAX_CONFIG_NODES} nodes`);
 
   const sanitized = { nodes: [] };
+  let totalFilters = 0;
 
   for (let i = 0; i < config.nodes.length; i++) {
     const node = config.nodes[i];
@@ -809,39 +906,21 @@ export function validateNegotiableConfig(config) {
     const sanitizedNode = { path, state };
 
     if (state === 'included' && node.filter != null) {
-      const f = node.filter;
-      if (typeof f !== 'object') throw new Error(`nodes[${i}].filter must be an object`);
-      if (!VALID_FILTER_MODES.includes(f.mode)) throw new Error(`nodes[${i}].filter.mode must be one of: ${VALID_FILTER_MODES.join(', ')}`);
-
-      const sanitizedFilter = { mode: f.mode };
-
-      if (f.mode === 'whitelist' || f.mode === 'blacklist') {
-        if (!Array.isArray(f.itemIds)) throw new Error(`nodes[${i}].filter.itemIds must be an array`);
-        if (f.itemIds.length > MAX_WHITELIST_IDS) throw new Error(`nodes[${i}].filter.itemIds exceeds maximum ${MAX_WHITELIST_IDS}`);
-        sanitizedFilter.itemIds = f.itemIds
-          .map(id => parseInt(id, 10))
-          .filter(id => Number.isFinite(id) && id > 0);
-      } else if (f.mode === 'match') {
-        const sub = typeof f.substring === 'string' ? f.substring.replace(/[\x00-\x1f]/g, '').trim() : '';
-        if (sub.length > MAX_SUBSTRING_LENGTH) throw new Error(`nodes[${i}].filter.substring exceeds maximum length`);
-        sanitizedFilter.substring = sub;
-        sanitizedFilter.useRegex = !!f.useRegex;
-        if (sanitizedFilter.useRegex && sub) {
-          // Reject patterns with known catastrophic backtracking constructs
-          if (/(\.\*){3,}|\(\[?[^)]*\+\)\+|\(\[?[^)]*\*\)\+|\(\[?[^)]*\+\)\*/.test(sub)) {
-            throw new Error(`nodes[${i}].filter.substring contains a potentially unsafe regex pattern`);
-          }
-          try { new RegExp(sub); } catch { throw new Error(`nodes[${i}].filter.substring is not a valid regex`); }
+      const normalized = normalizeFilter(node.filter);
+      if (normalized?.filters?.length) {
+        if (normalized.filters.length > MAX_FILTERS_PER_NODE) {
+          throw new Error(`nodes[${i}].filter.filters exceeds maximum ${MAX_FILTERS_PER_NODE} rules`);
         }
-        sanitizedFilter.negate = !!f.negate;
-        if (Array.isArray(f.itemTypes)) {
-          sanitizedFilter.itemTypes = f.itemTypes.filter(t => VALID_ITEM_TYPES.includes(t));
-        } else {
-          sanitizedFilter.itemTypes = [];
+        totalFilters += normalized.filters.length;
+        if (totalFilters > MAX_TOTAL_FILTERS) {
+          throw new Error(`Total filter rules across all nodes exceeds maximum ${MAX_TOTAL_FILTERS}`);
         }
+        sanitizedNode.filter = {
+          filters: normalized.filters.map((rule, j) =>
+            validateFilterRule(rule, `nodes[${i}].filter.filters[${j}]`)
+          ),
+        };
       }
-
-      sanitizedNode.filter = sanitizedFilter;
     }
 
     sanitized.nodes.push(sanitizedNode);
@@ -883,45 +962,71 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
     return false;
   }
 
-  // Pre-compile regexes for match filters
-  const compiledRegexes = new Map();
+  // Pre-normalize all filters once and pre-compile regexes + lowercase substrings.
+  // Keyed by node path for O(1) lookup during item iteration.
+  const normalizedFilters = new Map(); // path -> { rules, regexes, lowerSubstrings, itemIdSets }
   for (const node of includedNodes) {
-    if (node.filter?.mode === 'match' && node.filter.useRegex && node.filter.substring) {
-      try { compiledRegexes.set(node.path, new RegExp(node.filter.substring, 'i')); } catch { /* skip */ }
+    const normalized = normalizeFilter(node.filter);
+    const rules = normalized?.filters || [];
+    const regexes = [];
+    const lowerSubstrings = [];
+    const itemIdSets = [];
+    for (const rule of rules) {
+      if (rule.useRegex && rule.substring) {
+        try { regexes.push(new RegExp(rule.substring, 'i')); } catch { regexes.push(null); }
+      } else {
+        regexes.push(null);
+      }
+      lowerSubstrings.push(rule.substring ? rule.substring.toLowerCase() : '');
+      itemIdSets.push(rule.itemIds?.length > 0 ? new Set(rule.itemIds) : null);
     }
+    normalizedFilters.set(node.path, { rules, regexes, lowerSubstrings, itemIdSets });
   }
 
-  // Check if an item matches a filter
-  function matchesFilter(item, filter, slim, nodePath) {
-    if (!filter) return true; // null filter = include all
+  // Check if an item matches a single filter rule's criteria
+  function matchesRuleCriteria(item, rule, slim, regex, lowerSubstring, itemIdSet) {
+    // Item ID match (from legacy whitelist/blacklist conversion)
+    if (itemIdSet && !itemIdSet.has(item.item_id)) return false;
 
-    if (filter.mode === 'whitelist') {
-      return filter.itemIds?.includes(item.item_id);
-    }
-    if (filter.mode === 'blacklist') {
-      return !filter.itemIds?.includes(item.item_id);
-    }
-    if (filter.mode === 'match') {
-      let nameMatch = true;
-      if (filter.substring) {
-        const re = compiledRegexes.get(nodePath);
-        if (re) {
-          nameMatch = re.test(item.item_name);
-        } else if (!filter.useRegex) {
-          nameMatch = item.item_name.toLowerCase().includes(filter.substring.toLowerCase());
-        } else {
-          nameMatch = false;
-        }
+    let nameMatch = true;
+    if (rule.substring) {
+      if (regex) {
+        nameMatch = regex.test(item.item_name);
+      } else if (!rule.useRegex) {
+        nameMatch = item.item_name.toLowerCase().includes(lowerSubstring);
+      } else {
+        nameMatch = false;
       }
-      let typeMatch = true;
-      if (filter.itemTypes?.length > 0) {
-        const itemType = slim?.t || null;
-        typeMatch = itemType ? filter.itemTypes.includes(itemType) : false;
-      }
-      const result = nameMatch && typeMatch;
-      return filter.negate ? !result : result;
     }
-    return true;
+
+    let typeMatch = true;
+    if (rule.itemTypes?.length > 0) {
+      const cat = slim?.t ? (ITEM_TYPE_CATEGORY[slim.t] || 'Other') : 'Other';
+      typeMatch = rule.itemTypes.includes(cat);
+    }
+
+    let tagMatch = true;
+    if (rule.tags?.length > 0) {
+      tagMatch = rule.tags.every(tag => hasItemTag(item.item_name, tag));
+    }
+
+    const result = nameMatch && typeMatch && tagMatch;
+    return rule.negate ? !result : result;
+  }
+
+  // Evaluate the filter rules for an item. Returns true if item should be included.
+  function evaluateFilters(item, slim, nodePath) {
+    const nf = normalizedFilters.get(nodePath);
+    if (!nf || nf.rules.length === 0) return true; // no rules = include all
+
+    for (let ri = 0; ri < nf.rules.length; ri++) {
+      if (matchesRuleCriteria(item, nf.rules[ri], slim, nf.regexes[ri], nf.lowerSubstrings[ri], nf.itemIdSets[ri])) {
+        if (nf.rules[ri].action === 'include') return true;
+        if (nf.rules[ri].action === 'exclude') return false;
+        // 'inherit' - continue to next rule
+      }
+    }
+    return false; // no rule matched = not included
   }
 
   const results = [];
@@ -945,8 +1050,8 @@ export function resolveNegotiableConfig(config, inventoryItems, slimLookup) {
       const slim = slimLookup?.get(item.item_id) || null;
       if (!slim || slim.ut) continue;
 
-      // Apply filter
-      if (!matchesFilter(item, node.filter || null, slim, node.path)) continue;
+      // Apply filter rules
+      if (!evaluateFilters(item, slim, node.path)) continue;
 
       const planet = extractPlanet(itemPath);
       if (!planet) continue; // Skip items without a determinable planet

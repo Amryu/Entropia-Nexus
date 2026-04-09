@@ -1,13 +1,14 @@
 <script>
   //@ts-nocheck
-  import { getTopCategory, itemTypeBadge } from '../../market/exchange/orderUtils';
+  import { getTopCategory } from '../../market/exchange/orderUtils';
+  import { hasItemTag } from '$lib/util.js';
 
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
    * @property {object|null} [node] - The container tree node being configured
    * @property {Array} [items] - All inventory items within this container
-   * @property {Map} [itemLookup] - item_id → slim item
+   * @property {Map} [itemLookup] - item_id -> slim item
    * @property {object|null} [existingFilter] - Current filter config for this node
    * @property {() => void} [onclose]
    * @property {(filter: object|null) => void} [onsave]
@@ -30,55 +31,59 @@
     'Skill Implants', 'Furnishings', 'Strongboxes', 'Other'
   ];
 
-  let mode = $state('all'); // 'all' | 'whitelist' | 'blacklist' | 'match'
-  let selectedIds = $state(new Set());
-  let substring = $state('');
-  let useRegex = $state(false);
-  let negateMatch = $state(false);
-  let selectedTypes = $state(new Set());
-  let searchTerm = $state('');
-  let regexError = $state(null);
+  const ALL_TAGS = [
+    { value: 'L', label: 'Limited' },
+    { value: 'M', label: 'Male' },
+    { value: 'F', label: 'Female' },
+    { value: 'C', label: 'Crafted' },
+  ];
 
-  // Initialize from existing filter when modal opens
+  function createRule() {
+    return { action: 'include', negate: false, substring: '', useRegex: false, itemTypes: [], tags: [] };
+  }
+
+  /**
+   * Normalize legacy filter format to new rules-based format.
+   */
+  function normalizeFilter(filter) {
+    if (!filter || typeof filter !== 'object') return [];
+    if (Array.isArray(filter.filters)) return filter.filters.map(r => ({
+      action: r.action || 'include',
+      negate: !!r.negate,
+      substring: r.substring || '',
+      useRegex: !!r.useRegex,
+      itemTypes: r.itemTypes || [],
+      tags: r.tags || [],
+      itemIds: r.itemIds || undefined,
+    }));
+    // Legacy formats
+    if (filter.mode === 'whitelist') return [{ action: 'include', negate: false, substring: '', useRegex: false, itemTypes: [], tags: [], itemIds: filter.itemIds || [] }];
+    if (filter.mode === 'blacklist') return [
+      { action: 'exclude', negate: false, substring: '', useRegex: false, itemTypes: [], tags: [], itemIds: filter.itemIds || [] },
+      { action: 'include', negate: false, substring: '', useRegex: false, itemTypes: [], tags: [] },
+    ];
+    if (filter.mode === 'match') return [{ action: 'include', negate: !!filter.negate, substring: filter.substring || '', useRegex: !!filter.useRegex, itemTypes: filter.itemTypes || [], tags: [] }];
+    return [];
+  }
+
+  let rules = $state([]);
+  let regexErrors = $state(new Map());
+
+  // Initialize when modal opens
   $effect(() => {
     if (show) {
-      if (!existingFilter) {
-        mode = 'all';
-        selectedIds = new Set();
-        substring = '';
-        useRegex = false;
-        selectedTypes = new Set();
-      } else {
-        mode = existingFilter.mode || 'all';
-        if (mode === 'whitelist' || mode === 'blacklist') {
-          selectedIds = new Set(existingFilter.itemIds || []);
-        } else {
-          selectedIds = new Set();
-        }
-        if (mode === 'match') {
-          substring = existingFilter.substring || '';
-          useRegex = !!existingFilter.useRegex;
-          negateMatch = !!existingFilter.negate;
-          selectedTypes = new Set(existingFilter.itemTypes || []);
-        } else {
-          substring = '';
-          useRegex = false;
-          negateMatch = false;
-          selectedTypes = new Set();
-        }
-      }
-      searchTerm = '';
-      regexError = null;
+      rules = existingFilter ? normalizeFilter(existingFilter) : [];
+      regexErrors = new Map();
     }
   });
 
-  // Deduplicated items for the list (unique by item_id)
+  // Deduplicated items for preview (unique by item_id)
   let uniqueItems = $derived((() => {
     const seen = new Map();
     for (const item of items) {
       if (!item.item_id || item.item_id === 0) continue;
       const slim = itemLookup.get(item.item_id);
-      if (slim?.ut) continue; // skip untradeable items
+      if (slim?.ut) continue;
       if (!seen.has(item.item_id)) {
         seen.set(item.item_id, {
           item_id: item.item_id,
@@ -88,89 +93,141 @@
           quantity: item.quantity || 1,
         });
       } else {
-        // Accumulate quantity for stackables
         seen.get(item.item_id).quantity += (item.quantity || 1);
       }
     }
     return [...seen.values()].sort((a, b) => a.item_name.localeCompare(b.item_name));
   })());
 
-  // Filter the list by search
-  let filteredItems = $derived((() => {
-    if (!searchTerm) return uniqueItems;
-    const lower = searchTerm.toLowerCase();
-    return uniqueItems.filter(i => i.item_name.toLowerCase().includes(lower));
-  })());
+  // Check if a single rule's criteria match an item
+  function matchesRuleCriteria(item, rule) {
+    if (rule.itemIds?.length > 0 && !rule.itemIds.includes(item.item_id)) return false;
 
-  // Items matching the current filter criteria
-  let matchedItems = $derived((() => {
-    if (mode === 'all') return uniqueItems;
-    if (mode === 'whitelist') return uniqueItems.filter(i => selectedIds.has(i.item_id));
-    if (mode === 'blacklist') return uniqueItems.filter(i => !selectedIds.has(i.item_id));
-    if (mode === 'match') {
-      return uniqueItems.filter(item => {
-        let nameMatch = true;
-        if (substring) {
-          if (useRegex) {
-            try { nameMatch = new RegExp(substring, 'i').test(item.item_name); } catch { nameMatch = false; }
-          } else {
-            nameMatch = item.item_name.toLowerCase().includes(substring.toLowerCase());
-          }
-        }
-        let typeMatch = true;
-        if (selectedTypes.size > 0) {
-          typeMatch = item.category ? selectedTypes.has(item.category) : false;
-        }
-        const result = nameMatch && typeMatch;
-        return negateMatch ? !result : result;
-      });
+    let nameMatch = true;
+    if (rule.substring) {
+      if (rule.useRegex) {
+        try { nameMatch = new RegExp(rule.substring, 'i').test(item.item_name); } catch { nameMatch = false; }
+      } else {
+        nameMatch = item.item_name.toLowerCase().includes(rule.substring.toLowerCase());
+      }
     }
-    return [];
-  })());
 
-  let matchCount = $derived(matchedItems.length);
-
-  // Validate regex
-  $effect(() => {
-    if (useRegex && substring) {
-      try { new RegExp(substring); regexError = null; } catch (e) { regexError = e.message; }
-    } else {
-      regexError = null;
+    let typeMatch = true;
+    if (rule.itemTypes?.length > 0) {
+      typeMatch = item.category ? rule.itemTypes.includes(item.category) : false;
     }
-  });
 
-  function toggleId(id) {
-    if (selectedIds.has(id)) {
-      selectedIds.delete(id);
-    } else {
-      selectedIds.add(id);
+    let tagMatch = true;
+    if (rule.tags?.length > 0) {
+      tagMatch = rule.tags.every(tag => hasItemTag(item.item_name, tag));
     }
-    selectedIds = new Set(selectedIds); // trigger reactivity
+
+    const result = nameMatch && typeMatch && tagMatch;
+    return rule.negate ? !result : result;
   }
 
-  function toggleType(cat) {
-    if (selectedTypes.has(cat)) {
-      selectedTypes.delete(cat);
-    } else {
-      selectedTypes.add(cat);
+  // Evaluate all rules for an item
+  function evaluateItem(item) {
+    if (rules.length === 0) return true; // no rules = include all
+    for (const rule of rules) {
+      if (matchesRuleCriteria(item, rule)) {
+        if (rule.action === 'include') return true;
+        if (rule.action === 'exclude') return false;
+        // 'inherit' - continue to next rule
+      }
     }
-    selectedTypes = new Set(selectedTypes);
+    return false; // no rule matched
+  }
+
+  let matchedItems = $derived(uniqueItems.filter(evaluateItem));
+  let matchCount = $derived(matchedItems.length);
+
+  // Validate regexes
+  $effect(() => {
+    const errors = new Map();
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i];
+      if (rule.useRegex && rule.substring) {
+        try { new RegExp(rule.substring); } catch (e) { errors.set(i, e.message); }
+      }
+    }
+    regexErrors = errors;
+  });
+
+  let hasRegexError = $derived(regexErrors.size > 0);
+
+  // Rule CRUD
+  function addRule() {
+    rules = [...rules, createRule()];
+  }
+
+  function removeRule(index) {
+    rules = rules.filter((_, i) => i !== index);
+  }
+
+  function moveRule(index, direction) {
+    const target = index + direction;
+    if (target < 0 || target >= rules.length) return;
+    const newRules = [...rules];
+    [newRules[index], newRules[target]] = [newRules[target], newRules[index]];
+    rules = newRules;
+  }
+
+  function updateRule(index, field, value) {
+    const newRules = [...rules];
+    newRules[index] = { ...newRules[index], [field]: value };
+    rules = newRules;
+  }
+
+  function toggleType(ruleIndex, typeName) {
+    const rule = rules[ruleIndex];
+    const types = [...(rule.itemTypes || [])];
+    const idx = types.indexOf(typeName);
+    if (idx >= 0) types.splice(idx, 1);
+    else types.push(typeName);
+    updateRule(ruleIndex, 'itemTypes', types);
+  }
+
+  function toggleTag(ruleIndex, tag) {
+    const rule = rules[ruleIndex];
+    const tags = [...(rule.tags || [])];
+    const idx = tags.indexOf(tag);
+    if (idx >= 0) tags.splice(idx, 1);
+    else tags.push(tag);
+    updateRule(ruleIndex, 'tags', tags);
   }
 
   function save() {
-    if (mode === 'all') {
-      onsave?.(null);
-    } else if (mode === 'whitelist' || mode === 'blacklist') {
-      onsave?.({ mode, itemIds: [...selectedIds] });
-    } else if (mode === 'match') {
-      onsave?.({
-        mode: 'match',
-        substring: substring.replace(/[\x00-\x1f]/g, '').trim().slice(0, 200),
-        useRegex,
-        negate: negateMatch,
-        itemTypes: [...selectedTypes],
-      });
+    if (rules.length === 0) {
+      onsave?.(null); // no rules = include all
+      return;
     }
+    onsave?.({
+      filters: rules.map(rule => {
+        const r = { action: rule.action };
+        if (rule.negate) r.negate = true;
+        const sub = (rule.substring || '').replace(/[\x00-\x1f]/g, '').trim().slice(0, 200);
+        if (sub) {
+          r.substring = sub;
+          if (rule.useRegex) r.useRegex = true;
+        }
+        if (rule.itemTypes?.length > 0) r.itemTypes = rule.itemTypes.filter(t => ALL_CATEGORIES.includes(t));
+        if (rule.tags?.length > 0) r.tags = rule.tags;
+        if (rule.itemIds?.length > 0) r.itemIds = rule.itemIds;
+        return r;
+      }),
+    });
+  }
+
+  function ruleDescription(rule) {
+    const parts = [];
+    if (rule.itemIds?.length > 0) parts.push(`${rule.itemIds.length} item IDs`);
+    if (rule.substring) parts.push(`"${rule.substring}"${rule.useRegex ? ' (regex)' : ''}`);
+    if (rule.itemTypes?.length > 0) parts.push(`${rule.itemTypes.length} type${rule.itemTypes.length > 1 ? 's' : ''}`);
+    if (rule.tags?.length > 0) parts.push(`tags: ${rule.tags.join(', ')}`);
+    if (parts.length === 0) return 'all items';
+    const desc = parts.join(', ');
+    return rule.negate ? `NOT (${desc})` : desc;
   }
 </script>
 
@@ -190,129 +247,116 @@
       </div>
 
       <div class="filter-body">
-        <div class="mode-selector">
-          <label class="mode-option">
-            <input type="radio" bind:group={mode} value="all" />
-            Include all items
-          </label>
-          <label class="mode-option">
-            <input type="radio" bind:group={mode} value="whitelist" />
-            Include specific items
-          </label>
-          <label class="mode-option">
-            <input type="radio" bind:group={mode} value="blacklist" />
-            Exclude specific items
-          </label>
-          <label class="mode-option">
-            <input type="radio" bind:group={mode} value="match" />
-            Match by pattern
-          </label>
+        {#if rules.length === 0}
+          <p class="info-text">All items will be listed. Add rules to filter.</p>
+        {/if}
+
+        <div class="rules-list">
+          {#each rules as rule, index (index)}
+            <div class="rule-card">
+              <div class="rule-header">
+                <select
+                  class="action-select action-{rule.action}"
+                  value={rule.action}
+                  onchange={(e) => updateRule(index, 'action', e.target.value)}
+                >
+                  <option value="include">Include</option>
+                  <option value="exclude">Exclude</option>
+                  <option value="inherit">Inherit</option>
+                </select>
+
+                <span class="rule-desc">{ruleDescription(rule)}</span>
+
+                <div class="rule-controls">
+                  <button class="btn-sm" onclick={() => moveRule(index, -1)} disabled={index === 0} title="Move up">&#9650;</button>
+                  <button class="btn-sm" onclick={() => moveRule(index, 1)} disabled={index === rules.length - 1} title="Move down">&#9660;</button>
+                  <button class="btn-sm danger" onclick={() => removeRule(index)} title="Remove">&times;</button>
+                </div>
+              </div>
+
+              <div class="rule-body">
+                <label class="negate-toggle">
+                  <input type="checkbox" checked={rule.negate} onchange={(e) => updateRule(index, 'negate', e.target.checked)} />
+                  Negate match
+                </label>
+
+                <div class="match-row">
+                  <label class="match-label">
+                    Pattern
+                    <input
+                      type="text"
+                      class="match-input"
+                      placeholder="Substring or regex..."
+                      value={rule.substring}
+                      oninput={(e) => updateRule(index, 'substring', e.target.value)}
+                      maxlength="200"
+                    />
+                  </label>
+                  <label class="regex-toggle">
+                    <input type="checkbox" checked={rule.useRegex} onchange={(e) => updateRule(index, 'useRegex', e.target.checked)} />
+                    Regex
+                  </label>
+                </div>
+                {#if regexErrors.has(index)}
+                  <p class="error-text">{regexErrors.get(index)}</p>
+                {/if}
+
+                <div class="chip-section">
+                  <span class="chip-label">Tags:</span>
+                  <div class="chip-row">
+                    {#each ALL_TAGS as tag}
+                      <label class="chip" class:active={rule.tags?.includes(tag.value)}>
+                        <input type="checkbox" checked={rule.tags?.includes(tag.value)} onchange={() => toggleTag(index, tag.value)} />
+                        {tag.label}
+                      </label>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="chip-section">
+                  <span class="chip-label">Types:</span>
+                  <div class="chip-row">
+                    {#each ALL_CATEGORIES as cat}
+                      <label class="chip" class:active={rule.itemTypes?.includes(cat)}>
+                        <input type="checkbox" checked={rule.itemTypes?.includes(cat)} onchange={() => toggleType(index, cat)} />
+                        {cat}
+                      </label>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+            </div>
+          {/each}
         </div>
 
-        {#if mode === 'whitelist' || mode === 'blacklist'}
-          <div class="item-list-section">
-            <input
-              type="text"
-              class="search-input"
-              placeholder="Search items..."
-              bind:value={searchTerm}
-            />
-            <div class="item-list">
-              {#each filteredItems as item (item.item_id)}
-                <label class="item-row">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(item.item_id)}
-                    onchange={() => toggleId(item.item_id)}
-                  />
-                  <span class="item-name">{item.item_name}</span>
-                  {#if item.type}
-                    <span class="item-type-badge">{item.category}</span>
-                  {/if}
-                  <span class="item-qty">x{item.quantity.toLocaleString()}</span>
-                </label>
-              {/each}
-              {#if filteredItems.length === 0}
-                <p class="empty-text">No items match your search</p>
-              {/if}
-            </div>
-            <div class="selection-hint">
-              {mode === 'whitelist' ? 'Checked items will be listed' : 'Checked items will be excluded'}
-              ({selectedIds.size} selected)
-            </div>
-          </div>
-        {:else if mode === 'match'}
-          <div class="match-section">
-            <div class="match-row">
-              <label class="match-label">
-                Pattern
-                <input
-                  type="text"
-                  class="match-input"
-                  placeholder="Enter substring or regex..."
-                  bind:value={substring}
-                  maxlength="200"
-                />
-              </label>
-              <label class="regex-toggle">
-                <input type="checkbox" bind:checked={useRegex} />
-                Regex
-              </label>
-              <label class="regex-toggle">
-                <input type="checkbox" bind:checked={negateMatch} />
-                Negate
-              </label>
-            </div>
-            {#if regexError}
-              <p class="error-text">{regexError}</p>
-            {/if}
+        <button class="btn-add" onclick={addRule}>+ Add Rule</button>
 
-            <div class="type-filters">
-              <span class="type-label">Item types:</span>
-              <div class="type-grid">
-                {#each ALL_CATEGORIES as cat}
-                  <label class="type-chip" class:active={selectedTypes.has(cat)}>
-                    <input
-                      type="checkbox"
-                      checked={selectedTypes.has(cat)}
-                      onchange={() => toggleType(cat)}
-                    />
-                    {cat}
-                  </label>
-                {/each}
+        {#if rules.length > 0}
+          <div class="default-hint">Items not matching any rule will not be listed.</div>
+        {/if}
+
+        <div class="match-preview">
+          <span class="match-preview-label">{matchedItems.length} item{matchedItems.length !== 1 ? 's' : ''}</span>
+          <div class="match-preview-list">
+            {#each matchedItems as item (item.item_id)}
+              <div class="match-preview-row">
+                <span class="item-name">{item.item_name}</span>
+                {#if item.category}
+                  <span class="item-type-badge">{item.category}</span>
+                {/if}
+                <span class="item-qty">x{item.quantity.toLocaleString()}</span>
               </div>
-              {#if selectedTypes.size === 0}
-                <span class="type-hint">No type filter = all types included</span>
-              {/if}
-            </div>
-
+            {/each}
+            {#if matchedItems.length === 0 && rules.length > 0}
+              <p class="empty-text">No items match the current rules</p>
+            {/if}
           </div>
-        {/if}
-
-        {#if mode === 'all' || mode === 'match'}
-          <div class="match-preview">
-            <span class="match-preview-label">{matchedItems.length} item{matchedItems.length !== 1 ? 's' : ''}</span>
-            <div class="match-preview-list">
-              {#each matchedItems as item (item.item_id)}
-                <div class="match-preview-row">
-                  <span class="item-name">{item.item_name}</span>
-                  {#if item.category}
-                    <span class="item-type-badge">{item.category}</span>
-                  {/if}
-                  <span class="item-qty">x{item.quantity.toLocaleString()}</span>
-                </div>
-              {/each}
-              {#if matchedItems.length === 0 && mode === 'match'}
-                <p class="empty-text">No items match the current pattern</p>
-              {/if}
-            </div>
-          </div>
-        {/if}
+        </div>
       </div>
 
       <div class="filter-actions">
         <button class="btn btn-secondary" onclick={() => onclose?.()}>Cancel</button>
-        <button class="btn btn-primary" onclick={save} disabled={regexError != null}>
+        <button class="btn btn-primary" onclick={save} disabled={hasRegexError}>
           Save Filter
         </button>
       </div>
@@ -335,8 +379,8 @@
     background: var(--primary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    width: 520px;
-    max-height: 80vh;
+    width: 560px;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
   }
@@ -349,10 +393,7 @@
     border-bottom: 1px solid var(--border-color);
   }
 
-  .filter-header h4 {
-    margin: 0;
-    font-size: 1rem;
-  }
+  .filter-header h4 { margin: 0; font-size: 1rem; }
 
   .filter-preview {
     flex: 1;
@@ -371,167 +412,189 @@
     padding: 0 4px;
   }
 
-  .close-btn:hover {
-    color: var(--text-color);
-  }
+  .close-btn:hover { color: var(--text-color); }
 
   .filter-body {
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     overflow-y: auto;
     flex: 1;
   }
 
-  .mode-selector {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    margin-bottom: 1rem;
+  .info-text {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem 0;
+    text-align: center;
   }
 
-  .mode-option {
+  /* Rules list */
+  .rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .rule-card {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--secondary-color);
+    overflow: hidden;
+  }
+
+  .rule-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-    cursor: pointer;
+    gap: 6px;
+    padding: 5px 8px;
+    background: var(--hover-color);
+    border-bottom: 1px solid var(--border-color);
   }
 
-  .item-list-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .search-input, .match-input {
-    width: 100%;
-    padding: 0.4rem 0.6rem;
+  .action-select {
+    padding: 2px 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 3px;
     background: var(--secondary-color);
     color: var(--text-color);
-    font-size: 0.85rem;
-    box-sizing: border-box;
-  }
-
-  .search-input:focus, .match-input:focus {
-    outline: none;
-    border-color: var(--accent-color);
-  }
-
-  .item-list {
-    max-height: 300px;
-    overflow-y: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--secondary-color);
-  }
-
-  .item-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0.6rem;
     cursor: pointer;
-    font-size: 0.82rem;
   }
 
-  .item-row:hover {
-    background: var(--hover-color);
-  }
+  .action-select.action-include { color: var(--success-color, #22c55e); }
+  .action-select.action-exclude { color: var(--error-color, #ef4444); }
+  .action-select.action-inherit { color: var(--text-muted); }
 
-  .item-name {
+  .action-select option { color: var(--text-color); }
+
+  .rule-desc {
     flex: 1;
+    font-size: 0.75rem;
+    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .item-type-badge {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    padding: 1px 4px;
+  .rule-controls {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .btn-sm {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
     border: 1px solid var(--border-color);
     border-radius: 3px;
-    white-space: nowrap;
-  }
-
-  .item-qty {
-    font-size: 0.75rem;
     color: var(--text-muted);
-    white-space: nowrap;
+    cursor: pointer;
+    font-size: 0.65rem;
+    padding: 0;
   }
 
-  .selection-hint {
-    font-size: 0.75rem;
-    color: var(--text-muted);
+  .btn-sm:hover:not(:disabled) {
+    border-color: var(--text-color);
+    color: var(--text-color);
   }
 
-  .empty-text {
-    text-align: center;
-    color: var(--text-muted);
-    padding: 1rem;
-    margin: 0;
-    font-size: 0.82rem;
+  .btn-sm:disabled { opacity: 0.3; cursor: default; }
+
+  .btn-sm.danger:hover:not(:disabled) {
+    border-color: var(--error-color);
+    color: var(--error-color);
   }
 
-  .match-section {
+  .rule-body {
+    padding: 6px 8px;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 6px;
   }
+
+  .negate-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+
+  .negate-toggle:has(input:checked) { color: var(--error-color, #ef4444); }
 
   .match-row {
     display: flex;
-    gap: 0.75rem;
+    gap: 0.5rem;
     align-items: flex-end;
   }
 
   .match-label {
     flex: 1;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 2px;
+    color: var(--text-muted);
   }
+
+  .match-input {
+    width: 100%;
+    padding: 3px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    font-size: 0.8rem;
+    box-sizing: border-box;
+  }
+
+  .match-input:focus { outline: none; border-color: var(--accent-color); }
 
   .regex-toggle {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    font-size: 0.8rem;
+    gap: 0.25rem;
+    font-size: 0.75rem;
     white-space: nowrap;
-    padding-bottom: 0.4rem;
+    padding-bottom: 3px;
+    color: var(--text-muted);
   }
 
   .error-text {
     color: var(--error-color);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     margin: 0;
   }
 
-  .type-filters {
+  /* Chip sections (tags, types) */
+  .chip-section {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 3px;
   }
 
-  .type-label {
-    font-size: 0.82rem;
+  .chip-label {
+    font-size: 0.75rem;
     color: var(--text-muted);
   }
 
-  .type-grid {
+  .chip-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: 3px;
   }
 
-  .type-chip {
+  .chip {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    padding: 2px 6px;
+    gap: 0;
+    font-size: 0.72rem;
+    padding: 1px 5px;
     border: 1px solid var(--border-color);
     border-radius: 3px;
     cursor: pointer;
@@ -539,39 +602,61 @@
     transition: background 0.1s, border-color 0.1s;
   }
 
-  .type-chip:hover {
-    background: var(--hover-color);
-  }
+  .chip:hover { background: var(--hover-color); }
 
-  .type-chip.active {
+  .chip.active {
     border-color: var(--accent-color);
     background: var(--accent-color);
     color: #fff;
   }
 
-  .type-chip input {
-    display: none;
+  .chip input { display: none; }
+
+  /* Add rule button */
+  .btn-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    padding: 6px;
+    font-size: 0.8rem;
+    background: transparent;
+    border: 1px dashed var(--border-color);
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 6px;
+    transition: all 0.15s;
   }
 
-  .type-hint {
+  .btn-add:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+
+  .default-hint {
     font-size: 0.72rem;
     color: var(--text-muted);
     font-style: italic;
+    margin-top: 4px;
+    text-align: center;
   }
 
+  /* Preview */
   .match-preview {
-    margin-top: 0.5rem;
+    margin-top: 8px;
   }
 
   .match-preview-label {
     font-size: 0.75rem;
     color: var(--text-muted);
     display: block;
-    margin-bottom: 0.25rem;
+    margin-bottom: 3px;
   }
 
   .match-preview-list {
-    max-height: 200px;
+    max-height: 180px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -582,14 +667,43 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.25rem 0.6rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  .match-preview-row:hover { background: var(--hover-color); }
+
+  .item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .item-type-badge {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    padding: 1px 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  .item-qty {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .empty-text {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 0.75rem;
+    margin: 0;
     font-size: 0.8rem;
   }
 
-  .match-preview-row:hover {
-    background: var(--hover-color);
-  }
-
+  /* Actions */
   .filter-actions {
     display: flex;
     justify-content: flex-end;
@@ -606,19 +720,9 @@
     font-size: 0.85rem;
   }
 
-  .btn-secondary {
-    background: var(--secondary-color);
-    color: var(--text-color);
-  }
+  .btn-secondary { background: var(--secondary-color); color: var(--text-color); }
 
-  .btn-primary {
-    background: var(--accent-color);
-    color: #fff;
-    border-color: var(--accent-color);
-  }
+  .btn-primary { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
 
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
