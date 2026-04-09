@@ -146,8 +146,11 @@
     const isCreateView = navMode === 'create';
     const isEditView = navMode === 'edit';
 
-    // Handle drawer state immediately (doesn't depend on data props)
-    if (isMobileAfterNav && !entity && !isCreateView) {
+    // Handle drawer state from the URL, not the entity prop (which may still be
+    // null during streaming/loading, causing the drawer to flash back open).
+    const toPath = navigation?.to?.url?.pathname || '';
+    const hasSlug = basePath && toPath.length > basePath.length + 1;
+    if (isMobileAfterNav && !hasSlug && !isCreateView) {
       drawerOpen = true;
     } else if (drawerOpen) {
       drawerOpen = false;
@@ -301,9 +304,11 @@
     windowWidth = window.innerWidth;
     mounted = true;
 
-    // Auto-open drawer on mobile when no entity is selected
+    // Auto-open drawer on mobile when no entity is selected (check URL, not prop)
     const isMobileOnMount = window.innerWidth < 900;
-    if (isMobileOnMount && !entity && !$isCreateMode) {
+    const mountPath = $page.url.pathname;
+    const mountHasSlug = basePath && mountPath.length > basePath.length + 1;
+    if (isMobileOnMount && !mountHasSlug && !$isCreateMode) {
       drawerOpen = true;
     }
 
