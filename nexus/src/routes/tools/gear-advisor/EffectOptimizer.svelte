@@ -255,13 +255,19 @@
   let effectSummary = $derived(aggregateEffects(allItemEffects, effectsCatalog, effectCaps));
 
   // ===== Total cost =====
+  function isAbsoluteMarkup(item) {
+    if (hasCondition(item)) return true;
+    const tt = item.Properties?.Economy?.MaxTT ?? item.Properties?.MaxTT ?? null;
+    return tt != null && tt > 0;
+  }
+
   function getItemCost(entityList, name, muSource, muCustom) {
     if (!name) return null;
     const item = (entityList || []).find(e => e.Name === name);
     if (!item) return null;
     const tt = item.Properties?.Economy?.MaxTT ?? item.Properties?.MaxTT ?? null;
     if (tt == null || tt <= 0) return null;
-    const isAbsolute = hasCondition(item);
+    const isAbsolute = isAbsoluteMarkup(item);
     let mu = muCustom ?? (isAbsolute ? 0 : 100);
     if (muSource === 'inventory' && markupData.inventoryMap) {
       const id = markupData.nameToId?.get(name);
