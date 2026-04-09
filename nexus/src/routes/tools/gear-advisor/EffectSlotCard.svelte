@@ -94,8 +94,74 @@
     return customValue ?? fallbackDefault;
   }
 
-  let isAbsoluteMU = $derived(selectedEntity ? hasCondition(selectedEntity) : false);
+  // Absolute MU: items with MaxTT (condition items like rings, weapons, pets, armor)
+  // hasCondition checks Properties.Type against CONDITION_TYPES, but clothing subtypes
+  // (Ring, Gloves, etc.) aren't in that set. Fall back to checking for MaxTT existence.
+  // Absolute MU: items with MaxTT (condition items like rings, weapons, pets, armor)
+  // hasCondition checks Properties.Type against CONDITION_TYPES, but clothing subtypes
+  // (Ring, Gloves, etc.) aren't in that set. Fall back to checking for MaxTT existence.
+  let isAbsoluteMU = $derived.by(() => {
+    if (!selectedEntity) return false;
+    if (hasCondition(selectedEntity)) return true;
+    const tt = selectedEntity.Properties?.Economy?.MaxTT ?? selectedEntity.Properties?.MaxTT ?? null;
+    return tt != null && tt > 0;
+  });
+
+  let editingMU = $state(false);
+
+  // Determine which fallback source is being used when custom is empty
+  let fallbackSource = $derived.by(() => {
+    if (markupSource !== 'custom') return null;
+    const def = isAbsoluteMU ? 0 : 100;
+    if (markupPercent != null && markupPercent !== '' && markupPercent !== def) return null;
+    if (!selected) return null;
+    if (markupData.inventoryMap) {
+      const id = markupData.nameToId?.get(selected);
+      if (id != null && markupData.inventoryMap.has(id)) return 'INV';
+    }
+    if (markupData.ingameMap?.has(selected)) return 'IGM';
+    if (markupData.wapByName?.has(selected)) return 'EXC';
+    return null;
+  });
+
   let resolvedMarkup = $derived(resolveMarkup(selected, markupSource, markupPercent));
+  let hasCustomValue = $derived.by(() => {
+    const def = isAbsoluteMU ? 0 : 100;
+    return markupPercent != null && markupPercent !== '' && markupPercent !== def;
+  });
+
+  function formatMU(value) {
+    if (isAbsoluteMU) return `+${Number(value)?.toFixed?.(2) ?? '0.00'} PED`;
+    return `${Number(value)?.toFixed?.(1) ?? '100'}%`;
+  }
+
+  function startEditMU() {
+    if (markupSource !== 'custom') return;
+    editingMU = true;
+  }
+
+  function commitMU(e) {
+    editingMU = false;
+    const val = e.target.value.trim();
+    if (val === '') {
+      // Clear to reset to fallback
+      markupPercent = isAbsoluteMU ? 0 : 100;
+      if (onmuValueChange) onmuValueChange(markupPercent);
+    } else {
+      const parsed = Number(val);
+      if (Number.isFinite(parsed)) {
+        markupPercent = parsed;
+        if (onmuValueChange) onmuValueChange(parsed);
+      }
+    }
+  }
+
+  function handleMUKeydown(e) {
+    if (e.key === 'Enter') e.target.blur();
+    else if (e.key === 'Escape') { editingMU = false; }
+  }
+
+  function autofocus(node) { node.focus(); node.select(); }
 
   const MU_SOURCES = [
     { key: 'custom', label: 'Custom' },
@@ -193,27 +259,35 @@
       </div>
       <div class="mu-value-row">
         <span class="mu-label">Markup:</span>
-        {#if markupSource === 'custom'}
-          {#if isAbsoluteMU}
-            <span class="mu-prefix">+</span>
-          {/if}
+        {#if markupSource === 'custom' && editingMU}
           <input
             type="number"
-            class="mu-input"
-            bind:value={markupPercent}
+            class="mu-edit-input"
+            value={hasCustomValue ? markupPercent : ''}
+            placeholder={formatMU(resolvedMarkup)}
             min={isAbsoluteMU ? 0 : 100}
             step={isAbsoluteMU ? 0.01 : 1}
-            onchange={() => { if (onmuValueChange) onmuValueChange(markupPercent); }}
+            inputmode="decimal"
+            onblur={commitMU}
+            onkeydown={handleMUKeydown}
+            use:autofocus
           />
           <span class="mu-unit">{isAbsoluteMU ? 'PED' : '%'}</span>
+        {:else if markupSource === 'custom'}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span
+            class="mu-value-editable"
+            class:is-fallback={!hasCustomValue}
+            onclick={startEditMU}
+            onkeydown={(e) => { if (e.key === 'Enter') startEditMU(); }}
+            role="button"
+            tabindex="0"
+          >{formatMU(resolvedMarkup)}</span>
+          {#if fallbackSource}
+            <span class="mu-source-badge" title="Using {fallbackSource === 'INV' ? 'inventory' : fallbackSource === 'IGM' ? 'in-game' : 'exchange'} value">{fallbackSource}</span>
+          {/if}
         {:else}
-          <span class="mu-resolved">
-            {#if isAbsoluteMU}
-              +{resolvedMarkup?.toFixed?.(2) ?? '0.00'} PED
-            {:else}
-              {resolvedMarkup?.toFixed?.(1) ?? '100'}%
-            {/if}
-          </span>
+          <span class="mu-value-readonly">{formatMU(resolvedMarkup)}</span>
         {/if}
       </div>
     </div>
@@ -393,21 +467,40 @@
     color: var(--text-muted);
   }
 
-  .mu-prefix {
-    font-size: 12px;
+  .mu-value-editable {
+    font-size: 13px;
     color: var(--text-color);
-    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px dashed var(--text-muted);
+    cursor: pointer;
+    padding-bottom: 1px;
   }
 
-  .mu-input {
+  .mu-value-editable:hover {
+    border-bottom-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+
+  .mu-value-editable.is-fallback {
+    opacity: 0.6;
+  }
+
+  .mu-value-readonly {
+    font-size: 13px;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mu-edit-input {
     width: 70px;
-    padding: 3px 6px;
-    font-size: 12px;
+    padding: 2px 6px;
+    font-size: 13px;
     background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--accent-color);
     border-radius: 4px;
     color: var(--text-color);
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 
   .mu-unit {
@@ -415,9 +508,13 @@
     color: var(--text-muted);
   }
 
-  .mu-resolved {
-    font-size: 12px;
-    color: var(--text-color);
-    font-variant-numeric: tabular-nums;
+  .mu-source-badge {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-left: 3px;
+    padding: 0 3px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    vertical-align: middle;
   }
 </style>
