@@ -97,7 +97,7 @@ async function hasBeaconHit(ip) {
   if (cached !== undefined) beaconIpCache.delete(ip);
   try {
     const { rows } = await pool.query(
-      `SELECT 1 FROM beacon_hits WHERE ip_address = $1`,
+      `SELECT 1 FROM beacon_hits WHERE ip_address = $1 AND bot_detected = false`,
       [ip]
     );
     if (rows.length > 0) {

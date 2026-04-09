@@ -126,8 +126,25 @@
     // Global waypoint copy handler for all rendered description content
     document.addEventListener('click', handleWaypointClick);
 
-    // Analytics beacon: proves JS execution for bot detection (no cookies, no tracking)
-    if (navigator.sendBeacon) navigator.sendBeacon('/api/beacon');
+    // Analytics beacon: proves JS execution + BotD headless browser detection
+    import('@fingerprintjs/botd').then(({ load }) => {
+      load().then(botd => {
+        const result = botd.detect();
+        const payload = JSON.stringify({
+          bot: result.bot,
+          type: result.bot ? result.botKind : 'notDetected'
+        });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/beacon', new Blob([payload], { type: 'application/json' }));
+        }
+      }).catch(() => {
+        // BotD failed (blocked, unsupported) - send plain beacon
+        if (navigator.sendBeacon) navigator.sendBeacon('/api/beacon');
+      });
+    }).catch(() => {
+      // Import failed - send plain beacon
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/beacon');
+    });
 
     // Guard against ad scripts injecting "height: auto !important" on layout
     // containers (auto ads engine un-fixes heights to insert placements).

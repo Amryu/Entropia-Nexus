@@ -68,7 +68,7 @@ export async function GET({ locals, url }) {
 
     // Fetch behavioral signals for all candidate subnets in parallel
     const allCidrs = subnets.map(s => s.subnet);
-    const [singlePageRes, timingRes, beaconRes, beaconCountRes] = allCidrs.length > 0
+    const [singlePageRes, timingRes, beaconRes, beaconCountRes, botdRes] = allCidrs.length > 0
       ? await Promise.all([
           // IPs that visited only a single route (single-page visitors)
           pool.query(
@@ -133,13 +133,27 @@ export async function GET({ locals, url }) {
              WHERE last_seen >= now() - $1 * interval '1 day'`,
             [days]
           ).catch(() => ({ rows: [{ cnt: 0 }] })),
+          // BotD: IPs flagged as headless browsers by client-side detection
+          pool.query(
+            `SELECT
+               network(set_masklen(bh.ip_address, 24))::text AS subnet,
+               count(*)::integer AS botd_flagged,
+               array_agg(DISTINCT bh.botd_type) FILTER (WHERE bh.botd_type IS NOT NULL AND bh.botd_type != 'notDetected') AS botd_types
+             FROM beacon_hits bh
+             WHERE bh.bot_detected = true
+               AND bh.last_seen >= now() - $1 * interval '1 day'
+               AND bh.ip_address << ANY($2::cidr[])
+             GROUP BY network(set_masklen(bh.ip_address, 24))`,
+            [days, allCidrs]
+          ).catch(() => ({ rows: [] })),
         ])
-      : [{ rows: [] }, { rows: [] }, { rows: [] }, { rows: [{ cnt: 0 }] }];
+      : [{ rows: [] }, { rows: [] }, { rows: [] }, { rows: [{ cnt: 0 }] }, { rows: [] }];
 
     // Build lookup maps
     const singlePageMap = new Map(singlePageRes.rows.map(r => [r.subnet, r.single_page_ips]));
     const timingMap = new Map(timingRes.rows.map(r => [r.subnet, r]));
     const beaconMap = new Map(beaconRes.rows.map(r => [r.subnet, r]));
+    const botdMap = new Map(botdRes.rows.map(r => [r.subnet, r]));
     // Only score beacon absence when coverage is meaningful: at least 100 beacon
     // hits AND at least 10% of non-bot IPs have fired the beacon.
     const beaconCount = beaconCountRes.rows[0]?.cnt ?? 0;
@@ -196,6 +210,15 @@ export async function GET({ locals, url }) {
         breakdown.no_beacon = Math.round((beacon.no_beacon_ips / beacon.total_ips) * 35);
       } else {
         breakdown.no_beacon = 0;
+      }
+
+      // BotD: client-side headless browser detection (strong signal)
+      const botd = botdMap.get(s.subnet);
+      if (botd && botd.botd_flagged > 0) {
+        breakdown.botd_headless = Math.min(botd.botd_flagged * 30, 80);
+        s.botd_types = botd.botd_types || [];
+      } else {
+        breakdown.botd_headless = 0;
       }
 
       // Residential discount: few IPs from the same /24 visiting a niche site
