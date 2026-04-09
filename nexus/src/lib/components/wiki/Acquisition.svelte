@@ -291,7 +291,7 @@
 
   .acquisition-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(500px, 100%), 1fr));
     gap: 16px;
     align-items: start;
     max-width: 100%;
@@ -394,7 +394,7 @@
     color: var(--text-muted, #999);
   }
 
-  @media (max-width: 899px) {
+  @media (max-width: 1099px) {
     .acquisition-grid {
       grid-template-columns: 1fr;
     }
