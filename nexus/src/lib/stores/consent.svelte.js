@@ -1,12 +1,13 @@
 import { browser } from '$app/environment';
-import { activateConsent } from '$lib/revenue-loader.js';
+import { activateAdConsent, activateAnalyticsConsent } from '$lib/revenue-loader.js';
 
-const STORAGE_KEY = 'nexus.consent.ads';
+const ADS_KEY = 'nexus.consent.ads';
+const ANALYTICS_KEY = 'nexus.consent.analytics';
 
 /** Log consent decision server-side for GDPR compliance. */
-function logConsent(ads) {
+function logConsent(ads, analytics) {
 	if (!browser) return;
-	const payload = JSON.stringify({ ads });
+	const payload = JSON.stringify({ ads, analytics });
 	try {
 		const blob = new Blob([payload], { type: 'application/json' });
 		navigator.sendBeacon('/api/site-pref', blob);
@@ -21,17 +22,26 @@ function logConsent(ads) {
 
 /** @type {'granted' | 'denied' | null} */
 let _adsConsent = $state(null);
+/** @type {'granted' | 'denied' | null} */
+let _analyticsConsent = $state(null);
 
 // Initialize from localStorage on browser
 if (browser) {
 	try {
-		const stored = localStorage.getItem(STORAGE_KEY);
-		if (stored === 'granted' || stored === 'denied') {
-			_adsConsent = stored;
+		const storedAds = localStorage.getItem(ADS_KEY);
+		if (storedAds === 'granted' || storedAds === 'denied') {
+			_adsConsent = storedAds;
 		}
-		// Returning visitor with consent - activate personalized ads
-		if (stored === 'granted') {
-			activateConsent();
+		const storedAnalytics = localStorage.getItem(ANALYTICS_KEY);
+		if (storedAnalytics === 'granted' || storedAnalytics === 'denied') {
+			_analyticsConsent = storedAnalytics;
+		}
+		// Returning visitor with consent - activate
+		if (storedAds === 'granted') {
+			activateAdConsent();
+		}
+		if (storedAnalytics === 'granted') {
+			activateAnalyticsConsent();
 		}
 	} catch {}
 }
@@ -40,41 +50,79 @@ export function getAdsConsent() {
 	return _adsConsent;
 }
 
+export function getAnalyticsConsent() {
+	return _analyticsConsent;
+}
+
 export function hasDecision() {
-	return _adsConsent === 'granted' || _adsConsent === 'denied';
+	return _adsConsent !== null && _analyticsConsent !== null;
 }
 
 export function grantAds() {
 	_adsConsent = 'granted';
 	if (!browser) return;
 	try {
-		localStorage.setItem(STORAGE_KEY, 'granted');
+		localStorage.setItem(ADS_KEY, 'granted');
 		// Suppress Ko-fi prompt - no double-dipping support requests
 		localStorage.setItem('nexus.kofi.dismissed', '1');
 	} catch {}
-	activateConsent();
-	logConsent('granted');
+	activateAdConsent();
 }
 
 export function denyAds() {
 	_adsConsent = 'denied';
 	if (!browser) return;
 	try {
-		localStorage.setItem(STORAGE_KEY, 'denied');
+		localStorage.setItem(ADS_KEY, 'denied');
 	} catch {}
-	logConsent('denied');
+}
+
+export function grantAnalytics() {
+	_analyticsConsent = 'granted';
+	if (!browser) return;
+	try {
+		localStorage.setItem(ANALYTICS_KEY, 'granted');
+	} catch {}
+	activateAnalyticsConsent();
+}
+
+export function denyAnalytics() {
+	_analyticsConsent = 'denied';
+	if (!browser) return;
+	try {
+		localStorage.setItem(ANALYTICS_KEY, 'denied');
+	} catch {}
+}
+
+/**
+ * Grant all consent categories at once.
+ */
+export function grantAll() {
+	grantAds();
+	grantAnalytics();
+	logConsent('granted', 'granted');
+}
+
+/**
+ * Deny all non-essential consent categories at once.
+ */
+export function denyAll() {
+	denyAds();
+	denyAnalytics();
+	logConsent('denied', 'denied');
 }
 
 /**
  * Save granular consent settings.
- * @param {{ ads: boolean }} settings
+ * @param {{ ads: boolean, analytics: boolean }} settings
  */
 export function saveConsent(settings) {
-	if (settings.ads) {
-		grantAds();
-	} else {
-		denyAds();
-	}
+	if (settings.ads) grantAds(); else denyAds();
+	if (settings.analytics) grantAnalytics(); else denyAnalytics();
+	logConsent(
+		settings.ads ? 'granted' : 'denied',
+		settings.analytics ? 'granted' : 'denied'
+	);
 }
 
 /**
@@ -82,8 +130,10 @@ export function saveConsent(settings) {
  */
 export function resetConsent() {
 	_adsConsent = null;
+	_analyticsConsent = null;
 	if (!browser) return;
 	try {
-		localStorage.removeItem(STORAGE_KEY);
+		localStorage.removeItem(ADS_KEY);
+		localStorage.removeItem(ANALYTICS_KEY);
 	} catch {}
 }

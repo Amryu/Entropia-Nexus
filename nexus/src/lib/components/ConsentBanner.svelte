@@ -1,24 +1,25 @@
 <!--
   @component ConsentBanner
   GDPR-compliant cookie consent banner with three options:
-  Only Essential, Allow Ads, or granular Settings toggle.
+  Essential Only, Allow All, or granular Settings toggle.
   Uses neutral class names to avoid adblocker filter lists.
 -->
 <script>
-  import { getAdsConsent, hasDecision, grantAds, denyAds, saveConsent, resetConsent } from '$lib/stores/consent.svelte.js';
+  import { hasDecision, grantAll, denyAll, saveConsent } from '$lib/stores/consent.svelte.js';
   import { browser } from '$app/environment';
 
   let showSettings = $state(false);
   let adsToggle = $state(false);
+  let analyticsToggle = $state(false);
 
   let visible = $derived(browser && !hasDecision());
 
   function handleEssential() {
-    denyAds();
+    denyAll();
   }
 
   function handleAllow() {
-    grantAds();
+    grantAll();
   }
 
   function toggleSettings() {
@@ -26,7 +27,7 @@
   }
 
   function handleSave() {
-    saveConsent({ ads: adsToggle });
+    saveConsent({ ads: adsToggle, analytics: analyticsToggle });
   }
 </script>
 
@@ -35,9 +36,10 @@
     <div class="site-notice-inner">
       <div class="site-notice-content">
         <p class="site-notice-text">
-          <strong class="site-notice-highlight">Ads help keep Entropia Nexus free.</strong>
-          Consenting allows personalized ads based on your interests. Declining still shows ads,
-          but they won't be tailored to you. You can also use an ad blocker if you prefer.
+          <strong class="site-notice-highlight">Your privacy matters.</strong>
+          We use cookies for analytics and personalized ads. Analytics help us improve the site,
+          and ads keep Entropia Nexus free. You can accept all, decline non-essential cookies,
+          or customize your preferences.
           <a href="/legal/privacy" class="site-notice-link">Privacy Policy</a>
         </p>
 
@@ -46,10 +48,18 @@
             <label class="site-notice-toggle">
               <span class="site-notice-toggle-info">
                 <strong>Essential</strong>
-                <span class="site-notice-toggle-desc">Session authentication, viewport preference</span>
+                <span class="site-notice-toggle-desc">Required for the site to function - session authentication and viewport preference</span>
               </span>
               <input type="checkbox" checked disabled />
               <span class="site-notice-switch site-notice-switch-locked"></span>
+            </label>
+            <label class="site-notice-toggle">
+              <span class="site-notice-toggle-info">
+                <strong>Analytics</strong>
+                <span class="site-notice-toggle-desc">Google Analytics - anonymous usage data to help us improve the site</span>
+              </span>
+              <input type="checkbox" bind:checked={analyticsToggle} />
+              <span class="site-notice-switch" class:site-notice-switch-on={analyticsToggle}></span>
             </label>
             <label class="site-notice-toggle">
               <span class="site-notice-toggle-info">
@@ -66,10 +76,10 @@
         {:else}
           <div class="site-notice-actions">
             <button class="site-notice-btn site-notice-btn-allow" onclick={handleAllow}>
-              Allow Personalized Ads
+              Accept All
             </button>
             <button class="site-notice-btn site-notice-btn-essential" onclick={handleEssential}>
-              Non-Personalized Only
+              Essential Only
             </button>
             <button class="site-notice-btn site-notice-btn-settings" onclick={toggleSettings}>
               Settings

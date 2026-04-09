@@ -66,10 +66,11 @@
         </p>
         <ul>
           <li><strong>Essential cookies:</strong> Login/session functionality and basic site operation. These are always active.</li>
+          <li><strong>Analytics cookies:</strong> Google Analytics collects anonymous usage data to help us understand how the site is used and identify areas for improvement. No analytics cookies are set unless you consent.</li>
           <li><strong>Advertising cookies:</strong> This site displays ads via Google AdSense to support its operation. Non-personalized ads are shown by default without tracking cookies. If you consent, Google may set cookies for ad personalization and measurement to show ads tailored to your interests.</li>
         </ul>
         <p>
-          When you first visit the site, a consent banner allows you to choose whether to allow personalized advertising.
+          When you first visit the site, a consent banner allows you to choose whether to allow analytics and personalized advertising.
           You can change your preferences at any time by clicking the button below.
         </p>
         <p>
