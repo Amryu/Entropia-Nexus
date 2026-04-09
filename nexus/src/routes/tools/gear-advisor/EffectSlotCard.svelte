@@ -92,9 +92,9 @@
 
   const MU_SOURCES = [
     { key: 'custom', label: 'Custom' },
-    { key: 'inventory', label: 'Inv' },
-    { key: 'ingame', label: 'IGM' },
-    { key: 'exchange', label: 'Exch' },
+    { key: 'inventory', label: 'Inventory' },
+    { key: 'ingame', label: 'In-Game' },
+    { key: 'exchange', label: 'Exchange' },
   ];
 </script>
 
@@ -201,6 +201,8 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--secondary-color);
+    overflow: hidden;
+    min-width: 0;
   }
 
   .slot-card.compact {
@@ -306,10 +308,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
   }
 
   .mu-source-toggle {
     display: flex;
+    flex-wrap: wrap;
     gap: 0;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -317,8 +321,8 @@
   }
 
   .mu-btn {
-    padding: 2px 6px;
-    font-size: 10px;
+    padding: 3px 6px;
+    font-size: 11px;
     border: none;
     border-right: 1px solid var(--border-color);
     background-color: transparent;

@@ -9,11 +9,26 @@
 
   let {
     targets = $bindable({}),
+    priorities = $bindable([]),
     effectsCatalog = [],
     effectCaps = {}
   } = $props();
 
   let customRows = $state([]);
+
+  function getEffectiveCap(effectName) {
+    const caps = effectCaps[effectName];
+    if (!caps) return 100;
+    const item = caps.item ?? Infinity;
+    const total = caps.total ?? Infinity;
+    const effective = Math.min(item, total);
+    return Number.isFinite(effective) ? effective : 100;
+  }
+
+  function getEffectUnit(effectName) {
+    const eff = effectsCatalog.find(e => e?.Name === effectName);
+    return eff?.Properties?.Unit || '';
+  }
 
   let targetableEffects = $derived(getTargetableEffects(effectsCatalog));
 
@@ -31,18 +46,20 @@
 
   function togglePreset(preset) {
     const newTargets = { ...targets };
+    let newPriorities = [...priorities];
     if (activePresets.has(preset.id)) {
-      // Remove this preset's targets
       for (const key of Object.keys(preset.targets)) {
         delete newTargets[key];
+        newPriorities = newPriorities.filter(p => p !== key);
       }
     } else {
-      // Add this preset's targets
       for (const [key, value] of Object.entries(preset.targets)) {
         newTargets[key] = value;
+        if (!newPriorities.includes(key)) newPriorities.push(key);
       }
     }
     targets = newTargets;
+    priorities = newPriorities;
   }
 
   function addCustomRow() {
@@ -50,9 +67,10 @@
     const usedNames = new Set([...Object.keys(targets), ...customRows.map(r => r.effectName)]);
     const available = targetableEffects.find(e => !usedNames.has(e.Name));
     if (!available) return;
-    const cap = effectCaps[available.Name]?.total ?? 100;
+    const cap = getEffectiveCap(available.Name);
     customRows = [...customRows, { effectName: available.Name, value: cap }];
     targets = { ...targets, [available.Name]: cap };
+    if (!priorities.includes(available.Name)) priorities = [...priorities, available.Name];
   }
 
   function removeCustomRow(index) {
@@ -60,16 +78,18 @@
     const newTargets = { ...targets };
     delete newTargets[row.effectName];
     targets = newTargets;
+    priorities = priorities.filter(p => p !== row.effectName);
     customRows = customRows.filter((_, i) => i !== index);
   }
 
   function updateCustomEffect(index, newEffectName) {
     const oldName = customRows[index].effectName;
-    const cap = effectCaps[newEffectName]?.total ?? 100;
+    const cap = getEffectiveCap(newEffectName);
     const newTargets = { ...targets };
     delete newTargets[oldName];
     newTargets[newEffectName] = cap;
     targets = newTargets;
+    priorities = priorities.map(p => p === oldName ? newEffectName : p);
     customRows = customRows.map((r, i) => i === index ? { effectName: newEffectName, value: cap } : r);
   }
 
@@ -83,7 +103,18 @@
 
   function clearAll() {
     targets = {};
+    priorities = [];
     customRows = [];
+  }
+
+  function movePriority(effectName, direction) {
+    const idx = priorities.indexOf(effectName);
+    if (idx < 0) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= priorities.length) return;
+    const arr = [...priorities];
+    [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+    priorities = arr;
   }
 </script>
 
@@ -91,7 +122,7 @@
   <div class="target-header">
     <h3>Target Effects</h3>
     {#if Object.keys(targets).length > 0}
-      <button type="button" class="btn-text" onclick={clearAll}>Clear all</button>
+      <button type="button" class="btn-clear" onclick={clearAll}>Clear all</button>
     {/if}
   </div>
 
@@ -102,12 +133,26 @@
         class="preset-btn"
         class:active={activePresets.has(preset.id)}
         onclick={() => togglePreset(preset)}
-        title={Object.entries(preset.targets).map(([k, v]) => `${k}: ${v}`).join(', ')}
+        title={Object.entries(preset.targets).map(([k, v]) => `${k}: ${v}${getEffectUnit(k)}`).join(', ')}
       >
         {preset.label}
       </button>
     {/each}
   </div>
+
+  {#if priorities.length > 1}
+    <div class="priority-order">
+      <span class="priority-label">Priority:</span>
+      {#each priorities as effectName, i (effectName)}
+        <div class="priority-item">
+          <span class="priority-rank">{i + 1}.</span>
+          <span class="priority-name">{effectName}</span>
+          <button type="button" class="priority-btn" disabled={i === 0} onclick={() => movePriority(effectName, -1)} title="Higher priority">^</button>
+          <button type="button" class="priority-btn" disabled={i === priorities.length - 1} onclick={() => movePriority(effectName, 1)} title="Lower priority">v</button>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   {#if customRows.length > 0}
     <div class="custom-targets">
@@ -164,19 +209,84 @@
     color: var(--text-color);
   }
 
-  .btn-text {
-    background: none;
-    border: none;
-    color: var(--text-muted);
+  .btn-clear {
+    padding: 4px 10px;
     font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--secondary-color);
+    color: var(--text-muted);
     cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
+    transition: all 0.15s ease;
   }
 
-  .btn-text:hover {
+  .btn-clear:hover {
     color: var(--text-color);
     background-color: var(--hover-color);
+  }
+
+  .priority-order {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 8px;
+    background-color: var(--bg-color);
+    border-radius: 6px;
+  }
+
+  .priority-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+
+  .priority-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .priority-rank {
+    color: var(--text-muted);
+    font-weight: 600;
+    min-width: 18px;
+  }
+
+  .priority-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .priority-btn {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background-color: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .priority-btn:hover:not(:disabled) {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  .priority-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
   .preset-row {

@@ -9,8 +9,15 @@
   let {
     summary = [],
     targets = {},
-    effectCaps = {}
+    effectCaps = {},
+    effectsCatalog = []
   } = $props();
+
+  function getUnitForEffect(name, summaryEntry) {
+    if (summaryEntry?.unit) return summaryEntry.unit;
+    const catalog = effectsCatalog.find(e => e?.Name === name);
+    return catalog?.Properties?.Unit || '';
+  }
 
   let targetEntries = $derived.by(() => {
     const entries = [];
@@ -18,7 +25,7 @@
       const entry = summary.find(e => e.name === name);
       const achieved = entry ? Math.abs(entry.signedTotal) : 0;
       const cap = effectCaps[name]?.total ?? null;
-      const unit = entry?.unit || '%';
+      const unit = getUnitForEffect(name, entry);
       const ratio = target > 0 ? Math.min(achieved / target, 1.5) : 0;
       const isOvercapped = achieved > target + 0.01;
       const isPerfect = Math.abs(achieved - target) < 0.01;

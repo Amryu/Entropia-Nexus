@@ -88,6 +88,7 @@
 
   // ===== State =====
   let targets = $state({});
+  let priorities = $state([]);
   let leftRing = $state(null);
   let rightRing = $state(null);
   let armorSet = $state(null);
@@ -130,6 +131,7 @@
 
   // Saved sets
   let savedSets = $state([]);
+  let activeSetId = $state(null);
 
   // Markup data
   let markupData = $state({ wapByName: new Map(), nameToId: new Map(), ingameMap: new Map(), inventoryMap: new Map() });
@@ -146,6 +148,7 @@
     pref.subscribe(v => stored = v)();
     if (stored) {
       targets = stored.targets || {};
+      priorities = stored.priorities || [];
       leftRing = stored.leftRing ?? null;
       rightRing = stored.rightRing ?? null;
       armorSet = stored.armorSet ?? null;
@@ -163,6 +166,7 @@
       muValues = { ...muValues, ...(stored.muValues || {}) };
       overcapMode = stored.overcapMode ?? 'punish';
       savedSets = stored.savedSets || [];
+      activeSetId = stored.activeSetId ?? null;
       showSuggestions = stored.showSuggestions ?? false;
     }
     prefLoaded = true;
@@ -185,7 +189,7 @@
   // Persist state
   $effect(() => {
     // Read all state to track dependencies
-    const _t = targets;
+    const _t = targets; const _pr = priorities;
     const _lr = leftRing; const _rr = rightRing;
     const _as = armorSet; const _asp = armorSetPieces;
     const _p = pet; const _pae = petActiveEffect;
@@ -195,10 +199,11 @@
     const _si = secondaryImplant; const _sc = secondaryClothing;
     const _mu = muSources; const _mv = muValues;
     const _oc = overcapMode; const _sets = savedSets;
+    const _asi = activeSetId;
     const _show = showSuggestions;
     if (!prefLoaded) return;
     pref.set({
-      targets: _t,
+      targets: _t, priorities: _pr,
       leftRing: _lr, rightRing: _rr,
       armorSet: _as, armorSetPieces: _asp,
       pet: _p, petActiveEffect: _pae,
@@ -208,7 +213,7 @@
       secondaryImplant: _si, secondaryClothing: _sc,
       muSources: _mu, muValues: _mv,
       overcapMode: _oc, savedSets: _sets,
-      showSuggestions: _show
+      activeSetId: _asi, showSuggestions: _show
     });
   });
 
@@ -308,7 +313,7 @@
         candidatesBySlot,
         effectsCatalog,
         effectCaps,
-        { overcapMode, armorSetPieces, lockedSlots: emptyOnly ? lockedSlots : { effects: secondaryEffects } }
+        { overcapMode, priorities, armorSetPieces, lockedSlots: emptyOnly ? lockedSlots : { effects: secondaryEffects } }
       );
       suggestionLoading = false;
       showSuggestions = true;
@@ -343,7 +348,7 @@
       const results = suggestForSlot(
         slotKey, targets, currentSlots, entityLookup,
         effectsCatalog, effectCaps,
-        { overcapMode, armorSetPieces }
+        { overcapMode, priorities, armorSetPieces }
       );
       if (results.length > 0) {
         const best = results[0];
@@ -378,124 +383,121 @@
     if (set.targets) targets = { ...set.targets };
   }
 
-  let hasSecondaryItems = $derived(
-    secondaryWeapon || secondaryAmplifier || secondaryVisionAttachment ||
-    secondaryAbsorber || secondaryImplant ||
-    Object.values(secondaryClothing).some(v => v)
-  );
-
-  // Auto-expand secondary if items present
-  $effect(() => {
-    if (hasSecondaryItems) showSecondary = true;
-  });
+  // (showSecondary kept for preference backwards compat but no longer controls visibility)
 </script>
 
 <div class="effect-optimizer">
-  <!-- Target Effects -->
-  <section class="eo-section">
-    <EffectTargetPanel
-      bind:targets
-      {effectsCatalog}
-      {effectCaps}
+  <!-- Left column: Saved sets + Suggestions -->
+  <aside class="eo-left">
+    <EffectSetCompare
+      bind:savedSets
+      bind:activeSetId
+      currentSlots={currentSlots}
+      currentTargets={targets}
+      currentSummary={effectSummary}
+      onload={handleLoadSet}
     />
-  </section>
 
-  <!-- Overcap mode toggle -->
-  <div class="eo-settings-row">
-    <span class="setting-label">Overcap:</span>
-    <div class="toggle-group">
-      <button type="button" class="toggle-btn" class:active={overcapMode === 'punish'} onclick={() => overcapMode = 'punish'}>
-        Penalize
-      </button>
-      <button type="button" class="toggle-btn" class:active={overcapMode === 'ignore'} onclick={() => overcapMode = 'ignore'}>
-        Ignore
-      </button>
-    </div>
-  </div>
-
-  <!-- Primary Equipment Slots -->
-  <section class="eo-section">
-    <h3 class="eo-section-title">Equipment</h3>
-    <div class="slots-grid">
-      <EffectSlotCard
-        label="Left Ring"
-        slotType="ring"
-        entities={leftRings}
-        bind:selected={leftRing}
-        {markupData}
-        bind:markupSource={muSources.leftRing}
-        bind:markupPercent={muValues.leftRing}
-        {effectsCatalog}
-        excludeName={rightRing}
-        onsuggest={() => handleSlotSuggest('leftRing')}
-        suggesting={suggestingSlot === 'leftRing'}
-      />
-      <EffectSlotCard
-        label="Right Ring"
-        slotType="ring"
-        entities={rightRings}
-        bind:selected={rightRing}
-        {markupData}
-        bind:markupSource={muSources.rightRing}
-        bind:markupPercent={muValues.rightRing}
-        {effectsCatalog}
-        excludeName={leftRing}
-        onsuggest={() => handleSlotSuggest('rightRing')}
-        suggesting={suggestingSlot === 'rightRing'}
-      />
-      <EffectSlotCard
-        label="Armor Set"
-        slotType="armorSet"
-        entities={armorSetsFiltered}
-        bind:selected={armorSet}
-        {markupData}
-        bind:markupSource={muSources.armorSet}
-        bind:markupPercent={muValues.armorSet}
-        {effectsCatalog}
-        bind:armorSetPieces
-        onsuggest={() => handleSlotSuggest('armorSet')}
-        suggesting={suggestingSlot === 'armorSet'}
-      />
-      <EffectSlotCard
-        label="Pet"
-        slotType="pet"
-        entities={petsSorted}
-        bind:selected={pet}
-        {markupData}
-        bind:markupSource={muSources.pet}
-        bind:markupPercent={muValues.pet}
-        {effectsCatalog}
-        bind:petActiveEffect
-        onsuggest={() => handleSlotSuggest('pet')}
-        suggesting={suggestingSlot === 'pet'}
-      />
-    </div>
-  </section>
-
-  <!-- Totals -->
-  <section class="eo-section">
-    <EffectTotalsBar
-      summary={effectSummary}
+    <EffectSuggestionPanel
+      results={suggestionResults}
       {targets}
-      {effectCaps}
+      loading={suggestionLoading}
+      onFillAll={handleFillAll}
+      onApply={handleApplySuggestion}
+      bind:emptyOnly
     />
-  </section>
+  </aside>
 
-  <!-- Secondary Equipment (collapsible) -->
-  <section class="eo-section">
-    <button
-      type="button"
-      class="section-toggle"
-      onclick={() => showSecondary = !showSecondary}
-    >
-      <span class="toggle-icon">{showSecondary ? '-' : '+'}</span>
-      Additional Equipment
-      {#if hasSecondaryItems}
-        <span class="badge">{[secondaryWeapon, secondaryAmplifier, secondaryVisionAttachment, secondaryAbsorber, secondaryImplant, ...Object.values(secondaryClothing)].filter(Boolean).length}</span>
-      {/if}
-    </button>
+  <!-- Right column: Configuration -->
+  <div class="eo-main">
+    <!-- Target Effects -->
+    <section class="eo-section">
+      <EffectTargetPanel
+        bind:targets
+        bind:priorities
+        {effectsCatalog}
+        {effectCaps}
+      />
+    </section>
 
-    {#if showSecondary}
+    <!-- Overcap mode toggle -->
+    <div class="eo-settings-row">
+      <span class="setting-label">Overcap:</span>
+      <div class="toggle-group">
+        <button type="button" class="toggle-btn" class:active={overcapMode === 'reject'} onclick={() => overcapMode = 'reject'}>
+          Reject
+        </button>
+        <button type="button" class="toggle-btn" class:active={overcapMode === 'punish'} onclick={() => overcapMode = 'punish'}>
+          Penalize
+        </button>
+        <button type="button" class="toggle-btn" class:active={overcapMode === 'ignore'} onclick={() => overcapMode = 'ignore'}>
+          Ignore
+        </button>
+      </div>
+    </div>
+
+    <!-- Primary Equipment Slots -->
+    <section class="eo-section">
+      <h3 class="eo-section-title">Equipment</h3>
+      <div class="slots-grid">
+        <EffectSlotCard
+          label="Left Ring"
+          slotType="ring"
+          entities={leftRings}
+          bind:selected={leftRing}
+          {markupData}
+          bind:markupSource={muSources.leftRing}
+          bind:markupPercent={muValues.leftRing}
+          {effectsCatalog}
+          excludeName={rightRing}
+          onsuggest={() => handleSlotSuggest('leftRing')}
+          suggesting={suggestingSlot === 'leftRing'}
+        />
+        <EffectSlotCard
+          label="Right Ring"
+          slotType="ring"
+          entities={rightRings}
+          bind:selected={rightRing}
+          {markupData}
+          bind:markupSource={muSources.rightRing}
+          bind:markupPercent={muValues.rightRing}
+          {effectsCatalog}
+          excludeName={leftRing}
+          onsuggest={() => handleSlotSuggest('rightRing')}
+          suggesting={suggestingSlot === 'rightRing'}
+        />
+        <EffectSlotCard
+          label="Armor Set"
+          slotType="armorSet"
+          entities={armorSetsFiltered}
+          bind:selected={armorSet}
+          {markupData}
+          bind:markupSource={muSources.armorSet}
+          bind:markupPercent={muValues.armorSet}
+          {effectsCatalog}
+          bind:armorSetPieces
+          onsuggest={() => handleSlotSuggest('armorSet')}
+          suggesting={suggestingSlot === 'armorSet'}
+        />
+        <EffectSlotCard
+          label="Pet"
+          slotType="pet"
+          entities={petsSorted}
+          bind:selected={pet}
+          {markupData}
+          bind:markupSource={muSources.pet}
+          bind:markupPercent={muValues.pet}
+          {effectsCatalog}
+          bind:petActiveEffect
+          onsuggest={() => handleSlotSuggest('pet')}
+          suggesting={suggestingSlot === 'pet'}
+        />
+      </div>
+    </section>
+
+    <!-- Additional Equipment -->
+    <section class="eo-section">
+      <h3 class="eo-section-title">Additional Equipment</h3>
       <div class="slots-grid secondary">
         <EffectSlotCard
           label="Weapon"
@@ -547,54 +549,71 @@
           {effectsCatalog}
           compact
         />
-        {#each [...clothingSlots.entries()] as [slotName, items] (slotName)}
-          <EffectSlotCard
-            label={slotName}
-            entities={items}
-            selected={secondaryClothing[slotName] || null}
-            onselect={(item) => { secondaryClothing = { ...secondaryClothing, [slotName]: item?.Name ?? null }; }}
-            onclear={() => { secondaryClothing = { ...secondaryClothing, [slotName]: null }; }}
-            {markupData}
-            markupSource="custom"
-            markupPercent={100}
-            {effectsCatalog}
-            compact
-          />
-        {/each}
       </div>
+    </section>
+
+    <!-- Clothing -->
+    {#if clothingSlots.size > 0}
+      <section class="eo-section">
+        <h3 class="eo-section-title">Clothing</h3>
+        <div class="slots-grid secondary">
+          {#each [...clothingSlots.entries()] as [slotName, items] (slotName)}
+            <EffectSlotCard
+              label={slotName}
+              entities={items}
+              selected={secondaryClothing[slotName] || null}
+              onselect={(item) => { secondaryClothing = { ...secondaryClothing, [slotName]: item?.Name ?? null }; }}
+              onclear={() => { secondaryClothing = { ...secondaryClothing, [slotName]: null }; }}
+              {markupData}
+              markupSource="custom"
+              markupPercent={100}
+              {effectsCatalog}
+              compact
+            />
+          {/each}
+        </div>
+      </section>
     {/if}
-  </section>
 
-  <!-- Suggestions -->
-  <section class="eo-section">
-    <EffectSuggestionPanel
-      results={suggestionResults}
-      {targets}
-      loading={suggestionLoading}
-      onFillAll={handleFillAll}
-      onApply={handleApplySuggestion}
-      bind:emptyOnly
-    />
-  </section>
-
-  <!-- Saved Sets & Compare -->
-  <section class="eo-section">
-    <EffectSetCompare
-      bind:savedSets
-      currentSlots={currentSlots}
-      currentTargets={targets}
-      currentSummary={effectSummary}
-      onload={handleLoadSet}
-    />
-  </section>
+    <!-- Totals -->
+    <section class="eo-section">
+      <EffectTotalsBar
+        summary={effectSummary}
+        {targets}
+        {effectCaps}
+        {effectsCatalog}
+      />
+    </section>
+  </div>
 </div>
 
 <style>
   .effect-optimizer {
     display: flex;
+    gap: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+
+  .eo-left {
+    flex: 0 0 280px;
+    display: flex;
     flex-direction: column;
     gap: 16px;
-    max-width: 800px;
+    align-self: flex-start;
+    position: sticky;
+    top: 16px;
+  }
+
+  .eo-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
 
   .eo-section {
@@ -654,7 +673,7 @@
 
   .slots-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
   }
 
@@ -662,50 +681,32 @@
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
 
-  .section-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    font-size: 13px;
-    font-weight: 500;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: transparent;
-    color: var(--text-color);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    width: 100%;
-    text-align: left;
+  @media (max-width: 1100px) {
+    .slots-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
-  .section-toggle:hover {
-    background-color: var(--hover-color);
+  @media (max-width: 900px) {
+    .eo-left {
+      flex: 0 0 220px;
+    }
   }
 
-  .toggle-icon {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-muted);
-    width: 16px;
-    text-align: center;
-  }
+  @media (max-width: 768px) {
+    .effect-optimizer {
+      flex-direction: column;
+    }
 
-  .badge {
-    margin-left: auto;
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 10px;
-    background-color: var(--accent-color);
-    color: white;
-    font-weight: 600;
+    .eo-left {
+      flex: none;
+      position: static;
+      width: 100%;
+    }
   }
 
   @media (max-width: 600px) {
-    .slots-grid {
-      grid-template-columns: 1fr;
-    }
-
+    .slots-grid,
     .slots-grid.secondary {
       grid-template-columns: 1fr;
     }

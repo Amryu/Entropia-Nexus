@@ -163,9 +163,34 @@ function findByName(list, name) {
 // Aggregate effects using loadoutEffects.js
 // ---------------------------------------------------------------------------
 
+// Effects that use highest-value-wins instead of stacking
+const MAX_VALUE_EFFECTS = new Set(['Auto Loot']);
+
 export function aggregateEffects(itemEffects, effectsCatalog, effectCaps) {
+  // Handle max-value effects: keep only the strongest instance
+  const maxEffects = new Map();
+  const stackingEffects = [];
+
+  for (const eff of itemEffects) {
+    const name = eff?.Name;
+    if (name && MAX_VALUE_EFFECTS.has(name)) {
+      const strength = getEffectStrength(eff);
+      const current = maxEffects.get(name);
+      if (!current || getEffectStrength(current) < strength) {
+        maxEffects.set(name, eff);
+      }
+    } else {
+      stackingEffects.push(eff);
+    }
+  }
+
+  // Add back only the strongest instance of max-value effects
+  for (const eff of maxEffects.values()) {
+    stackingEffects.push(eff);
+  }
+
   return summarizeEffects(
-    { itemEffects, actionEffects: [], bonusEffects: [] },
+    { itemEffects: stackingEffects, actionEffects: [], bonusEffects: [] },
     { effectsCatalog, effectCaps }
   );
 }
@@ -175,17 +200,29 @@ export function aggregateEffects(itemEffects, effectsCatalog, effectCaps) {
 // ---------------------------------------------------------------------------
 
 export function scoreCombination(targets, itemEffects, effectsCatalog, effectCaps, options = {}) {
-  const { overcapMode = 'punish' } = options;
+  const { overcapMode = 'punish', priorities = null } = options;
   const summary = aggregateEffects(itemEffects, effectsCatalog, effectCaps);
 
   let score = 0;
   const details = [];
+  const targetKeys = Object.keys(targets);
+  const numTargets = targetKeys.length;
 
   for (const [effectName, targetValue] of Object.entries(targets)) {
     const entry = summary.find(e => e.name === effectName);
     const achieved = entry ? Math.abs(entry.signedTotal) : 0;
     const ratio = targetValue > 0 ? achieved / targetValue : 1;
     const diff = achieved - targetValue;
+
+    // Priority multiplier: higher priority targets get more weight
+    // priorities is an array of effect names in priority order (index 0 = highest)
+    let priorityMult = 1;
+    if (priorities && priorities.length > 1) {
+      const idx = priorities.indexOf(effectName);
+      if (idx >= 0) {
+        priorityMult = 1 + (numTargets - idx) * 0.5;
+      }
+    }
 
     let effectScore = 0;
 
@@ -194,11 +231,14 @@ export function scoreCombination(targets, itemEffects, effectsCatalog, effectCap
       effectScore = 1000;
     } else if (diff > 0) {
       // Overcapped
-      if (overcapMode === 'punish') {
+      if (overcapMode === 'reject') {
+        // Hard reject: any overcap makes the combination unviable
+        return { score: -Infinity, details: [], summary, rejected: true };
+      } else if (overcapMode === 'punish') {
         const weight = OVERCAP_WEIGHTS[effectName] ?? DEFAULT_OVERCAP_WEIGHT;
         effectScore = 500 - (diff / targetValue) * 200 * weight;
       } else {
-        // Ignore overcap - treat as perfect
+        // Ignore overcap - treat as near-perfect
         effectScore = 800;
       }
     } else {
@@ -206,6 +246,7 @@ export function scoreCombination(targets, itemEffects, effectsCatalog, effectCap
       effectScore = ratio * 400;
     }
 
+    effectScore *= priorityMult;
     details.push({ effectName, targetValue, achieved, ratio, diff, effectScore });
     score += effectScore;
   }
