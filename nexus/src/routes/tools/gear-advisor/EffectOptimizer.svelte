@@ -701,6 +701,7 @@
   results={suggestDialogResults}
   {targets}
   currentSummary={effectSummary}
+  {effectsCatalog}
   bind:mode={suggestDialogMode}
   onpick={handleSuggestPick}
   loading={suggestDialogLoading}
@@ -720,10 +721,10 @@
     flex-direction: column;
     gap: 12px;
     position: sticky;
-    top: 16px;
+    top: 0px;
     align-self: flex-start;
-    height: calc(100vh - 160px);
-    height: calc(100dvh - 160px);
+    height: calc(100vh - 140px);
+    height: calc(100dvh - 140px);
   }
 
   .eo-left-box {

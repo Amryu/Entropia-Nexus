@@ -15,6 +15,7 @@
     results = [],
     targets = {},
     currentSummary = [],
+    effectsCatalog = [],
     mode = $bindable('contextual'),
     onpick = () => {},
     loading = false
@@ -41,28 +42,30 @@
     return names;
   });
 
-  function getEffectBadges(result) {
+  function getEffectUnit(effectName) {
+    const eff = (effectsCatalog || []).find(e => e?.Name === effectName);
+    return eff?.Properties?.Unit || '';
+  }
+
+  function getEffectInfo(result, effectName) {
     if (mode === 'standalone' && result.pctDetails) {
-      return result.pctDetails
-        .filter(d => d.achieved > 0)
-        .map(d => ({
-          name: d.effectName,
-          label: `${d.achieved}/${d.targetValue}`,
-          pct: d.pct,
-          isPerfect: Math.abs(d.pct - 100) < 0.5,
-          isOver: d.pct > 100.5,
-        }));
+      const d = result.pctDetails.find(p => p.effectName === effectName);
+      if (!d || d.achieved <= 0) return null;
+      return { itemValue: d.achieved, total: null, unit: getEffectUnit(effectName) };
     }
     if (result.details) {
-      return result.details.map(d => ({
-        name: d.effectName,
-        label: `${d.achieved.toFixed(1)}/${d.targetValue}`,
-        pct: d.ratio * 100,
-        isPerfect: Math.abs(d.diff) < 0.01,
-        isOver: d.diff > 0.01,
-      }));
+      const d = result.details.find(p => p.effectName === effectName);
+      if (!d) return null;
+      // In contextual mode, achieved = total with all items including this one
+      // We can estimate item contribution from summary if available
+      const totalWithItem = d.achieved;
+      // Find what the current total is without this item from currentSummary
+      const currentEntry = currentSummary.find(e => e.name === effectName);
+      const currentTotal = currentEntry ? Math.abs(currentEntry.signedTotal) : 0;
+      const itemValue = Math.max(0, totalWithItem - currentTotal);
+      return { itemValue, total: totalWithItem, unit: getEffectUnit(effectName) };
     }
-    return [];
+    return null;
   }
 </script>
 
@@ -116,17 +119,15 @@
                   <td class="rank-cell">{i + 1}</td>
                   <td class="name-cell" title={result.name}>{result.name}</td>
                   {#each targetNames as effectName (effectName)}
-                    {@const badge = getEffectBadges(result).find(b => b.name === effectName)}
+                    {@const info = getEffectInfo(result, effectName)}
                     <td class="effect-cell">
-                      {#if badge}
-                        <span
-                          class="effect-badge"
-                          class:perfect={badge.isPerfect}
-                          class:over={badge.isOver}
-                          class:under={!badge.isPerfect && !badge.isOver}
-                        >{badge.label}</span>
+                      {#if info}
+                        <span class="effect-item-value">{info.itemValue}{info.unit}</span>
+                        {#if info.total != null}
+                          <span class="effect-total-value">({info.total.toFixed(1)})</span>
+                        {/if}
                       {:else}
-                        <span class="effect-badge none">-</span>
+                        <span class="effect-none">-</span>
                       {/if}
                     </td>
                   {/each}
@@ -308,32 +309,22 @@
   .effect-col { text-align: center; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
   .effect-cell { text-align: center; }
 
-  .effect-badge {
-    display: inline-block;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 11px;
+  .effect-item-value {
+    font-weight: 500;
+    color: var(--text-color);
     font-variant-numeric: tabular-nums;
   }
 
-  .effect-badge.perfect {
-    background-color: color-mix(in srgb, var(--success-color, #5cb85c) 20%, transparent);
-    color: var(--success-color, #5cb85c);
-  }
-
-  .effect-badge.over {
-    background-color: color-mix(in srgb, var(--danger-color, #d9534f) 20%, transparent);
-    color: var(--danger-color, #d9534f);
-  }
-
-  .effect-badge.under {
-    background-color: color-mix(in srgb, var(--warning-color, #f0ad4e) 20%, transparent);
-    color: var(--warning-color, #f0ad4e);
-  }
-
-  .effect-badge.none {
+  .effect-total-value {
+    font-size: 11px;
     color: var(--text-muted);
-    opacity: 0.5;
+    margin-left: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .effect-none {
+    color: var(--text-muted);
+    opacity: 0.4;
   }
 
   .score-col { width: 60px; text-align: right; }
