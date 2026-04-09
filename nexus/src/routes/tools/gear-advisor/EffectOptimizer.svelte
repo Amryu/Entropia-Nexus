@@ -695,8 +695,7 @@
     padding: 10px;
     overflow-y: auto;
     flex: 1 1 0;
-    min-height: 100px;
-    max-height: 50%;
+    min-height: 0;
   }
 
   .eo-main {

@@ -181,6 +181,9 @@
     border-radius: 8px;
     background-color: var(--secondary-color);
     padding: 10px;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .set-toolbar {
@@ -228,7 +231,8 @@
     flex-direction: column;
     gap: 2px;
     overflow-y: auto;
-    max-height: 400px;
+    flex: 1;
+    min-height: 0;
   }
 
   .set-empty {
