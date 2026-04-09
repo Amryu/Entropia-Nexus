@@ -102,6 +102,12 @@
     onload(set);
   }
 
+  function renameActiveSet() {
+    if (!activeSetId) return;
+    const set = savedSets.find(s => s.id === activeSetId);
+    if (set) startRename(set);
+  }
+
   function startRename(set) {
     editingName = set.id;
     editValue = set.name;
@@ -138,9 +144,10 @@
 
 <div class="set-sidebar">
   <div class="set-toolbar">
-    <button type="button" class="toolbar-btn" onclick={createSet} title="Create new set">Create</button>
+    <button type="button" class="toolbar-btn btn-create" onclick={createSet} title="Create new set">Create</button>
     <button type="button" class="toolbar-btn" onclick={cloneSet} disabled={!activeSetId} title="Clone selected set">Clone</button>
-    <button type="button" class="toolbar-btn btn-danger-subtle" onclick={deleteActiveSet} disabled={!activeSetId} title="Delete selected set">Delete</button>
+    <button type="button" class="toolbar-btn" onclick={renameActiveSet} disabled={!activeSetId} title="Rename selected set">Rename</button>
+    <button type="button" class="toolbar-btn btn-delete" onclick={deleteActiveSet} disabled={!activeSetId} title="Delete selected set">Delete</button>
     <button type="button" class="toolbar-btn" onclick={importSets} title="Import sets from file">Import</button>
     <button type="button" class="toolbar-btn" onclick={exportSets} disabled={savedSets.length === 0} title="Export all sets">Export</button>
   </div>
@@ -224,9 +231,24 @@
     cursor: not-allowed;
   }
 
-  .btn-danger-subtle:hover:not(:disabled) {
-    color: var(--danger-color, #d9534f);
-    border-color: var(--danger-color, #d9534f);
+  .btn-create {
+    border-color: var(--success-color);
+    color: var(--success-color);
+  }
+
+  .btn-create:hover:not(:disabled) {
+    background-color: var(--success-color);
+    color: white;
+  }
+
+  .btn-delete {
+    border-color: var(--color-danger, #ef4444);
+    color: var(--color-danger, #ef4444);
+  }
+
+  .btn-delete:hover:not(:disabled) {
+    background-color: var(--color-danger, #ef4444);
+    color: white;
   }
 
   /* toolbar-spacer removed - using grid layout */

@@ -22,20 +22,22 @@
 
   let targetEntries = $derived.by(() => {
     const entries = [];
-    for (const [name, target] of Object.entries(targets)) {
+    for (const [name, rawTarget] of Object.entries(targets)) {
       const entry = summary.find(e => e.name === name);
       const achieved = entry ? Math.abs(entry.signedTotal) : 0;
       const caps = effectCaps[name];
       const itemCap = caps?.item ?? null;
       const totalCap = caps?.total ?? null;
-      const cap = (itemCap != null && totalCap != null) ? Math.min(itemCap, totalCap)
+      const effectiveCap = (itemCap != null && totalCap != null) ? Math.min(itemCap, totalCap)
         : itemCap ?? totalCap;
+      // Clamp displayed target to effective cap
+      const target = effectiveCap != null ? Math.min(rawTarget, effectiveCap) : rawTarget;
       const unit = getUnitForEffect(name, entry);
       const ratio = target > 0 ? Math.min(achieved / target, 1.5) : 0;
       const isOvercapped = achieved > target + 0.01;
       const isPerfect = Math.abs(achieved - target) < 0.01;
-      const isCapped = cap != null && Math.abs(achieved - cap) < 0.01;
-      entries.push({ name, target, achieved, cap, unit, ratio, isOvercapped, isPerfect, isCapped });
+      const isCapped = effectiveCap != null && Math.abs(achieved - effectiveCap) < 0.01;
+      entries.push({ name, target, achieved, cap: effectiveCap, unit, ratio, isOvercapped, isPerfect, isCapped });
     }
     return entries;
   });

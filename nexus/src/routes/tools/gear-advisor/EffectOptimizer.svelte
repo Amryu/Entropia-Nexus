@@ -710,11 +710,6 @@
   .effect-optimizer {
     display: flex;
     gap: 16px;
-    max-width: 1400px;
-    margin: 0 auto;
-    width: 100%;
-    padding: 16px;
-    box-sizing: border-box;
   }
 
   .eo-left {
