@@ -694,8 +694,9 @@
     background-color: var(--secondary-color);
     padding: 10px;
     overflow-y: auto;
-    flex: 1;
-    min-height: 0;
+    flex: 1 1 0;
+    min-height: 100px;
+    max-height: 50%;
   }
 
   .eo-main {

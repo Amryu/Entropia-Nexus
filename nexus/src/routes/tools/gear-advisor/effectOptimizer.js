@@ -16,6 +16,71 @@ export const EFFECT_PRESETS = [
   { id: 'max-crit-damage', label: 'Max Crit Damage', targets: { 'Critical Damage Added': 350 } },
 ];
 
+// ---------------------------------------------------------------------------
+// Effect categories for the target selection dialog
+// ---------------------------------------------------------------------------
+
+const OFFENSIVE_EFFECT_NAMES = new Set([
+  'Critical Chance Added',
+  'Critical Damage Added',
+  'Reload Speed Increased',
+  'Damage Done Increased',
+  'Dominance Increased',
+  'Melee Attack Speed',
+]);
+
+const DEFENSIVE_EFFECT_NAMES = new Set([
+  'Health Added',
+  'Lifesteal Added',
+  'Damage Taken Decreased',
+  'Evade Chance Increased',
+  'Dodge Chance Increased',
+  'Jamming Chance Increased',
+  'Critical Damage Taken Decreased',
+  'Regeneration Increased',
+  'Regeneration Per Second',
+]);
+
+const UTILITY_EFFECT_NAMES = new Set([
+  'Run Speed Increased',
+  'Movement Speed Increased',
+  'Carry Capacity Added',
+  'Auto Loot',
+  'Focus Generation Increased',
+  'Excavation Speed Increased',
+  'Taming Chance Increased',
+  'Rare Mining Finds Increased',
+]);
+
+export function categorizeEffects(effectsCatalog, effectCaps) {
+  const effects = (effectsCatalog || []).filter(e => e?.Properties?.IsPositive === true && e?.Name);
+  const used = new Set();
+  const build = (nameSet) => effects
+    .filter(e => nameSet.has(e.Name))
+    .map(e => { used.add(e.Name); return formatEffectForPicker(e, effectCaps); });
+
+  const offensive = build(OFFENSIVE_EFFECT_NAMES);
+  const defensive = build(DEFENSIVE_EFFECT_NAMES);
+  const utility = build(UTILITY_EFFECT_NAMES);
+  const misc = effects
+    .filter(e => !used.has(e.Name))
+    .map(e => formatEffectForPicker(e, effectCaps));
+
+  return { offensive, defensive, utility, misc };
+}
+
+function formatEffectForPicker(effect, effectCaps) {
+  const caps = effectCaps[effect.Name];
+  const itemCap = caps?.item ?? null;
+  const totalCap = caps?.total ?? null;
+  return {
+    name: effect.Name,
+    unit: effect.Properties?.Unit || '',
+    itemCap,
+    totalCap,
+  };
+}
+
 // Per-effect overcap penalty weights (1.0 = full penalty, lower = less bad to overcap)
 const OVERCAP_WEIGHTS = {
   'Run Speed Increased': 0.3,
