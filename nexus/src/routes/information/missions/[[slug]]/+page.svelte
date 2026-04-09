@@ -622,13 +622,13 @@
   }
 
   function handleChainCreate(data) {
-    const { name, planet } = data;
+    const { name, planet, description } = data;
     // Add to trusted chain names so it doesn't show validation error
     trustedChainNames = new Set([...trustedChainNames, name]);
-    // Set the chain name on the mission and close the dialog
+    // Set chain fields on the mission - bot will upsert the chain on save
     updateField('MissionChain.Name', name);
-    // Note: The chain will be created when the mission is saved
-    // The bot will handle creating the chain if it doesn't exist
+    if (planet) updateField('MissionChain.Planet', planet);
+    if (description) updateField('MissionChain.Description', description);
     showChainDialog = false;
   }
 
@@ -1805,7 +1805,7 @@
     <ChainEditorDialog
       chainName={activeMission?.MissionChain?.Name}
       chainDescription={activeMission?.MissionChain?.Description}
-      chainPlanet={activeMission?.MissionChain?.Planet}
+      chainPlanet={typeof activeMission?.MissionChain?.Planet === 'string' ? activeMission.MissionChain.Planet : activeMission?.MissionChain?.Planet?.Name ?? null}
       isCreating={chainDialogMode === 'create'}
       allChains={missionChainsList}
       allMissions={missionsList}
