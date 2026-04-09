@@ -495,6 +495,8 @@
         },
         handleClick: (view, pos, event) => {
           if (disabled) return false;
+          const docSize = view.state.doc.content.size;
+          if (pos < 0 || pos > docSize) return false;
           // Click on a link -> open link edit modal
           const resolvedPos = view.state.doc.resolve(pos);
           const linkMark = resolvedPos.marks().find(m => m.type.name === 'link');
@@ -502,8 +504,9 @@
             event.preventDefault();
             // Select the full link range so the modal can update/remove it
             let linkFrom = pos, linkTo = pos;
-            // Walk backward to find link start
-            view.state.doc.nodesBetween(Math.max(0, pos - 500), pos + 500, (node, nodePos) => {
+            const searchFrom = Math.max(0, pos - 500);
+            const searchTo = Math.min(docSize, pos + 500);
+            view.state.doc.nodesBetween(searchFrom, searchTo, (node, nodePos) => {
               if (node.isText) {
                 const mark = node.marks.find(m => m.type.name === 'link' && m.attrs.href === linkMark.attrs.href);
                 if (mark) {
