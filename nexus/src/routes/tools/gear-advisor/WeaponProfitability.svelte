@@ -491,80 +491,86 @@
         <!-- Detail analysis -->
         <div class="detail-panel-section">
           {#if comparisonWeapons.length > 0 && analyses[selectedCompIndex]}
+          <h4 class="dp-title">Details</h4>
           <div class="dp-selectors">
             {#if baseWeapons.length > 1}
-              <label class="dp-sel">
-                <span>Base:</span>
-                <select class="dp-select" bind:value={selectedBaseIndex}>
-                  {#each baseWeapons as bw, i}
-                    <option value={i}>{bw.weaponName || `Base ${i + 1}`}</option>
-                  {/each}
-                </select>
-              </label>
+              <select class="dp-select full" bind:value={selectedBaseIndex}>
+                {#each baseWeapons as bw, i}
+                  <option value={i}>{bw.weaponName || `Base ${i + 1}`}</option>
+                {/each}
+              </select>
             {/if}
             {#if comparisonWeapons.length > 1}
-              <label class="dp-sel">
-                <span>vs:</span>
-                <select class="dp-select" bind:value={selectedCompIndex}>
-                  {#each comparisonWeapons as cw, i}
-                    <option value={i}>{cw.weaponName || `Weapon ${i + 1}`}</option>
-                  {/each}
-                </select>
-              </label>
+              <select class="dp-select full" bind:value={selectedCompIndex}>
+                {#each comparisonWeapons as cw, i}
+                  <option value={i}>{cw.weaponName || `Weapon ${i + 1}`}</option>
+                {/each}
+              </select>
             {/if}
           </div>
 
           {#if analyses[selectedCompIndex]}
           {@const a = analyses[selectedCompIndex]}
+            <!-- Result -->
             <div class="be-mu-banner">
               <span class="be-mu-label">Break-even Markup</span>
               <span class="be-mu-value">{a.breakEvenMU != null ? a.breakEvenMU.toFixed(1) + '%' : 'N/A'}</span>
             </div>
-
             <div class="dp-net {a.netProfitabilityPED > 0.005 ? 'positive' : a.netProfitabilityPED < -0.005 ? 'negative' : ''}">
               <span class="dp-net-label">Net Profitability</span>
               <span class="dp-net-value">{formatPED(a.netProfitabilityPED).text}</span>
             </div>
 
-            <!-- Economy stats -->
-            <div class="dp-grid">
-              <div class="dp-row">
-                <span>Efficiency savings</span>
-                <span>{a.efficiencySavingsPED != null ? formatPED(a.efficiencySavingsPED).text : 'N/A'}</span>
-              </div>
-              <div class="dp-row">
-                <span>MU cost diff</span>
-                <span>{a.premiumDiffPED != null ? a.premiumDiffPED.toFixed(2) + ' PED' : 'N/A'}</span>
-              </div>
-              <div class="dp-row">
-                <span>Efficiency (base / comp)</span>
-                <span>{a.baseEfficiency?.toFixed(1) ?? 'N/A'} / {a.compEfficiency?.toFixed(1) ?? 'N/A'} ({formatPct(a.efficiencyDelta)})</span>
-              </div>
-              <div class="dp-row">
-                <span>DPP (base / comp)</span>
-                <span>{a.baseDPP?.toFixed(2) ?? 'N/A'} / {a.compDPP?.toFixed(2) ?? 'N/A'} ({formatPct(a.dppDiffPct)})</span>
-              </div>
-              <div class="dp-row">
-                <span>Total uses</span>
-                <span>{formatNumber(a.compTotalUses)}</span>
-              </div>
-              <div class="dp-row">
-                <span>Total cycle</span>
-                <span>{a.compTotalCyclePED != null ? a.compTotalCyclePED.toFixed(2) + ' PED' : 'N/A'}</span>
-              </div>
-              <div class="dp-row">
-                <span>TT cost / use</span>
-                <span>{a.compTTCostPerUsePEC != null ? a.compTTCostPerUsePEC.toFixed(2) + ' PEC' : 'N/A'}</span>
-              </div>
-              <div class="dp-row">
-                <span>MU cost / use</span>
-                <span>{a.compPremiumPerUsePEC != null ? a.compPremiumPerUsePEC.toFixed(2) + ' PEC' : 'N/A'}</span>
+            <!-- Efficiency -->
+            <div class="dp-box">
+              <h4 class="dp-title">Efficiency</h4>
+              <div class="dp-grid">
+                <div class="dp-row">
+                  <span>Efficiency (base / comp)</span>
+                  <span>{a.baseEfficiency?.toFixed(1) ?? 'N/A'} / {a.compEfficiency?.toFixed(1) ?? 'N/A'} ({formatPct(a.efficiencyDelta)})</span>
+                </div>
+                <div class="dp-row">
+                  <span>Efficiency savings</span>
+                  <span>{a.efficiencySavingsPED != null ? formatPED(a.efficiencySavingsPED).text : 'N/A'}</span>
+                </div>
+                <div class="dp-row">
+                  <span>MU cost diff</span>
+                  <span>{a.premiumDiffPED != null ? a.premiumDiffPED.toFixed(2) + ' PED' : 'N/A'}</span>
+                </div>
               </div>
             </div>
 
-            <!-- Combat stats -->
-            <h4 class="dp-title">Combat</h4>
-            <div class="dp-grid">
+            <!-- Economy -->
+            <div class="dp-box">
+              <h4 class="dp-title">Economy</h4>
+              <div class="dp-grid">
+                <div class="dp-row">
+                  <span>DPP (base / comp)</span>
+                  <span>{a.baseDPP?.toFixed(2) ?? 'N/A'} / {a.compDPP?.toFixed(2) ?? 'N/A'} ({formatPct(a.dppDiffPct)})</span>
+                </div>
+                <div class="dp-row">
+                  <span>TT cost / use</span>
+                  <span>{a.compTTCostPerUsePEC != null ? a.compTTCostPerUsePEC.toFixed(2) + ' PEC' : 'N/A'}</span>
+                </div>
+                <div class="dp-row">
+                  <span>MU cost / use</span>
+                  <span>{a.compPremiumPerUsePEC != null ? a.compPremiumPerUsePEC.toFixed(2) + ' PEC' : 'N/A'}</span>
+                </div>
+                <div class="dp-row">
+                  <span>Total cycle</span>
+                  <span>{a.compTotalCyclePED != null ? a.compTotalCyclePED.toFixed(2) + ' PED' : 'N/A'}</span>
+                </div>
+                <div class="dp-row">
+                  <span>Total uses</span>
+                  <span>{formatNumber(a.compTotalUses)}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Combat -->
+            <div class="dp-box">
+              <h4 class="dp-title">Combat</h4>
+              <div class="dp-grid">
               <div class="dp-row">
                 <span>DPS (base / comp)</span>
                 <span>{a.baseDPS?.toFixed(1) ?? 'N/A'} / {a.compDPS?.toFixed(1) ?? 'N/A'} ({formatPct(a.dpsDiffPct)})</span>
@@ -574,7 +580,7 @@
                 <span>{formatPct(a.dpsDiffPct)}</span>
               </div>
               <div class="dp-row">
-                <span>Additional kills (same PED)</span>
+                <span>Additional kills per PED</span>
                 <span>{formatPct(a.dppDiffPct)}</span>
               </div>
               <div class="dp-row">
@@ -595,6 +601,7 @@
                   </div>
                 {/if}
               {/if}
+            </div>
             </div>
           {/if}
         {:else}
@@ -760,9 +767,11 @@
     border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
   }
   .dp-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .dp-selectors { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dp-box { padding: 10px; background: var(--bg-color); border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .dp-selectors { display: flex; flex-direction: column; gap: 6px; }
   .dp-sel { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
   .dp-select { padding: 3px 6px; font-size: 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); max-width: 180px; }
+  .dp-select.full { max-width: none; width: 100%; }
 
   /* Break-even banner */
   .be-mu-banner {
