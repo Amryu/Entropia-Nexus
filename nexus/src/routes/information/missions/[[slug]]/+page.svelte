@@ -920,14 +920,21 @@
     if (entity?.MissionChain?.Name) {
       newTrusted.add(entity.MissionChain.Name);
     }
-    // Trust chain from existing pending change
+    // Trust chain from existing pending change (loaded via changeId param)
     if (data.existingChange?.data?.MissionChain?.Name) {
       newTrusted.add(data.existingChange.data.MissionChain.Name);
+    }
+    // Trust chain from resolved pending change (loaded via pending changes lookup)
+    if (resolvedPendingChange?.data?.MissionChain?.Name) {
+      newTrusted.add(resolvedPendingChange.data.MissionChain.Name);
+    }
+    // Trust chain from the active edit state (covers all code paths)
+    if (activeMission?.MissionChain?.Name) {
+      newTrusted.add(activeMission.MissionChain.Name);
     }
     // Keep any chains added via the dialog during this session
     for (const name of untrack(() => trustedChainNames)) {
       if (!chainOptions.some(opt => opt.value === name)) {
-        // Only keep if it's not already in chainOptions (meaning it was created this session)
         newTrusted.add(name);
       }
     }
@@ -935,7 +942,14 @@
   });
   // Check if the current chain name is valid (exists in the list of chains OR is trusted)
   let currentChainName = $derived(activeMission?.MissionChain?.Name || '');
-  let isValidChain = $derived(!currentChainName || chainOptions.some(opt => opt.value === currentChainName) || trustedChainNames.has(currentChainName));
+  let isValidChain = $derived(
+    !currentChainName ||
+    chainOptions.some(opt => opt.value === currentChainName) ||
+    trustedChainNames.has(currentChainName) ||
+    // Direct checks for pending/existing changes (before trustedChainNames effect runs)
+    data.existingChange?.data?.MissionChain?.Name === currentChainName ||
+    resolvedPendingChange?.data?.MissionChain?.Name === currentChainName
+  );
   let hasValidChainSelected = $derived(currentChainName && isValidChain);
   let missionOptions = $derived(missionsList
     .filter(mission => mission?.Id && mission?.Name && mission?.Id !== activeMission?.Id)
