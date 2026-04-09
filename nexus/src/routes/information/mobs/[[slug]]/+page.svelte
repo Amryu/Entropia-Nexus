@@ -1186,6 +1186,20 @@
     updateField('Species', buildSpeciesPayload(Name, _newSpecies, activeMob?.Species));
     showEditSpeciesDialog = false;
   }
+
+  function handleMaturityRename(oldName, newName) {
+    const loots = activeMob?.Loots;
+    if (!loots?.length) return;
+    let changed = false;
+    const updated = loots.map(loot => {
+      if (loot.Maturity?.Name === oldName) {
+        changed = true;
+        return { ...loot, Maturity: { ...loot.Maturity, Name: newName } };
+      }
+      return loot;
+    });
+    if (changed) updateField('Loots', updated);
+  }
 </script>
 
 <WikiSEO
@@ -1608,6 +1622,7 @@
                 type={activeMob?.Type}
                 mobName={activeMob?.Name || ''}
                 fieldPath="Maturities"
+                onrename={handleMaturityRename}
               />
             {:else}
               <MobMaturities

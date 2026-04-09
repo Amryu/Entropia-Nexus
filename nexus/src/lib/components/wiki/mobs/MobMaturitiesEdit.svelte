@@ -22,6 +22,7 @@
    * @property {string} [type]
    * @property {string} [mobName]
    * @property {string} [fieldPath]
+   * @property {(oldName: string, newName: string) => void} [onrename]
    */
 
   /** @type {Props} */
@@ -29,7 +30,8 @@
     maturities = [],
     type = null,
     mobName = '',
-    fieldPath = 'Maturities'
+    fieldPath = 'Maturities',
+    onrename
   } = $props();
 
   const NAME_MODES = [
@@ -260,6 +262,9 @@
     const editedMat = cloneMaturity(newList[matIndex]);
     newList[matIndex] = editedMat;
 
+    // Capture the current name before mutation so we can propagate renames to loots
+    const prevName = field === 'Name' ? editedMat.Name : null;
+
     // Track the original DB identity when Name or Level changes, so the backend
     // can UPDATE in-place instead of delete+insert (which cascades FK references).
     // Only capture once - subsequent edits keep the original identity.
@@ -286,6 +291,11 @@
     }
 
     updateField(fieldPath, newList);
+
+    // Notify parent so loot entries referencing the old name stay in sync
+    if (prevName != null && prevName !== value) {
+      onrename?.(prevName, value);
+    }
   }
 
   function addAttack(matIndex) {
