@@ -12,6 +12,7 @@
   import { goto } from '$app/navigation';
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import ArmorVsMob from '../ArmorVsMob.svelte';
+  import WeaponProfitability from '../WeaponProfitability.svelte';
 
   let { data } = $props();
 
@@ -21,6 +22,11 @@
       slug: 'armor-vs-mob',
       label: 'Armor vs Mob',
       description: 'Rank armor sets against a target mob (or vice versa).'
+    },
+    {
+      slug: 'weapon-profitability',
+      label: '(L) Weapon Profitability',
+      description: 'Evaluate (L) weapon purchases based on efficiency savings over their lifetime.'
     }
   ];
 
@@ -92,6 +98,14 @@
       armorSets={data.additional?.armorSets ?? []}
       armorPlatings={data.additional?.armorPlatings ?? []}
       mobs={data.additional?.mobs ?? []}
+    />
+  {:else if activeToolSlug === 'weapon-profitability'}
+    <WeaponProfitability
+      weapons={data.additional?.weapons ?? []}
+      weaponAmplifiers={data.additional?.weaponAmplifiers ?? []}
+      weaponVisionAttachments={data.additional?.weaponVisionAttachments ?? []}
+      absorbers={data.additional?.absorbers ?? []}
+      mindforceImplants={data.additional?.mindforceImplants ?? []}
     />
   {/if}
 </WikiPage>

@@ -12,6 +12,7 @@
     selected = null,
     placeholder = 'Search...',
     clearable = true,
+    dropUp = false,
     onselect = () => {},
     onclear = () => {}
   } = $props();
@@ -112,7 +113,7 @@
   </div>
 
   {#if isOpen && filtered.length > 0}
-    <ul class="picker-dropdown" role="listbox">
+    <ul class="picker-dropdown" class:drop-up={dropUp} role="listbox">
       {#each filtered as item, i (item.Id ?? item.Name)}
         <li>
           <button
@@ -129,7 +130,7 @@
       {/each}
     </ul>
   {:else if isOpen && query.trim() && filtered.length === 0}
-    <div class="picker-empty">No matches</div>
+    <div class="picker-empty" class:drop-up={dropUp}>No matches</div>
   {/if}
 </div>
 
@@ -198,6 +199,12 @@
     z-index: 50;
   }
 
+  .picker-dropdown.drop-up {
+    top: auto;
+    bottom: calc(100% + 2px);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+  }
+
   .picker-dropdown li {
     margin: 0;
   }
@@ -236,5 +243,10 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     z-index: 50;
+  }
+
+  .picker-empty.drop-up {
+    top: auto;
+    bottom: calc(100% + 2px);
   }
 </style>

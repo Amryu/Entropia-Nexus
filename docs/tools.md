@@ -226,6 +226,50 @@ Compare mode allows side-by-side comparison of two loadouts:
 
 ---
 
+## Gear Advisor
+
+A collection of small gear-related calculators.
+
+### Route
+
+```
+/tools/gear-advisor
+/tools/gear-advisor/armor-vs-mob
+/tools/gear-advisor/weapon-profitability
+```
+
+### Sub-tools
+
+#### Armor vs Mob
+
+Rank armor sets against a target mob's damage composition (or vice versa). Computes mitigation, damage taken, and decay.
+
+#### (L) Weapon Profitability
+
+Evaluate whether an (L) weapon's efficiency advantage generates enough extra TT returns over its lifetime to justify the markup premium paid.
+
+**Game Mechanics:**
+- Efficiency adds linearly: X% efficiency returns X * 0.07% more of cycled PED compared to 0% efficiency
+- TT cycling cost = full cost per use at TT rates (weapon decay + attachment decay + ammo)
+- Decay premium = per-use cost above TT on decay components only (not ammo)
+- UL items have 0 premium (repairable at TT value)
+
+**Key Calculations:**
+- `efficiencySavingsPerPED = (eff_comp - eff_base) * 0.07 / 100`
+- `netProfitability = efficiencySavings - (comp_premium - base_premium)`
+- Break-even markup: maximum MU% where the weapon is still economically viable
+
+**Features:**
+- Multiple base weapons (UL or L) with full attachment support
+- Multiple (L) comparison weapons
+- Import base configs from saved loadouts (including weapon sets)
+- Global absorber with conditional application (weapon MU > absorber MU)
+- Markup source toggle: Custom / Inventory / In-Game / Exchange
+- Three views: List (summary cards), Detail (full breakdown), Table (sortable comparison)
+- State persisted to user preferences
+
+---
+
 ## Client
 
 Desktop companion app for Entropia Universe that runs alongside the game.
