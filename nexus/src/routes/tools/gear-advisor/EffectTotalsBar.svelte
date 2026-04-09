@@ -25,7 +25,11 @@
     for (const [name, target] of Object.entries(targets)) {
       const entry = summary.find(e => e.name === name);
       const achieved = entry ? Math.abs(entry.signedTotal) : 0;
-      const cap = effectCaps[name]?.total ?? null;
+      const caps = effectCaps[name];
+      const itemCap = caps?.item ?? null;
+      const totalCap = caps?.total ?? null;
+      const cap = (itemCap != null && totalCap != null) ? Math.min(itemCap, totalCap)
+        : itemCap ?? totalCap;
       const unit = getUnitForEffect(name, entry);
       const ratio = target > 0 ? Math.min(achieved / target, 1.5) : 0;
       const isOvercapped = achieved > target + 0.01;
@@ -104,7 +108,11 @@
           <div class="cost-item">
             <span class="cost-name">{item.name}</span>
             <span class="cost-detail">
-              {item.tt.toFixed(2)} PED x {item.mu.toFixed(1)}%
+              {#if item.isAbsolute}
+                {item.tt.toFixed(2)} TT + {item.mu.toFixed(2)} MU
+              {:else}
+                {item.tt.toFixed(2)} TT x {item.mu.toFixed(1)}%
+              {/if}
               = <strong>{item.cost.toFixed(2)} PED</strong>
             </span>
           </div>
@@ -234,8 +242,8 @@
   }
 
   .other-badge {
-    font-size: 10px;
-    padding: 2px 6px;
+    font-size: 12px;
+    padding: 3px 8px;
     border-radius: 4px;
     background-color: var(--bg-color);
     color: var(--text-muted);

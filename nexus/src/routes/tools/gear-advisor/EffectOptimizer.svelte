@@ -10,11 +10,13 @@
   import { createPreference } from '$lib/preferences.js';
   import { fetchExchangeWapByName, fetchInGamePrices, fetchInventoryMarkups } from '$lib/markupSources.js';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects.js';
+  import { hasCondition } from '$lib/shopUtils.js';
   import EffectTargetPanel from './EffectTargetPanel.svelte';
   import EffectSlotCard from './EffectSlotCard.svelte';
   import EffectTotalsBar from './EffectTotalsBar.svelte';
   import EffectSuggestionPanel from './EffectSuggestionPanel.svelte';
   import EffectSetCompare from './EffectSetCompare.svelte';
+  import SlotSuggestionDialog from './SlotSuggestionDialog.svelte';
   import {
     filterRings,
     filterArmorSetsWithEffects,
@@ -127,8 +129,13 @@
   let suggestionLoading = $state(false);
   let emptyOnly = $state(false);
 
-  // Per-slot suggestion state
-  let suggestingSlot = $state(null);
+  // Per-slot suggestion dialog state
+  let suggestDialogOpen = $state(false);
+  let suggestDialogSlotKey = $state(null);
+  let suggestDialogLabel = $state('');
+  let suggestDialogResults = $state([]);
+  let suggestDialogLoading = $state(false);
+  let suggestDialogMode = $state('contextual');
 
   // Saved sets
   let savedSets = $state([]);
@@ -247,7 +254,8 @@
     if (!item) return null;
     const tt = item.Properties?.Economy?.MaxTT ?? item.Properties?.MaxTT ?? null;
     if (tt == null || tt <= 0) return null;
-    let mu = muCustom ?? 100;
+    const isAbsolute = hasCondition(item);
+    let mu = muCustom ?? (isAbsolute ? 0 : 100);
     if (muSource === 'inventory' && markupData.inventoryMap) {
       const id = markupData.nameToId?.get(name);
       if (id != null && markupData.inventoryMap.has(id)) mu = markupData.inventoryMap.get(id);
@@ -256,7 +264,9 @@
     } else if (muSource === 'exchange' && markupData.wapByName?.has(name)) {
       mu = markupData.wapByName.get(name);
     }
-    return { tt, mu, cost: tt * mu / 100 };
+    // Absolute: cost = TT + MU (PED). Relative: cost = TT * MU% / 100
+    const cost = isAbsolute ? tt + mu : tt * mu / 100;
+    return { tt, mu, cost, isAbsolute };
   }
 
   let totalCost = $derived.by(() => {
@@ -379,27 +389,45 @@
     }
   }
 
+  const SLOT_LABELS = { leftRing: 'Left Ring', rightRing: 'Right Ring', armorSet: 'Armor Set', pet: 'Pet' };
+
   function handleSlotSuggest(slotKey) {
     if (Object.keys(targets).length === 0) return;
-    suggestingSlot = slotKey;
+    suggestDialogSlotKey = slotKey;
+    suggestDialogLabel = SLOT_LABELS[slotKey] || slotKey;
+    suggestDialogOpen = true;
+    runSlotSuggestion(slotKey, suggestDialogMode);
+  }
+
+  function runSlotSuggestion(slotKey, mode) {
+    suggestDialogLoading = true;
     setTimeout(() => {
-      const results = suggestForSlot(
+      suggestDialogResults = suggestForSlot(
         slotKey, targets, currentSlots, entityLookup,
         effectsCatalog, effectCaps,
-        { overcapMode, priorities, armorSetPieces }
+        { overcapMode, priorities, armorSetPieces, mode, maxResults: 30 }
       );
-      if (results.length > 0) {
-        const best = results[0];
-        if (slotKey === 'leftRing') leftRing = best.name;
-        else if (slotKey === 'rightRing') rightRing = best.name;
-        else if (slotKey === 'armorSet') armorSet = best.name;
-        else if (slotKey === 'pet') {
-          pet = best.name;
-          if (best.effectKey) petActiveEffect = best.effectKey;
-        }
-      }
-      suggestingSlot = null;
+      suggestDialogLoading = false;
     }, 10);
+  }
+
+  // Re-run when mode changes
+  $effect(() => {
+    const _mode = suggestDialogMode;
+    if (suggestDialogOpen && suggestDialogSlotKey) {
+      runSlotSuggestion(suggestDialogSlotKey, _mode);
+    }
+  });
+
+  function handleSuggestPick(result) {
+    const slotKey = suggestDialogSlotKey;
+    if (slotKey === 'leftRing') leftRing = result.name;
+    else if (slotKey === 'rightRing') rightRing = result.name;
+    else if (slotKey === 'armorSet') armorSet = result.name;
+    else if (slotKey === 'pet') {
+      pet = result.name;
+      if (result.effectKey) petActiveEffect = result.effectKey;
+    }
   }
 
   function handleLoadSet(set) {
@@ -436,14 +464,16 @@
       onload={handleLoadSet}
     />
 
-    <EffectSuggestionPanel
-      results={suggestionResults}
-      {targets}
-      loading={suggestionLoading}
-      onFillAll={handleFillAll}
-      onApply={handleApplySuggestion}
-      bind:emptyOnly
-    />
+    <div class="eo-left-box">
+      <EffectSuggestionPanel
+        results={suggestionResults}
+        {targets}
+        loading={suggestionLoading}
+        onFillAll={handleFillAll}
+        onApply={handleApplySuggestion}
+        bind:emptyOnly
+      />
+    </div>
   </aside>
 
   <!-- Right column: Configuration -->
@@ -489,7 +519,7 @@
           {effectsCatalog}
           excludeName={rightRing}
           onsuggest={() => handleSlotSuggest('leftRing')}
-          suggesting={suggestingSlot === 'leftRing'}
+          suggesting={false}
         />
         <EffectSlotCard
           label="Right Ring"
@@ -502,7 +532,7 @@
           {effectsCatalog}
           excludeName={leftRing}
           onsuggest={() => handleSlotSuggest('rightRing')}
-          suggesting={suggestingSlot === 'rightRing'}
+          suggesting={false}
         />
         <EffectSlotCard
           label="Armor Set"
@@ -515,7 +545,7 @@
           {effectsCatalog}
           bind:armorSetPieces
           onsuggest={() => handleSlotSuggest('armorSet')}
-          suggesting={suggestingSlot === 'armorSet'}
+          suggesting={false}
         />
         <EffectSlotCard
           label="Pet"
@@ -528,7 +558,7 @@
           {effectsCatalog}
           bind:petActiveEffect
           onsuggest={() => handleSlotSuggest('pet')}
-          suggesting={suggestingSlot === 'pet'}
+          suggesting={false}
         />
       </div>
     </section>
@@ -626,6 +656,16 @@
   </div>
 </div>
 
+<SlotSuggestionDialog
+  bind:open={suggestDialogOpen}
+  slotLabel={suggestDialogLabel}
+  results={suggestDialogResults}
+  {targets}
+  bind:mode={suggestDialogMode}
+  onpick={handleSuggestPick}
+  loading={suggestDialogLoading}
+/>
+
 <style>
   .effect-optimizer {
     display: flex;
@@ -638,13 +678,24 @@
   }
 
   .eo-left {
-    flex: 0 0 280px;
+    flex: 0 0 320px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     align-self: flex-start;
     position: sticky;
     top: 16px;
+    max-height: calc(100vh - 32px);
+  }
+
+  .eo-left-box {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--secondary-color);
+    padding: 10px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
   }
 
   .eo-main {

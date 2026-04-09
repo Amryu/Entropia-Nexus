@@ -394,57 +394,81 @@ export function findBestCombinations(targets, candidatesBySlot, effectsCatalog, 
 // Per-slot suggestion
 // ---------------------------------------------------------------------------
 
+/**
+ * Suggest items for a specific slot.
+ * @param {string} mode - 'contextual' (considers other equipped items) or 'standalone' (item's own contribution)
+ */
 export function suggestForSlot(slotKey, targets, currentSlots, entities, effectsCatalog, effectCaps, options = {}) {
-  const { maxResults = 5, armorSetPieces = 7 } = options;
+  const { maxResults = 20, armorSetPieces = 7, mode = 'contextual' } = options;
   const targetNames = new Set(Object.keys(targets));
 
-  // Collect effects from all slots except the one we're suggesting for
+  // In contextual mode, collect effects from other slots
   const otherEffects = [];
-  const slotKeys = ['leftRing', 'rightRing', 'armorSet', 'pet'];
-
-  for (const key of slotKeys) {
-    if (key === slotKey) continue;
-    if (key === 'leftRing' && currentSlots.leftRing) {
-      otherEffects.push(...extractEquipEffects(findByName(entities.leftRings, currentSlots.leftRing)));
-    } else if (key === 'rightRing' && currentSlots.rightRing) {
-      otherEffects.push(...extractEquipEffects(findByName(entities.rightRings, currentSlots.rightRing)));
-    } else if (key === 'armorSet' && currentSlots.armorSet) {
-      const set = findByName(entities.armorSets, currentSlots.armorSet);
-      if (set) otherEffects.push(...extractArmorSetEffects(set, armorSetPieces));
-    } else if (key === 'pet' && currentSlots.pet && currentSlots.petActiveEffect) {
-      const pet = findByName(entities.pets, currentSlots.pet);
-      if (pet) {
-        const eff = extractPetEffect(pet, currentSlots.petActiveEffect);
-        if (eff) otherEffects.push(eff);
+  if (mode === 'contextual') {
+    const slotKeys = ['leftRing', 'rightRing', 'armorSet', 'pet'];
+    for (const key of slotKeys) {
+      if (key === slotKey) continue;
+      if (key === 'leftRing' && currentSlots.leftRing) {
+        otherEffects.push(...extractEquipEffects(findByName(entities.leftRings, currentSlots.leftRing)));
+      } else if (key === 'rightRing' && currentSlots.rightRing) {
+        otherEffects.push(...extractEquipEffects(findByName(entities.rightRings, currentSlots.rightRing)));
+      } else if (key === 'armorSet' && currentSlots.armorSet) {
+        const set = findByName(entities.armorSets, currentSlots.armorSet);
+        if (set) otherEffects.push(...extractArmorSetEffects(set, armorSetPieces));
+      } else if (key === 'pet' && currentSlots.pet && currentSlots.petActiveEffect) {
+        const pet = findByName(entities.pets, currentSlots.pet);
+        if (pet) {
+          const eff = extractPetEffect(pet, currentSlots.petActiveEffect);
+          if (eff) otherEffects.push(eff);
+        }
+      }
+    }
+    if (currentSlots.secondary) {
+      const secondaryKeys = ['weapon', 'amplifier', 'visionAttachment', 'absorber', 'implant'];
+      for (const key of secondaryKeys) {
+        const name = currentSlots.secondary[key];
+        if (name && entities[key]) {
+          otherEffects.push(...extractEquipEffects(findByName(entities[key], name)));
+        }
       }
     }
   }
 
-  // Also include secondary slot effects
-  if (currentSlots.secondary) {
-    const secondaryKeys = ['weapon', 'amplifier', 'visionAttachment', 'absorber', 'implant'];
-    for (const key of secondaryKeys) {
-      const name = currentSlots.secondary[key];
-      if (name && entities[key]) {
-        otherEffects.push(...extractEquipEffects(findByName(entities[key], name)));
+  // Score a candidate item
+  function scoreCandidate(slotEffects, itemName, extraProps = {}) {
+    const allEffects = [...otherEffects, ...slotEffects];
+
+    if (mode === 'standalone') {
+      // Standalone: measure what % of each target this item alone fills
+      let totalPct = 0;
+      const pctDetails = [];
+      for (const [effectName, targetValue] of Object.entries(targets)) {
+        const itemEffect = slotEffects.find(e => e?.Name === effectName);
+        const itemStrength = itemEffect ? getEffectStrength(itemEffect) : 0;
+        const pct = targetValue > 0 ? (itemStrength / targetValue) * 100 : 0;
+        totalPct += Math.min(pct, 100);
+        pctDetails.push({ effectName, targetValue, achieved: itemStrength, pct });
       }
+      return { name: itemName, score: totalPct, pctDetails, ...extraProps };
     }
+
+    // Contextual: full scoring with other effects
+    const { score, details, summary } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
+    return { name: itemName, score, details, summary, ...extraProps };
   }
 
   // Get candidates for this slot
-  let candidates;
   if (slotKey === 'pet') {
     const petCandidates = prefilterPetCandidates(entities.pets, targetNames);
-    return petCandidates.slice(0, maxResults * 3).map(entry => {
+    return petCandidates.map(entry => {
       const petEffect = extractPetEffect(entry.item, entry.effectKey);
-      const allEffects = [...otherEffects, ...(petEffect ? [petEffect] : [])];
-      const { score, details, summary } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
-      return { name: entry.item.Name, effectKey: entry.effectKey, score, details, summary };
+      return scoreCandidate(petEffect ? [petEffect] : [], entry.item.Name, { effectKey: entry.effectKey });
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, maxResults);
   }
 
+  let candidates;
   if (slotKey === 'armorSet') {
     candidates = prefilterCandidates(entities.armorSets || [], targetNames, true, armorSetPieces);
   } else if (slotKey === 'leftRing') {
@@ -459,9 +483,7 @@ export function suggestForSlot(slotKey, targets, currentSlots, entities, effects
     const slotEffects = slotKey === 'armorSet'
       ? extractArmorSetEffects(entry.item, armorSetPieces)
       : extractEquipEffects(entry.item);
-    const allEffects = [...otherEffects, ...slotEffects];
-    const { score, details, summary } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
-    return { name: entry.item.Name, score, details, summary };
+    return scoreCandidate(slotEffects, entry.item.Name);
   })
   .sort((a, b) => b.score - a.score)
   .slice(0, maxResults);

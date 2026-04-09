@@ -133,7 +133,6 @@
     <button type="button" class="toolbar-btn" onclick={cloneSet} disabled={!activeSetId} title="Clone selected set">Clone</button>
     <button type="button" class="toolbar-btn" onclick={updateActiveSet} disabled={!activeSetId} title="Save current config to selected set">Save</button>
     <button type="button" class="toolbar-btn btn-danger-subtle" onclick={deleteActiveSet} disabled={!activeSetId} title="Delete selected set">Delete</button>
-    <div class="toolbar-spacer"></div>
     <button type="button" class="toolbar-btn" onclick={importSets} title="Import sets from file">Import</button>
     <button type="button" class="toolbar-btn" onclick={exportSets} disabled={savedSets.length === 0} title="Export all sets">Export</button>
   </div>
@@ -185,21 +184,22 @@
   }
 
   .set-toolbar {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 4px;
-    padding-bottom: 6px;
+    padding-bottom: 8px;
     border-bottom: 1px solid var(--border-color);
   }
 
   .toolbar-btn {
-    padding: 5px 10px;
+    padding: 6px 4px;
     font-size: 12px;
     border: 1px solid var(--border-color);
     border-radius: 5px;
     background-color: transparent;
     color: var(--text-muted);
     cursor: pointer;
+    text-align: center;
     transition: all 0.1s ease;
   }
 
@@ -218,8 +218,9 @@
     border-color: var(--danger-color, #d9534f);
   }
 
+  /* toolbar-spacer removed - using grid layout */
   .toolbar-spacer {
-    flex: 1;
+    display: none;
   }
 
   .set-list {

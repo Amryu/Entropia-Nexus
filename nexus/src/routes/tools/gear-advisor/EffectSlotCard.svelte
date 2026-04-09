@@ -132,7 +132,7 @@
       <label class="pieces-label">Pieces equipped</label>
       <select class="pieces-select" bind:value={armorSetPieces}>
         {#each breakpoints as n}
-          <option value={n}>{n}+</option>
+          <option value={n}>{n}</option>
         {/each}
       </select>
     </div>
@@ -297,7 +297,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .effect-name {
