@@ -108,6 +108,8 @@
   let secondaryAbsorber = $state(null);
   let secondaryImplant = $state(null);
   let secondaryClothing = $state({});
+  let clothingMuSources = $state({});
+  let clothingMuValues = $state({});
 
   // MU configs per slot
   let muSources = $state({
@@ -171,6 +173,8 @@
       secondaryAbsorber = stored.secondaryAbsorber ?? null;
       secondaryImplant = stored.secondaryImplant ?? null;
       secondaryClothing = stored.secondaryClothing || {};
+      clothingMuSources = stored.clothingMuSources || {};
+      clothingMuValues = stored.clothingMuValues || {};
       muSources = { ...muSources, ...(stored.muSources || {}) };
       muValues = { ...muValues, ...(stored.muValues || {}) };
       overcapMode = stored.overcapMode ?? 'punish';
@@ -206,6 +210,7 @@
     const _sw = secondaryWeapon; const _sa = secondaryAmplifier;
     const _sv = secondaryVisionAttachment; const _sab = secondaryAbsorber;
     const _si = secondaryImplant; const _sc = secondaryClothing;
+    const _cms = clothingMuSources; const _cmv = clothingMuValues;
     const _mu = muSources; const _mv = muValues;
     const _oc = overcapMode; const _sets = savedSets;
     const _asi = activeSetId;
@@ -220,6 +225,7 @@
       secondaryWeapon: _sw, secondaryAmplifier: _sa,
       secondaryVisionAttachment: _sv, secondaryAbsorber: _sab,
       secondaryImplant: _si, secondaryClothing: _sc,
+      clothingMuSources: _cms, clothingMuValues: _cmv,
       muSources: _mu, muValues: _mv,
       overcapMode: _oc, savedSets: _sets,
       activeSetId: _asi, showSuggestions: _show
@@ -599,62 +605,72 @@
     <!-- Additional Equipment -->
     <section class="eo-section">
       <h3 class="eo-section-title">Additional Equipment</h3>
-      <div class="slots-grid secondary">
-        <EffectSlotCard
-          label="Weapon"
-          entities={weaponsSorted}
-          bind:selected={secondaryWeapon}
-          {markupData}
-          bind:markupSource={muSources.weapon}
-          bind:markupPercent={muValues.weapon}
-          {effectsCatalog}
-          compact
-          onsuggest={weaponsSorted.length ? () => handleSlotSuggest('weapon', 'Weapon', weaponsSorted) : null}
-        />
-        <EffectSlotCard
-          label="Amplifier"
-          entities={amplifiersSorted}
-          bind:selected={secondaryAmplifier}
-          {markupData}
-          bind:markupSource={muSources.amplifier}
-          bind:markupPercent={muValues.amplifier}
-          {effectsCatalog}
-          compact
-          onsuggest={amplifiersSorted.length ? () => handleSlotSuggest('amplifier', 'Amplifier', amplifiersSorted) : null}
-        />
-        <EffectSlotCard
-          label="Vision Attachment"
-          entities={visionAttachmentsSorted}
-          bind:selected={secondaryVisionAttachment}
-          {markupData}
-          bind:markupSource={muSources.visionAttachment}
-          bind:markupPercent={muValues.visionAttachment}
-          {effectsCatalog}
-          compact
-          onsuggest={visionAttachmentsSorted.length ? () => handleSlotSuggest('visionAttachment', 'Vision Attachment', visionAttachmentsSorted) : null}
-        />
-        <EffectSlotCard
-          label="Absorber"
-          entities={absorbersSorted}
-          bind:selected={secondaryAbsorber}
-          {markupData}
-          bind:markupSource={muSources.absorber}
-          bind:markupPercent={muValues.absorber}
-          {effectsCatalog}
-          compact
-          onsuggest={absorbersSorted.length ? () => handleSlotSuggest('absorber', 'Absorber', absorbersSorted) : null}
-        />
-        <EffectSlotCard
-          label="Implant"
-          entities={implantsSorted}
-          bind:selected={secondaryImplant}
-          {markupData}
-          bind:markupSource={muSources.implant}
-          bind:markupPercent={muValues.implant}
-          {effectsCatalog}
-          compact
-          onsuggest={implantsSorted.length ? () => handleSlotSuggest('implant', 'Implant', implantsSorted) : null}
-        />
+      <div class="slots-grid">
+        {#if weaponsSorted.length > 0}
+          <EffectSlotCard
+            label="Weapon"
+            entities={weaponsSorted}
+            bind:selected={secondaryWeapon}
+            {markupData}
+            bind:markupSource={muSources.weapon}
+            bind:markupPercent={muValues.weapon}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('weapon', 'Weapon', weaponsSorted)}
+          />
+        {/if}
+        {#if amplifiersSorted.length > 0}
+          <EffectSlotCard
+            label="Amplifier"
+            entities={amplifiersSorted}
+            bind:selected={secondaryAmplifier}
+            {markupData}
+            bind:markupSource={muSources.amplifier}
+            bind:markupPercent={muValues.amplifier}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('amplifier', 'Amplifier', amplifiersSorted)}
+          />
+        {/if}
+        {#if visionAttachmentsSorted.length > 0}
+          <EffectSlotCard
+            label="Vision Attachment"
+            entities={visionAttachmentsSorted}
+            bind:selected={secondaryVisionAttachment}
+            {markupData}
+            bind:markupSource={muSources.visionAttachment}
+            bind:markupPercent={muValues.visionAttachment}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('visionAttachment', 'Vision Attachment', visionAttachmentsSorted)}
+          />
+        {/if}
+        {#if absorbersSorted.length > 0}
+          <EffectSlotCard
+            label="Absorber"
+            entities={absorbersSorted}
+            bind:selected={secondaryAbsorber}
+            {markupData}
+            bind:markupSource={muSources.absorber}
+            bind:markupPercent={muValues.absorber}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('absorber', 'Absorber', absorbersSorted)}
+          />
+        {/if}
+        {#if implantsSorted.length > 0}
+          <EffectSlotCard
+            label="Implant"
+            entities={implantsSorted}
+            bind:selected={secondaryImplant}
+            {markupData}
+            bind:markupSource={muSources.implant}
+            bind:markupPercent={muValues.implant}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('implant', 'Implant', implantsSorted)}
+          />
+        {/if}
       </div>
     </section>
 
@@ -662,7 +678,7 @@
     {#if clothingSlots.size > 0}
       <section class="eo-section">
         <h3 class="eo-section-title">Clothing</h3>
-        <div class="slots-grid secondary">
+        <div class="slots-grid">
           {#each [...clothingSlots.entries()] as [slotName, items] (slotName)}
             <EffectSlotCard
               label={slotName}
@@ -671,8 +687,10 @@
               onselect={(item) => { secondaryClothing = { ...secondaryClothing, [slotName]: item?.Name ?? null }; }}
               onclear={() => { secondaryClothing = { ...secondaryClothing, [slotName]: null }; }}
               {markupData}
-              markupSource="custom"
-              markupPercent={100}
+              markupSource={clothingMuSources[slotName] || 'custom'}
+              markupPercent={clothingMuValues[slotName] ?? 0}
+              onmuSourceChange={(src) => { clothingMuSources = { ...clothingMuSources, [slotName]: src }; }}
+              onmuValueChange={(val) => { clothingMuValues = { ...clothingMuValues, [slotName]: val }; }}
               {effectsCatalog}
               compact
               onsuggest={items.length ? () => handleSlotSuggest('clothing:' + slotName, slotName, items) : null}
@@ -723,8 +741,8 @@
     position: sticky;
     top: 0px;
     align-self: flex-start;
-    height: calc(100vh - 140px);
-    height: calc(100dvh - 140px);
+    height: calc(100vh - 138px);
+    height: calc(100dvh - 138px);
   }
 
   .eo-left-box {
@@ -806,9 +824,6 @@
     gap: 8px;
   }
 
-  .slots-grid.secondary {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  }
 
   @media (max-width: 1100px) {
     .slots-grid {
@@ -839,8 +854,7 @@
   }
 
   @media (max-width: 600px) {
-    .slots-grid,
-    .slots-grid.secondary {
+    .slots-grid {
       grid-template-columns: 1fr;
     }
   }

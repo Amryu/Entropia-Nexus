@@ -24,6 +24,8 @@
     excludeName = null,
     onselect = () => {},
     onclear = () => {},
+    onmuSourceChange = null,
+    onmuValueChange = null,
     onsuggest = null,
     suggesting = false,
     compact = false
@@ -177,7 +179,7 @@
     </div>
   {/if}
 
-  {#if selectedEntity && !compact}
+  {#if selectedEntity}
     <div class="mu-section">
       <div class="mu-source-toggle">
         {#each MU_SOURCES as src (src.key)}
@@ -185,7 +187,7 @@
             type="button"
             class="mu-btn"
             class:active={markupSource === src.key}
-            onclick={() => { markupSource = src.key; }}
+            onclick={() => { markupSource = src.key; if (onmuSourceChange) onmuSourceChange(src.key); }}
           >{src.label}</button>
         {/each}
       </div>
@@ -201,6 +203,7 @@
             bind:value={markupPercent}
             min={isAbsoluteMU ? 0 : 100}
             step={isAbsoluteMU ? 0.01 : 1}
+            onchange={() => { if (onmuValueChange) onmuValueChange(markupPercent); }}
           />
           <span class="mu-unit">{isAbsoluteMU ? 'PED' : '%'}</span>
         {:else}
