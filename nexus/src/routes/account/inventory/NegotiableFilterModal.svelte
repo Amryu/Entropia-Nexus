@@ -35,7 +35,7 @@
     { value: 'L', label: 'Limited' },
     { value: 'M', label: 'Male' },
     { value: 'F', label: 'Female' },
-    { value: 'C', label: 'Crafted' },
+    { value: 'C', label: 'Customizable' },
   ];
 
   function createRule() {
