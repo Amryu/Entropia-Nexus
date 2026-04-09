@@ -359,6 +359,26 @@
       return itemNames.length > 0 ? `AI Daily: Hand in ${itemNames.join(', ')}` : 'AI Daily: Hand in items';
     }
 
+    if (Type === 'HandIn') {
+      const items = Payload?.items || [];
+      const itemNames = items.filter(i => i.itemId).map(i => {
+        const name = itemsIndex[i.itemId] || `Item #${i.itemId}`;
+        const qty = i.quantity != null ? `${i.quantity}\u00d7 ` : '';
+        return qty + name;
+      });
+      return itemNames.length > 0 ? `Hand in ${itemNames.join(', ')}` : 'Hand in items';
+    }
+
+    if (Type === 'Interact') {
+      const location = (data.locations || []).find(l => l.Id === Number(Payload?.targetLocationId));
+      const name = location?.Name || 'a target';
+      return `Interact with ${name}`;
+    }
+
+    if (Type === 'Explore') {
+      return 'Explore a location';
+    }
+
     if (Type === 'Use') {
       const item = Payload?.itemName || 'an item';
       return `Use ${item}`;
@@ -432,6 +452,20 @@
             ? `${item.minQuantity}–${item.maxQuantity}`
             : item.minQuantity ?? item.maxQuantity ?? '?';
           details.push({ label: name, value: `Qty: ${range}` });
+        }
+      }
+    }
+
+    if (Type === 'HandIn') {
+      const items = Payload?.items || [];
+      for (const item of items) {
+        if (item.itemId) {
+          const name = itemsIndex[item.itemId] || `Item #${item.itemId}`;
+          const parts = [];
+          if (item.quantity != null) parts.push(`Qty: ${item.quantity}`);
+          if (item.pedValue != null) parts.push(`${item.pedValue} PED`);
+          if (item.minPedValue != null) parts.push(`Min TT: ${item.minPedValue}`);
+          details.push({ label: name, value: parts.join(', ') || 'any' });
         }
       }
     }

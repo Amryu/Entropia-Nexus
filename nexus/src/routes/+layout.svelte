@@ -10,7 +10,7 @@
   import SupportNotice from "$lib/components/SupportNotice.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
-  import { invalidateAll } from '$app/navigation';
+  import { invalidateAll, afterNavigate } from '$app/navigation';
   import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
 
   let { data, children } = $props();
@@ -162,6 +162,14 @@
       // Also observe the layout element itself
       layoutGuard.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: false });
     }
+  });
+
+  // Signal SPA navigation to AdSense auto ads engine so it re-scans the page
+  afterNavigate(() => {
+    try {
+      const adsbygoogle = /** @type {any} */ (window).adsbygoogle;
+      if (adsbygoogle) adsbygoogle.push({});
+    } catch { /* blocked or not loaded */ }
   });
 
   onDestroy(() => {
