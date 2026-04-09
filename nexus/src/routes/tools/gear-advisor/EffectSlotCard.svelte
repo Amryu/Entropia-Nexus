@@ -114,13 +114,17 @@
     {/if}
   </div>
 
-  <EntityPicker
-    entities={filteredEntities}
-    selected={selectedEntity}
-    placeholder="Search {label.toLowerCase()}..."
-    onselect={handleSelect}
-    onclear={handleClear}
-  />
+  {#if entities.length === 0}
+    <div class="empty-slot">No items with effects</div>
+  {:else}
+    <EntityPicker
+      entities={filteredEntities}
+      selected={selectedEntity}
+      placeholder="Search {label.toLowerCase()}..."
+      onselect={handleSelect}
+      onclear={handleClear}
+    />
+  {/if}
 
   {#if slotType === 'armorSet' && selectedEntity}
     {@const breakpoints = [...new Set(
@@ -214,6 +218,17 @@
   .slot-card.compact {
     padding: 8px;
     gap: 4px;
+  }
+
+  .empty-slot {
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    text-align: center;
+    opacity: 0.6;
   }
 
   .slot-header {

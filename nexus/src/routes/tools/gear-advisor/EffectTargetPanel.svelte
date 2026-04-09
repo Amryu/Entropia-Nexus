@@ -5,7 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { EFFECT_PRESETS, categorizeEffects } from './effectOptimizer.js';
+  import { buildPresets, categorizeEffects } from './effectOptimizer.js';
 
   let {
     targets = $bindable({}),
@@ -34,11 +34,12 @@
 
   let categories = $derived(categorizeEffects(effectsCatalog, effectCaps));
   let usedNames = $derived(new Set(Object.keys(targets)));
+  let presets = $derived(buildPresets(effectCaps));
 
   // Track which presets are active based on current targets
   let activePresets = $derived.by(() => {
     const active = new Set();
-    for (const preset of EFFECT_PRESETS) {
+    for (const preset of presets) {
       const keys = Object.keys(preset.targets);
       if (keys.length === 0) continue;
       const allMatch = keys.every(k => targets[k] != null && Math.abs(targets[k] - preset.targets[k]) < 0.01);
@@ -150,7 +151,7 @@
   </div>
 
   <div class="preset-row">
-    {#each EFFECT_PRESETS as preset (preset.id)}
+    {#each presets as preset (preset.id)}
       <button
         type="button"
         class="preset-btn"

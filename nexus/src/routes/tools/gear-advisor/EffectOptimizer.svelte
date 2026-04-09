@@ -24,6 +24,7 @@
     aggregateEffects,
     findBestCombinations,
     suggestForSlot,
+    suggestFromList,
     buildDefaultSetName,
     extractArmorSetEffects,
     extractPetEffect
@@ -389,24 +390,47 @@
     }
   }
 
-  const SLOT_LABELS = { leftRing: 'Left Ring', rightRing: 'Right Ring', armorSet: 'Armor Set', pet: 'Pet' };
+  const PRIMARY_SLOTS = new Set(['leftRing', 'rightRing', 'armorSet', 'pet']);
 
-  function handleSlotSuggest(slotKey) {
+  // Map slot keys to entity lists for secondary slots
+  const SECONDARY_ENTITY_MAP = {
+    weapon: () => weaponsSorted,
+    amplifier: () => amplifiersSorted,
+    visionAttachment: () => visionAttachmentsSorted,
+    absorber: () => absorbersSorted,
+    implant: () => implantsSorted,
+  };
+
+  let suggestDialogSlotType = $state('primary');
+  let suggestDialogEntities = $state([]);
+
+  function handleSlotSuggest(slotKey, label, entityList) {
     if (Object.keys(targets).length === 0) return;
     suggestDialogSlotKey = slotKey;
-    suggestDialogLabel = SLOT_LABELS[slotKey] || slotKey;
+    suggestDialogLabel = label || slotKey;
     suggestDialogOpen = true;
+    suggestDialogSlotType = PRIMARY_SLOTS.has(slotKey) ? 'primary' : 'secondary';
+    suggestDialogEntities = entityList || [];
     runSlotSuggestion(slotKey, suggestDialogMode);
   }
 
   function runSlotSuggestion(slotKey, mode) {
     suggestDialogLoading = true;
     setTimeout(() => {
-      suggestDialogResults = suggestForSlot(
-        slotKey, targets, currentSlots, entityLookup,
-        effectsCatalog, effectCaps,
-        { overcapMode, priorities, armorSetPieces, mode, maxResults: 30 }
-      );
+      if (PRIMARY_SLOTS.has(slotKey)) {
+        suggestDialogResults = suggestForSlot(
+          slotKey, targets, currentSlots, entityLookup,
+          effectsCatalog, effectCaps,
+          { overcapMode, priorities, armorSetPieces, mode, maxResults: 30 }
+        );
+      } else {
+        // Secondary/clothing: use suggestFromList with all current effects as context
+        suggestDialogResults = suggestFromList(
+          suggestDialogEntities, targets, allItemEffects,
+          effectsCatalog, effectCaps,
+          { overcapMode, priorities, mode, maxResults: 30 }
+        );
+      }
       suggestDialogLoading = false;
     }, 10);
   }
@@ -427,6 +451,15 @@
     else if (slotKey === 'pet') {
       pet = result.name;
       if (result.effectKey) petActiveEffect = result.effectKey;
+    }
+    else if (slotKey === 'weapon') secondaryWeapon = result.name;
+    else if (slotKey === 'amplifier') secondaryAmplifier = result.name;
+    else if (slotKey === 'visionAttachment') secondaryVisionAttachment = result.name;
+    else if (slotKey === 'absorber') secondaryAbsorber = result.name;
+    else if (slotKey === 'implant') secondaryImplant = result.name;
+    else if (slotKey.startsWith('clothing:')) {
+      const clothSlot = slotKey.slice('clothing:'.length);
+      secondaryClothing = { ...secondaryClothing, [clothSlot]: result.name };
     }
   }
 
@@ -518,7 +551,7 @@
           bind:markupPercent={muValues.leftRing}
           {effectsCatalog}
           excludeName={rightRing}
-          onsuggest={() => handleSlotSuggest('leftRing')}
+          onsuggest={() => handleSlotSuggest('leftRing', 'Left Ring')}
           suggesting={false}
         />
         <EffectSlotCard
@@ -531,7 +564,7 @@
           bind:markupPercent={muValues.rightRing}
           {effectsCatalog}
           excludeName={leftRing}
-          onsuggest={() => handleSlotSuggest('rightRing')}
+          onsuggest={() => handleSlotSuggest('rightRing', 'Right Ring')}
           suggesting={false}
         />
         <EffectSlotCard
@@ -544,7 +577,7 @@
           bind:markupPercent={muValues.armorSet}
           {effectsCatalog}
           bind:armorSetPieces
-          onsuggest={() => handleSlotSuggest('armorSet')}
+          onsuggest={() => handleSlotSuggest('armorSet', 'Armor Set')}
           suggesting={false}
         />
         <EffectSlotCard
@@ -557,7 +590,7 @@
           bind:markupPercent={muValues.pet}
           {effectsCatalog}
           bind:petActiveEffect
-          onsuggest={() => handleSlotSuggest('pet')}
+          onsuggest={() => handleSlotSuggest('pet', 'Pet')}
           suggesting={false}
         />
       </div>
@@ -576,6 +609,7 @@
           bind:markupPercent={muValues.weapon}
           {effectsCatalog}
           compact
+          onsuggest={weaponsSorted.length ? () => handleSlotSuggest('weapon', 'Weapon', weaponsSorted) : null}
         />
         <EffectSlotCard
           label="Amplifier"
@@ -586,6 +620,7 @@
           bind:markupPercent={muValues.amplifier}
           {effectsCatalog}
           compact
+          onsuggest={amplifiersSorted.length ? () => handleSlotSuggest('amplifier', 'Amplifier', amplifiersSorted) : null}
         />
         <EffectSlotCard
           label="Vision Attachment"
@@ -596,6 +631,7 @@
           bind:markupPercent={muValues.visionAttachment}
           {effectsCatalog}
           compact
+          onsuggest={visionAttachmentsSorted.length ? () => handleSlotSuggest('visionAttachment', 'Vision Attachment', visionAttachmentsSorted) : null}
         />
         <EffectSlotCard
           label="Absorber"
@@ -606,6 +642,7 @@
           bind:markupPercent={muValues.absorber}
           {effectsCatalog}
           compact
+          onsuggest={absorbersSorted.length ? () => handleSlotSuggest('absorber', 'Absorber', absorbersSorted) : null}
         />
         <EffectSlotCard
           label="Implant"
@@ -616,6 +653,7 @@
           bind:markupPercent={muValues.implant}
           {effectsCatalog}
           compact
+          onsuggest={implantsSorted.length ? () => handleSlotSuggest('implant', 'Implant', implantsSorted) : null}
         />
       </div>
     </section>
@@ -637,6 +675,7 @@
               markupPercent={100}
               {effectsCatalog}
               compact
+              onsuggest={items.length ? () => handleSlotSuggest('clothing:' + slotName, slotName, items) : null}
             />
           {/each}
         </div>
@@ -679,14 +718,17 @@
   }
 
   .eo-left {
-    flex: 0 0 320px;
+    width: 320px;
+    min-width: 320px;
+    max-width: 320px;
     display: flex;
     flex-direction: column;
     gap: 12px;
     position: sticky;
     top: 16px;
-    height: calc(100vh - 140px);
-    height: calc(100dvh - 140px);
+    align-self: flex-start;
+    height: calc(100vh - 160px);
+    height: calc(100dvh - 160px);
   }
 
   .eo-left-box {
@@ -780,7 +822,9 @@
 
   @media (max-width: 900px) {
     .eo-left {
-      flex: 0 0 220px;
+      width: 240px;
+      min-width: 240px;
+      max-width: 240px;
     }
   }
 
@@ -790,9 +834,11 @@
     }
 
     .eo-left {
-      flex: none;
       position: static;
       width: 100%;
+      min-width: 0;
+      max-width: none;
+      height: auto;
     }
   }
 

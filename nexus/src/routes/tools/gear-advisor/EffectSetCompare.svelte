@@ -115,23 +115,31 @@
     editValue = '';
   }
 
-  function updateActiveSet() {
-    if (!activeSetId) return;
-    savedSets = savedSets.map(s => s.id === activeSetId ? {
-      ...s,
-      slots: JSON.parse(JSON.stringify(currentSlots)),
-      targets: { ...currentTargets },
-      summary: currentSummary.map(e => ({ name: e.name, value: e.signedTotal, unit: e.unit })),
-      savedAt: new Date().toISOString()
-    } : s);
-  }
+  // Auto-save active set with debounce
+  let autoSaveTimer = null;
+  $effect(() => {
+    const _slots = currentSlots;
+    const _targets = currentTargets;
+    const _summary = currentSummary;
+    const _id = activeSetId;
+    if (!_id) return;
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      savedSets = savedSets.map(s => s.id === _id ? {
+        ...s,
+        slots: JSON.parse(JSON.stringify(_slots)),
+        targets: { ..._targets },
+        summary: (_summary || []).map(e => ({ name: e.name, value: e.signedTotal, unit: e.unit })),
+        savedAt: new Date().toISOString()
+      } : s);
+    }, 2000);
+  });
 </script>
 
 <div class="set-sidebar">
   <div class="set-toolbar">
     <button type="button" class="toolbar-btn" onclick={createSet} title="Create new set">Create</button>
     <button type="button" class="toolbar-btn" onclick={cloneSet} disabled={!activeSetId} title="Clone selected set">Clone</button>
-    <button type="button" class="toolbar-btn" onclick={updateActiveSet} disabled={!activeSetId} title="Save current config to selected set">Save</button>
     <button type="button" class="toolbar-btn btn-danger-subtle" onclick={deleteActiveSet} disabled={!activeSetId} title="Delete selected set">Delete</button>
     <button type="button" class="toolbar-btn" onclick={importSets} title="Import sets from file">Import</button>
     <button type="button" class="toolbar-btn" onclick={exportSets} disabled={savedSets.length === 0} title="Export all sets">Export</button>
@@ -199,8 +207,8 @@
     font-size: 13px;
     border: 1px solid var(--border-color);
     border-radius: 5px;
-    background-color: transparent;
-    color: var(--text-muted);
+    background-color: var(--bg-color);
+    color: var(--text-color);
     cursor: pointer;
     text-align: center;
     transition: all 0.1s ease;
@@ -271,9 +279,7 @@
   .set-name {
     font-size: 13px;
     font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
     width: 100%;
   }
 

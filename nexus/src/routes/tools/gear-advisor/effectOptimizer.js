@@ -8,13 +8,36 @@ import { summarizeEffects, buildEffectCaps, getEffectStrength } from '$lib/utils
 // Presets
 // ---------------------------------------------------------------------------
 
-export const EFFECT_PRESETS = [
-  { id: 'max-crit-chance', label: 'Max Crit Chance', targets: { 'Critical Chance Added': 10 } },
-  { id: 'max-reload', label: 'Max Reload', targets: { 'Reload Speed Increased': 30 } },
-  { id: 'max-lifesteal', label: 'Max Lifesteal', targets: { 'Lifesteal Added': 20 } },
-  { id: 'max-run-speed', label: 'Max Run Speed', targets: { 'Run Speed Increased': 50 } },
-  { id: 'max-crit-damage', label: 'Max Crit Damage', targets: { 'Critical Damage Added': 350 } },
+const PRESET_DEFS = [
+  { id: 'max-crit-chance', label: 'Max Crit Chance', effects: ['Critical Chance Added'] },
+  { id: 'max-reload', label: 'Max Reload', effects: ['Reload Speed Increased'] },
+  { id: 'max-lifesteal', label: 'Max Lifesteal', effects: ['Lifesteal Added'] },
+  { id: 'max-run-speed', label: 'Max Run Speed', effects: ['Run Speed Increased'] },
+  { id: 'max-crit-damage', label: 'Max Crit Damage', effects: ['Critical Damage Added'] },
 ];
+
+export function getEffectiveCapValue(effectName, effectCaps) {
+  const caps = effectCaps?.[effectName];
+  if (!caps) return null;
+  const item = caps.item ?? Infinity;
+  const total = caps.total ?? Infinity;
+  const effective = Math.min(item, total);
+  return Number.isFinite(effective) ? effective : null;
+}
+
+export function buildPresets(effectCaps) {
+  return PRESET_DEFS.map(def => {
+    const targets = {};
+    for (const name of def.effects) {
+      const cap = getEffectiveCapValue(name, effectCaps);
+      if (cap != null) targets[name] = cap;
+    }
+    return { ...def, targets };
+  });
+}
+
+// Keep static fallback for backwards compat
+export const EFFECT_PRESETS = PRESET_DEFS;
 
 // ---------------------------------------------------------------------------
 // Effect categories for the target selection dialog
@@ -563,6 +586,42 @@ export function suggestForSlot(slotKey, targets, currentSlots, entities, effects
       ? extractArmorSetEffects(entry.item, armorSetPieces)
       : extractEquipEffects(entry.item);
     return scoreCandidate(slotEffects, entry.item.Name);
+  })
+  .sort((a, b) => b.score - a.score)
+  .slice(0, maxResults);
+}
+
+// ---------------------------------------------------------------------------
+// Generic suggestion for any entity list (secondary/clothing slots)
+// ---------------------------------------------------------------------------
+
+export function suggestFromList(itemList, targets, otherEffects, effectsCatalog, effectCaps, options = {}) {
+  const { maxResults = 20, mode = 'contextual' } = options;
+  const targetNames = new Set(Object.keys(targets));
+  const candidates = prefilterCandidates(itemList || [], targetNames);
+  const baseEffects = mode === 'contextual' ? (otherEffects || []) : [];
+
+  return candidates.map(entry => {
+    const slotEffects = extractEquipEffects(entry.item);
+    const allEffects = [...baseEffects, ...slotEffects];
+
+    if (mode === 'standalone') {
+      let totalPct = 0;
+      const pctDetails = [];
+      const numTargets = Object.keys(targets).length;
+      for (const [effectName, targetValue] of Object.entries(targets)) {
+        const itemEffect = slotEffects.find(e => e?.Name === effectName);
+        const itemStrength = itemEffect ? getEffectStrength(itemEffect) : 0;
+        const pct = targetValue > 0 ? (itemStrength / targetValue) * 100 : 0;
+        totalPct += Math.min(pct, 100);
+        pctDetails.push({ effectName, targetValue, achieved: itemStrength, pct });
+      }
+      const avgPct = numTargets > 0 ? totalPct / numTargets : 0;
+      return { name: entry.item.Name, score: avgPct, pctDetails };
+    }
+
+    const { score, details, summary } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
+    return { name: entry.item.Name, score, details, summary };
   })
   .sort((a, b) => b.score - a.score)
   .slice(0, maxResults);
