@@ -8,6 +8,7 @@
   import EntityPicker from './EntityPicker.svelte';
   import { extractEquipEffects, extractArmorSetEffects, extractPetEffect, getPetEffectKey } from './effectOptimizer.js';
   import { getEffectStrength } from '$lib/utils/loadoutEffects.js';
+  import { hasCondition } from '$lib/shopUtils.js';
 
   let {
     label = '',
@@ -69,25 +70,29 @@
   }
 
   function resolveMarkup(itemName, source, customValue) {
-    if (source === 'custom' || !itemName) return customValue ?? 100;
-    if (source === 'inventory' && markupData.inventoryMap) {
-      const id = markupData.nameToId?.get(itemName);
-      if (id != null && markupData.inventoryMap.has(id)) return markupData.inventoryMap.get(id);
-    }
-    if (source === 'ingame' && markupData.ingameMap?.has(itemName)) return markupData.ingameMap.get(itemName);
-    if (source === 'exchange' && markupData.wapByName?.has(itemName)) return markupData.wapByName.get(itemName);
-    // Fallback chain for custom: try inventory -> ingame -> exchange
-    if (source === 'custom' || customValue == null || customValue === '') {
-      if (markupData.inventoryMap) {
+    const fallbackDefault = isAbsoluteMU ? 0 : 100;
+    if (!itemName) return customValue ?? fallbackDefault;
+    // Try the selected source
+    if (source !== 'custom') {
+      if (source === 'inventory' && markupData.inventoryMap) {
         const id = markupData.nameToId?.get(itemName);
         if (id != null && markupData.inventoryMap.has(id)) return markupData.inventoryMap.get(id);
       }
-      if (markupData.ingameMap?.has(itemName)) return markupData.ingameMap.get(itemName);
-      if (markupData.wapByName?.has(itemName)) return markupData.wapByName.get(itemName);
+      if (source === 'ingame' && markupData.ingameMap?.has(itemName)) return markupData.ingameMap.get(itemName);
+      if (source === 'exchange' && markupData.wapByName?.has(itemName)) return markupData.wapByName.get(itemName);
     }
-    return customValue ?? 100;
+    // Custom mode or fallback: use custom value, then try fallback chain
+    if (customValue != null && customValue !== '' && customValue !== fallbackDefault) return customValue;
+    if (markupData.inventoryMap) {
+      const id = markupData.nameToId?.get(itemName);
+      if (id != null && markupData.inventoryMap.has(id)) return markupData.inventoryMap.get(id);
+    }
+    if (markupData.ingameMap?.has(itemName)) return markupData.ingameMap.get(itemName);
+    if (markupData.wapByName?.has(itemName)) return markupData.wapByName.get(itemName);
+    return customValue ?? fallbackDefault;
   }
 
+  let isAbsoluteMU = $derived(selectedEntity ? hasCondition(selectedEntity) : false);
   let resolvedMarkup = $derived(resolveMarkup(selected, markupSource, markupPercent));
 
   const MU_SOURCES = [
@@ -187,16 +192,25 @@
       <div class="mu-value-row">
         <span class="mu-label">Markup:</span>
         {#if markupSource === 'custom'}
+          {#if isAbsoluteMU}
+            <span class="mu-prefix">+</span>
+          {/if}
           <input
             type="number"
             class="mu-input"
             bind:value={markupPercent}
-            min="100"
-            step="1"
+            min={isAbsoluteMU ? 0 : 100}
+            step={isAbsoluteMU ? 0.01 : 1}
           />
-          <span class="mu-unit">%</span>
+          <span class="mu-unit">{isAbsoluteMU ? 'PED' : '%'}</span>
         {:else}
-          <span class="mu-resolved">{resolvedMarkup?.toFixed?.(1) ?? '100'}%</span>
+          <span class="mu-resolved">
+            {#if isAbsoluteMU}
+              +{resolvedMarkup?.toFixed?.(2) ?? '0.00'} PED
+            {:else}
+              {resolvedMarkup?.toFixed?.(1) ?? '100'}%
+            {/if}
+          </span>
         {/if}
       </div>
     </div>
@@ -374,6 +388,12 @@
   .mu-label {
     font-size: 11px;
     color: var(--text-muted);
+  }
+
+  .mu-prefix {
+    font-size: 12px;
+    color: var(--text-color);
+    font-weight: 500;
   }
 
   .mu-input {
