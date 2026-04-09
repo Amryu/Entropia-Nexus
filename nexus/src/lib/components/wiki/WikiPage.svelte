@@ -222,11 +222,24 @@
   function handleEdit() {
     if (entity) {
       startEdit();
+      const url = new URL(window.location.href);
+      url.searchParams.set('mode', 'edit');
+      history.replaceState(history.state, '', url);
     }
   }
 
   function handleCancelEdit() {
     cancelEdit();
+    clearEditModeUrl();
+  }
+
+  function clearEditModeUrl() {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('mode')) {
+      url.searchParams.delete('mode');
+      url.searchParams.delete('changeId');
+      history.replaceState(history.state, '', url);
+    }
   }
 
 
@@ -500,7 +513,7 @@
 
   <!-- Edit Action Bar (shown when in edit mode) -->
   {#if $editMode}
-    <EditActionBar {onSave} {onSubmit} {basePath} {user} entityName={entity?.Name || ''} />
+    <EditActionBar {onSave} {onSubmit} {basePath} {user} entityName={entity?.Name || ''} onexitedit={clearEditModeUrl} />
   {/if}
 
   <!-- Auth Help Dialog -->

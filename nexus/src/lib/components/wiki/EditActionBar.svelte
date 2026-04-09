@@ -56,6 +56,7 @@
    * @property {string} [basePath]
    * @property {object|null} [user]
    * @property {string} [entityName]
+   * @property {() => void} [onexitedit]
    */
 
   /** @type {Props} */
@@ -64,7 +65,8 @@
     onSubmit = null,
     basePath = '',
     user = null,
-    entityName = ''
+    entityName = '',
+    onexitedit
   } = $props();
 
   let saving = $state(false);
@@ -342,6 +344,7 @@
       if (!$isCreateMode) {
         setTimeout(() => {
           cancelEdit();
+          onexitedit?.();
           setViewingPendingChange(true);
         }, 1500);
       }
@@ -463,7 +466,7 @@
                 }
               }, 1500);
             } else {
-              setTimeout(() => cancelEdit(), 1500);
+              setTimeout(() => { cancelEdit(); onexitedit?.(); }, 1500);
             }
             directApplying = false;
             resolve();
@@ -492,6 +495,8 @@
       if (wasCreate && basePath) {
         suppressNextNavGuard();
         goto(basePath);
+      } else {
+        onexitedit?.();
       }
     };
 
