@@ -195,8 +195,8 @@
   }
 
   .toolbar-btn {
-    padding: 6px 4px;
-    font-size: 12px;
+    padding: 7px 6px;
+    font-size: 13px;
     border: 1px solid var(--border-color);
     border-radius: 5px;
     background-color: transparent;
@@ -229,7 +229,7 @@
   .set-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
     overflow-y: auto;
     flex: 1;
     min-height: 0;
@@ -246,10 +246,10 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 1px;
-    padding: 5px 8px;
+    gap: 2px;
+    padding: 8px 10px;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: 6px;
     background-color: transparent;
     color: var(--text-color);
     cursor: pointer;
@@ -269,7 +269,7 @@
   }
 
   .set-name {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -278,7 +278,7 @@
   }
 
   .set-meta {
-    font-size: 10px;
+    font-size: 11px;
     opacity: 0.7;
   }
 
