@@ -461,7 +461,8 @@
       Link.configure({
         openOnClick: false,
         HTMLAttributes: {
-          class: 'editor-link'
+          class: 'editor-link',
+          rel: 'noopener noreferrer'
         }
       })
     ];
@@ -488,6 +489,52 @@
         attributes: {
           class: 'tiptap-content',
           'data-placeholder': placeholder
+        },
+        handleClick: (view, pos, event) => {
+          if (disabled) return false;
+          // Click on a link -> open link edit modal
+          const resolvedPos = view.state.doc.resolve(pos);
+          const linkMark = resolvedPos.marks().find(m => m.type.name === 'link');
+          if (linkMark) {
+            event.preventDefault();
+            // Select the full link range so the modal can update/remove it
+            let linkFrom = pos, linkTo = pos;
+            // Walk backward to find link start
+            view.state.doc.nodesBetween(Math.max(0, pos - 500), pos + 500, (node, nodePos) => {
+              if (node.isText) {
+                const mark = node.marks.find(m => m.type.name === 'link' && m.attrs.href === linkMark.attrs.href);
+                if (mark) {
+                  const nodeEnd = nodePos + node.nodeSize;
+                  if (nodePos <= pos && nodeEnd >= pos) {
+                    linkFrom = nodePos;
+                    linkTo = nodeEnd;
+                  }
+                }
+              }
+            });
+            editor.commands.setTextSelection({ from: linkFrom, to: linkTo });
+            linkText = view.state.doc.textBetween(linkFrom, linkTo);
+            linkUrl = linkMark.attrs.href || '';
+            isLinkModalOpen = true;
+            return true;
+          }
+          // Click on a waypoint -> open waypoint edit modal
+          if (showWaypoints) {
+            const nodeAtPos = view.state.doc.nodeAt(pos);
+            if (nodeAtPos?.type.name === 'waypointInline') {
+              event.preventDefault();
+              // Select the waypoint node so updateAttributes/deleteSelection targets it
+              editor.commands.setNodeSelection(pos);
+              waypointString = normalizeWaypointString(nodeAtPos.attrs.waypoint || '');
+              waypointLabel = nodeAtPos.attrs.label || '';
+              waypointError = '';
+              isEditingWaypoint = true;
+              isWaypointModalOpen = true;
+              loadWaypointPlanets();
+              return true;
+            }
+          }
+          return false;
         },
         handlePaste: handleMarkdownPaste ? (view, event) => {
           const plainText = event.clipboardData?.getData('text/plain');
@@ -576,21 +623,35 @@
     isLinkModalOpen = true;
   }
 
+  /** Convert same-site URLs to relative paths */
+  function normalizeLink(url) {
+    if (!url) return url;
+    try {
+      const domain = import.meta.env.VITE_DOMAIN;
+      const parsed = new URL(url, `https://${domain}`);
+      if (parsed.hostname === domain || parsed.hostname === `www.${domain}` || parsed.hostname === `dev.${domain}`) {
+        return parsed.pathname + parsed.search + parsed.hash;
+      }
+    } catch { /* not a valid URL, return as-is */ }
+    return url;
+  }
+
   function insertLink() {
     if (!linkUrl) {
       editor?.chain().focus().unsetLink().run();
     } else {
+      const href = normalizeLink(linkUrl);
       const { from, to } = editor.state.selection;
       const hasSelection = from !== to;
 
       if (hasSelection) {
-        editor?.chain().focus().extendMarkRange('link').setLink({ href: linkUrl }).run();
+        editor?.chain().focus().extendMarkRange('link').setLink({ href }).run();
       } else if (linkText) {
         editor?.chain().focus()
           .insertContent({
             type: 'text',
             text: linkText,
-            marks: [{ type: 'link', attrs: { href: linkUrl } }]
+            marks: [{ type: 'link', attrs: { href } }]
           })
           .run();
       } else {
@@ -598,7 +659,7 @@
           .insertContent({
             type: 'text',
             text: linkUrl,
-            marks: [{ type: 'link', attrs: { href: linkUrl } }]
+            marks: [{ type: 'link', attrs: { href } }]
           })
           .run();
       }
@@ -707,20 +768,106 @@
   let isWaypointModalOpen = $state(false);
   let waypointString = $state('');
   let waypointLabel = $state('');
+  let isEditingWaypoint = $state(false);
+  let waypointError = $state('');
+
+  // Planet data for waypoint validation (fetched lazily when waypoints are enabled)
+  const TILE_SIZE = 8192;
+  let waypointPlanets = [];
+
+  async function loadWaypointPlanets() {
+    if (waypointPlanets.length || !showWaypoints) return;
+    try {
+      const res = await fetch(import.meta.env.VITE_API_URL + '/planets');
+      const data = await res.json();
+      waypointPlanets = (data || []).filter(p => p.Id > 0);
+    } catch { waypointPlanets = []; }
+  }
+
+  /** Parse waypoint string, stripping optional /wp prefix */
+  function parseWaypointString(str) {
+    if (!str) return null;
+    let s = str.trim();
+    // Strip /wp prefix
+    if (s.toLowerCase().startsWith('/wp ')) s = s.slice(4).trim();
+    const match = s.match(/\[([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,\]]+)(?:,\s*([^\]]*))?\]/);
+    if (!match) return null;
+    return {
+      planet: match[1].trim(),
+      x: parseFloat(match[2]),
+      y: parseFloat(match[3]),
+      z: parseFloat(match[4]),
+      name: match[5]?.trim() || ''
+    };
+  }
+
+  /** Validate a waypoint string and return an error message or '' if valid */
+  function validateWaypoint(str) {
+    const parsed = parseWaypointString(str);
+    if (!parsed) return 'Invalid format. Use [Planet, x, y, z, Name]';
+    if (isNaN(parsed.x) || isNaN(parsed.y) || isNaN(parsed.z)) return 'Coordinates must be numbers';
+    // Validate planet name (case-insensitive against TechnicalName or Name)
+    const planetMatch = waypointPlanets.find(p =>
+      p.Name.toLowerCase() === parsed.planet.toLowerCase() ||
+      p.Properties?.TechnicalName?.toLowerCase() === parsed.planet.toLowerCase()
+    );
+    if (!planetMatch) return `Unknown planet: ${parsed.planet}`;
+    // Validate coordinate bounds
+    const map = planetMatch.Properties?.Map;
+    if (map) {
+      const minX = map.X * TILE_SIZE;
+      const maxX = (map.X + map.Width) * TILE_SIZE;
+      const minY = map.Y * TILE_SIZE;
+      const maxY = (map.Y + map.Height) * TILE_SIZE;
+      if (parsed.x < minX || parsed.x > maxX || parsed.y < minY || parsed.y > maxY) {
+        return `Coordinates out of bounds for ${planetMatch.Name} (x: ${minX}-${maxX}, y: ${minY}-${maxY})`;
+      }
+    }
+    // Validate name length
+    if (parsed.name && parsed.name.length > 50) return 'Waypoint name must be 50 characters or less';
+    return '';
+  }
+
+  /** Normalize waypoint string: strip /wp prefix, keep the bracket content */
+  function normalizeWaypointString(str) {
+    if (!str) return str;
+    let s = str.trim();
+    if (s.toLowerCase().startsWith('/wp ')) s = s.slice(4).trim();
+    return s;
+  }
 
   function openWaypointModal() {
     waypointString = '';
     waypointLabel = '';
+    waypointError = '';
+    isEditingWaypoint = false;
     isWaypointModalOpen = true;
+    loadWaypointPlanets();
   }
 
   function insertWaypoint() {
-    if (waypointString.trim()) {
+    const normalized = normalizeWaypointString(waypointString);
+    const error = validateWaypoint(normalized);
+    if (error) {
+      waypointError = error;
+      return;
+    }
+    if (isEditingWaypoint) {
+      editor?.chain().focus().updateAttributes('waypointInline', {
+        waypoint: normalized,
+        label: waypointLabel.trim() || null
+      }).run();
+    } else {
       editor?.chain().focus().setWaypointInline({
-        waypoint: waypointString.trim(),
+        waypoint: normalized,
         label: waypointLabel.trim() || null
       }).run();
     }
+    closeWaypointModal();
+  }
+
+  function removeWaypoint() {
+    editor?.chain().focus().deleteSelection().run();
     closeWaypointModal();
   }
 
@@ -728,6 +875,8 @@
     isWaypointModalOpen = false;
     waypointString = '';
     waypointLabel = '';
+    waypointError = '';
+    isEditingWaypoint = false;
   }
 </script>
 
@@ -995,7 +1144,7 @@
   {#if isLinkModalOpen}
     <div class="link-modal-overlay" role="presentation" onclick={closeLinkModal} onkeydown={(e) => e.key === 'Escape' && closeLinkModal()}>
       <div class="link-modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-        <h4>Insert Link</h4>
+        <h4>{isActive('link') ? 'Edit' : 'Insert'} Link</h4>
         <div class="link-field">
           <label for="link-text">Link Text</label>
           <input
@@ -1010,9 +1159,9 @@
           <label for="link-url">URL</label>
           <input
             id="link-url"
-            type="url"
+            type="text"
             bind:value={linkUrl}
-            placeholder="https://example.com"
+            placeholder="https://example.com or /relative/path"
           />
         </div>
         <div class="link-actions">
@@ -1072,16 +1221,21 @@
   {#if showWaypoints && isWaypointModalOpen}
     <div class="link-modal-overlay" role="presentation" onclick={closeWaypointModal} onkeydown={(e) => e.key === 'Escape' && closeWaypointModal()}>
       <div class="link-modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-        <h4>Insert Waypoint</h4>
+        <h4>{isEditingWaypoint ? 'Edit' : 'Insert'} Waypoint</h4>
         <div class="link-field">
           <label for="waypoint-string">Waypoint</label>
           <input
             id="waypoint-string"
             type="text"
             bind:value={waypointString}
+            oninput={() => waypointError = ''}
             placeholder="[Calypso, 123, 456, 100, Name]"
           />
-          <p class="field-hint">Paste a full waypoint string</p>
+          {#if waypointError}
+            <p class="field-error">{waypointError}</p>
+          {:else}
+            <p class="field-hint">Paste a full waypoint string (with or without /wp prefix)</p>
+          {/if}
         </div>
         <div class="link-field">
           <label for="waypoint-label">Label (optional)</label>
@@ -1095,13 +1249,16 @@
         </div>
         <div class="link-actions">
           <button type="button" class="btn-secondary" onclick={closeWaypointModal}>Cancel</button>
+          {#if isEditingWaypoint}
+            <button type="button" class="btn-danger" onclick={removeWaypoint}>Remove</button>
+          {/if}
           <button
             type="button"
             class="btn-primary"
             onclick={insertWaypoint}
             disabled={!waypointString.trim()}
           >
-            Insert
+            {isEditingWaypoint ? 'Update' : 'Insert'}
           </button>
         </div>
       </div>
@@ -1559,10 +1716,18 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  .field-hint {
+  .field-hint,
+  .field-error {
     font-size: 11px;
-    color: var(--text-muted, #999);
     margin: 4px 0 0 0;
+  }
+
+  .field-hint {
+    color: var(--text-muted, #999);
+  }
+
+  .field-error {
+    color: var(--danger-color, #dc3545);
   }
 
   .link-actions {
