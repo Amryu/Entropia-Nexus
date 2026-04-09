@@ -2,6 +2,7 @@
   @component EntityPicker
   Minimal search-dropdown for picking an entity from a pre-loaded list.
   Used by Gear Advisor tools for armor / plating / mob selection.
+  Dropdown opens upward automatically when too close to the viewport bottom.
 -->
 <script>
   // @ts-nocheck
@@ -12,7 +13,6 @@
     selected = null,
     placeholder = 'Search...',
     clearable = true,
-    dropUp = false,
     onselect = () => {},
     onclear = () => {}
   } = $props();
@@ -21,6 +21,9 @@
   let isOpen = $state(false);
   let highlighted = $state(-1);
   let inputEl = $state();
+  let shouldDropUp = $state(false);
+
+  const DROPDOWN_HEIGHT = 224; // max-height (220) + border/padding
 
   // Keep the input text in sync with the current selection when not actively typing
   $effect(() => {
@@ -35,7 +38,6 @@
     const q = query.trim();
     const list = entities || [];
     if (!q) return list.slice(0, 20);
-    // Fuzzy score against each entity's name; keep matches and sort desc
     const scored = [];
     for (const e of list) {
       const score = scoreSearchResult(e?.Name || '', q);
@@ -44,6 +46,18 @@
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, 20).map(x => x.e);
   });
+
+  function checkDropDirection() {
+    if (!inputEl) return;
+    const rect = inputEl.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    shouldDropUp = spaceBelow < DROPDOWN_HEIGHT && rect.top > spaceBelow;
+  }
+
+  function openDropdown() {
+    checkDropDirection();
+    isOpen = true;
+  }
 
   function pick(item) {
     onselect(item);
@@ -63,7 +77,7 @@
 
   function handleKeydown(e) {
     if (!isOpen && (e.key === 'ArrowDown' || e.key === 'Enter')) {
-      isOpen = true;
+      openDropdown();
       return;
     }
     if (!isOpen) return;
@@ -95,9 +109,9 @@
       type="text"
       bind:value={query}
       {placeholder}
-      onfocus={() => { isOpen = true; }}
+      onfocus={openDropdown}
       onblur={() => setTimeout(() => { isOpen = false; }, 150)}
-      oninput={() => { isOpen = true; highlighted = -1; }}
+      oninput={() => { openDropdown(); highlighted = -1; }}
       onkeydown={handleKeydown}
       class="picker-input"
     />
@@ -113,7 +127,7 @@
   </div>
 
   {#if isOpen && filtered.length > 0}
-    <ul class="picker-dropdown" class:drop-up={dropUp} role="listbox">
+    <ul class="picker-dropdown" class:drop-up={shouldDropUp} role="listbox">
       {#each filtered as item, i (item.Id ?? item.Name)}
         <li>
           <button
@@ -130,7 +144,7 @@
       {/each}
     </ul>
   {:else if isOpen && query.trim() && filtered.length === 0}
-    <div class="picker-empty" class:drop-up={dropUp}>No matches</div>
+    <div class="picker-empty" class:drop-up={shouldDropUp}>No matches</div>
   {/if}
 </div>
 

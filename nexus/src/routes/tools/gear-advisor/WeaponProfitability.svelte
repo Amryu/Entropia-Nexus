@@ -433,7 +433,6 @@
                   {markupData}
                   limitedOnly={true}
                   compact={true}
-                  dropUp={true}
                   removable={true}
                   onremove={() => removeComparison(i)}
                 />

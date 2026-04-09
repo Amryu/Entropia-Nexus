@@ -16,7 +16,6 @@
     limitedOnly = false,
     removable = false,
     compact = false,
-    dropUp = false,
     onremove = () => {},
     label = ''
   } = $props();
@@ -123,8 +122,7 @@
         entities={weaponList}
         selected={weapon}
         placeholder={limitedOnly ? 'Select (L) weapon...' : 'Select weapon...'}
-        {dropUp}
-        onselect={handleWeaponSelect}
+               onselect={handleWeaponSelect}
         onclear={handleWeaponClear}
       />
     </div>
@@ -182,8 +180,7 @@
             <EntityPicker
               entities={compatibleAmplifiers}
               selected={config.amplifierName ? compatibleAmplifiers.find(a => a.Name === config.amplifierName) : null}
-              placeholder="Select amplifier..." {dropUp}
-              onselect={(item) => { config.amplifierName = item?.Name ?? null; if (!isLimited(item?.Name)) config.amplifierMarkup = 100; }}
+              placeholder="Select amplifier..."              onselect={(item) => { config.amplifierName = item?.Name ?? null; if (!isLimited(item?.Name)) config.amplifierMarkup = 100; }}
               onclear={() => { config.amplifierName = null; config.amplifierMarkup = 100; }}
             />
             {#if isLimited(config.amplifierName)}
@@ -201,8 +198,7 @@
               <EntityPicker
                 entities={entities.absorbers || []}
                 selected={config.absorberName ? entities.absorbers?.find(a => a.Name === config.absorberName) : null}
-                placeholder="Select absorber..." {dropUp}
-                onselect={(item) => { config.absorberName = item?.Name ?? null; if (!isLimited(item?.Name)) config.absorberMarkup = 100; }}
+                placeholder="Select absorber..."                onselect={(item) => { config.absorberName = item?.Name ?? null; if (!isLimited(item?.Name)) config.absorberMarkup = 100; }}
                 onclear={() => { config.absorberName = null; config.absorberMarkup = 100; }}
               />
               {#if isLimited(config.absorberName)}
@@ -221,8 +217,7 @@
               <EntityPicker
                 entities={entities.scopes || []}
                 selected={config.scopeName ? entities.scopes?.find(s => s.Name === config.scopeName) : null}
-                placeholder="Select scope..." {dropUp}
-                onselect={(item) => { config.scopeName = item?.Name ?? null; if (!isLimited(item?.Name)) config.scopeMarkup = 100; if (!item) config.scopeSightName = null; }}
+                placeholder="Select scope..."                onselect={(item) => { config.scopeName = item?.Name ?? null; if (!isLimited(item?.Name)) config.scopeMarkup = 100; if (!item) config.scopeSightName = null; }}
                 onclear={() => { config.scopeName = null; config.scopeMarkup = 100; config.scopeSightName = null; }}
               />
               {#if isLimited(config.scopeName)}
@@ -237,8 +232,7 @@
               <EntityPicker
                 entities={entities.sights || []}
                 selected={config.scopeSightName ? entities.sights?.find(s => s.Name === config.scopeSightName) : null}
-                placeholder="Select scope sight..." {dropUp}
-                onselect={(item) => { config.scopeSightName = item?.Name ?? null; }}
+                placeholder="Select scope sight..."                onselect={(item) => { config.scopeSightName = item?.Name ?? null; }}
                 onclear={() => { config.scopeSightName = null; }}
               />
             </div>
@@ -248,8 +242,7 @@
             <EntityPicker
               entities={entities.sights || []}
               selected={config.sightName ? entities.sights?.find(s => s.Name === config.sightName) : null}
-              placeholder="Select sight..." {dropUp}
-              onselect={(item) => { config.sightName = item?.Name ?? null; }}
+              placeholder="Select sight..."              onselect={(item) => { config.sightName = item?.Name ?? null; }}
               onclear={() => { config.sightName = null; }}
             />
           </div>
@@ -262,8 +255,7 @@
             <EntityPicker
               entities={compatibleMatrices}
               selected={config.matrixName ? compatibleMatrices.find(m => m.Name === config.matrixName) : null}
-              placeholder="Select matrix..." {dropUp}
-              onselect={(item) => { config.matrixName = item?.Name ?? null; if (!isLimited(item?.Name)) config.matrixMarkup = 100; }}
+              placeholder="Select matrix..."              onselect={(item) => { config.matrixName = item?.Name ?? null; if (!isLimited(item?.Name)) config.matrixMarkup = 100; }}
               onclear={() => { config.matrixName = null; config.matrixMarkup = 100; }}
             />
           </div>
@@ -276,8 +268,7 @@
             <EntityPicker
               entities={entities.implants || []}
               selected={config.implantName ? entities.implants?.find(i => i.Name === config.implantName) : null}
-              placeholder="Select implant..." {dropUp}
-              onselect={(item) => { config.implantName = item?.Name ?? null; if (!isLimited(item?.Name)) config.implantMarkup = 100; }}
+              placeholder="Select implant..."              onselect={(item) => { config.implantName = item?.Name ?? null; if (!isLimited(item?.Name)) config.implantMarkup = 100; }}
               onclear={() => { config.implantName = null; config.implantMarkup = 100; }}
             />
           </div>
