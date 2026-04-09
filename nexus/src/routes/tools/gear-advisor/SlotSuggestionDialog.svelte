@@ -14,6 +14,7 @@
     slotType = 'item',
     results = [],
     targets = {},
+    currentSummary = [],
     mode = $bindable('contextual'),
     onpick = () => {},
     loading = false
@@ -32,7 +33,13 @@
     if (e.key === 'Escape') open = false;
   }
 
-  let targetNames = $derived(Object.keys(targets));
+  // Hide Auto Loot column if already provided by current equipment
+  let targetNames = $derived.by(() => {
+    const names = Object.keys(targets);
+    const autoLootActive = currentSummary.some(e => e.name === 'Auto Loot' && Math.abs(e.signedTotal) > 0.01);
+    if (autoLootActive) return names.filter(n => n !== 'Auto Loot');
+    return names;
+  });
 
   function getEffectBadges(result) {
     if (mode === 'standalone' && result.pctDetails) {

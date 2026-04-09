@@ -661,6 +661,7 @@
   slotLabel={suggestDialogLabel}
   results={suggestDialogResults}
   {targets}
+  currentSummary={effectSummary}
   bind:mode={suggestDialogMode}
   onpick={handleSuggestPick}
   loading={suggestDialogLoading}
@@ -682,10 +683,10 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    align-self: flex-start;
     position: sticky;
     top: 16px;
-    max-height: calc(100vh - 32px);
+    height: calc(100vh - 140px);
+    height: calc(100dvh - 140px);
   }
 
   .eo-left-box {

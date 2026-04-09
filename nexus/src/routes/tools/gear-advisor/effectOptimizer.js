@@ -516,9 +516,10 @@ export function suggestForSlot(slotKey, targets, currentSlots, entities, effects
     const allEffects = [...otherEffects, ...slotEffects];
 
     if (mode === 'standalone') {
-      // Standalone: measure what % of each target this item alone fills
+      // Standalone: measure what % of each target this item alone fills, averaged across all targets
       let totalPct = 0;
       const pctDetails = [];
+      const numTargets = Object.keys(targets).length;
       for (const [effectName, targetValue] of Object.entries(targets)) {
         const itemEffect = slotEffects.find(e => e?.Name === effectName);
         const itemStrength = itemEffect ? getEffectStrength(itemEffect) : 0;
@@ -526,7 +527,8 @@ export function suggestForSlot(slotKey, targets, currentSlots, entities, effects
         totalPct += Math.min(pct, 100);
         pctDetails.push({ effectName, targetValue, achieved: itemStrength, pct });
       }
-      return { name: itemName, score: totalPct, pctDetails, ...extraProps };
+      const avgPct = numTargets > 0 ? totalPct / numTargets : 0;
+      return { name: itemName, score: avgPct, pctDetails, ...extraProps };
     }
 
     // Contextual: full scoring with other effects
