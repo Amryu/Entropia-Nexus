@@ -438,7 +438,7 @@
                 />
                 {#if analyses[i]}
                   {@const a = analyses[i]}
-                  <div class="comp-result" onclick={() => { selectedCompIndex = i; }}>
+                  <button type="button" class="comp-result" onclick={() => { selectedCompIndex = i; }}>
                     <span class="be-mu" title="Break-even markup">
                       Breakeven: {a.breakEvenMU != null ? a.breakEvenMU.toFixed(1) + '%' : 'N/A'}
                     </span>
@@ -448,7 +448,7 @@
                     <span class="delta-stat">Eff: {formatPct(a.efficiencyDelta)}</span>
                     <span class="delta-stat">DPP: {formatPct(a.dppDiffPct)}</span>
                     <span class="delta-stat">DPS: {formatPct(a.dpsDiffPct)}</span>
-                  </div>
+                  </button>
                 {/if}
               </div>
             {/each}
@@ -676,7 +676,7 @@
     <div class="modal-overlay" onclick={() => { showImportDialog = false; }}
       onkeydown={(e) => { if (e.key === 'Escape') showImportDialog = false; }}
       role="dialog" tabindex="-1">
-      <div class="modal" onclick={(e) => e.stopPropagation()}>
+      <div class="modal" role="presentation" onclick={(e) => e.stopPropagation()}>
         <div class="modal-header">
           <h3>Import from Loadout</h3>
           <button type="button" class="modal-close" onclick={() => { showImportDialog = false; }}>×</button>
@@ -735,12 +735,11 @@
   }
 
   /* Config groups */
-  .config-group { display: flex; flex-direction: column; gap: 0; }
   .group-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px; }
   .group-header h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-color); }
   .group-actions { display: flex; gap: 6px; }
   .add-btn { padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent-color); background: transparent; color: var(--accent-color); cursor: pointer; border-radius: 4px; }
-  .add-btn:hover, .add-btn.active { background: var(--accent-color); color: white; }
+  .add-btn:hover { background: var(--accent-color); color: white; }
   .config-cards { display: flex; flex-direction: column; gap: 6px; }
 
   .empty-hint { font-size: 13px; color: var(--text-muted); margin: 0; padding: 16px; text-align: center; background: var(--bg-color); border: 1px dashed var(--border-color); border-radius: 8px; }
@@ -749,9 +748,9 @@
   .comp-card-wrap { display: flex; flex-direction: column; }
   .comp-result {
     display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-    padding: 5px 10px; cursor: pointer;
+    padding: 5px 10px; cursor: pointer; width: 100%; text-align: left;
     background: var(--bg-color); border: 1px solid var(--border-color); border-top: none;
-    border-radius: 0 0 8px 8px; font-size: 11px;
+    border-radius: 0 0 8px 8px; font-size: 11px; font-family: inherit; color: inherit;
   }
   .comp-result:hover { background: var(--hover-color); }
   .comp-result .be-mu { font-weight: 600; color: var(--accent-color); }
@@ -768,7 +767,6 @@
   .dp-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .dp-box { padding: 10px; background: var(--bg-color); border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
   .dp-selectors { display: flex; flex-direction: column; gap: 6px; }
-  .dp-sel { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
   .dp-select { padding: 3px 6px; font-size: 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); max-width: 180px; }
   .dp-select.full { max-width: none; width: 100%; }
 
@@ -806,8 +804,6 @@
   .src-btn { padding: 3px 5px; font-size: 10px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-muted); cursor: pointer; border-radius: 3px; }
   .src-btn.active { background: var(--accent-color); border-color: var(--accent-color); color: white; }
   .src-btn:hover:not(.active) { background: var(--hover-color); }
-  .apply-btn { padding: 4px 10px; font-size: 11px; border: 1px solid var(--accent-color); background: transparent; color: var(--accent-color); cursor: pointer; border-radius: 4px; white-space: nowrap; }
-  .apply-btn:hover { background: var(--accent-color); color: white; }
 
   /* Import dialog */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 200; }

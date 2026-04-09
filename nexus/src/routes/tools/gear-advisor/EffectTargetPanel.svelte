@@ -207,7 +207,7 @@
 
 <!-- Effect picker dialog -->
 {#if pickerOpen}
-  <div class="picker-backdrop" role="dialog" aria-modal="true" onclick={(e) => { if (e.target === e.currentTarget) pickerOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') pickerOpen = false; }}>
+  <div class="picker-backdrop" role="dialog" tabindex="-1" aria-modal="true" onclick={(e) => { if (e.target === e.currentTarget) pickerOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') pickerOpen = false; }}>
     <div class="picker-panel">
       <div class="picker-header">
         <h3>Select Effect</h3>

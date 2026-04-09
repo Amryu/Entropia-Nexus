@@ -206,8 +206,8 @@
         .filter(n => n > 0)
     )].sort((a, b) => a - b)}
     <div class="pieces-row">
-      <label class="pieces-label">Pieces equipped</label>
-      <select class="pieces-select" bind:value={armorSetPieces}>
+      <label class="pieces-label" for="pieces-{slotType}">Pieces equipped</label>
+      <select id="pieces-{slotType}" class="pieces-select" bind:value={armorSetPieces}>
         {#each breakpoints as n}
           <option value={n}>{n}</option>
         {/each}
@@ -217,11 +217,12 @@
 
   {#if slotType === 'pet' && selectedEntity && allPetEffects.length > 0}
     <div class="pet-effect-row">
-      <label class="pet-effect-label">Active buff</label>
+      <label class="pet-effect-label" for="pet-buff-{slotType}">Active buff</label>
       <select
+        id="pet-buff-{slotType}"
         class="pet-effect-select"
         value={petActiveEffect}
-        onchange={(e) => { petActiveEffect = e.target.value; }}
+        onchange={(e) => { petActiveEffect = /** @type {HTMLSelectElement} */ (e.target).value; }}
       >
         {#each allPetEffects as eff (getPetEffectKey(eff))}
           <option value={getPetEffectKey(eff)}>

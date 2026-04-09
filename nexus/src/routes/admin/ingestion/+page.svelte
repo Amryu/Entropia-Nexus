@@ -70,7 +70,7 @@
       if (!res.ok) throw new Error(data.error || 'Rebuild failed');
       rebuildResult = { type: 'success', message: `Rebuild complete in ${data.elapsed}` };
     } catch (err) {
-      rebuildResult = { type: 'error', message: err.message };
+      rebuildResult = { type: 'error', message: /** @type {Error} */ (err).message };
     } finally {
       rebuilding = false;
     }

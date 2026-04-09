@@ -71,7 +71,7 @@
       Custom
     </button>
   </div>
-  <select class="period-select mobile-only" value={showCustom ? 'custom' : period} {disabled} onchange={(e) => e.target.value === 'custom' ? openCustom() : selectPreset(e.target.value)}>
+  <select class="period-select mobile-only" value={showCustom ? 'custom' : period} {disabled} onchange={(e) => /** @type {HTMLSelectElement} */ (e.target).value === 'custom' ? openCustom() : selectPreset(/** @type {HTMLSelectElement} */ (e.target).value)}>
     {#each PERIOD_OPTIONS as p}
       <option value={p.value}>{p.label}</option>
     {/each}

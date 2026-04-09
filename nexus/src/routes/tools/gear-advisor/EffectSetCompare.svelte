@@ -251,11 +251,6 @@
     color: white;
   }
 
-  /* toolbar-spacer removed - using grid layout */
-  .toolbar-spacer {
-    display: none;
-  }
-
   .set-list {
     display: flex;
     flex-direction: column;

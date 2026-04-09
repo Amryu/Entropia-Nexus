@@ -71,7 +71,7 @@
 
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="dialog-backdrop" role="dialog" aria-modal="true" onclick={handleBackdropClick} onkeydown={handleKeydown}>
+  <div class="dialog-backdrop" role="dialog" tabindex="-1" aria-modal="true" onclick={handleBackdropClick} onkeydown={handleKeydown}>
     <div class="dialog-panel">
       <div class="dialog-header">
         <h3>Suggest: {slotLabel}</h3>
