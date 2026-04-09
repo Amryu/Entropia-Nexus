@@ -46,15 +46,16 @@
   let rightRings = $derived(filterRings(clothings, 'right').sort(alphabetical));
   let armorSetsFiltered = $derived(filterArmorSetsWithEffects(armorSets).sort(alphabetical));
   let petsSorted = $derived([...(pets || [])].sort(alphabetical));
+  const hasEffects = (item) => item?.EffectsOnEquip?.length > 0;
   let weaponsSorted = $derived(
-    (weapons || []).filter(x => x.Properties?.Class !== 'Attached' && x.Properties?.Class !== 'Stationary').sort(alphabetical)
+    (weapons || []).filter(x => x.Properties?.Class !== 'Attached' && x.Properties?.Class !== 'Stationary' && hasEffects(x)).sort(alphabetical)
   );
   let amplifiersSorted = $derived(
-    (weaponAmplifiers || []).filter(x => x.Properties?.Type !== 'Matrix').sort(alphabetical)
+    (weaponAmplifiers || []).filter(x => x.Properties?.Type !== 'Matrix' && hasEffects(x)).sort(alphabetical)
   );
-  let visionAttachmentsSorted = $derived([...(weaponVisionAttachments || [])].sort(alphabetical));
-  let absorbersSorted = $derived([...(absorbers || [])].sort(alphabetical));
-  let implantsSorted = $derived([...(mindforceImplants || [])].sort(alphabetical));
+  let visionAttachmentsSorted = $derived((weaponVisionAttachments || []).filter(hasEffects).sort(alphabetical));
+  let absorbersSorted = $derived((absorbers || []).filter(hasEffects).sort(alphabetical));
+  let implantsSorted = $derived((mindforceImplants || []).filter(hasEffects).sort(alphabetical));
 
   // Non-ring clothing with effects, grouped by slot
   let clothingSlots = $derived.by(() => {
@@ -238,6 +239,43 @@
   // ===== Aggregated effects =====
   let allItemEffects = $derived(collectAllEffects(currentSlots, entityLookup));
   let effectSummary = $derived(aggregateEffects(allItemEffects, effectsCatalog, effectCaps));
+
+  // ===== Total cost =====
+  function getItemCost(entityList, name, muSource, muCustom) {
+    if (!name) return null;
+    const item = (entityList || []).find(e => e.Name === name);
+    if (!item) return null;
+    const tt = item.Properties?.Economy?.MaxTT ?? item.Properties?.MaxTT ?? null;
+    if (tt == null || tt <= 0) return null;
+    let mu = muCustom ?? 100;
+    if (muSource === 'inventory' && markupData.inventoryMap) {
+      const id = markupData.nameToId?.get(name);
+      if (id != null && markupData.inventoryMap.has(id)) mu = markupData.inventoryMap.get(id);
+    } else if (muSource === 'ingame' && markupData.ingameMap?.has(name)) {
+      mu = markupData.ingameMap.get(name);
+    } else if (muSource === 'exchange' && markupData.wapByName?.has(name)) {
+      mu = markupData.wapByName.get(name);
+    }
+    return { tt, mu, cost: tt * mu / 100 };
+  }
+
+  let totalCost = $derived.by(() => {
+    const costs = [];
+    const add = (list, name, src, custom) => {
+      const c = getItemCost(list, name, src, custom);
+      if (c) costs.push({ name, ...c });
+    };
+    add(leftRings, leftRing, muSources.leftRing, muValues.leftRing);
+    add(rightRings, rightRing, muSources.rightRing, muValues.rightRing);
+    add(petsSorted, pet, muSources.pet, muValues.pet);
+    add(weaponsSorted, secondaryWeapon, muSources.weapon, muValues.weapon);
+    add(amplifiersSorted, secondaryAmplifier, muSources.amplifier, muValues.amplifier);
+    add(visionAttachmentsSorted, secondaryVisionAttachment, muSources.visionAttachment, muValues.visionAttachment);
+    add(absorbersSorted, secondaryAbsorber, muSources.absorber, muValues.absorber);
+    add(implantsSorted, secondaryImplant, muSources.implant, muValues.implant);
+    const total = costs.reduce((sum, c) => sum + c.cost, 0);
+    return { items: costs, total };
+  });
 
   // ===== Suggestion handlers =====
   function handleFillAll() {
@@ -582,6 +620,7 @@
         {targets}
         {effectCaps}
         {effectsCatalog}
+        {totalCost}
       />
     </section>
   </div>

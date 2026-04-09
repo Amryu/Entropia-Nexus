@@ -123,11 +123,16 @@
   />
 
   {#if slotType === 'armorSet' && selectedEntity}
+    {@const breakpoints = [...new Set(
+      (selectedEntity.EffectsOnSetEquip || [])
+        .map(e => e?.Values?.MinSetPieces ?? e?.MinSetPieces ?? 0)
+        .filter(n => n > 0)
+    )].sort((a, b) => a - b)}
     <div class="pieces-row">
       <label class="pieces-label">Pieces equipped</label>
       <select class="pieces-select" bind:value={armorSetPieces}>
-        {#each [1, 2, 3, 4, 5, 6, 7] as n}
-          <option value={n}>{n}</option>
+        {#each breakpoints as n}
+          <option value={n}>{n}+</option>
         {/each}
       </select>
     </div>
@@ -164,7 +169,7 @@
   {/if}
 
   {#if selectedEntity && !compact}
-    <div class="mu-row">
+    <div class="mu-section">
       <div class="mu-source-toggle">
         {#each MU_SOURCES as src (src.key)}
           <button
@@ -175,7 +180,8 @@
           >{src.label}</button>
         {/each}
       </div>
-      <div class="mu-value">
+      <div class="mu-value-row">
+        <span class="mu-label">Markup:</span>
         {#if markupSource === 'custom'}
           <input
             type="number"
@@ -184,6 +190,7 @@
             min="100"
             step="1"
           />
+          <span class="mu-unit">%</span>
         {:else}
           <span class="mu-resolved">{resolvedMarkup?.toFixed?.(1) ?? '100'}%</span>
         {/if}
@@ -201,7 +208,6 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--secondary-color);
-    overflow: hidden;
     min-width: 0;
   }
 
@@ -304,24 +310,22 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .mu-row {
+  .mu-section {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .mu-source-toggle {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     overflow: hidden;
   }
 
   .mu-btn {
-    padding: 3px 6px;
+    flex: 1;
+    padding: 3px 4px;
     font-size: 11px;
     border: none;
     border-right: 1px solid var(--border-color);
@@ -329,6 +333,8 @@
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.1s ease;
+    text-align: center;
+    white-space: nowrap;
   }
 
   .mu-btn:last-child {
@@ -344,9 +350,15 @@
     color: white;
   }
 
-  .mu-value {
-    flex: 1;
-    min-width: 0;
+  .mu-value-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mu-label {
+    font-size: 11px;
+    color: var(--text-muted);
   }
 
   .mu-input {
@@ -358,6 +370,11 @@
     border-radius: 4px;
     color: var(--text-color);
     text-align: right;
+  }
+
+  .mu-unit {
+    font-size: 11px;
+    color: var(--text-muted);
   }
 
   .mu-resolved {

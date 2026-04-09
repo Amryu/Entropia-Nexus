@@ -10,7 +10,8 @@
     summary = [],
     targets = {},
     effectCaps = {},
-    effectsCatalog = []
+    effectsCatalog = [],
+    totalCost = { items: [], total: 0 }
   } = $props();
 
   function getUnitForEffect(name, summaryEntry) {
@@ -93,6 +94,26 @@
           {eff.name}: {eff.value > 0 ? '+' : ''}{eff.value.toFixed(1)}{eff.unit}
         </span>
       {/each}
+    </div>
+  {/if}
+
+  {#if totalCost.items.length > 0}
+    <div class="cost-summary">
+      <div class="cost-items">
+        {#each totalCost.items as item (item.name)}
+          <div class="cost-item">
+            <span class="cost-name">{item.name}</span>
+            <span class="cost-detail">
+              {item.tt.toFixed(2)} PED x {item.mu.toFixed(1)}%
+              = <strong>{item.cost.toFixed(2)} PED</strong>
+            </span>
+          </div>
+        {/each}
+      </div>
+      <div class="cost-total">
+        <span>Total estimated cost</span>
+        <strong>{totalCost.total.toFixed(2)} PED</strong>
+      </div>
     </div>
   {/if}
 </div>
@@ -224,5 +245,53 @@
   .other-badge.capped {
     border: 1px solid var(--warning-color, #f0ad4e);
     color: var(--warning-color, #f0ad4e);
+  }
+
+  .cost-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .cost-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .cost-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+  }
+
+  .cost-name {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 50%;
+  }
+
+  .cost-detail {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-color);
+  }
+
+  .cost-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-color);
+  }
+
+  .cost-total strong {
+    font-variant-numeric: tabular-nums;
   }
 </style>
