@@ -479,6 +479,9 @@
       onUpdate: ({ editor }) => {
         if (!initialized) return;
         const html = editor.getHTML();
+        // Skip if this is just TipTap normalizing prop content (e.g. '' -> '<p></p>')
+        if (html === lastExternalHtml) return;
+        lastExternalHtml = '';
         content = html;
         onchange?.(html);
       },
@@ -552,6 +555,7 @@
 
     // Allow TipTap's initial content normalization to complete before accepting changes
     await tick();
+    lastExternalHtml = editor.getHTML();
     initialized = true;
 
     // Click-to-copy for inline waypoints is handled by the global handler in +layout.svelte
@@ -563,11 +567,17 @@
     }
   });
 
-  // Update content when prop changes externally (suppress onUpdate echo)
+  // Update content when prop changes externally (suppress onUpdate echo).
+  // lastExternalHtml tracks the TipTap-normalized HTML after a prop-driven setContent,
+  // so onUpdate can distinguish user edits from TipTap normalization (e.g. '' -> '<p></p>').
+  let lastExternalHtml = '';
   $effect(() => {
-    if (editor && content !== editor.getHTML()) {
+    if (!editor) return;
+    const incoming = content || '';
+    if (incoming !== editor.getHTML()) {
       initialized = false;
-      editor.commands.setContent(content || '');
+      editor.commands.setContent(incoming);
+      lastExternalHtml = editor.getHTML();
       tick().then(() => { initialized = true; });
     }
   });

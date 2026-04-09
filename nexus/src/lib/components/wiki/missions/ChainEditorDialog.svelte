@@ -337,9 +337,11 @@
   function isDisconnected(id) {
     return connectivityStatus.disconnectedIds.includes(String(id));
   }
-  // Initialize edit values when chain data changes
+  // Initialize edit values when the chain identity changes (not on every field update)
+  let lastInitChainName = null;
   $effect(() => {
-    if (!isCreating && chainName) {
+    if (!isCreating && chainName && chainName !== lastInitChainName) {
+      lastInitChainName = chainName;
       editChainName = chainName || '';
       editChainDescription = chainDescription || '';
       editChainPlanet = chainPlanet || currentPlanetName;
