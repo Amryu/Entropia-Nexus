@@ -21,8 +21,13 @@ import {
   calculateAmmoBurn,
   calculateEfficiency,
   calculateLowestTotalUses,
-  calculateWeaponCost
+  calculateWeaponCost,
+  calculateItemTotalDamage
 } from '$lib/utils/loadoutCalculations.js';
+
+/** Simplified effective damage factor (no skill dependency):
+ *  88% hit chance at 75% avg damage + 2% crit at 175% damage */
+const EFFECTIVE_DAMAGE_FACTOR = 0.88 * 0.75 + 0.02 * 1.75;
 
 /** Efficiency-to-returns multiplier: 7% spread over 0-100% efficiency */
 const EFFICIENCY_RETURNS_FACTOR = 0.07;
@@ -181,6 +186,7 @@ export function computeWeaponStats(config, entities) {
   const ammoMarkup = config.ammoMarkup ?? 100;
 
   const totalDamage = calculateTotalDamage(weapon, dmgEnh, 0, amplifier);
+  const effectiveDamage = totalDamage != null ? totalDamage * EFFECTIVE_DAMAGE_FACTOR : null;
   const weaponCost = calculateWeaponCost(weapon, dmgEnh, ecoEnh);
 
   const decayAtMU = calculateDecay(
@@ -213,8 +219,8 @@ export function computeWeaponStats(config, entities) {
     ? 60 / weapon.Properties.UsesPerMinute
     : null;
 
-  const dpp = calculateDPP(totalDamage, costPerUse);
-  const dps = calculateDPS(totalDamage, reload);
+  const dpp = calculateDPP(effectiveDamage, costPerUse);
+  const dps = calculateDPS(effectiveDamage, reload);
 
   // Total cycle = total uses * weapon TT cost per use (PED)
   const totalCyclePED = totalUses != null && ttCostPerUse != null
@@ -229,6 +235,7 @@ export function computeWeaponStats(config, entities) {
     ammoMarkup,
     dmgEnh, ecoEnh,
     totalDamage,
+    effectiveDamage,
     decayAtMU,
     ammoBurn,
     costPerUse,

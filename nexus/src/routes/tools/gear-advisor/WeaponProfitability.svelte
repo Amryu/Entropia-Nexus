@@ -207,27 +207,37 @@
     if (selectedCompIndex >= comparisonWeapons.length) selectedCompIndex = Math.max(0, comparisonWeapons.length - 1);
   }
 
-  function applyGlobalAbsorber() {
-    if (!globalAbsorberName) return;
-    comparisonWeapons = comparisonWeapons.map(cfg => {
-      // Sync MU if same absorber is already set
-      if (cfg.absorberName === globalAbsorberName) {
-        return { ...cfg, absorberMarkup: globalAbsorberMarkup, absorberMarkupSource: globalAbsorberMarkupSource };
+  // Auto-apply global absorber reactively
+  $effect(() => {
+    const name = globalAbsorberName;
+    const mu = globalAbsorberMarkup;
+    const src = globalAbsorberMarkupSource;
+    if (!prefLoaded) return;
+
+    for (const cfg of comparisonWeapons) {
+      if (name) {
+        // Sync MU if same absorber already set, or apply if no absorber and weapon MU qualifies
+        if (cfg.absorberName === name) {
+          cfg.absorberMarkup = mu;
+          cfg.absorberMarkupSource = src;
+        } else if (!cfg.absorberName && shouldApplyAbsorber(cfg.markupPercent, mu)) {
+          cfg.absorberName = name;
+          cfg.absorberMarkup = mu;
+          cfg.absorberMarkupSource = src;
+        }
+      } else {
+        // Global absorber cleared - remove from weapons that had the previous global absorber
+        // (only clear if it matches, don't touch manually-set absorbers)
       }
-      // Apply if no absorber and weapon MU > absorber MU
-      if (!cfg.absorberName && shouldApplyAbsorber(cfg.markupPercent, globalAbsorberMarkup)) {
-        return { ...cfg, absorberName: globalAbsorberName, absorberMarkup: globalAbsorberMarkup, absorberMarkupSource: globalAbsorberMarkupSource };
+    }
+    // Also sync MU to base weapons with same absorber
+    for (const cfg of baseWeapons) {
+      if (name && cfg.absorberName === name) {
+        cfg.absorberMarkup = mu;
+        cfg.absorberMarkupSource = src;
       }
-      return cfg;
-    });
-    // Also sync to base weapons that have the same absorber
-    baseWeapons = baseWeapons.map(cfg => {
-      if (cfg.absorberName === globalAbsorberName) {
-        return { ...cfg, absorberMarkup: globalAbsorberMarkup, absorberMarkupSource: globalAbsorberMarkupSource };
-      }
-      return cfg;
-    });
-  }
+    }
+  });
 
   function resetAll() {
     baseWeapons = [createDefaultWeaponConfig()];
@@ -307,9 +317,10 @@
         + (w.Properties?.Damage?.Burn ?? 0) + (w.Properties?.Damage?.Cold ?? 0)
         + (w.Properties?.Damage?.Acid ?? 0) + (w.Properties?.Damage?.Electric ?? 0);
       const costPEC = decay != null ? decay + ((ammo ?? 0) / 100) : null;
-      const dpp = totalDmg && costPEC ? totalDmg / costPEC : null;
+      const effDmg = totalDmg ? totalDmg * 0.695 : null; // simplified effective damage
+      const dpp = effDmg && costPEC ? effDmg / costPEC : null;
       const reload = w.Properties?.UsesPerMinute ? 60 / w.Properties.UsesPerMinute : null;
-      const dps = totalDmg && reload ? totalDmg / reload : null;
+      const dps = effDmg && reload ? effDmg / reload : null;
       const totalUses = maxTT != null && decay ? Math.floor((maxTT - minTT) / (decay / 100)) : null;
       return { weapon: w, name: w.Name, efficiency: eff, dpp, dps, totalDamage: totalDmg || null, totalUses, type: w.Properties?.Type, class: w.Properties?.Class };
     });
@@ -437,6 +448,7 @@
                     </span>
                     <span class="delta-stat">Eff: {formatPct(a.efficiencyDelta)}</span>
                     <span class="delta-stat">DPP: {formatPct(a.dppDiffPct)}</span>
+                    <span class="delta-stat">DPS: {formatPct(a.dpsDiffPct)}</span>
                   </div>
                 {/if}
               </div>
@@ -472,10 +484,6 @@
                 </button>
               {/each}
             </div>
-            <button type="button" class="apply-btn" onclick={applyGlobalAbsorber}
-              title="Apply to comparison weapons without an absorber whose MU > absorber MU">
-              Apply to all
-            </button>
           </div>
         {/if}
       </div>
@@ -562,6 +570,14 @@
                 <span>{a.baseDPS?.toFixed(1) ?? 'N/A'} / {a.compDPS?.toFixed(1) ?? 'N/A'} ({formatPct(a.dpsDiffPct)})</span>
               </div>
               <div class="dp-row">
+                <span>Additional kills/h</span>
+                <span>{formatPct(a.dpsDiffPct)}</span>
+              </div>
+              <div class="dp-row">
+                <span>Additional kills (same PED)</span>
+                <span>{formatPct(a.dppDiffPct)}</span>
+              </div>
+              <div class="dp-row">
                 <span>Total damage (lifetime)</span>
                 <span>{a.compTotalUses != null && compStats[selectedCompIndex]?.totalDamage != null
                   ? formatNumber(Math.round(a.compTotalUses * compStats[selectedCompIndex].totalDamage))
@@ -570,24 +586,12 @@
               {#if mobHP && mobHP > 0}
                 <div class="dp-row">
                   <span>Kills / hour (base / comp)</span>
-                  <span>{a.baseKillsPerHour?.toFixed(1) ?? 'N/A'} / {a.compKillsPerHour?.toFixed(1) ?? 'N/A'}
-                    {#if a.baseKillsPerHour && a.compKillsPerHour}
-                      ({formatPct(((a.compKillsPerHour - a.baseKillsPerHour) / a.baseKillsPerHour) * 100)})
-                    {/if}
-                  </span>
+                  <span>{a.baseKillsPerHour?.toFixed(1) ?? 'N/A'} / {a.compKillsPerHour?.toFixed(1) ?? 'N/A'}</span>
                 </div>
                 {#if a.extraKillsOverLifetime != null}
-                  {@const baseTotalKills = a.compTotalUses && baseStats[selectedBaseIndex]?.totalDamage && mobHP
-                    ? (a.compTotalUses * (baseStats[selectedBaseIndex].costPerUse / 100) * baseStats[selectedBaseIndex].dpp) / mobHP
-                    : null}
                   <div class="dp-row">
                     <span>Extra kills (lifetime)</span>
-                    <span>
-                      {a.extraKillsOverLifetime >= 0 ? '+' : ''}{Math.round(a.extraKillsOverLifetime)}
-                      {#if baseTotalKills && baseTotalKills > 0}
-                        ({formatPct((a.extraKillsOverLifetime / baseTotalKills) * 100)})
-                      {/if}
-                    </span>
+                    <span>{a.extraKillsOverLifetime >= 0 ? '+' : ''}{Math.round(a.extraKillsOverLifetime)}</span>
                   </div>
                 {/if}
               {/if}
