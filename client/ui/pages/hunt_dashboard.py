@@ -318,6 +318,8 @@ class CurrentEncounterCard(_Card):
 class LastKillCard(_Card):
     """Summary of the most recent kill with collapsible loot list."""
 
+    markup_edit_requested = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__("Last Kill", parent)
         self._mob_label = QLabel("-")
@@ -349,7 +351,23 @@ class LastKillCard(_Card):
         self._loot_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._loot_table.setMaximumHeight(120)
         self._loot_table.setVisible(False)
+        self._loot_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._loot_table.customContextMenuRequested.connect(self._on_loot_menu)
         self._body.insertWidget(6, self._loot_table)
+
+    def _on_loot_menu(self, pos) -> None:
+        from PyQt6.QtWidgets import QMenu
+        row = self._loot_table.rowAt(pos.y())
+        if row < 0:
+            return
+        item = self._loot_table.item(row, 0)
+        if item is None:
+            return
+        menu = QMenu(self._loot_table)
+        act = menu.addAction("Set session markup...")
+        chosen = menu.exec(self._loot_table.viewport().mapToGlobal(pos))
+        if chosen is act:
+            self.markup_edit_requested.emit(item.text())
 
     def _on_toggle(self, checked: bool) -> None:
         self._toggle_btn.setArrowType(
@@ -657,6 +675,7 @@ class HuntDashboardView(QWidget):
         self._last_kill: MobEncounter | None = None
         self._session_start: datetime | None = None
         self._current_tool_name: str | None = None
+        self._gear_overrides_cache: dict = {}
 
         self._build_ui()
         self._connect_signals()
@@ -746,6 +765,9 @@ class HuntDashboardView(QWidget):
 
         row_b = QHBoxLayout()
         self._last_kill_card = LastKillCard()
+        self._last_kill_card.markup_edit_requested.connect(
+            self._open_session_markup_dialog
+        )
         self._stats_block = StatsBlock()
         row_b.addWidget(self._last_kill_card, 1)
         row_b.addWidget(self._stats_block, 1)
@@ -812,6 +834,8 @@ class HuntDashboardView(QWidget):
         s.global_event.connect(self._on_global_event)
         s.own_global.connect(self._on_own_global)
         s.open_encounter_updated.connect(self._on_open_encounter_updated)
+        s.gear_override_changed.connect(self._on_gear_override_changed)
+        s.session_markup_changed.connect(self._on_session_markup_changed)
 
     # -- Scope / mode toggles ----------------------------------------
 
@@ -887,6 +911,12 @@ class HuntDashboardView(QWidget):
         tracker = self._get_tracker()
         ti = getattr(tracker, "_tool_inference", None) if tracker else None
         loadout = self._current_loadout()
+        overrides = {}
+        try:
+            overrides = self._db.get_all_gear_overrides() or {}
+        except Exception:
+            overrides = {}
+        self._gear_overrides_cache = overrides
 
         rows_by_cat: dict[str, list[dict]] = {"offense": [], "defense": [], "utility": []}
         for name, stats in tool_stats.items():
@@ -896,17 +926,21 @@ class HuntDashboardView(QWidget):
                     cost_per_shot = ti.get_cost_per_shot(name) or 0.0
                 except Exception:
                     cost_per_shot = 0.0
-            cost = stats["shots_fired"] * cost_per_shot
+            # cost_per_shot from ToolInferenceEngine is PEC; convert to PED.
+            cost = stats["shots_fired"] * (cost_per_shot / 100.0)
             category = self._tool_categorizer.category_for(name) if self._tool_categorizer else "utility"
             if category is None:
                 continue  # mining tool, skipped
             in_lo = self._tool_categorizer.is_in_loadout(name, loadout) if self._tool_categorizer else False
+            flags = []
+            if name.lower() in overrides:
+                flags.append("OVR")
             rows_by_cat.setdefault(category, []).append({
                 "name": name,
                 "shots": stats["shots_fired"],
                 "cost": cost,
                 "in_loadout": in_lo,
-                "flags": "",
+                "flags": " ".join(flags),
             })
 
         for bucket in rows_by_cat.values():
@@ -931,7 +965,13 @@ class HuntDashboardView(QWidget):
             duration = datetime.utcnow() - start
         globals_count = sum(1 for e in encounters if e.is_global)
         hof_count = sum(1 for e in encounters if e.is_hof)
-        mu = hunt_stats.mu_consumed(encounters, self._markup_resolver, None)
+        tracker = self._get_tracker()
+        session_id = tracker._session.id if tracker and tracker._session else None
+        mu = hunt_stats.mu_consumed(
+            encounters, self._markup_resolver,
+            gear_overrides=self._gear_overrides_cache,
+            session_id=session_id,
+        )
         self._stats_block.set_stats(
             return_pct=economy["return_pct"],
             profit_loss=economy["profit_loss"],
@@ -1049,6 +1089,14 @@ class HuntDashboardView(QWidget):
     def _on_open_encounter_updated(self, data) -> None:
         self._refresh_open_encounters()
 
+    def _on_gear_override_changed(self, data) -> None:
+        """Refresh costs when a gear override is edited."""
+        self.refresh()
+
+    def _on_session_markup_changed(self, data) -> None:
+        """Refresh loot valuation when a session (L) markup changes."""
+        self.refresh()
+
     def _refresh_tool_card(self) -> None:
         tracker = self._get_tracker()
         name = self._current_tool_name
@@ -1102,8 +1150,34 @@ class HuntDashboardView(QWidget):
         item_type = self._tool_categorizer.item_type_for(tool_name) if self._tool_categorizer else None
         encounters = self._scoped_encounters()
         view = tool_detail_for(tool_name, encounters, category, item_type)
+        if hasattr(view, "edit_override_requested"):
+            view.edit_override_requested.connect(self._open_gear_override_dialog)
         self._detail_panel.show_view(tool_name, view)
         self._detail_panel.setVisible(True)
+
+    def _open_gear_override_dialog(self, tool_name: str) -> None:
+        from .hunt_dashboard_gear_override_dialog import GearOverrideDialog
+        dialog = GearOverrideDialog(
+            tool_name=tool_name,
+            db=self._db,
+            event_bus=self._event_bus,
+            parent=self,
+        )
+        dialog.exec()
+
+    def _open_session_markup_dialog(self, item_name: str) -> None:
+        tracker = self._get_tracker()
+        if tracker is None or tracker._session is None:
+            return
+        from .hunt_dashboard_session_markup_dialog import SessionMarkupDialog
+        dialog = SessionMarkupDialog(
+            item_name=item_name,
+            session_id=tracker._session.id,
+            db=self._db,
+            event_bus=self._event_bus,
+            parent=self,
+        )
+        dialog.exec()
 
     def _open_encounter_detail(self, enc: MobEncounter) -> None:
         from .hunt_dashboard_details import EncounterDetailView

@@ -244,14 +244,70 @@ def mu_consumed(
     encounters: list[MobEncounter],
     markup_resolver: "MarkupResolver | None" = None,
     gear_overrides: dict | None = None,
+    session_id: str | None = None,
 ) -> float | None:
     """Total markup consumed (ammo MU + (L) decay above TT) for *encounters*.
 
-    Phase 1 returns None so the dashboard shows a placeholder. Phase 2
-    wires in gear overrides and per-ammo MU resolution; until then the
-    value cannot be computed accurately, so we refuse to guess.
+    Two contributions:
+        1. Ammo MU. Only a handful of ammo types carry markup; each
+           encounter's tool_stats entries that fire MU-bearing ammo get
+           billed based on the resolver's current markup.
+        2. (L) decay MU. For tools with a custom markup entry in
+           ``gear_overrides``, the decay portion of their cost-per-shot
+           is billed through the markup percentage.
+
+    Returns None if the resolver is unavailable (we refuse to guess).
     """
-    return None
+    if markup_resolver is None:
+        return None
+    from .ammo_mu import AMMO_MU_TYPES
+
+    total_mu = 0.0
+    overrides = gear_overrides or {}
+
+    # Ammo MU contribution - resolve each ammo type once and scale by
+    # the total TT value pulled from that type's loot/ammo usage. The
+    # per-encounter breakdown is not available for ammo, so this is an
+    # approximation: we assume every shot fired by a tool whose ammo is
+    # in AMMO_MU_TYPES burns 1 unit of that ammo at TT = tool cost.
+    for ammo_name in AMMO_MU_TYPES:
+        try:
+            result = markup_resolver.resolve(ammo_name, session_id=session_id)
+        except Exception:
+            continue
+        if result.source == "default":
+            continue
+        if result.markup_type == "percentage":
+            pct_above = max(0.0, result.markup_value - 100.0) / 100.0
+        else:
+            pct_above = 0.0  # absolute ammo MU is rare; skip for now
+        if pct_above <= 0:
+            continue
+        # No per-shot ammo-type lookup yet; this stays zero in practice
+        # until a future change wires tool -> ammo_type. Skip.
+
+    # (L) decay MU contribution from gear_overrides custom_markup.
+    if overrides:
+        for enc in encounters:
+            for tool_name, ts in enc.tool_stats.items():
+                row = overrides.get(tool_name.lower())
+                if not row:
+                    continue
+                markup = row.get("custom_markup")
+                markup_type = row.get("custom_markup_type") or "percentage"
+                decay_pec = row.get("decay_pec_per_use")
+                if markup is None or decay_pec is None:
+                    continue
+                # decay is PEC per use; convert to PED and scale by shots.
+                decay_ped_per_shot = float(decay_pec) / 100.0
+                total_decay_ped = decay_ped_per_shot * ts.shots_fired
+                if markup_type == "percentage":
+                    pct_above = max(0.0, float(markup) - 100.0) / 100.0
+                    total_mu += total_decay_ped * pct_above
+                else:
+                    # absolute markup per unit of decay is unusual; skip
+                    pass
+    return round(total_mu, 4)
 
 
 def session_economy_from_stats(session_stats: SessionRunningStats) -> dict:

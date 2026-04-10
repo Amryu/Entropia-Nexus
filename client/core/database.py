@@ -2,6 +2,7 @@ import hashlib
 import os
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -137,7 +138,11 @@ CREATE TABLE IF NOT EXISTS hunt_sessions (
     end_time TEXT,
     loadout_id TEXT,
     primary_mob TEXT,
-    notes TEXT
+    notes TEXT,
+    enhancer_inference_state TEXT,
+    shrapnel_buffer TEXT,
+    break_buffer TEXT,
+    config_signature TEXT
 );
 
 CREATE TABLE IF NOT EXISTS hunts (
@@ -254,6 +259,16 @@ CREATE TABLE IF NOT EXISTS custom_item_markups (
     item_name TEXT PRIMARY KEY,
     markup_value REAL NOT NULL,
     markup_type TEXT NOT NULL DEFAULT 'percentage',
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gear_overrides (
+    item_name TEXT PRIMARY KEY,
+    decay_pec_per_use REAL,
+    ammo_use_per_shot REAL,
+    custom_markup REAL,
+    custom_markup_type TEXT,
+    note TEXT,
     updated_at TEXT NOT NULL
 );
 
@@ -377,6 +392,51 @@ DROP INDEX IF EXISTS idx_skill_gains_skill;
 """
 
 
+class _GuardedConn:
+    """Thin proxy around sqlite3.Connection that makes commit()
+    respect the owning Database's explicit-transaction depth.
+
+    Everything else forwards unchanged. Used so all the scattered
+    `self._conn.commit()` calls in this file can't prematurely
+    end a transaction() block or a begin_batch() run.
+    """
+
+    __slots__ = ("_owner", "_conn")
+
+    def __init__(self, owner, conn):
+        object.__setattr__(self, "_owner", owner)
+        object.__setattr__(self, "_conn", conn)
+
+    def commit(self):
+        if self._owner._tx_depth > 0 or self._owner._batch_mode:
+            return
+        try:
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            # "cannot commit - no transaction is active" — safe no-op
+            pass
+
+    def __enter__(self):
+        # Delegating to the underlying connection's context manager
+        # would start a legacy-style transaction that conflicts with
+        # our explicit transaction() depth tracking. Route callers
+        # through transaction() instead — the context manager here
+        # just yields without wrapping.
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        if name in _GuardedConn.__slots__:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._conn, name, value)
+
+
 class Database:
     """SQLite persistence layer. Thread-safe via internal lock."""
 
@@ -386,7 +446,21 @@ class Database:
         self._lock = threading.Lock()
         self._batch_mode = False
         self._batch_count = 0
+        self._tx_depth = 0  # explicit transaction nesting depth
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        # Disable Python sqlite3's implicit transaction management so
+        # BEGIN/COMMIT/SAVEPOINT/RELEASE behave consistently. Without
+        # this, Python 3.12+ rewrites transaction statements in ways
+        # that break manual savepoint handling. Combined with the
+        # explicit _auto_commit() calls already scattered through the
+        # codebase, this gives us true control over commit boundaries.
+        self._conn.isolation_level = None
+        # Wrap the raw sqlite3 connection so every `commit()` call
+        # respects the current explicit-transaction depth. Any code
+        # in this module that does `self._conn.commit()` goes through
+        # this proxy; inside a transaction() or begin_batch(), commit
+        # is suppressed so it can't break atomicity.
+        self._conn = _GuardedConn(self, self._conn)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -427,7 +501,29 @@ class Database:
             ("parser_state", "file_hash", "TEXT"),
             ("screenshots", "file_hash", "TEXT"),
             ("custom_dailies", "planet", "TEXT DEFAULT ''"),
+            # Session crash-recovery state (blobs, JSON-encoded).
+            ("hunt_sessions", "enhancer_inference_state", "TEXT"),
+            ("hunt_sessions", "shrapnel_buffer", "TEXT"),
+            ("hunt_sessions", "break_buffer", "TEXT"),
+            ("hunt_sessions", "config_signature", "TEXT"),
+            # Phase 2: per-session (L) item markup overrides (JSON).
+            ("hunt_sessions", "session_item_markups", "TEXT"),
         ]
+        # Phase 2: ensure gear_overrides table exists on older DBs.
+        try:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS gear_overrides ("
+                "item_name TEXT PRIMARY KEY, "
+                "decay_pec_per_use REAL, "
+                "ammo_use_per_shot REAL, "
+                "custom_markup REAL, "
+                "custom_markup_type TEXT, "
+                "note TEXT, "
+                "updated_at TEXT NOT NULL)"
+            )
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass
         for table, column, col_def in migrations:
             try:
                 self._conn.execute(
@@ -570,6 +666,57 @@ class Database:
             self._conn.commit()
         self._batch_mode = False
         self._batch_count = 0
+
+    @contextmanager
+    def transaction(self):
+        """Multi-statement atomic transaction.
+
+        Top-level call issues BEGIN IMMEDIATE / COMMIT / ROLLBACK.
+        Nested calls use SAVEPOINT / RELEASE / ROLLBACK TO so an
+        inner failure doesn't abort the outer tx. Depth is tracked
+        on the Database instance and protected by the same lock.
+
+        While inside a transaction, _auto_commit() is suppressed so
+        intermediate writes stay atomic.
+
+        Usage::
+
+            with db.transaction():
+                db.update_mob_encounter(...)
+                db.insert_encounter_loot_items(...)
+                # exception here -> both writes rolled back
+        """
+        with self._lock:
+            depth = self._tx_depth
+            self._tx_depth += 1
+            savepoint = None
+            if depth == 0:
+                self._conn.execute("BEGIN IMMEDIATE")
+            else:
+                savepoint = f"tx_sp_{depth}"
+                self._conn.execute(f"SAVEPOINT {savepoint}")
+        prev_batch = self._batch_mode
+        self._batch_mode = True  # suppress _auto_commit mid-tx
+        try:
+            yield
+        except BaseException:
+            with self._lock:
+                if savepoint is None:
+                    self._conn.execute("ROLLBACK")
+                else:
+                    self._conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                self._tx_depth -= 1
+            raise
+        else:
+            with self._lock:
+                if savepoint is None:
+                    self._conn.execute("COMMIT")
+                else:
+                    self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                self._tx_depth -= 1
+        finally:
+            self._batch_mode = prev_batch
 
     # Parser state management
     def get_parser_state(self, file_path: str) -> tuple[int, int, str | None] | None:
@@ -1551,6 +1698,67 @@ class Database:
             )
             self._auto_commit()
 
+    def save_session_recovery_state(self, session_id: str, *,
+                                     enhancer_inference_state: str | None = None,
+                                     shrapnel_buffer: str | None = None,
+                                     break_buffer: str | None = None,
+                                     config_signature: str | None = None) -> None:
+        """Persist per-session crash-recovery blobs.
+
+        Each argument is a JSON-encoded string (or None to clear).
+        Only non-None fields are updated so callers can save one
+        blob at a time without clobbering the others.
+        """
+        sets = []
+        params: list = []
+        if enhancer_inference_state is not None:
+            sets.append("enhancer_inference_state = ?")
+            params.append(enhancer_inference_state)
+        if shrapnel_buffer is not None:
+            sets.append("shrapnel_buffer = ?")
+            params.append(shrapnel_buffer)
+        if break_buffer is not None:
+            sets.append("break_buffer = ?")
+            params.append(break_buffer)
+        if config_signature is not None:
+            sets.append("config_signature = ?")
+            params.append(config_signature)
+        if not sets:
+            return
+        params.append(session_id)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE hunt_sessions SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            self._auto_commit()
+
+    def get_session_recovery_state(self, session_id: str) -> dict:
+        """Read all crash-recovery blobs for a session.
+
+        Returns a dict with keys ``enhancer_inference_state``,
+        ``shrapnel_buffer``, ``break_buffer``, ``config_signature``.
+        Missing rows/columns come back as None.
+        """
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT enhancer_inference_state, shrapnel_buffer, "
+                "break_buffer, config_signature "
+                "FROM hunt_sessions WHERE id = ?",
+                (session_id,),
+            )
+            row = cur.fetchone()
+            self._conn.row_factory = None
+            if row is None:
+                return {
+                    "enhancer_inference_state": None,
+                    "shrapnel_buffer": None,
+                    "break_buffer": None,
+                    "config_signature": None,
+                }
+            return dict(row)
+
     # Hunts
     def insert_hunt(self, hunt_id: str, session_id: str, start_time: str,
                     primary_mob: str = None, location_label: str = None):
@@ -1698,6 +1906,47 @@ class Database:
             rows = [dict(r) for r in cur.fetchall()]
             self._conn.row_factory = None
             return rows
+
+    def delete_partial_encounters(self, session_id: str) -> int:
+        """Remove orphaned encounters (no end_time) from a crashed session.
+
+        A crash mid-combat leaves rows with end_time IS NULL that the
+        restore flow skips — but they stay in the DB forever and show
+        up in stats queries. Call this once on restore to clean them.
+
+        Also deletes child rows in encounter_loot_items,
+        encounter_tool_stats, and combat_event_details for the same
+        encounter IDs. Returns the count of encounters removed.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT id FROM mob_encounters "
+                "WHERE session_id = ? AND end_time IS NULL",
+                (session_id,),
+            )
+            ids = [row[0] for row in cur.fetchall()]
+            if not ids:
+                return 0
+        with self.transaction():
+            with self._lock:
+                placeholders = ",".join("?" * len(ids))
+                self._conn.execute(
+                    f"DELETE FROM encounter_loot_items WHERE encounter_id IN ({placeholders})",
+                    ids,
+                )
+                self._conn.execute(
+                    f"DELETE FROM encounter_tool_stats WHERE encounter_id IN ({placeholders})",
+                    ids,
+                )
+                self._conn.execute(
+                    f"DELETE FROM combat_event_details WHERE encounter_id IN ({placeholders})",
+                    ids,
+                )
+                self._conn.execute(
+                    f"DELETE FROM mob_encounters WHERE id IN ({placeholders})",
+                    ids,
+                )
+        return len(ids)
 
     def get_encounter_tool_stats(self, encounter_id: str) -> list[dict]:
         """Get tool stats for an encounter."""
@@ -2009,6 +2258,112 @@ class Database:
             self._conn.execute(
                 "DELETE FROM custom_item_markups WHERE item_name = ?",
                 (item_name,)
+            )
+            self._auto_commit()
+
+    # Gear overrides (Phase 2) -----------------------------------------
+
+    def get_gear_override(self, item_name: str) -> dict | None:
+        """Return the gear override row for *item_name* or None."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM gear_overrides WHERE lower(item_name) = lower(?)",
+                (item_name,)
+            )
+            row = cur.fetchone()
+            self._conn.row_factory = None
+            return dict(row) if row else None
+
+    def get_all_gear_overrides(self) -> dict[str, dict]:
+        """Return a dict keyed by lowercased item name for fast lookup."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute("SELECT * FROM gear_overrides")
+            rows = cur.fetchall()
+            self._conn.row_factory = None
+        return {row["item_name"].lower(): dict(row) for row in rows if row["item_name"]}
+
+    def set_gear_override(self, item_name: str, *,
+                          decay_pec_per_use: float | None = None,
+                          ammo_use_per_shot: float | None = None,
+                          custom_markup: float | None = None,
+                          custom_markup_type: str | None = None,
+                          note: str | None = None) -> None:
+        """Upsert a gear override row.
+
+        Any field left as None clears that override field (caller must
+        explicitly pass the prior value to preserve it).
+        """
+        from datetime import datetime
+        updated_at = datetime.utcnow().isoformat()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO gear_overrides (item_name, decay_pec_per_use, "
+                "ammo_use_per_shot, custom_markup, custom_markup_type, note, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(item_name) DO UPDATE SET "
+                "decay_pec_per_use = excluded.decay_pec_per_use, "
+                "ammo_use_per_shot = excluded.ammo_use_per_shot, "
+                "custom_markup = excluded.custom_markup, "
+                "custom_markup_type = excluded.custom_markup_type, "
+                "note = excluded.note, "
+                "updated_at = excluded.updated_at",
+                (item_name, decay_pec_per_use, ammo_use_per_shot,
+                 custom_markup, custom_markup_type, note, updated_at),
+            )
+            self._auto_commit()
+
+    def delete_gear_override(self, item_name: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM gear_overrides WHERE lower(item_name) = lower(?)",
+                (item_name,),
+            )
+            self._auto_commit()
+
+    # Session (L) markup overrides (Phase 2) ----------------------------
+
+    def get_session_item_markups(self, session_id: str) -> dict:
+        """Return the per-session markup blob as a dict, or {} if unset."""
+        import json
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT session_item_markups FROM hunt_sessions WHERE id = ?",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row or not row[0]:
+            return {}
+        try:
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+
+    def set_session_item_markup(self, session_id: str, item_name: str,
+                                 markup_value: float | None,
+                                 markup_type: str = "percentage") -> None:
+        """Set or clear a per-session markup entry for a loot item.
+
+        Passing markup_value=None removes the entry.
+        """
+        import json
+        current = self.get_session_item_markups(session_id)
+        key = item_name.lower()
+        if markup_value is None:
+            current.pop(key, None)
+        else:
+            current[key] = {
+                "value": float(markup_value),
+                "type": markup_type,
+                "display_name": item_name,
+            }
+        payload = json.dumps(current) if current else None
+        with self._lock:
+            self._conn.execute(
+                "UPDATE hunt_sessions SET session_item_markups = ? WHERE id = ?",
+                (payload, session_id),
             )
             self._auto_commit()
 

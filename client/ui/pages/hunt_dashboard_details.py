@@ -7,10 +7,11 @@ not expose any editing controls - those are Phase 2 / 3. The factory
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QHeaderView, QScrollArea, QFrame, QGridLayout,
+    QPushButton,
 )
 
 from ...hunt.session import MobEncounter
@@ -57,6 +58,15 @@ def _stat_row(layout: QGridLayout, row: int, label: str, value: str) -> None:
 # ---------------------------------------------------------------------------
 
 class _BaseToolDetailView(QWidget):
+    """Base class for per-tool detail views.
+
+    Emits ``edit_override_requested(tool_name)`` when the user clicks
+    the "Edit overrides" button so the dashboard can open the gear
+    override dialog.
+    """
+
+    edit_override_requested = pyqtSignal(str)
+
     def __init__(self, tool_name: str, encounters: list[MobEncounter], parent=None):
         super().__init__(parent)
         self._tool_name = tool_name
@@ -66,6 +76,11 @@ class _BaseToolDetailView(QWidget):
 
     def _build(self) -> None:
         raise NotImplementedError
+
+    def _make_edit_button(self) -> QPushButton:
+        btn = QPushButton("Edit overrides")
+        btn.clicked.connect(lambda: self.edit_override_requested.emit(self._tool_name))
+        return btn
 
 
 class WeaponDetailView(_BaseToolDetailView):
@@ -85,10 +100,7 @@ class WeaponDetailView(_BaseToolDetailView):
         _stat_row(grid, 5, "Encounters used", f"{self._agg['encounters']:,}")
         outer.addLayout(grid)
 
-        note = QLabel("Configuration (enhancers, decay, ammo overrides) coming in Phase 2.")
-        note.setStyleSheet("color: #888888; font-style: italic;")
-        note.setWordWrap(True)
-        outer.addWidget(note)
+        outer.addWidget(self._make_edit_button())
         outer.addStretch(1)
 
 
@@ -109,6 +121,7 @@ class HealingDetailView(_BaseToolDetailView):
         _stat_row(grid, 3, "Encounters used", f"{self._agg['encounters']:,}")
         outer.addLayout(grid)
 
+        outer.addWidget(self._make_edit_button())
         outer.addStretch(1)
 
 
@@ -120,10 +133,7 @@ class ArmorDetailView(_BaseToolDetailView):
         grid = QGridLayout()
         _stat_row(grid, 0, "Encounters worn", f"{self._agg['encounters']:,}")
         outer.addLayout(grid)
-        note = QLabel("Armor decay tracking lands in Phase 2.")
-        note.setStyleSheet("color: #888888; font-style: italic;")
-        note.setWordWrap(True)
-        outer.addWidget(note)
+        outer.addWidget(self._make_edit_button())
         outer.addStretch(1)
 
 
@@ -136,6 +146,7 @@ class UtilityDetailView(_BaseToolDetailView):
         _stat_row(grid, 0, "Uses", f"{self._agg['shots']:,}")
         _stat_row(grid, 1, "Encounters used", f"{self._agg['encounters']:,}")
         outer.addLayout(grid)
+        outer.addWidget(self._make_edit_button())
         outer.addStretch(1)
 
 

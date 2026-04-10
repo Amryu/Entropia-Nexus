@@ -115,9 +115,29 @@ class MarkupResolver:
         self._item_name_to_type: dict[str, str] | None = None
         self._item_name_to_sub_type: dict[str, str | None] | None = None
 
-    def resolve(self, item_name: str) -> MarkupResult:
-        """Resolve markup for an item using the priority chain."""
+    def resolve(self, item_name: str, session_id: str | None = None) -> MarkupResult:
+        """Resolve markup for an item using the priority chain.
+
+        When *session_id* is provided, per-session (L) markup overrides
+        stored on hunt_sessions.session_item_markups take precedence over
+        the global custom markup table. This is the Phase 2 hook for
+        session-scoped (L) item markup.
+        """
         name_lower = item_name.lower()
+
+        # 0. Session (L) markup override (Phase 2)
+        if session_id:
+            try:
+                session_markups = self._db.get_session_item_markups(session_id)
+            except Exception:
+                session_markups = {}
+            entry = session_markups.get(name_lower)
+            if isinstance(entry, dict) and "value" in entry:
+                return MarkupResult(
+                    markup_value=float(entry["value"]),
+                    markup_type=entry.get("type") or "percentage",
+                    source="session",
+                )
 
         # 1. Custom (local DB)
         custom = self._db.get_custom_markup(item_name)
@@ -167,12 +187,13 @@ class MarkupResolver:
             return MarkupResult(100.0, "percentage", "default")
         return MarkupResult(0.0, "absolute", "default")
 
-    def compute_mu_value(self, item_name: str, tt_value: float) -> tuple[float, str]:
+    def compute_mu_value(self, item_name: str, tt_value: float,
+                          session_id: str | None = None) -> tuple[float, str]:
         """Compute markup-adjusted value for display.
 
         Returns: (mu_value, source_label)
         """
-        result = self.resolve(item_name)
+        result = self.resolve(item_name, session_id=session_id)
         return result.compute(tt_value), result.source
 
     def refresh_exchange_cache(self) -> bool:

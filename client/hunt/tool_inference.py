@@ -34,13 +34,20 @@ class ToolInferenceEngine:
         # list of (timestamp, tool_name)
         self._tool_timeline: list[tuple[datetime, str]] = []
 
+        # Phase 2: optional callable returning {name_lower: override_row}.
+        # Rows are dicts with keys decay_pec_per_use, ammo_use_per_shot,
+        # custom_markup, custom_markup_type. Unset fields fall back to
+        # the weapon signature's inferred values.
+        self._override_provider = None
+
     @property
     def has_signatures(self) -> bool:
         return len(self._signatures) > 0
 
     def load_signature(self, weapon_name: str, damage_min: float,
                        damage_max: float, total_damage: float,
-                       cost_per_shot: float, crit_damage: float = 1.0):
+                       cost_per_shot: float, crit_damage: float = 1.0,
+                       decay_pec: float = 0.0, ammo_pec: float = 0.0):
         """Register a weapon signature for matching."""
         sig = WeaponSignature(
             weapon_name=weapon_name,
@@ -49,6 +56,8 @@ class ToolInferenceEngine:
             total_damage=total_damage,
             cost_per_shot=cost_per_shot,
             crit_damage=crit_damage,
+            decay_pec=decay_pec,
+            ammo_pec=ammo_pec,
         )
         # Avoid duplicates
         self._signatures = [s for s in self._signatures if s.weapon_name != weapon_name]
@@ -69,6 +78,8 @@ class ToolInferenceEngine:
             total_damage=stats.total_damage,
             cost_per_shot=stats.cost,
             crit_damage=getattr(stats, 'crit_damage', 1.0),
+            decay_pec=float(getattr(stats, 'decay', 0.0) or 0.0),
+            ammo_pec=float(getattr(stats, 'ammo_burn', 0.0) or 0.0),
         )
 
     def infer_tool(self, damage: float, is_crit: bool = False) -> tuple[str | None, float, float]:
@@ -112,11 +123,75 @@ class ToolInferenceEngine:
         return best_match, best_confidence, best_cost
 
     def get_cost_per_shot(self, tool_name: str) -> float:
-        """Look up the cost per shot for a known weapon."""
-        for sig in self._signatures:
-            if sig.weapon_name == tool_name:
-                return sig.cost_per_shot
-        return 0.0
+        """Look up the cost per shot (PEC) for a known weapon.
+
+        Applies gear overrides from the registered override provider if
+        any fields are set. Partial overrides fall back to the signature
+        for any field the user did not customize.
+        """
+        sig = None
+        for s in self._signatures:
+            if s.weapon_name == tool_name:
+                sig = s
+                break
+
+        override = self._lookup_override(tool_name)
+        base_decay = sig.decay_pec if sig else 0.0
+        base_ammo = sig.ammo_pec if sig else 0.0
+        base_total = sig.cost_per_shot if sig else 0.0
+
+        if not override:
+            return base_total
+
+        decay = override.get("decay_pec_per_use")
+        ammo = override.get("ammo_use_per_shot")
+        # Compose by summing whichever side the user set, falling back
+        # to the signature decomposition for the other side. When the
+        # signature decomposition is absent (sig=None or zero parts),
+        # the unset field contributes nothing — that mirrors what the
+        # signature would otherwise have said.
+        total_decay = float(decay) if decay is not None else base_decay
+        total_ammo = float(ammo) if ammo is not None else base_ammo
+        total = total_decay + total_ammo
+        # Guard: if neither side is set by override AND signature has
+        # zero decomposition but a non-zero total, fall back to the
+        # total to avoid wrecking cost calculations for older loadouts.
+        if total == 0.0 and base_total > 0.0 and decay is None and ammo is None:
+            return base_total
+        return total
+
+    # -- Gear override provider (Phase 2) -------------------------------
+
+    def set_override_provider(self, provider) -> None:
+        """Register a zero-arg callable that returns a dict of overrides.
+
+        The callable is invoked on every cost lookup so updates to the
+        underlying gear_overrides table are picked up without having to
+        reload signatures.
+        """
+        self._override_provider = provider
+
+    def _lookup_override(self, tool_name: str) -> dict | None:
+        if not self._override_provider or not tool_name:
+            return None
+        try:
+            overrides = self._override_provider() or {}
+        except Exception:
+            return None
+        row = overrides.get(tool_name.lower())
+        if not row:
+            return None
+        return row
+
+    def get_custom_markup(self, tool_name: str) -> tuple[float | None, str | None]:
+        """Return (value, type) for a gear override markup, or (None, None)."""
+        override = self._lookup_override(tool_name)
+        if not override:
+            return None, None
+        value = override.get("custom_markup")
+        if value is None:
+            return None, None
+        return float(value), override.get("custom_markup_type") or "percentage"
 
     # -- Tool timeline --------------------------------------------------------
 

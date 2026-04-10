@@ -34,9 +34,14 @@ class WeaponSignature:
     damage_min: float
     damage_max: float
     total_damage: float
-    cost_per_shot: float  # decay + ammo burn
+    cost_per_shot: float  # decay + ammo burn (PEC)
     weapon_id: int | None = None
     crit_damage: float = 1.0  # multiplier: 1 + (BonusCritDamage% / 100)
+    # Phase 2: separate decay and ammo components so gear overrides can
+    # selectively replace one part while the other falls back to the
+    # inferred value.
+    decay_pec: float = 0.0
+    ammo_pec: float = 0.0
 
 
 @dataclass

@@ -6,6 +6,12 @@ EVENT_COMBAT = "combat"
 EVENT_LOOT_GROUP = "loot_group"
 EVENT_ENHANCER_BREAK = "enhancer_break"
 EVENT_TIER_INCREASE = "tier_increase"
+EVENT_EFFECT_RECEIVED = "effect_received"
+# Prompt shown when enhancer auto-detection has already confirmed a
+# tool's enhancer state and then detects unexplained damage contradicting
+# that state. The user chooses how to handle it (redetect / manual / ignore).
+EVENT_ENHANCER_REDETECT_PROMPT = "enhancer_redetect_prompt"
+EVENT_ENHANCER_REDETECT_DECISION = "enhancer_redetect_decision"
 EVENT_GLOBAL = "global"
 EVENT_TRADE_CHAT = "trade_chat"
 EVENT_PARSER_ERROR = "parser_error"
@@ -44,6 +50,8 @@ EVENT_PLAYER_REVIVED = "player_revived"
 EVENT_OPEN_ENCOUNTER_UPDATED = "open_encounter_updated"
 EVENT_TRACKING_LOG = "tracking_log"
 EVENT_TOOL_COST_FILTER_CHANGED = "tool_cost_filter_changed"
+EVENT_GEAR_OVERRIDE_CHANGED = "gear_override_changed"
+EVENT_SESSION_MARKUP_CHANGED = "session_markup_changed"
 
 # Event names — Skills upload
 EVENT_SKILLS_UPLOADED = "skills_uploaded"
@@ -196,6 +204,14 @@ ENHANCER_BREAK_PATTERN = re.compile(
     r'^Your enhancer (.+?) on your (.+?) broke\. '
     r'You have (\d+) enhancers remaining on the item\. '
     r'You received ([\d.]+) PED Shrapnel\.\s*$'
+)
+
+# "Received Effect Over Time: <effect name>" — emitted when a buff or
+# heal-over-time is applied to the player. Note: this can come from
+# other players too (e.g. team healers), so attribution to a specific
+# tool requires cross-checking with the OCR-detected active tool.
+EFFECT_OVER_TIME_PATTERN = re.compile(
+    r'^Received Effect Over Time: (.+?)\s*$'
 )
 
 # Loot pattern
