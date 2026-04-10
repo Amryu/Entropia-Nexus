@@ -646,6 +646,7 @@
           apiPrefix={false}
           onselect={handleSearchSelect}
           onsearch={handleSearch}
+          categoryOrder={['Player', 'Mob', 'Hunting', 'Mining', 'Crafting', 'Rare Find', 'Discovery', 'Tier', 'Instance', 'PvP', 'Team']}
         />
       </div>
     </div>
@@ -682,6 +683,7 @@
             maxTotal={15}
             onselect={handlePlayerSelect}
             containerClass="filter-search-input"
+            categoryOrder={['Player', 'Team']}
           />
         {/if}
       </div>

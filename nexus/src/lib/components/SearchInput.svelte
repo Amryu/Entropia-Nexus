@@ -63,6 +63,7 @@
    * @property {Function} [onclose]
    * @property {Function} [onsearch]
    * @property {Function} [onfocusinput]
+   * @property {string[] | null} [categoryOrder]
    */
 
   /** @type {Props} */
@@ -82,7 +83,8 @@
     onselect,
     onclose,
     onsearch,
-    onfocusinput
+    onfocusinput,
+    categoryOrder = null
   } = $props();
 
   // Internal state
@@ -126,12 +128,24 @@
       categories[category].push(result);
     }
 
-    // Sort categories by highest score (first item's score, since results are pre-sorted)
-    const sortedCategories = Object.keys(categories).sort((a, b) => {
-      const scoreA = categories[a][0]?._score || 0;
-      const scoreB = categories[b][0]?._score || 0;
-      return scoreB - scoreA; // Highest score first
-    });
+    // Sort categories by highest score (first item's score, since results are pre-sorted).
+    // When categoryOrder is supplied, listed categories come first in that order and the
+    // remaining categories fall in behind by score.
+    let sortedCategories;
+    if (categoryOrder && categoryOrder.length > 0) {
+      const prioritySet = new Set(categoryOrder);
+      const priority = categoryOrder.filter(c => categories[c]);
+      const rest = Object.keys(categories)
+        .filter(c => !prioritySet.has(c))
+        .sort((a, b) => (categories[b][0]?._score || 0) - (categories[a][0]?._score || 0));
+      sortedCategories = [...priority, ...rest];
+    } else {
+      sortedCategories = Object.keys(categories).sort((a, b) => {
+        const scoreA = categories[a][0]?._score || 0;
+        const scoreB = categories[b][0]?._score || 0;
+        return scoreB - scoreA; // Highest score first
+      });
+    }
 
     // Build ordered result with limits
     const orderedCategories = {};
