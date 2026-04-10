@@ -647,6 +647,7 @@
           onselect={handleSearchSelect}
           onsearch={handleSearch}
           categoryOrder={['Player', 'Mob', 'Hunting', 'Mining', 'Crafting', 'Rare Find', 'Discovery', 'Tier', 'Instance', 'PvP', 'Team']}
+          minScore={550}
         />
       </div>
     </div>

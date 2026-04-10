@@ -64,6 +64,7 @@
    * @property {Function} [onsearch]
    * @property {Function} [onfocusinput]
    * @property {string[] | null} [categoryOrder]
+   * @property {number} [minScore]
    */
 
   /** @type {Props} */
@@ -84,7 +85,8 @@
     onclose,
     onsearch,
     onfocusinput,
-    categoryOrder = null
+    categoryOrder = null,
+    minScore = 0
   } = $props();
 
   // Internal state
@@ -109,7 +111,7 @@
         ...result,
         _score: scoreSearchResult(result.Name, query) || result.Score || 0
       }))
-      .filter(r => r._score > 0)
+      .filter(r => r._score > 0 && r._score >= minScore)
       .sort((a, b) => {
         if (b._score !== a._score) return b._score - a._score;
         return a.Name.length - b.Name.length;
