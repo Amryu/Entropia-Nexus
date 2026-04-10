@@ -508,6 +508,14 @@ class Database:
             ("hunt_sessions", "config_signature", "TEXT"),
             # Phase 2: per-session (L) item markup overrides (JSON).
             ("hunt_sessions", "session_item_markups", "TEXT"),
+            # Phase 3: anchor columns for retroactive enhancer timeline
+            # edits. anchor_encounter_id is an FK to mob_encounters(id)
+            # for "at this encounter" anchors; anchor_kind is one of
+            # session_start / hunt_start / encounter / loot_event. A
+            # NULL anchor_kind means the event fires at its own
+            # timestamp as before (unchanged behavior).
+            ("session_loadout_events", "anchor_encounter_id", "TEXT"),
+            ("session_loadout_events", "anchor_kind", "TEXT"),
         ]
         # Phase 2: ensure gear_overrides table exists on older DBs.
         try:
@@ -1874,6 +1882,26 @@ class Database:
                 )
             self._auto_commit()
 
+    def list_hunt_sessions(self, limit: int = 100) -> list[dict]:
+        """Return the most recent hunt sessions with summary counts."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT s.id, s.start_time, s.end_time, s.primary_mob, "
+                "(SELECT COUNT(*) FROM mob_encounters m "
+                " WHERE m.session_id = s.id AND m.outcome = 'kill') AS kill_count, "
+                "(SELECT COALESCE(SUM(m.loot_total_ped), 0) FROM mob_encounters m "
+                " WHERE m.session_id = s.id) AS loot_total, "
+                "(SELECT COALESCE(SUM(m.cost), 0) FROM mob_encounters m "
+                " WHERE m.session_id = s.id) AS cost_total "
+                "FROM hunt_sessions s "
+                "ORDER BY s.start_time DESC LIMIT ?",
+                (limit,),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            self._conn.row_factory = None
+            return rows
+
     def get_hunt_session(self, session_id: str) -> dict | None:
         """Get a hunt session by ID."""
         with self._lock:
@@ -1990,6 +2018,30 @@ class Database:
                     for li in items
                 ]
             )
+            self._auto_commit()
+
+    def replace_encounter_loot_items(self, encounter_id: str, items: list) -> None:
+        """Replace the loot_items rows for an encounter atomically."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM encounter_loot_items WHERE encounter_id = ?",
+                (encounter_id,),
+            )
+            if items:
+                self._conn.executemany(
+                    "INSERT INTO encounter_loot_items "
+                    "(encounter_id, item_name, quantity, value_ped, "
+                    "is_blacklisted, is_refining_output, is_in_loot_table, "
+                    "is_enhancer_shrapnel) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (encounter_id, li.item_name, li.quantity, li.value_ped,
+                         int(li.is_blacklisted), int(li.is_refining_output),
+                         int(li.is_in_loot_table),
+                         int(getattr(li, 'is_enhancer_shrapnel', False)))
+                        for li in items
+                    ],
+                )
             self._auto_commit()
 
     def get_encounter_loot_items(self, encounter_id: str) -> list[dict]:
@@ -2197,6 +2249,46 @@ class Database:
                 "SELECT * FROM session_loadout_events WHERE session_id = ? "
                 "ORDER BY timestamp",
                 (session_id,)
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            self._conn.row_factory = None
+            return rows
+
+    def insert_anchored_loadout_event(self, session_id: str, timestamp: str,
+                                       event_type: str, *, anchor_kind: str,
+                                       anchor_encounter_id: str | None = None,
+                                       description: str | None = None,
+                                       enhancer_delta: str | None = None,
+                                       tool_name: str | None = None) -> int:
+        """Insert a loadout event with Phase 3 retroactive anchoring.
+
+        anchor_kind: 'session_start' | 'hunt_start' | 'encounter' |
+        'loot_event'. For 'encounter' and 'loot_event' anchors
+        anchor_encounter_id must point to the referenced mob_encounters
+        row; the tracker replay uses that encounter's start_time for
+        chronological ordering regardless of the event's own timestamp.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO session_loadout_events "
+                "(session_id, timestamp, event_type, description, "
+                "enhancer_delta, tool_name, anchor_kind, anchor_encounter_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (session_id, timestamp, event_type, description,
+                 enhancer_delta, tool_name, anchor_kind, anchor_encounter_id),
+            )
+            self._auto_commit()
+            return cur.lastrowid
+
+    def get_anchored_loadout_events(self, session_id: str) -> list[dict]:
+        """Return only the anchored (retroactive) loadout events."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM session_loadout_events "
+                "WHERE session_id = ? AND anchor_kind IS NOT NULL "
+                "ORDER BY timestamp",
+                (session_id,),
             )
             rows = [dict(r) for r in cur.fetchall()]
             self._conn.row_factory = None

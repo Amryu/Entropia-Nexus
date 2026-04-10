@@ -52,6 +52,7 @@ EVENT_TRACKING_LOG = "tracking_log"
 EVENT_TOOL_COST_FILTER_CHANGED = "tool_cost_filter_changed"
 EVENT_GEAR_OVERRIDE_CHANGED = "gear_override_changed"
 EVENT_SESSION_MARKUP_CHANGED = "session_markup_changed"
+EVENT_ENHANCER_TIMELINE_EDITED = "enhancer_timeline_edited"
 
 # Event names — Skills upload
 EVENT_SKILLS_UPLOADED = "skills_uploaded"

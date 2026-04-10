@@ -236,10 +236,8 @@ class CurrentToolCard(_Card):
         self._enh_label = QLabel("Enhancers: -")
         self._enh_label.setWordWrap(True)
         self._body.insertWidget(3, self._enh_label)
-        # Enhancer-edit button is a Phase 3 stub.
         self._enh_edit_btn = QPushButton("Edit Enhancers")
-        self._enh_edit_btn.setEnabled(False)
-        self._enh_edit_btn.setToolTip("Coming in a future update")
+        self._enh_edit_btn.setToolTip("Record an enhancer change at a chosen anchor")
         self._body.insertWidget(4, self._enh_edit_btn)
 
     def set_tool(self, name: str | None, cost_per_shot: float | None,
@@ -319,9 +317,12 @@ class LastKillCard(_Card):
     """Summary of the most recent kill with collapsible loot list."""
 
     markup_edit_requested = pyqtSignal(str)
+    blacklist_global_requested = pyqtSignal(str)
+    blacklist_per_mob_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__("Last Kill", parent)
+        self._current_mob: str | None = None
         self._mob_label = QLabel("-")
         self._mob_label.setStyleSheet("font-size: 14px;")
         self._body.insertWidget(0, self._mob_label)
@@ -364,10 +365,22 @@ class LastKillCard(_Card):
         if item is None:
             return
         menu = QMenu(self._loot_table)
-        act = menu.addAction("Set session markup...")
+        markup_act = menu.addAction("Set session markup...")
+        menu.addSeparator()
+        blacklist_global_act = menu.addAction("Add to blacklist (global)")
+        blacklist_mob_act = None
+        if self._current_mob:
+            blacklist_mob_act = menu.addAction(
+                f"Add to blacklist (this mob: {self._current_mob})"
+            )
         chosen = menu.exec(self._loot_table.viewport().mapToGlobal(pos))
-        if chosen is act:
-            self.markup_edit_requested.emit(item.text())
+        text = item.text()
+        if chosen is markup_act:
+            self.markup_edit_requested.emit(text)
+        elif chosen is blacklist_global_act:
+            self.blacklist_global_requested.emit(text)
+        elif blacklist_mob_act is not None and chosen is blacklist_mob_act:
+            self.blacklist_per_mob_requested.emit(text)
 
     def _on_toggle(self, checked: bool) -> None:
         self._toggle_btn.setArrowType(
@@ -384,7 +397,9 @@ class LastKillCard(_Card):
             self._shots_label.setText("Shots: -")
             self._global_label.setText("")
             self._loot_table.setRowCount(0)
+            self._current_mob = None
             return
+        self._current_mob = enc.mob_name
         self._mob_label.setText(enc.mob_name or "Unknown")
         self._cost_label.setText(
             f"Cost: {enc.cost:.2f} PED | Return: {enc.loot_total_ped:.2f} PED"
@@ -565,6 +580,7 @@ class OpenEncountersPanel(_Card):
 
     abandon_requested = pyqtSignal(str)
     undo_merge_requested = pyqtSignal(str)
+    resolve_as_kill_requested = pyqtSignal(str, object)  # id, loot_ped or None
 
     def __init__(self, parent=None):
         super().__init__("Open Encounters", parent)
@@ -587,13 +603,31 @@ class OpenEncountersPanel(_Card):
             self._table.setItem(i, 2, QTableWidgetItem(f"{dmg:.0f}"))
             auto_merged = bool(enc.get("merged_from"))
             self._table.setItem(i, 3, QTableWidgetItem("auto" if auto_merged else ""))
-            action = QPushButton("Undo merge" if auto_merged else "Abandon")
             enc_id = enc.get("id") or ""
+            # Action cluster: Resolve / Abandon / Undo merge.
+            wrap = QWidget()
+            wrap_layout = QHBoxLayout(wrap)
+            wrap_layout.setContentsMargins(0, 0, 0, 0)
+            wrap_layout.setSpacing(2)
+            resolve_btn = QPushButton("Resolve")
+            resolve_btn.setToolTip("Mark as kill (optionally entering loot)")
+            resolve_btn.clicked.connect(
+                lambda _=False, eid=enc_id: self.resolve_as_kill_requested.emit(eid, None)
+            )
+            wrap_layout.addWidget(resolve_btn)
             if auto_merged:
-                action.clicked.connect(lambda _=False, eid=enc_id: self.undo_merge_requested.emit(eid))
+                undo_btn = QPushButton("Undo merge")
+                undo_btn.clicked.connect(
+                    lambda _=False, eid=enc_id: self.undo_merge_requested.emit(eid)
+                )
+                wrap_layout.addWidget(undo_btn)
             else:
-                action.clicked.connect(lambda _=False, eid=enc_id: self.abandon_requested.emit(eid))
-            self._table.setCellWidget(i, 4, action)
+                abandon_btn = QPushButton("Abandon")
+                abandon_btn.clicked.connect(
+                    lambda _=False, eid=enc_id: self.abandon_requested.emit(eid)
+                )
+                wrap_layout.addWidget(abandon_btn)
+            self._table.setCellWidget(i, 4, wrap)
 
 
 # ---------------------------------------------------------------------------
@@ -741,8 +775,8 @@ class HuntDashboardView(QWidget):
         header.addStretch(1)
 
         self._archive_btn = QPushButton("Archive view")
-        self._archive_btn.setEnabled(False)
-        self._archive_btn.setToolTip("Coming soon")
+        self._archive_btn.setToolTip("Browse past hunt sessions")
+        self._archive_btn.clicked.connect(self._open_archive_dialog)
         header.addWidget(self._archive_btn)
 
         root.addLayout(header)
@@ -758,6 +792,7 @@ class HuntDashboardView(QWidget):
 
         row_a = QHBoxLayout()
         self._tool_card = CurrentToolCard()
+        self._tool_card._enh_edit_btn.clicked.connect(self._open_enhancer_dialog)
         self._encounter_card = CurrentEncounterCard()
         row_a.addWidget(self._tool_card, 1)
         row_a.addWidget(self._encounter_card, 1)
@@ -767,6 +802,12 @@ class HuntDashboardView(QWidget):
         self._last_kill_card = LastKillCard()
         self._last_kill_card.markup_edit_requested.connect(
             self._open_session_markup_dialog
+        )
+        self._last_kill_card.blacklist_global_requested.connect(
+            self._add_to_global_blacklist
+        )
+        self._last_kill_card.blacklist_per_mob_requested.connect(
+            self._add_to_per_mob_blacklist
         )
         self._stats_block = StatsBlock()
         row_b.addWidget(self._last_kill_card, 1)
@@ -787,6 +828,8 @@ class HuntDashboardView(QWidget):
             RecentKillsModel.COL_MOB, QHeaderView.ResizeMode.Stretch
         )
         self._kills_view.clicked.connect(self._on_kill_clicked)
+        self._kills_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._kills_view.customContextMenuRequested.connect(self._on_kill_context_menu)
         left_layout.addWidget(self._kills_view, 2)
 
         tools_label = QLabel("Tools Used")
@@ -799,6 +842,7 @@ class HuntDashboardView(QWidget):
         self._open_panel = OpenEncountersPanel()
         self._open_panel.abandon_requested.connect(self._on_abandon_encounter)
         self._open_panel.undo_merge_requested.connect(self._on_undo_merge)
+        self._open_panel.resolve_as_kill_requested.connect(self._on_resolve_as_kill)
         left_layout.addWidget(self._open_panel)
         self._open_panel.setVisible(False)
 
@@ -836,6 +880,7 @@ class HuntDashboardView(QWidget):
         s.open_encounter_updated.connect(self._on_open_encounter_updated)
         s.gear_override_changed.connect(self._on_gear_override_changed)
         s.session_markup_changed.connect(self._on_session_markup_changed)
+        s.enhancer_timeline_edited.connect(self._on_enhancer_timeline_edited)
 
     # -- Scope / mode toggles ----------------------------------------
 
@@ -1097,6 +1142,10 @@ class HuntDashboardView(QWidget):
         """Refresh loot valuation when a session (L) markup changes."""
         self.refresh()
 
+    def _on_enhancer_timeline_edited(self, data) -> None:
+        """Refresh after an anchored enhancer event is recorded."""
+        self.refresh()
+
     def _refresh_tool_card(self) -> None:
         tracker = self._get_tracker()
         name = self._current_tool_name
@@ -1165,6 +1214,56 @@ class HuntDashboardView(QWidget):
         )
         dialog.exec()
 
+    def _open_archive_dialog(self) -> None:
+        from .hunt_dashboard_archive_dialog import ArchiveDialog
+        dialog = ArchiveDialog(db=self._db, parent=self)
+        dialog.exec()
+
+    def _open_enhancer_dialog(self) -> None:
+        tracker = self._get_tracker()
+        if tracker is None or tracker._session is None:
+            return
+        from .hunt_dashboard_enhancer_dialog import EnhancerTimelineDialog
+        dialog = EnhancerTimelineDialog(
+            session=tracker._session,
+            hunt_tracker=tracker,
+            db=self._db,
+            event_bus=self._event_bus,
+            parent=self,
+        )
+        dialog.exec()
+
+    def _on_kill_context_menu(self, pos) -> None:
+        from PyQt6.QtWidgets import QMenu
+        index = self._kills_view.indexAt(pos)
+        if not index.isValid():
+            return
+        enc = self._kills_model.encounter_at(index.row())
+        if enc is None:
+            return
+        menu = QMenu(self._kills_view)
+        edit_act = menu.addAction("Edit loot...")
+        chosen = menu.exec(self._kills_view.viewport().mapToGlobal(pos))
+        if chosen is edit_act:
+            self._open_loot_editor(enc)
+
+    def _open_loot_editor(self, encounter) -> None:
+        tracker = self._get_tracker()
+        if tracker is None:
+            return
+        is_past = (tracker._session is None
+                    or encounter.session_id != tracker._session.id)
+        from .hunt_dashboard_loot_editor_dialog import LootEditorDialog
+        dialog = LootEditorDialog(
+            encounter=encounter,
+            hunt_tracker=tracker,
+            db=self._db,
+            event_bus=self._event_bus,
+            is_past_session=is_past,
+            parent=self,
+        )
+        dialog.exec()
+
     def _open_session_markup_dialog(self, item_name: str) -> None:
         tracker = self._get_tracker()
         if tracker is None or tracker._session is None:
@@ -1178,6 +1277,43 @@ class HuntDashboardView(QWidget):
             parent=self,
         )
         dialog.exec()
+
+    def _add_to_global_blacklist(self, item_name: str) -> None:
+        from ...core.constants import EVENT_LOOT_BLACKLIST_CHANGED
+        from ...core.config import save_config
+        current = list(getattr(self._config, "loot_blacklist", None) or [])
+        key = item_name.lower()
+        if any(existing.lower() == key for existing in current):
+            return
+        current.append(item_name)
+        self._config.loot_blacklist = current
+        try:
+            save_config(self._config, self._config_path)
+        except Exception as e:
+            log.warning("save_config (global blacklist) failed: %s", e)
+        self._event_bus.publish(EVENT_LOOT_BLACKLIST_CHANGED, {"scope": "global"})
+
+    def _add_to_per_mob_blacklist(self, item_name: str) -> None:
+        from ...core.constants import EVENT_LOOT_BLACKLIST_CHANGED
+        from ...core.config import save_config
+        mob_name = self._last_kill_card._current_mob
+        if not mob_name:
+            return
+        mob_key = mob_name.lower()
+        current = dict(getattr(self._config, "loot_blacklist_per_mob", None) or {})
+        bucket = list(current.get(mob_key, []))
+        if any(existing.lower() == item_name.lower() for existing in bucket):
+            return
+        bucket.append(item_name)
+        current[mob_key] = bucket
+        self._config.loot_blacklist_per_mob = current
+        try:
+            save_config(self._config, self._config_path)
+        except Exception as e:
+            log.warning("save_config (per-mob blacklist) failed: %s", e)
+        self._event_bus.publish(EVENT_LOOT_BLACKLIST_CHANGED, {
+            "scope": "per_mob", "mob_name": mob_name,
+        })
 
     def _open_encounter_detail(self, enc: MobEncounter) -> None:
         from .hunt_dashboard_details import EncounterDetailView
@@ -1209,3 +1345,22 @@ class HuntDashboardView(QWidget):
             tracker.split_merged_encounter(enc_id)
         except Exception as e:
             log.warning("split_merged_encounter(%s) failed: %s", enc_id, e)
+
+    def _on_resolve_as_kill(self, enc_id: str, loot_ped) -> None:
+        tracker = self._get_tracker()
+        if tracker is None or not enc_id:
+            return
+        if loot_ped is None:
+            from PyQt6.QtWidgets import QInputDialog
+            value, ok = QInputDialog.getDouble(
+                self, "Resolve as kill",
+                "Loot (PED) - leave 0 for no loot:",
+                0.0, 0.0, 1_000_000.0, 2,
+            )
+            if not ok:
+                return
+            loot_ped = value if value > 0 else 0.0
+        try:
+            tracker.resolve_open_encounter_as_kill(enc_id, loot_ped=loot_ped)
+        except Exception as e:
+            log.warning("resolve_open_encounter_as_kill(%s) failed: %s", enc_id, e)
