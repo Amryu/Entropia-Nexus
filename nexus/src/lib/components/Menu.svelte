@@ -8,12 +8,15 @@
 
 
 
-  import { getTypeLink, getTypeName, encodeURIComponentSafe, copyToClipboard } from "$lib/util";
+  import { getTypeLink, getTypeName, encodeURIComponentSafe, copyToClipboard, apiCall } from "$lib/util";
+  import { scoreSearchResult } from "$lib/search.js";
   import { addToast } from '$lib/stores/toasts';
   import { PREFERRED_SHORT_ROUTE_BY_PREFIX } from '$lib/short-url-routes.js';
   import { loading } from "../../actions/loading";
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
+  import { getTypeConfig as getGlobalTypeConfig } from '$lib/data/globals-constants.js';
+  import { timeAgo as globalsTimeAgo, formatValue as globalsFormatValue } from '$lib/utils/globalsFormat.js';
 
   interface Props {
     user: any;
@@ -37,6 +40,24 @@
   // Ko-fi support prompt
   let showKofiPrompt = $state(false);
   let kofiTimeInterval = null;
+
+  // Client promo icon — shake + dropdown until user acknowledges latest major.minor release
+  const CLIENT_PROMO_SEEN_KEY = 'nexus.client-promo.seen-version';
+  const CLIENT_PROMO_CACHE_KEY = 'nexus.client-promo.changelog-cache';
+  let clientPromoShaking = $state(false);
+  let clientPromoLatestVersion = $state<string | null>(null);
+  let clientPromoLatestMajorMinor = $state<string | null>(null);
+
+  // Globals menu dropdown — recent feed + live polling while open
+  const GLOBALS_MENU_LIMIT = 10;
+  const GLOBALS_MENU_POLL_MS = 5000;
+  let globalsMenuItems = $state<any[]>([]);
+  let globalsMenuLoading = $state(false);
+  let globalsMenuLoaded = $state(false);
+  let globalsMenuLatestTs: string | null = null;
+  let globalsMenuPollTimer: ReturnType<typeof setInterval> | null = null;
+  let globalsMenuSearchRef = $state();
+  let globalsMenuSearchValue = $state('');
 
   // Notifications state
   let notifications = $state([]);
@@ -119,6 +140,9 @@
           }
         }
       } catch {}
+
+      // Client promo — fetch latest version, decide whether to shake
+      initClientPromo();
     }
   });
 
@@ -128,6 +152,7 @@
     }
     if (dropdownCloseTimeout) clearTimeout(dropdownCloseTimeout);
     if (kofiTimeInterval) clearInterval(kofiTimeInterval);
+    stopGlobalsMenu();
     if (typeof window !== 'undefined') {
       document.removeEventListener('keydown', handleGlobalKeydown);
     }
@@ -144,6 +169,132 @@
       const snoozeUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       localStorage.setItem('nexus.kofi.snoozed', snoozeUntil);
     } catch {}
+  }
+
+  function toMajorMinor(version: string | null | undefined): string | null {
+    if (!version) return null;
+    const parts = version.split('.');
+    if (parts.length < 2) return null;
+    const maj = parseInt(parts[0], 10);
+    const min = parseInt(parts[1], 10);
+    if (Number.isNaN(maj) || Number.isNaN(min)) return null;
+    return `${maj}.${min}`;
+  }
+
+  function isNewerMajorMinor(latest: string | null, seen: string | null): boolean {
+    if (!latest) return false;
+    if (!seen) return true;
+    const [lM, lm] = latest.split('.').map(Number);
+    const [sM, sm] = seen.split('.').map(Number);
+    return lM > sM || (lM === sM && lm > sm);
+  }
+
+  async function initClientPromo() {
+    try {
+      let changelog: any[] | null = null;
+      const cached = sessionStorage.getItem(CLIENT_PROMO_CACHE_KEY);
+      if (cached) {
+        try { changelog = JSON.parse(cached); } catch {}
+      }
+      if (!changelog) {
+        const res = await fetch('/client/changelog.json');
+        if (res.ok) {
+          changelog = await res.json();
+          try { sessionStorage.setItem(CLIENT_PROMO_CACHE_KEY, JSON.stringify(changelog)); } catch {}
+        }
+      }
+      if (!changelog || !changelog.length) return;
+      clientPromoLatestVersion = changelog[0]?.version || null;
+      clientPromoLatestMajorMinor = toMajorMinor(clientPromoLatestVersion);
+      const seen = localStorage.getItem(CLIENT_PROMO_SEEN_KEY);
+      if (isNewerMajorMinor(clientPromoLatestMajorMinor, seen)) {
+        clientPromoShaking = true;
+      }
+    } catch {}
+  }
+
+  function dismissClientPromo() {
+    clientPromoShaking = false;
+    if (dropdownOpen === 'client-promo') dropdownOpen = null;
+    try {
+      if (clientPromoLatestMajorMinor) {
+        localStorage.setItem(CLIENT_PROMO_SEEN_KEY, clientPromoLatestMajorMinor);
+      }
+    } catch {}
+  }
+
+  async function loadGlobalsMenu() {
+    if (globalsMenuLoaded) return;
+    globalsMenuLoading = true;
+    try {
+      const res = await fetch(`/api/globals?limit=${GLOBALS_MENU_LIMIT}`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data?.globals) ? data.globals : [];
+        globalsMenuItems = list.slice(0, GLOBALS_MENU_LIMIT);
+        globalsMenuLatestTs = globalsMenuItems[0]?.timestamp || null;
+        globalsMenuLoaded = true;
+      }
+    } catch {}
+    globalsMenuLoading = false;
+  }
+
+  async function pollGlobalsMenu() {
+    if (!globalsMenuLoaded) return;
+    try {
+      const params = new URLSearchParams({ limit: String(GLOBALS_MENU_LIMIT) });
+      if (globalsMenuLatestTs) params.set('since', globalsMenuLatestTs);
+      const res = await fetch(`/api/globals?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const incoming = Array.isArray(data?.globals) ? data.globals : [];
+      if (!incoming.length) return;
+      const merged = [...incoming, ...globalsMenuItems];
+      merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const dedup: any[] = [];
+      const seenIds = new Set();
+      for (const g of merged) {
+        if (seenIds.has(g.id)) continue;
+        seenIds.add(g.id);
+        dedup.push(g);
+        if (dedup.length >= GLOBALS_MENU_LIMIT) break;
+      }
+      globalsMenuItems = dedup;
+      globalsMenuLatestTs = globalsMenuItems[0]?.timestamp || globalsMenuLatestTs;
+    } catch {}
+  }
+
+  function startGlobalsMenu() {
+    loadGlobalsMenu();
+    if (globalsMenuPollTimer) clearInterval(globalsMenuPollTimer);
+    globalsMenuPollTimer = setInterval(pollGlobalsMenu, GLOBALS_MENU_POLL_MS);
+  }
+
+  function stopGlobalsMenu() {
+    if (globalsMenuPollTimer) {
+      clearInterval(globalsMenuPollTimer);
+      globalsMenuPollTimer = null;
+    }
+  }
+
+  function handleGlobalsSearchSelect({ name, type }: any) {
+    dropdownOpen = null;
+    stopGlobalsMenu();
+    if (type === 'Player' || type === 'Team') {
+      goto(`/globals/player/${encodeURIComponent(name)}`);
+    } else {
+      goto(`/globals/target/${encodeURIComponent(name)}`);
+    }
+    globalsMenuSearchRef?.clear?.();
+  }
+
+  function handleGlobalsSearchNavigate({ query }: any) {
+    const q = query?.trim();
+    if (!q) return;
+    dropdownOpen = null;
+    stopGlobalsMenu();
+    goto(`/globals/player/${encodeURIComponent(q)}`);
+    globalsMenuSearchRef?.clear?.();
   }
 
   function handleMediaChange(e: MediaQueryListEvent) {
@@ -178,12 +329,31 @@
     if (menu === 'notifications' && user) {
       loadNotifications(1, { force: true });
     }
+    if (menu === 'client-promo' && clientPromoShaking) {
+      // Opening the promo dropdown counts as acknowledgement
+      clientPromoShaking = false;
+      try {
+        if (clientPromoLatestMajorMinor) {
+          localStorage.setItem(CLIENT_PROMO_SEEN_KEY, clientPromoLatestMajorMinor);
+        }
+      } catch {}
+    }
+    if (menu === 'Globals') {
+      startGlobalsMenu();
+    } else {
+      stopGlobalsMenu();
+    }
+    if (menu !== 'Wiki') {
+      resetWikiExpanded();
+    }
   }
 
   function handleDropdownLeave() {
     dropdownCloseTimeout = setTimeout(() => {
       dropdownOpen = null;
       dropdownCloseTimeout = null;
+      resetWikiExpanded();
+      stopGlobalsMenu();
     }, 150);
   }
 
@@ -553,76 +723,9 @@
     'Home': [
       { label: 'News', url: 'news' },
       { label: 'Events', url: 'events' },
-      { label: 'Globals', url: 'globals' },
     ],
-    'Items': [
-      { label: 'Weapons', url: 'weapons' },
-      { label: 'Armor Sets', url: 'armorsets' },
-      { label: 'Medical Tools', url: 'medicaltools', children: [
-        { label: 'Tools', url: 'medicaltools/tools' },
-        { label: 'Chips', url: 'medicaltools/chips' },
-      ]},
-      { label: 'Tools', url: 'tools', children: [
-        { label: 'Refiners', url: 'tools/refiners' },
-        { label: 'Scanners', url: 'tools/scanners' },
-        { label: 'Finders', url: 'tools/finders' },
-        { label: 'Excavators', url: 'tools/excavators' },
-        { label: 'TP Chips', url: 'tools/teleportationchips' },
-        { label: 'Effect Chips', url: 'tools/effectchips' },
-        { label: 'Misc. Tools', url: 'tools/misctools' },
-      ]},
-      { label: 'Attachments', url: 'attachments', children: [
-        { label: 'Amplifiers', url: 'attachments/weaponamplifiers' },
-        { label: 'Scopes', url: 'attachments/weaponvisionattachments' },
-        { label: 'Absorbers', url: 'attachments/absorbers' },
-        { label: 'Finder Amps', url: 'attachments/finderamplifiers' },
-        { label: 'Platings', url: 'attachments/armorplatings' },
-        { label: 'Enhancers', url: 'attachments/enhancers' },
-        { label: 'Implants', url: 'attachments/mindforceimplants' },
-      ]},
-      { label: 'Blueprints', url: 'blueprints' },
-      { label: 'Materials', url: 'materials' },
-      { label: 'Pets', url: 'pets' },
-      { label: 'Consumables', url: 'consumables', children: [
-        { label: 'Stimulants', url: 'consumables/stimulants' },
-        { label: 'Capsules', url: 'consumables/capsules' },
-      ]},
-      { label: 'Vehicles', url: 'vehicles' },
-      { label: 'Furnishings', url: 'furnishings', children: [
-        { label: 'Furniture', url: 'furnishings/furniture' },
-        { label: 'Decorations', url: 'furnishings/decorations' },
-        { label: 'Storage', url: 'furnishings/storagecontainers' },
-        { label: 'Signs', url: 'furnishings/signs' },
-      ]},
-      { label: 'Clothing', url: 'clothing' },
-      { label: 'Strongboxes', url: 'strongboxes' }
-    ],
-    'Information': [
-      { label: 'Guides', url: 'guides', highlighted: true },
-      { label: 'Mobs', url: 'mobs', children: [
-        { label: 'Calypso', url: 'mobs?planet=Calypso' },
-        { label: 'Arkadia', url: 'mobs?planet=Arkadia' },
-        { label: 'Cyrene', url: 'mobs?planet=Cyrene' },
-        { label: 'Rocktropia', url: 'mobs?planet=ROCKtropia' },
-        { label: 'Next Island', url: 'mobs?planet=Next Island' },
-        { label: 'Toulan', url: 'mobs?planet=Toulan' },
-        { label: 'Monria', url: 'mobs?planet=Monria' },
-      ]},
-      { label: 'Missions', url: 'missions', children: [
-        { label: 'Calypso', url: 'missions?planet=Calypso' },
-        { label: 'Arkadia', url: 'missions?planet=Arkadia' },
-        { label: 'Cyrene', url: 'missions?planet=Cyrene' },
-        { label: 'Rocktropia', url: 'missions?planet=ROCKtropia' },
-        { label: 'Next Island', url: 'missions?planet=Next Island' },
-        { label: 'Toulan', url: 'missions?planet=Toulan' },
-        { label: 'Monria', url: 'missions?planet=Monria' },
-      ]},
-      { label: 'Professions', url: 'professions' },
-      { label: 'Skills', url: 'skills' },
-      { label: 'Vendors', url: 'vendors' },
-      { label: 'Locations', url: 'locations' },
-      { label: 'Enumerations', url: 'enumerations' },
-    ],
+    'Globals': [],
+    'Wiki': [],
     'Maps': [
       { label: 'Calypso', url: 'calypso', children: [
         { label: 'Setesh', url: 'setesh' },
@@ -658,7 +761,7 @@
       { label: 'API', url: 'api' },
     ],
     'Market': [
-      { label: 'Exchange', url: 'exchange', highlighted: true },
+      { label: 'Exchange', url: 'exchange' },
       { label: 'Auction', url: 'auction' },
       { label: 'Rental', url: 'rental' },
       { label: 'Services', url: 'services' },
@@ -675,6 +778,418 @@
       { label: 'Planet Calypso Forum', url: 'pcforum' },
     ],
   };
+
+  interface WikiColumn {
+    title: string;
+    basePath: string;
+    items: MenuItem[];
+  }
+
+  const wikiColumns: WikiColumn[] = [
+    {
+      title: 'Items',
+      basePath: 'items',
+      items: [
+        { label: 'Weapons', url: 'weapons', children: [
+          { label: 'Ranged', url: 'weapons?group=ranged' },
+          { label: 'Melee', url: 'weapons?group=melee' },
+          { label: 'Mindforce', url: 'weapons?group=mindforce' },
+          { label: 'Attached', url: 'weapons?group=attached' },
+          { label: 'Mounted', url: 'weapons?group=mounted' },
+          { label: 'Space Mining', url: 'weapons?group=spacemining' },
+        ]},
+        { label: 'Armor Sets', url: 'armorsets' },
+        { label: 'Medical Tools', url: 'medicaltools', children: [
+          { label: 'Tools', url: 'medicaltools/tools' },
+          { label: 'Chips', url: 'medicaltools/chips' },
+        ]},
+        { label: 'Tools', url: 'tools', children: [
+          { label: 'Refiners', url: 'tools/refiners' },
+          { label: 'Scanners', url: 'tools/scanners' },
+          { label: 'Finders', url: 'tools/finders' },
+          { label: 'Excavators', url: 'tools/excavators' },
+          { label: 'TP Chips', url: 'tools/teleportationchips' },
+          { label: 'Effect Chips', url: 'tools/effectchips' },
+          { label: 'Misc. Tools', url: 'tools/misctools' },
+        ]},
+        { label: 'Attachments', url: 'attachments', children: [
+          { label: 'Amplifiers', url: 'attachments/weaponamplifiers' },
+          { label: 'Scopes', url: 'attachments/weaponvisionattachments' },
+          { label: 'Absorbers', url: 'attachments/absorbers' },
+          { label: 'Finder Amps', url: 'attachments/finderamplifiers' },
+          { label: 'Platings', url: 'attachments/armorplatings' },
+          { label: 'Enhancers', url: 'attachments/enhancers' },
+          { label: 'Implants', url: 'attachments/mindforceimplants' },
+        ]},
+        { label: 'Blueprints', url: 'blueprints', children: [
+          { label: 'Weapon', url: 'blueprints?Properties.Type=Weapon' },
+          { label: 'Armor', url: 'blueprints?Properties.Type=Armor' },
+          { label: 'Tool', url: 'blueprints?Properties.Type=Tool' },
+          { label: 'Vehicle', url: 'blueprints?Properties.Type=Vehicle' },
+          { label: 'Textile', url: 'blueprints?Properties.Type=Textile' },
+          { label: 'Furniture', url: 'blueprints?Properties.Type=Furniture' },
+          { label: 'Attachment', url: 'blueprints?Properties.Type=Attachment' },
+          { label: 'Enhancer', url: 'blueprints?Properties.Type=Enhancer' },
+          { label: 'Metal Component', url: 'blueprints?Properties.Type=Metal%20Component' },
+          { label: 'Electrical Component', url: 'blueprints?Properties.Type=Electrical%20Component' },
+          { label: 'Mechanical Component', url: 'blueprints?Properties.Type=Mechanical%20Component' },
+          { label: 'Chemistry', url: 'blueprints?Properties.Type=Chemistry' },
+        ]},
+        { label: 'Materials', url: 'materials' },
+        { label: 'Pets', url: 'pets' },
+        { label: 'Consumables', url: 'consumables', children: [
+          { label: 'Stimulants', url: 'consumables/stimulants' },
+          { label: 'Capsules', url: 'consumables/capsules' },
+        ]},
+        { label: 'Vehicles', url: 'vehicles', children: [
+          { label: 'Land', url: 'vehicles?Properties.Type=Land' },
+          { label: 'Water', url: 'vehicles?Properties.Type=Water' },
+          { label: 'Air', url: 'vehicles?Properties.Type=Air' },
+          { label: 'Amphibious', url: 'vehicles?Properties.Type=Amphibious' },
+          { label: 'Space', url: 'vehicles?Properties.Type=Space' },
+        ]},
+        { label: 'Furnishings', url: 'furnishings', children: [
+          { label: 'Furniture', url: 'furnishings/furniture' },
+          { label: 'Decorations', url: 'furnishings/decorations' },
+          { label: 'Storage', url: 'furnishings/storagecontainers' },
+          { label: 'Signs', url: 'furnishings/signs' },
+        ]},
+        { label: 'Clothing', url: 'clothing', children: [
+          { label: 'With Effects', url: 'clothing?hasEffects=yes' },
+          { label: 'No Effects', url: 'clothing?hasEffects=no' },
+        ]},
+        { label: 'Strongboxes', url: 'strongboxes' },
+      ],
+    },
+    {
+      title: 'Information',
+      basePath: 'information',
+      items: [
+        { label: 'Guides', url: 'guides', highlighted: true },
+        { label: 'Mobs', url: 'mobs', children: [
+          { label: 'Calypso', url: 'mobs?planet=Calypso' },
+          { label: 'Arkadia', url: 'mobs?planet=Arkadia' },
+          { label: 'Cyrene', url: 'mobs?planet=Cyrene' },
+          { label: 'Rocktropia', url: 'mobs?planet=ROCKtropia' },
+          { label: 'Next Island', url: 'mobs?planet=Next Island' },
+          { label: 'Toulan', url: 'mobs?planet=Toulan' },
+          { label: 'Monria', url: 'mobs?planet=Monria' },
+        ]},
+        { label: 'Missions', url: 'missions', children: [
+          { label: 'Calypso', url: 'missions?planet=Calypso' },
+          { label: 'Arkadia', url: 'missions?planet=Arkadia' },
+          { label: 'Cyrene', url: 'missions?planet=Cyrene' },
+          { label: 'Rocktropia', url: 'missions?planet=ROCKtropia' },
+          { label: 'Next Island', url: 'missions?planet=Next Island' },
+          { label: 'Toulan', url: 'missions?planet=Toulan' },
+          { label: 'Monria', url: 'missions?planet=Monria' },
+        ]},
+        { label: 'Professions', url: 'professions', children: [
+          { label: 'Combat', url: 'professions?Category.Name=Combat' },
+          { label: 'Mindforce', url: 'professions?Category.Name=Mindforce' },
+          { label: 'Resource Collecting', url: 'professions?Category.Name=Resource%20Collecting' },
+          { label: 'Manufacturing', url: 'professions?Category.Name=Manufacturing' },
+          { label: 'Miscellaneous', url: 'professions?Category.Name=Miscellaneous' },
+        ]},
+        { label: 'Skills', url: 'skills', children: [
+          { label: 'Attributes', url: 'skills?Category.Name=Attributes' },
+          { label: 'Beauty', url: 'skills?Category.Name=Beauty' },
+          { label: 'Combat', url: 'skills?Category.Name=Combat' },
+          { label: 'Construction', url: 'skills?Category.Name=Construction' },
+          { label: 'Defense', url: 'skills?Category.Name=Defense' },
+          { label: 'Design', url: 'skills?Category.Name=Design' },
+          { label: 'General', url: 'skills?Category.Name=General' },
+          { label: 'Information', url: 'skills?Category.Name=Information' },
+          { label: 'Medical', url: 'skills?Category.Name=Medical' },
+          { label: 'Mindforce', url: 'skills?Category.Name=Mindforce' },
+          { label: 'Mining', url: 'skills?Category.Name=Mining' },
+          { label: 'Science', url: 'skills?Category.Name=Science' },
+          { label: 'Social', url: 'skills?Category.Name=Social' },
+        ]},
+        { label: 'Vendors', url: 'vendors' },
+        { label: 'Locations', url: 'locations', children: [
+          { label: 'Teleporters', url: 'locations/teleporters' },
+          { label: 'NPCs', url: 'locations/npcs' },
+          { label: 'Areas', url: 'locations/areas' },
+          { label: 'Estates', url: 'locations/estates' },
+          { label: 'Settlements', url: 'locations/settlements' },
+          { label: 'Wave Events', url: 'locations/waveevents' },
+          { label: 'Instances', url: 'locations/instances' },
+          { label: 'Vendors', url: 'locations/vendors' },
+          { label: 'Other', url: 'locations/other' },
+        ]},
+        { label: 'Enumerations', url: 'enumerations' },
+      ],
+    },
+  ];
+
+  // Wiki mega-dropdown popout — one slot, injected adjacent to the hovered column
+  let wikiExpanded: { column: string; label: string } | null = $state(null);
+  let wikiPopoutSearch = $state('');
+  let wikiPopoutSearchFocused = $state(false);
+  let wikiPopoutSearchInput: HTMLInputElement | null = $state(null);
+  let wikiPopoutPrevFocus: HTMLElement | null = null;
+  let wikiPopoutResults = $state<any[]>([]);
+  let wikiPopoutResultsLoading = $state(false);
+  let wikiPopoutSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let wikiCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  const WIKI_POPOUT_SEARCH_DEBOUNCE_MS = 220;
+  function cancelWikiClose() {
+    if (wikiCloseTimer) {
+      clearTimeout(wikiCloseTimer);
+      wikiCloseTimer = null;
+    }
+  }
+  function scheduleWikiClose() {
+    if (wikiPopoutSearchFocused) return;
+    cancelWikiClose();
+    wikiCloseTimer = setTimeout(() => {
+      wikiExpanded = null;
+      wikiCloseTimer = null;
+    }, 180);
+  }
+  function openWikiPopout(columnTitle: string, itemLabel: string, _triggerEl?: HTMLElement | null) {
+    cancelWikiClose();
+    const changed = !wikiExpanded || wikiExpanded.column !== columnTitle || wikiExpanded.label !== itemLabel;
+    if (changed) {
+      // Remember where focus was before popout takes it so we can restore on close
+      if (!wikiExpanded && typeof document !== 'undefined') {
+        const prev = document.activeElement as HTMLElement | null;
+        if (prev && prev !== document.body) wikiPopoutPrevFocus = prev;
+      }
+      wikiPopoutSearch = '';
+      wikiPopoutResults = [];
+      wikiPopoutResultsLoading = false;
+      wikiExpanded = { column: columnTitle, label: itemLabel };
+      // Warm the cache so typing feels instant
+      loadWikiPopoutEntities(itemLabel).catch(() => {});
+    }
+  }
+  function resetWikiExpanded() {
+    cancelWikiClose();
+    if (wikiExpanded) {
+      wikiPopoutSearch = '';
+      wikiPopoutSearchFocused = false;
+      const restore = wikiPopoutPrevFocus;
+      wikiPopoutPrevFocus = null;
+      wikiExpanded = null;
+      if (restore && typeof document !== 'undefined' && document.contains(restore)) {
+        try { restore.focus({ preventScroll: true }); } catch {}
+      }
+    }
+  }
+  function handleWikiPopoutResultClick(e: MouseEvent) {
+    if (e.button !== 0) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    dropdownOpen = null;
+    resetWikiExpanded();
+  }
+
+  function handleWikiSearchKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      resetWikiExpanded();
+    } else if (e.key === 'Enter') {
+      // Navigate to the first filtered result if any
+      const first = document.querySelector<HTMLAnchorElement>('.wiki-popout .wiki-popout-results a');
+      if (first) {
+        e.preventDefault();
+        first.click();
+      }
+    }
+  }
+  // Svelte action: focus element immediately on mount
+  function focusOnMount(node: HTMLInputElement) {
+    // next-tick to let the popout's enter animation and DOM settle
+    queueMicrotask(() => {
+      try { node.focus({ preventScroll: true }); } catch {}
+    });
+  }
+  // Map wiki parent label → ordered list of API endpoints + URL prefix for navigation.
+  // Entities are fetched once per parent, cached, then locally fuzzy-ranked on each keystroke.
+  type WikiPopoutEndpoint = {
+    endpoint: string;
+    sub?: string;
+    urlPrefix: string;
+    // Optional per-entity URL builder for categories where the path depends on entity fields
+    buildUrl?: (item: any) => string;
+    // Optional per-entity subtype label (e.g. derived from item.Type)
+    subFn?: (item: any) => string | null;
+  };
+
+  function locationTypeSlug(type: string | null | undefined): string {
+    switch (type) {
+      case 'Teleporter': return 'teleporters';
+      case 'Npc': return 'npcs';
+      case 'Area':
+      case 'WaveEventArea': return 'areas';
+      case 'Estate': return 'estates';
+      case 'Outpost':
+      case 'Camp':
+      case 'City': return 'settlements';
+      case 'InstanceEntrance': return 'instances';
+      case 'Vendor': return 'vendors';
+      default: return 'other';
+    }
+  }
+  const WIKI_POPOUT_ENDPOINTS: Record<string, WikiPopoutEndpoint[]> = {
+    'Weapons':     [{ endpoint: '/weapons', urlPrefix: '/items/weapons' }],
+    'Armor Sets':  [{ endpoint: '/armorsets', urlPrefix: '/items/armorsets' }],
+    'Medical Tools': [
+      { endpoint: '/medicaltools', sub: 'Tool', urlPrefix: '/items/medicaltools/tools' },
+      { endpoint: '/medicalchips', sub: 'Chip', urlPrefix: '/items/medicaltools/chips' },
+    ],
+    'Tools': [
+      { endpoint: '/refiners',           sub: 'Refiner',     urlPrefix: '/items/tools/refiners' },
+      { endpoint: '/scanners',           sub: 'Scanner',     urlPrefix: '/items/tools/scanners' },
+      { endpoint: '/finders',            sub: 'Finder',      urlPrefix: '/items/tools/finders' },
+      { endpoint: '/excavators',         sub: 'Excavator',   urlPrefix: '/items/tools/excavators' },
+      { endpoint: '/teleportationchips', sub: 'TP Chip',     urlPrefix: '/items/tools/teleportationchips' },
+      { endpoint: '/effectchips',        sub: 'Effect Chip', urlPrefix: '/items/tools/effectchips' },
+      { endpoint: '/misctools',          sub: 'Misc',        urlPrefix: '/items/tools/misctools' },
+    ],
+    'Attachments': [
+      { endpoint: '/weaponamplifiers',        sub: 'Amplifier',  urlPrefix: '/items/attachments/weaponamplifiers' },
+      { endpoint: '/weaponvisionattachments', sub: 'Scope',      urlPrefix: '/items/attachments/weaponvisionattachments' },
+      { endpoint: '/absorbers',               sub: 'Absorber',   urlPrefix: '/items/attachments/absorbers' },
+      { endpoint: '/finderamplifiers',        sub: 'Finder Amp', urlPrefix: '/items/attachments/finderamplifiers' },
+      { endpoint: '/armorplatings',           sub: 'Plating',    urlPrefix: '/items/attachments/armorplatings' },
+      { endpoint: '/enhancers',               sub: 'Enhancer',   urlPrefix: '/items/attachments/enhancers' },
+      { endpoint: '/mindforceimplants',       sub: 'Implant',    urlPrefix: '/items/attachments/mindforceimplants' },
+    ],
+    'Blueprints': [{ endpoint: '/blueprints', urlPrefix: '/items/blueprints' }],
+    'Materials':  [{ endpoint: '/materials',  urlPrefix: '/items/materials' }],
+    'Pets':       [{ endpoint: '/pets',       urlPrefix: '/items/pets' }],
+    'Consumables': [
+      { endpoint: '/stimulants', sub: 'Stimulant', urlPrefix: '/items/consumables/stimulants' },
+      { endpoint: '/capsules',   sub: 'Capsule',   urlPrefix: '/items/consumables/capsules' },
+    ],
+    'Vehicles': [{ endpoint: '/vehicles', urlPrefix: '/items/vehicles' }],
+    'Furnishings': [
+      { endpoint: '/furniture',         sub: 'Furniture',  urlPrefix: '/items/furnishings/furniture' },
+      { endpoint: '/decorations',       sub: 'Decoration', urlPrefix: '/items/furnishings/decorations' },
+      { endpoint: '/storagecontainers', sub: 'Storage',    urlPrefix: '/items/furnishings/storagecontainers' },
+      { endpoint: '/signs',             sub: 'Sign',       urlPrefix: '/items/furnishings/signs' },
+    ],
+    'Clothing':    [{ endpoint: '/clothings',    urlPrefix: '/items/clothing' }],
+    'Strongboxes': [{ endpoint: '/strongboxes',  urlPrefix: '/items/strongboxes' }],
+    'Mobs':        [{ endpoint: '/mobs',         urlPrefix: '/information/mobs' }],
+    'Missions':    [{ endpoint: '/missions',     urlPrefix: '/information/missions' }],
+    'Professions': [{ endpoint: '/professions',  urlPrefix: '/information/professions' }],
+    'Skills':      [{ endpoint: '/skills',       urlPrefix: '/information/skills' }],
+    'Vendors':     [{ endpoint: '/vendors',      urlPrefix: '/information/vendors' }],
+    'Locations': [{
+      endpoint: '/locations',
+      urlPrefix: '/information/locations',
+      buildUrl: (item) => `/information/locations/${locationTypeSlug(item?.Properties?.Type)}/${encodeURIComponentSafe(item?.Name || '')}`,
+      subFn: (item) => item?.Properties?.Type || null,
+    }],
+    'Enumerations':[{ endpoint: '/enumerations', urlPrefix: '/information/enumerations' }],
+  };
+
+  // Cache of fetched entity lists keyed by parent label
+  const wikiPopoutCache: Map<string, any[]> = new Map();
+  const wikiPopoutInflight: Map<string, Promise<any[]>> = new Map();
+
+  async function loadWikiPopoutEntities(parentLabel: string): Promise<any[]> {
+    const cached = wikiPopoutCache.get(parentLabel);
+    if (cached) return cached;
+    const inflight = wikiPopoutInflight.get(parentLabel);
+    if (inflight) return inflight;
+    const descriptors = WIKI_POPOUT_ENDPOINTS[parentLabel];
+    if (!descriptors) return [];
+    const promise = (async () => {
+      const results = await Promise.all(descriptors.map(async d => {
+        try {
+          const data = await apiCall(fetch, d.endpoint);
+          const arr: any[] = Array.isArray(data) ? data : [];
+          return arr.map(item => ({
+            Name: item?.Name,
+            SubType: d.subFn ? d.subFn(item) : (d.sub || item?.Properties?.Class || item?.Properties?.Type || null),
+            Url: d.buildUrl ? d.buildUrl(item) : `${d.urlPrefix}/${encodeURIComponentSafe(item?.Name || '')}`,
+          }));
+        } catch {
+          return [];
+        }
+      }));
+      return results.flat();
+    })();
+    wikiPopoutInflight.set(parentLabel, promise);
+    try {
+      const list = await promise;
+      wikiPopoutCache.set(parentLabel, list);
+      return list;
+    } finally {
+      wikiPopoutInflight.delete(parentLabel);
+    }
+  }
+
+  const WIKI_POPOUT_MAX_RENDER = 100;
+
+  async function runWikiPopoutSearch(query: string, parentLabel: string) {
+    const q = query.trim();
+    if (!q) {
+      wikiPopoutResults = [];
+      wikiPopoutResultsLoading = false;
+      return;
+    }
+    wikiPopoutResultsLoading = true;
+    try {
+      const entities = await loadWikiPopoutEntities(parentLabel);
+      // Local fuzzy ranking — keeps weak matches (score > 0) instead of filtering by threshold.
+      const ranked = entities
+        .map(e => ({ e, score: scoreSearchResult(e.Name || '', q) }))
+        .filter(x => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, WIKI_POPOUT_MAX_RENDER)
+        .map(x => x.e);
+      if (query === wikiPopoutSearch && parentLabel === wikiExpanded?.label) {
+        wikiPopoutResults = ranked;
+      }
+    } catch {}
+    if (query === wikiPopoutSearch && parentLabel === wikiExpanded?.label) {
+      wikiPopoutResultsLoading = false;
+    }
+  }
+
+  $effect(() => {
+    const query = wikiPopoutSearch;
+    const label = wikiExpanded?.label;
+    if (wikiPopoutSearchTimer) {
+      clearTimeout(wikiPopoutSearchTimer);
+      wikiPopoutSearchTimer = null;
+    }
+    if (!label) {
+      wikiPopoutResults = [];
+      wikiPopoutResultsLoading = false;
+      return;
+    }
+    if (!query.trim()) {
+      wikiPopoutResults = [];
+      wikiPopoutResultsLoading = false;
+      return;
+    }
+    wikiPopoutSearchTimer = setTimeout(() => runWikiPopoutSearch(query, label), WIKI_POPOUT_SEARCH_DEBOUNCE_MS);
+  });
+  function getWikiExpandedChildren(columnTitle: string): MenuItem[] {
+    if (!wikiExpanded || wikiExpanded.column !== columnTitle) return [];
+    const col = wikiColumns.find(c => c.title === columnTitle);
+    if (!col) return [];
+    const parent = col.items.find(i => i.label === wikiExpanded!.label);
+    return parent?.children || [];
+  }
+  function getWikiExpandedParent(columnTitle: string): MenuItem | null {
+    if (!wikiExpanded || wikiExpanded.column !== columnTitle) return null;
+    const col = wikiColumns.find(c => c.title === columnTitle);
+    return col?.items.find(i => i.label === wikiExpanded!.label) || null;
+  }
+  function getWikiItemUrl(basePath: string, url: string): string {
+    const qIdx = url.indexOf('?');
+    if (qIdx >= 0) {
+      return `/${basePath}/${url.substring(0, qIdx).toLowerCase()}${url.substring(qIdx)}`;
+    }
+    return `/${basePath}/${url.toLowerCase()}`;
+  }
 
   // Desktop search state (now managed by SearchInput component)
   let desktopSearchValue = $state('');
@@ -751,13 +1266,12 @@
   }
 
   // Top-level menus to visually highlight
-  const highlightedMenus = new Set(['Market']);
+  const highlightedMenus = new Set(['Globals']);
 
   // Menus with overview pages that the header should link to
   const menuOverviewUrls: Record<string, string> = {
     'Home': '/',
-    'Items': '/items',
-    'Information': '/information',
+    'Globals': '/globals',
     'Tools': '/tools',
     'Market': '/market',
     'Maps': '/maps'
@@ -876,7 +1390,6 @@
   }
 
   .dropdown-content {
-    display: none;
     position: absolute;
     left: 0;
     min-width: 180px;
@@ -887,16 +1400,44 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 4px 0;
+    transform-origin: top left;
+    transform: scale(0.92);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 120ms ease-out,
+      visibility 0s linear 140ms;
   }
 
   .dropdown-content.right {
     left: auto;
     right: 0;
     min-width: 220px;
+    transform-origin: top right;
   }
 
   .dropdown-content.open {
-    display: block;
+    transform: scale(1);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 120ms ease-out,
+      visibility 0s linear 0s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dropdown-content {
+      transition: opacity 80ms ease, visibility 0s linear 80ms;
+      transform: none;
+    }
+    .dropdown-content.open {
+      transition: opacity 80ms ease, visibility 0s linear 0s;
+      transform: none;
+    }
   }
 
   .menu-dropdown-item {
@@ -1291,6 +1832,443 @@
   .bounty-button svg {
     width: 26px;
     height: 26px;
+  }
+
+  .client-promo-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 100%;
+  }
+
+  .client-promo-button {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+    flex-shrink: 0;
+    text-decoration: none;
+    transform-origin: center;
+  }
+  .client-promo-button:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color);
+  }
+  .client-promo-button svg {
+    width: 26px;
+    height: 26px;
+  }
+  .client-promo-button.shaking {
+    animation: client-promo-shake 4s ease-in-out infinite;
+    color: var(--accent-color);
+  }
+  .client-promo-button.shaking:hover {
+    animation: none;
+  }
+  @keyframes client-promo-shake {
+    0%, 88%, 100% { transform: rotate(0) translateX(0); }
+    90% { transform: rotate(-8deg) translateX(-1px); }
+    92% { transform: rotate(7deg) translateX(1px); }
+    94% { transform: rotate(-5deg) translateX(-1px); }
+    96% { transform: rotate(4deg) translateX(1px); }
+    98% { transform: rotate(-2deg) translateX(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .client-promo-button.shaking { animation: none; }
+  }
+
+  .client-promo-dropdown {
+    min-width: 280px;
+    padding: 14px 16px 12px;
+  }
+  .client-promo-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+  }
+  .client-promo-close:hover {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+  }
+  .client-promo-header {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-color);
+    padding-right: 20px;
+    margin-bottom: 2px;
+  }
+  .client-promo-beta {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: var(--accent-color);
+    color: var(--secondary-color);
+    padding: 1px 5px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-left: 4px;
+  }
+  .client-promo-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .client-promo-features {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    font-size: 12px;
+    color: var(--text-color);
+  }
+  .client-promo-features li {
+    padding: 3px 0 3px 14px;
+    position: relative;
+  }
+  .client-promo-features li::before {
+    content: "\2022";
+    position: absolute;
+    left: 2px;
+    color: var(--accent-color);
+  }
+  .client-promo-cta {
+    display: block;
+    text-align: center;
+    padding: 8px 12px;
+    background: var(--accent-color);
+    color: var(--secondary-color) !important;
+    font-weight: 600;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: filter 0.15s ease;
+    margin-bottom: 8px;
+  }
+  .client-promo-cta:hover {
+    filter: brightness(1.1);
+  }
+  .client-promo-version {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .dropdown-wiki {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 12px 10px;
+    max-height: 80vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    width: max-content;
+    max-width: 90vw;
+    min-width: 0;
+  }
+  .wiki-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    flex: 0 0 auto;
+  }
+  .wiki-column-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 4px 10px 6px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .dropdown-wiki .menu-dropdown-item {
+    justify-content: space-between;
+    white-space: normal;
+  }
+  .dropdown-wiki .wiki-parent-item.active {
+    background-color: var(--accent-color);
+    color: var(--secondary-color);
+    font-weight: 600;
+  }
+  .dropdown-wiki .wiki-parent-item.active .submenu-arrow {
+    color: var(--secondary-color);
+  }
+  .wiki-popout {
+    min-width: 220px;
+    max-width: 280px;
+    padding: 4px 2px 6px;
+    border: none;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent-color) 10%, var(--secondary-color));
+    animation: wiki-popout-in 90ms ease-out;
+    transform-origin: left top;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(80vh - 22px);
+    min-height: 0;
+  }
+  .dropdown-wiki .menu-dropdown-item.wiki-popout-result {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .wiki-popout-result-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .wiki-popout-result-sub {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .wiki-popout .wiki-column-title {
+    padding-left: 14px;
+    color: var(--accent-color);
+    border-bottom-color: color-mix(in srgb, var(--accent-color) 35%, transparent);
+  }
+  .wiki-popout-search {
+    padding: 6px 10px 4px;
+    box-sizing: border-box;
+  }
+  .wiki-popout-search-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-color);
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.15s ease;
+    min-width: 0;
+  }
+  .wiki-popout-search-input::placeholder {
+    color: var(--text-muted);
+  }
+  .wiki-popout-search-input:focus {
+    border-color: var(--accent-color);
+  }
+  .wiki-popout-results {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .wiki-popout-empty {
+    padding: 12px 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+  }
+  @keyframes wiki-popout-in {
+    from { opacity: 0; transform: translateX(-6px) scaleX(0.94); }
+    to   { opacity: 1; transform: translateX(0) scaleX(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wiki-popout { animation: none; }
+  }
+
+  .dropdown-globals {
+    display: block;
+    min-width: 460px;
+    padding: 10px 10px 6px;
+  }
+  .globals-menu-search {
+    padding: 0 2px 8px;
+  }
+  .globals-menu-search :global(.search-input-wrapper) {
+    width: 100%;
+  }
+  .globals-menu-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-color);
+  }
+  .globals-menu-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: globals-live-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes globals-live-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+  .globals-menu-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-height: 340px;
+  }
+  .globals-menu-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    height: 34px;
+    font-size: 12px;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+  }
+  .globals-menu-row:not(.globals-menu-skeleton):hover {
+    background-color: var(--hover-color);
+  }
+  .globals-menu-empty {
+    padding: 40px 10px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .globals-menu-type {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    min-width: 56px;
+    text-align: center;
+  }
+  .globals-menu-type.type-kill      { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+  .globals-menu-type.type-deposit   { background: rgba(59, 130, 246, 0.15); color: #60b0ff; }
+  .globals-menu-type.type-craft     { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+  .globals-menu-type.type-rare      { background: rgba(96, 176, 255, 0.15); color: var(--accent-color); }
+  .globals-menu-type.type-discovery { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
+  .globals-menu-type.type-tier      { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
+  .globals-menu-type.type-examine   { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+  .globals-menu-type.type-pvp       { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
+  .globals-menu-content {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .globals-menu-player {
+    color: var(--text-color);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .globals-menu-player:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+  }
+  .globals-menu-target {
+    color: var(--text-muted);
+    margin-left: 4px;
+  }
+  .globals-menu-value {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    min-width: 64px;
+    text-align: right;
+  }
+  .globals-menu-badge {
+    flex-shrink: 0;
+    min-width: 28px;
+    text-align: center;
+  }
+  .globals-menu-badge .badge-hof,
+  .globals-menu-badge .badge-ath {
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .globals-menu-badge .badge-hof { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .globals-menu-badge .badge-ath { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+  .globals-menu-time {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 10px;
+    min-width: 44px;
+    text-align: right;
+  }
+  .globals-menu-footer {
+    display: block;
+    text-align: center;
+    padding: 8px;
+    margin-top: 4px;
+    border-top: 1px solid var(--border-color);
+    color: var(--accent-color);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .globals-menu-footer:hover {
+    background-color: var(--hover-color);
+  }
+
+  .globals-menu-skel {
+    display: inline-block;
+    height: 10px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--border-color) 0%, var(--hover-color) 50%, var(--border-color) 100%);
+    background-size: 200% 100%;
+    animation: globals-skel-shimmer 1.5s ease-in-out infinite;
+  }
+  .globals-menu-skel-type  { width: 56px; height: 14px; border-radius: 3px; }
+  .globals-menu-skel-text  { flex: 1; min-width: 0; }
+  .globals-menu-skel-value { width: 64px; }
+  .globals-menu-skel-time  { width: 44px; height: 8px; }
+  @keyframes globals-skel-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .mobile-section-link {
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+  }
+  .mobile-wiki-group-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 10px 16px 4px;
   }
 
   .kofi-button {
@@ -2271,7 +3249,8 @@
     }
 
     .kofi-wrapper,
-    .bounty-button {
+    .bounty-button,
+    .client-promo-wrapper {
       display: none;
     }
   }
@@ -2306,31 +3285,197 @@
         {:else}
           {menu}
         {/if}
-        <div class="dropdown-content" class:open={dropdownOpen === menu}>
-              {#each menuItemsWiki[menu] as item (item)}
-                {#if item.disabled}
-                  <div class="menu-dropdown-item disabled">{item.label} <span class="coming-soon">coming soon</span></div>
-                {:else if isExternalLink(item)}
-                  <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
-                {:else if item.children?.length}
-                  <div class="has-submenu">
-                    <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}<span class="submenu-arrow">&#9656;</span></div></a>
-                    <div class="submenu">
-                      {#each item.children as child}
-                        <a use:loading href={getMenuItemUrl(menu, child)}><div class="menu-dropdown-item">{child.label}</div></a>
-                      {/each}
-                    </div>
-                  </div>
-                {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</div></a>
-                {/if}
-              {/each}
+        {#if menu === 'Globals'}
+          <div class="dropdown-content dropdown-globals" class:open={dropdownOpen === menu}>
+            <div class="globals-menu-search">
+              <SearchInput
+                bind:this={globalsMenuSearchRef}
+                bind:value={globalsMenuSearchValue}
+                placeholder="Search players, teams, mobs, resources..."
+                endpoint="/api/globals/search"
+                apiPrefix={false}
+                onselect={handleGlobalsSearchSelect}
+                onsearch={handleGlobalsSearchNavigate}
+                categoryOrder={['Player', 'Mob', 'Hunting', 'Mining', 'Crafting', 'Rare Find', 'Discovery', 'Tier', 'Instance', 'PvP', 'Team']}
+                minScore={550}
+              />
+            </div>
+            <div class="globals-menu-header">
+              <span>Recent Globals</span>
+              {#if globalsMenuLoading && globalsMenuLoaded}
+                <span class="globals-menu-live-dot" title="Live"></span>
+              {/if}
+            </div>
+            <ul class="globals-menu-list">
+              {#if !globalsMenuLoaded}
+                {#each Array(GLOBALS_MENU_LIMIT) as _, i (i)}
+                  <li class="globals-menu-row globals-menu-skeleton">
+                    <span class="globals-menu-skel globals-menu-skel-type"></span>
+                    <span class="globals-menu-skel globals-menu-skel-text"></span>
+                    <span class="globals-menu-skel globals-menu-skel-value"></span>
+                    <span class="globals-menu-skel globals-menu-skel-time"></span>
+                  </li>
+                {/each}
+              {:else if globalsMenuItems.length === 0}
+                <li class="globals-menu-empty">No globals yet</li>
+              {:else}
+                {#each globalsMenuItems as g (g.id)}
+                  {@const tc = getGlobalTypeConfig(g.type)}
+                  <li class="globals-menu-row">
+                    <span class="globals-menu-type {tc.cssClass}">{tc.label}</span>
+                    <span class="globals-menu-content">
+                      <a href="/globals/player/{encodeURIComponent(g.player)}" class="globals-menu-player">{g.player}</a>
+                      <span class="globals-menu-target">{g.target}</span>
+                    </span>
+                    <span class="globals-menu-value">{globalsFormatValue(g.value, g.unit, g.type)}</span>
+                    <span class="globals-menu-badge">
+                      {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
+                    </span>
+                    <span class="globals-menu-time">{globalsTimeAgo(g.timestamp)}</span>
+                  </li>
+                {/each}
+              {/if}
+            </ul>
+            <a href="/globals" class="globals-menu-footer" use:loading>View all globals &rarr;</a>
           </div>
+        {:else if menu === 'Wiki'}
+          <div class="dropdown-content dropdown-wiki" class:open={dropdownOpen === menu}>
+            {#each wikiColumns as column (column.title)}
+              {@const expandedParent = getWikiExpandedParent(column.title)}
+              {@const expandedChildren = getWikiExpandedChildren(column.title)}
+              <div class="wiki-column" role="none" onmouseleave={scheduleWikiClose}>
+                <div class="wiki-column-title">{column.title}</div>
+                {#each column.items as item (item.label)}
+                  {@const hasPopout = !!(item.children?.length) || !!WIKI_POPOUT_ENDPOINTS[item.label]}
+                  {#if hasPopout}
+                    {@const active = wikiExpanded?.column === column.title && wikiExpanded?.label === item.label}
+                    <a
+                      use:loading
+                      href={getWikiItemUrl(column.basePath, item.url)}
+                      onmouseenter={(e) => openWikiPopout(column.title, item.label, e.currentTarget as HTMLElement)}
+                    >
+                      <div class="menu-dropdown-item wiki-parent-item" class:highlighted={item.highlighted} class:active>
+                        {item.label}
+                        <span class="submenu-arrow">&#9656;</span>
+                      </div>
+                    </a>
+                  {:else}
+                    <a
+                      use:loading
+                      href={getWikiItemUrl(column.basePath, item.url)}
+                      onmouseenter={resetWikiExpanded}
+                    >
+                      <div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div>
+                    </a>
+                  {/if}
+                {/each}
+              </div>
+              {#if expandedParent}
+                {@const searchActive = wikiPopoutSearch.trim().length > 0}
+                <div class="wiki-column wiki-popout" role="none" onmouseenter={cancelWikiClose} onmouseleave={scheduleWikiClose}>
+                  <div class="wiki-column-title">{expandedParent.label}</div>
+                  <div class="wiki-popout-search">
+                    <input
+                      type="text"
+                      class="wiki-popout-search-input"
+                      placeholder="Search {expandedParent.label.toLowerCase()}..."
+                      bind:value={wikiPopoutSearch}
+                      bind:this={wikiPopoutSearchInput}
+                      onfocus={() => { wikiPopoutSearchFocused = true; cancelWikiClose(); }}
+                      onblur={() => { wikiPopoutSearchFocused = false; }}
+                      onkeydown={handleWikiSearchKeydown}
+                      use:focusOnMount
+                    />
+                  </div>
+                  <div class="wiki-popout-results">
+                    {#if searchActive}
+                      {#if wikiPopoutResultsLoading && wikiPopoutResults.length === 0}
+                        <div class="wiki-popout-empty">Searching&hellip;</div>
+                      {:else if wikiPopoutResults.length === 0}
+                        <div class="wiki-popout-empty">No matches</div>
+                      {:else}
+                        {#each wikiPopoutResults as result, i (result.Url + '|' + i)}
+                          <a use:loading href={result.Url} onclick={handleWikiPopoutResultClick}>
+                            <div class="menu-dropdown-item wiki-popout-result">
+                              <span class="wiki-popout-result-name">{result.Name}</span>
+                              {#if result.SubType}
+                                <span class="wiki-popout-result-sub">{result.SubType}</span>
+                              {/if}
+                            </div>
+                          </a>
+                        {/each}
+                      {/if}
+                    {:else if expandedChildren.length > 0}
+                      {#each expandedChildren as child (child.label)}
+                        <a use:loading href={getWikiItemUrl(column.basePath, child.url)}>
+                          <div class="menu-dropdown-item">{child.label}</div>
+                        </a>
+                      {/each}
+                    {:else}
+                      <div class="wiki-popout-empty">Type to search {expandedParent.label.toLowerCase()}</div>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {:else if menuItemsWiki[menu].length > 0}
+          <div class="dropdown-content" class:open={dropdownOpen === menu}>
+                {#each menuItemsWiki[menu] as item (item)}
+                  {#if item.disabled}
+                    <div class="menu-dropdown-item disabled">{item.label} <span class="coming-soon">coming soon</span></div>
+                  {:else if isExternalLink(item)}
+                    <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
+                  {:else if item.children?.length}
+                    <div class="has-submenu">
+                      <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}<span class="submenu-arrow">&#9656;</span></div></a>
+                      <div class="submenu">
+                        {#each item.children as child}
+                          <a use:loading href={getMenuItemUrl(menu, child)}><div class="menu-dropdown-item">{child.label}</div></a>
+                        {/each}
+                      </div>
+                    </div>
+                  {:else}
+                    <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</div></a>
+                  {/if}
+                {/each}
+            </div>
+        {/if}
       </div>
     {/each}
   </div>
 
   <div class="auth-container">
+    <div class="client-promo-wrapper" role="none" onmouseenter={() => handleDropdownEnter('client-promo')} onmouseleave={handleDropdownLeave}>
+      <a href="/tools/client" class="client-promo-button" class:shaking={clientPromoShaking} title="Try the Entropia Nexus Client (Beta)" aria-label="Entropia Nexus Client">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="2.5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8 19h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M10 16.5v2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M14 16.5v2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="12" cy="9.2" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M12 5.2v1.6M12 11.6v1.6M8 9.2h1.6M14.4 9.2H16" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </a>
+      <div class="dropdown-content right client-promo-dropdown" class:open={dropdownOpen === 'client-promo'}>
+        <button class="client-promo-close" onclick={(e) => { e.preventDefault(); e.stopPropagation(); dismissClientPromo(); }} aria-label="Dismiss">&times;</button>
+        <div class="client-promo-header">
+          Entropia Nexus Client <span class="client-promo-beta">BETA</span>
+        </div>
+        <div class="client-promo-subtitle">Desktop companion for Entropia Universe.</div>
+        <ul class="client-promo-features">
+          <li>In-Game Wiki &amp; Overlays</li>
+          <li>Exchange Market in-game</li>
+          <li>Loadout Manager &amp; Gear Advisor</li>
+          <li>Skill Scanner via OCR</li>
+          <li>Auto-updates in the background</li>
+        </ul>
+        <a href="/tools/client" class="client-promo-cta" onclick={dismissClientPromo} use:loading>Try the Client &rarr;</a>
+        {#if clientPromoLatestVersion}
+          <div class="client-promo-version">v{clientPromoLatestVersion} beta</div>
+        {/if}
+      </div>
+    </div>
     <a href="/bounties" class="bounty-button" title="Contributor Bounties">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -2602,30 +3747,56 @@
     <!-- Navigation Mode -->
     <div class="mobile-menu-content">
       {#each Object.keys(menuItemsWiki) as menu (menu)}
-          <div class="mobile-section">
-            <!-- On mobile, clicking header just expands/collapses - no navigation -->
-            <!-- This prevents menu from closing before user can see options -->
-            <div class="mobile-section-header" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => toggleSection(menu)}>
+          {#if menu === 'Globals'}
+            <a use:loading href="/globals" class="mobile-section-header mobile-section-link" onclick={closeMobileMenu}>
               <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
-              <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
-            </div>
-            <div class="mobile-section-items" class:expanded={expandedSections.has(menu)}>
-              {#each menuItemsWiki[menu] as item (item)}
-                {#if item.disabled}
-                  <span class="mobile-menu-item disabled">{item.label} <span class="coming-soon">coming soon</span></span>
-                {:else if isExternalLink(item)}
-                  <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}</a>
-                {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</a>
-                {/if}
-                {#if item.children?.length}
-                  {#each item.children as child}
-                    <a use:loading href={getMenuItemUrl(menu, child)} class="mobile-menu-item mobile-sub-item" onclick={closeMobileMenu}>{child.label}</a>
+            </a>
+          {:else if menu === 'Wiki'}
+            <div class="mobile-section">
+              <div class="mobile-section-header" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => toggleSection(menu)}>
+                <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
+                <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
+              </div>
+              <div class="mobile-section-items" class:expanded={expandedSections.has(menu)}>
+                {#each wikiColumns as column (column.title)}
+                  <div class="mobile-wiki-group-title">{column.title}</div>
+                  {#each column.items as item (item.label)}
+                    <a use:loading href={getWikiItemUrl(column.basePath, item.url)} class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}</a>
+                    {#if item.children?.length}
+                      {#each item.children as child (child.label)}
+                        <a use:loading href={getWikiItemUrl(column.basePath, child.url)} class="mobile-menu-item mobile-sub-item" onclick={closeMobileMenu}>{child.label}</a>
+                      {/each}
+                    {/if}
                   {/each}
-                {/if}
-              {/each}
+                {/each}
+              </div>
             </div>
-          </div>
+          {:else}
+            <div class="mobile-section">
+              <!-- On mobile, clicking header just expands/collapses - no navigation -->
+              <!-- This prevents menu from closing before user can see options -->
+              <div class="mobile-section-header" role="button" tabindex="0" onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} onclick={() => toggleSection(menu)}>
+                <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
+                <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
+              </div>
+              <div class="mobile-section-items" class:expanded={expandedSections.has(menu)}>
+                {#each menuItemsWiki[menu] as item (item)}
+                  {#if item.disabled}
+                    <span class="mobile-menu-item disabled">{item.label} <span class="coming-soon">coming soon</span></span>
+                  {:else if isExternalLink(item)}
+                    <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}</a>
+                  {:else}
+                    <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} onclick={closeMobileMenu}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</a>
+                  {/if}
+                  {#if item.children?.length}
+                    {#each item.children as child}
+                      <a use:loading href={getMenuItemUrl(menu, child)} class="mobile-menu-item mobile-sub-item" onclick={closeMobileMenu}>{child.label}</a>
+                    {/each}
+                  {/if}
+                {/each}
+              </div>
+            </div>
+          {/if}
       {/each}
     </div>
 
