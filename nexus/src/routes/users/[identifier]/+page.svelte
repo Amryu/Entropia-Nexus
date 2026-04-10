@@ -32,7 +32,11 @@
   let saveStatus = $state('');
   let tabInitialized = $state(false);
   let imageFailed = $state(false);
+  let bannerFailed = $state(false);
+  let backgroundFailed = $state(false);
   let showImageDialog = $state(false);
+  let showBannerDialog = $state(false);
+  let showBackgroundDialog = $state(false);
   let showSocietyDialog = $state(false);
   let societyMode = $state('join');
   let societySearchQuery = $state('');
@@ -126,7 +130,11 @@
     saveStatus = '';
     tabInitialized = false;
     imageFailed = false;
+    bannerFailed = false;
+    backgroundFailed = false;
     showImageDialog = false;
+    showBannerDialog = false;
+    showBackgroundDialog = false;
     showSocietyDialog = false;
     avatarTabsInitialized = false;
     referenceReady = false;
@@ -451,6 +459,20 @@
     saveError = '';
     saveStatus = '';
     showImageDialog = true;
+  }
+
+  function openBannerDialog() {
+    if (!isOwner || !isEditing) return;
+    saveError = '';
+    saveStatus = '';
+    showBannerDialog = true;
+  }
+
+  function openBackgroundDialog() {
+    if (!isOwner || !isEditing) return;
+    saveError = '';
+    saveStatus = '';
+    showBackgroundDialog = true;
   }
 
   function getApiBase() {
@@ -796,6 +818,8 @@
   let displayImageUrl = $derived(imageFailed
     ? profile.discordAvatarUrl
     : (profile.profileImageUrl || profile.discordAvatarUrl));
+  let displayBannerUrl = $derived(!bannerFailed && profile?.profileBannerUrl ? profile.profileBannerUrl : null);
+  let displayBackgroundUrl = $derived(!backgroundFailed && profile?.profileBackgroundUrl ? profile.profileBackgroundUrl : null);
   $effect(() => {
     evaluation = showcaseLoadout
       ? evaluateLoadout(
@@ -846,8 +870,42 @@
   <link rel="canonical" href="https://entropianexus.com/users/{encodeURIComponentSafe(profile?.euName || profile?.discordName || '')}" />
 </svelte:head>
 
-<div class="profile-page">
-  <div class="profile-header">
+<div class="profile-page" class:has-background={!!displayBackgroundUrl}>
+  {#if displayBackgroundUrl}
+    <div
+      class="profile-page-background"
+      style="background-image: url('{displayBackgroundUrl}');"
+    ></div>
+    <div class="profile-page-background-overlay"></div>
+    <img
+      src={displayBackgroundUrl}
+      alt=""
+      class="profile-page-background-probe"
+      onerror={() => (backgroundFailed = true)}
+    />
+  {/if}
+  <div class="profile-header" class:has-banner={!!displayBannerUrl}>
+    {#if displayBannerUrl || (isOwner && isEditing)}
+      <div class="profile-header-banner">
+        {#if displayBannerUrl}
+          <img
+            src={displayBannerUrl}
+            alt=""
+            class="profile-banner-img"
+            onerror={() => (bannerFailed = true)}
+          />
+        {/if}
+        {#if isOwner && isEditing}
+          <button
+            type="button"
+            class="banner-edit-btn"
+            onclick={openBannerDialog}
+            title="Change banner"
+          >{displayBannerUrl ? 'Change banner' : 'Add banner'}</button>
+        {/if}
+      </div>
+    {/if}
+    <div class="profile-header-content">
     <div class="profile-image">
       <button class="profile-image-button" type="button" onclick={openImageDialog} class:editable={isOwner && isEditing}>
         {#if displayImageUrl}
@@ -914,6 +972,7 @@
     {#if isOwner}
       <div class="profile-actions">
         {#if isEditing}
+          <button class="btn btn-secondary btn-small" onclick={openBackgroundDialog} title="Change page background">Background</button>
           <button class="btn btn-primary" onclick={saveProfile}>Save</button>
           <button class="btn btn-secondary" onclick={cancelEdit}>Cancel</button>
         {:else}
@@ -926,9 +985,10 @@
         {/if}
       </div>
     {/if}
+    </div>
   </div>
 
-  <div class="profile-tabs">
+  <div class="profile-tabs" role="tablist">
     {#each availableTabs as tab}
       <button class:active={activeTab === tab.id} onclick={() => activeTab = tab.id}>{tab.label}</button>
     {/each}
@@ -1878,6 +1938,56 @@
   }}
 />
 
+<ImageUploadDialog
+  open={showBannerDialog}
+  entityType="user-banner"
+  entityId={profile.id}
+  entityName={profile.euName || profile.discordName}
+  showDelete={true}
+  hasImage={!!profile.hasCustomBanner}
+  aspect={6}
+  maxWidth={1200}
+  maxHeight={200}
+  onclose={() => (showBannerDialog = false)}
+  onuploaded={(data) => {
+    if (data?.imageUrl) {
+      profile = { ...profile, profileBannerUrl: data.imageUrl, hasCustomBanner: true };
+      bannerFailed = false;
+      saveStatus = 'Banner updated.';
+    }
+  }}
+  ondeleted={() => {
+    profile = { ...profile, profileBannerUrl: null, hasCustomBanner: false };
+    bannerFailed = false;
+    saveStatus = 'Banner removed.';
+  }}
+/>
+
+<ImageUploadDialog
+  open={showBackgroundDialog}
+  entityType="user-background"
+  entityId={profile.id}
+  entityName={profile.euName || profile.discordName}
+  showDelete={true}
+  hasImage={!!profile.hasCustomBackground}
+  aspect={16 / 9}
+  maxWidth={1920}
+  maxHeight={1080}
+  onclose={() => (showBackgroundDialog = false)}
+  onuploaded={(data) => {
+    if (data?.imageUrl) {
+      profile = { ...profile, profileBackgroundUrl: data.imageUrl, hasCustomBackground: true };
+      backgroundFailed = false;
+      saveStatus = 'Background updated.';
+    }
+  }}
+  ondeleted={() => {
+    profile = { ...profile, profileBackgroundUrl: null, hasCustomBackground: false };
+    backgroundFailed = false;
+    saveStatus = 'Background removed.';
+  }}
+/>
+
 <style>
   .profile-page {
     max-width: 1200px;
@@ -1885,16 +1995,89 @@
     padding: 24px 20px 60px;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 0;
+    position: relative;
+  }
+
+  .profile-page-background,
+  .profile-page-background-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .profile-page-background {
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+  }
+
+  .profile-page-background-overlay {
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.72) 100%);
+  }
+
+  .profile-page-background-probe {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
   }
 
   .profile-header {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 16px 16px 0 0;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 0;
+  }
+
+  .profile-header-banner {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    background: linear-gradient(135deg, var(--bg-color, #111), var(--secondary-color));
+    overflow: hidden;
+  }
+
+  .profile-header.has-banner .profile-header-banner {
+    background: transparent;
+  }
+
+  .profile-banner-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .banner-edit-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+
+  .banner-edit-btn:hover {
+    background: rgba(0, 0, 0, 0.75);
+  }
+
+  .profile-header-content {
     display: grid;
     grid-template-columns: 160px 1fr;
     gap: 24px;
-    background: var(--secondary-color);
-    border: 1px solid var(--border-color, #444);
-    border-radius: 16px;
     padding: 20px;
     position: relative;
   }
@@ -2147,29 +2330,46 @@
 
   .profile-tabs {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    background: var(--bg-color, #111);
+    border: 1px solid var(--border-color, #444);
+    border-bottom: none;
+    border-radius: 16px 16px 0 0;
+    margin-top: 16px;
   }
 
   .profile-tabs button {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #444);
-    background: var(--bg-color, #111);
-    color: var(--text-color);
+    flex: 1 1 auto;
+    padding: 14px 22px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted, #999);
     cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .profile-tabs button:hover {
+    color: var(--text-color);
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .profile-tabs button.active {
-    background: var(--accent-color, #4a9eff);
-    border-color: transparent;
-    color: #fff;
+    color: var(--text-color);
+    background: var(--secondary-color);
+    border-bottom-color: var(--accent-color, #4a9eff);
   }
 
   .profile-tab-panel {
     background: var(--secondary-color);
-    border-radius: 16px;
+    border-radius: 0 0 16px 16px;
     border: 1px solid var(--border-color, #444);
+    border-top: none;
     padding: 20px;
     display: flex;
     flex-direction: column;

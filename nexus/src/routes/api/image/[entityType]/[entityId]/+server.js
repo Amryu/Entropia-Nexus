@@ -88,7 +88,7 @@ export async function POST({ params, request, locals }) {
   }
 
   const type = entityType.toLowerCase();
-  if (type !== 'user') {
+  if (type !== 'user' && type !== 'user-banner' && type !== 'user-background') {
     return getResponse({ error: 'Only user images are supported.' }, 400);
   }
 
@@ -155,7 +155,7 @@ export async function DELETE({ params, locals }) {
   }
 
   const type = entityType.toLowerCase();
-  if (type !== 'user') {
+  if (type !== 'user' && type !== 'user-banner' && type !== 'user-background') {
     return getResponse({ error: 'Only user images are supported.' }, 400);
   }
 

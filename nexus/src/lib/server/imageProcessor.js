@@ -17,6 +17,10 @@ const THUMB_SIZE = 128;
 const BANNER_WIDTH = 1200;
 const ITEM_SET_MAX_WIDTH = 320;
 const ITEM_SET_MAX_HEIGHT = 480;
+const USER_BANNER_WIDTH = 1200;
+const USER_BANNER_HEIGHT = 200;
+const USER_BACKGROUND_MAX_WIDTH = 1920;
+const USER_BACKGROUND_MAX_HEIGHT = 1080;
 
 // Base upload directories (configured via environment)
 const UPLOAD_BASE = process.env.UPLOAD_DIR || './uploads';
@@ -48,7 +52,7 @@ const VALID_ENTITY_TYPES = [
   'furnishing', 'furniture', 'decoration', 'storagecontainer', 'sign',
   // Information & other
   'mob', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
-  'user', 'guide-category', 'richtext', 'announcement',
+  'user', 'user-banner', 'user-background', 'guide-category', 'richtext', 'announcement',
   // Auction
   'item-set',
   // Globals media (player-uploaded screenshots)
@@ -298,6 +302,8 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
     const isRichtext = entityType === 'richtext';
     const isItemSet = entityType === 'item-set';
     const isGlobal = entityType === 'global';
+    const isUserBanner = entityType === 'user-banner';
+    const isUserBackground = entityType === 'user-background';
 
     // Process icon — banner types get wider dimensions, richtext preserves aspect ratio,
     // item-sets fit within 320x480 (portrait), globals preserve aspect ratio (screenshots),
@@ -305,7 +311,23 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
     const iconPath = join(tempEntityPath, 'icon.webp');
     /** @type {boolean|undefined} */
     var transparent = undefined;
-    if (isGlobal) {
+    if (isUserBackground) {
+      await image
+        .resize(USER_BACKGROUND_MAX_WIDTH, USER_BACKGROUND_MAX_HEIGHT, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .webp({ quality: 85 })
+        .toFile(iconPath);
+    } else if (isUserBanner) {
+      await image
+        .resize(USER_BANNER_WIDTH, USER_BANNER_HEIGHT, {
+          fit: 'cover',
+          position: 'center'
+        })
+        .webp({ quality: 90 })
+        .toFile(iconPath);
+    } else if (isGlobal) {
       // Game screenshots — preserve aspect ratio, constrain to max 1920px wide
       await image
         .resize({ width: 1920, withoutEnlargement: true })

@@ -153,8 +153,9 @@
       if (entityName) formData.append('entityName', entityName);
 
       // Upload to server
-      const uploadUrl = entityType === 'user'
-        ? `/api/image/user/${entityId}`
+      const isUserImage = entityType === 'user' || entityType === 'user-banner' || entityType === 'user-background';
+      const uploadUrl = isUserImage
+        ? `/api/image/${entityType}/${entityId}`
         : '/api/uploads/entity-image';
 
       const response = await fetch(uploadUrl, {
@@ -173,7 +174,7 @@
         tempPath: result.tempPath,
         previewUrl: result.previewUrl,
         approved: result.approved,
-        imageUrl: entityType === 'user' ? `/api/image/user/${entityId}` : null
+        imageUrl: isUserImage ? `/api/image/${entityType}/${entityId}?t=${Date.now()}` : null
       });
 
       addToast(result.approved ? 'Image uploaded and approved' : 'Image uploaded — pending approval', { type: 'success' });
@@ -344,7 +345,7 @@
     uploading = true;
     error = '';
     try {
-      const response = await fetch(`/api/image/user/${entityId}`, { method: 'DELETE' });
+      const response = await fetch(`/api/image/${entityType}/${entityId}`, { method: 'DELETE' });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || `Delete failed: ${response.status}`);
@@ -501,7 +502,7 @@
           </p>
         {/if}
 
-        {#if entityType !== 'user'}
+        {#if entityType !== 'user' && entityType !== 'user-banner' && entityType !== 'user-background'}
           <div class="approval-note">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10" />
@@ -782,7 +783,8 @@
   .crop-container {
     position: relative;
     width: 100%;
-    height: 300px;
+    height: 420px;
+    max-height: 60vh;
     background-color: var(--bg-color);
     border-radius: 8px;
     overflow: hidden;

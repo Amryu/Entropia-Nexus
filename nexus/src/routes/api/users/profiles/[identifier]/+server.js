@@ -153,6 +153,10 @@ export async function GET({ params, locals, fetch }) {
   const discordAvatarUrl = resolveDiscordAvatar(profileUser);
   const hasCustomImage = !!getApprovedImagePath('user', profileUser.id, 'icon');
   const profileImageUrl = hasCustomImage ? `/api/image/user/${profileUser.id}` : null;
+  const hasCustomBanner = !!getApprovedImagePath('user-banner', profileUser.id, 'icon');
+  const profileBannerUrl = hasCustomBanner ? `/api/image/user-banner/${profileUser.id}` : null;
+  const hasCustomBackground = !!getApprovedImagePath('user-background', profileUser.id, 'icon');
+  const profileBackgroundUrl = hasCustomBackground ? `/api/image/user-background/${profileUser.id}` : null;
 
   const society = profileUser.society_id && profileUser.society_id > 0
     ? await getSocietyById(profileUser.society_id)
@@ -180,6 +184,10 @@ export async function GET({ params, locals, fetch }) {
       discordAvatarUrl,
       profileImageUrl,
       hasCustomImage,
+      profileBannerUrl,
+      hasCustomBanner,
+      profileBackgroundUrl,
+      hasCustomBackground,
       societyId: profileUser.society_id ?? null,
       society: society || pendingSociety,
       pendingSocietyRequest,
