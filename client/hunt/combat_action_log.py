@@ -37,6 +37,10 @@ class CombatAction:
     tool_name: str | None = None
     tool_source: str | None = None  # "ocr_reload", "ocr_direct", "ocr_timeline", "inferred"
     confidence: float = 0.0
+    # "encounter" = action occurred during an active encounter.
+    # "pre_encounter" = action occurred while no encounter was active
+    #   and was later reassigned to the next encounter that started.
+    phase: str = "encounter"
 
 
 class CombatActionLog:
@@ -149,6 +153,26 @@ class CombatActionLog:
 
         action.encounter_id = encounter_id
         self._by_encounter.setdefault(encounter_id, []).append(action)
+
+    def reassign_unattached(self, encounter_id: str, since: datetime,
+                             phase: str = "pre_encounter") -> list[CombatAction]:
+        """Attach orphaned actions (encounter_id=None) since `since` to `encounter_id`.
+
+        Used when a new encounter starts to retroactively attribute tool
+        uses (heals, buffs, idle shots) that happened between encounters.
+        Returns the list of reassigned actions in chronological order.
+        """
+        reassigned: list[CombatAction] = []
+        for action in self._actions:
+            if action.encounter_id is not None:
+                continue
+            if action.timestamp < since:
+                continue
+            action.encounter_id = encounter_id
+            action.phase = phase
+            self._by_encounter.setdefault(encounter_id, []).append(action)
+            reassigned.append(action)
+        return reassigned
 
     def clear(self) -> None:
         """Clear all actions (called on session end)."""

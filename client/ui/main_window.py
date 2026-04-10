@@ -108,6 +108,8 @@ class MainWindow(QWidget):
         self._markup_resolver = None
         self._exchange_store = None
         self._favourites_store = None
+        self._hunt_tracker = None  # set after workers start (see set_hunt_tracker)
+        self._tool_categorizer = None  # lazily built on first Hunt page access
         self._quitting = False
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
@@ -293,19 +295,36 @@ class MainWindow(QWidget):
     def _create_hunt_page(self):
         from .pages.hunt_page import HuntPage
         from ..hunt.markup_resolver import MarkupResolver
+        from ..hunt.tool_categorizer import ToolCategorizer
         self._markup_resolver = MarkupResolver(
             self._db, self._nexus_client, self._data_client,
         )
+        if self._tool_categorizer is None:
+            self._tool_categorizer = ToolCategorizer(
+                self._data_client, markup_resolver=self._markup_resolver,
+            )
         page = HuntPage(signals=self._signals, db=self._db,
                         event_bus=self._event_bus, config=self._config,
                         config_path=self._config_path,
-                        markup_resolver=self._markup_resolver)
+                        markup_resolver=self._markup_resolver,
+                        data_client=self._data_client,
+                        tool_categorizer=self._tool_categorizer,
+                        hunt_tracker_getter=lambda: self._hunt_tracker)
         import threading
         threading.Thread(
             target=self._refresh_markup_caches, daemon=True,
             name="markup-cache",
         ).start()
         return page
+
+    def set_hunt_tracker(self, tracker) -> None:
+        """Register the live HuntTracker instance.
+
+        Called after _start_hunt_tracker() in app.py has constructed
+        the tracker. Pages created earlier by prewarm_all_pages() keep
+        a getter closure so they can pull the fresh instance on demand.
+        """
+        self._hunt_tracker = tracker
 
     def _create_inventory_page(self):
         from .pages.inventory_page import InventoryPage
@@ -600,9 +619,25 @@ class MainWindow(QWidget):
             self._sound_effect.play()
 
     def _setup_capture_sounds(self):
-        """Initialize QSoundEffects for screenshot and clip feedback."""
+        """Connect capture sound signals.
+
+        QSoundEffect objects are created lazily on first play to avoid
+        importing PyQt6.QtMultimedia at startup — that import spins up
+        the Qt FFmpeg backend and its busy-looping native thread.
+        """
         self._screenshot_sound = None
         self._clip_sound = None
+        self._capture_sounds_initialized = False
+
+        self._signals.screenshot_saved.connect(self._on_screenshot_sound)
+        self._signals.clip_saved.connect(self._on_clip_sound)
+        self._signals.recording_stopped.connect(self._on_clip_sound)
+
+    def _ensure_capture_sounds(self):
+        """Lazily create QSoundEffect objects on first use."""
+        if self._capture_sounds_initialized:
+            return
+        self._capture_sounds_initialized = True
         try:
             from PyQt6.QtMultimedia import QSoundEffect
             from PyQt6.QtCore import QUrl
@@ -624,23 +659,23 @@ class MainWindow(QWidget):
         except ImportError:
             pass
 
-        self._signals.screenshot_saved.connect(self._on_screenshot_sound)
-        self._signals.clip_saved.connect(self._on_clip_sound)
-        self._signals.recording_stopped.connect(self._on_clip_sound)
-
     def _on_screenshot_sound(self, data):
         if self._is_recording:
             return
         if getattr(self._config, "capture_enabled", False) and self._config.clip_audio_enabled:
             return
-        if self._config.screenshot_sound_enabled and self._screenshot_sound:
-            self._screenshot_sound.play()
+        if self._config.screenshot_sound_enabled:
+            self._ensure_capture_sounds()
+            if self._screenshot_sound:
+                self._screenshot_sound.play()
 
     def _on_clip_sound(self, data):
         if self._is_recording:
             return
-        if self._config.clip_sound_enabled and self._clip_sound:
-            self._clip_sound.play()
+        if self._config.clip_sound_enabled:
+            self._ensure_capture_sounds()
+            if self._clip_sound:
+                self._clip_sound.play()
 
     def _poll_server_notifications(self):
         import threading

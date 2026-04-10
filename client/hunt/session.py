@@ -302,6 +302,14 @@ class HuntSession:
         return sum(e.death_count for e in self.encounters)
 
     @property
+    def global_count(self) -> int:
+        return sum(1 for e in self.encounters if e.is_global)
+
+    @property
+    def hof_count(self) -> int:
+        return sum(1 for e in self.encounters if e.is_hof)
+
+    @property
     def all_loot_items(self) -> list[EncounterLootItem]:
         """Flat list of non-blacklisted, non-refining loot items across encounters."""
         items = []

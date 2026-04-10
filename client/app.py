@@ -453,12 +453,14 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
     # Hunt tracker must subscribe to EVENT_CATCHUP_COMPLETE before the chat
     # watcher starts, otherwise a fast catchup (empty log) can race ahead.
     if is_dev_build():
-        workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
+        _ht_workers, _ht_tracker = _start_hunt_tracker(config, event_bus, db, data_client)
+        workers.extend(_ht_workers)
+        main_window.set_hunt_tracker(_ht_tracker)
     workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated(), data_client=data_client))
     workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_distributor))
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
-    _tl_workers = _start_target_lock_detector(config, event_bus, frame_distributor)
+    _tl_workers = _start_target_lock_detector(config, event_bus, frame_distributor, data_client)
     _ps_workers = _start_player_status_detector(config, event_bus, frame_distributor, data_client)
     _mp_workers = _start_market_price_detector(config, event_bus, frame_distributor, data_client)
     _mc_workers = _start_market_clipboard_monitor(config, event_bus)
@@ -475,7 +477,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
     _detector_refs = {
         "target_lock": (_tl_workers[0] if _tl_workers else None,
                         "target_lock_enabled",
-                        lambda: _start_target_lock_detector(config, event_bus, frame_distributor)),
+                        lambda: _start_target_lock_detector(config, event_bus, frame_distributor, data_client)),
         "player_status": (_ps_workers[0] if _ps_workers else None,
                           "player_status_enabled",
                           lambda: _start_player_status_detector(config, event_bus, frame_distributor, data_client)),
@@ -1139,9 +1141,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False,
     freeze_detector.start()
     freeze_detector.arm()
 
-    from .core.thread_profiler import ThreadProfiler
-    thread_profiler = ThreadProfiler()
-    thread_profiler.start()
     _sigint_extras.update(
         freeze_detector=freeze_detector,
         main_window=main_window,
@@ -1319,7 +1318,8 @@ def _run_headless(config, event_bus, db):
 
     workers = []
     if is_dev_build():
-        workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
+        _ht_workers, _ = _start_hunt_tracker(config, event_bus, db, data_client)
+        workers.extend(_ht_workers)
     workers.extend(_start_chat_watcher(config, event_bus, db, data_client=data_client))
     workers.extend(_start_ocr_pipeline(config, event_bus, db))
     workers.extend(_start_hotkey_manager(config, event_bus))
@@ -1448,8 +1448,14 @@ def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
 
 
 def _start_hunt_tracker(config, event_bus, db, data_client=None):
-    """Start the hunt session tracker. Returns list of stoppable workers."""
+    """Start the hunt session tracker.
+
+    Returns (workers, tracker) where ``tracker`` may be None if init
+    failed. Callers that need the instance (e.g. the Hunt dashboard)
+    grab it from the tuple; legacy callers can ignore the second slot.
+    """
     workers = []
+    tracker = None
     try:
         from .hunt.tracker import HuntTracker
         tracker = HuntTracker(config, event_bus, db, data_client)
@@ -1457,7 +1463,7 @@ def _start_hunt_tracker(config, event_bus, db, data_client=None):
         log.info("Hunt tracker ready")
     except Exception:
         log.exception("Hunt tracker failed to start")
-    return workers
+    return workers, tracker
 
 
 def _start_hotkey_manager(config, event_bus):
@@ -1488,7 +1494,8 @@ def _start_update_checker(config, event_bus):
     return workers
 
 
-def _start_target_lock_detector(config, event_bus, frame_cache=None):
+def _start_target_lock_detector(config, event_bus, frame_cache=None,
+                                data_client=None):
     """Start the target lock detector. Returns list of stoppable workers."""
     workers = []
     if not getattr(config, "target_lock_enabled", True):
@@ -1498,7 +1505,9 @@ def _start_target_lock_detector(config, event_bus, frame_cache=None):
         if frame_cache is None:
             from .ocr.capturer import ScreenCapturer
             frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
-        detector = TargetLockDetector(config, event_bus, frame_cache)
+        detector = TargetLockDetector(
+            config, event_bus, frame_cache, data_client=data_client,
+        )
         detector.start()
         workers.append(detector)
         log.info("Target lock detector started")

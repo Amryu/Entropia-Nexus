@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QTabWidget, QSpinBox, QDoubleSpinBox,
     QTreeWidget, QTreeWidgetItem, QScrollArea, QMessageBox,
     QTextEdit, QComboBox, QLineEdit, QMenu, QInputDialog,
+    QStackedWidget,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QAction
@@ -29,7 +30,8 @@ class HuntPage(QWidget):
     GLOBAL_CORRELATION_WINDOW = timedelta(seconds=10)
 
     def __init__(self, *, signals, db, event_bus, config, config_path,
-                 markup_resolver=None):
+                 markup_resolver=None, data_client=None, tool_categorizer=None,
+                 hunt_tracker_getter=None):
         super().__init__()
         self._signals = signals
         self._db = db
@@ -37,6 +39,9 @@ class HuntPage(QWidget):
         self._config = config
         self._config_path = config_path
         self._markup_resolver = markup_resolver
+        self._data_client = data_client
+        self._tool_categorizer = tool_categorizer
+        self._hunt_tracker_getter = hunt_tracker_getter or (lambda: None)
         self._active_session_id = None
         self._session_start_time: datetime | None = None
 
@@ -192,6 +197,64 @@ class HuntPage(QWidget):
     # ------------------------------------------------------------------ #
 
     def _build_current_hunt_tab(self):
+        """Host the current-hunt tab as a QStackedWidget with a segmented
+        toggle between the new dashboard and the legacy log tables."""
+        tab = QWidget()
+        outer = QVBoxLayout(tab)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(4)
+
+        toggle_row = QHBoxLayout()
+        toggle_row.setContentsMargins(8, 4, 8, 0)
+        dashboard_btn = QPushButton("Dashboard")
+        log_btn = QPushButton("Log Tables")
+        for btn in (dashboard_btn, log_btn):
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+        dashboard_btn.setChecked(True)
+        toggle_row.addWidget(dashboard_btn)
+        toggle_row.addWidget(log_btn)
+        toggle_row.addStretch(1)
+        outer.addLayout(toggle_row)
+
+        stack = QStackedWidget()
+        self._current_hunt_stack = stack
+
+        # Dashboard view (index 0).
+        try:
+            from .hunt_dashboard import HuntDashboardView
+            dashboard_view = HuntDashboardView(
+                signals=self._signals,
+                db=self._db,
+                event_bus=self._event_bus,
+                config=self._config,
+                config_path=self._config_path,
+                markup_resolver=self._markup_resolver,
+                data_client=self._data_client,
+                tool_categorizer=self._tool_categorizer,
+                hunt_tracker_getter=self._hunt_tracker_getter,
+            )
+        except Exception:
+            # Fall back to a placeholder so the legacy log view stays
+            # reachable if dashboard construction crashes.
+            import traceback
+            traceback.print_exc()
+            dashboard_view = QLabel("Dashboard failed to load. See logs.")
+        stack.addWidget(dashboard_view)
+
+        # Legacy log view (index 1) - same widgets as before.
+        log_view = self._build_hunt_log_view()
+        stack.addWidget(log_view)
+
+        outer.addWidget(stack, 1)
+
+        dashboard_btn.clicked.connect(lambda: stack.setCurrentIndex(0))
+        log_btn.clicked.connect(lambda: stack.setCurrentIndex(1))
+
+        self._tabs.addTab(tab, "Current Hunt")
+
+    def _build_hunt_log_view(self):
+        """Legacy current-hunt widgets (kill log, loot table, detail)."""
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
@@ -302,7 +365,7 @@ class HuntPage(QWidget):
         kill_log_layout.addWidget(self._detail_group)
         layout.addWidget(kill_log_group, 1)
 
-        self._tabs.addTab(tab, "Current Hunt")
+        return tab
 
     # ------------------------------------------------------------------ #
     #  Tab 3: Analytics                                                    #

@@ -16,6 +16,7 @@ from ..core.constants import (
     EVENT_HISTORICAL_IMPORT_PROGRESS,
     EVENT_HUNT_ENCOUNTER_ENDED,
     EVENT_HUNT_ENCOUNTER_STARTED,
+    EVENT_OPEN_ENCOUNTER_UPDATED,
     EVENT_HUNT_SESSION_STARTED,
     EVENT_HUNT_SESSION_STOPPED,
     EVENT_HUNT_SESSION_UPDATED,
@@ -109,6 +110,7 @@ class AppSignals(QObject):
     hunt_started = pyqtSignal(object)
     hunt_ended = pyqtSignal(object)
     hunt_split = pyqtSignal(object)
+    open_encounter_updated = pyqtSignal(object)
     session_auto_timeout = pyqtSignal(object)
     mob_target_changed = pyqtSignal(object)
     active_tool_changed = pyqtSignal(object)
@@ -203,6 +205,7 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_HUNT_STARTED: signals.hunt_started,
         EVENT_HUNT_ENDED: signals.hunt_ended,
         EVENT_HUNT_SPLIT: signals.hunt_split,
+        EVENT_OPEN_ENCOUNTER_UPDATED: signals.open_encounter_updated,
         EVENT_SESSION_AUTO_TIMEOUT: signals.session_auto_timeout,
         EVENT_MOB_TARGET_CHANGED: signals.mob_target_changed,
         EVENT_ACTIVE_TOOL_CHANGED: signals.active_tool_changed,

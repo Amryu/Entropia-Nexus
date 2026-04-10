@@ -62,14 +62,23 @@ def aggregate_by_mob(session: HuntSession) -> dict[str, dict]:
     return mobs
 
 
-def aggregate_by_tool(session: HuntSession) -> dict[str, dict]:
+def aggregate_by_tool(
+    source: HuntSession | list[MobEncounter],
+) -> dict[str, dict]:
     """Aggregate stats grouped by tool name.
 
-    Returns: {tool_name: {shots, damage, crits, encounters_used}}
+    Accepts a HuntSession (session scope) or a list of MobEncounter
+    (hunt scope, filtered scope). Returns:
+    {tool_name: {shots, damage, crits, encounters_used}}
     """
+    if isinstance(source, HuntSession):
+        encounters = source.encounters
+    else:
+        encounters = source
+
     tools: dict[str, dict] = {}
 
-    for enc in session.encounters:
+    for enc in encounters:
         for tool_name, ts in enc.tool_stats.items():
             if tool_name not in tools:
                 tools[tool_name] = {
@@ -194,6 +203,55 @@ def mob_efficiency_report(session_stats: SessionRunningStats) -> list[dict]:
         result.append(entry)
     result.sort(key=lambda x: x["kill_count"], reverse=True)
     return result
+
+
+def encounters_economy(encounters: list[MobEncounter]) -> dict:
+    """Economy summary computed directly from an encounter list.
+
+    Mirrors the shape of session_economy_from_stats but operates on an
+    arbitrary slice of encounters (used for hunt-scope dashboard stats
+    where there is no dedicated SessionRunningStats to read from).
+    """
+    total_shots = 0
+    total_cost = 0.0
+    total_loot = 0.0
+    total_kills = 0
+    total_deaths = 0
+    kill_cost_sum = 0.0
+    for enc in encounters:
+        total_shots += enc.shots_fired
+        total_cost += enc.cost
+        total_loot += enc.loot_total_ped
+        if enc.outcome == "kill":
+            total_kills += 1
+            kill_cost_sum += enc.cost
+        if enc.death_count:
+            total_deaths += enc.death_count
+    return {
+        "total_shots": total_shots,
+        "total_cost": round(total_cost, 4),
+        "total_loot": round(total_loot, 4),
+        "total_kills": total_kills,
+        "total_deaths": total_deaths,
+        "profit_loss": round(total_loot - total_cost, 4),
+        "return_pct": round((total_loot / total_cost * 100), 2) if total_cost > 0 else 0,
+        "cost_per_kill": round(kill_cost_sum / total_kills, 4) if total_kills > 0 else 0,
+        "loot_per_kill": round(total_loot / total_kills, 4) if total_kills > 0 else 0,
+    }
+
+
+def mu_consumed(
+    encounters: list[MobEncounter],
+    markup_resolver: "MarkupResolver | None" = None,
+    gear_overrides: dict | None = None,
+) -> float | None:
+    """Total markup consumed (ammo MU + (L) decay above TT) for *encounters*.
+
+    Phase 1 returns None so the dashboard shows a placeholder. Phase 2
+    wires in gear overrides and per-ammo MU resolution; until then the
+    value cannot be computed accurately, so we refuse to guess.
+    """
+    return None
 
 
 def session_economy_from_stats(session_stats: SessionRunningStats) -> dict:

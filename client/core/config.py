@@ -94,6 +94,15 @@ class AppConfig:
     # Open encounter auto-merge: auto-merge successive deaths to same mob
     auto_merge_deaths: bool = False
 
+    # Hunt dashboard — scope + return-mode toggles persist across runs
+    hunt_dashboard_scope: str = "hunt"  # "hunt" | "session"
+    hunt_dashboard_return_mode: str = "percent"  # "percent" | "signed_ped"
+    hunt_dashboard_tool_categories_collapsed: dict = field(default_factory=lambda: {
+        "offense": False,
+        "defense": False,
+        "utility": False,
+    })
+
     # Reload-based tool correlation
     reload_correlation_window_ms: int = 500   # max ms between damage event and reload drop
     reload_correlation_enabled: bool = True
@@ -397,6 +406,13 @@ DEFAULTS = {
     "max_encounter_duration_ms": 600000,
     "attribution_window_ms": 3000,
     "session_auto_timeout_ms": 3600000,
+    "hunt_dashboard_scope": "hunt",
+    "hunt_dashboard_return_mode": "percent",
+    "hunt_dashboard_tool_categories_collapsed": {
+        "offense": False,
+        "defense": False,
+        "utility": False,
+    },
     "hunt_split_mob_threshold": 10,
     "hunt_split_min_remote_kills": 5,
     "auto_merge_deaths": False,
