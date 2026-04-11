@@ -834,6 +834,13 @@
   let displayBannerUrl = $derived(!bannerFailed && profile?.profileBannerUrl ? profile.profileBannerUrl : null);
   let displayBackgroundUrl = $derived(!backgroundFailed && profile?.profileBackgroundUrl ? profile.profileBackgroundUrl : null);
   $effect(() => {
+    if (!browser) return;
+    if (displayBackgroundUrl) {
+      document.body.classList.add('profile-bg-transparent');
+      return () => document.body.classList.remove('profile-bg-transparent');
+    }
+  });
+  $effect(() => {
     evaluation = showcaseLoadout
       ? evaluateLoadout(
           showcaseLoadout,
@@ -2003,6 +2010,10 @@
     flex-direction: column;
     gap: 0;
     position: relative;
+  }
+
+  :global(body.profile-bg-transparent) {
+    background-color: transparent !important;
   }
 
   .profile-page-background,
