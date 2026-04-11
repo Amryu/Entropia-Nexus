@@ -83,6 +83,19 @@
     afterHeader,
   } = $props();
 
+  // Bridge URL query params to WikiNavigation initialFilters so menu
+  // links like /items/weapons?group=ranged auto-apply the filter.
+  let initialFiltersFromUrl = $derived((() => {
+    const out = {};
+    const sp = $page.url.searchParams;
+    for (const f of navFilters || []) {
+      if (!f?.key) continue;
+      const v = sp.get(f.key);
+      if (v !== null && v !== '') out[f.key] = v;
+    }
+    return out;
+  })());
+
   // Auth help dialog state
   let showAuthDialog = $state(false);
 
@@ -347,6 +360,7 @@
         <WikiNavigation
           items={navItems}
           filters={navFilters}
+          initialFilters={initialFiltersFromUrl}
           {basePath}
           {title}
           currentSlug={entity?.Name}
@@ -369,6 +383,7 @@
           <WikiNavigation
             items={navItems}
             filters={navFilters}
+            initialFilters={initialFiltersFromUrl}
             {basePath}
             {title}
             currentSlug={entity?.Name}

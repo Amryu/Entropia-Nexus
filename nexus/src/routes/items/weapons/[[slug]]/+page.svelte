@@ -209,14 +209,38 @@
   // Navigation filters
   const navFilters = [
     {
-      key: 'Properties.Class',
-      label: 'Class',
+      key: 'group',
+      label: 'Group',
       values: [
-        { value: 'Ranged', label: 'Ranged' },
-        { value: 'Melee', label: 'Melee' },
-        { value: 'Mindforce', label: 'Mindforce' },
-        { value: 'Attached', label: 'Attached' },
-      ]
+        { value: 'ranged', label: 'Ranged' },
+        { value: 'melee', label: 'Melee' },
+        { value: 'mindforce', label: 'Mindforce' },
+        { value: 'attached', label: 'Attached' },
+        { value: 'mounted', label: 'Mounted' },
+        { value: 'spacemining', label: 'Space Mining' },
+      ],
+      filterFn: (item, value) => {
+        const cls = item?.Properties?.Class || '';
+        const cat = item?.Properties?.Category || '';
+        const type = item?.Properties?.Type || '';
+        const isMining = /mining/i.test(type);
+        switch (value) {
+          case 'ranged':
+            return cls === 'Ranged' && cat !== 'Mounted' && !isMining;
+          case 'melee':
+            return cls === 'Melee';
+          case 'mindforce':
+            return cls === 'Mindforce';
+          case 'attached':
+            return cls === 'Attached' && !isMining;
+          case 'mounted':
+            return cat === 'Mounted' && !isMining;
+          case 'spacemining':
+            return isMining;
+          default:
+            return true;
+        }
+      }
     }
   ];
 
