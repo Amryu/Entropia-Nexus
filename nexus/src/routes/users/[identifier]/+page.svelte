@@ -30,7 +30,6 @@
   let isEditing = $state(false);
   let saveError = $state('');
   let saveStatus = $state('');
-  let tabInitialized = $state(false);
   let imageFailed = $state(false);
   let bannerFailed = $state(false);
   let backgroundFailed = $state(false);
@@ -125,10 +124,10 @@
 
   // Reset UI state when navigating to a different profile
   function resetUIState() {
+    activeTab = resolveInitialTab(data);
     isEditing = false;
     saveError = '';
     saveStatus = '';
-    tabInitialized = false;
     imageFailed = false;
     bannerFailed = false;
     backgroundFailed = false;
@@ -228,7 +227,29 @@
   }
 
 
-  let activeTab = $state('General');
+  function resolveInitialTab(d) {
+    const p = d?.profileData?.profile;
+    if (!p) return 'General';
+    const av = d.profileData.avatar || {};
+    const svc = d.profileData.services || [];
+    const shp = d.profileData.shops || [];
+    const ord = d.profileData.orders || [];
+    const rnt = d.profileData.rentals || [];
+    const availability = {
+      General: true,
+      Avatar: !!(p.showcaseLoadoutCode || av.showcaseLoadout),
+      Globals: !!p.euName,
+      Services: svc.length > 0,
+      Rentals: rnt.length > 0,
+      Shops: shp.length > 0,
+      Orders: ord.length > 0
+    };
+    const visible = PROFILE_TABS.filter(id => availability[id]);
+    const desired = p.defaultTab || 'General';
+    return visible.includes(desired) ? desired : (visible[0] || 'General');
+  }
+
+  let activeTab = $state(untrack(() => resolveInitialTab(data)));
 
 
 
@@ -371,7 +392,6 @@
       avatar = { ...avatar, showcaseLoadout: nextShowcase };
       isEditing = false;
       saveStatus = 'Profile updated.';
-      tabInitialized = false;
     } catch (err) {
       saveError = err.message || 'Failed to update profile.';
     }
@@ -720,15 +740,8 @@
     .map(id => ({ id, label: id, available: tabAvailability[id]?.() ?? true }))
     .filter(tab => tab.available));
   $effect(() => {
-    if (!untrack(() => tabInitialized) && availableTabs.length > 0) {
-      const desired = profile.defaultTab || 'General';
-      activeTab = availableTabs.find(tab => tab.id === desired)?.id || availableTabs[0].id;
-      tabInitialized = true;
-    }
-  });
-  $effect(() => {
-    if (tabInitialized && !availableTabs.find(tab => tab.id === untrack(() => activeTab))) {
-      activeTab = availableTabs[0]?.id || 'General';
+    if (availableTabs.length > 0 && !availableTabs.find(tab => tab.id === untrack(() => activeTab))) {
+      activeTab = availableTabs[0].id;
     }
   });
   $effect(() => {
@@ -884,26 +897,18 @@
       onerror={() => (backgroundFailed = true)}
     />
   {/if}
-  <div class="profile-header" class:has-banner={!!displayBannerUrl}>
-    {#if displayBannerUrl || (isOwner && isEditing)}
-      <div class="profile-header-banner">
-        {#if displayBannerUrl}
-          <img
-            src={displayBannerUrl}
-            alt=""
-            class="profile-banner-img"
-            onerror={() => (bannerFailed = true)}
-          />
-        {/if}
-        {#if isOwner && isEditing}
-          <button
-            type="button"
-            class="banner-edit-btn"
-            onclick={openBannerDialog}
-            title="Change banner"
-          >{displayBannerUrl ? 'Change banner' : 'Add banner'}</button>
-        {/if}
-      </div>
+  <div
+    class="profile-header"
+    class:has-banner={!!displayBannerUrl}
+    style={displayBannerUrl ? `background-image: url('${displayBannerUrl}');` : ''}
+  >
+    {#if displayBannerUrl}
+      <img
+        src={displayBannerUrl}
+        alt=""
+        class="profile-banner-probe"
+        onerror={() => (bannerFailed = true)}
+      />
     {/if}
     <div class="profile-header-content">
     <div class="profile-image">
@@ -972,6 +977,7 @@
     {#if isOwner}
       <div class="profile-actions">
         {#if isEditing}
+          <button class="btn btn-secondary btn-small" onclick={openBannerDialog} title="Change banner">Banner</button>
           <button class="btn btn-secondary btn-small" onclick={openBackgroundDialog} title="Change page background">Background</button>
           <button class="btn btn-primary" onclick={saveProfile}>Save</button>
           <button class="btn btn-secondary" onclick={cancelEdit}>Cancel</button>
@@ -2026,60 +2032,46 @@
   }
 
   .profile-header {
-    background: var(--secondary-color);
+    background-color: var(--secondary-color);
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
     border: 1px solid var(--border-color, #444);
-    border-radius: 16px 16px 0 0;
+    border-radius: 16px;
     position: relative;
     overflow: hidden;
-    margin-bottom: 0;
   }
 
-  .profile-header-banner {
-    position: relative;
-    width: 100%;
-    height: 200px;
-    background: linear-gradient(135deg, var(--bg-color, #111), var(--secondary-color));
-    overflow: hidden;
-  }
-
-  .profile-header.has-banner .profile-header-banner {
-    background: transparent;
-  }
-
-  .profile-banner-img {
+  .profile-header.has-banner::before {
+    content: '';
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0.6) 60%,
+      rgba(0, 0, 0, 0.75) 100%
+    );
+    pointer-events: none;
   }
 
-  .banner-edit-btn {
+  .profile-banner-probe {
     position: absolute;
-    right: 12px;
-    bottom: 12px;
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    background: rgba(0, 0, 0, 0.55);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
-  }
-
-  .banner-edit-btn:hover {
-    background: rgba(0, 0, 0, 0.75);
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
   }
 
   .profile-header-content {
     display: grid;
-    grid-template-columns: 160px 1fr;
+    grid-template-columns: 180px 1fr;
     gap: 24px;
     padding: 20px;
     position: relative;
+    z-index: 1;
+    min-height: 200px;
+    box-sizing: border-box;
   }
 
   .profile-image {
@@ -2092,8 +2084,8 @@
 
   .profile-image img,
   .profile-image-placeholder {
-    width: 140px;
-    height: 140px;
+    width: 160px;
+    height: 160px;
     border-radius: 12px;
     object-fit: cover;
     background: var(--bg-color, #111);

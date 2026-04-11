@@ -133,7 +133,7 @@ export async function POST({ params, request, locals }) {
 
     await processAndSaveImage(buffer, type, entityId, userId);
     await approveImage(type, entityId);
-    return getResponse({ success: true }, 200);
+    return getResponse({ success: true, approved: true }, 200);
   } catch (err) {
     console.error('Profile image upload error:', err);
     return getResponse({ error: 'Failed to upload image.' }, 500);
