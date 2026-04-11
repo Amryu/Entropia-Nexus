@@ -127,6 +127,9 @@ const OVERCAP_WEIGHTS = {
 };
 const DEFAULT_OVERCAP_WEIGHT = 0.8;
 
+// Penalty per reuse of an item across selected results. Higher = more variety.
+const DEFAULT_DIVERSITY_WEIGHT = 40;
+
 // ---------------------------------------------------------------------------
 // Effect extraction helpers
 // ---------------------------------------------------------------------------
@@ -234,7 +237,7 @@ export function collectAllEffects(slots, entities) {
     }
   }
   // Secondary slots
-  const secondaryKeys = ['weapon', 'amplifier', 'visionAttachment', 'absorber', 'implant'];
+  const secondaryKeys = ['weapon', 'amplifier', 'scope', 'scopeSight', 'sight', 'absorber', 'implant'];
   for (const key of secondaryKeys) {
     const name = slots.secondary?.[key];
     if (name && entities[key]) {
@@ -403,91 +406,224 @@ function prefilterPetCandidates(pets, targetNames) {
   return candidates;
 }
 
-export function findBestCombinations(targets, candidatesBySlot, effectsCatalog, effectCaps, options = {}) {
-  const { maxResults = 10, beamWidth = 100, topK = 20 } = options;
+/**
+ * Canonical signature for a set of effect objects. Two items are considered
+ * interchangeable (alternatives) ONLY when every single effect matches exactly -
+ * same effect names, same Values, and same count. Any difference in a Values
+ * field or an extra / missing effect produces a distinct signature.
+ */
+function normalizeEffect(e) {
+  if (!e?.Name) return null;
+  const parts = [e.Name];
+  if (e.Values && typeof e.Values === 'object') {
+    const keys = Object.keys(e.Values).sort();
+    for (const k of keys) {
+      parts.push(`v.${k}=${JSON.stringify(e.Values[k])}`);
+    }
+  }
+  if (e.Properties && typeof e.Properties === 'object') {
+    const keys = Object.keys(e.Properties).sort();
+    for (const k of keys) {
+      parts.push(`p.${k}=${JSON.stringify(e.Properties[k])}`);
+    }
+  }
+  return parts.join('~');
+}
+
+export function effectSignature(effects) {
+  const entries = [];
+  for (const e of (effects || [])) {
+    const n = normalizeEffect(e);
+    if (n) entries.push(n);
+  }
+  entries.sort();
+  return entries.join('||');
+}
+
+/**
+ * Group candidate entries by effect signature. Returns an array of groups,
+ * each { signature, effects, members: [...] } where members are interchangeable.
+ */
+function groupSlotAlternatives(entries, getEffects) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const effs = getEffects(entry);
+    const sig = effectSignature(effs);
+    if (!sig) continue;
+    let group = groups.get(sig);
+    if (!group) {
+      group = { signature: sig, effects: effs, members: [] };
+      groups.set(sig, group);
+    }
+    group.members.push(entry);
+  }
+  return [...groups.values()];
+}
+
+/**
+ * Find best equipment combinations via beam search.
+ *
+ * @param {object} slotConfigs - Map of slotKey to config:
+ *   {
+ *     type: 'ring' | 'armorSet' | 'pet' | 'equipment',
+ *     items: Item[],          // candidate pool (ignored if locked)
+ *     locked: boolean,        // true = keep current item, don't optimize
+ *     currentEffects: Effect[], // effects from currently-equipped item (added to base when locked)
+ *     pieceCount?: number,    // armorSet only
+ *     pairExclude?: string,   // slotKey that cannot contain the same item (rings)
+ *   }
+ */
+export function findBestCombinations(targets, slotConfigs, effectsCatalog, effectCaps, options = {}) {
+  const {
+    maxResults = 10,
+    beamWidth = 100,
+    topK = 20,
+    diversityWeight = DEFAULT_DIVERSITY_WEIGHT,
+  } = options;
   const targetNames = new Set(Object.keys(targets));
 
-  // Pre-filter each slot
-  const slots = [
-    { key: 'leftRing', items: prefilterCandidates(candidatesBySlot.leftRings || [], targetNames).slice(0, topK), isPet: false },
-    { key: 'rightRing', items: prefilterCandidates(candidatesBySlot.rightRings || [], targetNames).slice(0, topK), isPet: false },
-    { key: 'armorSet', items: prefilterCandidates(candidatesBySlot.armorSets || [], targetNames, true, options.armorSetPieces || 7).slice(0, topK), isPet: false, isArmorSet: true },
-    { key: 'pet', items: prefilterPetCandidates(candidatesBySlot.pets || [], targetNames).slice(0, topK), isPet: true },
-  ];
-
-  // Include locked items' effects as base
+  // Aggregate base effects from all locked slots
   const lockedEffects = [];
-  if (options.lockedSlots) {
-    for (const eff of (options.lockedSlots.effects || [])) {
-      lockedEffects.push(eff);
+  for (const cfg of Object.values(slotConfigs || {})) {
+    if (cfg?.locked && Array.isArray(cfg.currentEffects)) {
+      lockedEffects.push(...cfg.currentEffects);
     }
   }
 
-  // Beam search
-  let beam = [{ items: {}, effects: [...lockedEffects] }];
+  // Build per-slot group lists for unlocked slots
+  const unlockedSlots = [];
+  for (const [key, cfg] of Object.entries(slotConfigs || {})) {
+    if (!cfg || cfg.locked) continue;
+    const items = cfg.items || [];
+    const pieceCount = cfg.pieceCount || 7;
 
-  for (const slot of slots) {
-    if (options.lockedSlots?.[slot.key]) {
-      // Skip locked slots - already included in lockedEffects
-      continue;
+    let prefiltered;
+    let getEffects;
+
+    if (cfg.type === 'pet') {
+      prefiltered = prefilterPetCandidates(items, targetNames);
+      getEffects = (entry) => {
+        const e = extractPetEffect(entry.item, entry.effectKey);
+        return e ? [e] : [];
+      };
+    } else if (cfg.type === 'armorSet') {
+      prefiltered = prefilterCandidates(items, targetNames, true, pieceCount);
+      getEffects = (entry) => extractArmorSetEffects(entry.item, pieceCount);
+    } else {
+      prefiltered = prefilterCandidates(items, targetNames);
+      getEffects = (entry) => extractEquipEffects(entry.item);
     }
 
+    const sliced = prefiltered.slice(0, topK);
+    const groups = groupSlotAlternatives(sliced, getEffects);
+    if (groups.length === 0) continue;
+
+    unlockedSlots.push({
+      key,
+      type: cfg.type,
+      pairExclude: cfg.pairExclude || null,
+      groups,
+    });
+  }
+
+  // Beam search over slot groups
+  let beam = [{ items: {}, alternatives: {}, effects: [...lockedEffects], score: 0 }];
+
+  for (const slot of unlockedSlots) {
     const nextBeam = [];
 
     for (const candidate of beam) {
-      // Also consider "empty" for this slot
-      nextBeam.push({ ...candidate, items: { ...candidate.items } });
+      // Keep "skip this slot" as an option
+      nextBeam.push({
+        items: { ...candidate.items },
+        alternatives: { ...candidate.alternatives },
+        effects: [...candidate.effects],
+        score: candidate.score,
+      });
 
-      for (const entry of slot.items) {
-        let slotEffects;
-        const newItems = { ...candidate.items };
+      for (const group of slot.groups) {
+        const rep = group.members[0];
+        const repName = rep.item?.Name;
+        if (!repName) continue;
 
-        if (slot.isPet) {
-          const petEffect = extractPetEffect(entry.item, entry.effectKey);
-          slotEffects = petEffect ? [petEffect] : [];
-          newItems[slot.key] = { name: entry.item.Name, effectKey: entry.effectKey };
-        } else if (slot.isArmorSet) {
-          slotEffects = extractArmorSetEffects(entry.item, options.armorSetPieces || 7);
-          newItems[slot.key] = entry.item.Name;
-        } else {
-          slotEffects = extractEquipEffects(entry.item);
-          newItems[slot.key] = entry.item.Name;
-
-          // Prevent same ring in both slots
-          if (slot.key === 'rightRing' && newItems.leftRing === entry.item.Name) continue;
+        // Rings: avoid same item in both ring slots
+        if (slot.pairExclude) {
+          const partner = candidate.items[slot.pairExclude];
+          const partnerName = (partner && typeof partner === 'object') ? partner.name : partner;
+          if (partnerName && partnerName === repName && group.members.length === 1) continue;
         }
 
-        const allEffects = [...candidate.effects, ...slotEffects];
+        const newItems = { ...candidate.items };
+        const newAlts = { ...candidate.alternatives };
+
+        if (slot.type === 'pet') {
+          newItems[slot.key] = { name: repName, effectKey: rep.effectKey };
+          newAlts[slot.key] = group.members.map(m => ({ name: m.item.Name, effectKey: m.effectKey }));
+        } else {
+          newItems[slot.key] = repName;
+          newAlts[slot.key] = group.members.map(m => m.item.Name);
+        }
+
+        const allEffects = [...candidate.effects, ...group.effects];
         const { score } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
-        nextBeam.push({ items: newItems, effects: allEffects, score });
+        nextBeam.push({ items: newItems, alternatives: newAlts, effects: allEffects, score });
       }
     }
 
-    // Keep top beamWidth candidates
     nextBeam.sort((a, b) => (b.score || 0) - (a.score || 0));
     beam = nextBeam.slice(0, beamWidth);
   }
 
-  // Score final candidates
-  const results = beam.map(candidate => {
+  // Final scoring with details/summary
+  const scored = beam.map(candidate => {
     const { score, details, summary } = scoreCombination(targets, candidate.effects, effectsCatalog, effectCaps, options);
     return { ...candidate, score, details, summary };
   });
+  scored.sort((a, b) => b.score - a.score);
 
-  results.sort((a, b) => b.score - a.score);
-
-  // Deduplicate by item combination
+  // Dedup by total effect signature (collapses pure alternative-swap duplicates)
   const seen = new Set();
-  const unique = [];
-  for (const r of results) {
-    const key = JSON.stringify(r.items);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(r);
-    if (unique.length >= maxResults) break;
+  const deduped = [];
+  for (const r of scored) {
+    const sig = effectSignature(r.effects);
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    deduped.push(r);
   }
 
-  return unique;
+  // Greedy selection with diversity penalty: penalize reuse of the same item
+  // across previously-selected results so the top-N vary.
+  const selected = [];
+  const itemUseCount = new Map();
+
+  while (selected.length < maxResults && deduped.length > 0) {
+    let bestIdx = -1;
+    let bestAdjusted = -Infinity;
+    for (let i = 0; i < deduped.length; i++) {
+      const c = deduped[i];
+      let penalty = 0;
+      for (const val of Object.values(c.items)) {
+        const name = (val && typeof val === 'object') ? val.name : val;
+        if (!name) continue;
+        penalty += (itemUseCount.get(name) || 0) * diversityWeight;
+      }
+      const adjusted = (c.score || 0) - penalty;
+      if (adjusted > bestAdjusted) {
+        bestAdjusted = adjusted;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx === -1) break;
+    const picked = deduped.splice(bestIdx, 1)[0];
+    selected.push(picked);
+    for (const val of Object.values(picked.items)) {
+      const name = (val && typeof val === 'object') ? val.name : val;
+      if (!name) continue;
+      itemUseCount.set(name, (itemUseCount.get(name) || 0) + 1);
+    }
+  }
+
+  return selected;
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +660,7 @@ export function suggestForSlot(slotKey, targets, currentSlots, entities, effects
       }
     }
     if (currentSlots.secondary) {
-      const secondaryKeys = ['weapon', 'amplifier', 'visionAttachment', 'absorber', 'implant'];
+      const secondaryKeys = ['weapon', 'amplifier', 'scope', 'scopeSight', 'sight', 'absorber', 'implant'];
       for (const key of secondaryKeys) {
         const name = currentSlots.secondary[key];
         if (name && entities[key]) {
@@ -538,25 +674,31 @@ export function suggestForSlot(slotKey, targets, currentSlots, entities, effects
   function scoreCandidate(slotEffects, itemName, extraProps = {}) {
     const allEffects = [...otherEffects, ...slotEffects];
 
+    // Raw per-target item contribution (what the item itself provides)
+    const itemValues = {};
+    for (const effectName of Object.keys(targets)) {
+      const itemEffect = slotEffects.find(e => e?.Name === effectName);
+      itemValues[effectName] = itemEffect ? getEffectStrength(itemEffect) : 0;
+    }
+
     if (mode === 'standalone') {
       // Standalone: measure what % of each target this item alone fills, averaged across all targets
       let totalPct = 0;
       const pctDetails = [];
       const numTargets = Object.keys(targets).length;
       for (const [effectName, targetValue] of Object.entries(targets)) {
-        const itemEffect = slotEffects.find(e => e?.Name === effectName);
-        const itemStrength = itemEffect ? getEffectStrength(itemEffect) : 0;
+        const itemStrength = itemValues[effectName];
         const pct = targetValue > 0 ? (itemStrength / targetValue) * 100 : 0;
         totalPct += Math.min(pct, 100);
         pctDetails.push({ effectName, targetValue, achieved: itemStrength, pct });
       }
       const avgPct = numTargets > 0 ? totalPct / numTargets : 0;
-      return { name: itemName, score: avgPct, pctDetails, ...extraProps };
+      return { name: itemName, score: avgPct, pctDetails, itemValues, ...extraProps };
     }
 
     // Contextual: full scoring with other effects
     const { score, details, summary } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
-    return { name: itemName, score, details, summary, ...extraProps };
+    return { name: itemName, score, details, summary, itemValues, ...extraProps };
   }
 
   // Get candidates for this slot
@@ -605,23 +747,28 @@ export function suggestFromList(itemList, targets, otherEffects, effectsCatalog,
     const slotEffects = extractEquipEffects(entry.item);
     const allEffects = [...baseEffects, ...slotEffects];
 
+    const itemValues = {};
+    for (const effectName of Object.keys(targets)) {
+      const itemEffect = slotEffects.find(e => e?.Name === effectName);
+      itemValues[effectName] = itemEffect ? getEffectStrength(itemEffect) : 0;
+    }
+
     if (mode === 'standalone') {
       let totalPct = 0;
       const pctDetails = [];
       const numTargets = Object.keys(targets).length;
       for (const [effectName, targetValue] of Object.entries(targets)) {
-        const itemEffect = slotEffects.find(e => e?.Name === effectName);
-        const itemStrength = itemEffect ? getEffectStrength(itemEffect) : 0;
+        const itemStrength = itemValues[effectName];
         const pct = targetValue > 0 ? (itemStrength / targetValue) * 100 : 0;
         totalPct += Math.min(pct, 100);
         pctDetails.push({ effectName, targetValue, achieved: itemStrength, pct });
       }
       const avgPct = numTargets > 0 ? totalPct / numTargets : 0;
-      return { name: entry.item.Name, score: avgPct, pctDetails };
+      return { name: entry.item.Name, score: avgPct, pctDetails, itemValues };
     }
 
     const { score, details, summary } = scoreCombination(targets, allEffects, effectsCatalog, effectCaps, options);
-    return { name: entry.item.Name, score, details, summary };
+    return { name: entry.item.Name, score, details, summary, itemValues };
   })
   .sort((a, b) => b.score - a.score)
   .slice(0, maxResults);

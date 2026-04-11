@@ -28,7 +28,9 @@
     onmuValueChange = null,
     onsuggest = null,
     suggesting = false,
-    compact = false
+    compact = false,
+    open = null,
+    onToggleOpen = null
   } = $props();
 
   let selectedEntity = $derived(
@@ -101,6 +103,7 @@
   // hasCondition checks Properties.Type against CONDITION_TYPES, but clothing subtypes
   // (Ring, Gloves, etc.) aren't in that set. Fall back to checking for MaxTT existence.
   let isAbsoluteMU = $derived.by(() => {
+    if (slotType === 'pet') return true;
     if (!selectedEntity) return false;
     if (hasCondition(selectedEntity)) return true;
     const tt = selectedEntity.Properties?.Economy?.MaxTT ?? selectedEntity.Properties?.MaxTT ?? null;
@@ -171,8 +174,18 @@
   ];
 </script>
 
-<div class="slot-card" class:compact>
+<div class="slot-card" class:compact class:slot-open={open === true}>
   <div class="slot-header">
+    {#if onToggleOpen}
+      <button
+        type="button"
+        class="btn-lock"
+        class:is-open={open}
+        onclick={onToggleOpen}
+        title={open ? 'Open - optimizer may swap this slot. Click to close.' : 'Closed - optimizer will keep this slot. Click to open.'}
+        aria-label={open ? 'Close slot' : 'Open slot'}
+      ></button>
+    {/if}
     <span class="slot-label">{label}</span>
     {#if onsuggest}
       <button
@@ -181,8 +194,9 @@
         onclick={onsuggest}
         disabled={suggesting}
         title="Suggest best item for this slot"
+        aria-label="Suggest best item for this slot"
       >
-        {suggesting ? '...' : 'Suggest'}
+        {suggesting ? '...' : '\u00BB'}
       </button>
     {/if}
   </div>
@@ -307,6 +321,11 @@
     min-width: 0;
   }
 
+  .slot-card.slot-open {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 1px var(--accent-color) inset;
+  }
+
   .slot-card.compact {
     padding: 8px;
     gap: 4px;
@@ -326,26 +345,77 @@
   .slot-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
   }
 
   .slot-label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.2px;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .btn-lock {
+    position: relative;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: 1.5px solid var(--border-color);
+    border-radius: 50%;
+    background-color: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s ease;
+  }
+
+  .btn-lock::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--accent-color);
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .btn-lock:hover {
+    border-color: var(--accent-color);
+  }
+
+  .btn-lock.is-open {
+    border-color: var(--accent-color);
+  }
+
+  .btn-lock.is-open::before {
+    opacity: 1;
   }
 
   .btn-suggest {
-    padding: 2px 8px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
     font-size: 11px;
+    line-height: 1;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background-color: transparent;
     color: var(--accent-color);
     cursor: pointer;
     transition: all 0.15s ease;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .btn-suggest:hover:not(:disabled) {

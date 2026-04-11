@@ -145,6 +145,12 @@
 <div class="target-panel">
   <div class="target-header">
     <h3>Target Effects</h3>
+    <button
+      type="button"
+      class="help-btn"
+      aria-label="What are Target Effects?"
+      title={'Target Effects are the buff values you want your gear to hit.\n\nPick a preset or add a custom target, then the optimizer tries to assemble equipment that reaches those buff totals without overcapping.\n\nHigher-priority targets are weighted more heavily when multiple goals compete.'}
+    >?</button>
     {#if Object.keys(targets).length > 0}
       <button type="button" class="btn-clear" onclick={clearAll}>Clear all</button>
     {/if}
@@ -261,7 +267,7 @@
   .target-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
   }
 
   .target-header h3 {
@@ -269,6 +275,32 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--text-color);
+  }
+
+  .target-header .btn-clear {
+    margin-left: auto;
+  }
+
+  .help-btn {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background-color: var(--secondary-color);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .help-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
   }
 
   .btn-clear {

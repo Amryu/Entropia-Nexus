@@ -7,6 +7,7 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { SvelteSet } from 'svelte/reactivity';
   import { createPreference } from '$lib/preferences.js';
   import { fetchExchangeWapByName, fetchInGamePrices, fetchInventoryMarkups } from '$lib/markupSources.js';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects.js';
@@ -17,6 +18,7 @@
   import EffectSuggestionPanel from './EffectSuggestionPanel.svelte';
   import EffectSetCompare from './EffectSetCompare.svelte';
   import SlotSuggestionDialog from './SlotSuggestionDialog.svelte';
+  import OptimizerDialog from './OptimizerDialog.svelte';
   import {
     filterRings,
     filterArmorSetsWithEffects,
@@ -57,6 +59,9 @@
     (weaponAmplifiers || []).filter(x => x.Properties?.Type !== 'Matrix' && hasEffects(x)).sort(alphabetical)
   );
   let visionAttachmentsSorted = $derived((weaponVisionAttachments || []).filter(hasEffects).sort(alphabetical));
+  let scopesSorted = $derived(visionAttachmentsSorted.filter(x => x.Properties?.Type === 'Scope'));
+  let sightsSorted = $derived(visionAttachmentsSorted.filter(x => x.Properties?.Type === 'Sight'));
+  let scopeSightsSorted = $derived(sightsSorted);
   let absorbersSorted = $derived((absorbers || []).filter(hasEffects).sort(alphabetical));
   let implantsSorted = $derived((mindforceImplants || []).filter(hasEffects).sort(alphabetical));
 
@@ -84,7 +89,9 @@
     pets: petsSorted,
     weapon: weaponsSorted,
     amplifier: amplifiersSorted,
-    visionAttachment: visionAttachmentsSorted,
+    scope: scopesSorted,
+    scopeSight: scopeSightsSorted,
+    sight: sightsSorted,
     absorber: absorbersSorted,
     implant: implantsSorted,
     clothings
@@ -104,7 +111,9 @@
   let showSecondary = $state(false);
   let secondaryWeapon = $state(null);
   let secondaryAmplifier = $state(null);
-  let secondaryVisionAttachment = $state(null);
+  let secondaryScope = $state(null);
+  let secondaryScopeSight = $state(null);
+  let secondarySight = $state(null);
   let secondaryAbsorber = $state(null);
   let secondaryImplant = $state(null);
   let secondaryClothing = $state({});
@@ -114,23 +123,29 @@
   // MU configs per slot
   let muSources = $state({
     leftRing: 'custom', rightRing: 'custom', armorSet: 'custom', pet: 'custom',
-    weapon: 'custom', amplifier: 'custom', visionAttachment: 'custom',
+    weapon: 'custom', amplifier: 'custom',
+    scope: 'custom', scopeSight: 'custom', sight: 'custom',
     absorber: 'custom', implant: 'custom'
   });
   let muValues = $state({
-    leftRing: 100, rightRing: 100, armorSet: 100, pet: 100,
-    weapon: 100, amplifier: 100, visionAttachment: 100,
+    leftRing: 100, rightRing: 100, armorSet: 100, pet: 0,
+    weapon: 100, amplifier: 100,
+    scope: 100, scopeSight: 100, sight: 100,
     absorber: 100, implant: 100
   });
 
   // Settings
   let overcapMode = $state('punish');
 
-  // Suggestions
+  // Optimizer
   let showSuggestions = $state(false);
   let suggestionResults = $state([]);
   let suggestionLoading = $state(false);
-  let emptyOnly = $state(false);
+  // Slots that participate in optimization. Everything NOT in this set is
+  // treated as locked (its current item contributes effects to the baseline).
+  const DEFAULT_UNLOCKED = ['leftRing', 'rightRing', 'armorSet', 'pet'];
+  let unlockedSlotIds = $state(new SvelteSet(DEFAULT_UNLOCKED));
+  let optimizerDialogOpen = $state(false);
 
   // Per-slot suggestion dialog state
   let suggestDialogOpen = $state(false);
@@ -169,7 +184,15 @@
       showSecondary = stored.showSecondary ?? false;
       secondaryWeapon = stored.secondaryWeapon ?? null;
       secondaryAmplifier = stored.secondaryAmplifier ?? null;
-      secondaryVisionAttachment = stored.secondaryVisionAttachment ?? null;
+      secondaryScope = stored.secondaryScope ?? null;
+      secondaryScopeSight = stored.secondaryScopeSight ?? null;
+      secondarySight = stored.secondarySight ?? null;
+      // Migrate legacy single vision-attachment slot by Type
+      if (stored.secondaryVisionAttachment && !secondaryScope && !secondarySight) {
+        const legacy = (weaponVisionAttachments || []).find(v => v.Name === stored.secondaryVisionAttachment);
+        if (legacy?.Properties?.Type === 'Scope') secondaryScope = legacy.Name;
+        else if (legacy?.Properties?.Type === 'Sight') secondarySight = legacy.Name;
+      }
       secondaryAbsorber = stored.secondaryAbsorber ?? null;
       secondaryImplant = stored.secondaryImplant ?? null;
       secondaryClothing = stored.secondaryClothing || {};
@@ -181,6 +204,9 @@
       savedSets = stored.savedSets || [];
       activeSetId = stored.activeSetId ?? null;
       showSuggestions = stored.showSuggestions ?? false;
+      if (Array.isArray(stored.unlockedSlotIds)) {
+        unlockedSlotIds = new SvelteSet(stored.unlockedSlotIds);
+      }
     }
     prefLoaded = true;
 
@@ -208,13 +234,15 @@
     const _p = pet; const _pae = petActiveEffect;
     const _ss = showSecondary;
     const _sw = secondaryWeapon; const _sa = secondaryAmplifier;
-    const _sv = secondaryVisionAttachment; const _sab = secondaryAbsorber;
+    const _sco = secondaryScope; const _ssg = secondaryScopeSight; const _ssi = secondarySight;
+    const _sab = secondaryAbsorber;
     const _si = secondaryImplant; const _sc = secondaryClothing;
     const _cms = clothingMuSources; const _cmv = clothingMuValues;
     const _mu = muSources; const _mv = muValues;
     const _oc = overcapMode; const _sets = savedSets;
     const _asi = activeSetId;
     const _show = showSuggestions;
+    const _unlocked = [...unlockedSlotIds];
     if (!prefLoaded) return;
     pref.set({
       targets: _t, priorities: _pr,
@@ -223,12 +251,14 @@
       pet: _p, petActiveEffect: _pae,
       showSecondary: _ss,
       secondaryWeapon: _sw, secondaryAmplifier: _sa,
-      secondaryVisionAttachment: _sv, secondaryAbsorber: _sab,
+      secondaryScope: _sco, secondaryScopeSight: _ssg, secondarySight: _ssi,
+      secondaryAbsorber: _sab,
       secondaryImplant: _si, secondaryClothing: _sc,
       clothingMuSources: _cms, clothingMuValues: _cmv,
       muSources: _mu, muValues: _mv,
       overcapMode: _oc, savedSets: _sets,
-      activeSetId: _asi, showSuggestions: _show
+      activeSetId: _asi, showSuggestions: _show,
+      unlockedSlotIds: _unlocked
     });
   });
 
@@ -243,7 +273,9 @@
     secondary: {
       weapon: secondaryWeapon,
       amplifier: secondaryAmplifier,
-      visionAttachment: secondaryVisionAttachment,
+      scope: secondaryScope,
+      scopeSight: secondaryScopeSight,
+      sight: secondarySight,
       absorber: secondaryAbsorber,
       implant: secondaryImplant,
       clothing: secondaryClothing
@@ -255,17 +287,22 @@
   let effectSummary = $derived(aggregateEffects(allItemEffects, effectsCatalog, effectCaps));
 
   // ===== Total cost =====
-  function isAbsoluteMarkup(item) {
+  function isAbsoluteMarkup(item, forceAbsolute = false) {
+    if (forceAbsolute) return true;
     if (hasCondition(item)) return true;
     const tt = item.Properties?.Economy?.MaxTT ?? item.Properties?.MaxTT ?? null;
     return tt != null && tt > 0;
   }
 
-  function getItemCost(entityList, name, muSource, muCustom) {
+  function getItemCost(entityList, name, muSource, muCustom, forceAbsolute = false) {
     if (!name) return null;
     const item = (entityList || []).find(e => e.Name === name);
     if (!item) return null;
     const tt = item.Properties?.Economy?.MaxTT ?? item.Properties?.MaxTT ?? null;
+    if (forceAbsolute) {
+      const mu = muCustom ?? 0;
+      return { tt: tt ?? 0, mu, cost: (tt ?? 0) + mu, isAbsolute: true };
+    }
     if (tt == null || tt <= 0) return null;
     const isAbsolute = isAbsoluteMarkup(item);
     let mu = muCustom ?? (isAbsolute ? 0 : 100);
@@ -284,122 +321,202 @@
 
   let totalCost = $derived.by(() => {
     const costs = [];
-    const add = (list, name, src, custom) => {
-      const c = getItemCost(list, name, src, custom);
+    const add = (list, name, src, custom, forceAbsolute = false) => {
+      const c = getItemCost(list, name, src, custom, forceAbsolute);
       if (c) costs.push({ name, ...c });
     };
     add(leftRings, leftRing, muSources.leftRing, muValues.leftRing);
     add(rightRings, rightRing, muSources.rightRing, muValues.rightRing);
-    add(petsSorted, pet, muSources.pet, muValues.pet);
+    add(petsSorted, pet, muSources.pet, muValues.pet, true);
     add(weaponsSorted, secondaryWeapon, muSources.weapon, muValues.weapon);
     add(amplifiersSorted, secondaryAmplifier, muSources.amplifier, muValues.amplifier);
-    add(visionAttachmentsSorted, secondaryVisionAttachment, muSources.visionAttachment, muValues.visionAttachment);
+    add(scopesSorted, secondaryScope, muSources.scope, muValues.scope);
+    add(scopeSightsSorted, secondaryScopeSight, muSources.scopeSight, muValues.scopeSight);
+    add(sightsSorted, secondarySight, muSources.sight, muValues.sight);
     add(absorbersSorted, secondaryAbsorber, muSources.absorber, muValues.absorber);
     add(implantsSorted, secondaryImplant, muSources.implant, muValues.implant);
     const total = costs.reduce((sum, c) => sum + c.cost, 0);
     return { items: costs, total };
   });
 
-  // ===== Suggestion handlers =====
+  // ===== Optimizer handlers =====
+
+  // Build effects for a currently-equipped item in a given slot (for baseline when locked)
+  function currentEffectsForSlot(key) {
+    if (key === 'leftRing' && leftRing) {
+      const item = leftRings.find(r => r.Name === leftRing);
+      return item?.EffectsOnEquip || [];
+    }
+    if (key === 'rightRing' && rightRing) {
+      const item = rightRings.find(r => r.Name === rightRing);
+      return item?.EffectsOnEquip || [];
+    }
+    if (key === 'armorSet' && armorSet) {
+      const set = armorSetsFiltered.find(s => s.Name === armorSet);
+      return set ? extractArmorSetEffects(set, armorSetPieces) : [];
+    }
+    if (key === 'pet' && pet && petActiveEffect) {
+      const petEntity = petsSorted.find(p => p.Name === pet);
+      if (!petEntity) return [];
+      const eff = extractPetEffect(petEntity, petActiveEffect);
+      return eff ? [eff] : [];
+    }
+    if (key === 'weapon' && secondaryWeapon) {
+      const w = weaponsSorted.find(x => x.Name === secondaryWeapon);
+      return w?.EffectsOnEquip || [];
+    }
+    if (key === 'amplifier' && secondaryAmplifier) {
+      const a = amplifiersSorted.find(x => x.Name === secondaryAmplifier);
+      return a?.EffectsOnEquip || [];
+    }
+    if (key === 'scope' && secondaryScope) {
+      const v = scopesSorted.find(x => x.Name === secondaryScope);
+      return v?.EffectsOnEquip || [];
+    }
+    if (key === 'scopeSight' && secondaryScopeSight) {
+      const v = scopeSightsSorted.find(x => x.Name === secondaryScopeSight);
+      return v?.EffectsOnEquip || [];
+    }
+    if (key === 'sight' && secondarySight) {
+      const v = sightsSorted.find(x => x.Name === secondarySight);
+      return v?.EffectsOnEquip || [];
+    }
+    if (key === 'absorber' && secondaryAbsorber) {
+      const ab = absorbersSorted.find(x => x.Name === secondaryAbsorber);
+      return ab?.EffectsOnEquip || [];
+    }
+    if (key === 'implant' && secondaryImplant) {
+      const im = implantsSorted.find(x => x.Name === secondaryImplant);
+      return im?.EffectsOnEquip || [];
+    }
+    if (key.startsWith('clothing:')) {
+      const slotName = key.slice('clothing:'.length);
+      const name = secondaryClothing[slotName];
+      if (!name) return [];
+      const item = (clothingSlots.get(slotName) || []).find(c => c.Name === name);
+      return item?.EffectsOnEquip || [];
+    }
+    return [];
+  }
+
+  // Enumerate all slot keys currently available to optimize over
+  let allSlotKeys = $derived.by(() => {
+    const keys = ['leftRing', 'rightRing', 'armorSet', 'pet'];
+    if (weaponsSorted.length) keys.push('weapon');
+    if (amplifiersSorted.length) keys.push('amplifier');
+    if (scopesSorted.length) keys.push('scope');
+    if (scopeSightsSorted.length) keys.push('scopeSight');
+    if (sightsSorted.length) keys.push('sight');
+    if (absorbersSorted.length) keys.push('absorber');
+    if (implantsSorted.length) keys.push('implant');
+    for (const slotName of clothingSlots.keys()) keys.push('clothing:' + slotName);
+    return keys;
+  });
+
+  function buildSlotConfigs() {
+    const configs = {};
+    const slotItems = {
+      leftRing: { type: 'ring', items: leftRings, pairExclude: 'rightRing' },
+      rightRing: { type: 'ring', items: rightRings, pairExclude: 'leftRing' },
+      armorSet: { type: 'armorSet', items: armorSetsFiltered, pieceCount: armorSetPieces },
+      pet: { type: 'pet', items: petsSorted },
+      weapon: { type: 'equipment', items: weaponsSorted },
+      amplifier: { type: 'equipment', items: amplifiersSorted },
+      scope: { type: 'equipment', items: scopesSorted },
+      scopeSight: { type: 'equipment', items: scopeSightsSorted },
+      sight: { type: 'equipment', items: sightsSorted },
+      absorber: { type: 'equipment', items: absorbersSorted },
+      implant: { type: 'equipment', items: implantsSorted },
+    };
+
+    for (const key of allSlotKeys) {
+      const locked = !unlockedSlotIds.has(key);
+      let base = slotItems[key];
+      if (!base && key.startsWith('clothing:')) {
+        const slotName = key.slice('clothing:'.length);
+        base = { type: 'equipment', items: clothingSlots.get(slotName) || [] };
+      }
+      if (!base) continue;
+      configs[key] = {
+        type: base.type,
+        items: locked ? [] : base.items,
+        locked,
+        currentEffects: locked ? currentEffectsForSlot(key) : [],
+        pieceCount: base.pieceCount,
+        pairExclude: base.pairExclude,
+      };
+    }
+    return configs;
+  }
+
   function handleFillAll() {
     if (Object.keys(targets).length === 0) return;
     suggestionLoading = true;
-    // Use setTimeout to avoid blocking the UI
     setTimeout(() => {
-      const candidatesBySlot = {
-        leftRings: emptyOnly && leftRing ? [] : leftRings,
-        rightRings: emptyOnly && rightRing ? [] : rightRings,
-        armorSets: emptyOnly && armorSet ? [] : armorSetsFiltered,
-        pets: emptyOnly && pet ? [] : petsSorted
-      };
-
-      // Build locked slots if emptyOnly
-      const lockedSlots = {};
-      if (emptyOnly) {
-        const lockedEffects = [];
-        if (leftRing) {
-          lockedSlots.leftRing = true;
-          const item = leftRings.find(r => r.Name === leftRing);
-          if (item) lockedEffects.push(...(item.EffectsOnEquip || []));
-        }
-        if (rightRing) {
-          lockedSlots.rightRing = true;
-          const item = rightRings.find(r => r.Name === rightRing);
-          if (item) lockedEffects.push(...(item.EffectsOnEquip || []));
-        }
-        if (armorSet) {
-          lockedSlots.armorSet = true;
-          const set = armorSetsFiltered.find(s => s.Name === armorSet);
-          if (set) lockedEffects.push(...extractArmorSetEffects(set, armorSetPieces));
-        }
-        if (pet && petActiveEffect) {
-          lockedSlots.pet = true;
-          const petEntity = petsSorted.find(p => p.Name === pet);
-          if (petEntity) {
-            const eff = extractPetEffect(petEntity, petActiveEffect);
-            if (eff) lockedEffects.push(eff);
-          }
-        }
-        lockedSlots.effects = lockedEffects;
-      }
-
-      // Include secondary slot effects in locked
-      const secondaryEffects = [];
-      if (secondaryWeapon) {
-        const w = weaponsSorted.find(x => x.Name === secondaryWeapon);
-        if (w) secondaryEffects.push(...(w.EffectsOnEquip || []));
-      }
-      if (secondaryAmplifier) {
-        const a = amplifiersSorted.find(x => x.Name === secondaryAmplifier);
-        if (a) secondaryEffects.push(...(a.EffectsOnEquip || []));
-      }
-      if (secondaryVisionAttachment) {
-        const v = visionAttachmentsSorted.find(x => x.Name === secondaryVisionAttachment);
-        if (v) secondaryEffects.push(...(v.EffectsOnEquip || []));
-      }
-      if (secondaryAbsorber) {
-        const ab = absorbersSorted.find(x => x.Name === secondaryAbsorber);
-        if (ab) secondaryEffects.push(...(ab.EffectsOnEquip || []));
-      }
-      if (secondaryImplant) {
-        const im = implantsSorted.find(x => x.Name === secondaryImplant);
-        if (im) secondaryEffects.push(...(im.EffectsOnEquip || []));
-      }
-
-      if (!lockedSlots.effects) lockedSlots.effects = [];
-      lockedSlots.effects.push(...secondaryEffects);
-
+      const slotConfigs = buildSlotConfigs();
       suggestionResults = findBestCombinations(
         targets,
-        candidatesBySlot,
+        slotConfigs,
         effectsCatalog,
         effectCaps,
-        { overcapMode, priorities, armorSetPieces, lockedSlots: emptyOnly ? lockedSlots : { effects: secondaryEffects } }
+        { overcapMode, priorities, armorSetPieces, maxResults: 50, beamWidth: 250 }
       );
       suggestionLoading = false;
       showSuggestions = true;
     }, 10);
   }
 
-  function handleApplySuggestion(result, applyEmptyOnly) {
-    if (result.items?.leftRing && (!applyEmptyOnly || !leftRing)) {
-      leftRing = result.items.leftRing;
+  function applySlotValue(key, value) {
+    const name = (value && typeof value === 'object') ? value.name : value;
+    if (key === 'leftRing') leftRing = name;
+    else if (key === 'rightRing') rightRing = name;
+    else if (key === 'armorSet') armorSet = name;
+    else if (key === 'pet') {
+      pet = name;
+      if (value && typeof value === 'object' && value.effectKey) petActiveEffect = value.effectKey;
     }
-    if (result.items?.rightRing && (!applyEmptyOnly || !rightRing)) {
-      rightRing = result.items.rightRing;
+    else if (key === 'weapon') secondaryWeapon = name;
+    else if (key === 'amplifier') secondaryAmplifier = name;
+    else if (key === 'scope') secondaryScope = name;
+    else if (key === 'scopeSight') secondaryScopeSight = name;
+    else if (key === 'sight') secondarySight = name;
+    else if (key === 'absorber') secondaryAbsorber = name;
+    else if (key === 'implant') secondaryImplant = name;
+    else if (key.startsWith('clothing:')) {
+      const slotName = key.slice('clothing:'.length);
+      secondaryClothing = { ...secondaryClothing, [slotName]: name };
     }
-    if (result.items?.armorSet && (!applyEmptyOnly || !armorSet)) {
-      armorSet = result.items.armorSet;
+  }
+
+  function handleApplySuggestion(result) {
+    for (const [key, value] of Object.entries(result.items || {})) {
+      applySlotValue(key, value);
     }
-    if (result.items?.pet && (!applyEmptyOnly || !pet)) {
-      const petData = result.items.pet;
-      if (typeof petData === 'object') {
-        pet = petData.name;
-        petActiveEffect = petData.effectKey;
-      } else {
-        pet = petData;
-      }
+  }
+
+  function handleSwapAlternative(resultIndex, slotKey, value) {
+    const result = suggestionResults[resultIndex];
+    if (!result) return;
+    result.items = { ...result.items, [slotKey]: value };
+    suggestionResults = [...suggestionResults];
+  }
+
+  function toggleSlotLock(slotKey) {
+    if (unlockedSlotIds.has(slotKey)) unlockedSlotIds.delete(slotKey);
+    else unlockedSlotIds.add(slotKey);
+  }
+
+  function setAllSlotsLocked(locked) {
+    if (locked) {
+      unlockedSlotIds.clear();
+    } else {
+      for (const k of allSlotKeys) unlockedSlotIds.add(k);
     }
+  }
+
+  function resetLocksToDefault() {
+    unlockedSlotIds.clear();
+    for (const k of DEFAULT_UNLOCKED) unlockedSlotIds.add(k);
   }
 
   const PRIMARY_SLOTS = new Set(['leftRing', 'rightRing', 'armorSet', 'pet']);
@@ -408,13 +525,34 @@
   const SECONDARY_ENTITY_MAP = {
     weapon: () => weaponsSorted,
     amplifier: () => amplifiersSorted,
-    visionAttachment: () => visionAttachmentsSorted,
+    scope: () => scopesSorted,
+    scopeSight: () => scopeSightsSorted,
+    sight: () => sightsSorted,
     absorber: () => absorbersSorted,
     implant: () => implantsSorted,
   };
 
   let suggestDialogSlotType = $state('primary');
   let suggestDialogEntities = $state([]);
+  let suggestDialogCurrentSlotEffects = $state([]);
+  let suggestDialogCurrentSlotItemName = $state(null);
+  let suggestDialogBaselineSummary = $state([]);
+
+  function currentItemNameForSlot(key) {
+    if (key === 'leftRing') return leftRing;
+    if (key === 'rightRing') return rightRing;
+    if (key === 'armorSet') return armorSet;
+    if (key === 'pet') return pet;
+    if (key === 'weapon') return secondaryWeapon;
+    if (key === 'amplifier') return secondaryAmplifier;
+    if (key === 'scope') return secondaryScope;
+    if (key === 'scopeSight') return secondaryScopeSight;
+    if (key === 'sight') return secondarySight;
+    if (key === 'absorber') return secondaryAbsorber;
+    if (key === 'implant') return secondaryImplant;
+    if (key.startsWith('clothing:')) return secondaryClothing[key.slice('clothing:'.length)] || null;
+    return null;
+  }
 
   function handleSlotSuggest(slotKey, label, entityList) {
     if (Object.keys(targets).length === 0) return;
@@ -423,6 +561,12 @@
     suggestDialogOpen = true;
     suggestDialogSlotType = PRIMARY_SLOTS.has(slotKey) ? 'primary' : 'secondary';
     suggestDialogEntities = entityList || [];
+    const currentEffs = currentEffectsForSlot(slotKey);
+    suggestDialogCurrentSlotEffects = currentEffs;
+    suggestDialogCurrentSlotItemName = currentItemNameForSlot(slotKey);
+    // Baseline = aggregated effects from everything EXCEPT this slot
+    const baselineEffs = allItemEffects.filter(e => !currentEffs.includes(e));
+    suggestDialogBaselineSummary = aggregateEffects(baselineEffs, effectsCatalog, effectCaps);
     runSlotSuggestion(slotKey, suggestDialogMode);
   }
 
@@ -466,7 +610,9 @@
     }
     else if (slotKey === 'weapon') secondaryWeapon = result.name;
     else if (slotKey === 'amplifier') secondaryAmplifier = result.name;
-    else if (slotKey === 'visionAttachment') secondaryVisionAttachment = result.name;
+    else if (slotKey === 'scope') secondaryScope = result.name;
+    else if (slotKey === 'scopeSight') secondaryScopeSight = result.name;
+    else if (slotKey === 'sight') secondarySight = result.name;
     else if (slotKey === 'absorber') secondaryAbsorber = result.name;
     else if (slotKey === 'implant') secondaryImplant = result.name;
     else if (slotKey.startsWith('clothing:')) {
@@ -486,7 +632,9 @@
     if (set.slots.secondary) {
       secondaryWeapon = set.slots.secondary.weapon ?? null;
       secondaryAmplifier = set.slots.secondary.amplifier ?? null;
-      secondaryVisionAttachment = set.slots.secondary.visionAttachment ?? null;
+      secondaryScope = set.slots.secondary.scope ?? null;
+      secondaryScopeSight = set.slots.secondary.scopeSight ?? null;
+      secondarySight = set.slots.secondary.sight ?? null;
       secondaryAbsorber = set.slots.secondary.absorber ?? null;
       secondaryImplant = set.slots.secondary.implant ?? null;
       secondaryClothing = set.slots.secondary.clothing || {};
@@ -516,7 +664,8 @@
         loading={suggestionLoading}
         onFillAll={handleFillAll}
         onApply={handleApplySuggestion}
-        bind:emptyOnly
+        onSwapAlternative={handleSwapAlternative}
+        onOpenDialog={() => (optimizerDialogOpen = true)}
       />
     </div>
   </aside>
@@ -565,6 +714,8 @@
           excludeName={rightRing}
           onsuggest={() => handleSlotSuggest('leftRing', 'Left Ring')}
           suggesting={false}
+          open={unlockedSlotIds.has('leftRing')}
+          onToggleOpen={() => toggleSlotLock('leftRing')}
         />
         <EffectSlotCard
           label="Right Ring"
@@ -578,6 +729,8 @@
           excludeName={leftRing}
           onsuggest={() => handleSlotSuggest('rightRing', 'Right Ring')}
           suggesting={false}
+          open={unlockedSlotIds.has('rightRing')}
+          onToggleOpen={() => toggleSlotLock('rightRing')}
         />
         <EffectSlotCard
           label="Armor Set"
@@ -591,6 +744,8 @@
           bind:armorSetPieces
           onsuggest={() => handleSlotSuggest('armorSet', 'Armor Set')}
           suggesting={false}
+          open={unlockedSlotIds.has('armorSet')}
+          onToggleOpen={() => toggleSlotLock('armorSet')}
         />
         <EffectSlotCard
           label="Pet"
@@ -604,6 +759,8 @@
           bind:petActiveEffect
           onsuggest={() => handleSlotSuggest('pet', 'Pet')}
           suggesting={false}
+          open={unlockedSlotIds.has('pet')}
+          onToggleOpen={() => toggleSlotLock('pet')}
         />
       </div>
     </section>
@@ -623,6 +780,8 @@
             {effectsCatalog}
             compact
             onsuggest={() => handleSlotSuggest('weapon', 'Weapon', weaponsSorted)}
+            open={unlockedSlotIds.has('weapon')}
+            onToggleOpen={() => toggleSlotLock('weapon')}
           />
         {/if}
         {#if amplifiersSorted.length > 0}
@@ -636,19 +795,53 @@
             {effectsCatalog}
             compact
             onsuggest={() => handleSlotSuggest('amplifier', 'Amplifier', amplifiersSorted)}
+            open={unlockedSlotIds.has('amplifier')}
+            onToggleOpen={() => toggleSlotLock('amplifier')}
           />
         {/if}
-        {#if visionAttachmentsSorted.length > 0}
+        {#if scopesSorted.length > 0}
           <EffectSlotCard
-            label="Vision Attachment"
-            entities={visionAttachmentsSorted}
-            bind:selected={secondaryVisionAttachment}
+            label="Scope"
+            entities={scopesSorted}
+            bind:selected={secondaryScope}
             {markupData}
-            bind:markupSource={muSources.visionAttachment}
-            bind:markupPercent={muValues.visionAttachment}
+            bind:markupSource={muSources.scope}
+            bind:markupPercent={muValues.scope}
             {effectsCatalog}
             compact
-            onsuggest={() => handleSlotSuggest('visionAttachment', 'Vision Attachment', visionAttachmentsSorted)}
+            onsuggest={() => handleSlotSuggest('scope', 'Scope', scopesSorted)}
+            open={unlockedSlotIds.has('scope')}
+            onToggleOpen={() => toggleSlotLock('scope')}
+          />
+        {/if}
+        {#if scopeSightsSorted.length > 0}
+          <EffectSlotCard
+            label="Scope Sight"
+            entities={scopeSightsSorted}
+            bind:selected={secondaryScopeSight}
+            {markupData}
+            bind:markupSource={muSources.scopeSight}
+            bind:markupPercent={muValues.scopeSight}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('scopeSight', 'Scope Sight', scopeSightsSorted)}
+            open={unlockedSlotIds.has('scopeSight')}
+            onToggleOpen={() => toggleSlotLock('scopeSight')}
+          />
+        {/if}
+        {#if sightsSorted.length > 0}
+          <EffectSlotCard
+            label="Sight"
+            entities={sightsSorted}
+            bind:selected={secondarySight}
+            {markupData}
+            bind:markupSource={muSources.sight}
+            bind:markupPercent={muValues.sight}
+            {effectsCatalog}
+            compact
+            onsuggest={() => handleSlotSuggest('sight', 'Sight', sightsSorted)}
+            open={unlockedSlotIds.has('sight')}
+            onToggleOpen={() => toggleSlotLock('sight')}
           />
         {/if}
         {#if absorbersSorted.length > 0}
@@ -662,6 +855,8 @@
             {effectsCatalog}
             compact
             onsuggest={() => handleSlotSuggest('absorber', 'Absorber', absorbersSorted)}
+            open={unlockedSlotIds.has('absorber')}
+            onToggleOpen={() => toggleSlotLock('absorber')}
           />
         {/if}
         {#if implantsSorted.length > 0}
@@ -675,6 +870,8 @@
             {effectsCatalog}
             compact
             onsuggest={() => handleSlotSuggest('implant', 'Implant', implantsSorted)}
+            open={unlockedSlotIds.has('implant')}
+            onToggleOpen={() => toggleSlotLock('implant')}
           />
         {/if}
       </div>
@@ -700,6 +897,8 @@
               {effectsCatalog}
               compact
               onsuggest={items.length ? () => handleSlotSuggest('clothing:' + slotName, slotName, items) : null}
+              open={unlockedSlotIds.has('clothing:' + slotName)}
+              onToggleOpen={() => toggleSlotLock('clothing:' + slotName)}
             />
           {/each}
         </div>
@@ -725,10 +924,53 @@
   results={suggestDialogResults}
   {targets}
   currentSummary={effectSummary}
+  currentSlotEffects={suggestDialogCurrentSlotEffects}
+  currentSlotItemName={suggestDialogCurrentSlotItemName}
+  baselineSummary={suggestDialogBaselineSummary}
   {effectsCatalog}
   bind:mode={suggestDialogMode}
   onpick={handleSuggestPick}
   loading={suggestDialogLoading}
+/>
+
+<OptimizerDialog
+  bind:open={optimizerDialogOpen}
+  {allSlotKeys}
+  {unlockedSlotIds}
+  slotLabels={{
+    leftRing: 'Left Ring',
+    rightRing: 'Right Ring',
+    armorSet: 'Armor Set',
+    pet: 'Pet',
+    weapon: 'Weapon',
+    amplifier: 'Amplifier',
+    scope: 'Scope',
+    scopeSight: 'Scope Sight',
+    sight: 'Sight',
+    absorber: 'Absorber',
+    implant: 'Implant'
+  }}
+  currentItems={{
+    leftRing, rightRing, armorSet, pet,
+    weapon: secondaryWeapon,
+    amplifier: secondaryAmplifier,
+    scope: secondaryScope,
+    scopeSight: secondaryScopeSight,
+    sight: secondarySight,
+    absorber: secondaryAbsorber,
+    implant: secondaryImplant,
+    clothing: secondaryClothing
+  }}
+  results={suggestionResults}
+  {targets}
+  loading={suggestionLoading}
+  onToggleLock={toggleSlotLock}
+  onLockAll={() => setAllSlotsLocked(true)}
+  onUnlockAll={() => setAllSlotsLocked(false)}
+  onResetLocks={resetLocksToDefault}
+  onRun={handleFillAll}
+  onApply={handleApplySuggestion}
+  onSwapAlternative={handleSwapAlternative}
 />
 
 <style>
