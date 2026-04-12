@@ -1246,11 +1246,49 @@ function formatJsonForDiscord(json) {
 }
 
 /**
+ * If an object's only meaningful key is the identifier `Name`, return that name
+ * as a string so the parent line can inline it (e.g. `Item: Foo` instead of
+ * `Item:` followed by `Name: Foo`). Strips `<empty> -> ` markers from added /
+ * removed states. Returns null when the object has additional fields.
+ */
+const META_KEYS = new Set(['_status', '_identifier']);
+
+function tryInlineIdentifier(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const keys = Object.keys(obj).filter(k => !META_KEYS.has(k));
+  if (keys.length !== 1 || keys[0] !== 'Name') return null;
+  const v = obj.Name;
+  if (typeof v === 'string') return v.replace('<empty> -> ', '').replace(' -> <empty>', '');
+  if (typeof v === 'number') return String(v);
+  return null;
+}
+
+/**
+ * If every item in an array can be inlined as an identifier, return a comma
+ * separated list rendering, with +/- prefixes per item to convey status.
+ * Returns null when at least one item has more than just `Name`.
+ */
+function tryInlineIdentifierArray(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const parts = [];
+  for (const item of arr) {
+    const inline = tryInlineIdentifier(item);
+    if (inline === null) return null;
+    const status = item?._status;
+    if (status === 'added') parts.push(`+${inline}`);
+    else if (status === 'removed') parts.push(`-${inline}`);
+    else parts.push(inline);
+  }
+  return `[${parts.join(', ')}]`;
+}
+
+/**
  * Recursively format a compareJson result into diff-style lines.
  * - Context keys (unchanged): "  key: value"
  * - Changed primitives ("old -> new"): "- key: old" / "+ key: new"
  * - Nested objects: header line + indented children
  * - Array items: prefixed with _status indicator
+ * - Objects/arrays containing only an identifier collapse to "key: Name"
  */
 function formatDiffLines(obj, lines, depth) {
   const pad = '  '.repeat(depth);
@@ -1262,20 +1300,19 @@ function formatDiffLines(obj, lines, depth) {
         formatChangedValue(item, null, pad, lines);
       } else if (typeof item === 'object' && item !== null) {
         const status = item._status;
-        const rawLabel = item.Name || item.Tier || '';
+        const rawLabel = item._identifier ?? item.Name ?? item.Tier ?? '(unnamed)';
         const label = (status === 'added' || status === 'removed') && typeof rawLabel === 'string'
           ? rawLabel.replace('<empty> -> ', '').replace(' -> <empty>', '')
           : rawLabel;
         const prefix = status === 'added' ? '+' : status === 'removed' ? '-' : ' ';
+        const trivial = tryInlineIdentifier(item) !== null;
 
         if (status === 'added' || status === 'removed') {
-          // Show the whole sub-object with +/- prefix
-          if (label) lines.push(`${prefix} ${pad}${label}:`);
-          formatDiffLinesFlat(item, lines, depth + 1, prefix);
+          if (label) lines.push(`${prefix} ${pad}${label}${trivial ? '' : ':'}`);
+          if (!trivial) formatDiffLinesFlat(item, lines, depth + 1, prefix);
         } else {
-          // Changed item — show label as context, diff the fields
-          if (label) lines.push(`  ${pad}${label}:`);
-          formatDiffLines(item, lines, depth + 1);
+          if (label) lines.push(`  ${pad}${label}${trivial ? '' : ':'}`);
+          if (!trivial) formatDiffLines(item, lines, depth + 1);
         }
       }
     }
@@ -1283,16 +1320,26 @@ function formatDiffLines(obj, lines, depth) {
   }
 
   for (const [key, value] of Object.entries(obj)) {
-    if (key === '_status') continue;
+    if (META_KEYS.has(key)) continue;
 
     if (typeof value === 'string') {
       formatChangedValue(value, key, pad, lines);
     } else if (Array.isArray(value)) {
-      lines.push(`  ${pad}${key}:`);
-      formatDiffLines(value, lines, depth + 1);
+      const inlineArr = tryInlineIdentifierArray(value);
+      if (inlineArr !== null) {
+        lines.push(`  ${pad}${key}: ${inlineArr}`);
+      } else {
+        lines.push(`  ${pad}${key}:`);
+        formatDiffLines(value, lines, depth + 1);
+      }
     } else if (typeof value === 'object' && value !== null) {
-      lines.push(`  ${pad}${key}:`);
-      formatDiffLines(value, lines, depth + 1);
+      const inline = tryInlineIdentifier(value);
+      if (inline !== null) {
+        lines.push(`  ${pad}${key}: ${inline}`);
+      } else {
+        lines.push(`  ${pad}${key}:`);
+        formatDiffLines(value, lines, depth + 1);
+      }
     } else if (value != null) {
       lines.push(`  ${pad}${key}: ${value}`);
     }
@@ -1322,11 +1369,24 @@ function formatChangedValue(value, key, pad, lines) {
 function formatDiffLinesFlat(obj, lines, depth, prefix, skipContext = true) {
   const pad = '  '.repeat(depth);
   for (const [key, value] of Object.entries(obj)) {
-    if (key === '_status') continue;
+    if (META_KEYS.has(key)) continue;
     if (skipContext && (key === 'Name' || key === 'Tier')) continue;
-    if (typeof value === 'object' && value !== null) {
-      lines.push(`${prefix} ${pad}${key}:`);
-      formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
+    if (Array.isArray(value)) {
+      const inlineArr = tryInlineIdentifierArray(value);
+      if (inlineArr !== null) {
+        lines.push(`${prefix} ${pad}${key}: ${inlineArr}`);
+      } else {
+        lines.push(`${prefix} ${pad}${key}:`);
+        formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      const inline = tryInlineIdentifier(value);
+      if (inline !== null) {
+        lines.push(`${prefix} ${pad}${key}: ${inline}`);
+      } else {
+        lines.push(`${prefix} ${pad}${key}:`);
+        formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
+      }
     } else if (value != null) {
       // Strip redundant "<empty> -> " / " -> <empty>" — the +/- prefix already conveys direction
       const display = typeof value === 'string' ? value.replace('<empty> -> ', '').replace(' -> <empty>', '') : value;

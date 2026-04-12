@@ -226,6 +226,20 @@ function deepEqual(a, b) {
 }
 
 /**
+ * Extract a human-readable identifier from an array item using arrayIdentifiers.
+ * Used to keep diff output identifiable even when the matched fields are
+ * unchanged (and would otherwise be stripped from the result).
+ */
+function extractIdentifier(item) {
+  if (item == null) return null;
+  for (const fn of arrayIdentifiers) {
+    const id = fn(item);
+    if (id != null) return id;
+  }
+  return null;
+}
+
+/**
  * Find a matching item in an array using identifiers
  */
 function findMatchByIdentifier(item, candidates) {
@@ -306,7 +320,10 @@ export function compareJson(oldJson, newJson) {
 
         if (match) {
           anyChanges = true;
-          arrayResult.push({ ...match, _status: matchIndex >= 0 ? 'changed' : 'added' });
+          const identifier = extractIdentifier(newValue[i]);
+          const entry = { ...match, _status: matchIndex >= 0 ? 'changed' : 'added' };
+          if (identifier != null) entry._identifier = identifier;
+          arrayResult.push(entry);
         }
       }
 
@@ -315,7 +332,10 @@ export function compareJson(oldJson, newJson) {
         const removedDiff = compareJson(oldItem, null);
         if (removedDiff) {
           anyChanges = true;
-          arrayResult.push({ ...removedDiff, _status: 'removed' });
+          const identifier = extractIdentifier(oldItem);
+          const entry = { ...removedDiff, _status: 'removed' };
+          if (identifier != null) entry._identifier = identifier;
+          arrayResult.push(entry);
         }
       }
 

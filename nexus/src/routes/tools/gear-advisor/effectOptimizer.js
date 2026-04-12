@@ -46,6 +46,7 @@ export const EFFECT_PRESETS = PRESET_DEFS;
 const OFFENSIVE_EFFECT_NAMES = new Set([
   'Critical Chance Added',
   'Critical Damage Added',
+  'Critical Damage Added (Harlequin)',
   'Reload Speed Increased',
   'Damage Done Increased',
   'Dominance Increased',
@@ -60,6 +61,7 @@ const DEFENSIVE_EFFECT_NAMES = new Set([
   'Dodge Chance Increased',
   'Jamming Chance Increased',
   'Critical Damage Taken Decreased',
+  'Evade, Dodge & Jamming Increased (Harlequin)',
   'Regeneration Increased',
   'Regeneration Per Second',
 ]);

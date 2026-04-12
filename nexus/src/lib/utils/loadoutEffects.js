@@ -23,7 +23,14 @@ const DEFENSIVE_EFFECT_NAMES = new Set([
   'Evade Chance Increased',
   'Dodge Chance Increased',
   'Jamming Chance Increased',
-  'Critical Damage Taken Decreased'
+  'Critical Damage Taken Decreased',
+  'Evade, Dodge & Jamming Increased (Harlequin)'
+]);
+
+// Variant effects with parenthetical qualifiers that bypass normal caps
+// but contribute to the same offensive stat as their base effect.
+const OFFENSIVE_VARIANT_NAMES = new Map([
+  ['Critical Damage Added (Harlequin)', 'critDamage']
 ]);
 
 export function getEffectStrength(effect) {
@@ -272,12 +279,17 @@ export function summarizeEffects({ itemEffects = [], actionEffects = [], bonusEf
 
 export function getOffensiveTotals(allEffects) {
   const list = Array.isArray(allEffects) ? allEffects : [];
-  return {
+  const totals = {
     damage: (list.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Damage Done')?.signedTotal) ?? 0,
     reload: (list.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Reload Speed')?.signedTotal) ?? 0,
     critChance: (list.find(effect => effect?.prefix?.type === 'add' && effect?.prefix?.base === 'Critical Chance')?.signedTotal) ?? 0,
     critDamage: (list.find(effect => effect?.prefix?.type === 'add' && effect?.prefix?.base === 'Critical Damage')?.signedTotal) ?? 0
   };
+  for (const effect of list) {
+    const key = OFFENSIVE_VARIANT_NAMES.get(effect?.name);
+    if (key) totals[key] += effect.signedTotal ?? 0;
+  }
+  return totals;
 }
 
 export function groupEffects(allEffects) {
@@ -286,14 +298,20 @@ export function groupEffects(allEffects) {
     .map(def => list.find(effect => effect?.prefix?.type === def.type && effect?.prefix?.base === def.base) || null)
     .filter(Boolean)
     .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
+  const offensiveVariants = list
+    .filter(effect => OFFENSIVE_VARIANT_NAMES.has(effect?.name))
+    .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
   const defensive = list
     .filter(effect => DEFENSIVE_EFFECT_NAMES.has(effect.name))
     .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
+  const allOffensive = [...offensive, ...offensiveVariants];
+  const offensiveNames = new Set(allOffensive.map(e => e.name));
   const utility = list
+    .filter(effect => !offensiveNames.has(effect.name))
     .filter(effect => !effect?.prefix || !OFFENSIVE_EFFECTS.some(def => def.type === effect.prefix.type && def.base === effect.prefix.base))
     .filter(effect => !DEFENSIVE_EFFECT_NAMES.has(effect.name))
     .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
 
-  return { offensive, defensive, utility };
+  return { offensive: allOffensive, defensive, utility };
 }
 
