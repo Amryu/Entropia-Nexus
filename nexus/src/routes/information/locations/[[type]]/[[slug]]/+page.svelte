@@ -866,8 +866,8 @@
             />
           </div>
           <div class="infobox-subtitle">
-            <span>{LOCATION_TYPES.find(t => t.value === locationType)?.label || locationType}</span>
-            <span>{activeLocation?.Planet?.Name || 'Unknown'}</span>
+            <span class="type-badge">{LOCATION_TYPES.find(t => t.value === locationType)?.label || locationType}</span>
+            <span class="planet-badge">{activeLocation?.Planet?.Name || 'Unknown'}</span>
           </div>
         </div>
 

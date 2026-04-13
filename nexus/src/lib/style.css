@@ -1104,20 +1104,10 @@ h2 {
 }
 
 /* Type badge in infobox subtitle */
-.type-badge {
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  background-color: var(--accent-color, #4a9eff);
-  color: white;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-/* Category/planet badge variant (professions, skills, vendors, shops) */
+.type-badge,
 .category-badge,
 .planet-badge {
-  padding: 3px 10px;
+  padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
   background-color: var(--accent-color, #4a9eff);

@@ -1306,7 +1306,7 @@
           </div>
           <div class="infobox-subtitle">
             <span class="type-badge type-{mobType.toLowerCase()}">{mobType}</span>
-            <span>{activeMob?.Planet?.Name || 'Calypso'}</span>
+            <span class="planet-badge">{activeMob?.Planet?.Name || 'Calypso'}</span>
           </div>
         </div>
 

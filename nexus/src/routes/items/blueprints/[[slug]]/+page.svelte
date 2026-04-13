@@ -663,8 +663,8 @@
             />
           </div>
           <div class="infobox-subtitle">
-            <span class="type-badge">{activeEntity?.Properties?.Type || 'Blueprint'}</span>
-            <span>Level {activeEntity?.Properties?.Level ?? '?'}</span>
+            <span class="type-badge">{(activeEntity?.Properties?.Type || 'Blueprint').replace(/ Component$/, ' C.')}</span>
+            <span class="type-badge">Level {activeEntity?.Properties?.Level ?? '?'}</span>
             {#if activeEntity?.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
             {#if activeEntity?.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>

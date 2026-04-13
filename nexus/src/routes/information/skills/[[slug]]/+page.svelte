@@ -762,10 +762,11 @@
   }
 
   .status-badge {
-    padding: 3px 8px;
-    font-size: 10px;
+    padding: 2px 8px;
+    font-size: 11px;
     font-weight: 600;
     border-radius: 4px;
+    text-transform: uppercase;
   }
 
   .status-badge.hidden {

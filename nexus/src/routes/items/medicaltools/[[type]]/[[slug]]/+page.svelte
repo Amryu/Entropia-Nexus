@@ -1086,7 +1086,7 @@
 
   .sib-badge {
     padding: 2px 8px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     background-color: #10b981;
     color: white;

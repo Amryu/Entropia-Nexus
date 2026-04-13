@@ -583,7 +583,7 @@
           </div>
           <div class="infobox-subtitle">
             <span class="type-badge">Armor Set</span>
-            <span>{pieceCount} pieces</span>
+            <span class="type-badge">{pieceCount} pieces</span>
             {#if activeEntity?.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
             {#if activeEntity?.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
           </div>

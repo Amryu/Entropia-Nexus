@@ -1244,8 +1244,8 @@
             />
           </div>
           <div class="infobox-subtitle">
-            <span>{isChainView ? 'Mission Chain' : activeMission?.Properties?.Type || 'Mission'}</span>
-            <span>{activeEntity?.Planet?.Name || 'Calypso'}</span>
+            <span class="type-badge">{isChainView ? 'Mission Chain' : activeMission?.Properties?.Type || 'Mission'}</span>
+            <span class="planet-badge">{activeEntity?.Planet?.Name || 'Calypso'}</span>
           </div>
         </div>
 
