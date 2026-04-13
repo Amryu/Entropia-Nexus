@@ -1246,40 +1246,76 @@ function formatJsonForDiscord(json) {
 }
 
 /**
- * If an object's only meaningful key is the identifier `Name`, return that name
- * as a string so the parent line can inline it (e.g. `Item: Foo` instead of
- * `Item:` followed by `Name: Foo`). Strips `<empty> -> ` markers from added /
- * removed states. Returns null when the object has additional fields.
+ * Inline-identifier helpers. An object whose only meaningful key is `Name`
+ * (or `Name`-via-arrow-marker) collapses to a single value so the parent line
+ * can render `Item: Foo` instead of `Item:` followed by `Name: Foo`.
+ *
+ * `inlineIdentifier` returns `{value, status}` so callers can place a +/- on
+ * the line itself (Discord diff coloring keys off the first character only).
  */
 const META_KEYS = new Set(['_status', '_identifier']);
 
-function tryInlineIdentifier(obj) {
+function inlineIdentifier(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
   const keys = Object.keys(obj).filter(k => !META_KEYS.has(k));
   if (keys.length !== 1 || keys[0] !== 'Name') return null;
   const v = obj.Name;
-  if (typeof v === 'string') return v.replace('<empty> -> ', '').replace(' -> <empty>', '');
-  if (typeof v === 'number') return String(v);
-  return null;
+  let status = obj._status ?? 'unchanged';
+  let value;
+  if (typeof v === 'string') {
+    if (v.startsWith('<empty> -> ')) {
+      value = v.slice('<empty> -> '.length);
+      if (status === 'unchanged') status = 'added';
+    } else if (v.endsWith(' -> <empty>')) {
+      value = v.slice(0, -' -> <empty>'.length);
+      if (status === 'unchanged') status = 'removed';
+    } else {
+      value = v;
+    }
+  } else if (typeof v === 'number') {
+    value = String(v);
+  } else {
+    return null;
+  }
+  return { value, status };
+}
+
+function statusPrefix(status) {
+  return status === 'added' ? '+' : status === 'removed' ? '-' : ' ';
 }
 
 /**
- * If every item in an array can be inlined as an identifier, return a comma
- * separated list rendering, with +/- prefixes per item to convey status.
- * Returns null when at least one item has more than just `Name`.
+ * If every array item collapses to an inline identifier, return groups split
+ * by status. Returns null as soon as one item has additional fields.
  */
-function tryInlineIdentifierArray(arr) {
+function inlineIdentifierGroups(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return null;
-  const parts = [];
+  const groups = { added: [], removed: [], unchanged: [] };
   for (const item of arr) {
-    const inline = tryInlineIdentifier(item);
-    if (inline === null) return null;
-    const status = item?._status;
-    if (status === 'added') parts.push(`+${inline}`);
-    else if (status === 'removed') parts.push(`-${inline}`);
-    else parts.push(inline);
+    const info = inlineIdentifier(item);
+    if (info === null) return null;
+    if (info.status === 'added') groups.added.push(info.value);
+    else if (info.status === 'removed') groups.removed.push(info.value);
+    else groups.unchanged.push(info.value);
   }
-  return `[${parts.join(', ')}]`;
+  return groups;
+}
+
+/**
+ * Emit one line per non-empty status group so each line begins with +/-/space
+ * and Discord can color it. When `forcedPrefix` is set (parent already added
+ * or removed), collapse to a single line under the parent's prefix.
+ */
+function emitInlineGroups(groups, key, pad, lines, forcedPrefix = null) {
+  const label = key ? `${key}: ` : '';
+  if (forcedPrefix) {
+    const all = [...groups.added, ...groups.removed, ...groups.unchanged];
+    if (all.length) lines.push(`${forcedPrefix} ${pad}${label}[${all.join(', ')}]`);
+    return;
+  }
+  if (groups.added.length) lines.push(`+ ${pad}${label}[${groups.added.join(', ')}]`);
+  if (groups.removed.length) lines.push(`- ${pad}${label}[${groups.removed.join(', ')}]`);
+  if (groups.unchanged.length) lines.push(`  ${pad}${label}[${groups.unchanged.join(', ')}]`);
 }
 
 /**
@@ -1289,6 +1325,8 @@ function tryInlineIdentifierArray(arr) {
  * - Nested objects: header line + indented children
  * - Array items: prefixed with _status indicator
  * - Objects/arrays containing only an identifier collapse to "key: Name"
+ * - Array items with no extractable identifier render as a "*" bullet so
+ *   nested children still print at a sensible depth.
  */
 function formatDiffLines(obj, lines, depth) {
   const pad = '  '.repeat(depth);
@@ -1296,23 +1334,37 @@ function formatDiffLines(obj, lines, depth) {
   if (Array.isArray(obj)) {
     for (const item of obj) {
       if (typeof item === 'string') {
-        // Primitive change in array: "old -> new"
         formatChangedValue(item, null, pad, lines);
       } else if (typeof item === 'object' && item !== null) {
         const status = item._status;
-        const rawLabel = item._identifier ?? item.Name ?? item.Tier ?? '(unnamed)';
+        const inline = inlineIdentifier(item);
+        const trivial = inline !== null;
+        const rawLabel = trivial
+          ? inline.value
+          : (item._identifier ?? item.Name ?? item.Tier ?? null);
         const label = (status === 'added' || status === 'removed') && typeof rawLabel === 'string'
           ? rawLabel.replace('<empty> -> ', '').replace(' -> <empty>', '')
           : rawLabel;
-        const prefix = status === 'added' ? '+' : status === 'removed' ? '-' : ' ';
-        const trivial = tryInlineIdentifier(item) !== null;
+        const prefix = statusPrefix(status);
 
-        if (status === 'added' || status === 'removed') {
-          if (label) lines.push(`${prefix} ${pad}${label}${trivial ? '' : ':'}`);
-          if (!trivial) formatDiffLinesFlat(item, lines, depth + 1, prefix);
+        if (label != null) {
+          lines.push(`${prefix} ${pad}${label}${trivial ? '' : ':'}`);
+          if (!trivial) {
+            if (status === 'added' || status === 'removed') {
+              formatDiffLinesFlat(item, lines, depth + 1, prefix);
+            } else {
+              formatDiffLines(item, lines, depth + 1);
+            }
+          }
         } else {
-          if (label) lines.push(`  ${pad}${label}${trivial ? '' : ':'}`);
-          if (!trivial) formatDiffLines(item, lines, depth + 1);
+          // No top-level identifier — emit a generic bullet so the children
+          // don't blur into adjacent items, then render children one level in.
+          lines.push(`${prefix} ${pad}*`);
+          if (status === 'added' || status === 'removed') {
+            formatDiffLinesFlat(item, lines, depth + 1, prefix, false);
+          } else {
+            formatDiffLines(item, lines, depth + 1);
+          }
         }
       }
     }
@@ -1325,17 +1377,17 @@ function formatDiffLines(obj, lines, depth) {
     if (typeof value === 'string') {
       formatChangedValue(value, key, pad, lines);
     } else if (Array.isArray(value)) {
-      const inlineArr = tryInlineIdentifierArray(value);
-      if (inlineArr !== null) {
-        lines.push(`  ${pad}${key}: ${inlineArr}`);
+      const groups = inlineIdentifierGroups(value);
+      if (groups !== null) {
+        emitInlineGroups(groups, key, pad, lines);
       } else {
         lines.push(`  ${pad}${key}:`);
         formatDiffLines(value, lines, depth + 1);
       }
     } else if (typeof value === 'object' && value !== null) {
-      const inline = tryInlineIdentifier(value);
+      const inline = inlineIdentifier(value);
       if (inline !== null) {
-        lines.push(`  ${pad}${key}: ${inline}`);
+        lines.push(`${statusPrefix(inline.status)} ${pad}${key}: ${inline.value}`);
       } else {
         lines.push(`  ${pad}${key}:`);
         formatDiffLines(value, lines, depth + 1);
@@ -1360,7 +1412,6 @@ function formatChangedValue(value, key, pad, lines) {
     if (oldPart !== '<empty>') lines.push(`- ${pad}${label}${oldPart}`);
     if (newPart !== '<empty>') lines.push(`+ ${pad}${label}${newPart}`);
   } else {
-    // Context key (unchanged)
     lines.push(`  ${pad}${key ? `${key}: ` : ''}${value}`);
   }
 }
@@ -1372,23 +1423,22 @@ function formatDiffLinesFlat(obj, lines, depth, prefix, skipContext = true) {
     if (META_KEYS.has(key)) continue;
     if (skipContext && (key === 'Name' || key === 'Tier')) continue;
     if (Array.isArray(value)) {
-      const inlineArr = tryInlineIdentifierArray(value);
-      if (inlineArr !== null) {
-        lines.push(`${prefix} ${pad}${key}: ${inlineArr}`);
+      const groups = inlineIdentifierGroups(value);
+      if (groups !== null) {
+        emitInlineGroups(groups, key, pad, lines, prefix);
       } else {
         lines.push(`${prefix} ${pad}${key}:`);
         formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
       }
     } else if (typeof value === 'object' && value !== null) {
-      const inline = tryInlineIdentifier(value);
+      const inline = inlineIdentifier(value);
       if (inline !== null) {
-        lines.push(`${prefix} ${pad}${key}: ${inline}`);
+        lines.push(`${prefix} ${pad}${key}: ${inline.value}`);
       } else {
         lines.push(`${prefix} ${pad}${key}:`);
         formatDiffLinesFlat(value, lines, depth + 1, prefix, false);
       }
     } else if (value != null) {
-      // Strip redundant "<empty> -> " / " -> <empty>" — the +/- prefix already conveys direction
       const display = typeof value === 'string' ? value.replace('<empty> -> ', '').replace(' -> <empty>', '') : value;
       if (display !== '') lines.push(`${prefix} ${pad}${key}: ${display}`);
     }
