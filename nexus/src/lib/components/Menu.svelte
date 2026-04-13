@@ -924,7 +924,7 @@
   ];
 
   // Wiki mega-dropdown popout — one slot, injected adjacent to the hovered column
-  let wikiExpanded: { column: string; label: string } | null = $state(null);
+  let wikiExpanded: { column: string; label: string; side: 'left' | 'right' } | null = $state(null);
   let wikiPopoutSearch = $state('');
   let wikiPopoutSearchFocused = $state(false);
   let wikiPopoutSearchInput: HTMLInputElement | null = $state(null);
@@ -948,7 +948,7 @@
       wikiCloseTimer = null;
     }, 180);
   }
-  function openWikiPopout(columnTitle: string, itemLabel: string, _triggerEl?: HTMLElement | null) {
+  function openWikiPopout(columnTitle: string, itemLabel: string, side: 'left' | 'right', _triggerEl?: HTMLElement | null) {
     cancelWikiClose();
     const changed = !wikiExpanded || wikiExpanded.column !== columnTitle || wikiExpanded.label !== itemLabel;
     if (changed) {
@@ -960,7 +960,7 @@
       wikiPopoutSearch = '';
       wikiPopoutResults = [];
       wikiPopoutResultsLoading = false;
-      wikiExpanded = { column: columnTitle, label: itemLabel };
+      wikiExpanded = { column: columnTitle, label: itemLabel, side };
       // Warm the cache so typing feels instant
       loadWikiPopoutEntities(itemLabel).catch(() => {});
     }
@@ -1171,17 +1171,14 @@
     }
     wikiPopoutSearchTimer = setTimeout(() => runWikiPopoutSearch(query, label), WIKI_POPOUT_SEARCH_DEBOUNCE_MS);
   });
-  function getWikiExpandedChildren(columnTitle: string): MenuItem[] {
-    if (!wikiExpanded || wikiExpanded.column !== columnTitle) return [];
-    const col = wikiColumns.find(c => c.title === columnTitle);
-    if (!col) return [];
-    const parent = col.items.find(i => i.label === wikiExpanded!.label);
-    return parent?.children || [];
-  }
-  function getWikiExpandedParent(columnTitle: string): MenuItem | null {
-    if (!wikiExpanded || wikiExpanded.column !== columnTitle) return null;
-    const col = wikiColumns.find(c => c.title === columnTitle);
-    return col?.items.find(i => i.label === wikiExpanded!.label) || null;
+  function getWikiPopoutInfo(): { column: WikiColumn; parent: MenuItem; children: MenuItem[] } | null {
+    const exp = wikiExpanded;
+    if (!exp) return null;
+    const column = wikiColumns.find(c => c.title === exp.column);
+    if (!column) return null;
+    const parent = column.items.find(i => i.label === exp.label);
+    if (!parent) return null;
+    return { column, parent, children: parent.children || [] };
   }
   function getWikiItemUrl(basePath: string, url: string): string {
     const qIdx = url.indexOf('?');
@@ -1500,6 +1497,12 @@
     font-size: 13px;
     color: var(--text-muted);
     margin-left: auto;
+  }
+  .submenu-arrow-left {
+    margin-left: 0;
+  }
+  .wiki-parent-label {
+    flex: 1 1 auto;
   }
 
   .submenu {
@@ -1968,6 +1971,13 @@
   }
 
   .dropdown-wiki {
+    padding: 0;
+    overflow: visible;
+    width: max-content;
+    max-width: 90vw;
+    min-width: 0;
+  }
+  .dropdown-wiki-columns {
     display: flex;
     flex-direction: row;
     align-items: stretch;
@@ -1976,8 +1986,6 @@
     max-height: 80vh;
     overflow-y: auto;
     overflow-x: hidden;
-    width: max-content;
-    max-width: 90vw;
     min-width: 0;
   }
   .wiki-column {
@@ -2009,21 +2017,38 @@
     color: var(--secondary-color);
   }
   .wiki-popout {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 100;
     min-width: 220px;
     max-width: 280px;
-    padding: 4px 2px 6px;
-    border: none;
+    padding: 12px 2px 10px;
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     background: color-mix(in srgb, var(--accent-color) 10%, var(--secondary-color));
-    animation: wiki-popout-in 90ms ease-out;
-    transform-origin: left top;
-    align-self: stretch;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.3);
     display: flex;
     flex-direction: column;
-    max-height: calc(80vh - 22px);
     min-height: 0;
   }
-  .dropdown-wiki .menu-dropdown-item.wiki-popout-result {
+  .wiki-popout-left {
+    right: 100%;
+    margin-right: 4px;
+    transform-origin: right top;
+    animation: wiki-popout-in-left 90ms ease-out;
+  }
+  .wiki-popout-right {
+    left: 100%;
+    margin-left: 4px;
+    transform-origin: left top;
+    animation: wiki-popout-in-right 90ms ease-out;
+  }
+  .wiki-popout .menu-dropdown-item {
+    justify-content: space-between;
+    white-space: normal;
+  }
+  .wiki-popout .menu-dropdown-item.wiki-popout-result {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -2090,7 +2115,11 @@
     font-style: italic;
     text-align: center;
   }
-  @keyframes wiki-popout-in {
+  @keyframes wiki-popout-in-left {
+    from { opacity: 0; transform: translateX(6px) scaleX(0.94); }
+    to   { opacity: 1; transform: translateX(0) scaleX(1); }
+  }
+  @keyframes wiki-popout-in-right {
     from { opacity: 0; transform: translateX(-6px) scaleX(0.94); }
     to   { opacity: 1; transform: translateX(0) scaleX(1); }
   }
@@ -3340,84 +3369,89 @@
           </div>
         {:else if menu === 'Wiki'}
           <div class="dropdown-content dropdown-wiki" class:open={dropdownOpen === menu}>
-            {#each wikiColumns as column (column.title)}
-              {@const expandedParent = getWikiExpandedParent(column.title)}
-              {@const expandedChildren = getWikiExpandedChildren(column.title)}
-              <div class="wiki-column" role="none" onmouseleave={scheduleWikiClose}>
-                <div class="wiki-column-title">{column.title}</div>
-                {#each column.items as item (item.label)}
-                  {@const hasPopout = !!(item.children?.length) || !!WIKI_POPOUT_ENDPOINTS[item.label]}
-                  {#if hasPopout}
-                    {@const active = wikiExpanded?.column === column.title && wikiExpanded?.label === item.label}
-                    <a
-                      use:loading
-                      href={getWikiItemUrl(column.basePath, item.url)}
-                      onmouseenter={(e) => openWikiPopout(column.title, item.label, e.currentTarget as HTMLElement)}
-                    >
-                      <div class="menu-dropdown-item wiki-parent-item" class:highlighted={item.highlighted} class:active>
-                        {item.label}
-                        <span class="submenu-arrow">&#9656;</span>
-                      </div>
-                    </a>
-                  {:else}
-                    <a
-                      use:loading
-                      href={getWikiItemUrl(column.basePath, item.url)}
-                      onmouseenter={resetWikiExpanded}
-                    >
-                      <div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div>
-                    </a>
-                  {/if}
-                {/each}
-              </div>
-              {#if expandedParent}
+            <div class="dropdown-wiki-columns">
+              {#each wikiColumns as column, columnIndex (column.title)}
+                {@const side = columnIndex < wikiColumns.length / 2 ? 'left' : 'right'}
+                <div class="wiki-column" role="none" onmouseleave={scheduleWikiClose}>
+                  <div class="wiki-column-title">{column.title}</div>
+                  {#each column.items as item (item.label)}
+                    {@const hasPopout = !!(item.children?.length) || !!WIKI_POPOUT_ENDPOINTS[item.label]}
+                    {#if hasPopout}
+                      {@const active = wikiExpanded?.column === column.title && wikiExpanded?.label === item.label}
+                      <a
+                        use:loading
+                        href={getWikiItemUrl(column.basePath, item.url)}
+                        onmouseenter={(e) => openWikiPopout(column.title, item.label, side, e.currentTarget as HTMLElement)}
+                      >
+                        <div class="menu-dropdown-item wiki-parent-item" class:highlighted={item.highlighted} class:active>
+                          {#if side === 'left'}<span class="submenu-arrow submenu-arrow-left">&#9666;</span>{/if}
+                          <span class="wiki-parent-label">{item.label}</span>
+                          {#if side === 'right'}<span class="submenu-arrow">&#9656;</span>{/if}
+                        </div>
+                      </a>
+                    {:else}
+                      <a
+                        use:loading
+                        href={getWikiItemUrl(column.basePath, item.url)}
+                        onmouseenter={resetWikiExpanded}
+                      >
+                        <div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div>
+                      </a>
+                    {/if}
+                  {/each}
+                </div>
+              {/each}
+            </div>
+            {#if wikiExpanded}
+              {@const popoutInfo = getWikiPopoutInfo()}
+              {#if popoutInfo}
                 {@const searchActive = wikiPopoutSearch.trim().length > 0}
-                <div class="wiki-column wiki-popout" role="none" onmouseenter={cancelWikiClose} onmouseleave={scheduleWikiClose}>
-                  <div class="wiki-column-title">{expandedParent.label}</div>
-                  <div class="wiki-popout-search">
-                    <input
-                      type="text"
-                      class="wiki-popout-search-input"
-                      placeholder="Search {expandedParent.label.toLowerCase()}..."
-                      bind:value={wikiPopoutSearch}
-                      bind:this={wikiPopoutSearchInput}
-                      onfocus={() => { wikiPopoutSearchFocused = true; cancelWikiClose(); }}
-                      onblur={() => { wikiPopoutSearchFocused = false; }}
-                      onkeydown={handleWikiSearchKeydown}
-                      use:focusOnMount
-                    />
-                  </div>
-                  <div class="wiki-popout-results">
-                    {#if searchActive}
-                      {#if wikiPopoutResultsLoading && wikiPopoutResults.length === 0}
-                        <div class="wiki-popout-empty">Searching&hellip;</div>
-                      {:else if wikiPopoutResults.length === 0}
-                        <div class="wiki-popout-empty">No matches</div>
-                      {:else}
-                        {#each wikiPopoutResults as result, i (result.Url + '|' + i)}
-                          <a use:loading href={result.Url} onclick={handleWikiPopoutResultClick}>
-                            <div class="menu-dropdown-item wiki-popout-result">
-                              <span class="wiki-popout-result-name">{result.Name}</span>
-                              {#if result.SubType}
-                                <span class="wiki-popout-result-sub">{result.SubType}</span>
-                              {/if}
-                            </div>
-                          </a>
-                        {/each}
-                      {/if}
-                    {:else if expandedChildren.length > 0}
-                      {#each expandedChildren as child (child.label)}
-                        <a use:loading href={getWikiItemUrl(column.basePath, child.url)}>
-                          <div class="menu-dropdown-item">{child.label}</div>
+                <div class="wiki-popout wiki-popout-{wikiExpanded.side}" role="none" onmouseenter={cancelWikiClose} onmouseleave={scheduleWikiClose}>
+                <div class="wiki-column-title">{popoutInfo.parent.label}</div>
+                <div class="wiki-popout-search">
+                  <input
+                    type="text"
+                    class="wiki-popout-search-input"
+                    placeholder="Search {popoutInfo.parent.label.toLowerCase()}..."
+                    bind:value={wikiPopoutSearch}
+                    bind:this={wikiPopoutSearchInput}
+                    onfocus={() => { wikiPopoutSearchFocused = true; cancelWikiClose(); }}
+                    onblur={() => { wikiPopoutSearchFocused = false; }}
+                    onkeydown={handleWikiSearchKeydown}
+                    use:focusOnMount
+                  />
+                </div>
+                <div class="wiki-popout-results">
+                  {#if searchActive}
+                    {#if wikiPopoutResultsLoading && wikiPopoutResults.length === 0}
+                      <div class="wiki-popout-empty">Searching&hellip;</div>
+                    {:else if wikiPopoutResults.length === 0}
+                      <div class="wiki-popout-empty">No matches</div>
+                    {:else}
+                      {#each wikiPopoutResults as result, i (result.Url + '|' + i)}
+                        <a use:loading href={result.Url} onclick={handleWikiPopoutResultClick}>
+                          <div class="menu-dropdown-item wiki-popout-result">
+                            <span class="wiki-popout-result-name">{result.Name}</span>
+                            {#if result.SubType}
+                              <span class="wiki-popout-result-sub">{result.SubType}</span>
+                            {/if}
+                          </div>
                         </a>
                       {/each}
-                    {:else}
-                      <div class="wiki-popout-empty">Type to search {expandedParent.label.toLowerCase()}</div>
                     {/if}
-                  </div>
+                  {:else if popoutInfo.children.length > 0}
+                    {#each popoutInfo.children as child (child.label)}
+                      <a use:loading href={getWikiItemUrl(popoutInfo.column.basePath, child.url)}>
+                        <div class="menu-dropdown-item">{child.label}</div>
+                      </a>
+                    {/each}
+                  {:else}
+                    <div class="wiki-popout-empty">Type to search {popoutInfo.parent.label.toLowerCase()}</div>
+                  {/if}
                 </div>
+              </div>
               {/if}
-            {/each}
+            {/if}
           </div>
         {:else if menuItemsWiki[menu].length > 0}
           <div class="dropdown-content" class:open={dropdownOpen === menu}>
