@@ -73,8 +73,10 @@
   // Build a display payload for a damage cell. When TotalDamage is filled,
   // returns the numeric value. When it's missing but the maturity has a
   // Damage Potential bucket, returns a string like `~Large` with a tooltip
-  // describing the approximation. Otherwise returns null.
+  // describing the approximation. Returns null when the attack itself
+  // doesn't exist for this maturity (no DP fallback in that case).
   function getDisplayDamage(attack, damagePotential) {
+    if (!attack) return null;
     const td = attack?.TotalDamage;
     if (td != null && td > 0) {
       return { value: td, approximated: false, tooltip: null };
@@ -124,6 +126,16 @@
   }
 
   let isAsteroid = $derived(type === 'Asteroid');
+
+  function hasAttackSlot(mats, slotName, slotIndex) {
+    return mats.some(m => {
+      const named = m.Attacks?.find(a => a.Name === slotName);
+      if (named) return true;
+      return m.Attacks?.[slotIndex] != null;
+    });
+  }
+  let hasSecondary = $derived(hasAttackSlot(sortedMaturities, 'Secondary', 1));
+  let hasTertiary = $derived(hasAttackSlot(sortedMaturities, 'Tertiary', 2));
 
   // Transform data for FancyTable
   let tableData = $derived(sortedMaturities.map(maturity => {
@@ -249,8 +261,9 @@
     }
   ];
 
-  // Additional columns for non-asteroids
-  const mobColumns = [
+  // Additional columns for non-asteroids. Secondary/Tertiary only appear
+  // when at least one maturity has an attack in that slot.
+  let mobColumns = $derived([
     {
       key: 'boss',
       header: 'Boss',
@@ -262,16 +275,16 @@
       sortable: true,
       formatter: (_value, row) => renderDamageCell(row.primaryDisplay, row.primaryTooltip)
     },
-    {
+    ...(hasSecondary ? [{
       key: 'secondaryDamage',
       header: 'Secondary',
       formatter: (_value, row) => renderDamageCell(row.secondaryDisplay, row.secondaryTooltip)
-    },
-    {
+    }] : []),
+    ...(hasTertiary ? [{
       key: 'tertiaryDamage',
       header: 'Tertiary',
       formatter: (_value, row) => renderDamageCell(row.tertiaryDisplay, row.tertiaryTooltip)
-    },
+    }] : []),
     {
       key: 'defense',
       header: 'Defense',
@@ -285,7 +298,7 @@
         ? `<span style="color: var(--success-color, #4ade80); font-weight: 500;">Lvl ${row.tamingLevel}</span>`
         : 'No'
     }
-  ];
+  ]);
 
   let loadoutColumns = $derived(loadoutStats ? [
     {
