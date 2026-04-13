@@ -15,7 +15,7 @@
     computeLayerDecayRates,
     computeAttackBreakdown,
     sortedMaturities
-  } from './armorVsMob.js';
+  } from '$lib/gear-advisor/armorVsMob.js';
   import { exportCSV, exportJSON, exportTableAsImage } from './export-utils.js';
 
   let {

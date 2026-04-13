@@ -2,7 +2,7 @@
   // @ts-nocheck
   import { onMount, onDestroy, untrack } from 'svelte';
   import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, getShapeEdges, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
-  import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
+  import { formatMobSpawnDisplayName, getWaypoint } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
 
   
@@ -93,8 +93,7 @@
         if (!payload) return;
         const coords = payload.Properties?.Coordinates;
         if (!coords) return;
-        const wpName = (payload.Name || '').replace(/,/g, '').trim().slice(0, 50);
-        const wp = `/wp [${planet?.Name || ''}, ${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}, ${wpName}]`;
+        const wp = `/wp ${getWaypoint(planet, coords.Longitude ?? 0, coords.Latitude ?? 0, coords.Altitude, payload.Name)}`;
         navigator.clipboard?.writeText(wp);
       }
     }

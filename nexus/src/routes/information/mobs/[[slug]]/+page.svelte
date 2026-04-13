@@ -20,6 +20,7 @@
   import WikiNavigation from '$lib/components/wiki/WikiNavigation.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineArmorVsMobPanel from '$lib/components/gear-advisor/InlineArmorVsMobPanel.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
@@ -918,7 +919,8 @@
     locations: true,
     loots: true,
     codex: true,
-    globals: false
+    globals: false,
+    armorRecommendations: false
   });
   let maturitiesSectionAnchor = $state();
   let lastMaturityScrollKey = null;
@@ -1634,6 +1636,23 @@
             {/if}
           </DataSection>
         </div>
+
+        <!-- Recommended Armor Section -->
+        {#if !$editMode && activeMob?.Maturities?.length > 0}
+          <DataSection
+            title="Recommended Armor"
+            icon=""
+            bind:expanded={panelStates.armorRecommendations}
+            subtitle="Top matchups by mitigation"
+            ontoggle={savePanelStates}
+          >
+            {#if panelStates.armorRecommendations}
+              {#key activeMob?.Id}
+                <InlineArmorVsMobPanel mode="recommend-armors" mob={activeMob} />
+              {/key}
+            {/if}
+          </DataSection>
+        {/if}
 
         <!-- Locations Section -->
         {#if $editMode || (activeMob?.Spawns && activeMob.Spawns.length > 0)}

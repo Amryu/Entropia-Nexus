@@ -54,18 +54,52 @@
     }
   }
 
-  // Damage types for composition
+  // Damage types for composition / resistances. `colorVar` points at the
+  // shared --damage-* CSS variables in nexus/src/lib/style.css so the
+  // Resistances row and Attack Composition row share identical color cues.
   const DAMAGE_TYPES = [
-    { key: 'Stab', label: 'Stb' },
-    { key: 'Cut', label: 'Cut' },
-    { key: 'Impact', label: 'Imp' },
-    { key: 'Penetration', label: 'Pen' },
-    { key: 'Shrapnel', label: 'Shp' },
-    { key: 'Burn', label: 'Brn' },
-    { key: 'Cold', label: 'Cld' },
-    { key: 'Acid', label: 'Acd' },
-    { key: 'Electric', label: 'Ele' }
+    { key: 'Stab',        label: 'Stb', colorVar: '--damage-stab' },
+    { key: 'Cut',         label: 'Cut', colorVar: '--damage-cut' },
+    { key: 'Impact',      label: 'Imp', colorVar: '--damage-impact' },
+    { key: 'Penetration', label: 'Pen', colorVar: '--damage-penetration' },
+    { key: 'Shrapnel',    label: 'Shp', colorVar: '--damage-shrapnel' },
+    { key: 'Burn',        label: 'Brn', colorVar: '--damage-burn' },
+    { key: 'Cold',        label: 'Cld', colorVar: '--damage-cold' },
+    { key: 'Acid',        label: 'Acd', colorVar: '--damage-acid' },
+    { key: 'Electric',    label: 'Ele', colorVar: '--damage-electric' }
   ];
+
+  // Damage Potential buckets mirror the enumeration seeded in
+  // sql/nexus/migrations/026_seed_enumerations.sql ("Damage Potential").
+  // `from` is the inclusive lower bound of each bucket.
+  const DAMAGE_POTENTIAL_BUCKETS = [
+    { name: 'Minimal',  from: 1   },
+    { name: 'Small',    from: 20  },
+    { name: 'Limited',  from: 30  },
+    { name: 'Medium',   from: 40  },
+    { name: 'Large',    from: 60  },
+    { name: 'Great',    from: 101 },
+    { name: 'Huge',     from: 161 },
+    { name: 'Immense',  from: 271 },
+    { name: 'Gigantic', from: 356 },
+    { name: 'Colossal', from: 500 }
+  ];
+
+  // Pick the DP bucket containing max(attack.TotalDamage) for a maturity.
+  // Returns null when the maturity has no attack with a filled TotalDamage.
+  function classifyDPFromAttacks(maturity) {
+    const attacks = Array.isArray(maturity?.Attacks) ? maturity.Attacks : [];
+    let max = 0;
+    for (const a of attacks) {
+      const v = a?.TotalDamage;
+      if (v != null && v > max) max = v;
+    }
+    if (max <= 0) return null;
+    for (let i = DAMAGE_POTENTIAL_BUCKETS.length - 1; i >= 0; i--) {
+      if (max >= DAMAGE_POTENTIAL_BUCKETS[i].from) return DAMAGE_POTENTIAL_BUCKETS[i].name;
+    }
+    return null;
+  }
 
   // Attack name presets
   const ATTACK_NAMES = ['Primary', 'Secondary', 'Tertiary', 'Quaternary', 'Quinary', 'Senary'];
@@ -156,6 +190,7 @@
         RegenerationInterval: null,
         RegenerationAmount: null,
         MissChance: null,
+        DamagePotential: null,
         Taming: {
           IsTameable: false,
           TamingLevel: null
@@ -543,6 +578,31 @@
                     </label>
                   {/each}
                 </div>
+
+                {@const dpAuto = classifyDPFromAttacks(maturity)}
+                {@const dpLocked = dpAuto != null}
+                <div class="field-grid dp-grid">
+                  <label class="field dp-field">
+                    <span class="field-label">
+                      Damage Potential
+                      {#if dpLocked}
+                        <span class="dp-hint" title="Derived from highest attack damage. Clear all attack damages to edit manually.">(auto)</span>
+                      {:else}
+                        <span class="dp-hint">This refers to the same name enumeration. It tells in what range the maturity falls, even if not exactly known.</span>
+                      {/if}
+                    </span>
+                    <select
+                      value={dpLocked ? dpAuto : (maturity.Properties?.DamagePotential || '')}
+                      disabled={dpLocked}
+                      onchange={(e) => updateMaturityField(matIndex, 'Properties.DamagePotential', e.target.value || null)}
+                    >
+                      <option value="">—</option>
+                      {#each DAMAGE_POTENTIAL_BUCKETS as bucket}
+                        <option value={bucket.name}>{bucket.name} ({bucket.from}+)</option>
+                      {/each}
+                    </select>
+                  </label>
+                </div>
               {/if}
             </div>
 
@@ -584,21 +644,23 @@
                   </label>
                 </div>
 
-                <!-- Defense Grid -->
-                <div class="field-grid defense">
-                  <span class="field-label full">Defense</span>
-                  {#each DAMAGE_TYPES as dmgType}
-                    <label class="field compact">
-                      <span class="field-label-mini">{dmgType.label}</span>
-                      <input
-                        type="number"
-                        value={maturity.Properties?.Defense?.[dmgType.key] ?? ''}
-                        oninput={(e) => updateMaturityField(matIndex, `Properties.Defense.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : 0)}
-                        step="0.1"
-                        min="0"
-                      />
-                    </label>
-                  {/each}
+                <!-- Resistances (single-line colored row, mirrors attack composition) -->
+                <div class="field-grid resistances">
+                  <span class="field-label full">Resistances</span>
+                  <div class="damage-type-row">
+                    {#each DAMAGE_TYPES as dmgType}
+                      <label class="field compact damage-type-field">
+                        <span class="field-label-mini" style="color: var({dmgType.colorVar})">{dmgType.label}</span>
+                        <input
+                          type="number"
+                          value={maturity.Properties?.Defense?.[dmgType.key] ?? ''}
+                          oninput={(e) => updateMaturityField(matIndex, `Properties.Defense.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : 0)}
+                          step="0.1"
+                          min="0"
+                        />
+                      </label>
+                    {/each}
+                  </div>
                 </div>
               </div>
 
@@ -722,8 +784,8 @@
                         </div>
                         <div class="composition-grid">
                           {#each DAMAGE_TYPES as dmgType}
-                            <label class="field compact">
-                              <span class="field-label-mini">{dmgType.label}</span>
+                            <label class="field compact damage-type-field">
+                              <span class="field-label-mini" style="color: var({dmgType.colorVar})">{dmgType.label}</span>
                               <input
                                 type="number"
                                 value={attack.Damage?.[dmgType.key] ?? ''}
@@ -876,9 +938,51 @@
     align-items: end;
   }
 
-  .field-grid.defense,
   .field-grid.attributes {
     grid-template-columns: repeat(5, 1fr);
+  }
+
+  .field-grid.resistances {
+    grid-template-columns: 1fr;
+  }
+
+  .damage-type-row {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .damage-type-row .damage-type-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .damage-type-row .damage-type-field input {
+    padding: 2px 3px;
+    font-size: 11px;
+    text-align: center;
+    height: 24px;
+  }
+
+  .damage-type-field .field-label-mini {
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .field-grid.dp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dp-field {
+    max-width: 320px;
+  }
+
+  .dp-hint {
+    font-size: 10px;
+    color: var(--text-muted, #999);
+    font-style: italic;
+    margin-left: 4px;
   }
 
   .field-grid.taming-grid {
@@ -1213,9 +1317,16 @@
       grid-template-columns: repeat(2, 1fr);
     }
 
-    .field-grid.defense,
     .field-grid.attributes {
       grid-template-columns: repeat(3, 1fr);
+    }
+
+    .damage-type-row {
+      flex-wrap: wrap;
+    }
+
+    .damage-type-row .damage-type-field {
+      flex: 1 1 18%;
     }
 
     .composition-grid {
@@ -1232,9 +1343,12 @@
       grid-template-columns: 1fr;
     }
 
-    .field-grid.defense,
     .field-grid.attributes {
       grid-template-columns: repeat(3, 1fr);
+    }
+
+    .damage-type-row .damage-type-field {
+      flex: 1 1 30%;
     }
 
     .composition-grid {

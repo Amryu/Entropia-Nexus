@@ -679,6 +679,18 @@
     transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
   }
 
+  /* SSR safety net: the desktop sidebar is conditionally rendered via the
+     JS-gated {#if !isMobile} block. If the server guessed a desktop viewport
+     for a user who is actually on mobile, the sidebar would flash in the
+     initial SSR paint until hydration swaps to the MobileDrawer. This media
+     query forces the sidebar hidden below 900px regardless of SSR state so
+     the first paint on a real mobile browser is always clean. */
+  @media (max-width: 899px) {
+    .wiki-sidebar {
+      display: none !important;
+    }
+  }
+
   .sidebar-ad {
     flex-shrink: 0;
     padding: 8px;

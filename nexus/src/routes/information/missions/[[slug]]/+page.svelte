@@ -9,7 +9,7 @@
   import { goto } from '$app/navigation';
   import { onDestroy, untrack } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
-  import { getPlanetNavFilter } from '$lib/mapUtil';
+  import { getPlanetNavFilter, getWaypoint } from '$lib/mapUtil';
   import { hasVisibleText } from '$lib/sanitize.js';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -515,15 +515,8 @@
   function getStartLocationWaypoint(startLocation) {
     if (!startLocation) return null;
     const { Planet, Coordinates, Name } = startLocation;
-    if (!Coordinates?.Longitude && !Coordinates?.Latitude && !Coordinates?.Altitude) return null;
-    const parts = [
-      Planet?.Name || '?',
-      Coordinates?.Longitude ?? '?',
-      Coordinates?.Latitude ?? '?',
-      Coordinates?.Altitude ?? '?',
-      Name || 'Start Location'
-    ];
-    return `[${parts.join(', ')}]`;
+    if (Coordinates?.Longitude == null && Coordinates?.Latitude == null) return null;
+    return getWaypoint(Planet, Coordinates?.Longitude ?? 0, Coordinates?.Latitude ?? 0, Coordinates?.Altitude, Name || 'Start Location');
   }
 
 

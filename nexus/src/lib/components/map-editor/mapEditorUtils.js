@@ -8,11 +8,11 @@
 
 export const LOCATION_TYPES = [
   'Teleporter', 'Npc', 'Interactable', 'Outpost', 'Camp', 'City',
-  'RevivalPoint', 'InstanceEntrance', 'Vendor', 'Estate'
+  'RevivalPoint', 'InstanceEntrance', 'Vendor', 'Estate', 'MagicalFlower'
 ];
 
 export const AREA_TYPES = [
-  'MobArea', 'LandArea', 'WaveEventArea', 'PvpArea', 'PvpLootArea',
+  'MobArea', 'LandArea', 'TreeArea', 'WaveEventArea', 'PvpArea', 'PvpLootArea',
   'ZoneArea', 'CityArea', 'EstateArea', 'EventArea'
 ];
 
@@ -33,10 +33,12 @@ const TYPE_COLORS = {
   InstanceEntrance:'#b0c4de',
   Vendor:         '#ffa07a',
   Estate:         '#deb887',
+  MagicalFlower:  '#ff77aa',
   // Area types
   WaveEventArea:  '#da70d6',
   LandArea:       '#00ff00',
   MobArea:        '#ffff00',
+  TreeArea:       '#15803d',
   PvpArea:        '#ffa500',
   PvpLootArea:    '#ff0000',
   ZoneArea:       '#4169e1',

@@ -1,6 +1,164 @@
 <script>
   //@ts-nocheck
 
+  // ─── Marker style registry ──────────────────────────────────────────
+  // Each entry: { color, shape }
+  // shapes: 'circle' | 'square' | 'diamond' | 'roundedSquare' | 'triUp' | 'triDown' |
+  //         'pentagon' | 'hexagon' | 'star' | 'cross' | 'ring'
+  const MARKER_STYLES = {
+    Teleporter:       { color: '#00ffff', shape: 'circle' },
+    Npc:              { color: '#ff69b4', shape: 'diamond' },
+    Vendor:           { color: '#ffa07a', shape: 'roundedSquare' },
+    Interactable:     { color: '#dda0dd', shape: 'triUp' },
+    Outpost:          { color: '#87ceeb', shape: 'pentagon' },
+    Camp:             { color: '#f0e68c', shape: 'triDown' },
+    City:             { color: '#90ee90', shape: 'hexagon' },
+    MagicalFlower:    { color: '#ff77aa', shape: 'star' },
+    RevivalPoint:     { color: '#98fb98', shape: 'cross' },
+    InstanceEntrance: { color: '#b0c4de', shape: 'ring' },
+    Estate:           { color: '#deb887', shape: 'roundedSquare' }
+  };
+
+  function drawMarkerShape(ctx, shape, x, y, r) {
+    ctx.beginPath();
+    switch (shape) {
+      case 'circle':
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        break;
+      case 'square':
+        ctx.rect(x - r, y - r, r * 2, r * 2);
+        break;
+      case 'diamond':
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r, y);
+        ctx.closePath();
+        break;
+      case 'roundedSquare': {
+        const rr = Math.max(1, r * 0.35);
+        const x0 = x - r, y0 = y - r, w = r * 2, h = r * 2;
+        ctx.moveTo(x0 + rr, y0);
+        ctx.arcTo(x0 + w, y0, x0 + w, y0 + h, rr);
+        ctx.arcTo(x0 + w, y0 + h, x0, y0 + h, rr);
+        ctx.arcTo(x0, y0 + h, x0, y0, rr);
+        ctx.arcTo(x0, y0, x0 + w, y0, rr);
+        ctx.closePath();
+        break;
+      }
+      case 'triUp':
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y + r * 0.85);
+        ctx.lineTo(x - r, y + r * 0.85);
+        ctx.closePath();
+        break;
+      case 'triDown':
+        ctx.moveTo(x, y + r);
+        ctx.lineTo(x + r, y - r * 0.85);
+        ctx.lineTo(x - r, y - r * 0.85);
+        ctx.closePath();
+        break;
+      case 'pentagon':
+        for (let i = 0; i < 5; i++) {
+          const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+          const px = x + Math.cos(a) * r;
+          const py = y + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        break;
+      case 'hexagon':
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3;
+          const px = x + Math.cos(a) * r;
+          const py = y + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        break;
+      case 'star': {
+        const inner = r * 0.45;
+        for (let i = 0; i < 10; i++) {
+          const rad = i % 2 === 0 ? r : inner;
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          const px = x + Math.cos(a) * rad;
+          const py = y + Math.sin(a) * rad;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        break;
+      }
+      case 'cross': {
+        const t = r * 0.38;
+        ctx.moveTo(x - t, y - r);
+        ctx.lineTo(x + t, y - r);
+        ctx.lineTo(x + t, y - t);
+        ctx.lineTo(x + r, y - t);
+        ctx.lineTo(x + r, y + t);
+        ctx.lineTo(x + t, y + t);
+        ctx.lineTo(x + t, y + r);
+        ctx.lineTo(x - t, y + r);
+        ctx.lineTo(x - t, y + t);
+        ctx.lineTo(x - r, y + t);
+        ctx.lineTo(x - r, y - t);
+        ctx.lineTo(x - t, y - t);
+        ctx.closePath();
+        break;
+      }
+      case 'ring':
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        break;
+      default:
+        ctx.rect(x - r, y - r, r * 2, r * 2);
+    }
+  }
+
+  function drawPointMarker(ctx, type, pt, isHovered, isSelected) {
+    const style = MARKER_STYLES[type] || { color: '#ffffff', shape: 'square' };
+    const isTp = type === 'Teleporter';
+    const baseR = isTp ? 4 : 6;
+    const activeR = isTp ? 8 : 9;
+    const r = (isHovered || isSelected) ? activeR : baseR;
+
+    let fillColor = style.color;
+    let strokeColor = isTp ? 'red' : 'black';
+    let fillAlpha = 0.9;
+    let lineWidth = 1.5;
+
+    if (isSelected) {
+      fillColor = 'yellow';
+      strokeColor = 'orange';
+      fillAlpha = 1;
+      lineWidth = 3;
+    } else if (isHovered) {
+      fillColor = 'orange';
+      strokeColor = 'yellow';
+      fillAlpha = 0.95;
+      lineWidth = 2.5;
+    }
+
+    ctx.save();
+    ctx.lineWidth = lineWidth;
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = strokeColor;
+
+    if (style.shape === 'ring') {
+      ctx.globalAlpha = fillAlpha;
+      drawMarkerShape(ctx, 'ring', pt.x, pt.y, r);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, r * 0.45, 0, 2 * Math.PI);
+      ctx.fill();
+    } else {
+      ctx.globalAlpha = fillAlpha;
+      drawMarkerShape(ctx, style.shape, pt.x, pt.y, r);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawShape(ctx, loc, isHovered, isSelected) {
     const type = loc.Properties.Shape;
     ctx.save();
@@ -57,31 +215,10 @@
         ctx.stroke();
       }
     } else {
-      // Draw as point
+      // Draw as point — dispatch per location type
       if (!loc._imgPoint) { ctx.restore(); return; }
       const pt = imageCoordsToCanvasCoords(loc._imgPoint.x, loc._imgPoint.y);
-      if (loc.Properties.Type === 'Teleporter') {
-        ctx.beginPath();
-        const showLarge = isHovered || isSelected;
-        ctx.arc(pt.x, pt.y, showLarge ? 8 : 4, 0, 2 * Math.PI);
-        ctx.fillStyle = isSelected ? 'yellow' : isHovered ? 'orange' : 'aqua';
-        ctx.strokeStyle = isSelected ? 'orange' : isHovered ? 'yellow' : 'red';
-        ctx.globalAlpha = isSelected ? 1 : 0.85;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = showLarge ? 4 : 2;
-        ctx.stroke();
-      } else {
-        ctx.beginPath();
-        ctx.rect(pt.x - 7, pt.y - 7, 14, 14);
-        ctx.fillStyle = isSelected ? 'yellow' : isHovered ? 'orange' : 'white';
-        ctx.globalAlpha = isSelected ? 1 : isHovered ? 0.8 : 0.7;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = isSelected ? 'orange' : isHovered ? 'yellow' : 'black';
-        ctx.lineWidth = isSelected ? 4 : isHovered ? 2 : 1;
-        ctx.stroke();
-      }
+      drawPointMarker(ctx, loc.Properties.Type, pt, isHovered, isSelected);
     }
     ctx.restore();
   }
@@ -262,12 +399,68 @@
   // Pre-compute search result lookup (Id → index) to avoid creating a Map every draw frame
   let searchResultMap = new Map();
 
-  // Layer visibility toggles
-  let showTeleporters = $state(true);
-  let showLandAreas = $state(false);
-  let showMobAreas = $state(true);
-  let showPvpAreas = $state(true);
-  let showOtherAreas = $state(false);
+  // ─── Layer filter system ──────────────────────────────────────────
+  // Main toggle buttons (TP/LA/MA/TR/PVP/WE) map a short label to types
+  // they control. Click = exclusive (others off). Shift+click = toggle in set.
+  // "OTH" opens a popover with checkboxes for everything else.
+  const OUTPOST_TP_CULL_RADIUS = 200; // meters — outposts within this distance
+                                      // of a teleporter are hidden while zoomed out
+  const POINT_DETAIL_THRESHOLD_EU = 20000; // visible width (game units) below which
+                                           // fine-grained point markers become visible
+  const ZOOM_GATED_POINT_TYPES = new Set([
+    'Npc', 'Vendor', 'Interactable', 'Camp', 'City',
+    'MagicalFlower', 'RevivalPoint', 'InstanceEntrance', 'Estate'
+  ]);
+
+  function pointPassesZoomGate(loc, visibleWidthGame) {
+    const type = loc?.Properties?.Type;
+    if (type === 'Teleporter') return true;
+    if (type === 'Outpost') {
+      // Near-TP outposts only visible when zoomed in; others always
+      if (loc._nearTp) return visibleWidthGame <= POINT_DETAIL_THRESHOLD_EU;
+      return true;
+    }
+    if (ZOOM_GATED_POINT_TYPES.has(type)) {
+      return visibleWidthGame <= POINT_DETAIL_THRESHOLD_EU;
+    }
+    return true;
+  }
+
+  const MAIN_LAYERS = [
+    { id: 'TP',  full: 'Teleporters',    color: '#00ffff', types: ['Teleporter'] },
+    { id: 'LA',  full: 'Land Areas',     color: '#4ade80', types: ['LandArea'] },
+    { id: 'MA',  full: 'Mob Areas',      color: '#facc15', types: ['MobArea'] },
+    { id: 'TR',  full: 'Tree Areas',     color: '#15803d', types: ['TreeArea'] },
+    { id: 'PVP', full: 'PvP Areas',      color: '#ef4444', types: ['PvpArea', 'PvpLootArea'] },
+    { id: 'WE',  full: 'Wave Events',    color: '#da70d6', types: ['WaveEventArea'] }
+  ];
+  // Everything not covered by a main button lives in the "Other" popover.
+  const OTHER_GROUPS = [
+    { label: 'Points', items: [
+      { type: 'Outpost',          label: 'Outposts' },
+      { type: 'Npc',              label: 'NPCs' },
+      { type: 'Vendor',           label: 'Vendors' },
+      { type: 'Interactable',     label: 'Interactables' },
+      { type: 'Camp',             label: 'Camps' },
+      { type: 'City',             label: 'Cities' },
+      { type: 'MagicalFlower',    label: 'Magical Flowers' },
+      { type: 'RevivalPoint',     label: 'Revival Points' },
+      { type: 'InstanceEntrance', label: 'Instance Entrances' },
+      { type: 'Estate',           label: 'Estates' }
+    ]},
+    { label: 'Areas', items: [
+      { type: 'ZoneArea',   label: 'Zone Areas' },
+      { type: 'CityArea',   label: 'City Areas' },
+      { type: 'EstateArea', label: 'Estate Areas' },
+      { type: 'EventArea',  label: 'Event Areas' }
+    ]}
+  ];
+  const DEFAULT_MAIN = new Set(['TP', 'MA', 'TR', 'PVP']);
+  const DEFAULT_OTHER = new Set(['Outpost']);
+
+  let activeMain = $state(new Set(DEFAULT_MAIN));
+  let activeOther = $state(new Set(DEFAULT_OTHER));
+  let otherPopoverOpen = $state(false);
 
   const mapLoadedStore = writable(false);
 
@@ -408,24 +601,39 @@
 
   export function getZoom() { return zoom; }
 
+  // Legacy layer name aliases used by the embed postMessage API
+  const LEGACY_LAYER_ALIASES = {
+    teleporters: 'TP', landAreas: 'LA', mobAreas: 'MA',
+    pvpAreas: 'PVP', waveEventAreas: 'WE', treeAreas: 'TR',
+    otherAreas: '__OTHER__'
+  };
   export function setLayerVisibility(layer, visible) {
-    switch (layer) {
-      case 'teleporters': showTeleporters = visible; break;
-      case 'landAreas': showLandAreas = visible; break;
-      case 'mobAreas': showMobAreas = visible; break;
-      case 'pvpAreas': showPvpAreas = visible; break;
-      case 'otherAreas': showOtherAreas = visible; break;
+    const resolved = LEGACY_LAYER_ALIASES[layer] || layer;
+    const main = new Set(activeMain);
+    const other = new Set(activeOther);
+    if (resolved === '__OTHER__') {
+      if (visible) {
+        for (const g of OTHER_GROUPS) for (const it of g.items) other.add(it.type);
+      } else {
+        other.clear();
+      }
+    } else {
+      const def = MAIN_LAYERS.find(d => d.id === resolved);
+      if (def) {
+        if (visible) main.add(resolved); else main.delete(resolved);
+      } else {
+        if (visible) other.add(resolved); else other.delete(resolved);
+      }
     }
+    activeMain = main;
+    activeOther = other;
     markDirty();
   }
 
   export function getLayerVisibility() {
     return {
-      teleporters: showTeleporters,
-      landAreas: showLandAreas,
-      mobAreas: showMobAreas,
-      pvpAreas: showPvpAreas,
-      otherAreas: showOtherAreas
+      main: Array.from(activeMain),
+      other: Array.from(activeOther)
     };
   }
 
@@ -926,14 +1134,22 @@
     }
 
     // Second pass: draw point locations (they go on top)
+    // Compute visible width in game units for zoom gate
+    const _visGameW = (imageTileSize / zoom) * (canvasBounds.width / canvasBounds.height)
+                      * imageToEntropiaRatio;
     for (const loc of filteredPoints) {
       if (!isInViewport(loc)) continue;
       const isHov = _hoveredId != null && loc.Id === _hoveredId;
       const isSel = _selectedId != null && loc.Id === _selectedId;
       const isTeleporter = loc.Properties?.Type === 'Teleporter';
-      if (hasSearch && _searchMap.has(loc.Id) && !isHov && !isSel) {
+      const isSearchHit = _searchMap.has(loc.Id);
+      // Zoom gate — bypass for hover/selection/search hits
+      if (!isHov && !isSel && !isSearchHit && !pointPassesZoomGate(loc, _visGameW)) {
+        continue;
+      }
+      if (hasSearch && isSearchHit && !isHov && !isSel) {
         drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
-      } else if (hasSearch && !_searchMap.has(loc.Id) && !isHov && !isSel && !isTeleporter) {
+      } else if (hasSearch && !isSearchHit && !isHov && !isSel && !isTeleporter) {
         drawDesaturated(ctx, loc);
       } else {
         drawShape(ctx, loc, isHov, isSel);
@@ -1020,11 +1236,15 @@
       return null;
     };
 
+    // Zoom gate matches draw loop — don't hit-test invisible points
+    const _hitVisGameW = visibleWidth * imageToEntropiaRatio;
+
     // First pass: check point locations (higher click priority - they render on top)
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
       if (isAreaType(loc)) continue;
       if (!isInViewport(loc)) continue;
+      if (!pointPassesZoomGate(loc, _hitVisGameW)) continue;
       const hit = checkHit(loc, i);
       if (hit) return hit;
     }
@@ -1471,10 +1691,10 @@
 
   function getColorByType(type, loc) {
     switch (type) {
-      case 'Teleporter':
-        return { color: 'aqua', pattern: null };
       case 'LandArea':
         return { color: 'green', pattern: null };
+      case 'TreeArea':
+        return { color: '#15803d', pattern: null };
       case 'ZoneArea':
         return { color: 'blue', pattern: null };
       case 'PvpLootArea':
@@ -1485,66 +1705,133 @@
         return { color: 'yellow', pattern: null };
       case 'EventArea':
         return { color: 'white', pattern: null };
+      case 'CityArea':
+        return { color: '#90ee90', pattern: null };
+      case 'EstateArea':
+        return { color: '#deb887', pattern: null };
       case 'WaveEventArea':
         return { color: '#da70d6', pattern: null };
       case 'MobArea': {
-        // Event mob areas use their recurring event color
         const reColor = loc?.Properties?.RecurringEventColor;
         if (reColor) return { color: reColor, pattern: null };
-        // Use difficulty color if available, otherwise yellow
         const diff = loc?._difficulty;
         return { color: diff?.color || 'yellow', pattern: null };
       }
-      default:
-        return { color: 'white', pattern: null };
+      default: {
+        const style = MARKER_STYLES[type];
+        return { color: style?.color || 'white', pattern: null };
+      }
     }
   }
 
   let mapContextMenuObject = $state({ contextMenu: null, payload: null })
 
 
-  // Layer toggle functions
-  function toggleTeleporters() { showTeleporters = !showTeleporters; }
-  function toggleLandAreas() { showLandAreas = !showLandAreas; }
-  function toggleMobAreas() { showMobAreas = !showMobAreas; }
-  function togglePvpAreas() { showPvpAreas = !showPvpAreas; }
-  function toggleOtherAreas() { showOtherAreas = !showOtherAreas; }
+  // ─── Layer toggle handlers ────────────────────────────────────────
+  function handleLayerClick(id, ev) {
+    const shift = ev && (ev.shiftKey || ev.metaKey);
+    const next = new Set(activeMain);
+    if (shift) {
+      if (next.has(id)) next.delete(id); else next.add(id);
+    } else {
+      // Exclusive among main buttons — OTH selection untouched
+      next.clear();
+      next.add(id);
+    }
+    activeMain = next;
+    markDirty();
+  }
+  function handleOtherClick(ev) {
+    // OTH button just opens/closes the popover — no exclusive change
+    ev.stopPropagation();
+    otherPopoverOpen = !otherPopoverOpen;
+  }
+  function closeOtherPopover() {
+    if (otherPopoverOpen) otherPopoverOpen = false;
+  }
+  function toggleOtherItem(type) {
+    const next = new Set(activeOther);
+    if (next.has(type)) next.delete(type); else next.add(type);
+    activeOther = next;
+    markDirty();
+  }
+  function selectAllOther() {
+    const all = new Set();
+    for (const g of OTHER_GROUPS) for (const it of g.items) all.add(it.type);
+    activeOther = all;
+    markDirty();
+  }
+  function selectNoneOther() {
+    activeOther = new Set();
+    markDirty();
+  }
+
+  // Pre-compute outpost-near-teleporter flag once per locations load
+  let _tpCullVersion = 0;
+  function computeOutpostCull(locs) {
+    if (!locs || !locs.length) return;
+    const tps = [];
+    for (const loc of locs) {
+      if (loc.Properties?.Type === 'Teleporter') {
+        const c = loc.Properties?.Coordinates;
+        if (c && c.Longitude != null && c.Latitude != null) {
+          tps.push([c.Longitude, c.Latitude]);
+        }
+      }
+    }
+    const r2 = OUTPOST_TP_CULL_RADIUS * OUTPOST_TP_CULL_RADIUS;
+    for (const loc of locs) {
+      if (loc.Properties?.Type !== 'Outpost') continue;
+      const c = loc.Properties?.Coordinates;
+      if (!c || c.Longitude == null || c.Latitude == null) { loc._nearTp = false; continue; }
+      let near = false;
+      for (const [tx, ty] of tps) {
+        const dx = c.Longitude - tx;
+        const dy = c.Latitude - ty;
+        if (dx * dx + dy * dy <= r2) { near = true; break; }
+      }
+      loc._nearTp = near;
+    }
+  }
+
   $effect(() => { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); });
-  // Filter locations based on layer toggles
-  // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
   $effect(() => {
-    // Touch all toggle variables to establish reactive dependencies
-    const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected, searchResults, activeRecurringEvents];
+    if (locations) {
+      computeOutpostCull(locations);
+      _tpCullVersion++;
+      if (browser) markDirty();
+    }
+  });
+  // Filter locations based on layer toggles
+  $effect(() => {
+    const _deps = [activeMain, activeOther, selected, searchResults, activeRecurringEvents, _tpCullVersion];
     const searchResultIds = new Set(searchResults.map(sr => sr.Id));
+    const mainTypeSet = new Set();
+    for (const def of MAIN_LAYERS) {
+      if (activeMain.has(def.id)) for (const t of def.types) mainTypeSet.add(t);
+    }
     filteredLocations = locations ? locations.filter(loc => {
-      // Always show the selected location regardless of layer toggles
       if (selected && loc.Id === selected.Id) return true;
-      // Always show search results regardless of layer toggles
       if (searchResultIds.has(loc.Id)) return true;
 
       const type = loc.Properties?.Type;
       const areaType = loc.Properties?.AreaType || type;
+      const key = areaType === 'Area' ? null : areaType;
 
-      // Teleporters
-      if (type === 'Teleporter') return showTeleporters;
-
-      // Land Areas
-      if (areaType === 'LandArea') return showLandAreas;
-
-      // Mob Areas (creatures) & Wave Event Areas
-      if (areaType === 'MobArea' || areaType === 'WaveEventArea') {
-        if (!showMobAreas) return false;
-        // Event mob areas: only show when their event is active
-        const reName = loc.Properties?.RecurringEventName;
-        if (reName) return activeRecurringEvents.has(reName);
+      // Main categories
+      if (mainTypeSet.has(key)) {
+        // Mob areas / wave events gated on active recurring events
+        if (key === 'MobArea' || key === 'WaveEventArea') {
+          const reName = loc.Properties?.RecurringEventName;
+          if (reName) return activeRecurringEvents.has(reName);
+        }
         return true;
       }
 
-      // PvP Areas (PvpArea and PvpLootArea)
-      if (areaType === 'PvpArea' || areaType === 'PvpLootArea') return showPvpAreas;
+      // Other popover items
+      if (activeOther.has(key) || activeOther.has(type)) return true;
 
-      // Other areas (Zone, Event, City, Estate, etc.)
-      return showOtherAreas;
+      return false;
     }) : [];
     // Pre-split into areas and points for the two-pass draw loop
     const _areas = [], _points = [];
@@ -1617,21 +1904,27 @@
     flex-direction: column;
     gap: 6px;
     z-index: 10;
+    align-items: flex-start;
   }
 
   .layer-btn {
-    width: 40px;
     height: 32px;
+    min-width: 40px;
+    width: 40px;
+    max-width: 40px;
     display: flex;
     align-items: center;
-    justify-content: center;
     padding: 0;
     background: rgba(0, 0, 0, 0.75);
     border: 1px solid var(--border-color, #555);
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: max-width 0.22s ease, width 0.22s ease,
+                background 0.15s, opacity 0.15s, border-color 0.15s;
     opacity: 0.5;
+    white-space: nowrap;
+    overflow: hidden;
+    color: var(--text-color, #e8e8e8);
   }
 
   .layer-btn.active {
@@ -1641,33 +1934,115 @@
 
   .layer-btn:hover {
     opacity: 1;
-    background: rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.92);
+    width: 170px;
+    max-width: 170px;
+  }
+
+  .layer-btn:focus-visible {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
   }
 
   .layer-icon {
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
+    width: 38px;
+    text-align: center;
+    flex-shrink: 0;
   }
 
-  .tp-icon {
-    color: aqua;
+  .layer-full {
+    font-size: 11px;
+    font-weight: 600;
+    padding-right: 12px;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity 0.18s ease, transform 0.22s ease;
+    flex-shrink: 0;
   }
 
-  .la-icon {
-    color: #4ade80;
+  .layer-btn:hover .layer-full {
+    opacity: 1;
+    transform: translateX(0);
   }
 
-  .ma-icon {
-    color: #facc15;
+  .layer-hint {
+    font-size: 10px;
+    color: var(--text-muted-color, #888);
+    padding: 4px 10px 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 2px;
   }
 
-  .pvp-icon {
-    color: #ef4444;
+  /* Other popover */
+  .other-popover {
+    position: absolute;
+    left: 48px;
+    bottom: 0;
+    min-width: 220px;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: rgba(10, 10, 14, 0.96);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
+    padding: 8px 0;
+    z-index: 20;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   }
 
-  .other-icon {
-    color: #a78bfa;
+  .other-popover-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 4px 10px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .other-popover-header button {
+    flex: 1;
+    background: transparent;
+    color: var(--accent-color, #4a9eff);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .other-popover-header button:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .other-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted-color, #888);
+    padding: 6px 10px 2px;
+    letter-spacing: 0.5px;
+  }
+
+  .other-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-color, #e8e8e8);
+  }
+
+  .other-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .other-item input[type="checkbox"] {
+    width: 12px;
+    height: 12px;
+    cursor: pointer;
+    accent-color: var(--accent-color, #4a9eff);
   }
 
   /* Hide layer toggles on mobile */
@@ -1678,6 +2053,7 @@
   }
 </style>
 
+<svelte:window onclick={closeOtherPopover} />
 <Tooltip
   bind:this={tooltipElement}
   bind:text={tooltipText}
@@ -1694,46 +2070,55 @@
   <!-- Layer toggles (bottom-left, desktop only) -->
   {#if !hideLayerToggles}
   <div class="layer-toggles">
+    {#each MAIN_LAYERS as layer (layer.id)}
+      <button
+        class="layer-btn"
+        class:active={activeMain.has(layer.id)}
+        onclick={(e) => handleLayerClick(layer.id, e)}
+        title={`${layer.full} — click to show only, shift+click to toggle`}
+      >
+        <span class="layer-icon" style="color: {layer.color}">{layer.id}</span>
+        <span class="layer-full">{layer.full}</span>
+      </button>
+    {/each}
     <button
       class="layer-btn"
-      class:active={showTeleporters}
-      onclick={toggleTeleporters}
-      title="Toggle Teleporters"
+      class:active={activeOther.size > 0}
+      onclick={handleOtherClick}
+      title="Other layers — open picker"
     >
-      <span class="layer-icon tp-icon">TP</span>
+      <span class="layer-icon" style="color: #a78bfa">OTH</span>
+      <span class="layer-full">Other…</span>
     </button>
-    <button
-      class="layer-btn"
-      class:active={showLandAreas}
-      onclick={toggleLandAreas}
-      title="Toggle Land Areas"
-    >
-      <span class="layer-icon la-icon">LA</span>
-    </button>
-    <button
-      class="layer-btn"
-      class:active={showMobAreas}
-      onclick={toggleMobAreas}
-      title="Toggle Mob & Wave Event Areas"
-    >
-      <span class="layer-icon ma-icon">MA</span>
-    </button>
-    <button
-      class="layer-btn"
-      class:active={showPvpAreas}
-      onclick={togglePvpAreas}
-      title="Toggle PvP Areas"
-    >
-      <span class="layer-icon pvp-icon">PVP</span>
-    </button>
-    <button
-      class="layer-btn"
-      class:active={showOtherAreas}
-      onclick={toggleOtherAreas}
-      title="Toggle Other Areas"
-    >
-      <span class="layer-icon other-icon">OTH</span>
-    </button>
+    {#if otherPopoverOpen}
+      <div
+        class="other-popover"
+        role="dialog"
+        aria-label="Other layer filters"
+        tabindex="-1"
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={(e) => { if (e.key === 'Escape') closeOtherPopover(); }}
+      >
+        <div class="other-popover-header">
+          <button onclick={selectAllOther}>Select all</button>
+          <button onclick={selectNoneOther}>Select none</button>
+        </div>
+        {#each OTHER_GROUPS as group}
+          <div class="other-group-label">{group.label}</div>
+          {#each group.items as item}
+            <label class="other-item">
+              <input
+                type="checkbox"
+                checked={activeOther.has(item.type)}
+                onchange={() => toggleOtherItem(item.type)}
+              />
+              {item.label}
+            </label>
+          {/each}
+        {/each}
+      </div>
+    {/if}
+    <div class="layer-hint">Shift+click for multi</div>
   </div>
   {/if}
 </div>

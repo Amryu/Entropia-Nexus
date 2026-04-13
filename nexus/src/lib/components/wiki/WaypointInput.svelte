@@ -141,8 +141,8 @@
         planet: fullMatch[1].trim(),
         x: parseFloat(fullMatch[2]) || 0,
         y: parseFloat(fullMatch[3]) || 0,
-        z: parseFloat(fullMatch[4]) || 0,
-        name: fullMatch[5]?.trim() || ''
+        z: parseFloat(fullMatch[4]) || 100,
+        name: (fullMatch[5]?.trim() || '').slice(0, 50)
       };
     }
 
@@ -153,7 +153,7 @@
         planet: null,
         x: parseFloat(simpleMatch[1]) || 0,
         y: parseFloat(simpleMatch[2]) || 0,
-        z: parseFloat(simpleMatch[3]) || 0,
+        z: parseFloat(simpleMatch[3]) || 100,
         name: null
       };
     }

@@ -111,11 +111,12 @@
     // Full waypoint: [Planet, x, y, z, Name]
     const fullMatch = str.match(/\[([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,\]]+)(?:,\s*([^\]]*))?\]/);
     if (fullMatch) {
+      const parsedName = fullMatch[5]?.trim() || null;
       return {
         x: parseFloat(fullMatch[2]) || 0,
         y: parseFloat(fullMatch[3]) || 0,
-        z: parseFloat(fullMatch[4]) || 0,
-        name: fullMatch[5]?.trim() || null
+        z: parseFloat(fullMatch[4]) || 100,
+        name: parsedName ? parsedName.slice(0, 50) : null
       };
     }
     // Simple: x, y, z (with or without brackets)
@@ -124,7 +125,7 @@
       return {
         x: parseFloat(simpleMatch[1]) || 0,
         y: parseFloat(simpleMatch[2]) || 0,
-        z: parseFloat(simpleMatch[3]) || 0,
+        z: parseFloat(simpleMatch[3]) || 100,
         name: null
       };
     }

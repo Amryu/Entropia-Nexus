@@ -106,6 +106,11 @@ export const Mob = {
                 "type": ["number", "null"],
                 "default": null
               },
+              "DamagePotential": {
+                "type": ["string", "null"],
+                "enum": ["Minimal", "Small", "Limited", "Medium", "Large", "Great", "Huge", "Immense", "Gigantic", "Colossal", null],
+                "default": null
+              },
               "Attributes": {
                 "type": ["object", "null"],
                 "additionalProperties": false,
@@ -214,6 +219,7 @@ export const Mob = {
               "RegenerationInterval",
               "RegenerationAmount",
               "MissChance",
+              "DamagePotential",
               "Attributes",
               "Defense"
             ]

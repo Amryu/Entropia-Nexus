@@ -25,6 +25,7 @@
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineArmorVsMobPanel from '$lib/components/gear-advisor/InlineArmorVsMobPanel.svelte';
   import MarketPriceSection from '$lib/components/wiki/MarketPriceSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
@@ -378,7 +379,8 @@
     tiering: true,
     marketPrices: true,
     acquisition: true,
-    usage: true
+    usage: true,
+    mobRecommendations: false
   });
 
   onMount(() => {
@@ -720,6 +722,23 @@
             {#key armorSet?.Id ?? 'create'}
               <ArmorSetPieces armorSet={activeEntity} />
             {/key}
+          </DataSection>
+        {/if}
+
+        <!-- Recommended Mobs Section -->
+        {#if !$editMode && activeEntity?.Properties?.Defense && totalDefense > 0}
+          <DataSection
+            title="Recommended Mobs"
+            icon=""
+            bind:expanded={panelStates.mobRecommendations}
+            subtitle="Top matchups by mitigation"
+            ontoggle={savePanelStates}
+          >
+            {#if panelStates.mobRecommendations}
+              {#key activeEntity?.Id}
+                <InlineArmorVsMobPanel mode="recommend-mobs" armorSet={activeEntity} />
+              {/key}
+            {/if}
           </DataSection>
         {/if}
 

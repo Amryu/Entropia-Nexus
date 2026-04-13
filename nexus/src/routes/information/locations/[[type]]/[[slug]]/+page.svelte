@@ -752,10 +752,10 @@
   // Build waypoint string for WaypointCopyButton (view mode)
   let waypointString = $derived(activeLocation?.Properties?.Coordinates?.Longitude != null
     ? getWaypoint(
-        activeLocation?.Planet?.Name || 'Calypso',
+        activeLocation?.Planet,
         activeLocation?.Properties?.Coordinates?.Longitude,
         activeLocation?.Properties?.Coordinates?.Latitude,
-        activeLocation?.Properties?.Coordinates?.Altitude ?? 100,
+        activeLocation?.Properties?.Coordinates?.Altitude,
         activeLocation?.Name || ''
       )
     : '');

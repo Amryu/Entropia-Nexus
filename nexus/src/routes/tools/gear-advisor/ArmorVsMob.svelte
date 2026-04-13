@@ -9,6 +9,8 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { beforeNavigate } from '$app/navigation';
+  import { browser } from '$app/environment';
   import EntityPicker from './EntityPicker.svelte';
   import PoolSelectionDialog from './PoolSelectionDialog.svelte';
   import ComparisonDialog from './ComparisonDialog.svelte';
@@ -29,8 +31,12 @@
     rankMaturitiesChunked,
     rankArmorsChunked,
     buildDetails,
-    hasDamageData
-  } from './armorVsMob.js';
+    hasDamageData,
+    hasDamageDataOrPotential,
+    damagePotentialMidpoint,
+    findWeakestDefenseType
+  } from '$lib/gear-advisor/armorVsMob.js';
+  import { VALID_ADVISOR_SCOPES, VALID_ADVISOR_RANK_BY, buildAdvisorUrl } from '$lib/gear-advisor/buildAdvisorUrl.js';
 
   let { armorSets = [], armorPlatings = [], mobs = [] } = $props();
 
@@ -45,6 +51,10 @@
   let rankBy = $state('mitigation'); // 'typeMatch' | 'mitigation' | 'damageTaken'
   let includePlates = $state(true); // include top-3 plate pairings in armor ranking
   let ulPlatesOnly = $state(false); // restrict plates to unlimited (non-"(L)")
+  // Hide rows whose damage values were approximated from a maturity's
+  // Damage Potential bucket (no real TotalDamage on any attack).
+  let hideApproximated = $state(false);
+  let hideApproximatedLoaded = $state(false);
 
   // Candidate-pool filters (empty = use all) — persisted to user preferences
   // (DB when logged in, localStorage otherwise).
@@ -108,11 +118,20 @@
     { debounceMs: 400 }
   );
 
+  // Persist the Hide-approximated toggle so both the standalone page and the
+  // inline panel share the same choice (they use the same storage key).
+  const hideApproximatedPref = createPreference(
+    'gear-advisor.hide-approximated',
+    { value: false },
+    { debounceMs: 200 }
+  );
+
   onMount(async () => {
     const userId = $page.data?.user?.id ?? null;
     await Promise.all([
       poolPref.load(userId),
-      compareColumnsPref.load(userId)
+      compareColumnsPref.load(userId),
+      hideApproximatedPref.load(userId)
     ]);
     let stored;
     poolPref.subscribe(v => stored = v)();
@@ -131,7 +150,102 @@
       visibleCompareColumns = { ...DEFAULT_COMPARE_COLUMNS, ...storedCols };
     }
     compareColumnsLoaded = true;
+
+    let storedHide;
+    hideApproximatedPref.subscribe(v => storedHide = v)();
+    if (storedHide && typeof storedHide === 'object') {
+      hideApproximated = storedHide.value === true;
+    }
+    hideApproximatedLoaded = true;
+
+    applyUrlParams();
+    // Allow the URL-sync effect to start writing changes after the initial
+    // param-apply has run; otherwise a user with a ?mob=X link would see the
+    // param stripped before it gets to populate state.
+    urlSyncReady = true;
   });
+
+  // Persist hide-approximated toggle after it loads
+  $effect(() => {
+    const _hide = hideApproximated;
+    if (!hideApproximatedLoaded) return;
+    hideApproximatedPref.set({ value: _hide });
+  });
+
+  // --- URL state sync ---
+  // Reflects the current calculator selection in the page URL as query
+  // params, so the page can be linked, bookmarked and round-tripped through
+  // the browser back/forward stack. Writes happen via history.replaceState
+  // (no history entry per keystroke, no SvelteKit navigation).
+  // Params are scrubbed from history before the user navigates away to a
+  // different page so the gear advisor doesn't pollute unrelated routes.
+  let urlSyncReady = $state(false);
+
+  $effect(() => {
+    const _armorSet = armorSet;
+    const _plating = plating;
+    const _mob = mob;
+    const _scope = scope;
+    const _rankBy = rankBy;
+    if (!urlSyncReady || !browser) return;
+    const target = buildAdvisorUrl({
+      armor: _armorSet?.Name,
+      plating: _plating?.Name,
+      mob: _mob?.Name,
+      scope: _scope !== 'average' ? _scope : undefined,
+      rankBy: _rankBy !== 'mitigation' ? _rankBy : undefined
+    });
+    const current = window.location.pathname + window.location.search;
+    if (current !== target) {
+      window.history.replaceState(window.history.state, '', target);
+    }
+  });
+
+  beforeNavigate((nav) => {
+    if (!browser) return;
+    const toPath = nav?.to?.url?.pathname;
+    const fromPath = nav?.from?.url?.pathname;
+    // Only scrub when actually leaving this route (ignore in-page query-only
+    // transitions). Replacing the current entry with a bare path prevents
+    // the back button from resurrecting stale ?armor=... params.
+    if (toPath && fromPath && toPath !== fromPath) {
+      try {
+        window.history.replaceState(window.history.state, '', fromPath);
+      } catch {}
+    }
+  });
+
+  // Deep-link pre-fill: read armor/plating/mob/scope/rankBy from URL once on
+  // mount after pool prefs load so the selection isn't clobbered. Unknown
+  // names no-op gracefully.
+  function applyUrlParams() {
+    const sp = $page.url?.searchParams;
+    if (!sp) return;
+    const findByName = (list, name) => {
+      if (!name) return null;
+      const decoded = (() => { try { return decodeURIComponent(name); } catch { return name; } })();
+      return (list || []).find(e => e?.Name === decoded) || null;
+    };
+    const armorName = sp.get('armor');
+    if (armorName) {
+      const match = findByName(armorSets, armorName);
+      if (match) armorSet = match;
+    }
+    const platingName = sp.get('plating');
+    if (platingName) {
+      const match = findByName(armorPlatings, platingName);
+      if (match) plating = match;
+    }
+    const mobName = sp.get('mob');
+    if (mobName) {
+      const match = findByName(mobs, mobName);
+      if (match) mob = match;
+    }
+    const scopeParam = sp.get('scope');
+    if (scopeParam && VALID_ADVISOR_SCOPES.has(scopeParam)) scope = scopeParam;
+    const rankByParam = sp.get('rankBy');
+    if (rankByParam && VALID_ADVISOR_RANK_BY.has(rankByParam)) rankBy = rankByParam;
+  }
 
   // Persist pool filters whenever they change (after initial load)
   $effect(() => {
@@ -157,6 +271,21 @@
   let defense = $derived(armorSet
     ? computeDefenseLayers(armorSet, plating, iceShield, enhancers)
     : null);
+
+  // Derived: flat per-type defense map summed across all layers — used by
+  // the "Effective defense" grid. computeDefenseLayers returns a layer array,
+  // not a type-indexed object, so template access via `defense[type]` would
+  // be undefined without this flattening step.
+  let effectiveDefense = $derived.by(() => {
+    if (!defense) return null;
+    const out = {};
+    for (const type of DEFENSE_TYPES) {
+      let sum = 0;
+      for (const layer of defense) sum += layer?.[type] ?? 0;
+      out[type] = sum;
+    }
+    return out;
+  });
 
   // Pre-mitigation damage multiplier (clamped to ≥ 0)
   let dmgMultiplier = $derived(Math.max(0, 1 - (Number(dmgReduction) || 0) / 100));
@@ -221,21 +350,49 @@
           mitigation: null,
           critTaken: null,
           decayThisAttack: null,
+          approximated: false,
           hasData: false
         });
         continue;
       }
-      const br = computeAttackBreakdown(atk, defense, dmgMultiplier, decayRates);
+      // When the attack has no TotalDamage but the maturity carries a
+      // Damage Potential classification, substitute the bucket midpoint so
+      // the row still shows mitigation/damage-taken numbers (flagged).
+      const realTotal = atk?.TotalDamage;
+      const dpMid = damagePotentialMidpoint(mat?.Properties?.DamagePotential);
+      const approximated = (realTotal == null || realTotal <= 0) && dpMid != null;
+      const effectiveAtk = approximated ? { ...atk, TotalDamage: dpMid } : atk;
+      const br = computeAttackBreakdown(effectiveAtk, defense, dmgMultiplier, decayRates);
+      // Weakest defense type for this single attack at max roll — the type
+      // where the biggest uncovered damage lies and thus the best candidate
+      // for an armor / plating upgrade.
+      let weakestType = null;
+      if (effectiveDefense && (effectiveAtk?.TotalDamage ?? 0) > 0) {
+        const total = effectiveAtk.TotalDamage * dmgMultiplier;
+        let maxLeak = 0;
+        for (const t of DEFENSE_TYPES) {
+          const pct = (effectiveAtk?.Damage?.[t] ?? 0) / 100;
+          if (pct <= 0) continue;
+          const incoming = total * pct;
+          const leak = Math.max(0, incoming - (effectiveDefense[t] ?? 0));
+          if (leak > maxLeak) { maxLeak = leak; weakestType = { type: t, leak }; }
+        }
+      }
       rows.push({
         maturityName: mat.Name || '',
         maturityLevel: mat?.Properties?.Level ?? null,
-        totalDamage: atk?.TotalDamage ?? null,
+        totalDamage: approximated ? dpMid : (realTotal ?? null),
         takenMin: br.takenMin,
         takenAvg: br.expectedTaken,
         takenMax: br.takenMax,
+        // Display "deflected" at max roll (worst-case absorbed) so full
+        // absorption shows as the full mob damage, not 75% of it.
+        deflected: br.blockedMax,
+        weakestType,
         mitigation: br.mitigation,
         critTaken: br.critTaken,
         decayThisAttack: br.expectedDecay,
+        approximated,
         hasData: br.totalAvg > 0
       });
     }
@@ -258,6 +415,7 @@
     const _decayRates = decayRates;
     const _planet = mobPlanetFilter;
     const _viewMaturities = viewMaturities;
+    const _hideApprox = hideApproximated;
 
     if (!_armorSet || _mob) {
       mobRanking = [];
@@ -275,11 +433,11 @@
     const promise = _viewMaturities
       ? rankMaturitiesChunked(
           filteredMobs, _defense, _dmgMultiplier, _rankBy, _decayRates,
-          { chunkSize: 100, signal: controller }
+          { chunkSize: 100, signal: controller, hideApproximated: _hideApprox }
         )
       : rankMobsChunked(
           filteredMobs, _defense, _scope, _dmgMultiplier, _rankBy, _decayRates,
-          { chunkSize: 100, signal: controller }
+          { chunkSize: 100, signal: controller, hideApproximated: _hideApprox }
         );
 
     promise.then(result => {
@@ -325,6 +483,7 @@
     const _poolArmorNames = poolArmorNames;
     const _poolPlateNames = poolPlateNames;
     const _poolArmorEnhancers = poolArmorEnhancers;
+    const _hideApprox = hideApproximated;
 
     if (_armorSet || !_mob) {
       armorRanking = [];
@@ -350,7 +509,8 @@
         ulPlatesOnly: _ulPlatesOnly,
         armorFilter: hasArmorPool ? new Set(_poolArmorNames) : null,
         plateFilter: hasPlatePool ? new Set(_poolPlateNames) : null,
-        armorEnhancers: hasArmorPool ? _poolArmorEnhancers : null
+        armorEnhancers: hasArmorPool ? _poolArmorEnhancers : null,
+        hideApproximated: _hideApprox
       },
       { chunkSize: 40, signal: controller }
     ).then(result => {
@@ -417,7 +577,7 @@
     const atk = (selectedAttackName || 'attack').replace(/[^A-Za-z0-9_-]+/g, '_');
     const base = `gear-advisor_${mobName}_${setName}${plateName ? '+' + plateName : ''}_${atk}`;
 
-    const headers = ['Maturity', 'Dmg', 'Taken (min)', 'Taken (exp)', 'Taken (max)', 'Max Crit Dmg', 'Decay', 'Mit'];
+    const headers = ['Maturity', 'Dmg', 'Taken (min)', 'Taken (exp)', 'Taken (max)', 'Deflected', 'Weakest type', 'Max Crit Dmg', 'Decay', 'Mit'];
     const dataRows = flatRows.map(row => {
       const lvl = row.maturityLevel != null ? ` (L${row.maturityLevel})` : '';
       return [
@@ -426,6 +586,8 @@
         row.hasData ? formatNum(row.takenMin) : null,
         row.hasData ? formatNum(row.takenAvg) : null,
         row.hasData ? formatNum(row.takenMax) : null,
+        row.hasData ? formatNum(row.deflected) : null,
+        row.hasData && row.weakestType ? `${row.weakestType.type} (+${formatNum(row.weakestType.leak, 0)})` : null,
         row.hasData ? formatNum(row.critTaken) : null,
         row.hasData ? formatNum(row.decayThisAttack, 3) : null,
         row.hasData ? formatPct(row.mitigation * 100, 0) : null
@@ -451,6 +613,8 @@
             takenMin: row.takenMin,
             takenAvg: row.takenAvg,
             takenMax: row.takenMax,
+            deflected: row.deflected,
+            weakestType: row.weakestType,
             critTaken: row.critTaken,
             decayPerAttack: row.decayThisAttack,
             mitigation: row.mitigation
@@ -463,7 +627,7 @@
         base,
         [headers],
         dataRows,
-        { title, numericCols: [1, 2, 3, 4, 5, 6, 7] }
+        { title, numericCols: [1, 2, 3, 4, 5, 7, 8, 9] }
       );
     }
   }
@@ -560,6 +724,10 @@
               <input type="checkbox" bind:checked={ulPlatesOnly} disabled={!includePlates} />
               <span>UL plates only</span>
             </label>
+            <label class="inline-check" title="Hide rows whose damage values were approximated from this mob's Damage Potential bucket">
+              <input type="checkbox" bind:checked={hideApproximated} />
+              <span>Hide approximated</span>
+            </label>
             <button
               type="button"
               class="pool-btn"
@@ -586,12 +754,14 @@
           {:else}
             <div class="ranking-list" role="list">
               {#each armorRanking.slice(0, 150) as r, i (r.name + '|' + (r.plating?.Name || '') + '|' + i)}
+                {@const approxTip = r.approximated ? 'Damage values approximated from this maturity\'s Damage Potential bucket.' : ''}
                 <button
                   type="button"
                   class="ranking-row"
                   class:no-damage={!r.hasTotalDamage && r.hasComposition}
                   class:no-data={!r.hasComposition}
                   class:with-plate={!!r.plating}
+                  class:approximated={r.approximated}
                   onclick={() => { armorSet = r.armorSet; plating = r.plating; }}
                 >
                   <span class="rank-idx">#{i + 1}</span>
@@ -600,17 +770,21 @@
                       {r.name}{#if r.plating}&nbsp;<span class="plate-tag">+ {r.plating.Name}</span>{/if}
                     </span>
                     {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null}&nbsp;· L{r.maturityLevel}{/if}</span>{/if}
+                    {#if r.approximated}<span class="approx-tag" title={approxTip}>~approx</span>{/if}
                   </span>
                   <span class="rank-metric">
                     {#if r.hasTotalDamage}
-                      <span class="mit" title="Expected damage mitigated vs incoming (integrated over the damage roll range)">{formatPct(r.mitigationPct, 1)} mitigated</span>
+                      <span class="mit" title={r.approximated ? approxTip : `Mitigation at the mob's strongest roll (damage deflected ÷ total damage)`}>{r.approximated ? '~' : ''}{formatPct(r.mitigationPct, 1)} mitigated</span>
+                      {#if r.damageDeflected != null}
+                        <span class="deflected" title={r.approximated ? approxTip : `Damage deflected at the mob's strongest roll (absorbed by armor layers)`}>{r.approximated ? '~' : ''}+{formatNum(r.damageDeflected)}/hit deflected</span>
+                      {/if}
                       <span class="type-score" title="How well armor's defenses align with the mob's damage composition (fraction of total armor defense deployed vs this mob)">{formatPct(r.typeScore * 100, 1)} type-match</span>
-                      <span class="taken" title="Avg damage taken per hit">–{formatNum(r.damageTaken)}/hit</span>
+                      <span class="taken" title={r.approximated ? approxTip : `Damage taken at the mob's strongest roll`}>{r.approximated ? '~' : ''}–{formatNum(r.damageTaken)}/hit</span>
                       {#if r.decayPerAttack != null}
                         {#if r.decayPerAttackMin != null && r.decayPerAttackMax != null && Math.abs(r.decayPerAttackMax - r.decayPerAttackMin) > 0.0005}
-                          <span class="decay" title="Armor/plate decay per attack across maturities (PEC)">{formatNum(r.decayPerAttackMin, 3)}–{formatNum(r.decayPerAttackMax, 3)} PEC decay</span>
+                          <span class="decay" title={r.approximated ? approxTip : 'Armor/plate decay per attack across maturities (PEC)'}>{r.approximated ? '~' : ''}{formatNum(r.decayPerAttackMin, 3)}–{formatNum(r.decayPerAttackMax, 3)} PEC decay</span>
                         {:else}
-                          <span class="decay" title="Armor/plate decay per attack (PEC)">{formatNum(r.decayPerAttack, 3)} PEC decay</span>
+                          <span class="decay" title={r.approximated ? approxTip : 'Armor/plate decay per attack (PEC)'}>{r.approximated ? '~' : ''}{formatNum(r.decayPerAttack, 3)} PEC decay</span>
                         {/if}
                       {/if}
                     {:else if r.hasComposition}
@@ -644,7 +818,7 @@
           {#if enhancers > 0}<div class="chip">+ {enhancers} enhancer{enhancers !== 1 ? 's' : ''}</div>{/if}
           {#if dmgReduction !== 0}<div class="chip">{dmgReduction > 0 ? '-' : '+'}{Math.abs(dmgReduction)}% dmg</div>{/if}
 
-          {#if defense}
+          {#if effectiveDefense}
             <h5 class="defense-title">Effective defense</h5>
             <div class="defense-grid">
               {#each DEFENSE_TYPES as type}
@@ -653,7 +827,7 @@
                     <span class="def-label-full">{type}</span>
                     <span class="def-label-short">{type.slice(0, 3)}</span>
                   </span>
-                  <span class="def-value">{formatNum(defense[type])}</span>
+                  <span class="def-value">{formatNum(effectiveDefense[type])}</span>
                 </div>
               {/each}
             </div>
@@ -706,6 +880,10 @@
               <input type="checkbox" bind:checked={viewMaturities} />
               <span>Per maturity</span>
             </label>
+            <label class="inline-check" title="Hide rows whose damage values were approximated from a maturity's Damage Potential bucket">
+              <input type="checkbox" bind:checked={hideApproximated} />
+              <span>Hide approximated</span>
+            </label>
             <label class="planet-filter">
               <span class="planet-label">Planet:</span>
               <select bind:value={mobPlanetFilter} class="planet-select">
@@ -745,28 +923,34 @@
           {:else}
             <div class="ranking-list" role="list">
               {#each displayedMobRanking.slice(0, 200) as r, i (r.name + '|' + (r.maturityLabel || '') + '|' + i)}
+                {@const approxTip = r.approximated ? 'Damage values approximated from this maturity\'s Damage Potential bucket.' : ''}
                 <button
                   type="button"
                   class="ranking-row"
                   class:no-damage={!r.hasTotalDamage && r.hasComposition}
                   class:no-data={!r.hasComposition}
+                  class:approximated={r.approximated}
                   onclick={() => { mob = r.mob; }}
                 >
                   <span class="rank-idx">#{i + 1}</span>
                   <span class="rank-name">
                     <span class="name-main">{r.name}</span>
                     {#if r.maturityLabel}<span class="rank-sub">{r.maturityLabel}{#if r.maturityLevel != null}&nbsp;· L{r.maturityLevel}{/if}</span>{/if}
+                    {#if r.approximated}<span class="approx-tag" title={approxTip}>~approx</span>{/if}
                   </span>
                   <span class="rank-metric">
                     {#if r.hasTotalDamage}
-                      <span class="mit" title="Expected damage mitigated vs incoming (integrated over the damage roll range)">{formatPct(r.mitigationPct, 1)} mitigated</span>
+                      <span class="mit" title={r.approximated ? approxTip : `Mitigation at the mob's strongest roll (damage deflected ÷ total damage)`}>{r.approximated ? '~' : ''}{formatPct(r.mitigationPct, 1)} mitigated</span>
+                      {#if r.damageDeflected != null}
+                        <span class="deflected" title={r.approximated ? approxTip : `Damage deflected at the mob's strongest roll (absorbed by armor layers)`}>{r.approximated ? '~' : ''}+{formatNum(r.damageDeflected)}/hit deflected</span>
+                      {/if}
                       <span class="type-score" title="How well armor's defenses align with the mob's damage composition (fraction of total armor defense deployed vs this mob)">{formatPct(r.typeScore * 100, 1)} type-match</span>
-                      <span class="taken" title="Avg damage taken per hit">–{formatNum(r.damageTaken)}/hit</span>
+                      <span class="taken" title={r.approximated ? approxTip : `Damage taken at the mob's strongest roll`}>{r.approximated ? '~' : ''}–{formatNum(r.damageTaken)}/hit</span>
                       {#if r.decayPerAttack != null}
                         {#if r.decayPerAttackMin != null && r.decayPerAttackMax != null && Math.abs(r.decayPerAttackMax - r.decayPerAttackMin) > 0.0005}
-                          <span class="decay" title="Armor/plate decay per attack across maturities (PEC)">{formatNum(r.decayPerAttackMin, 3)}–{formatNum(r.decayPerAttackMax, 3)} PEC decay</span>
+                          <span class="decay" title={r.approximated ? approxTip : 'Armor/plate decay per attack across maturities (PEC)'}>{r.approximated ? '~' : ''}{formatNum(r.decayPerAttackMin, 3)}–{formatNum(r.decayPerAttackMax, 3)} PEC decay</span>
                         {:else}
-                          <span class="decay" title="Armor/plate decay per attack (PEC)">{formatNum(r.decayPerAttack, 3)} PEC decay</span>
+                          <span class="decay" title={r.approximated ? approxTip : 'Armor/plate decay per attack (PEC)'}>{r.approximated ? '~' : ''}{formatNum(r.decayPerAttack, 3)} PEC decay</span>
                         {/if}
                       {/if}
                     {:else if r.hasComposition}
@@ -834,6 +1018,8 @@
                   <th>Maturity</th>
                   <th class="num">Dmg</th>
                   <th class="num" title="Damage taken at lowest roll / expected avg / max roll (armor caps per-type)">Taken (min/exp/max)</th>
+                  <th class="num" title="Damage absorbed by armor layers at the mob's strongest roll (≤ total attack damage)">Deflected</th>
+                  <th title="Defense type with the biggest uncovered damage at max roll — the best upgrade target for this attack">Weakest type</th>
                   <th class="num" title="Max crit damage taken (2× max damage, 20% armor pierce)">Max Crit Dmg</th>
                   <th class="num" title="Armor/plate decay per attack (PEC)">Decay</th>
                   <th class="num">Mit</th>
@@ -841,21 +1027,34 @@
               </thead>
               <tbody>
                 {#each flatRows as row, i (i)}
-                  <tr class:no-data-row={!row.hasData}>
+                  {@const approxTip = row.approximated ? 'Damage values approximated from this maturity\'s Damage Potential bucket.' : ''}
+                  <tr class:no-data-row={!row.hasData} class:approximated-row={row.approximated}>
                     <td>
                       <span class="cell-main">{row.maturityName}</span>
                       {#if row.maturityLevel != null}<span class="cell-sub">L{row.maturityLevel}</span>{/if}
+                      {#if row.approximated}<span class="approx-tag" title={approxTip}>~approx</span>{/if}
                     </td>
-                    <td class="num" class:muted={row.totalDamage == null}>
-                      {row.totalDamage != null ? formatNum(row.totalDamage, 0) : '—'}
+                    <td class="num" class:muted={row.totalDamage == null} class:approx-num={row.approximated} title={row.approximated ? approxTip : ''}>
+                      {row.approximated ? '~' : ''}{row.totalDamage != null ? formatNum(row.totalDamage, 0) : '—'}
                     </td>
                     {#if row.hasData}
-                      <td class="num">{formatNum(row.takenMin)} / {formatNum(row.takenAvg)} / {formatNum(row.takenMax)}</td>
-                      <td class="num crit-cell">{formatNum(row.critTaken)}</td>
-                      <td class="num decay-cell">{formatNum(row.decayThisAttack, 3)}</td>
-                      <td class="num mit-cell">{formatPct(row.mitigation * 100, 0)}</td>
+                      <td class="num" class:approx-num={row.approximated} title={row.approximated ? approxTip : ''}>{row.approximated ? '~' : ''}{formatNum(row.takenMin)} / {formatNum(row.takenAvg)} / {formatNum(row.takenMax)}</td>
+                      <td class="num deflected-cell" class:approx-num={row.approximated} title={row.approximated ? approxTip : 'Damage deflected at the mob\'s strongest roll'}>{row.approximated ? '~' : ''}+{formatNum(row.deflected)}</td>
+                      <td class:approx-num={row.approximated} title={row.weakestType ? `${row.weakestType.type}: ${formatNum(row.weakestType.leak)} uncovered damage at max roll` : 'Armor fully covers this attack'}>
+                        {#if row.weakestType}
+                          <span class="weakest-type" style="color: var(--damage-{row.weakestType.type.toLowerCase()})">{row.weakestType.type}</span>
+                          <span class="weakest-leak">+{formatNum(row.weakestType.leak, 0)}</span>
+                        {:else}
+                          <span class="muted">—</span>
+                        {/if}
+                      </td>
+                      <td class="num crit-cell" class:approx-num={row.approximated}>{row.approximated ? '~' : ''}{formatNum(row.critTaken)}</td>
+                      <td class="num decay-cell" class:approx-num={row.approximated}>{row.approximated ? '~' : ''}{formatNum(row.decayThisAttack, 3)}</td>
+                      <td class="num mit-cell" class:approx-num={row.approximated}>{row.approximated ? '~' : ''}{formatPct(row.mitigation * 100, 0)}</td>
                     {:else}
                       <td class="num muted">—</td>
+                      <td class="num muted">—</td>
+                      <td class="muted">—</td>
                       <td class="num muted">—</td>
                       <td class="num muted">—</td>
                       <td class="num muted">—</td>
@@ -866,10 +1065,21 @@
             </table>
           {/if}
 
-          {#if !hasDamageData(mob)}
+          {#if !hasDamageDataOrPotential(mob)}
             <div class="missing-data-cta">
               <p class="missing-data-title">No total damage data for this mob.</p>
               <p class="missing-data-hint">Help the community by adding it on the mob's wiki page.</p>
+              <a
+                class="missing-data-link"
+                href={`/information/mobs/${encodeURIComponentSafe(mob.Name)}?mode=edit`}
+                target="_blank"
+                rel="noopener"
+              >Add damage info →</a>
+            </div>
+          {:else if !hasDamageData(mob)}
+            <div class="missing-data-cta approx-cta">
+              <p class="missing-data-title">Damage values are approximated from this mob's Damage Potential classification.</p>
+              <p class="missing-data-hint">Help by adding exact attack damage on the wiki page.</p>
               <a
                 class="missing-data-link"
                 href={`/information/mobs/${encodeURIComponentSafe(mob.Name)}?mode=edit`}
@@ -895,6 +1105,7 @@
 
       <fieldset class="scope-group">
         <legend>Rank by</legend>
+        <label><input type="radio" name="rankBy" value="deflected" bind:group={rankBy} /> Damage deflected</label>
         <label><input type="radio" name="rankBy" value="mitigation" bind:group={rankBy} /> % Mitigation</label>
         <label><input type="radio" name="rankBy" value="damageTaken" bind:group={rankBy} /> Damage taken</label>
         <label><input type="radio" name="rankBy" value="typeMatch" bind:group={rankBy} /> Type-match</label>
@@ -1175,6 +1386,45 @@
 
   .ranking-row.no-data .rank-name {
     font-style: italic;
+  }
+
+  /* Rows whose damage values were approximated from Damage Potential */
+  .ranking-row.approximated {
+    border-left: 3px solid var(--warning-color, #fbbf24);
+  }
+
+  .ranking-row.approximated .mit,
+  .ranking-row.approximated .taken,
+  .ranking-row.approximated .decay {
+    font-style: italic;
+    color: var(--text-muted, #999);
+  }
+
+  .approx-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--warning-color, #fbbf24);
+    background: color-mix(in srgb, var(--warning-color, #fbbf24) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning-color, #fbbf24) 40%, transparent);
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+
+  .approximated-row {
+    background-color: color-mix(in srgb, var(--warning-color, #fbbf24) 6%, transparent);
+  }
+
+  .approx-num {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .missing-data-cta.approx-cta {
+    border-color: color-mix(in srgb, var(--warning-color, #fbbf24) 50%, transparent);
   }
 
   .plate-tag {
@@ -1606,6 +1856,17 @@
   .fancy-table .crit-cell {
     font-weight: 600;
     color: var(--damage-cut, #e06060);
+  }
+
+  .fancy-table .weakest-type {
+    font-weight: 600;
+  }
+
+  .fancy-table .weakest-leak {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
   }
 
   .fancy-table .decay-cell {

@@ -23,6 +23,7 @@
   import StarterKit from '@tiptap/starter-kit';
   import Link from '@tiptap/extension-link';
   import { page } from '$app/stores';
+  import { getWaypoint, sanitizeWaypointAltitude, sanitizeWaypointName } from '$lib/mapUtil';
 
   /** Suppress the initial onUpdate that TipTap fires when normalizing empty content */
   let initialized = $state(false);
@@ -841,12 +842,20 @@
     return '';
   }
 
-  /** Normalize waypoint string: strip /wp prefix, keep the bracket content */
+  /** Normalize waypoint string: strip /wp prefix, rewrite using TechnicalName, default altitude, truncate name */
   function normalizeWaypointString(str) {
     if (!str) return str;
-    let s = str.trim();
-    if (s.toLowerCase().startsWith('/wp ')) s = s.slice(4).trim();
-    return s;
+    const parsed = parseWaypointString(str);
+    if (!parsed) {
+      let s = str.trim();
+      if (s.toLowerCase().startsWith('/wp ')) s = s.slice(4).trim();
+      return s;
+    }
+    const planetMatch = waypointPlanets.find(p =>
+      p.Name?.toLowerCase() === parsed.planet.toLowerCase() ||
+      p.Properties?.TechnicalName?.toLowerCase() === parsed.planet.toLowerCase()
+    );
+    return getWaypoint(planetMatch || parsed.planet, parsed.x, parsed.y, parsed.z, parsed.name);
   }
 
   function openWaypointModal() {

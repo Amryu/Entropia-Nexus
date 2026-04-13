@@ -9,7 +9,7 @@
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import MapLinkButton from './MapLinkButton.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
-  import { getMobAreaDifficulty } from '$lib/mapUtil.js';
+  import { getMobAreaDifficulty, getWaypoint } from '$lib/mapUtil.js';
 
   /**
    * @typedef {Object} Props
@@ -79,12 +79,6 @@
   function toPlanetSlug(planet) {
     const name = getPlanetName(planet) || 'Calypso';
     return name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase() || 'calypso';
-  }
-
-  function getWaypoint(planet, x, y, z, name) {
-    const technicalName = planet?.Properties?.TechnicalName || getPlanetName(planet) || 'Unknown';
-    const clean = (name || '').replace(/,/g, '').trim().slice(0, 50);
-    return `[${technicalName}, ${x}, ${y}, ${z}, ${clean}]`;
   }
 
   // Transform data for FancyTable
@@ -180,7 +174,7 @@
   .locations-table-container {
     width: 100%;
     max-width: 100%;
-    overflow: hidden;
+    min-width: 0; /* allow flex shrink so FancyTable's inner horizontal scroll fires */
   }
 
   .locations-table-container :global(.fancy-table-container) {

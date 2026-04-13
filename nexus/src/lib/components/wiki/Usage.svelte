@@ -162,7 +162,7 @@
     flex-direction: column;
     gap: 8px;
     max-width: 100%;
-    overflow: hidden;
+    min-width: 0; /* allow flex shrink so FancyTable's inner horizontal scroll fires */
   }
 
   .usage-section :global(.fancy-table-container) {

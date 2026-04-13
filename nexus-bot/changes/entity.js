@@ -1509,6 +1509,29 @@ async function applyWaveEventWavesChanges(client, locationId, waves) {
   }
 }
 
+// Classify a maturity into a Damage Potential bucket using max attack damage.
+// Falls back to the client-supplied value only when no attack has TotalDamage.
+// Bucket ranges mirror sql/nexus/migrations/026_seed_enumerations.sql.
+function classifyDamagePotential(maturity) {
+  const attacks = Array.isArray(maturity?.Attacks) ? maturity.Attacks : [];
+  let max = 0;
+  for (const a of attacks) {
+    const v = a?.TotalDamage;
+    if (v != null && v > max) max = v;
+  }
+  if (max <= 0) return maturity.Properties?.DamagePotential ?? null;
+  if (max >= 500) return 'Colossal';
+  if (max >= 356) return 'Gigantic';
+  if (max >= 271) return 'Immense';
+  if (max >= 161) return 'Huge';
+  if (max >= 101) return 'Great';
+  if (max >= 60)  return 'Large';
+  if (max >= 40)  return 'Medium';
+  if (max >= 30)  return 'Limited';
+  if (max >= 20)  return 'Small';
+  return 'Minimal';
+}
+
 async function applyMobMaturityChanges(client, mobId, maturities) {
   // Rename detection: UPDATE the (Name, DangerLevel) identity in-place so the Id
   // (and all FK references in MobSpawnMaturities, MobLoots, etc.) is preserved
@@ -1589,10 +1612,10 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
     ),
     ...maturities.map(maturity => client.query(`
       INSERT INTO "MobMaturities"
-      ("MobId", "Name", "NameMode", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+      ("MobId", "Name", "NameMode", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description", "DamagePotential")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       ON CONFLICT ("MobId", "Name", (COALESCE("DangerLevel", -1))) DO UPDATE SET
-      "NameMode" = $3, "Health" = $4, "RegenerationInterval" = $5, "RegenerationAmount" = $6, "AttackSpeed" = $7, "DangerLevel" = $8, "TamingLevel" = $9, "Strength" = $10, "Agility" = $11, "Intelligence" = $12, "Psyche" = $13, "Stamina" = $14, "MissChance" = $15, "ResistanceStab" = $16, "ResistanceCut" = $17, "ResistanceImpact" = $18, "ResistancePenetration" = $19, "ResistanceShrapnel" = $20, "ResistanceBurn" = $21, "ResistanceCold" = $22, "ResistanceAcid" = $23, "ResistanceElectric" = $24, "Boss" = $25, "Description" = $26
+      "NameMode" = $3, "Health" = $4, "RegenerationInterval" = $5, "RegenerationAmount" = $6, "AttackSpeed" = $7, "DangerLevel" = $8, "TamingLevel" = $9, "Strength" = $10, "Agility" = $11, "Intelligence" = $12, "Psyche" = $13, "Stamina" = $14, "MissChance" = $15, "ResistanceStab" = $16, "ResistanceCut" = $17, "ResistanceImpact" = $18, "ResistancePenetration" = $19, "ResistanceShrapnel" = $20, "ResistanceBurn" = $21, "ResistanceCold" = $22, "ResistanceAcid" = $23, "ResistanceElectric" = $24, "Boss" = $25, "Description" = $26, "DamagePotential" = $27
       RETURNING "Id"`,
       [
         mobId,
@@ -1620,7 +1643,8 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
         maturity.Properties.Defense?.Acid ?? null,
         maturity.Properties.Defense?.Electric ?? null,
         maturity.Properties.Boss || false,
-        maturity.Properties.Description ?? null]).then(res => ({ ...maturity, Id: res.rows[0].Id })))
+        maturity.Properties.Description ?? null,
+        classifyDamagePotential(maturity)]).then(res => ({ ...maturity, Id: res.rows[0].Id })))
   ]).then(res => res.slice(1));
 
   await Promise.all(maturities.map(maturity => applyMobAttackChanges(client, maturity.Id, maturity.Attacks)));

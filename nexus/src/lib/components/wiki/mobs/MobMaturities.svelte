@@ -58,8 +58,35 @@
     return 0;
   }) : []);
 
+  // Lower bound of each Damage Potential bucket from
+  // sql/nexus/migrations/026_seed_enumerations.sql — used for the display
+  // tooltip on approximated damage cells.
+  const DP_BUCKET_FROM = {
+    Minimal: 1, Small: 20, Limited: 30, Medium: 40, Large: 60,
+    Great: 101, Huge: 161, Immense: 271, Gigantic: 356, Colossal: 500
+  };
+
   function getTotalDamage(attack) {
     return attack?.TotalDamage ?? null;
+  }
+
+  // Build a display payload for a damage cell. When TotalDamage is filled,
+  // returns the numeric value. When it's missing but the maturity has a
+  // Damage Potential bucket, returns a string like `~Large` with a tooltip
+  // describing the approximation. Otherwise returns null.
+  function getDisplayDamage(attack, damagePotential) {
+    const td = attack?.TotalDamage;
+    if (td != null && td > 0) {
+      return { value: td, approximated: false, tooltip: null };
+    }
+    if (damagePotential && DP_BUCKET_FROM[damagePotential] != null) {
+      return {
+        value: damagePotential,
+        approximated: true,
+        tooltip: `Approximate - Damage Potential: ${damagePotential} (${DP_BUCKET_FROM[damagePotential]}+)`
+      };
+    }
+    return null;
   }
 
   function getTotalDefense(maturity) {
@@ -78,6 +105,24 @@
       .join(', ');
   }
 
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+  }
+
+  // Render a damage cell payload from getDisplayDamage. Numeric values show
+  // dotted-underline (composition tooltip); approximated values render in
+  // italic muted color with a ~ prefix and the DP tooltip.
+  function renderDamageCell(payload, tooltip) {
+    if (!payload) return 'N/A';
+    const safeTip = escapeHtml(tooltip || '');
+    if (payload.approximated) {
+      return `<span style="color: var(--text-muted, #999); font-style: italic; text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${safeTip}">~${escapeHtml(payload.value)}</span>`;
+    }
+    return `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${safeTip}">${escapeHtml(payload.value)}</span>`;
+  }
+
   let isAsteroid = $derived(type === 'Asteroid');
 
   // Transform data for FancyTable
@@ -88,6 +133,11 @@
     const primaryAttack = maturity.Attacks?.find(a => a.Name === 'Primary') || maturity.Attacks?.[0];
     const secondaryAttack = maturity.Attacks?.find(a => a.Name === 'Secondary') || maturity.Attacks?.[1];
     const tertiaryAttack = maturity.Attacks?.find(a => a.Name === 'Tertiary') || maturity.Attacks?.[2];
+
+    const dp = maturity.Properties?.DamagePotential ?? null;
+    const primaryDisplay = getDisplayDamage(primaryAttack, dp);
+    const secondaryDisplay = getDisplayDamage(secondaryAttack, dp);
+    const tertiaryDisplay = getDisplayDamage(tertiaryAttack, dp);
 
     // Loadout-based kill stats
     const hp = maturity.Properties?.Health;
@@ -117,12 +167,18 @@
       hp,
       hpPerLevel: hpPerLevel,
       boss: maturity.Properties?.Boss === true,
+      // Keep primary/secondary/tertiaryDamage as sortable numbers (null when
+      // unknown). The *Display payload carries the render hint (numeric vs
+      // approximated DP bucket) and is consumed by renderDamageCell.
       primaryDamage: getTotalDamage(primaryAttack),
-      primaryTooltip: getDamageComposition(primaryAttack),
+      primaryDisplay,
+      primaryTooltip: primaryDisplay?.approximated ? primaryDisplay.tooltip : getDamageComposition(primaryAttack),
       secondaryDamage: getTotalDamage(secondaryAttack),
-      secondaryTooltip: getDamageComposition(secondaryAttack),
+      secondaryDisplay,
+      secondaryTooltip: secondaryDisplay?.approximated ? secondaryDisplay.tooltip : getDamageComposition(secondaryAttack),
       tertiaryDamage: getTotalDamage(tertiaryAttack),
-      tertiaryTooltip: getDamageComposition(tertiaryAttack),
+      tertiaryDisplay,
+      tertiaryTooltip: tertiaryDisplay?.approximated ? tertiaryDisplay.tooltip : getDamageComposition(tertiaryAttack),
       defense: getTotalDefense(maturity),
       tameable: maturity.Properties?.Taming?.IsTameable || maturity.Properties?.TamingLevel > 0,
       tamingLevel: maturity.Properties?.Taming?.TamingLevel || maturity.Properties?.TamingLevel,
@@ -204,23 +260,17 @@
       key: 'primaryDamage',
       header: 'Primary',
       sortable: true,
-      formatter: (value, row) => value != null
-        ? `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${row.primaryTooltip}">${value}</span>`
-        : 'N/A'
+      formatter: (_value, row) => renderDamageCell(row.primaryDisplay, row.primaryTooltip)
     },
     {
       key: 'secondaryDamage',
       header: 'Secondary',
-      formatter: (value, row) => value != null
-        ? `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${row.secondaryTooltip}">${value}</span>`
-        : 'N/A'
+      formatter: (_value, row) => renderDamageCell(row.secondaryDisplay, row.secondaryTooltip)
     },
     {
       key: 'tertiaryDamage',
       header: 'Tertiary',
-      formatter: (value, row) => value != null
-        ? `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${row.tertiaryTooltip}">${value}</span>`
-        : 'N/A'
+      formatter: (_value, row) => renderDamageCell(row.tertiaryDisplay, row.tertiaryTooltip)
     },
     {
       key: 'defense',

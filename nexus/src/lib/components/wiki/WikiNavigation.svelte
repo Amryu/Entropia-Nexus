@@ -1624,10 +1624,10 @@
 
   .expand-btn {
     padding: 5px;
-    background: transparent;
-    border: 1px solid var(--border-color, #555);
+    background: var(--accent-color-bg, transparent);
+    border: 1px solid var(--accent-color, #4a9eff);
     border-radius: 4px;
-    color: var(--text-muted, #999);
+    color: var(--accent-color, #4a9eff);
     cursor: pointer;
     transition: all 0.15s;
     display: flex;
@@ -1636,8 +1636,8 @@
   }
 
   .expand-btn:hover {
-    background-color: var(--hover-color);
-    color: var(--text-color);
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
   }
 
   .expand-btn.active {

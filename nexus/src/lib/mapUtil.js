@@ -328,9 +328,24 @@ export function getWaypointFromLocation(location) {
   return `${getWaypoint(planet, coords.Longitude, coords.Latitude, coords.Altitude, name)}`;
 }
 
+export function sanitizeWaypointName(name) {
+  return (name || '').replace(/,/g, '').trim().slice(0, 50);
+}
+
+export function sanitizeWaypointAltitude(alt) {
+  const n = Number(alt);
+  if (!Number.isFinite(n) || n === 0) return 100;
+  return n;
+}
+
+export function getPlanetTechnicalName(planet) {
+  if (!planet) return '';
+  if (typeof planet === 'string') return planet;
+  return planet?.Properties?.TechnicalName ?? planet?.Name ?? '';
+}
+
 export function getWaypoint(planet, x, y, z, name) {
-  const clean = (name || '').replace(/,/g, '').trim().slice(0, 50);
-  return `[${planet}, ${x}, ${y}, ${z}, ${clean}]`;
+  return `[${getPlanetTechnicalName(planet)}, ${x}, ${y}, ${sanitizeWaypointAltitude(z)}, ${sanitizeWaypointName(name)}]`;
 }
 
 // Fuzzy scoring - adapted from wiki navigation

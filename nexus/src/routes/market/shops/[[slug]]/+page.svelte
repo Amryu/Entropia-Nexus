@@ -13,6 +13,7 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, apiCall, getLatestPendingUpdate } from '$lib/util';
+  import { getWaypoint } from '$lib/mapUtil';
   import { hasVisibleText } from '$lib/sanitize.js';
 
   // Wiki components
@@ -378,13 +379,7 @@
   function formatCoordinates(s) {
     const coords = s?.Coordinates;
     if (!coords) return null;
-
-    const planet = s.Planet?.Properties?.TechnicalName || s.Planet?.Name || 'Unknown';
-    const lon = coords.Longitude ?? 0;
-    const lat = coords.Latitude ?? 0;
-    const alt = coords.Altitude ?? 100;
-
-    return `[${planet}, ${lon}, ${lat}, ${alt}, ${s.Name}]`;
+    return getWaypoint(s.Planet, coords.Longitude ?? 0, coords.Latitude ?? 0, coords.Altitude, s.Name);
   }
 
   function getPlanetBadgeClass(planetName) {
