@@ -102,8 +102,12 @@ export async function load({ fetch, params, url, parent }) {
     response.locations = locations || [];
     response.events = events || [];
   } else if (response.object) {
-    response.locations = await apiCall(fetch, '/locations').catch(() => []) || [];
-    response.mobMaturities = null;
+    const [locations, mobMaturities] = await Promise.all([
+      apiCall(fetch, '/locations').catch(() => []),
+      apiCall(fetch, '/mobmaturities').catch(() => [])
+    ]);
+    response.locations = locations || [];
+    response.mobMaturities = mobMaturities || [];
     response.events = null;
   } else {
     response.mobMaturities = null;

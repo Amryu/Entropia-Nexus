@@ -422,8 +422,11 @@
           .map(([pts, names]) => `${pts} pts: ${names.join(', ')}`);
 
         if (pointGroups.length > 0) {
+          const mobName = getMobNameFromId(mob.mobId);
+          const knownMob = mobIdToName[mob.mobId];
           details.push({
-            label: getMobNameFromId(mob.mobId),
+            label: mobName,
+            labelHref: knownMob ? `/information/mobs/${encodeURIComponentSafe(mobName)}` : undefined,
             value: pointGroups.join(' | ')
           });
         }
@@ -447,11 +450,16 @@
       const items = Payload?.items || [];
       for (const item of items) {
         if (item.itemId) {
-          const name = itemsIndex[item.itemId] || `Item #${item.itemId}`;
+          const known = itemsIndex[item.itemId];
+          const name = known || `Item #${item.itemId}`;
           const range = (item.minQuantity != null && item.maxQuantity != null)
             ? `${item.minQuantity}–${item.maxQuantity}`
             : item.minQuantity ?? item.maxQuantity ?? '?';
-          details.push({ label: name, value: `Qty: ${range}` });
+          details.push({
+            label: name,
+            labelHref: known ? `/items/${item.itemId}` : undefined,
+            value: `Qty: ${range}`
+          });
         }
       }
     }
@@ -460,20 +468,30 @@
       const items = Payload?.items || [];
       for (const item of items) {
         if (item.itemId) {
-          const name = itemsIndex[item.itemId] || `Item #${item.itemId}`;
+          const known = itemsIndex[item.itemId];
+          const name = known || `Item #${item.itemId}`;
           const parts = [];
           if (item.quantity != null) parts.push(`Qty: ${item.quantity}`);
           if (item.pedValue != null) parts.push(`${item.pedValue} PED`);
           if (item.minPedValue != null) parts.push(`Min TT: ${item.minPedValue}`);
-          details.push({ label: name, value: parts.join(', ') || 'any' });
+          details.push({
+            label: name,
+            labelHref: known ? `/items/${item.itemId}` : undefined,
+            value: parts.join(', ') || 'any'
+          });
         }
       }
     }
 
     if (Type === 'Collect') {
       if (Payload?.itemId) {
-        const name = itemsIndex[Payload.itemId] || `Item #${Payload.itemId}`;
-        details.push({ label: 'Item', value: name });
+        const known = itemsIndex[Payload.itemId];
+        const name = known || `Item #${Payload.itemId}`;
+        details.push({
+          label: 'Item',
+          value: name,
+          href: known ? `/items/${Payload.itemId}` : undefined
+        });
       }
       if (Payload?.quantity != null) {
         details.push({ label: 'Quantity', value: String(Payload.quantity) });
@@ -482,8 +500,13 @@
 
     if (Type === 'CollectValue') {
       if (Payload?.itemId) {
-        const name = itemsIndex[Payload.itemId] || `Item #${Payload.itemId}`;
-        details.push({ label: 'Item', value: name });
+        const known = itemsIndex[Payload.itemId];
+        const name = known || `Item #${Payload.itemId}`;
+        details.push({
+          label: 'Item',
+          value: name,
+          href: known ? `/items/${Payload.itemId}` : undefined
+        });
       }
       if (Payload?.pedValue != null) {
         details.push({ label: 'Value', value: `${Payload.pedValue} PED` });
@@ -1624,7 +1647,7 @@
                                 <div class="objective-expanded">
                                   {#each details as detail}
                                     <div class="detail-row">
-                                      <span class="detail-label">{detail.label}:</span>
+                                      <span class="detail-label">{#if detail.labelHref}<a href={detail.labelHref} class="detail-link">{detail.label}</a>{:else}{detail.label}{/if}:</span>
                                       <span class="detail-value">{#if detail.href}<a href={detail.href} class="detail-link">{detail.value}</a>{:else}{detail.value}{/if}</span>
                                     </div>
                                   {/each}
