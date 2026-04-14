@@ -1031,8 +1031,15 @@
     acc[m.Id] = m;
     return acc;
   }, {}));
+  // Build mob ID to name lookup from maturities
+  // API returns Mob: { Name, Links: { $Url: "/mobs/<id>" } } — extract MobId from URL
   let mobIdToName = $derived((data.mobMaturities || []).reduce((acc, m) => {
-    if (m.MobId && m.Mob?.Name) acc[m.MobId] = m.Mob.Name;
+    const mobName = m.Mob?.Name;
+    const mobUrl = m.Mob?.Links?.$Url;
+    const mobId = mobUrl ? parseInt(mobUrl.split('/').pop(), 10) : null;
+    if (mobId && mobName) {
+      acc[mobId] = mobName;
+    }
     return acc;
   }, {}));
   // Build mob species ID to name lookup

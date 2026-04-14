@@ -48,7 +48,6 @@ function formatMobMaturity(x){
 	const attacks = (x.Attacks || []).map(formatMobAttack);
 	return {
 		Id: x.Id,
-		MobId: x.MobId ?? null,
 		Name: x.Name,
 		NameMode: x.NameMode || null,
 		Properties: {
