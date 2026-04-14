@@ -85,11 +85,19 @@
   // Single dialog state - null when closed, object when open
   let openMaturityDialog = $state(null); // { stepIndex, objIndex, mobIndex }
 
+  // API returns Mob: { Name, Links: { $Url: "/mobs/<id>" } } — extract MobId from URL
+  function getMobIdFromMaturity(maturity) {
+    const url = maturity?.Mob?.Links?.$Url;
+    if (!url) return null;
+    const id = parseInt(url.split('/').pop(), 10);
+    return Number.isFinite(id) ? id : null;
+  }
+
   // Build unique mob options from maturities (using MobId as value)
   let mobOptions = $derived((() => {
     const mobMap = new Map();
     for (const maturity of mobMaturities) {
-      const mobId = maturity?.MobId;
+      const mobId = getMobIdFromMaturity(maturity);
       const mobName = maturity?.Mob?.Name;
       if (mobId && mobName && !mobMap.has(mobId)) {
         mobMap.set(mobId, { label: mobName, value: mobId });
@@ -102,7 +110,7 @@
   let mobIdToName = $derived((() => {
     const map = new Map();
     for (const maturity of mobMaturities) {
-      const mobId = maturity?.MobId;
+      const mobId = getMobIdFromMaturity(maturity);
       const mobName = maturity?.Mob?.Name;
       if (mobId && mobName) {
         map.set(mobId, mobName);
@@ -134,7 +142,7 @@
   // Get maturities for a specific mob by MobId, sorted by level*HP ascending, bosses after non-bosses
   function getMaturitiesForMob(mobId) {
     if (!mobId) return [];
-    const maturities = mobMaturities.filter(m => m?.MobId === mobId);
+    const maturities = mobMaturities.filter(m => getMobIdFromMaturity(m) === mobId);
     return maturities.sort((a, b) => {
       const aIsBoss = a.Properties?.Boss === true;
       const bIsBoss = b.Properties?.Boss === true;
