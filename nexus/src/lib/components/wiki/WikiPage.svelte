@@ -342,7 +342,7 @@
       return;
     }
 
-    if ((hasPendingChange || initialMode === 'edit') && !$editMode) {
+    if ((hasPendingChange || (initialMode === 'edit' && canEdit)) && !$editMode) {
       startEdit();
     }
   });
