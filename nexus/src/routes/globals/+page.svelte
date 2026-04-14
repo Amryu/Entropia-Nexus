@@ -20,8 +20,6 @@
   import GlobalsTabNav from '$lib/components/globals/GlobalsTabNav.svelte';
   import { TYPE_FILTERS, TOP_LOOTS_TABS, getTypeConfig } from '$lib/data/globals-constants.js';
   import { formatPedShort, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   let { data } = $props();
 
   let user = $derived(data?.session?.user || null);
@@ -1057,18 +1055,9 @@
     {/if}
   </div>
   {/if}
-
-  <div class="ad-placement">
-    <AdSlot adSlot="9076572564" adFormat="auto" />
-  </div>
 </div>
 
 <style>
-  .ad-placement {
-    max-width: 728px;
-    margin: 32px auto 0;
-  }
-
   .globals-page {
     max-width: 1200px;
     margin: 0 auto;

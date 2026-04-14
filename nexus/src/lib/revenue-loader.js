@@ -5,20 +5,6 @@ function gtag() {
 }
 
 /**
- * Update Google Consent Mode v2 to grant ad-related consent.
- * Called when the user explicitly consents to personalized ads.
- * The AdSense script is always loaded (in app.html) but defaults to
- * non-personalized ads via Consent Mode defaults.
- */
-export function activateAdConsent() {
-	gtag('consent', 'update', {
-		'ad_storage': 'granted',
-		'ad_user_data': 'granted',
-		'ad_personalization': 'granted'
-	});
-}
-
-/**
  * Update Google Consent Mode v2 to grant analytics consent.
  * Called when the user explicitly consents to analytics tracking.
  * GA4 is always loaded (in app.html) but defaults to cookieless

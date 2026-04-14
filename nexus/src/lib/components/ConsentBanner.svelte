@@ -1,16 +1,11 @@
 <!--
   @component ConsentBanner
-  GDPR-compliant cookie consent banner with three options:
-  Essential Only, Allow All, or granular Settings toggle.
-  Uses neutral class names to avoid adblocker filter lists.
+  Cookie consent banner. Essential cookies are always on; analytics
+  (Google Analytics) is opt-in. Uses neutral class names to avoid adblocker filter lists.
 -->
 <script>
-  import { hasDecision, grantAll, denyAll, saveConsent } from '$lib/stores/consent.svelte.js';
+  import { hasDecision, grantAll, denyAll } from '$lib/stores/consent.svelte.js';
   import { browser } from '$app/environment';
-
-  let showSettings = $state(false);
-  let adsToggle = $state(false);
-  let analyticsToggle = $state(false);
 
   let visible = $derived(browser && !hasDecision());
 
@@ -21,14 +16,6 @@
   function handleAllow() {
     grantAll();
   }
-
-  function toggleSettings() {
-    showSettings = !showSettings;
-  }
-
-  function handleSave() {
-    saveConsent({ ads: adsToggle, analytics: analyticsToggle });
-  }
 </script>
 
 {#if visible}
@@ -37,55 +24,20 @@
       <div class="site-notice-content">
         <p class="site-notice-text">
           <strong class="site-notice-highlight">Your privacy matters.</strong>
-          We use cookies for analytics and personalized ads. Analytics help us improve the site,
-          and ads keep Entropia Nexus free. You can accept all, decline non-essential cookies,
-          or customize your preferences.
+          Entropia Nexus uses Google Analytics to collect anonymous usage data that helps us
+          improve the site. No personalized advertising or tracking cookies are used.
+          You can accept analytics or stick with essential cookies only.
           <a href="/legal/privacy" class="site-notice-link">Privacy Policy</a>
         </p>
 
-        {#if showSettings}
-          <div class="site-notice-settings">
-            <label class="site-notice-toggle">
-              <span class="site-notice-toggle-info">
-                <strong>Essential</strong>
-                <span class="site-notice-toggle-desc">Required for the site to function - session authentication and viewport preference</span>
-              </span>
-              <input type="checkbox" checked disabled />
-              <span class="site-notice-switch site-notice-switch-locked"></span>
-            </label>
-            <label class="site-notice-toggle">
-              <span class="site-notice-toggle-info">
-                <strong>Analytics</strong>
-                <span class="site-notice-toggle-desc">Google Analytics - anonymous usage data to help us improve the site</span>
-              </span>
-              <input type="checkbox" bind:checked={analyticsToggle} />
-              <span class="site-notice-switch" class:site-notice-switch-on={analyticsToggle}></span>
-            </label>
-            <label class="site-notice-toggle">
-              <span class="site-notice-toggle-info">
-                <strong>Advertising</strong>
-                <span class="site-notice-toggle-desc">Google AdSense - personalized ads and tracking cookies</span>
-              </span>
-              <input type="checkbox" bind:checked={adsToggle} />
-              <span class="site-notice-switch" class:site-notice-switch-on={adsToggle}></span>
-            </label>
-            <button class="site-notice-btn site-notice-btn-save" onclick={handleSave}>
-              Save Preferences
-            </button>
-          </div>
-        {:else}
-          <div class="site-notice-actions">
-            <button class="site-notice-btn site-notice-btn-allow" onclick={handleAllow}>
-              Accept All
-            </button>
-            <button class="site-notice-btn site-notice-btn-essential" onclick={handleEssential}>
-              Essential Only
-            </button>
-            <button class="site-notice-btn site-notice-btn-settings" onclick={toggleSettings}>
-              Settings
-            </button>
-          </div>
-        {/if}
+        <div class="site-notice-actions">
+          <button class="site-notice-btn site-notice-btn-allow" onclick={handleAllow}>
+            Accept Analytics
+          </button>
+          <button class="site-notice-btn site-notice-btn-essential" onclick={handleEssential}>
+            Essential Only
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -168,102 +120,6 @@
   .site-notice-btn-essential:hover,
   .site-notice-btn-allow:hover {
     background: var(--border-color);
-  }
-
-  .site-notice-btn-settings {
-    background: none;
-    color: var(--text-muted);
-    padding: 7px 12px;
-  }
-
-  .site-notice-btn-settings:hover {
-    color: var(--text-color);
-  }
-
-  .site-notice-btn-save {
-    background: var(--accent-color);
-    color: #fff;
-    align-self: flex-start;
-  }
-
-  /* Granular settings panel */
-  .site-notice-settings {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .site-notice-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    background: var(--primary-color);
-    cursor: pointer;
-  }
-
-  .site-notice-toggle-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 0.8125rem;
-    color: var(--text-color);
-  }
-
-  .site-notice-toggle-desc {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .site-notice-toggle input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .site-notice-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    min-width: 36px;
-    border-radius: 10px;
-    background: var(--border-color);
-    transition: background 0.2s;
-  }
-
-  .site-notice-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: transform 0.2s, background 0.2s;
-  }
-
-  .site-notice-switch-on {
-    background: var(--accent-color);
-  }
-
-  .site-notice-switch-on::after {
-    transform: translateX(16px);
-    background: #fff;
-  }
-
-  .site-notice-switch-locked {
-    background: var(--accent-color);
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .site-notice-switch-locked::after {
-    transform: translateX(16px);
-    background: #fff;
   }
 
   @media (max-width: 599px) {

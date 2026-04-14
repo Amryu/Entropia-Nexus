@@ -7,7 +7,7 @@
 
   import { resetConsent } from '$lib/stores/consent.svelte.js';
 
-  const lastUpdated = 'April 7, 2026';
+  const lastUpdated = 'April 14, 2026';
 </script>
 
 <svelte:head>
@@ -67,11 +67,10 @@
         <ul>
           <li><strong>Essential cookies:</strong> Login/session functionality and basic site operation. These are always active.</li>
           <li><strong>Analytics cookies:</strong> Google Analytics collects anonymous usage data to help us understand how the site is used and identify areas for improvement. No analytics cookies are set unless you consent.</li>
-          <li><strong>Advertising cookies:</strong> This site displays ads via Google AdSense to support its operation. Non-personalized ads are shown by default without tracking cookies. If you consent, Google may set cookies for ad personalization and measurement to show ads tailored to your interests.</li>
         </ul>
         <p>
-          When you first visit the site, a consent banner allows you to choose whether to allow analytics and personalized advertising.
-          You can change your preferences at any time by clicking the button below.
+          When you first visit the site, a consent banner allows you to choose whether to allow analytics.
+          You can change your preference at any time by clicking the button below.
         </p>
         <p>
           <button class="change-preferences-btn" onclick={resetConsent}>Change Cookie Preferences</button>
@@ -130,10 +129,9 @@
           Privacy Policy and Terms of Service.
         </p>
         <p>
-          If you consent to advertising cookies, the Service uses Google AdSense to display advertisements.
-          Google may collect data and use cookies for ad personalization and performance measurement,
-          subject to <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.
-          You may manage Google's ad personalization at <a href="https://adssettings.google.com" target="_blank" rel="noopener">Google Ad Settings</a>.
+          If you consent to analytics, the Service uses Google Analytics to collect anonymous usage data.
+          Google may process this data subject to
+          <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.
         </p>
         <p>
           We are not responsible for the privacy practices of third-party services.

@@ -36,8 +36,6 @@
     setViewingPendingChange,
     updateField
   } from '$lib/stores/wikiEditState.js';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
@@ -1229,10 +1227,6 @@
             <span>View on Map</span>
           </a>
         {/if}
-
-        <div class="infobox-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
-        </div>
       </aside>
 
       <article class="wiki-article" class:editing={$editMode}>
@@ -1256,11 +1250,6 @@
             />
           </div>
         {/if}
-
-        <div class="wiki-content-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-        </div>
-
         <!-- Facilities Section (only for settlements: Outpost, Camp, City) -->
         {#if isSettlement}
           <DataSection title="Facilities" subtitle="{activeLocation?.Facilities?.length || 0} available" icon="" allowOverflow={$editMode}>
@@ -1480,18 +1469,11 @@
     <div class="no-selection">
       <h2>Locations</h2>
       <p>Select a location from the list to view details.</p>
-      <div class="no-selection-ad">
-        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
-  .infobox-ad { margin-top: 12px; }
-  .wiki-content-ad { margin: 16px 0; }
-  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
-
   /* Teleporter list in infobox */
   .teleporter-list {
     display: flex;

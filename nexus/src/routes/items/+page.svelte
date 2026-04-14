@@ -4,8 +4,6 @@
 -->
 <script>
   import '$lib/style.css';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   const categories = [
     {
       name: 'Weapons',
@@ -122,18 +120,9 @@
       </a>
     {/each}
   </div>
-
-  <div class="ad-placement">
-    <AdSlot adSlot="9076572564" adFormat="auto" />
-  </div>
 </div>
 
 <style>
-  .ad-placement {
-    max-width: 728px;
-    margin: 32px auto 0;
-  }
-
   .items-overview {
     max-width: 1200px;
     margin: 0 auto;

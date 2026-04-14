@@ -12,8 +12,8 @@ export async function POST(event) {
 		return new Response(null, { status: 400 });
 	}
 
-	const { ads, analytics } = body;
-	if (!VALID_VALUES.includes(ads) || !VALID_VALUES.includes(analytics)) {
+	const { analytics } = body;
+	if (!VALID_VALUES.includes(analytics)) {
 		return new Response(null, { status: 400 });
 	}
 
@@ -21,7 +21,7 @@ export async function POST(event) {
 
 	pool.query(
 		`INSERT INTO consent_log (ip_address, ads_consent, analytics_consent) VALUES ($1, $2, $3)`,
-		[ip || '0.0.0.0', ads, analytics]
+		[ip || '0.0.0.0', 'denied', analytics]
 	).catch(() => {});
 
 	return new Response(null, { status: 204 });

@@ -37,8 +37,6 @@
     setViewingPendingChange,
     updateField
   } from '$lib/stores/wikiEditState.js';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
@@ -1539,10 +1537,6 @@
             </a>
           {/if}
         {/if}
-
-        <div class="infobox-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
-        </div>
       </aside>
 
       <article class="wiki-article">
@@ -1571,11 +1565,6 @@
             </div>
           {/if}
         </div>
-
-        <div class="wiki-content-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-        </div>
-
         {#if !isChainView && hasValidChainSelected}
           <DataSection title="Chain Preview" subtitle="Nearby missions" icon="">
             {#if previewPrev.length || previewNext.length}
@@ -1799,9 +1788,6 @@
     <div class="no-selection">
       <h2>{isChainView ? 'Mission Chains' : 'Missions'}</h2>
       <p>Select a {isChainView ? 'mission chain' : 'mission'} from the list to view details.</p>
-      <div class="no-selection-ad">
-        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-      </div>
     </div>
   {/if}
 
@@ -1892,10 +1878,6 @@
 </WikiPage>
 
 <style>
-  .infobox-ad { margin-top: 12px; }
-  .wiki-content-ad { margin: 16px 0; }
-  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
-
   .missions-sidebar {
     display: flex;
     flex-direction: column;

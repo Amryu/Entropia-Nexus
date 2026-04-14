@@ -9,12 +9,9 @@
   import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import PartnerSlot from '$lib/components/PartnerSlot.svelte';
-  import AdSlot from '$lib/components/AdSlot.svelte';
   import { resetConsent } from '$lib/stores/consent.svelte.js';
 
   let { data } = $props();
-  let hasLeftPromo = $derived((promos?.placements?.left?.length ?? 0) > 0);
-  let hasRightPromo = $derived((promos?.placements?.right?.length ?? 0) > 0);
 
   let { news, events, streams, videos, globals } = $derived(data);
   let promos = $derived(data.promos);
@@ -138,23 +135,15 @@
 </svelte:head>
 
 <div class="home-page">
-  <!-- Vertical partner/ad slots for wide screens -->
+  <!-- Vertical partner slots for wide screens -->
   <aside class="partner-rail partner-rail-left" aria-label="Partner content">
     <div class="partner-slot partner-vertical" data-slot="left">
-      {#if hasLeftPromo}
-        <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} />
-      {:else}
-        <AdSlot adSlot="2183861159" adFormat="auto" />
-      {/if}
+      <PartnerSlot promos={promos?.placements?.left ?? []} variant="vertical" rotationIndex={rotationSeed} />
     </div>
   </aside>
   <aside class="partner-rail partner-rail-right" aria-label="Partner content">
     <div class="partner-slot partner-vertical" data-slot="right">
-      {#if hasRightPromo}
-        <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} />
-      {:else}
-        <AdSlot adSlot="2183861159" adFormat="auto" />
-      {/if}
+      <PartnerSlot promos={promos?.placements?.right ?? []} variant="vertical" rotationIndex={rotationSeed + 1} />
     </div>
   </aside>
 
@@ -261,31 +250,19 @@
       {/if}
     </section>
 
-    <!-- Inline partner/ad slots (visible when side rails are hidden) -->
+    <!-- Inline partner slots (visible when side rails are hidden) -->
     <div class="partner-inline partner-inline-pair">
       <div class="partner-slot partner-horizontal" data-slot="top-1">
-        {#if hasLeftPromo}
-          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
-        {:else}
-          <AdSlot adSlot="9076572564" adFormat="auto" />
-        {/if}
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
       </div>
       <div class="partner-slot partner-horizontal" data-slot="top-2">
-        {#if hasRightPromo}
-          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
-        {:else}
-          <AdSlot adSlot="9076572564" adFormat="auto" />
-        {/if}
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
       </div>
     </div>
     <!-- Mobile: single slot after news/events -->
     <div class="partner-inline partner-inline-mobile-1">
       <div class="partner-slot partner-horizontal" data-slot="mobile-1">
-        {#if hasLeftPromo}
-          <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
-        {:else}
-          <AdSlot adSlot="9076572564" adFormat="auto" />
-        {/if}
+        <PartnerSlot promos={promos?.placements?.left ?? []} variant="horizontal" rotationIndex={rotationSeed} />
       </div>
     </div>
 
@@ -301,11 +278,7 @@
     <!-- Mobile: single slot after globals -->
     <div class="partner-inline partner-inline-mobile-2">
       <div class="partner-slot partner-horizontal" data-slot="mobile-2">
-        {#if hasRightPromo}
-          <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
-        {:else}
-          <AdSlot adSlot="9076572564" adFormat="auto" />
-        {/if}
+        <PartnerSlot promos={promos?.placements?.right ?? []} variant="horizontal" rotationIndex={rotationSeed + 1} />
       </div>
     </div>
 

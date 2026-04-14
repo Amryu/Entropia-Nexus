@@ -13,7 +13,6 @@
   import WikiNavigation from './WikiNavigation.svelte';
   import MobileDrawer from './MobileDrawer.svelte';
   import EditActionBar from './EditActionBar.svelte';
-  import AdSlot from '$lib/components/AdSlot.svelte';
 
   /**
    * @typedef {Object} Props
@@ -402,11 +401,6 @@
             {userPendingUpdates}
           />
         {/if}
-        {#if !sidebarExpanded && !sidebarFullWidth}
-          <div class="sidebar-ad">
-            <AdSlot adSlot="5222854398" adFormat="auto" />
-          </div>
-        {/if}
       </aside>
     {/if}
 
@@ -689,15 +683,6 @@
     .wiki-sidebar {
       display: none !important;
     }
-  }
-
-  .sidebar-ad {
-    flex-shrink: 0;
-    padding: 8px;
-    max-height: 200px;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
   }
 
   .wiki-page.sidebar-expanded .wiki-sidebar {

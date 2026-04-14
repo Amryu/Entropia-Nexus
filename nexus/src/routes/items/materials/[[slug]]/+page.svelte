@@ -49,8 +49,6 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
@@ -371,10 +369,6 @@
             </span>
           </div>
         </div>
-
-        <div class="infobox-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
-        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -410,11 +404,6 @@
             </div>
           {/if}
         </div>
-
-        <div class="wiki-content-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-        </div>
-
         <!-- Refining Recipes Section (edit mode only) -->
         {#if $editMode}
           <DataSection
@@ -472,18 +461,11 @@
     <div class="no-selection">
       <h2>Materials</h2>
       <p>Select a material from the list to view details.</p>
-      <div class="no-selection-ad">
-        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
-  .infobox-ad { margin-top: 12px; }
-  .wiki-content-ad { margin: 16px 0; }
-  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
-
   @media (min-width: 1400px) {
     .wiki-infobox-float {
       width: 280px;

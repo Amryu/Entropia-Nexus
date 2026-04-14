@@ -48,8 +48,6 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
@@ -576,10 +574,6 @@
             />
           </div>
         {/if}
-
-        <div class="infobox-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
-        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -610,11 +604,6 @@
             </div>
           {/if}
         </div>
-
-        <div class="wiki-content-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-        </div>
-
         <!-- Market Prices Section -->
         {#if !activeEntity?.Properties?.IsUntradeable}
         <MarketPriceSection
@@ -642,17 +631,10 @@
     <div class="no-selection">
       <h2>{additional.type ? getTypeName(additional.type) + 's' : 'Consumables'}</h2>
       <p>Select a {additional.type ? getTypeName(additional.type).toLowerCase() : 'consumable'} from the list to view details.</p>
-      <div class="no-selection-ad">
-        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
-  .infobox-ad { margin-top: 12px; }
-  .wiki-content-ad { margin: 16px 0; }
-  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
-
   /* No page-specific styles - all shared rules are in style.css */
 </style>

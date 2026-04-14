@@ -7,10 +7,9 @@
   import Menu from "$lib/components/Menu.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
   import ConsentBanner from "$lib/components/ConsentBanner.svelte";
-  import SupportNotice from "$lib/components/SupportNotice.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
-  import { invalidateAll, afterNavigate } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
   import { decodeURIComponentSafe, copyToClipboard } from '$lib/util.js';
 
   let { data, children } = $props();
@@ -164,14 +163,6 @@
     }
   });
 
-  // Signal SPA navigation to AdSense auto ads engine so it re-scans the page
-  afterNavigate(() => {
-    try {
-      const adsbygoogle = /** @type {any} */ (window).adsbygoogle;
-      if (adsbygoogle) adsbygoogle.push({});
-    } catch { /* blocked or not loaded */ }
-  });
-
   onDestroy(() => {
     stopVerificationPoll();
     if (viewportDebounceTimer) {
@@ -237,7 +228,7 @@
   <link rel="manifest" href="/site.webmanifest">
   <link rel="alternate" type="application/rss+xml" title="Entropia Nexus" href="/feed.xml">
 </svelte:head>
-{#if !isEmbed}<Toasts /><ConsentBanner /><SupportNotice />{/if}
+{#if !isEmbed}<Toasts /><ConsentBanner />{/if}
 <div class="app-layout">
   {#if !isEmbed}
     <Menu user={data?.session?.user} realUser={data?.session?.realUser} />

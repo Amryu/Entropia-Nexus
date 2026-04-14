@@ -6,8 +6,6 @@
 <script>
   import '$lib/style.css';
   import MarketSearch from '$lib/components/MarketSearch.svelte';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   let { data } = $props();
 
   let featuredSections = $derived([
@@ -181,18 +179,9 @@
       {/each}
     </div>
   </section>
-
-  <div class="ad-placement">
-    <AdSlot adSlot="9076572564" adFormat="auto" />
-  </div>
 </div>
 
 <style>
-  .ad-placement {
-    max-width: 728px;
-    margin: 32px auto 0;
-  }
-
   .market-dashboard {
     max-width: 1200px;
     margin: 0 auto;

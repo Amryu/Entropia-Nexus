@@ -48,8 +48,6 @@
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
-  import AdSlot from '$lib/components/AdSlot.svelte';
-
   // Legacy components for data display
   import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
@@ -893,10 +891,6 @@
             </div>
           </div>
         {/if}
-
-        <div class="infobox-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={1} />
-        </div>
       </aside>
 
       <!-- Main content (center) -->
@@ -928,11 +922,6 @@
             </div>
           {/if}
         </div>
-
-        <div class="wiki-content-ad">
-          <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-        </div>
-
         <!-- Construction Section -->
         {#if activeEntity?.Materials?.length > 0 || $editMode}
           <DataSection
@@ -993,18 +982,11 @@
     <div class="no-selection">
       <h2>Blueprints</h2>
       <p>Select a blueprint from the list to view details.</p>
-      <div class="no-selection-ad">
-        <AdSlot adSlot="3560522008" adFormat="autorelaxed" matchedContentRows={1} matchedContentColumns={4} />
-      </div>
     </div>
   {/if}
 </WikiPage>
 
 <style>
-  .infobox-ad { margin-top: 12px; }
-  .wiki-content-ad { margin: 16px 0; }
-  .no-selection-ad { max-width: 728px; margin: 32px auto 0; }
-
   .stats-section.tier-1 .tier1-link {
     color: #f4e8e8;
     text-decoration: none;
