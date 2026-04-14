@@ -63,12 +63,10 @@
     height: planet.Height || 100000
   } : { x: 0, y: 0, width: 100000, height: 100000 });
 
-  // Get map image URL based on planet
-  let mapImageUrl = $derived(planet?.TechnicalName
-    ? `/maps/${planet.TechnicalName}.jpg`
-    : planet?.Name
-      ? `/maps/Planet_${planet.Name}.jpg`
-      : '/maps/Planet_Calypso.jpg');
+  // Get map image URL based on planet (matches Map.svelte / LocationMapEmbed format)
+  let mapImageUrl = $derived(planet?.Name
+    ? `/${planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}.jpg`
+    : '/calypso.jpg');
 
   // Compute bounds of all objectives for auto-centering
   let objectiveBounds = $derived((() => {
