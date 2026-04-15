@@ -93,7 +93,7 @@
         { value: 'Combat', label: 'Combat' },
         { value: 'Mindforce', label: 'Mindforce' },
         { value: 'Resource Collecting', label: 'Resource Collecting' },
-        { value: 'Manufacturing', label: 'Manufacturing' },
+        { value: 'Construction', label: 'Construction' },
         { value: 'Miscellaneous', label: 'Miscellaneous' },
       ]
     }
@@ -152,7 +152,7 @@
     { value: 'Combat', label: 'Combat' },
     { value: 'Mindforce', label: 'Mindforce' },
     { value: 'Resource Collecting', label: 'Resource Collecting' },
-    { value: 'Manufacturing', label: 'Manufacturing' },
+    { value: 'Construction', label: 'Construction' },
     { value: 'Miscellaneous', label: 'Miscellaneous' }
   ];
 

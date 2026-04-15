@@ -61,7 +61,7 @@ export async function load({ fetch, params, url, parent }) {
       apiCall(fetch, '/weapons').catch(() => [])
     ]);
     response.blueprintbooks = blueprintbooksList || [];
-    response.professions = (professionsList || []).filter(p => p.Category?.Name === 'Manufacturing');
+    response.professions = (professionsList || []).filter(p => p.Category?.Name === 'Construction');
     response.productItems = (itemsList || []).filter(i =>
       i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet'
     );

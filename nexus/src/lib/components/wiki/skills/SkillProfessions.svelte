@@ -22,7 +22,7 @@
     'Combat': '#ef4444',
     'Mindforce': '#a855f7',
     'Resource Collecting': '#22c55e',
-    'Manufacturing': '#f59e0b',
+    'Construction': '#f59e0b',
     'Miscellaneous': '#6b7280'
   };
 

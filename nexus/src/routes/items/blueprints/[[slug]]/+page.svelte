@@ -526,7 +526,7 @@
         { key: 'productItems', url: '/api/items' },
         { key: 'weaponItems', url: '/api/weapons' }
       ]).then(deps => {
-        deps.professions = (deps.professions || []).filter(p => p.Category?.Name === 'Manufacturing');
+        deps.professions = (deps.professions || []).filter(p => p.Category?.Name === 'Construction');
         deps.productItems = (deps.productItems || []).filter(i => i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet');
         data = { ...data, ...deps };
         editDepsLoading = false;
