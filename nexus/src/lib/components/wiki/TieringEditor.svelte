@@ -21,9 +21,10 @@
     matValues,
     getTierMaterial
   } from '$lib/tieringUtil.js';
-  import { editMode, updateField } from '$lib/stores/wikiEditState.js';
+  import { editMode, updateField, startEdit as startWikiEdit } from '$lib/stores/wikiEditState.js';
   import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup, deleteInventoryMarkup } from '$lib/markupSources.js';
   import MarkupSourceHelp from './MarkupSourceHelp.svelte';
+  import ContributeCTA from './ContributeCTA.svelte';
 
   
 
@@ -823,9 +824,11 @@
         </div>
       {/if}
     {:else}
-      <div class="no-materials">
-        No material information available for this tier.
-      </div>
+      <ContributeCTA
+        message="No material information recorded for this tier."
+        category="item"
+        onContribute={startWikiEdit}
+      />
     {/if}
 
     {#if !compact && currentTier}
@@ -1217,15 +1220,6 @@
     height: 14px;
     cursor: pointer;
     accent-color: var(--accent-color, #4a9eff);
-  }
-
-  .no-materials {
-    padding: 16px;
-    text-align: center;
-    color: var(--text-muted, #999);
-    font-size: 13px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 6px;
   }
 
   /* Current tier info */

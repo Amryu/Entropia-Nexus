@@ -7,7 +7,8 @@
 <script>
   // @ts-nocheck
   import { getTimeString } from '$lib/util';
-  import { editMode, updateField } from '$lib/stores/wikiEditState.js';
+  import { editMode, updateField, startEdit } from '$lib/stores/wikiEditState.js';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
   import SearchInput from './SearchInput.svelte';
   import CreateEffectDialog from './CreateEffectDialog.svelte';
 
@@ -321,7 +322,11 @@
         {/each}
       </ul>
     {:else}
-      <div class="no-effects">No effects</div>
+      <ContributeCTA
+        message="No effects recorded."
+        category="effect"
+        onContribute={startEdit}
+      />
     {/if}
   </div>
 {/if}
@@ -408,15 +413,6 @@
   .effect-duration {
     font-size: 12px;
     color: var(--text-muted, #999);
-  }
-
-  .no-effects {
-    padding: 8px;
-    text-align: center;
-    color: var(--text-muted, #999);
-    font-size: 14px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 4px;
   }
 
   /* Edit mode styles */

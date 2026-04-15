@@ -8,7 +8,8 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'profession');
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { hasVisibleText } from '$lib/sanitize.js';
 

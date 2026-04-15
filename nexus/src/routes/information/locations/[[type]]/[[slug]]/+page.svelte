@@ -7,7 +7,8 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'location');
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { hasVisibleText } from '$lib/sanitize.js';

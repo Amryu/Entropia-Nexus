@@ -5,14 +5,18 @@
 -->
 <script>
   // @ts-nocheck
+  import { getContext } from 'svelte';
   import {
     editMode,
     updateField,
     setFieldError,
     validationErrors,
     fieldWarnings,
-    getNestedValue
+    getNestedValue,
+    startEdit
   } from '$lib/stores/wikiEditState.js';
+  import MissingFieldCTA from './MissingFieldCTA.svelte';
+  import { isMissing } from './contributeCategories.js';
 
   
 
@@ -61,6 +65,8 @@
    * @property {string} [displayFormat]
    * @property {boolean} [editable]
    * @property {Function} [onchange]
+   * @property {string} [fieldLabel] - human label used for the contribute CTA when value is missing
+   * @property {boolean} [showContributeCTA] - opt out of the inline CTA for this field
    */
 
   /** @type {Props} */
@@ -80,8 +86,27 @@
     required = false,
     displayFormat = '',
     editable = undefined,
-    onchange
+    onchange,
+    fieldLabel = '',
+    showContributeCTA = true,
   } = $props();
+
+  // Page-level category comes from Svelte context so individual stat rows
+  // don't have to repeat it. Pages call setContext('wikiContributeCategory', ...).
+  const pageCategory = getContext('wikiContributeCategory') || null;
+
+  // Derive a human-readable field label from the path when no explicit label
+  // is supplied. "Properties.AttackRange" -> "Attack Range".
+  function prettifyPath(p) {
+    if (!p) return 'this field';
+    const last = String(p).split('.').pop().replace(/\[.*?\]/g, '');
+    return last
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/^./, (c) => c.toUpperCase());
+  }
+
+  let resolvedFieldLabel = $derived(fieldLabel || prettifyPath(path));
 
   // Internal state
   let inputEl = $state();
@@ -322,9 +347,17 @@
       {#if prefix}
         <span class="prefix">{prefix}</span>
       {/if}
-      <span class="value">{formatDisplayValue(value)}</span>
-      {#if suffix && value !== null && value !== undefined && value !== ''}
-        <span class="suffix">{suffix}</span>
+      {#if isMissing(value) && showContributeCTA && pageCategory}
+        <MissingFieldCTA
+          field={resolvedFieldLabel}
+          category={pageCategory}
+          onContribute={startEdit}
+        />
+      {:else}
+        <span class="value">{formatDisplayValue(value)}</span>
+        {#if suffix && value !== null && value !== undefined && value !== ''}
+          <span class="suffix">{suffix}</span>
+        {/if}
       {/if}
     </span>
   {/if}

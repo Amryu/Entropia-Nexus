@@ -5,6 +5,8 @@
 <script>
   // @ts-nocheck
   import { getItemLink } from '$lib/util';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
+  import ContributeCTA from './ContributeCTA.svelte';
 
   
 
@@ -94,13 +96,21 @@
             {/each}
           </div>
         {:else}
-          <div class="no-ingredients">No ingredients specified</div>
+          <ContributeCTA
+            message="No ingredients recorded for this recipe."
+            category="refining"
+            onContribute={startEdit}
+          />
         {/if}
       </div>
     {/each}
   </div>
 {:else if showEmpty}
-  <div class="no-recipes">No refining recipes available</div>
+  <ContributeCTA
+    message="No refining recipes recorded."
+    category="refining"
+    onContribute={startEdit}
+  />
 {/if}
 
 <style>
@@ -177,16 +187,6 @@
 
   .ingredient-name {
     color: var(--text-color);
-  }
-
-  .no-ingredients,
-  .no-recipes {
-    padding: 12px;
-    text-align: center;
-    color: var(--text-muted, #999);
-    font-size: 13px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 6px;
   }
 
   @media (max-width: 899px) {

@@ -8,7 +8,8 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'weapon');
   import { encodeURIComponentSafe, hasItemTag, clampDecimals, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { hasVisibleText } from '$lib/sanitize.js';
 
@@ -33,8 +34,10 @@
     setExistingPendingChange,
     setViewingPendingChange,
     updateField,
-    changeMetadata
+    changeMetadata,
+    startEdit
   } from '$lib/stores/wikiEditState.js';
+  import FieldValue from '$lib/components/wiki/FieldValue.svelte';
 
   // Weapon-specific components
   import DamageBreakdownGrid from '$lib/components/wiki/DamageBreakdownGrid.svelte';
@@ -1203,7 +1206,7 @@
                 {/if}
               </span>
             </div>
-            {#if skillInfo?.IsSiB && (skillIntervals?.hit?.min !== null || skillIntervals?.hit?.max !== null || $editMode)}
+            {#if skillInfo?.IsSiB}
               <div class="stat-row indent">
                 <span class="stat-label">Level Range</span>
                 <span class="stat-value">
@@ -1228,7 +1231,9 @@
                       />
                     </span>
                   {:else}
-                    {skillIntervals?.hit?.min ?? '?'} - {skillIntervals?.hit?.max ?? '?'}
+                    <FieldValue value={skillIntervals?.hit?.min} field="Min Level" category="weapon" compact onContribute={startEdit} />
+                    <span class="interval-sep">-</span>
+                    <FieldValue value={skillIntervals?.hit?.max} field="Max Level" category="weapon" compact onContribute={startEdit} />
                   {/if}
                 </span>
               </div>
@@ -1251,7 +1256,7 @@
                 {/if}
               </span>
             </div>
-            {#if skillInfo?.IsSiB && (skillIntervals?.dmg?.min !== null || skillIntervals?.dmg?.max !== null || $editMode)}
+            {#if skillInfo?.IsSiB}
               <div class="stat-row indent">
                 <span class="stat-label">Level Range</span>
                 <span class="stat-value">
@@ -1276,7 +1281,9 @@
                       />
                     </span>
                   {:else}
-                    {skillIntervals?.dmg?.min ?? '?'} - {skillIntervals?.dmg?.max ?? '?'}
+                    <FieldValue value={skillIntervals?.dmg?.min} field="Min Level" category="weapon" compact onContribute={startEdit} />
+                    <span class="interval-sep">-</span>
+                    <FieldValue value={skillIntervals?.dmg?.max} field="Max Level" category="weapon" compact onContribute={startEdit} />
                   {/if}
                 </span>
               </div>

@@ -10,7 +10,8 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'item');
   import { encodeURIComponentSafe, clampDecimals, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { hasVisibleText } from '$lib/sanitize.js';
 

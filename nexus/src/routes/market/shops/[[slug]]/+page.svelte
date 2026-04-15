@@ -11,7 +11,8 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'shop');
   import { encodeURIComponentSafe, apiCall, getLatestPendingUpdate } from '$lib/util';
   import { getWaypoint } from '$lib/mapUtil';
   import { hasVisibleText } from '$lib/sanitize.js';

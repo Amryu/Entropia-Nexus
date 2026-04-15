@@ -6,8 +6,9 @@
 -->
 <script>
   // @ts-nocheck
-  import { editMode } from '$lib/stores/wikiEditState.js';
+  import { editMode, startEdit } from '$lib/stores/wikiEditState.js';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
 
   
 
@@ -138,7 +139,11 @@
     {/if}
   </div>
 {:else}
-  <div class="no-damage">No damage data available</div>
+  <ContributeCTA
+    message="No damage data available."
+    category="weapon"
+    onContribute={startEdit}
+  />
 {/if}
 
 <style>
@@ -291,13 +296,6 @@
 
   .compact-total .compact-label {
     color: rgba(255, 255, 255, 0.8);
-  }
-
-  .no-damage {
-    padding: 12px;
-    text-align: center;
-    color: var(--text-muted, #999);
-    font-size: 14px;
   }
 
   /* Responsive: 2 columns on very narrow */

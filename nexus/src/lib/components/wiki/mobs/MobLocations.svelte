@@ -10,6 +10,8 @@
   import MapLinkButton from './MapLinkButton.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
   import { getMobAreaDifficulty, getWaypoint } from '$lib/mapUtil.js';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   /**
    * @typedef {Object} Props
@@ -155,7 +157,11 @@
 
 <div class="locations-table-container">
   {#if !mobSpawns || mobSpawns.length === 0}
-    <div class="no-data">No location data available.</div>
+    <ContributeCTA
+      message="No location data available."
+      category="mapping"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -187,10 +193,4 @@
     }
   }
 
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-  }
 </style>

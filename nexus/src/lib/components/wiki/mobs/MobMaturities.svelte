@@ -8,6 +8,8 @@
   import { tick, untrack } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { computeMobKillStats } from '$lib/utils/mobKillStats.js';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   /**
    * @typedef {Object} Props
@@ -324,7 +326,11 @@
 
 <div class="maturities-table-container" bind:this={tableContainer}>
   {#if !sortedMaturities || sortedMaturities.length === 0}
-    <div class="no-data">No maturity data available.</div>
+    <ContributeCTA
+      message="No maturity data available."
+      category="mob"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -373,12 +379,5 @@
 
   .maturities-table-container :global(.table-row.selected-row:hover) {
     background-color: rgba(74, 158, 255, 0.28);
-  }
-
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
   }
 </style>

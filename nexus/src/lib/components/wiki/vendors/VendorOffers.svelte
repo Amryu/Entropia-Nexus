@@ -7,6 +7,8 @@
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { clampDecimals, getItemLink, getTypeName } from '$lib/util';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   let { offers = [] } = $props();
 
@@ -105,7 +107,11 @@
 
 <div class="offers-table-container">
   {#if !offers || offers.length === 0}
-    <div class="no-data">This vendor has no offers.</div>
+    <ContributeCTA
+      message="No offers recorded for this vendor."
+      category="vendor"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -137,10 +143,4 @@
     }
   }
 
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-  }
 </style>

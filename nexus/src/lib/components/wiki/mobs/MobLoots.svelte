@@ -8,6 +8,8 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import '$lib/style.css';
   import { getItemLink } from '$lib/util';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   let { loots = [] } = $props();
 
@@ -92,7 +94,11 @@
 
 <div class="loots-table-container">
   {#if !sortedLoots || sortedLoots.length === 0}
-    <div class="no-data">No loot data available.</div>
+    <ContributeCTA
+      message="No loot data available."
+      category="mob"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -124,10 +130,4 @@
     }
   }
 
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-  }
 </style>

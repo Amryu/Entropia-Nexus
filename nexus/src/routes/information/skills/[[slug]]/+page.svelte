@@ -9,7 +9,8 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'skill');
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { hasVisibleText } from '$lib/sanitize.js';
 

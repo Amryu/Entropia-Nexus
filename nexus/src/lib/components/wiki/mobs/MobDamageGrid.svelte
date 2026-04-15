@@ -3,15 +3,18 @@
   Displays mob damage type breakdown as bars.
 -->
 <script>
-  
+  // @ts-nocheck
+  import MissingFieldCTA from '$lib/components/wiki/MissingFieldCTA.svelte';
+
   /**
    * @typedef {Object} Props
    * @property {any} [damageSpread]
    * @property {string} [label]
+   * @property {(() => void) | null} [onContribute]
    */
 
   /** @type {Props} */
-  let { damageSpread = null, label = '' } = $props();
+  let { damageSpread = null, label = '', onContribute = null } = $props();
 
   const damageTypes = [
     { key: 'Impact', color: 'var(--damage-impact)' },
@@ -40,7 +43,9 @@
 
 <div class="damage-grid">
   {#if activeDamage.length === 0}
-    <div class="no-damage">No damage data</div>
+    <div class="no-damage">
+      No damage data{#if onContribute}&nbsp;<MissingFieldCTA field="damage types" category="mob" compact onContribute={onContribute} />{/if}
+    </div>
   {:else}
     {#each activeDamage as damage}
       {@const value = damageSpread[damage.key] || 0}

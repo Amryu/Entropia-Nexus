@@ -7,7 +7,9 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'mission');
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter, getWaypoint } from '$lib/mapUtil';
   import { hasVisibleText } from '$lib/sanitize.js';
@@ -35,7 +37,8 @@
     viewingPendingChange,
     setExistingPendingChange,
     setViewingPendingChange,
-    updateField
+    updateField,
+    startEdit
   } from '$lib/stores/wikiEditState.js';
   let { data = $bindable() } = $props();
 
@@ -1455,6 +1458,16 @@
           {@const hasRewardChoices = rewards.Items?.length > 0 && rewards.Items[0]?.Items !== undefined}
           {@const rewardPackages = hasRewardChoices ? rewards.Items : [rewards]}
           {@const hasAnyRewards = rewardPackages.some(pkg => (pkg?.Items?.length || 0) + (pkg?.Skills?.length || 0) + (pkg?.Unlocks?.length || 0) > 0)}
+          {#if !hasAnyRewards && !$editMode}
+            <div class="stats-section rewards-section">
+              <h4 class="section-title">Rewards</h4>
+              <ContributeCTA
+                message="No rewards recorded for this mission."
+                category="mission"
+                onContribute={startEdit}
+              />
+            </div>
+          {/if}
           {#if hasAnyRewards && !$editMode}
             <div class="stats-section rewards-section">
               <h4 class="section-title">Rewards</h4>
@@ -1650,13 +1663,21 @@
                         {/each}
                       </ul>
                     {:else}
-                      <div class="empty-text">No objectives defined.</div>
+                      <ContributeCTA
+                        message="No objectives defined."
+                        category="mission"
+                        onContribute={startEdit}
+                      />
                     {/if}
                   </div>
                 {/each}
               </div>
             {:else}
-              <div class="empty-text">No steps yet.</div>
+              <ContributeCTA
+                message="No steps recorded for this mission."
+                category="mission"
+                onContribute={startEdit}
+              />
             {/if}
           </DataSection>
 

@@ -7,6 +7,8 @@
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   let { unlocks = [] } = $props();
 
@@ -50,7 +52,11 @@
 
 <div class="unlocks-table-container">
   {#if !sortedUnlocks || sortedUnlocks.length === 0}
-    <div class="no-data">This profession does not unlock any skills.</div>
+    <ContributeCTA
+      message="No unlock data recorded for this profession."
+      category="profession"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -82,10 +88,4 @@
     }
   }
 
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-  }
 </style>

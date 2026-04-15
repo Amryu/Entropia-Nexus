@@ -10,10 +10,11 @@
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import { clampDecimals, getItemLink } from '$lib/util';
-  import { editMode, updateField } from '$lib/stores/wikiEditState.js';
+  import { editMode, updateField, startEdit as startWikiEdit } from '$lib/stores/wikiEditState.js';
   import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices, saveInventoryMarkup, deleteInventoryMarkup } from '$lib/markupSources.js';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import MarkupSourceHelp from './MarkupSourceHelp.svelte';
+  import ContributeCTA from './ContributeCTA.svelte';
   import '$lib/style.css';
 
   
@@ -484,9 +485,11 @@
     </div>
   </div>
 {:else}
-  <div class="no-materials">
-    <span class="text-muted">No materials defined</span>
-  </div>
+  <ContributeCTA
+    message="No materials recorded for this blueprint."
+    category="blueprint"
+    onContribute={startWikiEdit}
+  />
 {/if}
 
 <style>
@@ -857,14 +860,6 @@
 
   .product-link:hover {
     text-decoration: underline;
-  }
-
-  .no-materials {
-    padding: 16px;
-    text-align: center;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 6px;
   }
 
   .text-muted {

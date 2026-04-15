@@ -7,6 +7,8 @@
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   let { skills = [] } = $props();
 
@@ -74,7 +76,11 @@
 
 <div class="skills-table-container">
   {#if !sortedSkills || sortedSkills.length === 0}
-    <div class="no-data">No skill component data available.</div>
+    <ContributeCTA
+      message="No skill component data available."
+      category="profession"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -108,10 +114,4 @@
     }
   }
 
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-  }
 </style>

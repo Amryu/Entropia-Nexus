@@ -9,7 +9,8 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onMount, onDestroy, tick, untrack } from 'svelte';
+  import { onMount, onDestroy, tick, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'mob');
   import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps, hasItemTag } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { hasVisibleText } from '$lib/sanitize.js';
@@ -61,8 +62,11 @@
     viewingPendingChange,
     setExistingPendingChange,
     setViewingPendingChange,
-    updateField
+    updateField,
+    startEdit
   } from '$lib/stores/wikiEditState';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import FieldValue from '$lib/components/wiki/FieldValue.svelte';
   let { data = $bindable() } = $props();
 
   // Lazy-load edit dependencies when edit mode activates
@@ -1522,12 +1526,17 @@
                   <MobDamageGrid
                     damageSpread={group.damageSpread}
                     label={attack.groups.length === 1 && !matLabel ? attack.name : `${attack.name}${matLabel ? ` (${matLabel})` : ''}`}
+                    onContribute={startEdit}
                   />
                 {/each}
               {/if}
             {/each}
             {#if !primaryDamageGroups && !secondaryDamageGroups && !tertiaryDamageGroups}
-              <div class="no-data">No damage data available</div>
+              <ContributeCTA
+                message="No damage data available."
+                category="mob"
+                onContribute={startEdit}
+              />
             {/if}
           </div>
         {/if}

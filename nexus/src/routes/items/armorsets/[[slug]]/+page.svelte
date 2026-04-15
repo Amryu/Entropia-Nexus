@@ -15,7 +15,8 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack, setContext } from 'svelte';
+  setContext('wikiContributeCategory', 'armor');
   import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { hasVisibleText } from '$lib/sanitize.js';
 

@@ -7,6 +7,8 @@
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
+  import ContributeCTA from '$lib/components/wiki/ContributeCTA.svelte';
+  import { startEdit } from '$lib/stores/wikiEditState.js';
 
   let { unlocks = [] } = $props();
 
@@ -37,7 +39,11 @@
 
 <div class="unlocks-table-container">
   {#if !sortedUnlocks || sortedUnlocks.length === 0}
-    <div class="no-data">This skill is not unlocked by any profession (always available).</div>
+    <ContributeCTA
+      message="No unlock sources recorded - this skill is either always available or the data is missing."
+      category="skill"
+      onContribute={startEdit}
+    />
   {:else}
     <FancyTable
       {columns}
@@ -69,10 +75,4 @@
     }
   }
 
-  .no-data {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    padding: 20px;
-    text-align: center;
-  }
 </style>
