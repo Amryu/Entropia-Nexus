@@ -431,7 +431,7 @@ UNION ALL
  SELECT ("ArmorPlatings"."Id" + 500000) AS "Id", "ArmorPlatings"."Name", "ArmorPlatings"."MaxTT", "ArmorPlatings"."Weight", 'ArmorPlating'::text AS "Type"
    FROM ONLY "ArmorPlatings"
 UNION ALL
- SELECT ("Enhancers"."Id" + 600000) AS "Id", "Enhancers"."Name", "Enhancers"."MaxTT", "Enhancers"."Weight", 'Enhancer'::text AS "Type"
+ SELECT ("Enhancers"."Id" + 600000) AS "Id", "Enhancers"."Name", "Enhancers"."Value" AS "MaxTT", "Enhancers"."Weight", 'Enhancer'::text AS "Type"
    FROM ONLY "Enhancers"
 UNION ALL
  SELECT ("MindforceImplants"."Id" + 700000) AS "Id", "MindforceImplants"."Name", "MindforceImplants"."MaxTT", "MindforceImplants"."Weight", 'MindforceImplant'::text AS "Type"
