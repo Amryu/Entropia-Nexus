@@ -368,12 +368,15 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
   const armorPieces = armorSlots.map(slot => findByName(entities.armors, loadout?.Gear?.Armor?.[slot]?.Name));
   const platePieces = armorSlots.map(slot => findByName(entities.armorPlatings, loadout?.Gear?.Armor?.[slot]?.Plate?.Name));
 
-  const totalDamage = LoadoutCalc.calculateTotalDamage(
+  const damagePerType = LoadoutCalc.calculateDamagePerType(
     weapon,
     loadout?.Gear?.Weapon?.Enhancers?.Damage ?? 0,
     offensiveTotals.damage ?? 0,
     amplifier
   );
+  const totalDamage = damagePerType != null
+    ? LoadoutCalc.DAMAGE_TYPES.reduce((sum, t) => sum + damagePerType[t], 0)
+    : null;
 
   const critAbility = LoadoutCalc.calculateCritAbility(
     weapon,
@@ -574,6 +577,7 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
     stats: {
       isMiningWeapon,
       totalDamage,
+      damagePerType,
       effectiveDamage,
       damageInterval,
       hitAbility,

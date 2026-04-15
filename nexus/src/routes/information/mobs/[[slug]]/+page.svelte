@@ -45,6 +45,7 @@
   // Loadout evaluation (for cost-to-kill columns)
   import { browser } from '$app/environment';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator.js';
+  import { computeMobKillStats } from '$lib/utils/mobKillStats.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader.js';
   import { buildEvalContext, getLoadoutDisplayName } from '$lib/utils/loadoutContext.js';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects.js';
@@ -304,7 +305,12 @@
         loadoutStats = {
           dpp: s.dpp ?? 0,
           effectiveDamage: s.effectiveDamage ?? 0,
-          reload: s.reload ?? 0
+          reload: s.reload ?? 0,
+          damageInterval: s.damageInterval ?? null,
+          critChance: s.critChance ?? null,
+          critDamage: s.critDamage ?? null,
+          hitAbility: s.hitAbility ?? null,
+          damagePerType: s.damagePerType ?? null
         };
       } else {
         loadoutStats = null;
@@ -413,16 +419,10 @@
         const primaryAttack = maturity?.Attacks?.find(a => a.Name === 'Primary') || maturity?.Attacks?.[0];
         const secondaryAttack = maturity?.Attacks?.find(a => a.Name === 'Secondary') || maturity?.Attacks?.[1];
         const tertiaryAttack = maturity?.Attacks?.find(a => a.Name === 'Tertiary') || maturity?.Attacks?.[2];
-        // Loadout kill stats
-        let costToKill = null, shotsToKill = null, timeToKill = null;
-        if (loadoutStats && hp != null) {
-          const { dpp, effectiveDamage, reload } = loadoutStats;
-          if (effectiveDamage > 0) {
-            shotsToKill = hp / effectiveDamage;
-            if (reload > 0) timeToKill = Math.max(0, shotsToKill - 1) * reload;
-          }
-          if (dpp > 0) costToKill = (hp / dpp) / 100;
-        }
+        const killStats = computeMobKillStats({ loadoutStats, maturity });
+        const shotsToKill = killStats.shots;
+        const costToKill = killStats.cost;
+        const timeToKill = killStats.time;
 
         return {
           Id: maturityId,

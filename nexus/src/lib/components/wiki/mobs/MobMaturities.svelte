@@ -7,6 +7,7 @@
   // @ts-nocheck
   import { tick, untrack } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import { computeMobKillStats } from '$lib/utils/mobKillStats.js';
 
   /**
    * @typedef {Object} Props
@@ -153,22 +154,10 @@
 
     // Loadout-based kill stats
     const hp = maturity.Properties?.Health;
-    let costToKill = null;
-    let shotsToKill = null;
-    let timeToKill = null;
-
-    if (loadoutStats && hp != null) {
-      const { dpp, effectiveDamage, reload } = loadoutStats;
-      if (effectiveDamage > 0) {
-        shotsToKill = hp / effectiveDamage;
-        if (reload > 0) {
-          timeToKill = Math.max(0, shotsToKill - 1) * reload;
-        }
-      }
-      if (dpp > 0) {
-        costToKill = (hp / dpp) / 100; // PEC → PED
-      }
-    }
+    const killStats = computeMobKillStats({ loadoutStats, maturity });
+    const shotsToKill = killStats.shots;
+    const costToKill = killStats.cost;
+    const timeToKill = killStats.time;
 
     return {
       id: maturity?.Id ?? null,

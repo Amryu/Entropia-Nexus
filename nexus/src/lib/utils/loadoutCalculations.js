@@ -22,41 +22,55 @@ function weightedAverage(weightA, valueA, weightB, valueB) {
 
 // ========== Weapon Damage Calculations ==========
 
-export function calculateTotalDamage(weapon, damageEnhancers, bonusDamagePercent, amplifier) {
-  if (weapon == null) return null;
+export const DAMAGE_TYPES = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
 
-  const baseDamage = (weapon.Properties?.Damage?.Impact
-    + weapon.Properties?.Damage?.Cut
-    + weapon.Properties?.Damage?.Stab
-    + weapon.Properties?.Damage?.Penetration
-    + weapon.Properties?.Damage?.Shrapnel
-    + weapon.Properties?.Damage?.Burn
-    + weapon.Properties?.Damage?.Cold
-    + weapon.Properties?.Damage?.Acid
-    + weapon.Properties?.Damage?.Electric) || null;
-
-  if (baseDamage == null) return null;
-
-  let totalDamage = baseDamage;
-  totalDamage *= 1 + (damageEnhancers * 0.1);
-
-  if (amplifier != null) {
-    const amplifierDamage = (amplifier.Properties?.Damage?.Impact
-      + amplifier.Properties?.Damage?.Cut
-      + amplifier.Properties?.Damage?.Stab
-      + amplifier.Properties?.Damage?.Penetration
-      + amplifier.Properties?.Damage?.Shrapnel
-      + amplifier.Properties?.Damage?.Burn
-      + amplifier.Properties?.Damage?.Cold
-      + amplifier.Properties?.Damage?.Acid
-      + amplifier.Properties?.Damage?.Electric) || null;
-    
-    if (amplifierDamage != null) {
-      totalDamage += Math.min(baseDamage / 2, amplifierDamage);
+function sumDamageTypes(source) {
+  if (source == null) return null;
+  let total = 0;
+  let any = false;
+  for (const type of DAMAGE_TYPES) {
+    const v = source[type];
+    if (v != null) {
+      total += v;
+      any = true;
     }
   }
+  return any ? total : null;
+}
 
-  return totalDamage * (1 + (bonusDamagePercent ?? 0) / 100);
+export function calculateDamagePerType(weapon, damageEnhancers, bonusDamagePercent, amplifier) {
+  if (weapon == null) return null;
+
+  const baseSource = weapon.Properties?.Damage;
+  if (baseSource == null) return null;
+
+  const baseTotal = sumDamageTypes(baseSource);
+  if (baseTotal == null) return null;
+
+  const enhancerMultiplier = 1 + (damageEnhancers * 0.1);
+  const bonusMultiplier = 1 + (bonusDamagePercent ?? 0) / 100;
+
+  // Amplifier contribution: total is capped at baseTotal/2, distributed proportionally across the amp's types.
+  const ampSource = amplifier?.Properties?.Damage;
+  const ampTotalRaw = sumDamageTypes(ampSource);
+  const ampTotalEffective = ampTotalRaw != null ? Math.min(baseTotal / 2, ampTotalRaw) : 0;
+  const ampScale = ampTotalRaw != null && ampTotalRaw > 0 ? ampTotalEffective / ampTotalRaw : 0;
+
+  const result = {};
+  for (const type of DAMAGE_TYPES) {
+    const base = baseSource[type] ?? 0;
+    const amp = ampSource?.[type] != null ? ampSource[type] * ampScale : 0;
+    result[type] = (base * enhancerMultiplier + amp) * bonusMultiplier;
+  }
+  return result;
+}
+
+export function calculateTotalDamage(weapon, damageEnhancers, bonusDamagePercent, amplifier) {
+  const perType = calculateDamagePerType(weapon, damageEnhancers, bonusDamagePercent, amplifier);
+  if (perType == null) return null;
+  let total = 0;
+  for (const type of DAMAGE_TYPES) total += perType[type];
+  return total;
 }
 
 export function calculateDamageInterval(weapon, dmgSkill, skillModEnhancers, totalDamage) {
