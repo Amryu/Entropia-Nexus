@@ -533,112 +533,63 @@
 </WikiPage>
 
 <style>
-  .layout-a {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: var(--space-lg, 24px);
-  }
-  .wiki-infobox-float {
-    grid-column: 2;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md, 16px);
-  }
-  .wiki-article {
-    grid-column: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md, 16px);
-  }
-  .stats-section {
-    background: var(--surface-card, #1e2530);
-    border: 1px solid var(--border-subtle, #2a3340);
-    border-radius: var(--radius-md, 8px);
-    padding: var(--space-md, 16px);
-  }
-  .infobox-header {
-    text-align: center;
-    padding: var(--space-md, 16px);
-    background: var(--surface-card, #1e2530);
-    border-radius: var(--radius-md, 8px);
-  }
-  .infobox-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
-  .infobox-subtitle {
-    margin-top: var(--space-xs, 4px);
-    display: flex;
-    justify-content: center;
-    gap: var(--space-xs, 4px);
-    flex-wrap: wrap;
-  }
-  .category-badge {
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    background: var(--surface-accent, #2a3340);
-    border-radius: 999px;
-  }
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-  }
-  .stat-label {
-    color: var(--text-muted, #8a95a5);
-  }
-  .stat-value-block {
+  /*
+   * Wiki layout classes (.layout-a, .wiki-infobox-float, .wiki-article,
+   * .stats-section, .infobox-header/-title/-subtitle, .stat-row/-label/
+   * -value, .section-title, .category-badge) are defined globally in
+   * $lib/style.css and shared with profession/skill/mob pages. Only
+   * page-specific additions live here.
+   */
+
+  /* Block-level stat-value cell for embedded SearchInputs */
+  :global(.stat-value.stat-value-block) {
     width: 100%;
   }
-  .section-title {
-    margin: 0 0 var(--space-sm, 8px) 0;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    color: var(--text-muted, #8a95a5);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
+
+  /* "existing" / "new" badge next to the Species section title */
   .species-state {
-    font-size: 0.65rem;
+    font-size: 10px;
     padding: 2px 6px;
     border-radius: 999px;
-    background: var(--surface-accent, #2a3340);
+    background-color: var(--bg-color, var(--primary-color));
+    color: var(--text-muted, #999);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    margin-left: 8px;
   }
+
+  /* Toggle grid for rod-type / planet multi-select */
   .toggle-group {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-xs, 4px);
-  }
-  .toggle {
-    padding: 6px 12px;
-    border: 1px solid var(--border-subtle, #2a3340);
-    background: var(--surface-card, #1e2530);
-    color: var(--text-primary, #e6ebf0);
-    border-radius: var(--radius-sm, 4px);
-    cursor: pointer;
-  }
-  .toggle.active {
-    background: var(--accent-primary, #3b82f6);
-    border-color: var(--accent-primary, #3b82f6);
-    color: white;
-  }
-  .muted {
-    color: var(--text-muted, #8a95a5);
-    font-style: italic;
+    gap: 6px;
   }
 
-  @media (max-width: 960px) {
-    .layout-a {
-      grid-template-columns: 1fr;
-    }
-    .wiki-infobox-float {
-      grid-column: 1;
-    }
-    .wiki-article {
-      grid-column: 1;
-    }
+  .toggle {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color, #555);
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+
+  .toggle:hover {
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .toggle.active {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  /* Empty-state message in article sections */
+  .muted {
+    color: var(--text-muted, #999);
+    font-style: italic;
+    margin: 0;
   }
 </style>
