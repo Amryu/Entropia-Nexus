@@ -612,7 +612,7 @@
                 <h5 class="group-title">Combat</h5>
                 <div class="field-grid">
                   <label class="field">
-                    <span class="field-label">Regen Interval</span>
+                    <span class="field-label">Regen Interval (s)</span>
                     <input
                       type="number"
                       value={maturity.Properties?.RegenerationInterval ?? ''}
@@ -622,17 +622,18 @@
                     />
                   </label>
                   <label class="field">
-                    <span class="field-label">Regen Amount</span>
+                    <span class="field-label">Regen Amount (HP)</span>
                     <input
                       type="number"
                       value={maturity.Properties?.RegenerationAmount ?? ''}
                       oninput={(e) => updateMaturityField(matIndex, 'Properties.RegenerationAmount', e.target.value ? parseFloat(e.target.value) : null)}
                       step="0.1"
                       min="0"
+                      max="100"
                     />
                   </label>
                   <label class="field">
-                    <span class="field-label">Miss Chance</span>
+                    <span class="field-label">Miss Chance (%)</span>
                     <input
                       type="number"
                       value={maturity.Properties?.MissChance ?? ''}
