@@ -763,6 +763,54 @@
               <span class="stat-label">Type</span>
               <span class="stat-value">{activeEntity?.Properties?.Type || 'N/A'}</span>
             </div>
+
+          <!-- Fishing reels: Strength, Speed -->
+          {:else if additional.type === 'fishingreels'}
+            <div class="stat-row primary">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">{activeEntity?.Properties?.Strength != null ? clampDecimals(activeEntity.Properties.Strength, 0, 2) : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Speed</span>
+              <span class="stat-value">{activeEntity?.Properties?.Speed != null ? clampDecimals(activeEntity.Properties.Speed, 0, 2) : 'N/A'}</span>
+            </div>
+
+          <!-- Fishing blanks: Strength, Flexibility -->
+          {:else if additional.type === 'fishingblanks'}
+            <div class="stat-row primary">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">{activeEntity?.Properties?.Strength != null ? clampDecimals(activeEntity.Properties.Strength, 0, 2) : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Flexibility</span>
+              <span class="stat-value">{activeEntity?.Properties?.Flexibility != null ? clampDecimals(activeEntity.Properties.Flexibility, 0, 2) : 'N/A'}</span>
+            </div>
+
+          <!-- Fishing lines: Flexibility, Strength, Length -->
+          {:else if additional.type === 'fishinglines'}
+            <div class="stat-row primary">
+              <span class="stat-label">Flexibility</span>
+              <span class="stat-value">{activeEntity?.Properties?.Flexibility != null ? clampDecimals(activeEntity.Properties.Flexibility, 0, 2) : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">{activeEntity?.Properties?.Strength != null ? clampDecimals(activeEntity.Properties.Strength, 0, 2) : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Length</span>
+              <span class="stat-value">{activeEntity?.Properties?.Length != null ? `${clampDecimals(activeEntity.Properties.Length, 0, 2)}m` : 'N/A'}</span>
+            </div>
+
+          <!-- Fishing lures: Depth, Quality -->
+          {:else if additional.type === 'fishinglures'}
+            <div class="stat-row primary">
+              <span class="stat-label">Depth</span>
+              <span class="stat-value">{activeEntity?.Properties?.Depth != null ? `${clampDecimals(activeEntity.Properties.Depth, 0, 2)}m` : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Quality</span>
+              <span class="stat-value">{activeEntity?.Properties?.Quality != null ? clampDecimals(activeEntity.Properties.Quality, 0, 2) : 'N/A'}</span>
+            </div>
           {/if}
         </div>
 

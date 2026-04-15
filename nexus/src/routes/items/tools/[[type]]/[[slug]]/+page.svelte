@@ -736,6 +736,19 @@
               <span class="stat-label">Cost/Use</span>
               <span class="stat-value">{cost != null ? `${cost.toFixed(2)} PEC` : 'N/A'}</span>
             </div>
+          {:else if additional.type === 'fishingrods'}
+            <div class="stat-row primary">
+              <span class="stat-label">Rod Type</span>
+              <span class="stat-value">{activeEntity?.Properties?.RodType || 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">{activeEntity?.Properties?.Strength != null ? clampDecimals(activeEntity.Properties.Strength, 0, 2) : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Flexibility</span>
+              <span class="stat-value">{activeEntity?.Properties?.Flexibility != null ? clampDecimals(activeEntity.Properties.Flexibility, 0, 2) : 'N/A'}</span>
+            </div>
           {:else}
             <!-- misctools -->
             <div class="stat-row primary">
