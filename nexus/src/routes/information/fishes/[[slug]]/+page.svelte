@@ -569,8 +569,17 @@
         </div>
       </aside>
 
-      <!-- Main article: description only -->
+      <!-- Main article: title + description -->
       <article class="wiki-article">
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Fish Name"
+          />
+        </h1>
+
         <DataSection title="Description" expanded={true}>
           {#if $editMode}
             <RichTextEditor
