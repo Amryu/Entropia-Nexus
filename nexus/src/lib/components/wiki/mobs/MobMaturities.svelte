@@ -160,9 +160,9 @@
     if (loadoutStats && hp != null) {
       const { dpp, effectiveDamage, reload } = loadoutStats;
       if (effectiveDamage > 0) {
-        shotsToKill = Math.ceil(hp / effectiveDamage);
+        shotsToKill = hp / effectiveDamage;
         if (reload > 0) {
-          timeToKill = (shotsToKill - 1) * reload;
+          timeToKill = Math.max(0, shotsToKill - 1) * reload;
         }
       }
       if (dpp > 0) {
@@ -314,7 +314,7 @@
       header: 'Shots/kill',
       sortable: true,
       formatter: (value) => value != null
-        ? `<span style="font-family: monospace;">${value}</span>`
+        ? `<span style="font-family: monospace;">${value.toFixed(2)}</span>`
         : 'N/A'
     },
     {
