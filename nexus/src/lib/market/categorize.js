@@ -68,10 +68,12 @@ export function categorizeItems(items, {
       categorized._unlisted.push(item);
     } else if (type === 'capsule') {
       categorizeConsumable(item, categorized.consumables);
-    } else if (type === 'material') {
-      // Base items have Properties.Type = 'Material'; detailed materials pass handles sub-types (Deed/Token/Share → financial)
+    } else if (type === 'material' || type === 'fish') {
+      // Base items have Properties.Type = 'Material' or 'Fish' (fishes are
+      // materials promoted by the Items view); detailed materials pass
+      // handles sub-types (Deed/Token/Share → financial).
       if (!hasMaterials) categorizeMaterial(item, categorized.materials);
-    } else if (type === 'consumable') {
+    } else if (type === 'consumable' || type === 'food') {
       categorizeConsumable(item, categorized.consumables);
     } else if (type === 'vehicle') {
       // Prefer detailed Vehicles dataset when available to use the new Vehicle Type
@@ -552,7 +554,9 @@ const ITEM_TYPE_CATEGORY_MAP = {
   'Blueprint': 'Blueprints',
   'Capsule': 'Consumables',
   'Material': 'Materials',
+  'Fish': 'Materials',
   'Consumable': 'Consumables',
+  'Food': 'Consumables',
   'Vehicle': 'Vehicles',
   'Pet': 'Pets',
   'SkillImplant': 'Skill Implants',
@@ -560,7 +564,12 @@ const ITEM_TYPE_CATEGORY_MAP = {
   'Decoration': 'Furnishings',
   'StorageContainer': 'Furnishings',
   'Sign': 'Furnishings',
-  'Strongbox': 'Strongboxes'
+  'Strongbox': 'Strongboxes',
+  'FishingRod': 'Tools',
+  'FishingReel': 'Attachments',
+  'FishingBlank': 'Attachments',
+  'FishingLine': 'Attachments',
+  'FishingLure': 'Attachments'
 };
 
 /**

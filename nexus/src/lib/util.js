@@ -225,6 +225,24 @@ export function getTypeLink(name, type, subType = null, id = null) {
       return `/items/attachments/enhancers/${encodeURIComponentSafe(name)}`;
     case 'MindforceImplant':
       return `/items/attachments/mindforceimplants/${encodeURIComponentSafe(name)}`;
+    case 'FishingRod':
+      return `/items/tools/fishingrods/${encodeURIComponentSafe(name)}`;
+    case 'FishingReel':
+      return `/items/attachments/fishingreels/${encodeURIComponentSafe(name)}`;
+    case 'FishingBlank':
+      return `/items/attachments/fishingblanks/${encodeURIComponentSafe(name)}`;
+    case 'FishingLine':
+      return `/items/attachments/fishinglines/${encodeURIComponentSafe(name)}`;
+    case 'FishingLure':
+      return `/items/attachments/fishinglures/${encodeURIComponentSafe(name)}`;
+    case 'Fish':
+      // Fish items surface as Type='Fish' in the Items view; route to the
+      // Information page, not an items page.
+      return `/information/fishes/${encodeURIComponentSafe(name)}`;
+    case 'Food':
+      // Food is stored in Consumables with Type='Food'; still uses the
+      // consumables stimulants route.
+      return `/items/consumables/stimulants/${encodeURIComponentSafe(name)}`;
     case 'Mob':
       return `/information/mobs/${encodeURIComponentSafe(name)}`;
     case 'MobMaturity':

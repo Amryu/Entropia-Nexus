@@ -49,7 +49,7 @@ const audit = require('./audit');
 const entitychanges = require('./entitychanges');
 const recurringevents = require('./recurringevents');
 // Newly added (migration phase 3)
-let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspecies, mobs;
+let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspecies, mobs, fish, fishingrods, fishingreels, fishingblanks, fishinglines, fishinglures;
 try { absorbers = require('./absorbers'); } catch {}
 try { misctools = require('./misctools'); } catch {}
 try { signs = require('./signs'); } catch {}
@@ -65,6 +65,12 @@ try { mobloots = require('./mobloots'); } catch {}
 try { mobmaturities = require('./mobmaturities'); } catch {}
 try { mobspecies = require('./mobspecies'); } catch {}
 try { mobs = require('./mobs'); } catch {}
+try { fish = require('./fish'); } catch {}
+try { fishingrods = require('./fishingrods'); } catch {}
+try { fishingreels = require('./fishingreels'); } catch {}
+try { fishingblanks = require('./fishingblanks'); } catch {}
+try { fishinglines = require('./fishinglines'); } catch {}
+try { fishinglures = require('./fishinglures'); } catch {}
 
 function registerAll(app){
   // Order can matter for overlapping paths; keep generic last
@@ -134,6 +140,12 @@ function registerAll(app){
   mobmaturities?.register(app);
   mobspecies?.register(app);
   mobs?.register(app);
+  fish?.register(app);
+  fishingrods?.register(app);
+  fishingreels?.register(app);
+  fishingblanks?.register(app);
+  fishinglines?.register(app);
+  fishinglures?.register(app);
 }
 
 module.exports = { registerAll };

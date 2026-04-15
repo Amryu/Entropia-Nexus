@@ -15,6 +15,7 @@ const idOffsets = {
   MedicalChips:             4800000,
   TeleportationChips:       4810000,
   EffectChips:              4820000,
+  FishingRods:              4900000,
   Attachments:              5000000,
   WeaponAmplifiers:         5100000,
   WeaponVisionAttachments:  5200000,
@@ -23,6 +24,10 @@ const idOffsets = {
   ArmorPlatings:            5500000,
   Enhancers:                5600000,
   MindforceImplants:        5700000,
+  FishingReels:             5800000,
+  FishingBlanks:            5810000,
+  FishingLines:             5820000,
+  FishingLures:             5830000,
   Blueprints:               6000000,
   Vehicles:                 7000000,
   Clothings:                8000000,
@@ -36,6 +41,8 @@ const idOffsets = {
   Pets:                     11000000,
   Strongboxes:              12000000,
   ArmorSets:                13000000,
+  // Food shares the Consumables table; rows with Consumables.Type='Food'
+  // surface as Items.Type='Food' via the Items VIEW. No separate offset.
 
   equipSet:                 100000,
 };
@@ -45,13 +52,15 @@ const idOffsets = {
 const ITEM_TABLES = [
   // Direct in Items VIEW
   'Materials', 'Weapons', 'Armors', 'Blueprints', 'Vehicles', 'Clothes',
-  'Consumables', 'CreatureControlCapsules', 'Pets',
+  'Consumables', 'CreatureControlCapsules', 'Pets', 'Fish',
   // Tools VIEW
   'MedicalTools', 'MiscTools', 'Refiners', 'Scanners', 'Finders', 'Excavators',
   'BlueprintBooks', 'MedicalChips', 'TeleportationChips', 'EffectChips',
+  'FishingRods',
   // Attachments VIEW
   'WeaponAmplifiers', 'WeaponVisionAttachments', 'Absorbers', 'FinderAmplifiers',
   'ArmorPlatings', 'Enhancers', 'MindforceImplants',
+  'FishingReels', 'FishingBlanks', 'FishingLines', 'FishingLures',
   // Furnishings VIEW
   'Furniture', 'Decorations', 'StorageContainers', 'Signs',
 ];
@@ -94,6 +103,12 @@ const TABLE_TO_ENTITY_TYPE = {
   Mobs:                     'Mob',
   Skills:                   'Skill',
   Professions:              'Profession',
+  FishingRods:              'FishingRod',
+  FishingReels:             'FishingReel',
+  FishingBlanks:            'FishingBlank',
+  FishingLines:             'FishingLine',
+  FishingLures:             'FishingLure',
+  Fish:                     'Fish',
 };
 
 // Blueprint drop category mapping

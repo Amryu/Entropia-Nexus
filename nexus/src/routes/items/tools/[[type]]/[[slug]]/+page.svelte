@@ -134,7 +134,8 @@
     { label: 'Excavators', title: 'Excavators', type: 'excavators' },
     { label: 'TP Chips', title: 'Teleportation Chips', type: 'teleportationchips' },
     { label: 'Effect Chips', title: 'Effect Chips', type: 'effectchips' },
-    { label: 'Misc. Tools', title: 'Misc. Tools', type: 'misctools' }
+    { label: 'Misc. Tools', title: 'Misc. Tools', type: 'misctools' },
+    { label: 'Fishing Rods', title: 'Fishing Rods', type: 'fishingrods' }
   ];
 
   // When misctools profession is cleared, also clear skill fields
@@ -157,6 +158,7 @@
       case 'teleportationchips': return 'Teleportation Chip';
       case 'effectchips': return 'Effect Chip';
       case 'misctools': return 'Misc. Tool';
+      case 'fishingrods': return 'Fishing Rod';
       default: return 'Tool';
     }
   }
@@ -171,6 +173,7 @@
       case 'teleportationchips': return 'TeleportationChip';
       case 'effectchips': return 'EffectChip';
       case 'misctools': return 'MiscTool';
+      case 'fishingrods': return 'FishingRod';
       default: return 'Tool';
     }
   }
@@ -265,6 +268,17 @@
           LearningIntervalStart: null,
           LearningIntervalEnd: null
         };
+        break;
+      case 'fishingrods':
+        base.Properties.RodType = 'Casting';
+        base.Properties.Strength = null;
+        base.Properties.Flexibility = null;
+        base.Properties.Skill = {
+          IsSiB: null,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        };
+        base.Profession = { Name: null };
         break;
     }
 
@@ -762,6 +776,37 @@
               </span>
             </div>
           {/if}
+          {#if additional.type === 'fishingrods'}
+            <div class="stat-row">
+              <span class="stat-label">Rod Type</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.RodType}
+                  path="Properties.RodType"
+                  type="select"
+                  options={[
+                    { value: 'Casting', label: 'Casting' },
+                    { value: 'Angling', label: 'Angling' },
+                    { value: 'Fly Fishing', label: 'Fly Fishing' },
+                    { value: 'Deep Ocean Fishing', label: 'Deep Ocean Fishing' },
+                    { value: 'Baitfishing', label: 'Baitfishing' }
+                  ]}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Strength} path="Properties.Strength" type="number" />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Flexibility</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Flexibility} path="Properties.Flexibility" type="number" />
+              </span>
+            </div>
+          {/if}
           {#if additional.type === 'teleportationchips' || additional.type === 'effectchips'}
             <div class="stat-row">
               <span class="stat-label">Range</span>
@@ -775,7 +820,7 @@
               </span>
             </div>
           {/if}
-          {#if additional.type !== 'refiners' && additional.type !== 'misctools'}
+          {#if additional.type !== 'refiners' && additional.type !== 'misctools' && additional.type !== 'fishingrods'}
             <div class="stat-row toggleable" onclick={toggleReloadUses} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.click())} title="Click to toggle between Reload and Uses/min" role="button" tabindex="0">
               {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
@@ -1077,7 +1122,7 @@
                   {/if}
                 </span>
               </div>
-            {:else if additional.type === 'misctools'}
+            {:else if additional.type === 'misctools' || additional.type === 'fishingrods'}
               <div class="stat-row">
                 <span class="stat-label">Profession</span>
                 <span class="stat-value">
@@ -1135,7 +1180,7 @@
                 </span>
               </div>
             {/if}
-            {#if additional.type !== 'misctools'}
+            {#if additional.type !== 'misctools' && additional.type !== 'fishingrods'}
               <div class="stat-row">
                 <span class="stat-label">Level Range</span>
                 <span class="stat-value">

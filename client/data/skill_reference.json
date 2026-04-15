@@ -1042,5 +1042,131 @@
     "name": "Reputation",
     "category": "Social",
     "hidden": false
+  },
+  {
+    "id": 176,
+    "name": "Gutting",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 177,
+    "name": "Fishing",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 178,
+    "name": "Casting",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 179,
+    "name": "Angling",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 180,
+    "name": "Fly Fishing",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 181,
+    "name": "Deep Ocean Fishing",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 182,
+    "name": "Baitfishing",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 183,
+    "name": "Water Reading",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 184,
+    "name": "Fisherman's Sense",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 185,
+    "name": "Lure Mastery",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 186,
+    "name": "Angler Intuition",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 187,
+    "name": "Matching the Hatch",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 188,
+    "name": "False Casting",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 189,
+    "name": "Sea Eyes",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 190,
+    "name": "Filleting",
+    "category": "Information",
+    "hidden": true
+  },
+  {
+    "id": 191,
+    "name": "Fishing Rod Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 192,
+    "name": "Fishing Attachment Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 193,
+    "name": "Cooking",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 194,
+    "name": "Provisioning",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 195,
+    "name": "Nutrition",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 196,
+    "name": "Gastronomy",
+    "category": "Construction",
+    "hidden": false
   }
 ]

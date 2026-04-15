@@ -676,8 +676,9 @@ export async function getItemType(itemId, fetch) {
     gender: GENDERED_TYPES.has(type) ? (item.Properties?.Gender ?? null) : undefined
   };
 
-  // For Materials, look up sub-type (Deed, Token, etc.) from detailed endpoint
-  if (result.type === 'Material') {
+  // For Materials (and Fish, which are Materials promoted by the Items view),
+  // look up sub-type (Deed, Token, etc.) from the detailed Materials endpoint.
+  if (result.type === 'Material' || result.type === 'Fish') {
     const matId = itemId - MATERIAL_ID_OFFSET;
     const mat = await apiCall(fetch, `/materials/${matId}`);
     if (mat?.Properties?.Type) result.subType = mat.Properties.Type;
@@ -794,13 +795,17 @@ const ITEM_TYPE_CATEGORY = {
   'FinderAmplifier': 'Tools', 'Excavator': 'Tools', 'Scanner': 'Tools',
   'MiscTool': 'Tools', 'Tool': 'Tools', 'EffectChip': 'Tools',
   'TeleportationChip': 'Tools', 'Refiner': 'Tools',
+  'FishingRod': 'Tools',
   'Enhancer': 'Enhancers', 'Clothing': 'Clothes',
   'Blueprint': 'Blueprints', 'BlueprintBook': 'Blueprints',
-  'Material': 'Materials', 'Consumable': 'Consumables', 'Capsule': 'Consumables',
+  'Material': 'Materials', 'Fish': 'Materials',
+  'Consumable': 'Consumables', 'Capsule': 'Consumables', 'Food': 'Consumables',
   'Vehicle': 'Vehicles', 'Pet': 'Pets', 'SkillImplant': 'Skill Implants',
   'Furniture': 'Furnishings', 'Decoration': 'Furnishings',
   'StorageContainer': 'Furnishings', 'Sign': 'Furnishings',
   'Strongbox': 'Strongboxes',
+  'FishingReel': 'Attachments', 'FishingBlank': 'Attachments',
+  'FishingLine': 'Attachments', 'FishingLure': 'Attachments',
 };
 
 /**

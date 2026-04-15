@@ -15,6 +15,19 @@ const queries = {
   LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}`
 };
 
+// Non-default `Type.toLowerCase() + 's'` URL paths. Each entry maps an
+// Items.Type value to the API path segment used in the item's `$Url`.
+// Types not listed here fall back to `${type.toLowerCase()}s`.
+const TYPE_URL_OVERRIDES = {
+  Fish: 'fishes',              // Info-side; promoted from Materials
+  Food: 'consumables',         // Food shares the Consumables table
+  FishingRod: 'fishingrods',
+  FishingReel: 'fishingreels',
+  FishingBlank: 'fishingblanks',
+  FishingLine: 'fishinglines',
+  FishingLure: 'fishinglures',
+};
+
 function formatItem(x, classIdMap, itemProps){
   const rawId = x.Id % 100000;
   const classId = classIdMap ? (classIdMap[`${x.Type}:${rawId}`] || null) : null;
@@ -22,6 +35,7 @@ function formatItem(x, classIdMap, itemProps){
   const aliases = (x.Type === 'Armor' || x.Type === 'Clothing')
     ? generateGenderAliases(x.Name, x.Gender)
     : [];
+  const urlPath = TYPE_URL_OVERRIDES[x.Type] || `${x.Type.toLowerCase()}s`;
   return {
     Id: x.Id,
     ClassId: classId,
@@ -35,7 +49,7 @@ function formatItem(x, classIdMap, itemProps){
       IsRare: props?.IsRare || false,
       ...(x.Gender != null && { Gender: x.Gender })
     },
-    Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.Id % 100000}` }
+    Links: { "$Url": `/${urlPath}/${x.Id % 100000}` }
   };
 }
 

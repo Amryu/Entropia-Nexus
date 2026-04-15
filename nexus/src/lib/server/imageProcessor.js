@@ -42,16 +42,17 @@ const VALID_ENTITY_TYPES = [
   'weapon', 'armorset', 'material', 'blueprint', 'clothing', 'vehicle', 'pet', 'strongbox',
   // Tools
   'tool', 'misctool', 'refiner', 'scanner', 'finder', 'excavator',
-  'teleportationchip', 'effectchip',
+  'teleportationchip', 'effectchip', 'fishingrod',
   // Attachments
   'attachment', 'weaponamplifier', 'weaponvisionattachment', 'absorber',
   'finderamplifier', 'armorplating', 'enhancer', 'mindforceimplant',
+  'fishingreel', 'fishingblank', 'fishingline', 'fishinglure',
   // Consumables & Medical
   'consumable', 'capsule', 'medicaltool', 'medicalchip',
   // Furnishings
   'furnishing', 'furniture', 'decoration', 'storagecontainer', 'sign',
   // Information & other
-  'mob', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
+  'mob', 'fish', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
   'user', 'user-banner', 'user-background', 'guide-category', 'richtext', 'announcement',
   // Auction
   'item-set',

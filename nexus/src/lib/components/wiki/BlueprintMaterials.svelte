@@ -360,7 +360,7 @@
                   placeholder="Search material..."
                   apiEndpoint="/search/items"
                   displayFn={(item) => item?.Name || ''}
-                  allowedTypes={['Material']}
+                  allowedTypes={['Material', 'Fish']}
                   allowedNames={materialNames}
                   validValues={materialNames}
                   onchange={(e) => updateMaterial(index, 'Item', e.value)}

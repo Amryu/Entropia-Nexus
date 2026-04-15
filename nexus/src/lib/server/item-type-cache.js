@@ -122,7 +122,7 @@ export async function resolveItemTypesByItemId(itemIds, fetch) {
 
     map[itemId] = {
       type,
-      subType: type === 'Material'
+      subType: (type === 'Material' || type === 'Fish')
         ? (cache.materialSubTypeByItemId.get(itemId) ?? null)
         : null
     };
@@ -161,7 +161,7 @@ export async function resolveItemDataByItemId(itemIds, fetch) {
 
     map[itemId] = {
       type,
-      subType: type === 'Material'
+      subType: (type === 'Material' || type === 'Fish')
         ? (cache.materialSubTypeByItemId.get(itemId) ?? null)
         : null,
       item: item || null

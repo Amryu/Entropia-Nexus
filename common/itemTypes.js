@@ -10,6 +10,7 @@ export const STACKABLE_TYPES = new Set([
   'Capsule',
   'Enhancer',
   'Strongbox',
+  'Food', // Food is a Consumable subtype surfaced as its own Items.Type
 ]);
 
 /** Types that have condition (can be damaged, have CurrentTT) */
@@ -19,6 +20,7 @@ export const CONDITION_TYPES = new Set([
   'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
   'TeleportationChip', 'EffectChip', 'MedicalChip',
   'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet', 'Clothing',
+  'FishingRod', 'FishingReel', 'FishingBlank', 'FishingLine', 'FishingLure',
 ]);
 
 /** ID offset for pet items (Items.Id = Pets.Id + PET_ID_OFFSET) */
@@ -69,6 +71,14 @@ export const TYPE_ID_OFFSETS = {
   Pet:                     11000000,
   Strongbox:               12000000,
   ArmorSet:                13000000,
+  // Food rows live in the Consumables table with Type='Food'; the Items
+  // VIEW promotes them to Items.Type='Food'. The backing offset is the
+  // same as Consumables, so no entry here.
+  FishingRod:               4900000,
+  FishingReel:              5800000,
+  FishingBlank:             5810000,
+  FishingLine:              5820000,
+  FishingLure:              5830000,
 };
 
 /**
@@ -122,6 +132,12 @@ export const ALL_ITEM_TYPES = new Set([
   'Excavator',
   'Finder',
   'FinderAmplifier',
+  'FishingBlank',
+  'FishingLine',
+  'FishingLure',
+  'FishingReel',
+  'FishingRod',
+  'Food',
   'Furniture',
   'Material',
   'MedicalChip',
@@ -173,6 +189,12 @@ export const RENTAL_ALLOWED_ITEM_TYPES = new Set([
   'MedicalChip',
   'EffectChip',
   'MindforceImplant',
+  // Fishing gear
+  'FishingRod',
+  'FishingReel',
+  'FishingBlank',
+  'FishingLine',
+  'FishingLure',
 ]);
 
 /**

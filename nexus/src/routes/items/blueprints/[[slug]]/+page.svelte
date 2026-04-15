@@ -170,6 +170,11 @@
         { value: 'Electrical Component', label: 'Electrical Component' },
         { value: 'Mechanical Component', label: 'Mechanical Component' },
         { value: 'Chemistry', label: 'Chemistry' },
+        { value: 'Fishing Gear', label: 'Fishing Gear' },
+        { value: 'Fishing Attachment', label: 'Fishing Attachment' },
+        { value: 'Gastronomer', label: 'Gastronomer' },
+        { value: 'Provisioner', label: 'Provisioner' },
+        { value: 'Nutritionist', label: 'Nutritionist' },
       ]
     }
   ];
@@ -187,7 +192,12 @@
     { value: 'Metal Component', label: 'Metal Component' },
     { value: 'Electrical Component', label: 'Electrical Component' },
     { value: 'Mechanical Component', label: 'Mechanical Component' },
-    { value: 'Chemistry', label: 'Chemistry' }
+    { value: 'Chemistry', label: 'Chemistry' },
+    { value: 'Fishing Gear', label: 'Fishing Gear' },
+    { value: 'Fishing Attachment', label: 'Fishing Attachment' },
+    { value: 'Gastronomer', label: 'Gastronomer' },
+    { value: 'Provisioner', label: 'Provisioner' },
+    { value: 'Nutritionist', label: 'Nutritionist' }
   ];
 
   // Sidebar table columns for blueprints
@@ -354,6 +364,11 @@
     'Electrical Component': 'Electronics Engineer',
     'Mechanical Component': 'Mechanical Engineer',
     'Chemistry': 'Chemist',
+    'Fishing Gear': 'Fishing Gear Engineer',
+    'Fishing Attachment': 'Fishing Attachment Engineer',
+    'Gastronomer': 'Gastronomer',
+    'Provisioner': 'Provisioner',
+    'Nutritionist': 'Nutritionist',
   };
 
   const PRODUCT_TYPE_TO_BP_TYPE = {
@@ -377,6 +392,11 @@
     'Decoration': 'Furniture',
     'Furniture': 'Furniture',
     'StorageContainer': 'Furniture',
+    'FishingRod': 'Fishing Gear',
+    'FishingReel': 'Fishing Attachment',
+    'FishingBlank': 'Fishing Attachment',
+    'FishingLine': 'Fishing Attachment',
+    'FishingLure': 'Fishing Attachment',
   };
 
   const WEAPON_TYPE_TO_PROFESSION = {

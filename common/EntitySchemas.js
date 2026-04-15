@@ -11,6 +11,12 @@ import { EffectChip } from "./schemas/EffectChip.js";
 import { Excavator } from "./schemas/Excavator.js";
 import { Finder } from "./schemas/Finder.js";
 import { FinderAmplifier } from "./schemas/FinderAmplifier.js";
+import { Fish } from "./schemas/Fish.js";
+import { FishingBlank } from "./schemas/FishingBlank.js";
+import { FishingLine } from "./schemas/FishingLine.js";
+import { FishingLure } from "./schemas/FishingLure.js";
+import { FishingReel } from "./schemas/FishingReel.js";
+import { FishingRod } from "./schemas/FishingRod.js";
 import { Furniture } from "./schemas/Furniture.js";
 import { Location } from "./schemas/Location.js";
 import { Material } from "./schemas/Material.js";
@@ -50,6 +56,12 @@ export const EntitySchemas = {
   Excavator,
   Finder,
   FinderAmplifier,
+  Fish,
+  FishingBlank,
+  FishingLine,
+  FishingLure,
+  FishingReel,
+  FishingRod,
   Furniture,
   Location,
   Material,

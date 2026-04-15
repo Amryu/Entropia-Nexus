@@ -447,6 +447,86 @@ export const UpsertConfigs = {
       applyItemProperties(client, id, x)
     ])
   },
+  FishingRod: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
+      { name: "Weight", value: x => x.Properties.Weight },
+      { name: "RodType", value: x => x.Properties.RodType },
+      { name: "Strength", value: x => x.Properties.Strength ?? null },
+      { name: "Flexibility", value: x => x.Properties.Flexibility ?? null },
+      { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "MinTT", value: x => x.Properties.Economy?.MinTT ?? null },
+      { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null },
+      { name: "ProfessionId", value: async (x, c) => {
+        if (!x.Profession?.Name) return null;
+        return c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.Profession.Name]).then(res => res.rows[0]?.Id ?? null);
+      }},
+      { name: "IsSib", value: x => x.Properties.Skill?.IsSiB ? 1 : 0 },
+      { name: "MinLevel", value: x => x.Properties.Skill?.LearningIntervalStart ?? null },
+      { name: "MaxLevel", value: x => x.Properties.Skill?.LearningIntervalEnd ?? null }
+    ],
+    offset: 4900000,
+    table: "FishingRods",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
+  },
+  FishingReel: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
+      { name: "Weight", value: x => x.Properties.Weight },
+      { name: "Strength", value: x => x.Properties.Strength ?? null },
+      { name: "Speed", value: x => x.Properties.Speed ?? null },
+      { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
+    ],
+    offset: 5800000,
+    table: "FishingReels",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
+  },
+  FishingBlank: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
+      { name: "Weight", value: x => x.Properties.Weight },
+      { name: "Strength", value: x => x.Properties.Strength ?? null },
+      { name: "Flexibility", value: x => x.Properties.Flexibility ?? null },
+      { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
+    ],
+    offset: 5810000,
+    table: "FishingBlanks",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
+  },
+  FishingLine: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
+      { name: "Weight", value: x => x.Properties.Weight },
+      { name: "Flexibility", value: x => x.Properties.Flexibility ?? null },
+      { name: "Strength", value: x => x.Properties.Strength ?? null },
+      { name: "Length", value: x => x.Properties.Length ?? null },
+      { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
+    ],
+    offset: 5820000,
+    table: "FishingLines",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
+  },
+  FishingLure: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
+      { name: "Weight", value: x => x.Properties.Weight },
+      { name: "Depth", value: x => x.Properties.Depth ?? null },
+      { name: "Quality", value: x => x.Properties.Quality ?? null },
+      { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
+    ],
+    offset: 5830000,
+    table: "FishingLures",
+    relationChangeFunc: async (client, id, x) => await applyItemProperties(client, id, x)
+  },
   Blueprint: {
     columns: [
       { name: "Name", value: x => x.Name },
@@ -846,6 +926,48 @@ export const UpsertConfigs = {
       if (x.Spawns) {
         await applyMobSpawnChanges(client, id, x.Spawns);
       }
+    }
+  },
+  Fish: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties?.Description ?? null },
+      { name: "ItemId", value: async (x, c) => {
+        if (!x.Item?.Name) return null;
+        return await c.query(`SELECT "Id" FROM "Items" WHERE "Name" = $1`, [x.Item.Name]).then(res => res.rows[0]?.Id ?? null);
+      }},
+      { name: "SpeciesId", value: async (x, c) => {
+        // Fish ↔ MobSpecies is 1:1. Always upsert the species row by the
+        // name provided in the form (defaults to the fish's own Name when
+        // not set) and force CodexType='Fish'.
+        const speciesName = x.Species?.Name || x.Name;
+        if (!speciesName) return null;
+        const baseCost = x.Species?.CodexBaseCost ?? null;
+        await c.query(
+          `INSERT INTO "MobSpecies" ("Name", "CodexBaseCost", "CodexType")
+           VALUES ($1, $2, 'Fish'::"CodexType")
+           ON CONFLICT ("Name") DO UPDATE SET
+             "CodexBaseCost" = COALESCE(EXCLUDED."CodexBaseCost", "MobSpecies"."CodexBaseCost"),
+             "CodexType" = 'Fish'::"CodexType"`,
+          [speciesName, baseCost]
+        );
+        return await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [speciesName]).then(res => res.rows[0]?.Id ?? null);
+      }},
+      { name: "Biome", value: x => x.Properties?.Biome ?? null },
+      { name: "Size", value: x => x.Properties?.Size ?? null },
+      { name: "Strength", value: x => x.Properties?.Strength ?? null },
+      { name: "Difficulty", value: x => x.Properties?.Difficulty ?? null },
+      { name: "MinDepth", value: x => x.Properties?.MinDepth ?? null },
+      { name: "PreferredLureId", value: async (x, c) => {
+        if (!x.PreferredLure?.Name) return null;
+        return await c.query(`SELECT "Id" FROM "Items" WHERE "Name" = $1`, [x.PreferredLure.Name]).then(res => res.rows[0]?.Id ?? null);
+      }},
+      { name: "TimeOfDay", value: x => x.Properties?.TimeOfDay ?? null }
+    ],
+    table: "Fish",
+    relationChangeFunc: async (client, id, x) => {
+      await applyFishPlanetsChanges(client, id, x.Planets || []);
+      await applyFishRodTypesChanges(client, id, x.Properties?.RodTypes || []);
     }
   },
   Mission: {
@@ -1662,6 +1784,39 @@ async function applyMobAttackChanges(client, maturityId, attacks) {
       [maturityId, attack.Name, attack.Damage.Stab, attack.Damage.Cut, attack.Damage.Impact, attack.Damage.Penetration, attack.Damage.Shrapnel, attack.Damage.Burn, attack.Damage.Cold, attack.Damage.Acid, attack.Damage.Electric, attack.IsAoE ? 1 : 0, attack.TotalDamage])
     )
   ]);
+}
+
+async function applyFishPlanetsChanges(client, fishId, planets) {
+  planets = Array.isArray(planets) ? planets : [];
+
+  const resolved = await Promise.all(planets.map(async p => {
+    if (!p?.Name) return null;
+    const r = await client.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [p.Name]);
+    return r.rows[0]?.Id ?? null;
+  }));
+  const newIds = resolved.filter(id => Number.isInteger(id));
+
+  await client.query(
+    `DELETE FROM "FishPlanets" WHERE "FishId" = $1 AND "PlanetId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+    [fishId, newIds]
+  );
+  await Promise.all(newIds.map(pid => client.query(
+    `INSERT INTO "FishPlanets" ("FishId", "PlanetId") VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [fishId, pid]
+  )));
+}
+
+async function applyFishRodTypesChanges(client, fishId, rodTypes) {
+  rodTypes = Array.isArray(rodTypes) ? rodTypes.filter(Boolean) : [];
+
+  await client.query(
+    `DELETE FROM "FishRodTypes" WHERE "FishId" = $1 AND "RodType" NOT IN (SELECT * FROM unnest($2::"FishingRodType"[]))`,
+    [fishId, rodTypes]
+  );
+  await Promise.all(rodTypes.map(rt => client.query(
+    `INSERT INTO "FishRodTypes" ("FishId", "RodType") VALUES ($1, $2::"FishingRodType") ON CONFLICT DO NOTHING`,
+    [fishId, rt]
+  )));
 }
 
 async function applyMobLootChanges(client, mobId, loots) {

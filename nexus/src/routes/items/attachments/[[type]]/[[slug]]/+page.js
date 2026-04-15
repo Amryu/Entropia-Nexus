@@ -20,6 +20,10 @@ function getEntityType(type) {
     case 'armorplatings': return 'ArmorPlating';
     case 'enhancers': return 'Enhancer';
     case 'mindforceimplants': return 'MindforceImplant';
+    case 'fishingreels': return 'FishingReel';
+    case 'fishingblanks': return 'FishingBlank';
+    case 'fishinglines': return 'FishingLine';
+    case 'fishinglures': return 'FishingLure';
     default: return null;
   }
 }
@@ -40,7 +44,7 @@ export async function load({ fetch, params, url, parent }) {
   const changeId = url.searchParams.get('changeId');
 
   const config = {
-    items: ['weaponamplifiers', 'weaponvisionattachments', 'absorbers', 'finderamplifiers', 'armorplatings', 'enhancers', 'mindforceimplants'],
+    items: ['weaponamplifiers', 'weaponvisionattachments', 'absorbers', 'finderamplifiers', 'armorplatings', 'enhancers', 'mindforceimplants', 'fishingreels', 'fishingblanks', 'fishinglines', 'fishinglures'],
     types: [
       { type: 'weaponamplifiers' },
       { type: 'weaponvisionattachments' },
@@ -48,7 +52,11 @@ export async function load({ fetch, params, url, parent }) {
       { type: 'finderamplifiers' },
       { type: 'armorplatings' },
       { type: 'enhancers' },
-      { type: 'mindforceimplants' }
+      { type: 'mindforceimplants' },
+      { type: 'fishingreels' },
+      { type: 'fishingblanks' },
+      { type: 'fishinglines' },
+      { type: 'fishinglures' }
     ],
     name: isCreateMode ? null : decodeURIComponentSafe(params.slug),
     type: decodeURIComponentSafe(params.type),

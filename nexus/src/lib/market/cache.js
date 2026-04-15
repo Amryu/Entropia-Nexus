@@ -620,8 +620,9 @@ function slimItem(item) {
     v = item.Properties.NutrioCapacity / 100;
   }
 
-  // Material sub-type for absolute markup items (Deed, Token)
-  const st = type === 'Material' && item.Properties?.Type && ABSOLUTE_MARKUP_MATERIAL_TYPES.has(item.Properties.Type)
+  // Material sub-type for absolute markup items (Deed, Token). Fish items
+  // are Materials promoted by the Items view; treat them the same here.
+  const st = (type === 'Material' || type === 'Fish') && item.Properties?.Type && ABSOLUTE_MARKUP_MATERIAL_TYPES.has(item.Properties.Type)
     ? item.Properties.Type : undefined;
 
   return {

@@ -501,7 +501,7 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
 }
 
 // Valid item types for filtering (prevents SQL injection)
-const VALID_ITEM_TYPES = ['Weapon', 'Armor', 'Clothing', 'Tool', 'Material', 'Blueprint', 'Component', 'Furniture', 'Enhancer', 'Attachment', 'ArmorSet', 'Consumable', 'Mining', 'Amplifier', 'Vehicle'];
+const VALID_ITEM_TYPES = ['Weapon', 'Armor', 'Clothing', 'Tool', 'Material', 'Blueprint', 'Component', 'Furniture', 'Enhancer', 'Attachment', 'ArmorSet', 'Consumable', 'Mining', 'Amplifier', 'Vehicle', 'Fish', 'Food', 'FishingRod', 'FishingReel', 'FishingBlank', 'FishingLine', 'FishingLure'];
 
 async function searchItems(query, fuzzy = false, options = {}){
   query = query.trim(); // Trim whitespace to avoid matching issues
@@ -555,9 +555,19 @@ async function searchItems(query, fuzzy = false, options = {}){
     : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND ("Armors"."Name" ILIKE $1${mwArmor}) LIMIT 1)`;
 
   // When filtering by a specific type, skip per-category partitioning
-  // and return up to resultLimit results of that type
+  // and return up to resultLimit results of that type.
+  //
+  // Type expansion: certain types surface as multiple Items.Type values via
+  // the Items view. Filtering by the "parent" type must match all of them:
+  //   Material   -> [Material, Fish]   (fishes are materials promoted by the view)
+  //   Consumable -> [Consumable, Food] (foods share the Consumables table)
   let sql;
   const filterTypeIdx = filterType ? (useFuzzy ? 3 : 2) + mwParams.length + 1 : null;
+  const filterTypeValues = filterType
+    ? (filterType === 'Material'   ? ['Material', 'Fish']
+    :  filterType === 'Consumable' ? ['Consumable', 'Food']
+    : [filterType])
+    : null;
   if (filterType) {
     // Direct search for a specific type without per-category limiting
     sql = `
@@ -570,12 +580,12 @@ async function searchItems(query, fuzzy = false, options = {}){
         FROM ONLY "Items"
         LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
         LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
-        WHERE "Items"."Type" = $${filterTypeIdx}
+        WHERE "Items"."Type" = ANY($${filterTypeIdx}::text[])
         UNION ALL
         SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
           ${armorMatchedPieceSubquery} AS "MatchedName"
         FROM ONLY "ArmorSets"
-        WHERE 'ArmorSet' = $${filterTypeIdx} AND (
+        WHERE 'ArmorSet' = ANY($${filterTypeIdx}::text[]) AND (
           ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
           OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
         )
@@ -617,7 +627,7 @@ async function searchItems(query, fuzzy = false, options = {}){
 
   // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
   const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
-  if (filterType) params.push(filterType);
+  if (filterType) params.push(filterTypeValues);
   const { rows } = await pool.query(sql, params);
 
   // Post-process results: apply scoring, filter, and sort

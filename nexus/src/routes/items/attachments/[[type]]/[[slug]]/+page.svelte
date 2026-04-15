@@ -125,7 +125,11 @@
     { label: 'Finder Amp', title: 'Finder Amplifiers', type: 'finderamplifiers' },
     { label: 'Platings', title: 'Armor Platings', type: 'armorplatings' },
     { label: 'Enhancers', title: 'Enhancers', type: 'enhancers' },
-    { label: 'Implants', title: 'Mindforce Implants', type: 'mindforceimplants' }
+    { label: 'Implants', title: 'Mindforce Implants', type: 'mindforceimplants' },
+    { label: 'Reels', title: 'Fishing Reels', type: 'fishingreels' },
+    { label: 'Blanks', title: 'Fishing Blanks', type: 'fishingblanks' },
+    { label: 'Lines', title: 'Fishing Lines', type: 'fishinglines' },
+    { label: 'Lures', title: 'Fishing Lures', type: 'fishinglures' }
   ];
 
   // Type name mapping
@@ -138,6 +142,10 @@
       case 'armorplatings': return 'Armor Plating';
       case 'enhancers': return 'Enhancer';
       case 'mindforceimplants': return 'Mindforce Implant';
+      case 'fishingreels': return 'Fishing Reel';
+      case 'fishingblanks': return 'Fishing Blank';
+      case 'fishinglines': return 'Fishing Line';
+      case 'fishinglures': return 'Fishing Lure';
       default: return 'Attachment';
     }
   }
@@ -152,6 +160,10 @@
       case 'armorplatings': return 'ArmorPlating';
       case 'enhancers': return 'Enhancer';
       case 'mindforceimplants': return 'MindforceImplant';
+      case 'fishingreels': return 'FishingReel';
+      case 'fishingblanks': return 'FishingBlank';
+      case 'fishinglines': return 'FishingLine';
+      case 'fishinglures': return 'FishingLure';
       default: return null;
     }
   }
@@ -216,6 +228,27 @@
       case 'mindforceimplants':
         base.Properties.Economy.Absorption = 0;
         base.Properties.MaxProfessionLevel = 0;
+        break;
+      case 'fishingreels':
+        base.Properties.Strength = null;
+        base.Properties.Speed = null;
+        base.Properties.Economy.Decay = null;
+        break;
+      case 'fishingblanks':
+        base.Properties.Strength = null;
+        base.Properties.Flexibility = null;
+        base.Properties.Economy.Decay = null;
+        break;
+      case 'fishinglines':
+        base.Properties.Flexibility = null;
+        base.Properties.Strength = null;
+        base.Properties.Length = null;
+        base.Properties.Economy.Decay = null;
+        break;
+      case 'fishinglures':
+        base.Properties.Depth = null;
+        base.Properties.Quality = null;
+        base.Properties.Economy.Decay = null;
         break;
     }
 
@@ -842,6 +875,64 @@
                   path="Properties.MaxProfessionLevel"
                   type="number"
                 />
+              </span>
+            </div>
+          {:else if additional.type === 'fishingreels'}
+            <div class="stat-row">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Strength} path="Properties.Strength" type="number" />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Speed</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Speed} path="Properties.Speed" type="number" />
+              </span>
+            </div>
+          {:else if additional.type === 'fishingblanks'}
+            <div class="stat-row">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Strength} path="Properties.Strength" type="number" />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Flexibility</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Flexibility} path="Properties.Flexibility" type="number" />
+              </span>
+            </div>
+          {:else if additional.type === 'fishinglines'}
+            <div class="stat-row">
+              <span class="stat-label">Flexibility</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Flexibility} path="Properties.Flexibility" type="number" />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Strength</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Strength} path="Properties.Strength" type="number" />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Length (m)</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Length} path="Properties.Length" type="number" />
+              </span>
+            </div>
+          {:else if additional.type === 'fishinglures'}
+            <div class="stat-row">
+              <span class="stat-label">Depth (m)</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Depth} path="Properties.Depth" type="number" />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Quality</span>
+              <span class="stat-value">
+                <InlineEdit value={activeEntity?.Properties?.Quality} path="Properties.Quality" type="number" />
               </span>
             </div>
           {/if}

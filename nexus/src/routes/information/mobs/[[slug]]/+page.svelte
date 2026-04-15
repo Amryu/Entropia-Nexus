@@ -123,7 +123,11 @@
       localSpeciesList = [...(speciesList || [])];
     }
   });
-  let speciesOptions = $derived(localSpeciesList.map(s => ({ value: s.Name, label: s.Name })));
+  // Fish species are reserved for the Fish info page (CodexType='Fish') and
+  // must not be pickable for mobs. Filter them out of the species dropdown.
+  let speciesOptions = $derived(localSpeciesList
+    .filter(s => s?.Properties?.CodexType !== 'Fish')
+    .map(s => ({ value: s.Name, label: s.Name })));
 
   // Verified users can edit
   let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));

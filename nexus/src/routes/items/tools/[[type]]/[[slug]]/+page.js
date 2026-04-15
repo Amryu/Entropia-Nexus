@@ -19,6 +19,7 @@ function getEntityType(type) {
     case 'teleportationchips': return 'TeleportationChip';
     case 'effectchips': return 'EffectChip';
     case 'misctools': return 'MiscTool';
+    case 'fishingrods': return 'FishingRod';
     default: return null;
   }
 }
@@ -39,7 +40,7 @@ export async function load({ fetch, params, url, parent }) {
   const changeId = url.searchParams.get('changeId');
 
   const config = {
-    items: ['refiners', 'scanners', 'finders', 'excavators', 'teleportationchips', 'effectchips', 'misctools'],
+    items: ['refiners', 'scanners', 'finders', 'excavators', 'teleportationchips', 'effectchips', 'misctools', 'fishingrods'],
     types: [
       { type: 'refiners', tierable: false },
       { type: 'scanners', tierable: false },
@@ -47,7 +48,8 @@ export async function load({ fetch, params, url, parent }) {
       { type: 'excavators', tierable: true },
       { type: 'teleportationchips', tierable: false },
       { type: 'effectchips', tierable: false },
-      { type: 'misctools', tierable: false }
+      { type: 'misctools', tierable: false },
+      { type: 'fishingrods', tierable: false }
     ],
     name: isCreateMode ? null : decodeURIComponentSafe(params.slug),
     type: decodeURIComponentSafe(params.type),
