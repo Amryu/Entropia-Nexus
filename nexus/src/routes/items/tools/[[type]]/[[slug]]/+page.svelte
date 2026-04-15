@@ -1066,7 +1066,7 @@
         {#if additional.type !== 'scanners' && additional.type !== 'refiners'}
           <div class="stats-section">
             <h4 class="section-title">Skilling</h4>
-            {#if additional.type !== 'misctools'}
+            {#if additional.type !== 'misctools' && additional.type !== 'fishingrods'}
               <div class="stat-row">
                 <span class="stat-label">SiB</span>
                 <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
