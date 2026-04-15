@@ -318,13 +318,42 @@ CREATE TRIGGER zz_track_change AFTER INSERT OR UPDATE OR DELETE ON "FishRodTypes
 
 -- ---------------------------------------------------------------------------
 -- 8. Grants
+--
+-- Pattern mirrors existing wiki-editable entity tables (see MiscTools/
+-- ClassIds prod grants):
+--   nexus     -> SELECT on the entity table + its audit
+--   nexus_bot -> SELECT/INSERT/UPDATE/DELETE on the entity table,
+--                INSERT on the audit (required because the audit trigger
+--                runs as the invoker and inserts into the audit table),
+--                USAGE/SELECT on the sequence for RETURNING Id inserts
 -- ---------------------------------------------------------------------------
 
+-- nexus: read-only on every new entity table + junction + audit
+GRANT SELECT ON
+    "FishingRods", "FishingReels", "FishingBlanks", "FishingLines", "FishingLures",
+    "Fish", "FishPlanets", "FishRodTypes"
+TO nexus;
+
+GRANT SELECT ON
+    "FishingRods_audit", "FishingReels_audit", "FishingBlanks_audit",
+    "FishingLines_audit", "FishingLures_audit", "Fish_audit"
+TO nexus;
+
+-- nexus_bot: full CRUD on entity tables + junctions
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     "FishingRods", "FishingReels", "FishingBlanks", "FishingLines", "FishingLures",
     "Fish", "FishPlanets", "FishRodTypes"
-TO "nexus", nexus_bot;
+TO nexus_bot;
 
+-- nexus_bot: INSERT on audit tables so the after-row audit triggers can
+-- write their rows while running under nexus_bot's session.
+GRANT INSERT ON
+    "FishingRods_audit", "FishingReels_audit", "FishingBlanks_audit",
+    "FishingLines_audit", "FishingLures_audit", "Fish_audit"
+TO nexus_bot;
+
+-- nexus_bot: sequence usage for SERIAL PK tables (junctions have composite
+-- PKs and no sequence, so they're excluded).
 GRANT USAGE, SELECT ON SEQUENCE
     "FishingRods_Id_seq",
     "FishingReels_Id_seq",
@@ -332,12 +361,7 @@ GRANT USAGE, SELECT ON SEQUENCE
     "FishingLines_Id_seq",
     "FishingLures_Id_seq",
     "Fish_Id_seq"
-TO "nexus", nexus_bot;
-
-GRANT SELECT ON
-    "FishingRods_audit", "FishingReels_audit", "FishingBlanks_audit",
-    "FishingLines_audit", "FishingLures_audit", "Fish_audit"
-TO "nexus", nexus_bot;
+TO nexus_bot;
 
 -- ---------------------------------------------------------------------------
 -- 9. VIEW updates: Tools, Attachments, Items.
