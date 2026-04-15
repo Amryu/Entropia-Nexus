@@ -228,28 +228,48 @@
     return data.speciesList.some(s => s.Name === name && s.Properties?.CodexType === 'Fish');
   });
 
-  function toggleRodType(rt) {
+  // ===== Multi-select add/remove for rod types and planets =====
+
+  // Remaining rod-type options (not yet selected).
+  let rodTypeAddOptions = $derived.by(() => {
+    const selected = new Set(activeEntity?.Properties?.RodTypes || []);
+    return ROD_TYPES
+      .filter(rt => !selected.has(rt))
+      .map(rt => ({ value: rt, label: rt }));
+  });
+
+  function addRodType(rt) {
+    if (!rt) return;
     const current = Array.isArray(activeEntity?.Properties?.RodTypes) ? [...activeEntity.Properties.RodTypes] : [];
-    const idx = current.indexOf(rt);
-    if (idx >= 0) current.splice(idx, 1);
-    else current.push(rt);
+    if (current.includes(rt)) return;
+    current.push(rt);
     updateField('Properties.RodTypes', current);
   }
 
-  function togglePlanet(planetName) {
+  function removeRodType(rt) {
+    const current = (activeEntity?.Properties?.RodTypes || []).filter(x => x !== rt);
+    updateField('Properties.RodTypes', current);
+  }
+
+  // Remaining planet options (not yet selected).
+  let planetAddOptions = $derived.by(() => {
+    const selected = new Set((activeEntity?.Planets || []).map(p => p?.Name).filter(Boolean));
+    return (data.planetsList || [])
+      .filter(p => p?.Name && !selected.has(p.Name))
+      .map(p => ({ value: p.Name, label: p.Name }));
+  });
+
+  function addPlanet(name) {
+    if (!name) return;
     const current = Array.isArray(activeEntity?.Planets) ? [...activeEntity.Planets] : [];
-    const idx = current.findIndex(p => p?.Name === planetName);
-    if (idx >= 0) current.splice(idx, 1);
-    else current.push({ Name: planetName });
+    if (current.some(p => p?.Name === name)) return;
+    current.push({ Name: name });
     updateField('Planets', current);
   }
 
-  function isRodTypeSelected(rt) {
-    return (activeEntity?.Properties?.RodTypes || []).includes(rt);
-  }
-
-  function isPlanetSelected(name) {
-    return (activeEntity?.Planets || []).some(p => p?.Name === name);
+  function removePlanet(name) {
+    const current = (activeEntity?.Planets || []).filter(p => p?.Name !== name);
+    updateField('Planets', current);
   }
 </script>
 
@@ -295,6 +315,7 @@
 
     <div class="layout-a">
       <aside class="wiki-infobox-float">
+        <!-- Header: image, name, species subtitle -->
         <div class="infobox-header">
           <EntityImageUpload
             entityId={activeEntity?.Id}
@@ -312,17 +333,32 @@
               placeholder="Fish Name"
             />
           </div>
-          <div class="infobox-subtitle">
-            {#if activeEntity?.Properties?.Biome}
-              <span class="category-badge">{activeEntity.Properties.Biome}</span>
-            {/if}
-            {#if activeEntity?.Properties?.Difficulty}
-              <span class="category-badge">{activeEntity.Properties.Difficulty}</span>
-            {/if}
+          {#if activeEntity?.Species?.Name}
+            <div class="infobox-subtitle">
+              <span class="category-badge">{activeEntity.Species.Name}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Tier-1: 3 display-only primary stats (no inputs) -->
+        <div class="stats-section tier-1 tier-blue">
+          <div class="stat-row primary">
+            <span class="stat-label">Biome</span>
+            <span class="stat-value">{activeEntity?.Properties?.Biome || 'N/A'}</span>
+          </div>
+          <div class="stat-row primary">
+            <span class="stat-label">Difficulty</span>
+            <span class="stat-value">{activeEntity?.Properties?.Difficulty || 'N/A'}</span>
+          </div>
+          <div class="stat-row primary">
+            <span class="stat-label">Size</span>
+            <span class="stat-value">{activeEntity?.Properties?.Size != null ? `${activeEntity.Properties.Size} cm` : 'N/A'}</span>
           </div>
         </div>
 
-        <div class="stats-section tier-1 tier-blue">
+        <!-- General: editable core attributes (dropdowns + numbers) -->
+        <div class="stats-section">
+          <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Biome</span>
             <span class="stat-value">
@@ -330,7 +366,8 @@
                 value={activeEntity?.Properties?.Biome}
                 path="Properties.Biome"
                 type="select"
-                options={[{ value: null, label: '-' }, ...BIOMES.map(b => ({ value: b, label: b }))]}
+                placeholder="Select biome"
+                options={BIOMES.map(b => ({ value: b, label: b }))}
               />
             </span>
           </div>
@@ -341,7 +378,20 @@
                 value={activeEntity?.Properties?.Difficulty}
                 path="Properties.Difficulty"
                 type="select"
-                options={[{ value: null, label: '-' }, ...DIFFICULTIES.map(d => ({ value: d, label: d }))]}
+                placeholder="Select difficulty"
+                options={DIFFICULTIES.map(d => ({ value: d, label: d }))}
+              />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Time of Day</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.TimeOfDay}
+                path="Properties.TimeOfDay"
+                type="select"
+                placeholder="Any"
+                options={TIMES_OF_DAY.map(t => ({ value: t, label: t }))}
               />
             </span>
           </div>
@@ -378,22 +428,12 @@
               />
             </span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Time of Day</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.TimeOfDay}
-                path="Properties.TimeOfDay"
-                type="select"
-                options={[{ value: null, label: 'Any' }, ...TIMES_OF_DAY.map(t => ({ value: t, label: t }))]}
-              />
-            </span>
-          </div>
         </div>
 
+        <!-- Material: the item side of the hybrid entity -->
         <div class="stats-section">
-          <h4 class="section-title">Item (Material)</h4>
-          <div class="stat-row">
+          <h4 class="section-title">Material</h4>
+          <div class="stat-row stat-row-block">
             <span class="stat-value stat-value-block">
               {#if $editMode}
                 <SearchInput
@@ -410,15 +450,15 @@
           </div>
         </div>
 
+        <!-- Species (codex) -->
         <div class="stats-section">
           <h4 class="section-title">
-            Species (Codex)
+            Species
             {#if $editMode && activeEntity?.Species?.Name}
               <span class="species-state">{isExistingSpecies ? 'existing' : 'new'}</span>
             {/if}
           </h4>
-          <div class="stat-row">
-            <span class="stat-label">Name</span>
+          <div class="stat-row stat-row-block">
             <span class="stat-value stat-value-block">
               {#if $editMode}
                 <SearchInput
@@ -434,7 +474,7 @@
             </span>
           </div>
           <div class="stat-row">
-            <span class="stat-label">Codex Base Cost</span>
+            <span class="stat-label">Base Cost</span>
             <span class="stat-value">
               <InlineEdit
                 value={activeEntity?.Species?.CodexBaseCost}
@@ -446,9 +486,10 @@
           </div>
         </div>
 
+        <!-- Preferred lure -->
         <div class="stats-section">
           <h4 class="section-title">Preferred Lure</h4>
-          <div class="stat-row">
+          <div class="stat-row stat-row-block">
             <span class="stat-value stat-value-block">
               {#if $editMode}
                 <SearchInput
@@ -464,8 +505,71 @@
             </span>
           </div>
         </div>
+
+        <!-- Rod types: multi-select via dropdown + chip list -->
+        <div class="stats-section">
+          <h4 class="section-title">Rod Types</h4>
+          {#if (activeEntity?.Properties?.RodTypes || []).length > 0}
+            <div class="chip-list">
+              {#each activeEntity.Properties.RodTypes as rt}
+                <span class="chip">
+                  {rt}
+                  {#if $editMode}
+                    <button type="button" class="chip-remove" aria-label="Remove {rt}" onclick={() => removeRodType(rt)}>×</button>
+                  {/if}
+                </span>
+              {/each}
+            </div>
+          {:else if !$editMode}
+            <p class="empty-note">None set</p>
+          {/if}
+          {#if $editMode && rodTypeAddOptions.length > 0}
+            <select
+              class="add-select"
+              value=""
+              onchange={(e) => { addRodType(e.currentTarget.value); e.currentTarget.value = ''; }}
+            >
+              <option value="" disabled>+ Add rod type…</option>
+              {#each rodTypeAddOptions as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          {/if}
+        </div>
+
+        <!-- Planets: multi-select via dropdown + chip list -->
+        <div class="stats-section">
+          <h4 class="section-title">Planets</h4>
+          {#if (activeEntity?.Planets || []).length > 0}
+            <div class="chip-list">
+              {#each activeEntity.Planets as p}
+                <span class="chip">
+                  {p?.Name || '-'}
+                  {#if $editMode}
+                    <button type="button" class="chip-remove" aria-label="Remove {p?.Name}" onclick={() => removePlanet(p?.Name)}>×</button>
+                  {/if}
+                </span>
+              {/each}
+            </div>
+          {:else if !$editMode}
+            <p class="empty-note">None set</p>
+          {/if}
+          {#if $editMode && planetAddOptions.length > 0}
+            <select
+              class="add-select"
+              value=""
+              onchange={(e) => { addPlanet(e.currentTarget.value); e.currentTarget.value = ''; }}
+            >
+              <option value="" disabled>+ Add planet…</option>
+              {#each planetAddOptions as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          {/if}
+        </div>
       </aside>
 
+      <!-- Main article: description only -->
       <article class="wiki-article">
         <DataSection title="Description" expanded={true}>
           {#if $editMode}
@@ -477,54 +581,6 @@
             <div>{@html activeEntity.Properties.Description}</div>
           {:else}
             <p class="muted">No description yet.</p>
-          {/if}
-        </DataSection>
-
-        <DataSection title="Rod Types" expanded={true}>
-          {#if $editMode}
-            <div class="toggle-group">
-              {#each ROD_TYPES as rt}
-                <button
-                  type="button"
-                  class="toggle {isRodTypeSelected(rt) ? 'active' : ''}"
-                  onclick={() => toggleRodType(rt)}
-                >
-                  {rt}
-                </button>
-              {/each}
-            </div>
-          {:else if (activeEntity?.Properties?.RodTypes || []).length > 0}
-            <ul>
-              {#each activeEntity.Properties.RodTypes as rt}
-                <li>{rt}</li>
-              {/each}
-            </ul>
-          {:else}
-            <p class="muted">No rod types set.</p>
-          {/if}
-        </DataSection>
-
-        <DataSection title="Planets" expanded={true}>
-          {#if $editMode}
-            <div class="toggle-group">
-              {#each (data.planetsList || []) as p}
-                <button
-                  type="button"
-                  class="toggle {isPlanetSelected(p.Name) ? 'active' : ''}"
-                  onclick={() => togglePlanet(p.Name)}
-                >
-                  {p.Name}
-                </button>
-              {/each}
-            </div>
-          {:else if (activeEntity?.Planets || []).length > 0}
-            <ul>
-              {#each activeEntity.Planets as p}
-                <li>{p?.Name || '-'}</li>
-              {/each}
-            </ul>
-          {:else}
-            <p class="muted">No planets set.</p>
           {/if}
         </DataSection>
       </article>
@@ -541,8 +597,15 @@
    * page-specific additions live here.
    */
 
+  /* Full-width stat row (no label, embedded picker takes the whole line) */
+  .stat-row-block {
+    display: block;
+    padding: 4px 0;
+  }
+
   /* Block-level stat-value cell for embedded SearchInputs */
   :global(.stat-value.stat-value-block) {
+    display: block;
     width: 100%;
   }
 
@@ -556,34 +619,71 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-left: 8px;
+    font-weight: 400;
   }
 
-  /* Toggle grid for rod-type / planet multi-select */
-  .toggle-group {
+  /* Chip list for multi-select (rod types / planets) */
+  .chip-list {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    margin-bottom: 8px;
   }
 
-  .toggle {
-    padding: 6px 12px;
-    border: 1px solid var(--border-color, #555);
-    background-color: var(--secondary-color);
-    color: var(--text-color);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: background-color 0.15s, border-color 0.15s;
-  }
-
-  .toggle:hover {
-    border-color: var(--accent-color, #4a9eff);
-  }
-
-  .toggle.active {
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
     background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
     color: white;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.25);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .chip-remove:hover {
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  /* Add-new dropdown for multi-select sections */
+  .add-select {
+    width: 100%;
+    padding: 6px 8px;
+    background-color: var(--bg-color, var(--primary-color));
+    color: var(--text-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .add-select:hover {
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  /* View-mode empty note inside infobox sections */
+  .empty-note {
+    margin: 0;
+    color: var(--text-muted, #999);
+    font-size: 12px;
+    font-style: italic;
   }
 
   /* Empty-state message in article sections */
