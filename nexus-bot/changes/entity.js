@@ -934,7 +934,13 @@ export const UpsertConfigs = {
       { name: "Description", value: x => x.Properties?.Description ?? null },
       { name: "ItemId", value: async (x, c) => {
         if (!x.Item?.Name) return null;
-        return await c.query(`SELECT "Id" FROM "Items" WHERE "Name" = $1`, [x.Item.Name]).then(res => res.rows[0]?.Id ?? null);
+        // Fish must point at a Material. Restrict the lookup so that a
+        // wrong item type silently resolves to NULL rather than orphaning
+        // the Fish row (the Items view only promotes Materials to Fish).
+        return await c.query(
+          `SELECT "Id" FROM "Items" WHERE "Name" = $1 AND "Type" IN ('Material','Fish')`,
+          [x.Item.Name]
+        ).then(res => res.rows[0]?.Id ?? null);
       }},
       { name: "SpeciesId", value: async (x, c) => {
         // Fish ↔ MobSpecies is 1:1. Always upsert the species row by the
@@ -960,7 +966,11 @@ export const UpsertConfigs = {
       { name: "MinDepth", value: x => x.Properties?.MinDepth ?? null },
       { name: "PreferredLureId", value: async (x, c) => {
         if (!x.PreferredLure?.Name) return null;
-        return await c.query(`SELECT "Id" FROM "Items" WHERE "Name" = $1`, [x.PreferredLure.Name]).then(res => res.rows[0]?.Id ?? null);
+        // Only FishingLure items are valid preferred lures.
+        return await c.query(
+          `SELECT "Id" FROM "Items" WHERE "Name" = $1 AND "Type" = 'FishingLure'`,
+          [x.PreferredLure.Name]
+        ).then(res => res.rows[0]?.Id ?? null);
       }},
       { name: "TimeOfDay", value: x => x.Properties?.TimeOfDay ?? null }
     ],

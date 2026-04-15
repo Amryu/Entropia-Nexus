@@ -2,6 +2,24 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
+// Items.Type -> API path segment overrides for types whose lowercased+s
+// form doesn't match the API endpoint. Keep in sync with
+// api/endpoints/items.js TYPE_URL_OVERRIDES.
+const TYPE_URL_OVERRIDES = {
+  Fish: 'fishes',
+  Food: 'consumables',
+  FishingRod: 'fishingrods',
+  FishingReel: 'fishingreels',
+  FishingBlank: 'fishingblanks',
+  FishingLine: 'fishinglines',
+  FishingLure: 'fishinglures',
+};
+
+function itemTypeToPath(type) {
+  if (!type) return 'items';
+  return TYPE_URL_OVERRIDES[type] || `${String(type).toLowerCase()}s`;
+}
+
 // Fish is the info-side row. Every Fish references an Items row (Material)
 // and a MobSpecies row. This endpoint exposes the info entity joined with
 // the item, species, and junction data.
@@ -71,7 +89,7 @@ function formatFish(f, rel) {
     Item: f.ItemName ? {
       Name: f.ItemName,
       Properties: { Type: f.ItemType },
-      Links: { "$Url": `/${String(f.ItemType || '').toLowerCase()}s/${f.ItemId}` }
+      Links: { "$Url": `/${itemTypeToPath(f.ItemType)}/${f.ItemId}` }
     } : null,
     Species: f.SpeciesName ? {
       Name: f.SpeciesName,
