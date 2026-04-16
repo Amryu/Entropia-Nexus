@@ -1027,6 +1027,7 @@ export const UpsertConfigs = {
       await applyFishBiomesChanges(client, id, x.Properties?.Biomes || []);
       await applyFishRodTypesChanges(client, id, x.Properties?.RodTypes || []);
       await applyFishSizesChanges(client, id, x.Sizes || []);
+      await applyFishSectorLocationsChanges(client, id, x.Locations || []);
     }
   },
   Mission: {
@@ -1908,6 +1909,28 @@ async function applyFishSizesChanges(client, fishId, sizes) {
        "Strength" = $3, "ScrapsToRefine" = $4`,
     [fishId, size.Name, size.Strength ?? null, size.ScrapsToRefine ?? null]
   )));
+}
+
+async function applyFishSectorLocationsChanges(client, fishId, locations) {
+  locations = Array.isArray(locations) ? locations : [];
+
+  await client.query(`DELETE FROM "FishSectorLocations" WHERE "FishId" = $1`, [fishId]);
+
+  for (const loc of locations) {
+    if (!loc?.PlanetName) continue;
+    const planetRes = await client.query(
+      `SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [loc.PlanetName]
+    );
+    const planetId = planetRes.rows[0]?.Id;
+    if (!planetId) continue;
+
+    const sectors = Array.isArray(loc.Sectors) ? loc.Sectors.filter(s => s.Col != null && s.Row != null) : [];
+    await Promise.all(sectors.map(s => client.query(
+      `INSERT INTO "FishSectorLocations" ("FishId", "PlanetId", "SectorCol", "SectorRow", "Rarity", "Note")
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [fishId, planetId, s.Col, s.Row, s.Rarity || 'Common', s.Note || null]
+    )));
+  }
 }
 
 async function applyMobLootChanges(client, mobId, loots) {

@@ -25,11 +25,12 @@ const baseQuery = `
 
 async function loadRelated(fishRows) {
   const ids = fishRows.map(r => r.Id);
-  if (ids.length === 0) return { planetsByFish: {}, rodTypesByFish: {}, sizesByFish: {}, biomesByFish: {} };
+  if (ids.length === 0) return { planetsByFish: {}, rodTypesByFish: {}, sizesByFish: {}, biomesByFish: {}, locationsByFish: {} };
 
-  const [planetsRes, rodRes, sizesRes, biomesRes] = await Promise.all([
+  const [planetsRes, rodRes, sizesRes, biomesRes, sectorsRes] = await Promise.all([
     pool.query(
-      `SELECT fp."FishId", p."Id" AS "PlanetId", p."Name" AS "PlanetName"
+      `SELECT fp."FishId", p."Id" AS "PlanetId", p."Name" AS "PlanetName",
+              p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight"
        FROM ONLY "FishPlanets" fp
        JOIN ONLY "Planets" p ON p."Id" = fp."PlanetId"
        WHERE fp."FishId" = ANY($1::int[])`,
@@ -50,12 +51,23 @@ async function loadRelated(fishRows) {
       `SELECT "FishId", "Biome" FROM ONLY "FishBiomes" WHERE "FishId" = ANY($1::int[])`,
       [ids]
     ),
+    pool.query(
+      `SELECT fsl."FishId", fsl."PlanetId", p."Name" AS "PlanetName",
+              p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight",
+              fsl."SectorCol", fsl."SectorRow", fsl."Rarity", fsl."Note"
+       FROM ONLY "FishSectorLocations" fsl
+       JOIN ONLY "Planets" p ON p."Id" = fsl."PlanetId"
+       WHERE fsl."FishId" = ANY($1::int[])`,
+      [ids]
+    ),
   ]);
 
   const planetsByFish = {};
   for (const r of planetsRes.rows) {
     (planetsByFish[r.FishId] ||= []).push({
       Name: r.PlanetName,
+      Width: r.PlanetWidth,
+      Height: r.PlanetHeight,
       Links: { "$Url": `/planets/${r.PlanetId}` }
     });
   }
@@ -79,7 +91,23 @@ async function loadRelated(fishRows) {
     (biomesByFish[r.FishId] ||= []).push(r.Biome);
   }
 
-  return { planetsByFish, rodTypesByFish, sizesByFish, biomesByFish };
+  const locationsByFish = {};
+  for (const r of sectorsRes.rows) {
+    const fishLocs = (locationsByFish[r.FishId] ||= []);
+    let planet = fishLocs.find(p => p.PlanetName === r.PlanetName);
+    if (!planet) {
+      planet = { PlanetName: r.PlanetName, Width: r.PlanetWidth, Height: r.PlanetHeight, Sectors: [] };
+      fishLocs.push(planet);
+    }
+    planet.Sectors.push({
+      Col: r.SectorCol,
+      Row: r.SectorRow,
+      Rarity: r.Rarity,
+      Note: r.Note || null,
+    });
+  }
+
+  return { planetsByFish, rodTypesByFish, sizesByFish, biomesByFish, locationsByFish };
 }
 
 function formatFish(f, rel) {
@@ -116,6 +144,7 @@ function formatFish(f, rel) {
       Links: { "$Url": `/items/${f.PreferredLureId}` }
     } : null,
     Planets: rel.planetsByFish[f.Id] || [],
+    Locations: rel.locationsByFish[f.Id] || [],
     Links: { "$Url": `/fishes/${f.Id}` }
   };
 }
@@ -133,7 +162,7 @@ async function getFish(idOrName) {
   return formatFish(row, rel);
 }
 
-const CACHE_KEYS = ['Fish', 'FishSizes', 'FishBiomes', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials'];
+const CACHE_KEYS = ['Fish', 'FishSizes', 'FishBiomes', 'FishSectorLocations', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials'];
 
 function register(app) {
   /**

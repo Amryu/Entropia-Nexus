@@ -10,6 +10,8 @@
     CODEX_MULTIPLIERS,
     REWARD_DIVISORS,
     CODEX_SKILL_CATEGORIES,
+    FISH_CODEX_SKILLS,
+    FISH_CODEX_DIVISOR,
     getCategoryForRank,
     getCumulativeCost,
     calcCumulativeSkillGain
@@ -172,18 +174,36 @@
   }
 
 
+  let isFishCodex = $derived(codexType === 'Fish');
+
   let selectedRank = $state(0);
   let showCumulative = $state(false);
 
-  let category = $derived(getCategoryForRank(selectedRank + 1));
-  let skillsForRank = $derived(codexType === 'Asteroid' ? SKILLS.asteroid : SKILLS[category]);
-  let rewardDivisor = $derived(REWARD_DIVISORS[category]);
+  let category = $derived(isFishCodex ? 'fish' : getCategoryForRank(selectedRank + 1));
+  let skillsForRank = $derived(
+    isFishCodex ? FISH_CODEX_SKILLS.map(s => s.name)
+    : codexType === 'Asteroid' ? SKILLS.asteroid
+    : SKILLS[category]
+  );
+  let rewardDivisor = $derived(isFishCodex ? FISH_CODEX_DIVISOR : REWARD_DIVISORS[category]);
   let isCat4Rank = $derived(codexType === 'MobLooter' && (selectedRank + 1) % 10 === 5);
   let costForRank = $derived(baseCost ? CODEX_MULTIPLIERS[selectedRank] * baseCost : null);
   let cumulativeCost = $derived(baseCost ? getCumulativeCost(selectedRank, baseCost) : null);
   let displayCost = $derived(showCumulative ? cumulativeCost : costForRank);
   let rewardValue = $derived(costForRank ? (costForRank / rewardDivisor).toFixed(4) : 'N/A');
   let cat4RewardValue = $derived(costForRank ? (costForRank / REWARD_DIVISORS.cat4).toFixed(4) : 'N/A');
+
+  let fishMultiplierBySkill = $derived.by(() => {
+    const map = {};
+    for (const s of FISH_CODEX_SKILLS) map[s.name] = s.multiplier;
+    return map;
+  });
+
+  function getFishRewardValue(skillName) {
+    if (!costForRank) return 'N/A';
+    const mult = fishMultiplierBySkill[skillName] ?? 1;
+    return (costForRank / rewardDivisor * mult).toFixed(4);
+  }
 
   // Reactive cumulative skill gains - these update when selectedRank changes
   let cumulativeCat1 = $derived(calcCumulativeSkillGain('cat1', selectedRank, baseCost).toFixed(4));
@@ -205,7 +225,7 @@
               {#each CODEX_MULTIPLIERS.slice(row * 5, row * 5 + 5) as multiplier, col}
                 {@const rankIndex = row * 5 + col}
                 {@const isSelected = selectedRank === rankIndex}
-                {@const rankCategory = getCategoryForRank(rankIndex + 1)}
+                {@const rankCategory = isFishCodex ? 'fish' : getCategoryForRank(rankIndex + 1)}
                 {@const isCat4 = codexType === 'MobLooter' && (rankIndex + 1) % 10 === 5}
                 {@const displayValue = showCumulative ? getCumulativeCost(rankIndex, baseCost) : multiplier * baseCost}
                 <button
@@ -243,26 +263,28 @@
         </div>
 
         <!-- Legend -->
-        <div class="legend">
-          <div class="legend-item">
-            <span class="legend-swatch cat-cat1"></span>
-            <span>Cat 1</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-swatch cat-cat2"></span>
-            <span>Cat 2</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-swatch cat-cat3"></span>
-            <span>Cat 3</span>
-          </div>
-          {#if codexType === 'MobLooter'}
+        {#if !isFishCodex}
+          <div class="legend">
             <div class="legend-item">
-              <span class="legend-swatch cat4-bonus"></span>
-              <span>+Cat 4</span>
+              <span class="legend-swatch cat-cat1"></span>
+              <span>Cat 1</span>
             </div>
-          {/if}
-        </div>
+            <div class="legend-item">
+              <span class="legend-swatch cat-cat2"></span>
+              <span>Cat 2</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch cat-cat3"></span>
+              <span>Cat 3</span>
+            </div>
+            {#if codexType === 'MobLooter'}
+              <div class="legend-item">
+                <span class="legend-swatch cat4-bonus"></span>
+                <span>+Cat 4</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Rewards Panel -->
@@ -270,7 +292,11 @@
         <div class="rewards-header">
           <div class="rewards-title">
             <span class="rank-label">Rank {selectedRank + 1}</span>
-            <span class="category-badge cat-{category}">Category {category.slice(-1)}</span>
+            {#if isFishCodex}
+              <span class="category-badge cat-fish">Fishing</span>
+            {:else}
+              <span class="category-badge cat-{category}">Category {category.slice(-1)}</span>
+            {/if}
           </div>
           <div class="cost-display">
             <span class="cost-label">{showCumulative ? 'Total' : 'Cost'}</span>
@@ -289,9 +315,13 @@
           <div class="skills-list">
             {#each skillsForRank as skill}
               {@const badges = getSkillBadges(skill)}
+              {@const fishMult = isFishCodex ? fishMultiplierBySkill[skill] : null}
               <div class="skill-row" class:has-badge={badges.length > 0}>
                 <a href={getTypeLink(skill, 'Skill')} class="skill-name skill-link">{skill}</a>
                 <span class="skill-badges">
+                  {#if fishMult != null}
+                    <span class="skill-badge fish-mult" title="{fishMult}x reward multiplier">{fishMult}x</span>
+                  {/if}
                   {#each badges as badge}
                     <span
                       class="skill-badge {badge.level} {badge.type}"
@@ -299,7 +329,7 @@
                     >{badge.label}</span>
                   {/each}
                 </span>
-                <span class="skill-value">{rewardValue}</span>
+                <span class="skill-value">{isFishCodex ? getFishRewardValue(skill) : rewardValue}</span>
               </div>
             {/each}
           </div>
@@ -334,20 +364,32 @@
         <!-- Cumulative Summary by Category -->
         <div class="cumulative-summary">
           <div class="summary-title">Cumulative Skill Gain (Ranks 1-{selectedRank + 1})</div>
-          <div class="summary-grid">
-            <div class="summary-item cat-cat1">
-              <span class="summary-label">Cat 1</span>
-              <span class="summary-value">{cumulativeCat1} PED</span>
+          {#if isFishCodex}
+            <div class="summary-grid fish-summary">
+              {#each FISH_CODEX_SKILLS as fs}
+                {@const cumGain = baseCost ? Array.from({ length: selectedRank + 1 }, (_, i) => CODEX_MULTIPLIERS[i] * baseCost / FISH_CODEX_DIVISOR * fs.multiplier).reduce((a, b) => a + b, 0).toFixed(4) : '0'}
+                <div class="summary-item cat-fish">
+                  <span class="summary-label">{fs.name} ({fs.multiplier}x)</span>
+                  <span class="summary-value">{cumGain} PED</span>
+                </div>
+              {/each}
             </div>
-            <div class="summary-item cat-cat2">
-              <span class="summary-label">Cat 2</span>
-              <span class="summary-value">{cumulativeCat2} PED</span>
+          {:else}
+            <div class="summary-grid">
+              <div class="summary-item cat-cat1">
+                <span class="summary-label">Cat 1</span>
+                <span class="summary-value">{cumulativeCat1} PED</span>
+              </div>
+              <div class="summary-item cat-cat2">
+                <span class="summary-label">Cat 2</span>
+                <span class="summary-value">{cumulativeCat2} PED</span>
+              </div>
+              <div class="summary-item cat-cat3">
+                <span class="summary-label">Cat 3</span>
+                <span class="summary-value">{cumulativeCat3} PED</span>
+              </div>
             </div>
-            <div class="summary-item cat-cat3">
-              <span class="summary-label">Cat 3</span>
-              <span class="summary-value">{cumulativeCat3} PED</span>
-            </div>
-          </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -358,6 +400,9 @@
       </span>
       {#if codexType === 'MobLooter'}
         <span class="cat4-note">Category 4 bonus available on ranks 5, 15, 25</span>
+      {/if}
+      {#if isFishCodex}
+        <span class="cat4-note">Same skills available at every rank</span>
       {/if}
     </div>
   {/if}
@@ -432,6 +477,10 @@
 
   .rank-btn.cat-cat3 {
     background-color: var(--cat3-bg, rgba(60, 179, 113, 0.3));
+  }
+
+  .rank-btn.cat-fish {
+    background-color: var(--cat-fish-bg, rgba(56, 189, 248, 0.25));
   }
 
   .rank-btn.cat4-bonus {
@@ -603,6 +652,11 @@
     color: var(--text-color);
   }
 
+  .category-badge.cat-fish {
+    background-color: var(--cat-fish-bg, rgba(56, 189, 248, 0.25));
+    color: var(--text-color);
+  }
+
   .cost-display {
     text-align: right;
   }
@@ -710,6 +764,11 @@
     padding: 2px 5px;
     border-radius: 3px;
     text-transform: uppercase;
+  }
+
+  .skill-badge.fish-mult {
+    background-color: var(--cat-fish-bg, rgba(56, 189, 248, 0.25));
+    color: var(--text-color);
   }
 
   /* HP badges - darker green for better readability */
@@ -856,6 +915,26 @@
 
   .summary-item.cat-cat3 {
     background-color: var(--cat3-bg, rgba(60, 179, 113, 0.3));
+  }
+
+  .summary-item.cat-fish {
+    background-color: var(--cat-fish-bg, rgba(56, 189, 248, 0.25));
+  }
+
+  .summary-grid.fish-summary {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .fish-summary .summary-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+  }
+
+  .fish-summary .summary-label {
+    margin-bottom: 0;
   }
 
   .summary-label {

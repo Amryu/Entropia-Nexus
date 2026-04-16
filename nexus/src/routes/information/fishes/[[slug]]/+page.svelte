@@ -1,7 +1,7 @@
 <!--
   @component Fish Wiki Page
   Wikipedia-style layout. Fish is a hybrid info entity: it references a
-  Material item (by name) and a MobSpecies row (1:1, CodexType='Fish').
+  Material item (by name) and a MobSpecies row (many:1, CodexType='Fish').
 -->
 <script>
   // @ts-nocheck
@@ -18,6 +18,8 @@
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+  import MobCodex from '$lib/components/wiki/mobs/MobCodex.svelte';
+  import FishSectorGrid from '$lib/components/wiki/fish/FishSectorGrid.svelte';
 
   import {
     editMode,
@@ -54,7 +56,8 @@
     Species: { Name: '', CodexBaseCost: null },
     FishOil: { Name: null },
     PreferredLure: { Name: null },
-    Planets: []
+    Planets: [],
+    Locations: []
   };
 
   function applyChangesToEntity(entity, changes) {
@@ -145,6 +148,15 @@
   let canUsePendingChange = $derived(!!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))));
   let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
   let navItems = $derived(allItems);
+  let skillsList = $derived(data.skillsList || []);
+  let speciesCodexBaseCost = $derived(activeEntity?.Species?.CodexBaseCost ?? activeEntity?.Species?.Properties?.CodexBaseCost);
+  let speciesCodexType = $derived(activeEntity?.Species?.Properties?.CodexType ?? 'Fish');
+  let hasCodex = $derived(speciesCodexBaseCost != null);
+
+  let sortedSizes = $derived.by(() => {
+    const sizes = activeEntity?.Sizes || [];
+    return [...sizes].sort((a, b) => (a.ScrapsToRefine ?? Infinity) - (b.ScrapsToRefine ?? Infinity));
+  });
 
   $effect(() => {
     if (user) {
@@ -178,7 +190,7 @@
   ]);
 
   let seoDescription = $derived(activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Fish'} - ${activeEntity?.Properties?.Biome || ''} fish in Entropia Universe.`);
+    `${activeEntity?.Name || 'Fish'} - ${(activeEntity?.Properties?.Biomes || []).join(', ') || ''} fish in Entropia Universe.`);
   let canonicalUrl = $derived(fish
     ? `https://entropianexus.com/information/fishes/${encodeURIComponentSafe(fish.Name)}`
     : 'https://entropianexus.com/information/fishes');
@@ -472,51 +484,6 @@
           </div>
         </div>
 
-        <!-- Sizes (maturities) -->
-        <div class="stats-section">
-          <h4 class="section-title">Sizes</h4>
-          {#if (activeEntity?.Sizes || []).length > 0}
-            <div class="sizes-table">
-              <div class="sizes-header">
-                <span class="sizes-col-name">Name</span>
-                <span class="sizes-col-num">Strength</span>
-                <span class="sizes-col-num">Scraps</span>
-                {#if $editMode}<span class="sizes-col-action"></span>{/if}
-              </div>
-              {#each activeEntity.Sizes as size, i}
-                <div class="sizes-row">
-                  {#if $editMode}
-                    <span class="sizes-col-name">
-                      <input type="text" class="size-input" value={size.Name} placeholder="Size name"
-                        onchange={(e) => updateSize(i, 'Name', e.currentTarget.value)} />
-                    </span>
-                    <span class="sizes-col-num">
-                      <input type="number" class="size-input size-input-num" value={size.Strength}
-                        placeholder="-" onchange={(e) => updateSize(i, 'Strength', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
-                    </span>
-                    <span class="sizes-col-num">
-                      <input type="number" class="size-input size-input-num" value={size.ScrapsToRefine}
-                        placeholder="-" onchange={(e) => updateSize(i, 'ScrapsToRefine', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
-                    </span>
-                    <span class="sizes-col-action">
-                      <button type="button" class="chip-remove" aria-label="Remove size" onclick={() => removeSize(i)}>×</button>
-                    </span>
-                  {:else}
-                    <span class="sizes-col-name">{size.Name}</span>
-                    <span class="sizes-col-num">{size.Strength ?? '-'}</span>
-                    <span class="sizes-col-num">{size.ScrapsToRefine ?? '-'}</span>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          {:else if !$editMode}
-            <p class="empty-note">No sizes set</p>
-          {/if}
-          {#if $editMode}
-            <button type="button" class="add-btn" onclick={addSize}>+ Add size</button>
-          {/if}
-        </div>
-
         <!-- Species (codex) -->
         <div class="stats-section">
           <h4 class="section-title">
@@ -667,7 +634,7 @@
         </div>
       </aside>
 
-      <!-- Main article: title + description -->
+      <!-- Main article: title + description + sizes + codex -->
       <article class="wiki-article">
         <h1 class="article-title">
           <InlineEdit
@@ -690,6 +657,97 @@
             <p class="muted">No description yet.</p>
           {/if}
         </DataSection>
+
+        <DataSection
+          title="Sizes"
+          expanded={true}
+          subtitle="{(activeEntity?.Sizes || []).length} sizes"
+        >
+          {#if $editMode}
+            {#if (activeEntity?.Sizes || []).length > 0}
+              <table class="sizes-table">
+                <thead>
+                  <tr>
+                    <th class="sizes-th-name">Name</th>
+                    <th class="sizes-th-num">Strength</th>
+                    <th class="sizes-th-num">Scraps to Refine</th>
+                    <th class="sizes-th-action"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each activeEntity.Sizes as size, i}
+                    <tr>
+                      <td>
+                        <input type="text" class="size-input" value={size.Name} placeholder="Size name"
+                          onchange={(e) => updateSize(i, 'Name', e.currentTarget.value)} />
+                      </td>
+                      <td>
+                        <input type="number" class="size-input size-input-num" value={size.Strength}
+                          placeholder="-" onchange={(e) => updateSize(i, 'Strength', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
+                      </td>
+                      <td>
+                        <input type="number" class="size-input size-input-num" value={size.ScrapsToRefine}
+                          placeholder="-" onchange={(e) => updateSize(i, 'ScrapsToRefine', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
+                      </td>
+                      <td class="sizes-td-action">
+                        <button type="button" class="chip-remove" aria-label="Remove size" onclick={() => removeSize(i)}>×</button>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+            <button type="button" class="add-btn" onclick={addSize}>+ Add size</button>
+          {:else if sortedSizes.length > 0}
+            <table class="sizes-table">
+              <thead>
+                <tr>
+                  <th class="sizes-th-name">Name</th>
+                  <th class="sizes-th-num">Strength</th>
+                  <th class="sizes-th-num">Scraps to Refine</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each sortedSizes as size}
+                  <tr>
+                    <td>{size.Name}</td>
+                    <td class="num">{size.Strength ?? '-'}</td>
+                    <td class="num">{size.ScrapsToRefine ?? '-'}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="muted">No sizes recorded yet.</p>
+          {/if}
+        </DataSection>
+
+        {#if !isCreateMode && hasCodex}
+          <DataSection title="Codex Calculator" expanded={true}>
+            <MobCodex
+              baseCost={speciesCodexBaseCost}
+              codexType={speciesCodexType}
+              mobType="Fish"
+              skills={skillsList}
+            />
+          </DataSection>
+        {/if}
+
+        <DataSection
+          title="Locations"
+          expanded={true}
+          subtitle="{(activeEntity?.Locations || []).reduce((n, l) => n + (l.Sectors?.length || 0), 0)} sectors"
+        >
+          <FishSectorGrid
+            locations={activeEntity?.Locations || []}
+            planets={activeEntity?.Planets || []}
+            isEditMode={$editMode}
+            planetsList={data.planetsList}
+            onchange={(newLocations) => updateField('Locations', newLocations)}
+          />
+        </DataSection>
+
+        <!-- TODO: Global section (fish global stats/tracking) goes here when implemented -->
       </article>
     </div>
   {/if}
@@ -800,57 +858,62 @@
     margin: 0;
   }
 
-  /* Sizes mini-table inside infobox */
+  /* Sizes table in article area */
   .sizes-table {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 12px;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
   }
 
-  .sizes-header {
-    display: flex;
-    gap: 4px;
+  .sizes-table th {
+    text-align: left;
     font-weight: 600;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border-color, #555);
+    padding: 6px 10px;
+    border-bottom: 2px solid var(--border-color, #555);
     color: var(--text-muted, #999);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
 
-  .sizes-row {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    padding: 2px 0;
+  .sizes-table td {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border-color-subtle, rgba(128, 128, 128, 0.2));
   }
 
-  .sizes-col-name {
-    flex: 1;
-    min-width: 0;
+  .sizes-table tr:hover {
+    background-color: var(--hover-bg, rgba(128, 128, 128, 0.08));
   }
 
-  .sizes-col-num {
-    width: 60px;
+  .sizes-th-name {
+    width: auto;
+  }
+
+  .sizes-th-num {
+    width: 120px;
+    text-align: right !important;
+  }
+
+  .sizes-th-action {
+    width: 32px;
+  }
+
+  .sizes-td-action {
+    text-align: center;
+  }
+
+  .sizes-table td.num {
     text-align: right;
-  }
-
-  .sizes-col-action {
-    width: 20px;
-    display: flex;
-    justify-content: center;
   }
 
   .size-input {
     width: 100%;
-    padding: 3px 6px;
+    padding: 4px 8px;
     background-color: var(--bg-color, var(--primary-color));
     color: var(--text-color);
     border: 1px solid var(--border-color, #555);
     border-radius: 3px;
-    font-size: 12px;
+    font-size: 13px;
     box-sizing: border-box;
   }
 
@@ -865,13 +928,13 @@
 
   .add-btn {
     width: 100%;
-    padding: 6px 8px;
-    margin-top: 6px;
+    padding: 8px;
+    margin-top: 8px;
     background-color: var(--bg-color, var(--primary-color));
     color: var(--text-muted, #999);
     border: 1px dashed var(--border-color, #555);
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
     text-align: center;
   }

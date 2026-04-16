@@ -107,6 +107,39 @@ export const Fish = {
       "type": "array",
       "items": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
       "default": []
+    },
+    "Locations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "PlanetName": { "type": "string" },
+          "Width": { "type": ["integer", "null"], "default": null },
+          "Height": { "type": ["integer", "null"], "default": null },
+          "Sectors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "Col": { "type": "integer" },
+                "Row": { "type": "integer" },
+                "Rarity": {
+                  "type": "string",
+                  "enum": ["Common", "Uncommon", "Rare", "Very Rare", "Extremely Rare"],
+                  "default": "Common"
+                },
+                "Note": { "type": ["string", "null"], "default": null }
+              },
+              "required": ["Col", "Row", "Rarity"]
+            },
+            "default": []
+          }
+        },
+        "required": ["PlanetName", "Sectors"]
+      },
+      "default": []
     }
   },
   "required": [

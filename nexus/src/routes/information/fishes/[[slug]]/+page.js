@@ -4,6 +4,7 @@
  * Wikipedia-style layout; supports full wiki editing.
  */
 let items;
+let cachedSkills;
 
 import { redirect } from '@sveltejs/kit';
 import { apiCall, decodeURIComponentSafe, encodeURIComponentSafe, handlePageLoad, loadPendingChangesData } from '$lib/util';
@@ -67,6 +68,11 @@ export async function load({ fetch, params, url, parent }) {
   response.userPendingUpdates = pendingData.userPendingUpdates;
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
+
+  if (!cachedSkills) {
+    cachedSkills = await apiCall(fetch, '/skills').catch(() => []) || [];
+  }
+  response.skillsList = cachedSkills;
 
   // Edit-mode dependencies: item/lure picker, planet toggles, plus the list
   // of existing Fish-type species so the form can distinguish "pick existing"

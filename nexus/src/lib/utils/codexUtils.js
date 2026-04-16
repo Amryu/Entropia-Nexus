@@ -15,6 +15,20 @@ export const CODEX_MULTIPLIERS = [
 /** Skill category reward divisors: PED cycle cost per PED of skill gained */
 export const REWARD_DIVISORS = { cat1: 200, cat2: 320, cat3: 640, cat4: 1000 };
 
+export const FISH_CODEX_DIVISOR = 320;
+
+/**
+ * Fish codex skills with per-skill reward multipliers.
+ * Every rank offers the same skills; multiplier scales the base reward.
+ */
+export const FISH_CODEX_SKILLS = [
+  { name: 'Fishing', multiplier: 1.0 },
+  { name: 'Casting', multiplier: 1.6 },
+  { name: 'Angling', multiplier: 1.6 },
+  { name: 'Fly Fishing', multiplier: 1.6 },
+  { name: 'Deep Ocean Fishing', multiplier: 1.6 }
+];
+
 /**
  * Codex skill categories — determines which skills are available at which ranks.
  * These are specific to the codex game mechanic and don't map to DB skill categories.

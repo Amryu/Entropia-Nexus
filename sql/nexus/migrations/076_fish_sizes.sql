@@ -183,7 +183,30 @@ GRANT INSERT ON "FishSizes_audit" TO nexus_bot;
 GRANT USAGE, SELECT ON SEQUENCE "FishSizes_Id_seq" TO nexus_bot;
 
 -- ---------------------------------------------------------------------------
--- 8. Rebuild Items VIEW to reflect Fish column changes
+-- 8. FishSectorLocations (fine-grid: each server tile subdivided 4x4)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE "FishSectorLocations" (
+    "FishId"    integer NOT NULL REFERENCES "Fish"("Id") ON DELETE CASCADE,
+    "PlanetId"  integer NOT NULL REFERENCES "Planets"("Id") ON DELETE CASCADE,
+    "SectorCol" integer NOT NULL,
+    "SectorRow" integer NOT NULL,
+    "Rarity"    text NOT NULL DEFAULT 'Common',
+    "Note"      text,
+    PRIMARY KEY ("FishId", "PlanetId", "SectorCol", "SectorRow")
+);
+
+CREATE INDEX "FishSectorLocations_PlanetId_idx" ON "FishSectorLocations" ("PlanetId");
+
+CREATE TRIGGER zz_track_change
+    AFTER INSERT OR UPDATE OR DELETE ON "FishSectorLocations"
+    FOR EACH STATEMENT EXECUTE FUNCTION track_table_change();
+
+GRANT SELECT ON "FishSectorLocations" TO nexus;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "FishSectorLocations" TO nexus_bot;
+
+-- ---------------------------------------------------------------------------
+-- 9. Rebuild Items VIEW to reflect Fish column changes
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE VIEW "Items" AS
