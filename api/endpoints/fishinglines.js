@@ -21,6 +21,7 @@ function formatFishingLine(x, data) {
       Length: x.Length !== null ? Number(x.Length) : null,
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
       },
       IsUntradeable: props?.IsUntradeable || false,

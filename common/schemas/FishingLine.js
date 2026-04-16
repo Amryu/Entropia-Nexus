@@ -21,9 +21,10 @@ export const FishingLine = {
           "additionalProperties": false,
           "properties": {
             "MaxTT": { "type": ["number", "null"], "default": null },
+            "MinTT": { "type": ["number", "null"], "default": null },
             "Decay": { "type": ["number", "null"], "default": null }
           },
-          "required": ["MaxTT", "Decay"]
+          "required": ["MaxTT", "MinTT", "Decay"]
         }
       },
       "required": ["Description", "Weight", "Economy"]

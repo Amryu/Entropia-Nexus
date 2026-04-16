@@ -20,6 +20,7 @@ function formatFishingBlank(x, data) {
       Flexibility: x.Flexibility !== null ? Number(x.Flexibility) : null,
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
       },
       IsUntradeable: props?.IsUntradeable || false,

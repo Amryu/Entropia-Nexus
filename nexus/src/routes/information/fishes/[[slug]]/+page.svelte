@@ -6,7 +6,7 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
-  import { onDestroy, setContext } from 'svelte';
+  import { onDestroy, setContext, untrack } from 'svelte';
   setContext('wikiContributeCategory', 'fish');
   import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
 
@@ -125,13 +125,16 @@
   // Lazy-load edit dependencies on edit activation
   let editDepsLoading = $state(false);
   $effect(() => {
-    if ($editMode && data.itemsList === null && !editDepsLoading) {
+    if ($editMode && data.itemsList === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
         { key: 'itemsList', url: '/api/items?limit=5000' },
         { key: 'planetsList', url: '/api/planets' },
         { key: 'speciesList', url: '/api/mobspecies' }
-      ], data).finally(() => { editDepsLoading = false; });
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
     }
   });
 

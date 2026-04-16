@@ -478,6 +478,7 @@ export const UpsertConfigs = {
       { name: "Strength", value: x => x.Properties.Strength ?? null },
       { name: "Speed", value: x => x.Properties.Speed ?? null },
       { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "MinTT", value: x => x.Properties.Economy?.MinTT ?? null },
       { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
     ],
     offset: 5800000,
@@ -492,6 +493,7 @@ export const UpsertConfigs = {
       { name: "Strength", value: x => x.Properties.Strength ?? null },
       { name: "Flexibility", value: x => x.Properties.Flexibility ?? null },
       { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "MinTT", value: x => x.Properties.Economy?.MinTT ?? null },
       { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
     ],
     offset: 5810000,
@@ -507,6 +509,7 @@ export const UpsertConfigs = {
       { name: "Strength", value: x => x.Properties.Strength ?? null },
       { name: "Length", value: x => x.Properties.Length ?? null },
       { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "MinTT", value: x => x.Properties.Economy?.MinTT ?? null },
       { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
     ],
     offset: 5820000,
@@ -521,6 +524,7 @@ export const UpsertConfigs = {
       { name: "Depth", value: x => x.Properties.Depth ?? null },
       { name: "Quality", value: x => x.Properties.Quality ?? null },
       { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
+      { name: "MinTT", value: x => x.Properties.Economy?.MinTT ?? null },
       { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null }
     ],
     offset: 5830000,
