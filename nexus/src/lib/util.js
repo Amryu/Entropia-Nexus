@@ -390,6 +390,20 @@ export function getTypeName(type) {
         return 'Tier';
       case 'Target':
         return 'Target';
+      case 'FishingRod':
+        return 'Fishing Rod';
+      case 'FishingReel':
+        return 'Fishing Reel';
+      case 'FishingBlank':
+        return 'Fishing Blank';
+      case 'FishingLine':
+        return 'Fishing Line';
+      case 'FishingLure':
+        return 'Fishing Lure';
+      case 'Fish':
+        return 'Fish';
+      case 'Food':
+        return 'Food';
       default:
         return 'N/A';
   }
