@@ -38,7 +38,7 @@
 
   const BIOMES = ['Sea', 'River', 'Lake', 'Deep Ocean', 'Sky'];
   const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Very Hard', 'Elite'];
-  const TIMES_OF_DAY = ['Day', 'Night'];
+  const TIMES_OF_DAY = ['Dawn', 'Day', 'Sunset', 'Night'];
   const ROD_TYPES = ['Casting', 'Angling', 'Fly Fishing', 'Deep Ocean Fishing', 'Baitfishing'];
 
   const emptyEntity = {
@@ -47,7 +47,7 @@
       Description: '',
       Difficulty: null,
       MinDepth: null,
-      TimeOfDay: null,
+      TimesOfDay: [],
       Weight: null,
       Economy: { MaxTT: null },
       Biomes: [],
@@ -136,8 +136,8 @@
     timeOfDay: {
       key: 'timeOfDay',
       header: 'Time of Day',
-      width: '90px',
-      getValue: (item) => item.Properties?.TimeOfDay,
+      width: '110px',
+      getValue: (item) => (item.Properties?.TimesOfDay || []).join(', '),
       format: (v) => v || 'Any'
     },
     minDepth: {
@@ -340,6 +340,26 @@
     updateField('Properties.Biomes', current);
   }
 
+  let timeAddOptions = $derived.by(() => {
+    const selected = new Set(activeEntity?.Properties?.TimesOfDay || []);
+    return TIMES_OF_DAY
+      .filter(t => !selected.has(t))
+      .map(t => ({ value: t, label: t }));
+  });
+
+  function addTime(t) {
+    if (!t) return;
+    const current = Array.isArray(activeEntity?.Properties?.TimesOfDay) ? [...activeEntity.Properties.TimesOfDay] : [];
+    if (current.includes(t)) return;
+    current.push(t);
+    updateField('Properties.TimesOfDay', current);
+  }
+
+  function removeTime(t) {
+    const current = (activeEntity?.Properties?.TimesOfDay || []).filter(x => x !== t);
+    updateField('Properties.TimesOfDay', current);
+  }
+
   // Remaining rod-type options (not yet selected).
   let rodTypeAddOptions = $derived.by(() => {
     const selected = new Set(activeEntity?.Properties?.RodTypes || []);
@@ -478,18 +498,6 @@
             </span>
           </div>
           <div class="stat-row">
-            <span class="stat-label">Time of Day</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.TimeOfDay}
-                path="Properties.TimeOfDay"
-                type="select"
-                placeholder="Any"
-                options={TIMES_OF_DAY.map(t => ({ value: t, label: t }))}
-              />
-            </span>
-          </div>
-          <div class="stat-row">
             <span class="stat-label">Min Depth (m)</span>
             <span class="stat-value">
               <InlineEdit
@@ -590,97 +598,113 @@
           </div>
         </div>
 
-        <!-- Biomes: multi-select via dropdown + chip list -->
+        <!-- Classifications: consolidated multi-select panel -->
         <div class="stats-section">
-          <h4 class="section-title">Biomes</h4>
-          {#if (activeEntity?.Properties?.Biomes || []).length > 0}
-            <div class="chip-list">
-              {#each activeEntity.Properties.Biomes as b}
-                <span class="chip">
-                  {b}
-                  {#if $editMode}
-                    <button type="button" class="chip-remove" aria-label="Remove {b}" onclick={() => removeBiome(b)}>×</button>
-                  {/if}
-                </span>
-              {/each}
-            </div>
-          {:else if !$editMode}
-            <p class="empty-note">None set</p>
-          {/if}
-          {#if $editMode && biomeAddOptions.length > 0}
-            <select
-              class="add-select"
-              value=""
-              onchange={(e) => { addBiome(e.currentTarget.value); e.currentTarget.value = ''; }}
-            >
-              <option value="" disabled>+ Add biome…</option>
-              {#each biomeAddOptions as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          {/if}
-        </div>
+          <h4 class="section-title">Classifications</h4>
 
-        <!-- Rod types: multi-select via dropdown + chip list -->
-        <div class="stats-section">
-          <h4 class="section-title">Rod Types</h4>
-          {#if (activeEntity?.Properties?.RodTypes || []).length > 0}
-            <div class="chip-list">
-              {#each activeEntity.Properties.RodTypes as rt}
-                <span class="chip">
-                  {rt}
-                  {#if $editMode}
-                    <button type="button" class="chip-remove" aria-label="Remove {rt}" onclick={() => removeRodType(rt)}>×</button>
-                  {/if}
-                </span>
-              {/each}
-            </div>
-          {:else if !$editMode}
-            <p class="empty-note">None set</p>
-          {/if}
-          {#if $editMode && rodTypeAddOptions.length > 0}
-            <select
-              class="add-select"
-              value=""
-              onchange={(e) => { addRodType(e.currentTarget.value); e.currentTarget.value = ''; }}
-            >
-              <option value="" disabled>+ Add rod type…</option>
-              {#each rodTypeAddOptions as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          {/if}
-        </div>
+          <div class="multi-group">
+            <span class="multi-label">Biomes</span>
+            {#if (activeEntity?.Properties?.Biomes || []).length > 0}
+              <div class="chip-list">
+                {#each activeEntity.Properties.Biomes as b}
+                  <span class="chip">
+                    {b}
+                    {#if $editMode}
+                      <button type="button" class="chip-remove" aria-label="Remove {b}" onclick={() => removeBiome(b)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {:else if !$editMode}
+              <span class="empty-inline">-</span>
+            {/if}
+            {#if $editMode && biomeAddOptions.length > 0}
+              <select class="add-select" value="" onchange={(e) => { addBiome(e.currentTarget.value); e.currentTarget.value = ''; }}>
+                <option value="" disabled>+ Add…</option>
+                {#each biomeAddOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            {/if}
+          </div>
 
-        <!-- Planets: multi-select via dropdown + chip list -->
-        <div class="stats-section">
-          <h4 class="section-title">Planets</h4>
-          {#if (activeEntity?.Planets || []).length > 0}
-            <div class="chip-list">
-              {#each activeEntity.Planets as p}
-                <span class="chip">
-                  {p?.Name || '-'}
-                  {#if $editMode}
-                    <button type="button" class="chip-remove" aria-label="Remove {p?.Name}" onclick={() => removePlanet(p?.Name)}>×</button>
-                  {/if}
-                </span>
-              {/each}
-            </div>
-          {:else if !$editMode}
-            <p class="empty-note">None set</p>
-          {/if}
-          {#if $editMode && planetAddOptions.length > 0}
-            <select
-              class="add-select"
-              value=""
-              onchange={(e) => { addPlanet(e.currentTarget.value); e.currentTarget.value = ''; }}
-            >
-              <option value="" disabled>+ Add planet…</option>
-              {#each planetAddOptions as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          {/if}
+          <div class="multi-group">
+            <span class="multi-label">Time of Day</span>
+            {#if (activeEntity?.Properties?.TimesOfDay || []).length > 0}
+              <div class="chip-list">
+                {#each activeEntity.Properties.TimesOfDay as t}
+                  <span class="chip">
+                    {t}
+                    {#if $editMode}
+                      <button type="button" class="chip-remove" aria-label="Remove {t}" onclick={() => removeTime(t)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {:else if !$editMode}
+              <span class="empty-inline">Any</span>
+            {/if}
+            {#if $editMode && timeAddOptions.length > 0}
+              <select class="add-select" value="" onchange={(e) => { addTime(e.currentTarget.value); e.currentTarget.value = ''; }}>
+                <option value="" disabled>+ Add…</option>
+                {#each timeAddOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            {/if}
+          </div>
+
+          <div class="multi-group">
+            <span class="multi-label">Rod Types</span>
+            {#if (activeEntity?.Properties?.RodTypes || []).length > 0}
+              <div class="chip-list">
+                {#each activeEntity.Properties.RodTypes as rt}
+                  <span class="chip">
+                    {rt}
+                    {#if $editMode}
+                      <button type="button" class="chip-remove" aria-label="Remove {rt}" onclick={() => removeRodType(rt)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {:else if !$editMode}
+              <span class="empty-inline">-</span>
+            {/if}
+            {#if $editMode && rodTypeAddOptions.length > 0}
+              <select class="add-select" value="" onchange={(e) => { addRodType(e.currentTarget.value); e.currentTarget.value = ''; }}>
+                <option value="" disabled>+ Add…</option>
+                {#each rodTypeAddOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            {/if}
+          </div>
+
+          <div class="multi-group">
+            <span class="multi-label">Planets</span>
+            {#if (activeEntity?.Planets || []).length > 0}
+              <div class="chip-list">
+                {#each activeEntity.Planets as p}
+                  <span class="chip">
+                    {p?.Name || '-'}
+                    {#if $editMode}
+                      <button type="button" class="chip-remove" aria-label="Remove {p?.Name}" onclick={() => removePlanet(p?.Name)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {:else if !$editMode}
+              <span class="empty-inline">-</span>
+            {/if}
+            {#if $editMode && planetAddOptions.length > 0}
+              <select class="add-select" value="" onchange={(e) => { addPlanet(e.currentTarget.value); e.currentTarget.value = ''; }}>
+                <option value="" disabled>+ Add…</option>
+                {#each planetAddOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            {/if}
+          </div>
         </div>
       </aside>
 
@@ -837,12 +861,37 @@
     font-weight: 400;
   }
 
-  /* Chip list for multi-select (rod types / planets) */
+  /* Grouped multi-select rows inside a single Classifications section */
+  .multi-group {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.06));
+  }
+
+  .multi-group:last-child {
+    border-bottom: none;
+  }
+
+  .multi-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+
+  .empty-inline {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+  }
+
+  /* Chip list for multi-select */
   .chip-list {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .chip {

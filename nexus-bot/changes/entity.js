@@ -1020,7 +1020,7 @@ export const UpsertConfigs = {
           [x.FishOil.Name]
         ).then(res => res.rows[0]?.Id ?? null);
       }},
-      { name: "TimeOfDay", value: x => x.Properties?.TimeOfDay ?? null }
+      { name: "TimeOfDay", value: x => x.Properties?.TimesOfDay ?? [] }
     ],
     table: "Fish",
     relationChangeFunc: async (client, id, x) => {

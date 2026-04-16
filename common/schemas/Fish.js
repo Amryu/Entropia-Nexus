@@ -38,10 +38,13 @@ export const Fish = {
           "type": ["number", "null"],
           "default": null
         },
-        "TimeOfDay": {
-          "type": ["string", "null"],
-          "enum": ["Day", "Night", null],
-          "default": null
+        "TimesOfDay": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["Dawn", "Day", "Sunset", "Night"]
+          },
+          "default": []
         },
         "Weight": {
           "type": ["number", "null"],
@@ -72,7 +75,7 @@ export const Fish = {
         "Biomes",
         "Difficulty",
         "MinDepth",
-        "TimeOfDay",
+        "TimesOfDay",
         "Weight",
         "Economy",
         "RodTypes"
