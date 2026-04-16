@@ -12,6 +12,7 @@ export const TYPE_CONFIG = {
   deposit:       { label: 'Mining',       cssClass: 'type-deposit',       color: '#60b0ff' },
   space_deposit: { label: 'Space Mining', cssClass: 'type-space-deposit', color: '#a78bfa' },
   craft:         { label: 'Crafting',     cssClass: 'type-craft',         color: '#f97316' },
+  fish:          { label: 'Fishing',      cssClass: 'type-fish',          color: '#06b6d4' },
   rare_item:     { label: 'Rare Find',    cssClass: 'type-rare',          color: '#60b0ff' },
   discovery:     { label: 'Discovery',    cssClass: 'type-discovery',     color: '#9b59b6' },
   tier:          { label: 'Tier Record',  cssClass: 'type-tier',          color: '#f1c40f' },
@@ -26,6 +27,7 @@ export const TYPE_FILTERS = [
   { value: 'deposit', label: 'Mining', space: 'exclude' },
   { value: 'deposit', label: 'Space Mining', space: 'only' },
   { value: 'craft', label: 'Crafting' },
+  { value: 'fish', label: 'Fishing' },
 ];
 
 /** Top loots tab definitions. */
@@ -34,6 +36,7 @@ export const TOP_LOOTS_TABS = [
   { value: 'mining',       label: 'Mining',        types: "('deposit')",          hasValue: true, space: 'exclude' },
   { value: 'space_mining', label: 'Space Mining',  types: "('deposit')",          hasValue: true, space: 'only' },
   { value: 'crafting',     label: 'Crafting',      types: "('craft')",            hasValue: true },
+  { value: 'fishing',      label: 'Fishing',       types: "('fish')",             hasValue: true },
   { value: 'rare_item',    label: 'Rare Find',     types: "('rare_item')",        hasValue: true,  isSpecial: true },
   { value: 'discovery',    label: 'Discovery',     types: "('discovery')",        hasValue: false, isSpecial: true },
   { value: 'tier',         label: 'Tier Record',   types: "('tier')",             hasValue: false, isSpecial: true },

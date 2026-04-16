@@ -4,7 +4,7 @@
  * Public endpoint, no auth required.
  *
  * Returns summary stats + breakdowns by hunting (per-mob with maturities),
- * mining (per-resource), space mining (asteroids), crafting (per-item),
+ * mining (per-resource), space mining (asteroids), crafting (per-item), fishing (per-target),
  * activity timeline, top individual loots per category, and per-target ATH stats.
  */
 import { pool } from '$lib/server/db.js';
@@ -129,6 +129,7 @@ export async function GET({ params, url, locals }) {
       miningResult,
       spaceMiningResult,
       craftingResult,
+      fishingResult,
       activityResult,
       recentResult,
       discoveryResult,
@@ -138,6 +139,7 @@ export async function GET({ params, url, locals }) {
       topMiningResult,
       topSpaceMiningResult,
       topCraftingResult,
+      topFishingResult,
       categoryRanksResult,
       spaceMiningRanksResult,
       spaceMiningActivityResult,
@@ -145,6 +147,7 @@ export async function GET({ params, url, locals }) {
       athMiningResult,
       athSpaceMiningResult,
       athCraftingResult,
+      athFishingResult,
       athPvpResult,
     ] = await Promise.all([
       // Summary stats (rollup or raw)
@@ -171,6 +174,8 @@ export async function GET({ params, url, locals }) {
                     COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
                     count(*) FILTER (WHERE global_type = 'craft') AS craft_count,
                     COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
+                    count(*) FILTER (WHERE global_type = 'fish') AS fish_count,
+                    COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'fish'), 0) AS fishing_value,
                     count(*) FILTER (WHERE global_type = 'rare_item') AS rare_count,
                     count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
                     count(*) FILTER (WHERE global_type = 'tier') AS tier_count,
@@ -231,6 +236,19 @@ export async function GET({ params, url, locals }) {
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'craft'
+         GROUP BY target_name
+         ORDER BY total_value DESC`,
+        [playerName, ...extraParams]
+      ),
+
+      // Fishing: per-target breakdown
+      pool.query(
+        `SELECT target_name AS target, count(*) AS catches,
+                COALESCE(sum(${VALUE_PED}), 0) AS total_value,
+                COALESCE(avg(${VALUE_PED}), 0) AS avg_value, COALESCE(max(${VALUE_PED}), 0) AS best_value
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type = 'fish'
          GROUP BY target_name
          ORDER BY total_value DESC`,
         [playerName, ...extraParams]
@@ -316,6 +334,9 @@ export async function GET({ params, url, locals }) {
       // Top individual crafting loots
       topLootsQuery("global_type = 'craft'"),
 
+      // Top individual fishing loots
+      topLootsQuery("global_type = 'fish'"),
+
       // Category-level player rankings (how this player ranks among ALL players per category)
       // When a period filter is active, ranks are computed over that period using raw events;
       // for all-time, use the pre-aggregated rollup table for speed.
@@ -328,7 +349,9 @@ export async function GET({ params, url, locals }) {
                 SUM(${VALUE_PED}) FILTER (WHERE global_type = 'deposit') AS mining_value,
                 COUNT(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
                 SUM(${VALUE_PED}) FILTER (WHERE global_type = 'craft') AS crafting_value,
-                COUNT(*) FILTER (WHERE global_type = 'craft') AS crafting_count
+                COUNT(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
+                SUM(${VALUE_PED}) FILTER (WHERE global_type = 'fish') AS fishing_value,
+                COUNT(*) FILTER (WHERE global_type = 'fish') AS fishing_count
               FROM ingested_globals
               WHERE confirmed = true${periodCond}
               GROUP BY player_name
@@ -340,12 +363,15 @@ export async function GET({ params, url, locals }) {
                 RANK() OVER (ORDER BY mining_value DESC NULLS LAST) AS mining_value_rank,
                 RANK() OVER (ORDER BY mining_count DESC NULLS LAST) AS mining_count_rank,
                 RANK() OVER (ORDER BY crafting_value DESC NULLS LAST) AS crafting_value_rank,
-                RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank
+                RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank,
+                RANK() OVER (ORDER BY fishing_value DESC NULLS LAST) AS fishing_value_rank,
+                RANK() OVER (ORDER BY fishing_count DESC NULLS LAST) AS fishing_count_rank
               FROM category_totals
             )
             SELECT hunting_value_rank, hunting_count_rank,
                    mining_value_rank, mining_count_rank,
-                   crafting_value_rank, crafting_count_rank
+                   crafting_value_rank, crafting_count_rank,
+                   fishing_value_rank, fishing_count_rank
             FROM ranked
             WHERE lower(player_name) = lower($1)`,
             [playerName, ...extraParams]
@@ -358,7 +384,9 @@ export async function GET({ params, url, locals }) {
                 SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
                 SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
                 SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value,
-                SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count
+                SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count,
+                SUM(sum_value) FILTER (WHERE global_type = 'fish') AS fishing_value,
+                SUM(event_count) FILTER (WHERE global_type = 'fish') AS fishing_count
               FROM globals_rollup_player
               WHERE granularity = 'monthly'
               GROUP BY player_name
@@ -370,12 +398,15 @@ export async function GET({ params, url, locals }) {
                 RANK() OVER (ORDER BY mining_value DESC NULLS LAST) AS mining_value_rank,
                 RANK() OVER (ORDER BY mining_count DESC NULLS LAST) AS mining_count_rank,
                 RANK() OVER (ORDER BY crafting_value DESC NULLS LAST) AS crafting_value_rank,
-                RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank
+                RANK() OVER (ORDER BY crafting_count DESC NULLS LAST) AS crafting_count_rank,
+                RANK() OVER (ORDER BY fishing_value DESC NULLS LAST) AS fishing_value_rank,
+                RANK() OVER (ORDER BY fishing_count DESC NULLS LAST) AS fishing_count_rank
               FROM category_totals
             )
             SELECT hunting_value_rank, hunting_count_rank,
                    mining_value_rank, mining_count_rank,
-                   crafting_value_rank, crafting_count_rank
+                   crafting_value_rank, crafting_count_rank,
+                   fishing_value_rank, fishing_count_rank
             FROM ranked
             WHERE lower(player_name) = lower($1)`,
             [playerName]
@@ -446,6 +477,15 @@ export async function GET({ params, url, locals }) {
           `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank, count_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'crafting'
+             AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName]
+        )),
+        // Fishing ATH from leaderboard
+        safeQuery(pool.query(
+          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank, count_rank
+           FROM globals_ath_leaderboard
+           WHERE lower(player_name) = lower($1) AND category = 'fishing'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName]
@@ -569,6 +609,33 @@ export async function GET({ params, url, locals }) {
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
         )),
+        // Fishing ATH fallback CTE
+        timedQuery(c => c.query(
+          `WITH target_totals AS (
+             SELECT player_name, target_name,
+                    sum(${VALUE_PED}) AS total_value, max(${VALUE_PED}) AS best_value,
+                    count(*) AS count
+             FROM ingested_globals
+             WHERE confirmed = true AND global_type = 'fish'${periodCond}
+               AND target_name IN (
+                 SELECT DISTINCT target_name FROM ingested_globals
+                 WHERE confirmed = true AND lower(player_name) = lower($1)
+                   AND global_type = 'fish'${periodCond}
+               )
+             GROUP BY player_name, target_name
+           ),
+           ranked AS (
+             SELECT *,
+                    RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
+                    RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
+             FROM target_totals
+           )
+           SELECT target_name, total_value, best_value, count, total_rank, best_rank
+           FROM ranked
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF_LIVE} OR best_rank <= ${ATH_RANK_CUTOFF_LIVE})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName, ...extraParams]
+        )),
         timedQuery(c => c.query(
           `WITH pvp_ranked AS (
              SELECT player_name, (${VALUE_PED}) AS value, event_timestamp, is_hof, is_ath,
@@ -616,6 +683,8 @@ export async function GET({ params, url, locals }) {
         mining_value: g('deposit').value,
         craft_count: g('craft').count,
         crafting_value: g('craft').value,
+        fish_count: g('fish').count,
+        fishing_value: g('fish').value,
         rare_count: g('rare_item').count,
         discovery_count: g('discovery').count,
         tier_count: g('tier').count,
@@ -707,7 +776,7 @@ export async function GET({ params, url, locals }) {
     const allGlobalIds = [
       ...recentResult.rows, ...discoveryResult.rows, ...rareItemsResult.rows,
       ...pvpResult.rows, ...topHuntingResult.rows, ...topMiningResult.rows,
-      ...topSpaceMiningResult.rows, ...topCraftingResult.rows,
+      ...topSpaceMiningResult.rows, ...topCraftingResult.rows, ...topFishingResult.rows,
     ].map(r => r.id).filter(Boolean);
 
     const gzCountMap = new Map();
@@ -782,6 +851,8 @@ export async function GET({ params, url, locals }) {
           mining_value: parseFloat(summary.mining_value) - spaceMiningValue,
           craft_count: parseInt(summary.craft_count),
           crafting_value: parseFloat(summary.crafting_value),
+          fish_count: parseInt(summary.fish_count) || 0,
+          fishing_value: parseFloat(summary.fishing_value) || 0,
           rare_count: parseInt(summary.rare_count),
           discovery_count: parseInt(summary.discovery_count),
           tier_count: parseInt(summary.tier_count),
@@ -799,6 +870,7 @@ export async function GET({ params, url, locals }) {
           hunting: { value_rank: parseInt(cr.hunting_value_rank), count_rank: parseInt(cr.hunting_count_rank) },
           mining: { value_rank: parseInt(cr.mining_value_rank), count_rank: parseInt(cr.mining_count_rank) },
           crafting: { value_rank: parseInt(cr.crafting_value_rank), count_rank: parseInt(cr.crafting_count_rank) },
+          fishing: { value_rank: parseInt(cr.fishing_value_rank), count_rank: parseInt(cr.fishing_count_rank) },
           space_mining: smr ? { value_rank: parseInt(smr.value_rank), count_rank: parseInt(smr.count_rank) } : null,
         };
       })(),
@@ -822,6 +894,15 @@ export async function GET({ params, url, locals }) {
           best_value: parseFloat(r.best_value),
         })),
       },
+      fishing: {
+        targets: fishingResult.rows.map(r => ({
+          target: r.target,
+          catches: parseInt(r.catches),
+          total_value: parseFloat(r.total_value),
+          avg_value: parseFloat(r.avg_value),
+          best_value: parseFloat(r.best_value),
+        })),
+      },
       bucket_unit: bucketUnit,
       activity: fillActivityGaps(
         (() => {
@@ -838,13 +919,14 @@ export async function GET({ params, url, locals }) {
       ),
       activity_by_type: (() => {
         const HUNTING_TYPES = new Set(['kill', 'team_kill', 'examine']);
-        const types = { hunting: new Map(), mining: new Map(), crafting: new Map() };
+        const types = { hunting: new Map(), mining: new Map(), crafting: new Map(), fishing: new Map() };
         for (const r of activityResult.rows) {
           const key = new Date(r.bucket).toISOString();
           const count = parseInt(r.count);
           if (HUNTING_TYPES.has(r.type)) types.hunting.set(key, (types.hunting.get(key) || 0) + count);
           else if (r.type === 'deposit') types.mining.set(key, (types.mining.get(key) || 0) + count);
           else if (r.type === 'craft') types.crafting.set(key, (types.crafting.get(key) || 0) + count);
+          else if (r.type === 'fish') types.fishing.set(key, (types.fishing.get(key) || 0) + count);
         }
         // Build space mining activity from separate query
         const smActivity = new Map();
@@ -869,6 +951,7 @@ export async function GET({ params, url, locals }) {
           hunting: toArr(types.hunting),
           mining: toArr(types.mining),
           crafting: toArr(types.crafting),
+          fishing: toArr(types.fishing),
           space_mining: toArr(smActivity),
         };
       })(),
@@ -934,6 +1017,7 @@ export async function GET({ params, url, locals }) {
         mining: mapLootRows(topMiningResult.rows),
         space_mining: mapLootRows(topSpaceMiningResult.rows),
         crafting: mapLootRows(topCraftingResult.rows),
+        fishing: mapLootRows(topFishingResult.rows),
       },
       ath_rankings: {
         hunting: athHuntingResult.rows.map(r => {
@@ -954,6 +1038,7 @@ export async function GET({ params, url, locals }) {
         mining: mapRankingRows(athMiningResult.rows),
         space_mining: mapRankingRows(athSpaceMiningResult.rows),
         crafting: mapRankingRows(athCraftingResult.rows),
+        fishing: mapRankingRows(athFishingResult.rows),
         pvp: useLeaderboard
           ? athPvpResult.rows.map(r => ({
               value: parseFloat(r.value),

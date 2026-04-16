@@ -38,6 +38,7 @@ test.describe('Globals main page', () => {
     await expect(categoryRow.locator('.stat-label', { hasText: 'Hunting' })).toBeVisible();
     await expect(categoryRow.locator('.stat-label', { hasText: 'Mining' })).toBeVisible();
     await expect(categoryRow.locator('.stat-label', { hasText: 'Crafting' })).toBeVisible();
+    await expect(categoryRow.locator('.stat-label', { hasText: 'Fishing' })).toBeVisible();
     // Category cards should show PED values
     await expect(categoryRow.locator('.stat-sub').first()).toContainText('PED');
   });
@@ -66,6 +67,7 @@ test.describe('Globals main page', () => {
     await expect(topLoots.locator('.sort-btn', { hasText: 'Hunting' })).toBeVisible();
     await expect(topLoots.locator('.sort-btn', { hasText: 'Mining' })).toBeVisible();
     await expect(topLoots.locator('.sort-btn', { hasText: 'Crafting' })).toBeVisible();
+    await expect(topLoots.locator('.sort-btn', { hasText: 'Fishing' })).toBeVisible();
     await expect(topLoots.locator('.sort-btn', { hasText: 'Rare Find' })).toBeVisible();
     await expect(topLoots.locator('.sort-btn', { hasText: 'Discovery' })).toBeVisible();
     await expect(topLoots.locator('.sort-btn', { hasText: 'Tier Record' })).toBeVisible();
@@ -258,6 +260,7 @@ test.describe('Globals API', () => {
     expect(data.summary).toHaveProperty('hunting');
     expect(data.summary).toHaveProperty('mining');
     expect(data.summary).toHaveProperty('crafting');
+    expect(data.summary).toHaveProperty('fishing');
     expect(data.summary.hunting).toHaveProperty('count');
     expect(data.summary.hunting).toHaveProperty('value');
     expect(data).toHaveProperty('bucket_unit');
@@ -357,6 +360,7 @@ test.describe('Globals API', () => {
     expect(data.summary).toHaveProperty('hunting_value');
     expect(data.summary).toHaveProperty('mining_value');
     expect(data.summary).toHaveProperty('crafting_value');
+    expect(data.summary).toHaveProperty('fishing_value');
     expect(data.summary).toHaveProperty('pvp_count');
     expect(data.summary).toHaveProperty('pvp_value');
     expect(data).toHaveProperty('rare_items');
@@ -367,10 +371,12 @@ test.describe('Globals API', () => {
     expect(data.top_loots).toHaveProperty('hunting');
     expect(data.top_loots).toHaveProperty('mining');
     expect(data.top_loots).toHaveProperty('crafting');
+    expect(data.top_loots).toHaveProperty('fishing');
     expect(data).toHaveProperty('ath_rankings');
     expect(data.ath_rankings).toHaveProperty('hunting');
     expect(data.ath_rankings).toHaveProperty('mining');
     expect(data.ath_rankings).toHaveProperty('crafting');
+    expect(data.ath_rankings).toHaveProperty('fishing');
     expect(data.ath_rankings).toHaveProperty('pvp');
   });
 });

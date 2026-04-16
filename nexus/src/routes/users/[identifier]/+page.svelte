@@ -765,6 +765,9 @@
     for (const item of (globalsData.crafting?.items || [])) {
       rows.push({ target: item.target, type: 'crafting', typeLabel: 'Crafting', count: item.crafts, total_value: item.total_value, avg_value: item.avg_value || 0, best_value: item.best_value });
     }
+    for (const item of (globalsData.fishing?.targets || [])) {
+      rows.push({ target: item.target, type: 'fishing', typeLabel: 'Fishing', count: item.catches, total_value: item.total_value, avg_value: item.avg_value || 0, best_value: item.best_value });
+    }
     return rows;
   })());
   let globalsFilteredRows = $derived((() => {
@@ -773,15 +776,16 @@
     if (globalsTypeFilter === 'deposit' && globalsSpaceFilter === 'only') return globalsUnifiedRows.filter(r => r.type === 'space_mining');
     if (globalsTypeFilter === 'deposit') return globalsUnifiedRows.filter(r => r.type === 'mining');
     if (globalsTypeFilter === 'craft') return globalsUnifiedRows.filter(r => r.type === 'crafting');
+    if (globalsTypeFilter === 'fish') return globalsUnifiedRows.filter(r => r.type === 'fishing');
     return globalsUnifiedRows;
   })());
   let globalsSortedRows = $derived(sortedData(globalsFilteredRows, globalsSort));
   let globalsTotalPages = $derived(Math.ceil(globalsSortedRows.length / GLOBALS_PAGE_SIZE));
   let globalsDisplayRows = $derived(globalsSortedRows.slice(globalsPage * GLOBALS_PAGE_SIZE, (globalsPage + 1) * GLOBALS_PAGE_SIZE));
   // ATH rankings data
-  let globalsAthRankings = $derived(globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], space_mining: [], pvp: [] });
+  let globalsAthRankings = $derived(globalsData?.ath_rankings || { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [], pvp: [] });
   let globalsCategoryRanks = $derived(globalsData?.category_ranks || null);
-  let globalsActivityByType = $derived(globalsData?.activity_by_type || { hunting: [], mining: [], crafting: [], space_mining: [] });
+  let globalsActivityByType = $derived(globalsData?.activity_by_type || { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [] });
   let globalsSpaceMining = $derived(globalsData?.space_mining || []);
   const SPARK_MONTHS = 12; // last 365 days ≈ 12 monthly buckets
   let globalsSummary = $derived(globalsData?.summary || null);
@@ -1637,6 +1641,7 @@
                   { key: 'mining', label: 'Mining', colorClass: 'mining-color', count: globalsSummary.deposit_count || 0, value: globalsSummary.mining_value || 0 },
                   { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color', count: globalsSpaceMining.reduce((s, m) => s + m.finds, 0), value: globalsSpaceMining.reduce((s, m) => s + m.total_value, 0) },
                   { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: globalsSummary.craft_count || 0, value: globalsSummary.crafting_value || 0 },
+                  { key: 'fishing', label: 'Fishing', colorClass: 'fishing-color', count: globalsSummary.fish_count || 0, value: globalsSummary.fishing_value || 0 },
                 ] as cat}
                   {@const cr = globalsCategoryRanks?.[cat.key]}
                   {@const rawSpark = globalsActivityByType[cat.key] || []}
@@ -1677,7 +1682,8 @@
                 { key: 'hunting', label: 'Hunting', colorClass: 'hunting-color' },
                 { key: 'mining', label: 'Mining', colorClass: 'mining-color' },
                 { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color' },
-                { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' }
+                { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' },
+                { key: 'fishing', label: 'Fishing', colorClass: 'fishing-color' }
               ] as category}
                 {@const entries = (globalsAthRankings[category.key] || [])
                   .filter(e => globalsAthMode === 'best' || globalsAthMode === 'bestTarget' ? e.best_rank <= 500
@@ -3229,6 +3235,7 @@
   .ranking-card-header.mining-color  { background: rgba(96, 176, 255, 0.12); color: #60b0ff; }
   .ranking-card-header.crafting-color { background: rgba(249, 115, 22, 0.12); color: #f97316; }
   .ranking-card-header.space-mining-color { background: rgba(167, 139, 250, 0.12); color: #a78bfa; }
+  .ranking-card-header.fishing-color { background: rgba(6, 182, 212, 0.12); color: #06b6d4; }
 
   .ranking-entry {
     display: flex;
@@ -3519,6 +3526,7 @@
   .globals-type-mining        { background: rgba(96, 176, 255, 0.15); color: #60b0ff; }
   .globals-type-space_mining  { background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
   .globals-type-crafting      { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+  .globals-type-fishing       { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
 
   /* Globals tab — pagination */
   .globals-pagination {
@@ -3571,10 +3579,11 @@
   .mining-color { color: #60b0ff; }
   .space-mining-color { color: #a78bfa; }
   .crafting-color { color: #f97316; }
+  .fishing-color { color: #06b6d4; }
 
   .globals-category-cards {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 10px;
     margin-bottom: 16px;
   }
@@ -3593,6 +3602,7 @@
   .globals-category-card.mining-color { background: rgba(96, 176, 255, 0.06); }
   .globals-category-card.space-mining-color { background: rgba(167, 139, 250, 0.06); }
   .globals-category-card.crafting-color { background: rgba(249, 115, 22, 0.06); }
+  .globals-category-card.fishing-color { background: rgba(6, 182, 212, 0.06); }
 
   .globals-cat-sparkline {
     position: absolute;
@@ -3683,7 +3693,7 @@
     .globals-compact-table th,
     .globals-compact-table td { padding: 6px 8px; }
     .globals-rankings-grid { grid-template-columns: repeat(2, 1fr); }
-    .globals-category-cards { grid-template-columns: repeat(2, 1fr); }
+    .globals-category-cards { grid-template-columns: repeat(3, 1fr); }
     .globals-highlights { grid-template-columns: 1fr; }
   }
 </style>

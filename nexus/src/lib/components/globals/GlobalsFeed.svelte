@@ -179,6 +179,7 @@
   .type-tier     { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
   .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
   .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
+  .type-fish     { background: rgba(6, 182, 212, 0.15);  color: #06b6d4; }
 
   .feed-content {
     flex: 1;

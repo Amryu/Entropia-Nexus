@@ -159,7 +159,7 @@ export async function GET({ url, request }) {
       const { periodWhere, periodParams } = buildRollupPeriodFilter(rollupGranularity, period, from, to, 2);
       const typeFilter = url.searchParams.get('type');
       const typeFilterArr = typeFilter
-        ? typeFilter.split(',').map(t => t.trim()).filter(t => ['kill','team_kill','deposit','craft','rare_item','discovery','tier','examine','pvp'].includes(t))
+        ? typeFilter.split(',').map(t => t.trim()).filter(t => ['kill','team_kill','deposit','craft','fish','rare_item','discovery','tier','examine','pvp'].includes(t))
         : null;
       const typeCond = typeFilterArr ? ` AND global_type = ANY($${periodParams.length + 2})` : '';
       const typeParams = typeFilterArr ? [typeFilterArr] : [];

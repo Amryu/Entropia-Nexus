@@ -31,6 +31,7 @@
     mining: { count: 0, value: 0 },
     space_mining: { count: 0, value: 0 },
     crafting: { count: 0, value: 0 },
+    fishing: { count: 0, value: 0 },
   };
 
   let dataGlobals = $derived(data.globals || []);
@@ -231,6 +232,7 @@
     'kill,team_kill,examine': 'hunting',
     'deposit': 'mining',
     'craft': 'crafting',
+    'fish': 'fishing',
   };
 
   function onTypeFilter(val, space = '') {
@@ -616,17 +618,17 @@
 
 <svelte:head>
   <title>Globals - Entropia Nexus</title>
-  <meta name="description" content="Live global events from Entropia Universe. Track hunting, mining, crafting globals, HoF and ATH records." />
+  <meta name="description" content="Live global events from Entropia Universe. Track hunting, mining, crafting, fishing globals, HoF and ATH records." />
   <link rel="canonical" href="https://entropianexus.com/globals" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://entropianexus.com/globals" />
   <meta property="og:title" content="Globals - Entropia Nexus" />
-  <meta property="og:description" content="Live global events from Entropia Universe. Track hunting, mining, crafting globals, HoF and ATH records." />
+  <meta property="og:description" content="Live global events from Entropia Universe. Track hunting, mining, crafting, fishing globals, HoF and ATH records." />
   <meta property="og:image" content="https://entropianexus.com/icon.png" />
   <meta property="og:site_name" content="Entropia Nexus" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Globals - Entropia Nexus" />
-  <meta name="twitter:description" content="Live global events from Entropia Universe. Track hunting, mining, crafting globals, HoF and ATH records." />
+  <meta name="twitter:description" content="Live global events from Entropia Universe. Track hunting, mining, crafting, fishing globals, HoF and ATH records." />
   <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
@@ -644,7 +646,7 @@
           apiPrefix={false}
           onselect={handleSearchSelect}
           onsearch={handleSearch}
-          categoryOrder={['Player', 'Mob', 'Hunting', 'Mining', 'Crafting', 'Rare Find', 'Discovery', 'Tier', 'Instance', 'PvP', 'Team']}
+          categoryOrder={['Player', 'Mob', 'Hunting', 'Mining', 'Crafting', 'Fishing', 'Rare Find', 'Discovery', 'Tier', 'Instance', 'PvP', 'Team']}
           minScore={550}
         />
       </div>
@@ -794,6 +796,11 @@
       <span class="stat-value crafting-color">{summary.crafting.count.toLocaleString()}</span>
       <span class="stat-label">Crafting</span>
       <span class="stat-sub">{formatPedShort(summary.crafting.value)} PED</span>
+    </div>
+    <div class="stat-card category-card">
+      <span class="stat-value fishing-color">{summary.fishing.count.toLocaleString()}</span>
+      <span class="stat-label">Fishing</span>
+      <span class="stat-sub">{formatPedShort(summary.fishing.value)} PED</span>
     </div>
   </div>
 
@@ -980,6 +987,7 @@
           { value: 'deposit', label: 'Mining', space: 'exclude' },
           { value: 'deposit', label: 'Space Mining', space: 'only' },
           { value: 'craft', label: 'Crafting' },
+          { value: 'fish', label: 'Fishing' },
           { value: 'rare_item', label: 'Rare Finds' },
           { value: 'discovery', label: 'Discoveries' },
           { value: 'tier', label: 'Tier Records' },
@@ -1252,7 +1260,7 @@
   }
 
   .stats-row.category-row {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     margin-bottom: 20px;
   }
 
@@ -1300,6 +1308,7 @@
   .mining-color { color: #60b0ff; }
   .space-mining-color { color: #a78bfa; }
   .crafting-color { color: #f97316; }
+  .fishing-color { color: #06b6d4; }
 
   .stats-loading .stat-value {
     opacity: 0.4;
@@ -1675,6 +1684,7 @@
   .type-tier     { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
   .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
   .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
+  .type-fish     { background: rgba(6, 182, 212, 0.15);  color: #06b6d4; }
 
   .player-link {
     color: var(--text-color);
@@ -1781,7 +1791,7 @@
     }
 
     .stats-row.category-row {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
     }
 
     .charts-grid {

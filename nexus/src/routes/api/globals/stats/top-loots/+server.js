@@ -7,7 +7,7 @@
  * Each entry: { player, target, value, hof, ath, timestamp, mob_id }
  *
  * Query params:
- *   category — hunting|mining|crafting|rare_item|discovery|tier|pvp (default: hunting)
+ *   category — hunting|mining|crafting|fishing|rare_item|discovery|tier|pvp (default: hunting)
  *   page     — 1-based page number (default: 1)
  *   limit    — items per page (default: 20, max: 50)
  *   Plus all standard globals filters.

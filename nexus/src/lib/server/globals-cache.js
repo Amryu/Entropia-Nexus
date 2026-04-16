@@ -280,6 +280,7 @@ const ATH_CATEGORIES = [
   { category: 'space_mining', typeFilter: "global_type = 'deposit' AND target_name ~* 'asteroid'", useMobKey: false },
   { category: 'crafting', typeFilter: "global_type = 'craft'", useMobKey: false },
   { category: 'pvp', typeFilter: "global_type = 'pvp'", useMobKey: false },
+  { category: 'fishing', typeFilter: "global_type = 'fish'", useMobKey: false },
   { category: 'hunting', typeFilter: "global_type IN ('kill', 'team_kill', 'examine')", useMobKey: true },
 ];
 

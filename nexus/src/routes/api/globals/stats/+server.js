@@ -81,7 +81,7 @@ export async function GET({ url, request }) {
     try {
       const { periodWhere, periodParams } = buildRollupPeriodFilter(rollupGranularity, period, from, to, 2);
       const typeFilterArr = typeFilter
-        ? typeFilter.split(',').map(t => t.trim()).filter(t => ['kill','team_kill','deposit','craft','rare_item','discovery','tier','examine','pvp'].includes(t))
+        ? typeFilter.split(',').map(t => t.trim()).filter(t => ['kill','team_kill','deposit','craft','fish','rare_item','discovery','tier','examine','pvp'].includes(t))
         : null;
       const typeCond = typeFilterArr ? ` AND global_type = ANY($${periodParams.length + 2})` : '';
       const typeParams = typeFilterArr ? [typeFilterArr] : [];
@@ -112,7 +112,9 @@ export async function GET({ url, request }) {
                   SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
                   SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
                   SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count,
-                  SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value
+                  SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value,
+                  SUM(event_count) FILTER (WHERE global_type = 'fish') AS fishing_count,
+                  SUM(sum_value) FILTER (WHERE global_type = 'fish') AS fishing_value
            FROM globals_rollup
            WHERE granularity = $1${periodWhere}${typeCond}`,
           baseParams
@@ -219,6 +221,7 @@ export async function GET({ url, request }) {
           mining: { count: (parseInt(summary.mining_count) || 0) - smCount, value: (parseFloat(summary.mining_value) || 0) - smValue },
           space_mining: { count: smCount, value: smValue },
           crafting: { count: parseInt(summary.crafting_count) || 0, value: parseFloat(summary.crafting_value) || 0 },
+          fishing: { count: parseInt(summary.fishing_count) || 0, value: parseFloat(summary.fishing_value) || 0 },
         },
         by_type: byTypeResult.rows.map(r => ({
           type: r.type,
@@ -278,7 +281,9 @@ export async function GET({ url, request }) {
                 count(*) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid') AS space_mining_count,
                 COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'deposit' AND target_name ~* 'asteroid'), 0) AS space_mining_value,
                 count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
-                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
+                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
+                count(*) FILTER (WHERE global_type = 'fish') AS fishing_count,
+                COALESCE(sum(${VALUE_PED}) FILTER (WHERE global_type = 'fish'), 0) AS fishing_value
          FROM ingested_globals
          ${whereClause}`,
         params
@@ -356,6 +361,7 @@ export async function GET({ url, request }) {
         mining: { count: (parseInt(summary.mining_count) || 0) - rawSmCount, value: (parseFloat(summary.mining_value) || 0) - rawSmValue },
         space_mining: { count: rawSmCount, value: rawSmValue },
         crafting: { count: parseInt(summary.crafting_count), value: parseFloat(summary.crafting_value) },
+        fishing: { count: parseInt(summary.fishing_count) || 0, value: parseFloat(summary.fishing_value) || 0 },
       },
       by_type: byTypeResult.rows.map(r => ({
         type: r.type,

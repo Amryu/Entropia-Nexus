@@ -15,7 +15,7 @@ export const PERIOD_INTERVALS = {
 };
 
 const VALID_GLOBAL_TYPES = new Set([
-  'kill', 'team_kill', 'deposit', 'craft', 'rare_item',
+  'kill', 'team_kill', 'deposit', 'craft', 'fish', 'rare_item',
   'discovery', 'tier', 'examine', 'pvp',
 ]);
 

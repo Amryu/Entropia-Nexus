@@ -500,7 +500,7 @@ Paginated list of confirmed global events. Supports filtering and cursor-based p
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `type` | string | Filter by type (comma-separated): `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
+| `type` | string | Filter by type (comma-separated): `kill`, `team_kill`, `deposit`, `craft`, `fish`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
 | `player` | string | Player name (case-insensitive substring) |
 | `team` | string | Team name for team_kill globals (case-insensitive substring) |
 | `target` | string | Target name (case-insensitive substring) |
@@ -538,7 +538,7 @@ Aggregated global event statistics. Cached for 60 seconds.
 | `from` | string | Custom range start (YYYY-MM-DD). Used with `to` instead of `period` |
 | `to` | string | Custom range end (YYYY-MM-DD). Used with `from` instead of `period` |
 | `player` | string | Filter by player name (partial match, case-insensitive) |
-| `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
+| `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `fish`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
 | `target` | string | Filter by target name (partial match, case-insensitive) |
 | `location` | string | Filter by location (exact match) |
 | `min_value` | number | Minimum PED value |
@@ -611,7 +611,7 @@ Paginated ranked list of targets by globals. Unlike the main stats endpoint, thi
 | `from` | string | Custom range start (YYYY-MM-DD) |
 | `to` | string | Custom range end (YYYY-MM-DD) |
 | `player` | string | Filter by player name (partial match, case-insensitive) |
-| `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
+| `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `fish`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
 | `target` | string | Filter by target name (partial match, case-insensitive) |
 | `location` | string | Filter by location (exact match) |
 | `min_value` | number | Minimum PED value |
@@ -639,10 +639,11 @@ Player-specific global event breakdown. Cached for 60 seconds. Returns 404 if th
 
 Returns:
 - `player` — the player name
-- `summary` — `total_count`, `total_value`, `avg_value`, `max_value`, `hof_count`, `ath_count`, plus per-type counts and category values (`kill_count`, `team_kill_count`, `hunting_value`, `deposit_count`, `mining_value`, `craft_count`, `crafting_value`, `rare_count`, `discovery_count`, `tier_count`)
+- `summary` — `total_count`, `total_value`, `avg_value`, `max_value`, `hof_count`, `ath_count`, plus per-type counts and category values (`kill_count`, `team_kill_count`, `hunting_value`, `deposit_count`, `mining_value`, `craft_count`, `crafting_value`, `fish_count`, `fishing_value`, `rare_count`, `discovery_count`, `tier_count`)
 - `hunting` — array of `{ mob_id, target, kills, total_value, best_value, avg_value, maturities: [{ target, maturity_id, kills, total_value, avg_value, best_value }] }`
 - `mining` — `{ resources: [{ target, finds, total_value, avg_value, best_value }] }`
 - `crafting` — `{ items: [{ target, crafts, total_value, avg_value, best_value }] }`
+- `fishing` — `{ targets: [{ target, catches, total_value, avg_value, best_value }] }`
 - `bucket_unit` — time unit for activity buckets
 - `activity` — timeline buckets with `{ bucket, count }` (gap-filled)
 - `recent` — up to 20 recent globals

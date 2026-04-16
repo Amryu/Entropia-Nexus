@@ -8,7 +8,7 @@ import { getResponse } from '$lib/util.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
-const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
+const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'fish', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
 const MAX_TYPE_FILTERS = 10;
 
 function escapeLike(str) {

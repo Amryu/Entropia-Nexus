@@ -57,6 +57,7 @@
     { value: 'mining', label: 'Mining' },
     { value: 'space_mining', label: 'Space Mining' },
     { value: 'crafting', label: 'Crafting' },
+    { value: 'fishing', label: 'Fishing' },
   ];
   const EXTRA_TABS = [
     { value: 'rare', label: 'Rare Finds', key: 'rare_count' },
@@ -101,7 +102,7 @@
         playerData = await res.json();
       } else if (res.status === 404) {
         // No data for this period — show empty summary
-        playerData = { player: playerName, summary: { total_count: 0, total_value: 0, avg_value: 0, max_value: 0, hof_count: 0, ath_count: 0, kill_count: 0, team_kill_count: 0, hunting_value: 0, deposit_count: 0, mining_value: 0, craft_count: 0, crafting_value: 0, rare_count: 0, discovery_count: 0, tier_count: 0, pvp_count: 0, pvp_value: 0 }, hunting: [], mining: { resources: [] }, space_mining: [], crafting: { items: [] }, activity: [], recent: [], achievements: [], rare_items: [], pvp_events: [], top_loots: { hunting: [], mining: [], crafting: [], space_mining: [] }, ath_rankings: { hunting: [], mining: [], crafting: [], space_mining: [], pvp: [] } };
+        playerData = { player: playerName, summary: { total_count: 0, total_value: 0, avg_value: 0, max_value: 0, hof_count: 0, ath_count: 0, kill_count: 0, team_kill_count: 0, hunting_value: 0, deposit_count: 0, mining_value: 0, craft_count: 0, crafting_value: 0, fish_count: 0, fishing_value: 0, rare_count: 0, discovery_count: 0, tier_count: 0, pvp_count: 0, pvp_value: 0 }, hunting: [], mining: { resources: [] }, space_mining: [], crafting: { items: [] }, fishing: { targets: [] }, activity: [], recent: [], achievements: [], rare_items: [], pvp_events: [], top_loots: { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [] }, ath_rankings: { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [], pvp: [] } };
       }
     } catch { /* ignore */ }
     loading = false;
@@ -152,12 +153,19 @@
   let craftLootPage = $state(0);
   let craftLootSort = $state({ col: 'value', asc: false });
 
+  // Fishing tab pagination
+  let fishTargetPage = $state(0);
+  let fishLootPage = $state(0);
+  let fishSort = $state({ col: 'total_value', asc: false });
+  let fishLootSort = $state({ col: 'value', asc: false });
+
   // ATH rankings tab — auto-select category with most ranked entries
   const ATH_CATEGORIES = [
     { value: 'hunting', label: 'Hunting' },
     { value: 'mining', label: 'Mining' },
     { value: 'space_mining', label: 'Space Mining' },
     { value: 'crafting', label: 'Crafting' },
+    { value: 'fishing', label: 'Fishing' },
     { value: 'pvp', label: 'PvP' },
   ];
   let athCategoryOverride = $state(null);
@@ -273,8 +281,9 @@
   let mining = $derived(playerData?.mining?.resources || []);
   let spaceMining = $derived(playerData?.space_mining || []);
   let crafting = $derived(playerData?.crafting?.items || []);
+  let fishing = $derived(playerData?.fishing?.targets || []);
   let activity = $derived(playerData?.activity || []);
-  let activityByType = $derived(playerData?.activity_by_type || { hunting: [], mining: [], crafting: [], space_mining: [] });
+  let activityByType = $derived(playerData?.activity_by_type || { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [] });
 
   /** Generate a smoothed SVG path for a sparkline from an array of numbers.
    *  Uses Catmull-Rom interpolation between active points but drops to the
@@ -310,8 +319,8 @@
   let sortedRecent = $derived(recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort));
   let achievements = $derived(playerData?.achievements || []);
   let rareItems = $derived(playerData?.rare_items || []);
-  let topLoots = $derived(playerData?.top_loots || { hunting: [], mining: [], crafting: [], space_mining: [] });
-  let athRankings = $derived(playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], space_mining: [], pvp: [] });
+  let topLoots = $derived(playerData?.top_loots || { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [] });
+  let athRankings = $derived(playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], fishing: [], space_mining: [], pvp: [] });
   let categoryRanks = $derived(playerData?.category_ranks || null);
   let isTeam = $derived(summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count);
   let tabs = $derived([
@@ -343,9 +352,15 @@
   let craftLootPages = $derived(Math.ceil(sortedCraftingLoots.length / PAGE_SIZE));
   let pagedCrafting = $derived(sortedCrafting.slice(craftTargetPage * PAGE_SIZE, (craftTargetPage + 1) * PAGE_SIZE));
   let pagedCraftingLoots = $derived(sortedCraftingLoots.slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE));
+  let sortedFishing = $derived(sortedBreakdown(fishing, fishSort, 'fishing'));
+  let fishTargetPages = $derived(Math.ceil(sortedFishing.length / PAGE_SIZE));
+  let sortedFishingLoots = $derived(sortedData(topLoots.fishing || [], fishLootSort));
+  let fishLootPages = $derived(Math.ceil(sortedFishingLoots.length / PAGE_SIZE));
+  let pagedFishing = $derived(sortedFishing.slice(fishTargetPage * PAGE_SIZE, (fishTargetPage + 1) * PAGE_SIZE));
+  let pagedFishingLoots = $derived(sortedFishingLoots.slice(fishLootPage * PAGE_SIZE, (fishLootPage + 1) * PAGE_SIZE));
   let athCategory = $derived((() => {
-    const counts = { hunting: 0, mining: 0, space_mining: 0, crafting: 0, pvp: 0 };
-    for (const cat of ['hunting', 'mining', 'space_mining', 'crafting']) {
+    const counts = { hunting: 0, mining: 0, space_mining: 0, crafting: 0, fishing: 0, pvp: 0 };
+    for (const cat of ['hunting', 'mining', 'space_mining', 'crafting', 'fishing']) {
       counts[cat] = (athRankings[cat] || []).length;
     }
     counts.pvp = (athRankings.pvp || []).length;
@@ -364,11 +379,10 @@
   // ATH rank lookup by target name for breakdown tables
   let athRankByTarget = $derived((() => {
     const map = new Map();
-    for (const cat of ['hunting', 'mining', 'space_mining', 'crafting']) {
+    for (const cat of ['hunting', 'mining', 'space_mining', 'crafting', 'fishing']) {
       for (const e of athRankings[cat] || []) {
         const rank = { total: e.total_rank, best: e.best_rank, count: e.count_rank };
         map.set(`${cat}:${e.target?.toLowerCase()}`, rank);
-        // Also key by mob_id for hunting (loots use maturity names, ATH uses base mob names)
         if (e.mob_id) map.set(`${cat}:mob:${e.mob_id}`, rank);
       }
     }
@@ -491,6 +505,7 @@
         { key: 'mining', label: 'Mining', colorClass: 'mining-color', count: summary.deposit_count, value: summary.mining_value, tab: 'mining' },
         { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color', count: spaceMining.reduce((s, m) => s + m.finds, 0), value: spaceMining.reduce((s, m) => s + m.total_value, 0), tab: 'space_mining' },
         { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color', count: summary.craft_count, value: summary.crafting_value, tab: 'crafting' },
+        { key: 'fishing', label: 'Fishing', colorClass: 'fishing-color', count: summary.fish_count || 0, value: summary.fishing_value || 0, tab: 'fishing' },
       ] as cat}
         {@const cr = categoryRanks?.[cat.key]}
         {@const sparkData = activityByType[cat.key] || []}
@@ -558,6 +573,7 @@
             { key: 'mining', label: 'Mining', colorClass: 'mining-color' },
             { key: 'space_mining', label: 'Space Mining', colorClass: 'space-mining-color' },
             { key: 'crafting', label: 'Crafting', colorClass: 'crafting-color' },
+            { key: 'fishing', label: 'Fishing', colorClass: 'fishing-color' },
           ] as category}
             {@const useBest = overviewAthMode === 'best' || overviewAthMode === 'bestTarget'}
             {@const rawEntries = [...(athRankings[category.key] || [])]
@@ -1111,6 +1127,106 @@
           </div>
         </div>
 
+      <!-- === FISHING TAB === -->
+      {:else if activeTab === 'fishing'}
+        <div class="tab-side-by-side">
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.46-3.44 6-7 6-3.56 0-7.56-2.54-8.5-6Z"/><circle cx="15" cy="12" r="2"/><path d="M2 2l20 20"/></svg>
+              Target Breakdown
+            </h2>
+            {#if fishing.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank sortable" onclick={() => { fishSort = toggleSort(fishSort, 'rank'); fishTargetPage = 0; }}>Rank{sortIcon(fishSort, 'rank')}</th>
+                      <th class="sortable" onclick={() => { fishSort = toggleSort(fishSort, 'target'); fishTargetPage = 0; }}>
+                        Target{sortIcon(fishSort, 'target')}
+                      </th>
+                      <th class="sortable right col-value" onclick={() => { fishSort = toggleSort(fishSort, 'catches'); fishTargetPage = 0; }}>
+                        Catches{sortIcon(fishSort, 'catches')}
+                      </th>
+                      <th class="sortable right col-value" onclick={() => { fishSort = toggleSort(fishSort, 'total_value'); fishTargetPage = 0; }}>
+                        Total{sortIcon(fishSort, 'total_value')}
+                      </th>
+                      <th class="sortable right col-value col-hide-mobile" onclick={() => { fishSort = toggleSort(fishSort, 'best_value'); fishTargetPage = 0; }}>Best{sortIcon(fishSort, 'best_value')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedFishing as item}
+                      {@const athRank = athRankByTarget.get('fishing:' + item.target?.toLowerCase())}
+                      <tr>
+                        <td class="col-rank">
+                          {#if athRank}
+                            <span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={athRank.total <= 1} class:rank-diamond={athRank.total > 1 && athRank.total <= 10} class:rank-gold={athRank.total > 10 && athRank.total <= 50} class:rank-silver={athRank.total > 50 && athRank.total <= 200} class:rank-bronze={athRank.total > 200 && athRank.total <= 500}>#{athRank.total}</span>
+                          {/if}
+                        </td>
+                        <td><a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a></td>
+                        <td class="right">{item.catches}</td>
+                        <td class="right">{formatPed(item.total_value)}</td>
+                        <td class="right col-hide-mobile">{formatPed(item.best_value)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if fishTargetPages > 1}
+                <div class="pagination">
+                  <button disabled={fishTargetPage === 0} onclick={() => fishTargetPage--}>&laquo; Prev</button>
+                  <span>{fishTargetPage + 1} / {fishTargetPages}</span>
+                  <button disabled={fishTargetPage >= fishTargetPages - 1} onclick={() => fishTargetPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No fishing globals for this period</p>
+            {/if}
+          </div>
+
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Top Individual Loots
+            </h2>
+            {#if topLoots.fishing.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank right">#</th>
+                      <th class="sortable" onclick={() => { fishLootSort = toggleSort(fishLootSort, 'target'); fishLootPage = 0; }}>Target{sortIcon(fishLootSort, 'target')}</th>
+                      <th class="sortable right col-value" onclick={() => { fishLootSort = toggleSort(fishLootSort, 'value'); fishLootPage = 0; }}>Value{sortIcon(fishLootSort, 'value')}</th>
+                      <th class="col-badge"></th>
+                      <th class="sortable col-time" onclick={() => { fishLootSort = toggleSort(fishLootSort, 'timestamp'); fishLootPage = 0; }}>Time{sortIcon(fishLootSort, 'timestamp')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedFishingLoots as loot, i}
+                      {@const athRank = athRankByTarget.get('fishing:' + loot.target?.toLowerCase())}
+                      <tr>
+                        <td class="col-rank">{#if athRank}{@const r = athRank.total}<span class="ranking-badge ranking-badge-lg" title="Rank by total value" class:rank-ruby={r <= 1} class:rank-diamond={r > 1 && r <= 10} class:rank-gold={r > 10 && r <= 50} class:rank-silver={r > 50 && r <= 200} class:rank-bronze={r > 200 && r <= 500}>#{r}</span>{/if}</td>
+                        <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
+                        <td class="right font-weight-bold">{formatValue(loot.value, loot.unit)}</td>
+                        <td class="col-badge">{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="text-muted col-time" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if fishLootPages > 1}
+                <div class="pagination">
+                  <button disabled={fishLootPage === 0} onclick={() => fishLootPage--}>&laquo; Prev</button>
+                  <span>{fishLootPage + 1} / {fishLootPages}</span>
+                  <button disabled={fishLootPage >= fishLootPages - 1} onclick={() => fishLootPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No fishing HoFs recorded</p>
+            {/if}
+          </div>
+        </div>
+
       <!-- === RARE FINDS TAB === -->
       {:else if activeTab === 'rare'}
         <div class="section-card">
@@ -1480,7 +1596,7 @@
   }
 
   .stats-row.category-row {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     margin-bottom: 20px;
   }
 
@@ -1589,6 +1705,7 @@
   .mining-color { color: #60b0ff; }
   .space-mining-color { color: #a78bfa; }
   .crafting-color { color: #f97316; }
+  .fishing-color { color: #06b6d4; }
 
   /* Tab Navigation */
   .player-tab-nav {
@@ -1677,6 +1794,7 @@
   .ranking-card-header.mining-color { color: #60b0ff; }
   .ranking-card-header.space-mining-color { color: #a78bfa; }
   .ranking-card-header.crafting-color { color: #f97316; }
+  .ranking-card-header.fishing-color { color: #06b6d4; }
   .ranking-card-header.rare-color { color: #9b59b6; }
   .ranking-card-header.discovery-color { color: #2ecc71; }
 
@@ -2094,6 +2212,7 @@
   .type-tier     { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
   .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
   .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
+  .type-fish     { background: rgba(6, 182, 212, 0.15);  color: #06b6d4; }
 
   .badge-slot {
     display: inline-block;
@@ -2174,7 +2293,7 @@
     }
 
     .stats-row.category-row {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
     }
 
     .overview-rankings-header {

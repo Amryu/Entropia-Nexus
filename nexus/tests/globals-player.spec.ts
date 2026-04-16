@@ -56,6 +56,7 @@ test.describe('Globals player detail page', () => {
     await expect(categoryRow.locator('.stat-label', { hasText: 'Hunting' })).toBeVisible();
     await expect(categoryRow.locator('.stat-label', { hasText: 'Mining' })).toBeVisible();
     await expect(categoryRow.locator('.stat-label', { hasText: 'Crafting' })).toBeVisible();
+    await expect(categoryRow.locator('.stat-label', { hasText: 'Fishing' })).toBeVisible();
   });
 
   test('category cards are clickable and switch to category tab', async ({ page }) => {

@@ -6,7 +6,7 @@
  * Returns results compatible with the SearchInput component format:
  *   { Id, Name, Type, SubType, Score }
  *
- * Type values: "Player", "Team", "Hunting", "Mining", "Crafting",
+ * Type values: "Player", "Team", "Hunting", "Mining", "Crafting", "Fishing",
  *              "Rare Find", "Discovery", "Tier"
  */
 import { pool } from '$lib/server/db.js';
@@ -21,6 +21,7 @@ const GLOBAL_TYPE_LABELS = {
   team_kill: 'Hunting',
   deposit: 'Mining',
   craft: 'Crafting',
+  fish: 'Fishing',
   rare_item: 'Rare Find',
   discovery: 'Discovery',
   tier: 'Tier',
