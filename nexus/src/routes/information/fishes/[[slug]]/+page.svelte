@@ -48,9 +48,10 @@
       Difficulty: null,
       MinDepth: null,
       TimeOfDay: null,
+      Weight: null,
+      Economy: { MaxTT: null },
       RodTypes: []
     },
-    Item: { Name: null },
     Species: { Name: '', CodexBaseCost: null },
     PreferredLure: { Name: null },
     Planets: []
@@ -187,14 +188,6 @@
     ? `https://entropianexus.com/information/fishes/${encodeURIComponentSafe(fish.Name)}`
     : 'https://entropianexus.com/information/fishes');
   let entityImageUrl = $derived(fish?.Id ? `/api/img/fish/${fish.Id}` : null);
-
-  // SearchInput option builders (only computed on edit for perf)
-  let materialItemOptions = $derived.by(() => {
-    if (!$editMode || !Array.isArray(data.itemsList)) return [];
-    return data.itemsList
-      .filter(it => it?.Properties?.Type === 'Material' || it?.Properties?.Type === 'Fish')
-      .map(it => ({ value: it.Name, label: it.Name, sublabel: it.Properties?.Type }));
-  });
 
   let lureItemOptions = $derived.by(() => {
     if (!$editMode || !Array.isArray(data.itemsList)) return [];
@@ -428,24 +421,31 @@
               />
             </span>
           </div>
+          <div class="stat-row">
+            <span class="stat-label">Weight</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Weight}
+                path="Properties.Weight"
+                type="number"
+                placeholder="-"
+              />
+            </span>
+          </div>
         </div>
 
-        <!-- Material: the item side of the hybrid entity -->
+        <!-- Economy: TT value from the backing Materials row -->
         <div class="stats-section">
-          <h4 class="section-title">Material</h4>
-          <div class="stat-row stat-row-block">
-            <span class="stat-value stat-value-block">
-              {#if $editMode}
-                <SearchInput
-                  value={activeEntity?.Item?.Name || ''}
-                  placeholder="Search material..."
-                  options={materialItemOptions}
-                  onchange={(e) => updateField('Item.Name', e.value)}
-                  onselect={(e) => updateField('Item.Name', e.value)}
-                />
-              {:else}
-                {activeEntity?.Item?.Name || 'N/A'}
-              {/if}
+          <h4 class="section-title">Economy</h4>
+          <div class="stat-row">
+            <span class="stat-label">Max TT</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MaxTT}
+                path="Properties.Economy.MaxTT"
+                type="number"
+                placeholder="-"
+              />
             </span>
           </div>
         </div>

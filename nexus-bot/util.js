@@ -82,6 +82,18 @@ export function getTypeLink(name, type, subType = null) {
       return `/items/strongboxes/${encodeURIComponentSafe(name)}`;
     case 'Shop':
       return `/market/shops/${encodeURIComponentSafe(name)}`;
+    case 'Fish':
+      return `/information/fishes/${encodeURIComponentSafe(name)}`;
+    case 'FishingRod':
+      return `/items/tools/fishingrods/${encodeURIComponentSafe(name)}`;
+    case 'FishingReel':
+      return `/items/attachments/fishingreels/${encodeURIComponentSafe(name)}`;
+    case 'FishingBlank':
+      return `/items/attachments/fishingblanks/${encodeURIComponentSafe(name)}`;
+    case 'FishingLine':
+      return `/items/attachments/fishinglines/${encodeURIComponentSafe(name)}`;
+    case 'FishingLure':
+      return `/items/attachments/fishinglures/${encodeURIComponentSafe(name)}`;
     case 'Apartment':
       return `/maps/${(subType || '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     default:

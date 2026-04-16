@@ -48,6 +48,21 @@ export const Fish = {
           "enum": ["Day", "Night", null],
           "default": null
         },
+        "Weight": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "Economy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "MaxTT": {
+              "type": ["number", "null"],
+              "default": null
+            }
+          },
+          "required": ["MaxTT"]
+        },
         "RodTypes": {
           "type": "array",
           "items": {
@@ -65,10 +80,11 @@ export const Fish = {
         "Difficulty",
         "MinDepth",
         "TimeOfDay",
+        "Weight",
+        "Economy",
         "RodTypes"
       ]
     },
-    "Item": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Species": {
       "type": "object",
       "additionalProperties": false,
@@ -88,7 +104,6 @@ export const Fish = {
   "required": [
     "Name",
     "Properties",
-    "Item",
     "Species"
   ]
 }

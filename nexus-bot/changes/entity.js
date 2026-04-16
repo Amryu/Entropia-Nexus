@@ -933,14 +933,55 @@ export const UpsertConfigs = {
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties?.Description ?? null },
       { name: "ItemId", value: async (x, c) => {
-        if (!x.Item?.Name) return null;
-        // Fish must point at a Material. Restrict the lookup so that a
-        // wrong item type silently resolves to NULL rather than orphaning
-        // the Fish row (the Items view only promotes Materials to Fish).
-        return await c.query(
-          `SELECT "Id" FROM "Items" WHERE "Name" = $1 AND "Type" IN ('Material','Fish')`,
-          [x.Item.Name]
-        ).then(res => res.rows[0]?.Id ?? null);
+        // Fish IS the material - not a foreign reference to one. The upsert
+        // owns the Materials row that backs this fish:
+        //
+        //   * Update path (x.Id set): resolve the existing Fish row's
+        //     ItemId, locate the Materials row, and write Name/Weight/Value
+        //     back to it so the material stays in sync with the fish edit.
+        //   * Create path: find-or-create a Materials row by Name (so a
+        //     Fish can attach to a pre-existing generic material without
+        //     duplicating it), then write Weight/Value either way.
+        //
+        // ItemId is Materials.Id + 1000000 (Items view offset for Materials).
+        const weight = x.Properties?.Weight ?? null;
+        const ttValue = x.Properties?.Economy?.MaxTT ?? null;
+
+        if (x.Id) {
+          const existing = await c.query(
+            `SELECT "ItemId" FROM ONLY "Fish" WHERE "Id" = $1`,
+            [x.Id]
+          );
+          const existingItemId = existing.rows[0]?.ItemId;
+          if (existingItemId) {
+            const matId = existingItemId - 1000000;
+            await c.query(
+              `UPDATE ONLY "Materials" SET "Name" = $1, "Weight" = $2, "Value" = $3 WHERE "Id" = $4`,
+              [x.Name, weight, ttValue, matId]
+            );
+            return existingItemId;
+          }
+        }
+
+        // Find-or-create Materials row by name
+        const found = await c.query(
+          `SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1 ORDER BY "Id" LIMIT 1`,
+          [x.Name]
+        );
+        let matId = found.rows[0]?.Id;
+        if (matId) {
+          await c.query(
+            `UPDATE ONLY "Materials" SET "Weight" = $1, "Value" = $2 WHERE "Id" = $3`,
+            [weight, ttValue, matId]
+          );
+        } else {
+          const inserted = await c.query(
+            `INSERT INTO "Materials" ("Name", "Weight", "Value") VALUES ($1, $2, $3) RETURNING "Id"`,
+            [x.Name, weight, ttValue]
+          );
+          matId = inserted.rows[0].Id;
+        }
+        return matId + 1000000;
       }},
       { name: "SpeciesId", value: async (x, c) => {
         // Fish ↔ MobSpecies is 1:1. Always upsert the species row by the

@@ -2,39 +2,22 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
-// Items.Type -> API path segment overrides for types whose lowercased+s
-// form doesn't match the API endpoint. Keep in sync with
-// api/endpoints/items.js TYPE_URL_OVERRIDES.
-const TYPE_URL_OVERRIDES = {
-  Fish: 'fishes',
-  Food: 'consumables',
-  FishingRod: 'fishingrods',
-  FishingReel: 'fishingreels',
-  FishingBlank: 'fishingblanks',
-  FishingLine: 'fishinglines',
-  FishingLure: 'fishinglures',
-};
-
-function itemTypeToPath(type) {
-  if (!type) return 'items';
-  return TYPE_URL_OVERRIDES[type] || `${String(type).toLowerCase()}s`;
-}
-
-// Fish is the info-side row. Every Fish references an Items row (Material)
-// and a MobSpecies row. This endpoint exposes the info entity joined with
-// the item, species, and junction data.
+// Fish IS the material (not a foreign reference to one). Weight and TT
+// value come from the backing Materials row; Fish.ItemId is just the
+// Items-view-offset form of Materials.Id. The preferred lure is looked up
+// via the Items view (it's a FishingLure, not a material).
 
 const baseQuery = `
   SELECT f.*,
          ms."Name" AS "SpeciesName",
          ms."CodexBaseCost" AS "SpeciesCodexBaseCost",
          ms."CodexType" AS "SpeciesCodexType",
-         item_t."Name" AS "ItemName",
-         item_t."Type" AS "ItemType",
+         mat."Weight" AS "MatWeight",
+         mat."Value" AS "MatValue",
          lure_t."Name" AS "PreferredLureName"
     FROM ONLY "Fish" f
     LEFT JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
-    LEFT JOIN "Items" item_t ON item_t."Id" = f."ItemId"
+    LEFT JOIN ONLY "Materials" mat ON mat."Id" = f."ItemId" - 1000000
     LEFT JOIN "Items" lure_t ON lure_t."Id" = f."PreferredLureId"
 `;
 
@@ -84,13 +67,12 @@ function formatFish(f, rel) {
       Difficulty: f.Difficulty,
       MinDepth: f.MinDepth != null ? Number(f.MinDepth) : null,
       TimeOfDay: f.TimeOfDay,
+      Weight: f.MatWeight != null ? Number(f.MatWeight) : null,
+      Economy: {
+        MaxTT: f.MatValue != null ? Number(f.MatValue) : null,
+      },
       RodTypes: rel.rodTypesByFish[f.Id] || [],
     },
-    Item: f.ItemName ? {
-      Name: f.ItemName,
-      Properties: { Type: f.ItemType },
-      Links: { "$Url": `/${itemTypeToPath(f.ItemType)}/${f.ItemId}` }
-    } : null,
     Species: f.SpeciesName ? {
       Name: f.SpeciesName,
       Properties: {
