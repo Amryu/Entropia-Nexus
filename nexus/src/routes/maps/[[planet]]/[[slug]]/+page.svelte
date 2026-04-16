@@ -1113,20 +1113,6 @@
           {/each}
         </select>
       </div>
-      {#if isFishingPlanet && fishingSectorMap}
-        <div class="control-group view-toggle">
-          <button
-            class="view-btn"
-            class:active={!fishingViewActive}
-            onclick={() => { if (fishingViewActive) toggleFishingView(); }}
-          >Map</button>
-          <button
-            class="view-btn"
-            class:active={fishingViewActive}
-            onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
-          >Fishing</button>
-        </div>
-      {/if}
     </div>
     {/if}
 
@@ -1138,6 +1124,20 @@
           placeholder="Search fish..."
           bind:value={fishingSearchQuery}
         />
+        {#if isFishingPlanet && fishingSectorMap}
+          <div class="view-toggle">
+            <button
+              class="view-btn"
+              class:active={!fishingViewActive}
+              onclick={() => { if (fishingViewActive) toggleFishingView(); }}
+            >Map</button>
+            <button
+              class="view-btn"
+              class:active={fishingViewActive}
+              onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
+            >Fishing</button>
+          </div>
+        {/if}
       </div>
 
       {#if fishingSearchResults.length > 0}
@@ -1180,6 +1180,20 @@
               </svg>
             </button>
           {/if}
+        {/if}
+        {#if isFishingPlanet && fishingSectorMap}
+          <div class="view-toggle">
+            <button
+              class="view-btn"
+              class:active={!fishingViewActive}
+              onclick={() => { if (fishingViewActive) toggleFishingView(); }}
+            >Map</button>
+            <button
+              class="view-btn"
+              class:active={fishingViewActive}
+              onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
+            >Fishing</button>
+          </div>
         {/if}
       </div>
 
@@ -2676,12 +2690,11 @@
   /* View mode toggle (Map / Fishing) */
   .view-toggle {
     display: flex;
-    gap: 0;
-    align-self: flex-end;
+    flex-shrink: 0;
   }
 
   .view-btn {
-    padding: 4px 14px;
+    padding: 7px 12px;
     font-size: 12px;
     font-weight: 600;
     background: rgba(0, 0, 0, 0.5);
@@ -2689,6 +2702,7 @@
     border: 1px solid var(--border-color);
     cursor: pointer;
     transition: all 0.15s;
+    white-space: nowrap;
   }
 
   .view-btn:first-child {

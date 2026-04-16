@@ -567,6 +567,7 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties.Description },
+      { name: "Type", value: x => x.Properties.Type },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Value", value: x => x.Properties.Economy.MaxTT }
     ],

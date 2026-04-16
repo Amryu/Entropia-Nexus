@@ -78,16 +78,19 @@ export async function load({ fetch, params, url, parent }) {
   // of existing Fish-type species so the form can distinguish "pick existing"
   // from "create new". Species list is filtered client-side on CodexType.
   if (isCreateMode) {
-    const [itemsData, planetsData, speciesData] = await Promise.all([
+    const [itemsData, materialsData, planetsData, speciesData] = await Promise.all([
       apiCall(fetch, '/items?limit=5000').catch(() => []),
+      apiCall(fetch, '/materials?limit=5000').catch(() => []),
       apiCall(fetch, '/planets').catch(() => []),
       apiCall(fetch, '/mobspecies').catch(() => [])
     ]);
     response.itemsList = itemsData || [];
+    response.materialsList = materialsData || [];
     response.planetsList = planetsData || [];
     response.speciesList = speciesData || [];
   } else {
     response.itemsList = null;
+    response.materialsList = null;
     response.planetsList = null;
     response.speciesList = null;
   }

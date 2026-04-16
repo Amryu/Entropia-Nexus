@@ -125,6 +125,7 @@
       editDepsLoading = true;
       loadEditDeps([
         { key: 'itemsList', url: '/api/items?limit=5000' },
+        { key: 'materialsList', url: '/api/materials?limit=5000' },
         { key: 'planetsList', url: '/api/planets' },
         { key: 'speciesList', url: '/api/mobspecies' }
       ]).then(deps => {
@@ -205,9 +206,9 @@
   });
 
   let oilItemOptions = $derived.by(() => {
-    if (!$editMode || !Array.isArray(data.itemsList)) return [];
-    return data.itemsList
-      .filter(it => it?.Properties?.Type === 'Material' && it.Name.toLowerCase().includes('oil'))
+    if (!$editMode || !Array.isArray(data.materialsList)) return [];
+    return data.materialsList
+      .filter(it => it?.Properties?.Type === 'Fish Oil')
       .map(it => ({ value: it.Name, label: it.Name }));
   });
 
@@ -447,6 +448,25 @@
               />
             </span>
           </div>
+          <div class="stat-row">
+            <span class="stat-label">Species</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <SearchInput
+                  value={activeEntity?.Species?.Name || ''}
+                  placeholder="Pick or type new..."
+                  options={fishSpeciesOptions}
+                  onchange={handleSpeciesSelect}
+                  onselect={handleSpeciesSelect}
+                />
+              {:else}
+                {activeEntity?.Species?.Name || 'N/A'}
+              {/if}
+              {#if $editMode && activeEntity?.Species?.Name}
+                <span class="species-state">{isExistingSpecies ? 'existing' : 'new'}</span>
+              {/if}
+            </span>
+          </div>
         </div>
 
         <!-- Economy: TT value from the backing Materials row -->
@@ -478,45 +498,11 @@
                   onchange={(e) => updateField('FishOil.Name', e.value)}
                   onselect={(e) => updateField('FishOil.Name', e.value)}
                 />
+              {:else if activeEntity?.FishOil?.Name}
+                <a href="/items/materials/{encodeURIComponentSafe(activeEntity.FishOil.Name)}">{activeEntity.FishOil.Name}</a>
               {:else}
-                {activeEntity?.FishOil?.Name || 'N/A'}
+                N/A
               {/if}
-            </span>
-          </div>
-        </div>
-
-        <!-- Species (codex) -->
-        <div class="stats-section">
-          <h4 class="section-title">
-            Species
-            {#if $editMode && activeEntity?.Species?.Name}
-              <span class="species-state">{isExistingSpecies ? 'existing' : 'new'}</span>
-            {/if}
-          </h4>
-          <div class="stat-row stat-row-block">
-            <span class="stat-value stat-value-block">
-              {#if $editMode}
-                <SearchInput
-                  value={activeEntity?.Species?.Name || ''}
-                  placeholder="Pick or type new..."
-                  options={fishSpeciesOptions}
-                  onchange={handleSpeciesSelect}
-                  onselect={handleSpeciesSelect}
-                />
-              {:else}
-                {activeEntity?.Species?.Name || 'N/A'}
-              {/if}
-            </span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Base Cost</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Species?.CodexBaseCost}
-                path="Species.CodexBaseCost"
-                type="number"
-                placeholder="-"
-              />
             </span>
           </div>
         </div>
@@ -723,17 +709,6 @@
           {/if}
         </DataSection>
 
-        {#if !isCreateMode && hasCodex}
-          <DataSection title="Codex Calculator" expanded={true}>
-            <MobCodex
-              baseCost={speciesCodexBaseCost}
-              codexType={speciesCodexType}
-              mobType="Fish"
-              skills={skillsList}
-            />
-          </DataSection>
-        {/if}
-
         <DataSection
           title="Locations"
           expanded={true}
@@ -747,6 +722,17 @@
             onchange={(newLocations) => updateField('Locations', newLocations)}
           />
         </DataSection>
+
+        {#if !isCreateMode && hasCodex}
+          <DataSection title="Codex Calculator" expanded={true}>
+            <MobCodex
+              baseCost={speciesCodexBaseCost}
+              codexType={speciesCodexType}
+              mobType="Fish"
+              skills={skillsList}
+            />
+          </DataSection>
+        {/if}
 
         <!-- TODO: Global section (fish global stats/tracking) goes here when implemented -->
       </article>
