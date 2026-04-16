@@ -956,6 +956,25 @@
                 />
               </span>
             </div>
+          {:else if additional.type === 'fishingrods'}
+            <div class="stat-row">
+              <span class="stat-label">Ammo</span>
+              <span class="stat-value">Spool Cell</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Ammo Burn</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.AmmoBurn}
+                  path="Properties.Economy.AmmoBurn"
+                  type="number"
+                />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Cost/Use</span>
+              <span class="stat-value">{cost != null ? `${cost.toFixed(2)} PEC` : 'N/A'}</span>
+            </div>
           {:else if additional.type === 'teleportationchips' || additional.type === 'effectchips'}
             <div class="stat-row">
               <span class="stat-label">Ammo</span>
