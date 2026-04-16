@@ -316,16 +316,19 @@ export async function GET({ params, url, locals }) {
       return getResponse({ error: 'Target not found' }, 404);
     }
 
-    // Derive mob base name and wiki URL for mob targets (hunting types with mob_id)
+    // Derive mob base name and wiki URL for mob/fish targets
     let wikiUrl = null;
     let mobName = null;
     const mobId = resolvedMobId || summary.mob_id;
     const isHunting = summary.primary_type === 'kill' || summary.primary_type === 'team_kill';
+    const isFishing = summary.primary_type === 'fish';
     if (mobId && isHunting && maturitiesResult.rows.length > 1) {
       mobName = extractMobName(maturitiesResult.rows[0].target_name);
       wikiUrl = `/information/mobs/${encodeURIComponentSafe(mobName)}`;
     } else if (mobId && isHunting) {
       wikiUrl = `/information/mobs/${encodeURIComponentSafe(targetName)}`;
+    } else if (isFishing) {
+      wikiUrl = `/information/fishes/${encodeURIComponentSafe(targetName)}`;
     }
 
     // Build maturities list (only if there are multiple variants)
