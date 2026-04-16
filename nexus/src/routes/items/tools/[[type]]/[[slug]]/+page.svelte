@@ -148,6 +148,23 @@
     }
   }
 
+  const ROD_TYPE_PROFESSIONS = {
+    'Angling': 'Baiter',
+    'Casting': 'Cast Fisher',
+    'Baitfishing': 'Baitfisher',
+    'Fly Fishing': 'Fly Fisher',
+    'Deep Ocean Fishing': 'Deep Ocean Fisher',
+  };
+
+  const FISHING_PROFESSION_OPTIONS = Object.values(ROD_TYPE_PROFESSIONS)
+    .map(p => ({ value: p, label: p }));
+
+  function handleRodTypeChange() {
+    const rodType = $currentEntity?.Properties?.RodType;
+    const profession = ROD_TYPE_PROFESSIONS[rodType] || null;
+    updateField('Profession.Name', profession);
+  }
+
   // Type name mapping
   function getTypeName(type) {
     switch (type) {
@@ -273,12 +290,13 @@
         base.Properties.RodType = 'Casting';
         base.Properties.Strength = null;
         base.Properties.Flexibility = null;
+        base.Properties.Economy.Decay = null;
         base.Properties.Skill = {
-          IsSiB: null,
+          IsSiB: true,
           LearningIntervalStart: null,
           LearningIntervalEnd: null
         };
-        base.Profession = { Name: null };
+        base.Profession = { Name: 'Cast Fisher' };
         break;
     }
 
@@ -804,6 +822,7 @@
                     { value: 'Deep Ocean Fishing', label: 'Deep Ocean Fishing' },
                     { value: 'Baitfishing', label: 'Baitfishing' }
                   ]}
+                  onchange={handleRodTypeChange}
                 />
               </span>
             </div>
@@ -1135,7 +1154,54 @@
                   {/if}
                 </span>
               </div>
-            {:else if additional.type === 'misctools' || additional.type === 'fishingrods'}
+            {:else if additional.type === 'fishingrods'}
+              <div class="stat-row">
+                <span class="stat-label">Profession</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <InlineEdit
+                      value={activeEntity?.Profession?.Name}
+                      path="Profession.Name"
+                      type="select"
+                      placeholder="None"
+                      options={FISHING_PROFESSION_OPTIONS}
+                    />
+                  {:else if activeEntity?.Profession?.Name}
+                    <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
+                  {:else}
+                    N/A
+                  {/if}
+                </span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">SiB</span>
+                <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Skill?.IsSiB}
+                    path="Properties.Skill.IsSiB"
+                    type="checkbox"
+                  />
+                </span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Level Range</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                    path="Properties.Skill.LearningIntervalStart"
+                    type="number"
+                    step={0.1}
+                  />
+                  -
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                    path="Properties.Skill.LearningIntervalEnd"
+                    type="number"
+                    step={0.1}
+                  />
+                </span>
+              </div>
+            {:else if additional.type === 'misctools'}
               <div class="stat-row">
                 <span class="stat-label">Profession</span>
                 <span class="stat-value">

@@ -12,7 +12,8 @@ export async function load({ fetch, params }) {
   const [
     armorSets, armorPlatings, mobs,
     weapons, weaponAmplifiers, weaponVisionAttachments, absorbers, mindforceImplants,
-    clothings, pets, effects
+    clothings, pets, effects,
+    fishingRods, fishingReels, fishingBlanks, fishingLines, fishingLures
   ] = await Promise.all([
     apiCall(fetch, '/armorsets').catch(() => []),
     apiCall(fetch, '/armorplatings').catch(() => []),
@@ -24,7 +25,12 @@ export async function load({ fetch, params }) {
     apiCall(fetch, '/mindforceimplants').catch(() => []),
     apiCall(fetch, '/clothings').catch(() => []),
     apiCall(fetch, '/pets').catch(() => []),
-    apiCall(fetch, '/effects').catch(() => [])
+    apiCall(fetch, '/effects').catch(() => []),
+    apiCall(fetch, '/fishingrods').catch(() => []),
+    apiCall(fetch, '/fishingreels').catch(() => []),
+    apiCall(fetch, '/fishingblanks').catch(() => []),
+    apiCall(fetch, '/fishinglines').catch(() => []),
+    apiCall(fetch, '/fishinglures').catch(() => [])
   ]);
 
   const ensureArray = v => Array.isArray(v) ? v : [];
@@ -41,6 +47,11 @@ export async function load({ fetch, params }) {
     mindforceImplants: ensureArray(mindforceImplants),
     clothings: ensureArray(clothings),
     pets: ensureArray(pets),
-    effects: ensureArray(effects)
+    effects: ensureArray(effects),
+    fishingRods: ensureArray(fishingRods),
+    fishingReels: ensureArray(fishingReels),
+    fishingBlanks: ensureArray(fishingBlanks),
+    fishingLines: ensureArray(fishingLines),
+    fishingLures: ensureArray(fishingLures)
   });
 }

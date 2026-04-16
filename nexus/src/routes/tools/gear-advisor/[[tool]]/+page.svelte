@@ -14,6 +14,7 @@
   import ArmorVsMob from '../ArmorVsMob.svelte';
   import WeaponProfitability from '../WeaponProfitability.svelte';
   import EffectOptimizer from '../EffectOptimizer.svelte';
+  import FishingAdvisor from '../FishingAdvisor.svelte';
 
   let { data } = $props();
 
@@ -33,6 +34,11 @@
       slug: 'effect-optimizer',
       label: 'Effect Optimizer',
       description: 'Find optimal equipment to hit effect caps.'
+    },
+    {
+      slug: 'fishing-advisor',
+      label: 'Fishing Advisor',
+      description: 'Build and compare fishing rigs with rod and attachment stats.'
     }
   ];
 
@@ -124,6 +130,14 @@
       weaponVisionAttachments={data.additional?.weaponVisionAttachments ?? []}
       absorbers={data.additional?.absorbers ?? []}
       mindforceImplants={data.additional?.mindforceImplants ?? []}
+    />
+  {:else if activeToolSlug === 'fishing-advisor'}
+    <FishingAdvisor
+      fishingRods={data.additional?.fishingRods ?? []}
+      fishingReels={data.additional?.fishingReels ?? []}
+      fishingBlanks={data.additional?.fishingBlanks ?? []}
+      fishingLines={data.additional?.fishingLines ?? []}
+      fishingLures={data.additional?.fishingLures ?? []}
     />
   {/if}
 </WikiPage>
