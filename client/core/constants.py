@@ -172,6 +172,9 @@ SKILL_EXP_PATTERN = re.compile(
 SKILL_DIRECT_PATTERN = re.compile(
     r'^You have gained ([\d.]+) ([A-Z][\w ]+)$'
 )
+SKILL_IMPROVED_PATTERN = re.compile(
+    r'^Your ([A-Z][\w ]+?) has improved by ([\d.]+)$'
+)
 
 # Combat patterns (order matters: crit before regular damage)
 COMBAT_CRIT_PATTERN = re.compile(

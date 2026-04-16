@@ -43,6 +43,9 @@ ReturnMode = Literal["percent", "signed_ped"]
 
 RECENT_KILLS_VISIBLE_ROWS = 50
 TICKER_INTERVAL_MS = 1000
+# Coalesce bursty refresh requests so rapid events (combat, loot, mob
+# changes) trigger at most one full rebuild per window.
+REFRESH_DEBOUNCE_MS = 500
 
 
 # ---------------------------------------------------------------------------
@@ -168,10 +171,12 @@ class RecentKillsModel(QAbstractTableModel):
             if col == self.COL_MOB:
                 return enc.mob_name or "Unknown"
             if col == self.COL_COST:
-                return _fmt_ped(enc.cost)
+                # enc.cost is stored in PEC (see tracker._handle_damage).
+                return _fmt_ped(enc.cost / 100.0)
             if col == self.COL_MULT:
-                if enc.cost > 0:
-                    return f"{enc.loot_total_ped / enc.cost:.2f}x"
+                cost_ped = enc.cost / 100.0
+                if cost_ped > 0:
+                    return f"{enc.loot_total_ped / cost_ped:.2f}x"
                 return "-"
             if col == self.COL_RETURN:
                 return _fmt_ped(enc.loot_total_ped)
@@ -181,7 +186,7 @@ class RecentKillsModel(QAbstractTableModel):
                 return ts.isoformat(sep=" ", timespec="seconds") if ts else ""
         elif role == Qt.ItemDataRole.ForegroundRole:
             if col == self.COL_MULT and enc.cost > 0:
-                ratio = enc.loot_total_ped / enc.cost
+                ratio = enc.loot_total_ped / (enc.cost / 100.0)
                 if ratio >= 2.0:
                     return QBrush(QColor("#3ecf8e"))
                 if ratio < 0.5:
@@ -401,12 +406,13 @@ class LastKillCard(_Card):
             return
         self._current_mob = enc.mob_name
         self._mob_label.setText(enc.mob_name or "Unknown")
+        cost_ped = enc.cost / 100.0  # enc.cost stored in PEC
         self._cost_label.setText(
-            f"Cost: {enc.cost:.2f} PED | Return: {enc.loot_total_ped:.2f} PED"
+            f"Cost: {cost_ped:.2f} PED | Return: {enc.loot_total_ped:.2f} PED"
         )
-        if enc.cost > 0:
+        if cost_ped > 0:
             self._mult_label.setText(
-                f"Multiplier: {enc.loot_total_ped / enc.cost:.2f}x"
+                f"Multiplier: {enc.loot_total_ped / cost_ped:.2f}x"
             )
         else:
             self._mult_label.setText("Multiplier: -")
@@ -719,6 +725,14 @@ class HuntDashboardView(QWidget):
         self._ticker.timeout.connect(self._on_tick)
         self._ticker.start()
 
+        # Debounce timer — signal handlers call _schedule_refresh() instead
+        # of refresh() so bursts of events (e.g. loot + encounter-ended +
+        # session-updated in rapid succession) collapse into one rebuild.
+        self._refresh_debounce = QTimer(self)
+        self._refresh_debounce.setSingleShot(True)
+        self._refresh_debounce.setInterval(REFRESH_DEBOUNCE_MS)
+        self._refresh_debounce.timeout.connect(self.refresh)
+
     # -- Lifecycle ---------------------------------------------------
 
     def showEvent(self, event):
@@ -730,6 +744,11 @@ class HuntDashboardView(QWidget):
     def hideEvent(self, event):
         super().hideEvent(event)
         self._ticker.stop()
+        self._refresh_debounce.stop()
+
+    def _schedule_refresh(self) -> None:
+        """Coalesce refresh requests into a single rebuild after the debounce window."""
+        self._refresh_debounce.start()
 
     # -- UI layout ---------------------------------------------------
 
@@ -1004,6 +1023,15 @@ class HuntDashboardView(QWidget):
         if encounters is None:
             encounters = self._scoped_encounters()
         economy = hunt_stats.encounters_economy(encounters)
+        # enc.cost (and therefore every cost field returned by
+        # encounters_economy) is stored in PEC, while loot_total_ped is
+        # PED. The economy helper mixes the two without converting, so
+        # we rebuild the PED-consistent numbers here before displaying.
+        total_cost_ped = economy["total_cost"] / 100.0
+        total_loot_ped = economy["total_loot"]
+        profit_loss_ped = total_loot_ped - total_cost_ped
+        return_pct = (total_loot_ped / total_cost_ped * 100.0) if total_cost_ped > 0 else 0
+        avg_kill_cost_ped = economy["cost_per_kill"] / 100.0
         start = self._scope_start_time()
         duration = None
         if start:
@@ -1018,11 +1046,11 @@ class HuntDashboardView(QWidget):
             session_id=session_id,
         )
         self._stats_block.set_stats(
-            return_pct=economy["return_pct"],
-            profit_loss=economy["profit_loss"],
+            return_pct=return_pct,
+            profit_loss=profit_loss_ped,
             return_mode=self._return_mode,
             duration=duration,
-            avg_kill_cost=economy["cost_per_kill"],
+            avg_kill_cost=avg_kill_cost_ped,
             globals_count=globals_count,
             hof_count=hof_count,
             mu_consumed=mu,
@@ -1067,13 +1095,13 @@ class HuntDashboardView(QWidget):
     def _on_session_started(self, data) -> None:
         self._session_start = datetime.utcnow()
         self._last_kill = None
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_session_stopped(self, data) -> None:
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_session_updated(self, data) -> None:
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_encounter_started(self, data) -> None:
         tracker = self._get_tracker()
@@ -1082,6 +1110,7 @@ class HuntDashboardView(QWidget):
         enc = tracker._manager.current_encounter
         if enc:
             self._encounter_card.set_active(enc)
+        self._schedule_refresh()
 
     def _on_encounter_ended(self, data) -> None:
         tracker = self._get_tracker()
@@ -1092,19 +1121,19 @@ class HuntDashboardView(QWidget):
             self._last_kill = encounters[-1]
             self._last_kill_card.set_kill(self._last_kill)
         self._encounter_card.set_idle(self._last_kill)
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_hunt_started(self, data) -> None:
         if self._scope == "hunt":
-            self.refresh()
+            self._schedule_refresh()
 
     def _on_hunt_ended(self, data) -> None:
         if self._scope == "hunt":
-            self.refresh()
+            self._schedule_refresh()
 
     def _on_hunt_split(self, data) -> None:
         if self._scope == "hunt":
-            self.refresh()
+            self._schedule_refresh()
 
     def _on_mob_changed(self, data) -> None:
         tracker = self._get_tracker()
@@ -1113,6 +1142,7 @@ class HuntDashboardView(QWidget):
         enc = tracker._manager.current_encounter
         if enc:
             self._encounter_card.set_active(enc)
+        self._schedule_refresh()
 
     def _on_active_tool_changed(self, data) -> None:
         name = data.get("tool_name") if isinstance(data, dict) else str(data)
@@ -1126,25 +1156,25 @@ class HuntDashboardView(QWidget):
         # Dashboard's running feed is re-derived from encounters; a
         # global event alone is not enough (mob attribution comes via
         # the encounter's is_global flag). Just schedule a refresh.
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_own_global(self, event) -> None:
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_open_encounter_updated(self, data) -> None:
         self._refresh_open_encounters()
 
     def _on_gear_override_changed(self, data) -> None:
         """Refresh costs when a gear override is edited."""
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_session_markup_changed(self, data) -> None:
         """Refresh loot valuation when a session (L) markup changes."""
-        self.refresh()
+        self._schedule_refresh()
 
     def _on_enhancer_timeline_edited(self, data) -> None:
         """Refresh after an anchored enhancer event is recorded."""
-        self.refresh()
+        self._schedule_refresh()
 
     def _refresh_tool_card(self) -> None:
         tracker = self._get_tracker()
@@ -1156,7 +1186,9 @@ class HuntDashboardView(QWidget):
         if tracker and name:
             ti = tracker._tool_inference
             try:
-                cost = ti.get_cost_per_shot(name)
+                # get_cost_per_shot returns PEC; convert to PED for display.
+                raw_pec = ti.get_cost_per_shot(name)
+                cost = (raw_pec / 100.0) if raw_pec else raw_pec
             except Exception:
                 cost = None
             enh = getattr(tracker, "_enhancer_inference", None)

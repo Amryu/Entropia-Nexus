@@ -130,3 +130,13 @@ class PlatformBackend(Protocol):
     def flash_taskbar(self, wid: int) -> None:
         """Flash the taskbar entry for *wid* to attract attention."""
         ...
+
+    # --- Game state ---
+
+    def get_current_planet(self) -> str | None:
+        """Return the player's last visited planet (e.g. 'Calypso'), or None.
+
+        Reads from the game client's persistent state (Windows registry on
+        Win32, returns None on other platforms).
+        """
+        return None

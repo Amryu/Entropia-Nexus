@@ -71,6 +71,27 @@ class TestSkillGainHandler(unittest.TestCase):
         event = self.bus.publish.call_args[0][1]
         self.assertEqual(event.skill_name, "Quickness")
 
+    def test_can_handle_attribute_improved(self):
+        line = _make_system_line("Your Psyche has improved by 0.0123")
+        self.assertTrue(self.handler.can_handle(line))
+
+    def test_handle_attribute_improved(self):
+        line = _make_system_line("Your Psyche has improved by 0.0123")
+        self.handler.handle(line)
+        self.bus.publish.assert_called_once()
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.skill_name, "Psyche")
+        self.assertAlmostEqual(event.amount, 0.0123)
+        self.assertTrue(event.is_attribute)
+
+    def test_handle_attribute_improved_zero(self):
+        line = _make_system_line("Your Psyche has improved by 0.0000")
+        self.handler.handle(line)
+        self.bus.publish.assert_called_once()
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.skill_name, "Psyche")
+        self.assertAlmostEqual(event.amount, 0.0)
+
     def test_db_called(self):
         line = _make_system_line("You have gained 0.0639 experience in your Engineering skill")
         self.handler.handle(line)

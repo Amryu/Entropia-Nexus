@@ -1,10 +1,12 @@
-"""Loadout calculator — Python facade over the JS bridge.
+"""Loadout calculator — Python facade over the transpiled loadout modules.
 
-Delegates to evaluateLoadout() in loadoutEvaluator.js for full effects
-processing (gear effects, consumables, bonus properties, and capping).
+Delegates to `evaluateLoadout` in the auto-generated Python port of
+`loadoutEvaluator.js` for full effects processing (gear effects,
+consumables, bonus properties, and capping).
 """
 
-from .js_bridge import LoadoutJSBridge
+from .generated import loadout_effects, loadout_evaluator
+from .generated._runtime import js_sanitize_for_json
 from .models import LoadoutStats
 
 from ..core.logger import get_logger
@@ -13,10 +15,13 @@ log = get_logger("LoadoutCalc")
 
 
 class LoadoutCalculator:
-    """Evaluates loadouts using the JS bridge for calculations."""
+    """Evaluates loadouts using the transpiled Python port of the loadout JS."""
 
     def __init__(self, js_path: str | None = None):
-        self._bridge = LoadoutJSBridge(js_path)
+        # `js_path` is kept for backwards-compat with callers that still
+        # pass a custom path to the (now obsolete) JS files. Ignored —
+        # the generated Python lives in `client/loadout/generated/`.
+        pass
 
     def evaluate(self, loadout: dict, entities: dict) -> LoadoutStats:
         """Evaluate a loadout and return computed stats.
@@ -59,16 +64,15 @@ class LoadoutCalculator:
         effects_catalog = entities.get("effects", [])
         effect_caps = {}
         if effects_catalog:
-            effect_caps = self._bridge.call(
-                "buildEffectCaps", effects_catalog
-            ) or {}
+            effect_caps = loadout_effects.buildEffectCaps(effects_catalog) or {}
 
         options = {
             "effectsCatalog": effects_catalog,
             "effectCaps": effect_caps,
         }
 
-        result = self._bridge.call("evaluateLoadout", loadout, context, options)
+        raw = loadout_evaluator.evaluateLoadout(loadout, context, options)
+        result = js_sanitize_for_json(raw)
 
         if not result or not isinstance(result, dict):
             log.warning("evaluateLoadout returned empty result")

@@ -23,6 +23,7 @@ from ..theme import (
 )
 from ...core.constants import EVENT_TRACKER_DAILY_READY, EVENT_TRACKER_EVENT_REMINDER
 from ...core.logger import get_logger
+from ...core.waypoint import format_waypoint, sanitize_waypoint_altitude, sanitize_waypoint_name
 
 log = get_logger("Tracker")
 
@@ -54,8 +55,8 @@ def _parse_waypoint(raw: str) -> tuple[dict | None, str]:
         return {
             "longitude": float(m.group(2)),
             "latitude": float(m.group(3)),
-            "altitude": float(m.group(4)),
-            "name": m.group(5).strip(),
+            "altitude": sanitize_waypoint_altitude(m.group(4)),
+            "name": sanitize_waypoint_name(m.group(5)),
         }, m.group(1).strip()
     return None, ""
 
@@ -73,15 +74,13 @@ def _waypoint_copy_string(m: dict) -> str | None:
     """Build a /wp string for clipboard from a mission/custom daily dict."""
     loc = m.get("start_location")
     if loc and loc.get("longitude") is not None:
-        planet = m.get("planet", "?")
+        planet = m.get("planet_technical") or m.get("planet", "?")
         try:
             lon = float(loc["longitude"])
             lat = float(loc["latitude"])
-            alt = float(loc["altitude"]) if loc.get("altitude") is not None else 100
         except (TypeError, ValueError, KeyError):
             return None
-        label = (loc.get("name") or m.get("name", "?")).replace(",", "").strip()[:50]
-        return f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {label}]"
+        return format_waypoint(planet, lon, lat, loc.get("altitude"), loc.get("name") or m.get("name", "?"))
     # Fallback: raw waypoint string for custom dailies
     wp = m.get("waypoint", "")
     if wp:
@@ -177,10 +176,8 @@ def format_cooldown_label(interval) -> str:
 # Tab / table styles
 # ---------------------------------------------------------------------------
 
-from ...core.build_flags import is_dev_build as _is_dev
-
-_TAB_LABELS = ["Dailies", "Events", "Hunting", "Mining", "Crafting"]
-_COMING_SOON_TABS = {3, 4} if _is_dev() else {2, 3, 4}  # Hunting is dev-only
+_TAB_LABELS = ["Dailies", "Events", "Mining", "Crafting"]
+_COMING_SOON_TABS = {2, 3}  # Mining, Crafting. Hunting moved to top-level sidebar page.
 
 _TABLE_STYLE = f"""
     QTableWidget {{
@@ -339,8 +336,6 @@ class TrackerPage(QWidget):
         self._stack = QStackedWidget()
         self._stack.addWidget(self._build_dailies_page())    # 0: Dailies
         self._stack.addWidget(self._build_events_page())     # 1: Events
-        if _is_dev():
-            self._stack.addWidget(self._build_hunting_page())  # 2: Hunting (dev only)
         for i in sorted(_COMING_SOON_TABS):
             self._stack.addWidget(self._build_coming_soon_page(_TAB_LABELS[i]))
         root.addWidget(self._stack)
@@ -1989,6 +1984,7 @@ class TrackerPage(QWidget):
                     "id": mission["Id"],
                     "name": mission.get("Name", "?"),
                     "planet": (mission.get("Planet") or {}).get("Name", "Unknown"),
+                    "planet_technical": ((mission.get("Planet") or {}).get("Properties") or {}).get("TechnicalName") or "",
                     "cooldown_duration": _normalize_interval(
                         (mission.get("Properties") or {}).get("CooldownDuration")
                     ) or "1 day",

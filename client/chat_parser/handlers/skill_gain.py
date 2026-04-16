@@ -2,6 +2,7 @@ from ...core.constants import (
     EVENT_SKILL_GAIN,
     SKILL_DIRECT_PATTERN,
     SKILL_EXP_PATTERN,
+    SKILL_IMPROVED_PATTERN,
 )
 from ...skills.skill_ids import skill_name_to_id
 from ..models import ParsedLine, SkillGainEvent
@@ -9,15 +10,17 @@ from .base import BaseHandler
 
 
 class SkillGainHandler(BaseHandler):
-    """Handles skill gain messages in two formats:
+    """Handles skill gain messages in three formats:
     - 'You have gained 0.6347 experience in your Manufacture Mechanical Equipment skill'
     - 'You have gained 0.0248 Bravado' (attributes/general)
+    - 'Your Psyche has improved by 0.0123' (attribute improvement)
     """
 
     def can_handle(self, parsed_line: ParsedLine) -> bool:
         if parsed_line.channel != "System" or parsed_line.username != "":
             return False
-        return parsed_line.message.startswith("You have gained ")
+        msg = parsed_line.message
+        return msg.startswith("You have gained ") or msg.startswith("Your ")
 
     def handle(self, parsed_line: ParsedLine) -> None:
         msg = parsed_line.message
@@ -41,6 +44,18 @@ class SkillGainHandler(BaseHandler):
                 timestamp=parsed_line.timestamp,
                 skill_name=match.group(2),
                 amount=float(match.group(1)),
+                is_attribute=True,
+            )
+            self._emit(event)
+            return
+
+        # Try the improvement format: "Your Psyche has improved by 0.0123"
+        match = SKILL_IMPROVED_PATTERN.match(msg)
+        if match:
+            event = SkillGainEvent(
+                timestamp=parsed_line.timestamp,
+                skill_name=match.group(1),
+                amount=float(match.group(2)),
                 is_attribute=True,
             )
             self._emit(event)

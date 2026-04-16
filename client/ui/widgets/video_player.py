@@ -25,19 +25,36 @@ from ...core.logger import get_logger
 
 log = get_logger("VideoPlayer")
 
-_MULTIMEDIA_AVAILABLE = False
-try:
-    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-    from PyQt6.QtMultimediaWidgets import QVideoWidget
-    _MULTIMEDIA_AVAILABLE = True
-except ImportError:
-    pass
-
 SEEK_STEP_MS = 5000
 DEFAULT_FRAME_MS = 33
 
+# Lazy import — importing PyQt6.QtMultimedia eagerly causes the Qt FFmpeg
+# backend to spin up ~16 native threads, one of which busy-loops at 100% CPU
+# on some platforms.  Deferring the import to first use avoids burning a core
+# for users who never open a video.
+_MULTIMEDIA_CHECKED = False
+_MULTIMEDIA_AVAILABLE = False
+QMediaPlayer = None
+QAudioOutput = None
+QVideoWidget = None
+
 
 def has_multimedia() -> bool:
+    global _MULTIMEDIA_CHECKED, _MULTIMEDIA_AVAILABLE
+    global QMediaPlayer, QAudioOutput, QVideoWidget
+    if not _MULTIMEDIA_CHECKED:
+        _MULTIMEDIA_CHECKED = True
+        try:
+            from PyQt6.QtMultimedia import (
+                QMediaPlayer as _QMP, QAudioOutput as _QAO,
+            )
+            from PyQt6.QtMultimediaWidgets import QVideoWidget as _QVW
+            QMediaPlayer = _QMP
+            QAudioOutput = _QAO
+            QVideoWidget = _QVW
+            _MULTIMEDIA_AVAILABLE = True
+        except ImportError:
+            _MULTIMEDIA_AVAILABLE = False
     return _MULTIMEDIA_AVAILABLE
 
 
@@ -118,10 +135,11 @@ class VideoPlayerWidget(QWidget):
         self._native_height = 0
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._mm = has_multimedia()
         self._build_ui()
 
         # Create the media pipeline once — reused across load() calls.
-        if _MULTIMEDIA_AVAILABLE:
+        if self._mm:
             self._audio_output = QAudioOutput()
             self._audio_output.setVolume(self._vol_slider.value() / 100.0)
             self._player = QMediaPlayer()
@@ -144,7 +162,7 @@ class VideoPlayerWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        if _MULTIMEDIA_AVAILABLE:
+        if self._mm:
             self._video_widget = QVideoWidget()
             self._video_widget.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,

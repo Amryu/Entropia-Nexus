@@ -22,6 +22,7 @@ from ..theme import (
 )
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get
 from ...exchange.order_utils import TIERABLE_TYPES
+from ...core.waypoint import format_waypoint
 from .fancy_table import FancyTable, ColumnDef
 
 # Defense types share the same 9 names as damage types
@@ -797,13 +798,10 @@ class WaypointCopyButton(QPushButton):
         f"}}"
     )
 
-    def __init__(self, planet: str, coords: dict, name: str, parent=None):
+    def __init__(self, planet, coords: dict, name: str, parent=None):
         super().__init__(parent)
-        lon = coords.get("Longitude")
-        lat = coords.get("Latitude")
-        alt = coords.get("Altitude", 100)
-        self._waypoint = f"[{planet}, {lon}, {lat}, {alt}, {name}]"
-        self.setText(f"/wp {self._waypoint}")
+        self._wp_text = format_waypoint(planet, coords.get("Longitude", 0), coords.get("Latitude", 0), coords.get("Altitude"), name)
+        self.setText(self._wp_text)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(self._STYLE_NORMAL)
         self.clicked.connect(self._copy)
@@ -811,13 +809,13 @@ class WaypointCopyButton(QPushButton):
     def _copy(self):
         clipboard = QApplication.clipboard()
         if clipboard:
-            clipboard.setText(f"/wp {self._waypoint}")
+            clipboard.setText(self._wp_text)
         self.setText("\u2713 Copied!")
         self.setStyleSheet(self._STYLE_COPIED)
         QTimer.singleShot(_WP_COPIED_MS, self._reset)
 
     def _reset(self):
-        self.setText(f"/wp {self._waypoint}")
+        self.setText(self._wp_text)
         self.setStyleSheet(self._STYLE_NORMAL)
 
 

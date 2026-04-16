@@ -140,6 +140,13 @@ TRACKER = (
     '<rect x="11" y="17" width="5" height="2" rx="0.3" fill="currentColor" opacity="0.5"/>'
 )
 
+# Crosshair / reticle (hunt)
+HUNT = (
+    '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>'
+    '<circle cx="12" cy="12" r="2"/>'
+    '<path d="M12 1v5M12 18v5M1 12h5M18 12h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+)
+
 # Pencil (edit)
 PENCIL = (
     '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z'

@@ -54,16 +54,30 @@ MIN_CONTRAST = 10            # brightness gap between inside and outside mask
                              # reduces contrast; TM_CCOEFF_NORMED already rejects
                              # uniform bright areas via zero-variance scoring)
 
-# --- HP bar HSV ranges (from mob_detector.py) ---
-HP_RED_LOW1 = np.array([0, 80, 100])
-HP_RED_HIGH1 = np.array([10, 255, 255])
-HP_RED_LOW2 = np.array([170, 80, 100])
+# --- HP bar HSV ranges ---
+# The mob HP bar is normally RED with a glow at the right edge of the filled
+# portion; as HP drops, the right side becomes very dark gray. The transition
+# has a brighter pixel ("glow") that marks the current HP. A predominantly
+# GREEN bar means the mob is unreachable / not lockable (anti-abuse) — we
+# treat it as "no real lock" for OCR purposes.
+HP_RED_LOW1 = np.array([0, 60, 80])
+HP_RED_HIGH1 = np.array([12, 255, 255])
+HP_RED_LOW2 = np.array([168, 60, 80])
 HP_RED_HIGH2 = np.array([180, 255, 255])
-HP_GREEN_LOW = np.array([35, 80, 100])
+HP_GREEN_LOW = np.array([35, 80, 80])
 HP_GREEN_HIGH = np.array([85, 255, 255])
 
-# --- Shared icon brightness threshold ---
-SHARED_BRIGHTNESS_THRESHOLD = 80
+# --- Shared loot icon: prefer green-hue ratio over plain brightness ---
+SHARED_GREEN_LOW = np.array([35, 80, 80])
+SHARED_GREEN_HIGH = np.array([85, 255, 255])
+SHARED_GREEN_MIN_RATIO = 0.05
+
+# --- Mob name OCR ---
+NAME_MIN_CONFIDENCE = 0.20  # noisy background — be permissive at the OCR layer
+
+# --- Re-read state machine ---
+HP_UP_REREAD_THRESHOLD = 0.05  # 5% HP increase triggers re-read
+NAME_PERIODIC_RECHECK = 8      # frames between cheap insurance re-reads
 
 
 class TargetLockDetector:
@@ -73,9 +87,10 @@ class TargetLockDetector:
     for fast, robust detection at ~2 Hz.
     """
 
-    def __init__(self, config, event_bus, frame_source):
+    def __init__(self, config, event_bus, frame_source, data_client=None):
         self._config = config
         self._event_bus = event_bus
+        self._data_client = data_client
 
         # Detect frame source type
         self._distributor = None
@@ -132,7 +147,29 @@ class TargetLockDetector:
         self._name_candidate: str = ""
         self._name_confirm_count: int = 0
         self._name_debounce = getattr(config, 'target_lock_name_debounce', 2)
-        self._name_min_confidence = getattr(config, 'target_lock_name_min_confidence', 0.3)
+        self._name_min_confidence = getattr(config, 'target_lock_name_min_confidence',
+                                            NAME_MIN_CONFIDENCE)
+
+        # Re-read state machine: cached match + signals to decide whether
+        # to re-OCR the name region this tick.
+        from .nameplate_matcher import NameplateMatcher, NameMatch
+        self._NameMatch = NameMatch
+        self._matcher: NameplateMatcher | None = None
+        if data_client is not None:
+            try:
+                self._matcher = NameplateMatcher(data_client)
+                # Restrict to current planet (full-db fallback still works)
+                planet = _platform.get_current_planet()
+                if planet:
+                    self._matcher.set_planet(planet)
+                    log.info("Nameplate matcher restricted to planet %r", planet)
+            except Exception as e:
+                log.warning("Nameplate matcher unavailable: %s", e)
+
+        self._last_match: NameMatch | None = None
+        self._last_hp_kind: str = "none"
+        self._last_hp_pct: float | None = None
+        self._frames_since_match: int = 0
 
         self._load_template()
 
@@ -331,6 +368,20 @@ class TargetLockDetector:
 
             # Read ROIs and publish
             data = self._read_rois(image, x, y)
+
+            # If the HP bar wasn't recognizable, the template was a false
+            # positive (a chevron-like glyph somewhere in the UI). Treat
+            # this as "no target" and don't publish.
+            if data.get("hp_kind") == "none":
+                self._miss_count += 1
+                if self._miss_count >= LOST_TICKS and not self._published_lost:
+                    self._published_lost = True
+                    self._last_pos = None
+                    self._last_region_pixels = None
+                    self._reset_match_state()
+                    self._event_bus.publish(EVENT_TARGET_LOCK_LOST, {})
+                return
+
             gx, gy = self._game_origin
             data.update({
                 "x": gx + x, "y": gy + y,
@@ -340,8 +391,11 @@ class TargetLockDetector:
             })
             self._event_bus.publish(EVENT_TARGET_LOCK_UPDATE, data)
 
-            # Check for mob name change (debounced)
-            self._check_name_change(data.get("raw_name", ""))
+            # Check for mob name change (debounced) — use the *matched*
+            # mob name when available, since it's far more stable
+            # frame-to-frame than the raw OCR text.
+            stable_name = data.get("mob_name") or data.get("raw_name", "")
+            self._check_name_change(stable_name)
         else:
             self._miss_count += 1
             self._idle_ticks += 1  # no target — increment idle counter
@@ -349,7 +403,15 @@ class TargetLockDetector:
                 self._published_lost = True
                 self._last_pos = None
                 self._last_region_pixels = None
+                self._reset_match_state()
                 self._event_bus.publish(EVENT_TARGET_LOCK_LOST, {})
+
+    def _reset_match_state(self):
+        """Clear cached nameplate match + HP history when target is lost."""
+        self._last_match = None
+        self._last_hp_kind = "none"
+        self._last_hp_pct = None
+        self._frames_since_match = 0
 
     # ------------------------------------------------------------------
     # Three-tier template search
@@ -468,47 +530,118 @@ class TargetLockDetector:
 
     def _read_rois(self, image: np.ndarray,
                    tx: int, ty: int) -> dict:
-        """Read all configured ROI regions relative to template position."""
-        data = {
+        """Read all configured ROI regions relative to template position.
+
+        Returns a dict with hp_kind, hp_pct, is_shared, raw_name, plus the
+        matched mob name / level / maturity if a match was made.
+
+        The mob name is OCR'd only when needed (initial detection, HP went
+        UP, bar kind changed, or periodic insurance recheck) — when only
+        HP is dropping, the cached match is reused.
+        """
+        data: dict = {
+            "hp_kind": "none",
             "hp_pct": None,
             "is_shared": None,
             "raw_name": "",
+            "mob_name": None,
+            "maturity_name": None,
+            "level": None,
+            "match_score": 0.0,
         }
 
-        # HP bar
+        # HP bar (cheap, always run)
+        hp_kind = "none"
+        hp_pct: float | None = None
         roi_hp = getattr(self._config, "target_lock_roi_hp", None)
         if roi_hp:
             region = self._get_roi_region(image, tx, ty, roi_hp)
             if region is not None and region.size > 0:
-                hp = self._read_hp_bar(region)
-                data["hp_pct"] = hp
-                if self._tick_count % 40 == 1:
-                    log.info("Target HP: %.0f%% (ROI %dx%d, red+green pixels in region)",
-                             (hp or 0) * 100, region.shape[1], region.shape[0])
+                hp_kind, hp_pct = self._read_hp_bar(region)
+        data["hp_kind"] = hp_kind
+        data["hp_pct"] = hp_pct
 
-        # Shared icon
+        # If the HP bar isn't recognizable, this is a template false positive.
+        # Bail out early — don't waste OCR cycles or publish stale data.
+        if hp_kind == "none":
+            return data
+
+        # Shared loot icon (cheap, always run)
         roi_shared = getattr(self._config, "target_lock_roi_shared", None)
         if roi_shared:
             region = self._get_roi_region(image, tx, ty, roi_shared)
             if region is not None and region.size > 0:
                 data["is_shared"] = self._read_shared_icon(region)
 
-        # Name — ONNX text recognition
+        # Name — only OCR when we suspect a target change
         roi_name = getattr(self._config, "target_lock_roi_name", None)
+        reread_reason = self._should_reread_name(hp_kind, hp_pct)
+        name_region = None
         if roi_name:
-            region = self._get_roi_region(image, tx, ty, roi_name)
-            if region is not None and region.size > 0:
-                name = self._read_mob_name(region)
-                if name:
-                    data["raw_name"] = name
-                # Include the raw crop for debug overlay rendering
-                if getattr(self._config, "scan_overlay_debug", False):
-                    data["_name_crop"] = region
-                if self._tick_count % 40 == 1:
-                    log.info("Target name OCR: %r (ROI %dx%d)",
-                             name, region.shape[1], region.shape[0])
+            name_region = self._get_roi_region(image, tx, ty, roi_name)
+
+        if reread_reason != "skip" and name_region is not None and name_region.size > 0:
+            raw = self._read_mob_name(name_region)
+            if raw:
+                data["raw_name"] = raw
+                if self._matcher is not None:
+                    match = self._matcher.match(raw)
+                    if match is not None:
+                        self._last_match = match
+                        self._frames_since_match = 0
+                else:
+                    # No matcher: best-effort raw text only
+                    self._frames_since_match = 0
+            if self._tick_count % 40 == 1:
+                log.info("Target name OCR (%s): raw=%r match=%s",
+                         reread_reason, raw,
+                         self._last_match.nameplate if self._last_match else None)
+        else:
+            self._frames_since_match += 1
+
+        # Carry the cached match into the published data
+        if self._last_match is not None:
+            data["mob_name"] = self._last_match.mob_name
+            data["maturity_name"] = self._last_match.maturity_name or None
+            data["level"] = self._last_match.level
+            data["match_score"] = self._last_match.score
+            if not data["raw_name"]:
+                data["raw_name"] = self._last_match.nameplate
+
+        # Update state for next tick
+        self._last_hp_kind = hp_kind
+        self._last_hp_pct = hp_pct
+
+        # Include the raw crop for debug overlay rendering
+        if name_region is not None and getattr(self._config, "scan_overlay_debug", False):
+            data["_name_crop"] = name_region
 
         return data
+
+    def _should_reread_name(self, hp_kind: str, hp_pct: float | None) -> str:
+        """Decide if we should run name OCR this tick.
+
+        Returns one of:
+            'initial'      - no prior match yet
+            'kind_change'  - HP bar kind transitioned (red <-> green)
+            'hp_up'        - HP increased noticeably (downward never triggers)
+            'periodic'     - cheap insurance recheck every N ticks
+            'skip'         - reuse the cached match
+
+        Note: template position is intentionally NOT used as a trigger
+        because the chevron is a 3D world overlay — camera panning moves
+        it on screen even though the target hasn't changed.
+        """
+        if self._last_match is None or self._matcher is None:
+            return "initial"
+        if hp_kind != self._last_hp_kind:
+            return "kind_change"
+        if (hp_pct is not None and self._last_hp_pct is not None
+                and hp_pct - self._last_hp_pct > HP_UP_REREAD_THRESHOLD):
+            return "hp_up"
+        if self._frames_since_match >= NAME_PERIODIC_RECHECK:
+            return "periodic"
+        return "skip"
 
     def _get_roi_region(self, image: np.ndarray, tx: int, ty: int,
                         roi: dict) -> np.ndarray | None:
@@ -540,50 +673,101 @@ class TargetLockDetector:
         return image[y0:y1, x0:x1].copy()
 
     @staticmethod
-    def _read_hp_bar(region: np.ndarray) -> float:
-        """Estimate HP percentage from an HP bar region using HSV color analysis.
+    def _read_hp_bar(region: np.ndarray) -> tuple[str, float]:
+        """Estimate HP percentage from an HP bar region.
 
-        Returns a float in [0.0, 1.0].
+        The bar is normally RED (with a glow at the right edge marking the
+        current HP). A predominantly GREEN bar means the mob is unreachable
+        (anti-abuse — not actually lockable).
+
+        Returns ``(kind, pct)``:
+            ('red',   pct)  -> normal lockable target with HP=pct
+            ('green', 1.0)  -> unreachable target (no real lock)
+            ('none',  0.0)  -> no recognizable bar (template false positive)
         """
+        if region is None or region.size == 0:
+            return "none", 0.0
+        h, w = region.shape[:2]
+        if w == 0:
+            return "none", 0.0
+
         hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
-
-        # Count red pixels (damage taken / low HP)
-        red_mask1 = cv2.inRange(hsv, HP_RED_LOW1, HP_RED_HIGH1)
-        red_mask2 = cv2.inRange(hsv, HP_RED_LOW2, HP_RED_HIGH2)
-        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-
-        # Count green pixels (full HP)
+        red1 = cv2.inRange(hsv, HP_RED_LOW1, HP_RED_HIGH1)
+        red2 = cv2.inRange(hsv, HP_RED_LOW2, HP_RED_HIGH2)
+        red_mask = cv2.bitwise_or(red1, red2)
         green_mask = cv2.inRange(hsv, HP_GREEN_LOW, HP_GREEN_HIGH)
 
-        red_px = cv2.countNonZero(red_mask)
-        green_px = cv2.countNonZero(green_mask)
-        total = red_px + green_px
+        red_px = int(cv2.countNonZero(red_mask))
+        green_px = int(cv2.countNonZero(green_mask))
 
-        if total == 0:
-            return 0.0
+        # Need a minimum number of bar-colored pixels to count as "a bar"
+        min_bar_px = max(3, w // 8)
+        if red_px + green_px < min_bar_px:
+            return "none", 0.0
 
-        # Green portion = HP remaining
-        return green_px / total
+        if green_px > red_px * 2:
+            # Predominantly green = unreachable target
+            return "green", 1.0
+
+        # HP% = position of rightmost red column / bar width
+        col_red = np.any(red_mask > 0, axis=0)
+        if not np.any(col_red):
+            return "none", 0.0
+        rightmost = int(np.where(col_red)[0][-1])
+        return "red", min(1.0, (rightmost + 1) / w)
 
     @staticmethod
     def _read_shared_icon(region: np.ndarray) -> bool:
-        """Detect if the shared loot icon is present via brightness check."""
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        return float(np.mean(gray)) > SHARED_BRIGHTNESS_THRESHOLD
+        """Detect the green shared-loot icon via HSV green-hue ratio.
+
+        More specific than a plain brightness check — won't false-positive
+        on bright background scenery.
+        """
+        if region is None or region.size == 0:
+            return False
+        hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+        green = cv2.inRange(hsv, SHARED_GREEN_LOW, SHARED_GREEN_HIGH)
+        return float(np.count_nonzero(green)) / green.size > SHARED_GREEN_MIN_RATIO
+
+    @staticmethod
+    def _preprocess_name_white_mask(region_bgr: np.ndarray) -> np.ndarray:
+        """Mask everything except bright text pixels.
+
+        Mob names are rendered as bright near-white text directly over the
+        game world. The leading level token ("L54") is tinted by the game
+        based on the mob's danger rating — yellow / orange / red — so a
+        pure near-white mask drops it and the segmenter never sees those
+        columns. Match both the low-saturation name and saturated-bright
+        level colors.
+        """
+        hsv = cv2.cvtColor(region_bgr, cv2.COLOR_BGR2HSV)
+        white = cv2.inRange(hsv, np.array([0, 0, 180]), np.array([179, 60, 255]))
+        colored = cv2.inRange(hsv, np.array([0, 80, 180]), np.array([179, 255, 255]))
+        mask = cv2.bitwise_or(white, colored)
+        out = np.zeros_like(region_bgr)
+        out[mask > 0] = (255, 255, 255)
+        return out
 
     def _read_mob_name(self, region: np.ndarray) -> str | None:
-        """Read mob name from the name ROI using ONNX text recognition."""
+        """OCR the mob name region.
+
+        Uses recognize_text_wide (word-segmented batched ONNX inference)
+        with the white_mask preprocessing strategy that performed best in
+        the test harness on backdrop-less text.
+        """
+        if region is None or region.size == 0:
+            return None
         try:
             from . import onnxtr_recognizer
             if not onnxtr_recognizer.is_available():
                 return None
-            result = onnxtr_recognizer.recognize_text(
-                region, min_confidence=self._name_min_confidence,
+            prepped = self._preprocess_name_white_mask(region)
+            result = onnxtr_recognizer.recognize_text_wide(
+                prepped, min_confidence=self._name_min_confidence,
             )
             if result is None:
                 return None
             text, _confidence = result
-            # Strip "Corpse" suffix if present
             if text.endswith(" Corpse"):
                 text = text[:-7].strip()
             return text if text else None
@@ -619,11 +803,17 @@ class TargetLockDetector:
             self._last_mob_name = raw_name
             self._name_candidate = ""
             self._name_confirm_count = 0
-            self._event_bus.publish(EVENT_MOB_TARGET_CHANGED, {
+            payload: dict = {
                 "mob_name": raw_name,
                 "confidence": 0.8,
                 "source": "ocr",
-            })
+            }
+            if self._last_match is not None and self._last_match.mob_name == raw_name:
+                payload["maturity_name"] = self._last_match.maturity_name or None
+                payload["level"] = self._last_match.level
+                payload["nameplate"] = self._last_match.nameplate
+                payload["confidence"] = self._last_match.score
+            self._event_bus.publish(EVENT_MOB_TARGET_CHANGED, payload)
 
     # ------------------------------------------------------------------
     # Heart exclusion zone

@@ -21,6 +21,7 @@ from ..core.constants import (
     EVENT_CONFIG_CHANGED, EVENT_TARGET_LOCK_UPDATE, EVENT_TARGET_LOCK_LOST,
     EVENT_MARKET_PRICE_DEBUG, EVENT_MARKET_PRICE_LOST,
     EVENT_PLAYER_STATUS_UPDATE, EVENT_PLAYER_STATUS_LOST,
+    EVENT_ACTIVE_TOOL_CHANGED,
     EVENT_SKILLS_TEMPLATE_DEBUG,
     EVENT_RADAR_COORDINATES, EVENT_RADAR_LOST, EVENT_RADAR_DEBUG,
     GAME_TITLE_PREFIX,
@@ -128,6 +129,7 @@ class ScanHighlightOverlay(QWidget):
     _skills_template_signal = pyqtSignal(object)
     _player_status_signal = pyqtSignal(object)
     _player_status_lost_signal = pyqtSignal()
+    _active_tool_signal = pyqtSignal(object)
     _radar_signal = pyqtSignal(object)
     _radar_lost_signal = pyqtSignal()
     _radar_debug_signal = pyqtSignal(object)
@@ -161,6 +163,7 @@ class ScanHighlightOverlay(QWidget):
 
         # State — player status
         self._player_status_data: dict | None = None  # Last player status update
+        self._active_tool_data: dict | None = None    # Last tool name OCR result
 
         # State — radar
         self._radar_data: dict | None = None           # Last radar coordinate update
@@ -219,6 +222,7 @@ class ScanHighlightOverlay(QWidget):
         self._skills_template_signal.connect(self._on_skills_template_debug)
         self._player_status_signal.connect(self._on_player_status_update)
         self._player_status_lost_signal.connect(self._on_player_status_lost)
+        self._active_tool_signal.connect(self._on_active_tool_changed)
         self._radar_signal.connect(self._on_radar_update)
         self._radar_lost_signal.connect(self._on_radar_lost)
         self._radar_debug_signal.connect(self._on_radar_debug)
@@ -237,6 +241,7 @@ class ScanHighlightOverlay(QWidget):
         self._cb_skills_template = lambda d: self._skills_template_signal.emit(d)
         self._cb_player_status = lambda d: self._player_status_signal.emit(d)
         self._cb_player_status_lost = lambda d: self._player_status_lost_signal.emit()
+        self._cb_active_tool = lambda d: self._active_tool_signal.emit(d)
         self._cb_radar = lambda d: self._radar_signal.emit(d)
         self._cb_radar_lost = lambda d: self._radar_lost_signal.emit()
         self._cb_radar_debug = lambda d: self._radar_debug_signal.emit(d)
@@ -253,6 +258,7 @@ class ScanHighlightOverlay(QWidget):
         event_bus.subscribe(EVENT_SKILLS_TEMPLATE_DEBUG, self._cb_skills_template)
         event_bus.subscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_player_status)
         event_bus.subscribe(EVENT_PLAYER_STATUS_LOST, self._cb_player_status_lost)
+        event_bus.subscribe(EVENT_ACTIVE_TOOL_CHANGED, self._cb_active_tool)
         if self._radar_overlay_enabled:
             event_bus.subscribe(EVENT_RADAR_COORDINATES, self._cb_radar)
             event_bus.subscribe(EVENT_RADAR_LOST, self._cb_radar_lost)
@@ -505,9 +511,15 @@ class ScanHighlightOverlay(QWidget):
                 self.show()
             self.update()
 
+    def _on_active_tool_changed(self, data: dict) -> None:
+        """Tool name OCR result received — store and repaint."""
+        self._active_tool_data = data if data.get("tool_name") else None
+        self.update()
+
     def _on_player_status_lost(self) -> None:
         """Player heart lost — clear and repaint."""
         self._player_status_data = None
+        self._active_tool_data = None
         self.update()
         if (self._regions is None and self._target_lock_data is None
                 and len(self._market_price_windows) == 0):
@@ -1117,6 +1129,23 @@ class ScanHighlightOverlay(QWidget):
             painter.setFont(PS_LABEL_FONT)
             painter.drawText(rx + 2, ry - 2, label)
 
+        # Show recognized tool name below the Tool ROI
+        td = self._active_tool_data
+        if td:
+            tool_roi = getattr(self._config, "player_status_roi_tool_name", None)
+            if tool_roi:
+                trx = tx + tool_roi.get("dx", 0)
+                tby = ty + tool_roi.get("dy", 0) + tool_roi.get("h", 0)
+                name = td.get("tool_name", "")
+                conf = td.get("confidence", 0.0)
+                raw = td.get("ocr_raw", "")
+                text = f'{name} ({conf:.0%})'
+                if raw != name:
+                    text += f'  raw: "{raw}"'
+                painter.setPen(QPen(PS_ROI_TOOL_NAME, 1))
+                painter.setFont(PS_LABEL_FONT)
+                painter.drawText(trx, tby + 10, text)
+
     # ── Radar ────────────────────────────────────────────────────────
 
     def _paint_radar(self, painter: QPainter) -> None:
@@ -1215,6 +1244,7 @@ class ScanHighlightOverlay(QWidget):
         self._event_bus.unsubscribe(EVENT_MARKET_PRICE_LOST, self._cb_market_price_lost)
         self._event_bus.unsubscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_player_status)
         self._event_bus.unsubscribe(EVENT_PLAYER_STATUS_LOST, self._cb_player_status_lost)
+        self._event_bus.unsubscribe(EVENT_ACTIVE_TOOL_CHANGED, self._cb_active_tool)
         self._event_bus.unsubscribe(EVENT_SKILLS_TEMPLATE_DEBUG, self._cb_skills_template)
         self._event_bus.unsubscribe(EVENT_RADAR_COORDINATES, self._cb_radar)
         self._event_bus.unsubscribe(EVENT_RADAR_LOST, self._cb_radar_lost)

@@ -66,10 +66,11 @@ PAGE_LOADOUT = 4
 PAGE_INVENTORY = 5
 PAGE_EXCHANGE = 6
 PAGE_TRACKER = 7
-PAGE_GALLERY = 8
-PAGE_SETTINGS = 9
-PAGE_PROFILE = 10   # User profile (not in sidebar — opened via search/links)
-PAGE_SOCIETY = 11   # Society (not in sidebar — opened via search/links)
+PAGE_HUNT = 8
+PAGE_GALLERY = 9
+PAGE_SETTINGS = 10
+PAGE_PROFILE = 11   # User profile (not in sidebar — opened via search/links)
+PAGE_SOCIETY = 12   # Society (not in sidebar — opened via search/links)
 
 
 @dataclass
@@ -200,6 +201,7 @@ class MainWindow(QWidget):
             PAGE_INVENTORY: self._create_inventory_page,
             PAGE_EXCHANGE: self._create_exchange_page,
             PAGE_TRACKER: self._create_tracker_page,
+            PAGE_HUNT: self._create_hunt_page,
             PAGE_GALLERY: self._create_gallery_page,
             PAGE_SETTINGS: self._create_settings_page,
             PAGE_PROFILE: self._create_profile_page,

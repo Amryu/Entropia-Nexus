@@ -1,6 +1,7 @@
 from .handlers.base import BaseHandler
 from .handlers.combat import CombatHandler
 from .handlers.death_revival import DeathRevivalHandler
+from .handlers.effect import EffectOverTimeHandler
 from .handlers.enhancer import EnhancerBreakHandler
 from .handlers.globals import GlobalsHandler
 from .handlers.loot import LootHandler
@@ -36,6 +37,7 @@ class MessageClassifier:
         self._loot = LootHandler(event_bus, db)
         self._enhancer = EnhancerBreakHandler(event_bus, db)
         self._tier = TierHandler(event_bus, db)
+        self._effect = EffectOverTimeHandler(event_bus, db)
         self._globals = GlobalsHandler(event_bus, db)
         self._trade = TradeChatHandler(event_bus, db)
 
@@ -46,6 +48,7 @@ class MessageClassifier:
             self._loot,
             self._tier,
             self._enhancer,
+            self._effect,
             self._death_revival,
             self._combat,
         ]

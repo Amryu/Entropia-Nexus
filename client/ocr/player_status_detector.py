@@ -31,6 +31,7 @@ except ImportError:
     cv2 = None
 
 from ..core.constants import (
+    EVENT_ACTIVE_LOADOUT_CHANGED,
     EVENT_ACTIVE_TOOL_CHANGED,
     EVENT_PLAYER_STATUS_UPDATE,
     EVENT_PLAYER_STATUS_LOST,
@@ -76,12 +77,7 @@ TOOL_TEXT_MIN_RATIO = 0.05       # at least 5% bright pixels = has text
 NO_TOOL_BAR_OFFSET = 8  # px bars shift down when no tool equipped
 
 # --- Tool name OCR ---
-STPK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "stpk")
-TOOL_STPK_FILE = "tool_text.stpk"
-TOOL_OCR_BRIGHTNESS = 80       # text brightness threshold
-TOOL_OCR_MAX_CHAR_W = 9        # Arial Unicode MS 12 chars are ~7-9px wide
-TOOL_OCR_VALLEY_THRESHOLD = 20  # column-sum threshold for blob splitting
-MIN_TOOL_OCR_CONFIDENCE = 0.50  # minimum STPK read confidence to attempt matching
+MIN_TOOL_OCR_CONFIDENCE = 0.50  # minimum OCR confidence to attempt matching
 
 
 def _precompute_color_ranges(colors, tolerance=COLOR_TOLERANCE):
@@ -153,17 +149,22 @@ class PlayerStatusDetector:
         self._tool_equipped = True  # assume equipped until checked
 
         # Tool name OCR state
-        self._tool_text_reader = None
         self._tool_name_matcher = None
         self._last_tool_name: str | None = None
         self._last_tool_pixels: np.ndarray | None = None
-        self._load_tool_stpk()
         if data_client:
             try:
                 from .tool_name_matcher import ToolNameMatcher
                 self._tool_name_matcher = ToolNameMatcher(data_client)
             except Exception as e:
                 log.warning("Tool name matcher not available: %s", e)
+
+        # Preferred items from the active loadout (for OCR matching priority).
+        # Names are stored as-is; matching is done via case-insensitive prefix.
+        self._loadout_items: set[str] = set()
+        # Normalized → original lookup for fast prefix checks
+        self._loadout_items_norm: dict[str, str] = {}
+        event_bus.subscribe(EVENT_ACTIVE_LOADOUT_CHANGED, self._on_loadout_changed)
 
         # Idle mode tracking
         self._idle_ticks = 0  # consecutive ticks with no data change
@@ -209,25 +210,6 @@ class PlayerStatusDetector:
         log.info("Template loaded: %dx%d (%d/%d opaque)",
                  self._template_w, self._template_h, opaque_px, total_px)
 
-    def _load_tool_stpk(self):
-        """Load STPK templates for tool name OCR."""
-        stpk_path = os.path.join(STPK_DIR, TOOL_STPK_FILE)
-        if not os.path.exists(stpk_path):
-            log.info("Tool name STPK not found: %s — tool name OCR disabled", stpk_path)
-            return
-        try:
-            from .stpk_text_reader import StpkTextReader
-            self._tool_text_reader = StpkTextReader.from_stpk(
-                stpk_path,
-                brightness_threshold=TOOL_OCR_BRIGHTNESS,
-                max_single_char_w=TOOL_OCR_MAX_CHAR_W,
-                valley_threshold=TOOL_OCR_VALLEY_THRESHOLD,
-                right_align=False,
-            )
-            log.info("Tool name STPK loaded: %s", stpk_path)
-        except Exception as e:
-            log.warning("Failed to load tool STPK: %s", e)
-
     def set_game_hwnd(self, hwnd: int,
                       geometry: tuple[int, int, int, int] | None = None):
         """Set the game window handle and client-area geometry (x, y, w, h)."""
@@ -266,6 +248,12 @@ class PlayerStatusDetector:
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
+        try:
+            self._event_bus.unsubscribe(
+                EVENT_ACTIVE_LOADOUT_CHANGED, self._on_loadout_changed,
+            )
+        except Exception:
+            pass
         log.info("Stopped")
 
     # ------------------------------------------------------------------
@@ -603,12 +591,16 @@ class PlayerStatusDetector:
 
         region = image[ry:ry + h, rx:rx + w]
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        bright_pixels = int(np.count_nonzero(gray > TOOL_BRIGHTNESS_THRESHOLD))
-        total_pixels = gray.size
-        self._tool_equipped = bright_pixels > (total_pixels * TOOL_TEXT_MIN_RATIO)
+        # Check the inner third of rows - excludes HUD border artifacts
+        # at top/bottom that can false-positive when no tool is equipped.
+        rh = gray.shape[0]
+        y0 = max(1, rh // 3)
+        middle = gray[y0:rh - y0, :]
+        bright_pixels = int(np.count_nonzero(middle > TOOL_BRIGHTNESS_THRESHOLD))
+        self._tool_equipped = bright_pixels > (middle.size * TOOL_TEXT_MIN_RATIO)
 
         # OCR the tool name when a tool is equipped
-        if self._tool_equipped and self._tool_text_reader is not None:
+        if self._tool_equipped:
             self._read_tool_name(region)
         elif not self._tool_equipped and self._last_tool_name is not None:
             # Tool was unequipped — clear and notify
@@ -619,19 +611,70 @@ class PlayerStatusDetector:
                 "candidates": [],
                 "confidence": 0.0,
                 "ocr_raw": "",
-                "source": "stpk",
+                "source": "onnx",
             })
 
     # ------------------------------------------------------------------
     # Tool name OCR
     # ------------------------------------------------------------------
 
+    def _on_loadout_changed(self, data: dict):
+        """Track loadout items so OCR matching can prefer them.
+
+        The set is used as the high-priority candidate pool: if the OCR
+        prefix uniquely matches a loadout item, we accept it without
+        reading remaining segments.
+        """
+        from .item_name_matcher import _normalize_for_matching
+
+        loadout = data.get("loadout") or {}
+        gear = loadout.get("Gear") or {}
+        names: set[str] = set()
+
+        # Walk one level deep through the gear dict and collect Name fields.
+        # This catches Weapon, Healing, and any future equippable slots.
+        for slot_value in gear.values():
+            if isinstance(slot_value, dict):
+                name = (slot_value.get("Name") or "").strip()
+                if name:
+                    names.add(name)
+
+        # The event also exposes the primary weapon directly
+        primary = (data.get("weapon_name") or "").strip()
+        if primary:
+            names.add(primary)
+
+        self._loadout_items = names
+        self._loadout_items_norm = {
+            _normalize_for_matching(n): n for n in names
+        }
+        log.debug("Loadout items updated: %d entries", len(names))
+
+    def _loadout_prefix_matches(self, ocr_text: str) -> list[str]:
+        """Return loadout items whose normalized name starts with the OCR prefix."""
+        if not self._loadout_items_norm or not ocr_text:
+            return []
+        from .item_name_matcher import _normalize_for_matching
+
+        norm_ocr = _normalize_for_matching(ocr_text)
+        if not norm_ocr:
+            return []
+        return [
+            original
+            for norm, original in self._loadout_items_norm.items()
+            if norm.startswith(norm_ocr)
+        ]
+
     def _read_tool_name(self, tool_region: np.ndarray):
         """OCR the equipped tool name from the tool_name ROI.
 
-        Uses STPK blob matching to read the text, then Levenshtein
-        matching against known equippable items. Publishes
-        EVENT_ACTIVE_TOOL_CHANGED when the detected tool changes.
+        Uses progressive ONNX CRNN reading: first the leading word(s),
+        then the remainder if needed.  When the leading prefix uniquely
+        identifies a loadout item, the second inference is skipped — this
+        is the common case and saves ~20 ms per read.
+
+        Final matching falls back to Levenshtein search across all
+        equippable items.
         """
         # Pixel-change check — skip OCR if region is unchanged
         if (self._last_tool_pixels is not None
@@ -640,37 +683,79 @@ class PlayerStatusDetector:
             return
         self._last_tool_pixels = tool_region.copy()
 
-        # STPK text reading
-        raw_text, confidence, per_char_scores = self._tool_text_reader.read_text(
-            tool_region,
-        )
+        from . import onnxtr_recognizer
 
-        if not raw_text or confidence < MIN_TOOL_OCR_CONFIDENCE:
+        if not onnxtr_recognizer.is_available():
             return
 
-        # Levenshtein matching against known items
+        t0 = time.perf_counter()
+        last_partial: tuple[str, float] | None = None
+        early_match: str | None = None
+        early_conf: float = 0.0
+
+        for partial_text, partial_conf in onnxtr_recognizer.recognize_text_wide_iter(
+            tool_region, min_confidence=MIN_TOOL_OCR_CONFIDENCE,
+        ):
+            last_partial = (partial_text, partial_conf)
+
+            # Early-out: prefix uniquely identifies a single loadout item.
+            # The loadout is the user's configured gear, so an unambiguous
+            # prefix match against it is the strongest possible signal.
+            loadout_hits = self._loadout_prefix_matches(partial_text)
+            if len(loadout_hits) == 1:
+                early_match = loadout_hits[0]
+                early_conf = min(0.99, partial_conf * 1.05)
+                break
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+
+        if early_match is not None:
+            log.debug(
+                "Tool OCR: %.1f ms (loadout early-out: %r)",
+                elapsed_ms, early_match,
+            )
+            raw_text = last_partial[0] if last_partial else ""
+            self._publish_tool(early_match, [early_match], early_conf, raw_text)
+            return
+
+        if last_partial is None:
+            log.debug("Tool OCR: %.1f ms (no result)", elapsed_ms)
+            return
+
+        raw_text, raw_conf = last_partial
+        log.debug("Tool OCR: %.1f ms (full read: %r)", elapsed_ms, raw_text)
+
+        # Full Levenshtein matching against equippables
         matched_name = raw_text
         candidates: list[str] = []
+        confidence = raw_conf
 
         if self._tool_name_matcher is not None:
-            result = self._tool_name_matcher.match_prefix(
-                raw_text, per_char_scores, confidence,
-            )
+            result = self._tool_name_matcher.match_prefix(raw_text, [], raw_conf)
             matched_name = result.matched_name
-            candidates = result.candidates
+            candidates = result.candidates or [matched_name]
             confidence = result.confidence
 
-        # Only publish if the tool name actually changed
+            # Prefer loadout items if any of them appear in the candidate list
+            loadout_in_cands = [c for c in candidates if c in self._loadout_items]
+            if loadout_in_cands:
+                matched_name = loadout_in_cands[0]
+                confidence = min(0.99, confidence * 1.05)
+
+        self._publish_tool(matched_name, candidates, confidence, raw_text)
+
+    def _publish_tool(self, matched_name: str, candidates: list[str],
+                      confidence: float, raw_text: str):
+        """Publish EVENT_ACTIVE_TOOL_CHANGED if the matched tool changed."""
         if matched_name == self._last_tool_name:
             return
-
         self._last_tool_name = matched_name
         self._event_bus.publish(EVENT_ACTIVE_TOOL_CHANGED, {
             "tool_name": matched_name,
             "candidates": candidates,
             "confidence": confidence,
             "ocr_raw": raw_text,
-            "source": "stpk",
+            "source": "onnx",
         })
 
     # ------------------------------------------------------------------

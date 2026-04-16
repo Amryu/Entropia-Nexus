@@ -18,13 +18,12 @@ APP_NAME="entropia-nexus"
 # Directories are included whole — adding files to them requires zero changes.
 BUNDLE_DIRS=(
     "client/assets:client/assets"
-    "nexus/src/lib/utils:nexus/src/lib/utils"
+    "client/loadout/generated:client/loadout/generated"
 )
 BUNDLE_FILES=(
     "client/data/skill_reference.json:client/data"
     "client/data/skill_ranks.json:client/data"
     "client/data/changelog.json:client/data"
-    "common/itemTypes.js:common"
     "client/VERSION:client"
 )
 
@@ -127,6 +126,15 @@ fi
 
 cyan "PyInstaller $(python -m PyInstaller --version)"
 
+# ── Regenerate transpiled loadout modules ────────────────────────────────────
+# Parses the shared JS files via acorn (Node) and writes idiomatic Python
+# into client/loadout/generated/. Required before PyInstaller picks up the
+# client package, otherwise release builds ship a stale port.
+command -v node &>/dev/null || die "node not found — required by the loadout transpiler"
+cyan "Regenerating client/loadout/generated/ from JS sources..."
+( cd "${ROOT}" && python -m client.loadout.transpile --force ) \
+    || die "Transpile step failed — aborting build."
+
 # ── Build --add-data arguments (absolute paths) ─────────────────────────────
 
 DATA_ARGS=()
@@ -197,7 +205,6 @@ python -m PyInstaller \
     --distpath "$DIST_DIR" \
     --workpath "$BUILD_DIR" \
     --specpath "${ROOT}/client" \
-    --collect-all py_mini_racer \
     --collect-all sounddevice \
     --collect-all onnxruntime \
     --collect-all numpy \
@@ -337,19 +344,6 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
 
     SAVED_MB=$((SAVED / 1048576))
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."
-
-    # Fix py-mini-racer: its frozen-build code looks for the native library
-    # in sys._MEIPASS (= _internal/), but --collect-all places it in
-    # _internal/py_mini_racer/.  Copy it to where the library expects it.
-    if [[ "$PLATFORM" == "windows" ]]; then
-        PMR_LIB="$INTERNAL_CHECK/py_mini_racer/mini_racer.dll"
-    else
-        PMR_LIB=$(find "$INTERNAL_CHECK/py_mini_racer" -name 'libmini_racer*.so*' -type f 2>/dev/null | head -1)
-    fi
-    if [[ -f "$PMR_LIB" ]]; then
-        cp "$PMR_LIB" "$INTERNAL_CHECK/"
-        cyan "  Copied $(basename "$PMR_LIB") to _internal/ for py-mini-racer"
-    fi
 fi
 
 # ── Post-build: resolve version ─────────────────────────────────────────────

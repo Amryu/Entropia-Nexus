@@ -24,6 +24,7 @@ class VendorDetailView(WikiDetailView):
     def _build(self, item: dict):
         name = get_item_name(item)
         planet = deep_get(item, "Planet", "Name") or ""
+        wp_planet = deep_get(item, "Planet", "Properties", "TechnicalName") or planet
 
         # --- Image ---
         self._add_image_placeholder(name)
@@ -54,7 +55,7 @@ class VendorDetailView(WikiDetailView):
         general.add_row(StatRow("Planet", planet or "-"))
         coords = deep_get(item, "Properties", "Coordinates")
         if coords and coords.get("Longitude") is not None:
-            general.add_widget(WaypointCopyButton(planet, coords, name))
+            general.add_widget(WaypointCopyButton(wp_planet, coords, name))
         self._add_section(general)
 
         self._add_infobox_stretch()

@@ -25,6 +25,7 @@ class LocationDetailView(WikiDetailView):
         name = get_item_name(item)
         loc_type = deep_get(item, "Properties", "Type") or ""
         planet = deep_get(item, "Planet", "Name") or ""
+        wp_planet = deep_get(item, "Planet", "Properties", "TechnicalName") or planet
 
         # --- Image ---
         self._add_image_placeholder(name)
@@ -52,7 +53,7 @@ class LocationDetailView(WikiDetailView):
         general = InfoboxSection("General")
         coords = deep_get(item, "Properties", "Coordinates")
         if coords and coords.get("Longitude") is not None:
-            general.add_widget(WaypointCopyButton(planet, coords, name))
+            general.add_widget(WaypointCopyButton(wp_planet, coords, name))
         parent_loc = deep_get(item, "ParentLocation", "Name")
         if parent_loc:
             general.add_row(self._linked_stat_row("Parent", parent_loc, "Location"))

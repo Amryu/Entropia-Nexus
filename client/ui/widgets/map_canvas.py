@@ -29,23 +29,62 @@ _HIT_BUFFER_TP = 14            # px hit radius for teleporters
 _HIT_BUFFER_OTHER = 10         # px hit radius for other point locations
 _TP_RADIUS = 4                 # draw radius for teleporters (normal state)
 _TP_RADIUS_ACTIVE = 8          # draw radius for teleporters (hovered/selected)
-_LOC_HALF = 7                  # half-size for other location squares (14x14)
+_MARKER_RADIUS = 6             # draw radius for non-TP point markers
+_MARKER_RADIUS_ACTIVE = 9      # hovered/selected radius for non-TP markers
+_LOC_HALF = 7                  # legacy square half-size (fallback only)
 _ANIM_DURATION_MS = 300        # pan/zoom animation duration
 _ANIM_FPS = 60                 # animation frame rate
 
-# Type → QColor
-_TYPE_COLORS: dict[str, QColor] = {
-    "Teleporter":     QColor(0, 255, 255),    # aqua
-    "LandArea":       QColor(0, 255, 0),      # green
-    "ZoneArea":       QColor(0, 0, 255),      # blue
-    "PvpLootArea":    QColor(255, 0, 0),      # red
-    "PvpArea":        QColor(255, 165, 0),    # orange
-    "MobArea":        QColor(255, 255, 0),    # yellow
-    "Creature":       QColor(255, 255, 0),    # yellow
-    "EventArea":      QColor(255, 255, 255),  # white
-    "WaveEventArea":      QColor(218, 112, 214),  # orchid
+# Outposts within this game-unit distance of a teleporter are hidden while
+# the map is zoomed out, to reduce clutter. Matches the web client constant.
+_OUTPOST_TP_CULL_RADIUS = 200
+
+# Visible width of the viewport (in game units) below which fine-grained
+# point markers become visible. Keeps wide-zoom views uncluttered.
+_POINT_DETAIL_THRESHOLD_EU = 20000
+
+# Point types that are only drawn once the user has zoomed in enough
+# (visible width <= _POINT_DETAIL_THRESHOLD_EU). Teleporter and Outpost
+# have bespoke rules.
+_ZOOM_GATED_POINT_TYPES: set[str] = {
+    "Npc", "Vendor", "Interactable", "Camp", "City",
+    "MagicalFlower", "RevivalPoint", "InstanceEntrance", "Estate",
 }
 
+# Area-type colors (polygons / circles / rects)
+_AREA_COLORS: dict[str, QColor] = {
+    "LandArea":      QColor(0, 255, 0),        # green
+    "TreeArea":      QColor(21, 128, 61),      # forest green
+    "ZoneArea":      QColor(65, 105, 225),     # royal blue
+    "PvpLootArea":   QColor(255, 0, 0),        # red
+    "PvpArea":       QColor(255, 165, 0),      # orange
+    "MobArea":       QColor(255, 255, 0),      # yellow
+    "Creature":      QColor(255, 255, 0),      # yellow
+    "EventArea":     QColor(255, 255, 255),    # white
+    "WaveEventArea": QColor(218, 112, 214),    # orchid
+    "CityArea":      QColor(144, 238, 144),    # light green
+    "EstateArea":    QColor(222, 184, 135),    # burlywood
+}
+
+# Point-marker style: color + shape for each LocationType
+# shapes: "circle" | "diamond" | "roundedSquare" | "triUp" | "triDown" |
+#         "pentagon" | "hexagon" | "star" | "cross" | "ring" | "square"
+_MARKER_STYLES: dict[str, tuple[QColor, str]] = {
+    "Teleporter":       (QColor(0, 255, 255),   "circle"),
+    "Npc":              (QColor(255, 105, 180), "diamond"),
+    "Vendor":           (QColor(255, 160, 122), "roundedSquare"),
+    "Interactable":     (QColor(221, 160, 221), "triUp"),
+    "Outpost":          (QColor(135, 206, 235), "pentagon"),
+    "Camp":             (QColor(240, 230, 140), "triDown"),
+    "City":             (QColor(144, 238, 144), "hexagon"),
+    "MagicalFlower":    (QColor(255, 119, 170), "star"),
+    "RevivalPoint":     (QColor(152, 251, 152), "cross"),
+    "InstanceEntrance": (QColor(176, 196, 222), "ring"),
+    "Estate":           (QColor(222, 184, 135), "roundedSquare"),
+}
+
+# Backwards-compat alias used by _draw_area logic
+_TYPE_COLORS = _AREA_COLORS
 _DEFAULT_COLOR = QColor(255, 255, 255)
 
 
@@ -187,6 +226,7 @@ class MapCanvas(QWidget):
         self._hovered = None
         self._selected = None
         self._search_ids = set()
+        self._compute_outpost_cull(locations)
 
         pmap = planet.get("Properties", {}).get("Map", {})
         map_w = pmap.get("Width", 1)
@@ -226,6 +266,40 @@ class MapCanvas(QWidget):
     def set_layers(self, visible_types: set[str]):
         self._visible_types = visible_types
         self.update()
+
+    @staticmethod
+    def _compute_outpost_cull(locations: list[dict]) -> None:
+        """Mark outposts within _OUTPOST_TP_CULL_RADIUS of a teleporter for hiding."""
+        if not locations:
+            return
+        tps: list[tuple[float, float]] = []
+        for loc in locations:
+            props = loc.get("Properties", {})
+            if props.get("Type") != "Teleporter":
+                continue
+            coords = props.get("Coordinates") or {}
+            lon, lat = coords.get("Longitude"), coords.get("Latitude")
+            if lon is not None and lat is not None:
+                tps.append((lon, lat))
+
+        r2 = _OUTPOST_TP_CULL_RADIUS * _OUTPOST_TP_CULL_RADIUS
+        for loc in locations:
+            props = loc.get("Properties", {})
+            if props.get("Type") != "Outpost":
+                continue
+            coords = props.get("Coordinates") or {}
+            lon, lat = coords.get("Longitude"), coords.get("Latitude")
+            if lon is None or lat is None:
+                loc["_near_tp"] = False
+                continue
+            near = False
+            for tx, ty in tps:
+                dx = lon - tx
+                dy = lat - ty
+                if dx * dx + dy * dy <= r2:
+                    near = True
+                    break
+            loc["_near_tp"] = near
 
     def set_search_results(self, ids: set[int]):
         self._search_ids = ids
@@ -370,38 +444,49 @@ class MapCanvas(QWidget):
         """Locations passing the current layer filter or matching search/selection."""
         result = []
         selected_id = self._selected.get("Id") if self._selected else None
+        visible = self._visible_types
         for loc in self._locations:
             loc_id = loc.get("Id")
-            # Always show selected location regardless of layer filter
+            # Always show selected / search-result locations regardless of filter
             if selected_id is not None and loc_id == selected_id:
                 result.append(loc)
                 continue
-            # Always show search results regardless of layer filter
             if self._search_ids and loc_id in self._search_ids:
                 result.append(loc)
                 continue
-            t = loc.get("Properties", {}).get("AreaType") or loc.get("Properties", {}).get("Type", "")
-            shape = loc.get("Properties", {}).get("Shape")
-            # Map area type categories
-            if shape in _SHAPE_TYPES:
-                # Area: check area-type visibility
-                if t in self._visible_types:
-                    result.append(loc)
-                # Also show if PvpLootArea and PvpArea is enabled
-                elif t == "PvpLootArea" and "PvpArea" in self._visible_types:
-                    result.append(loc)
-                # "OtherArea" catch-all
-                elif "OtherArea" in self._visible_types and t not in {
-                    "LandArea", "MobArea", "PvpArea", "PvpLootArea",
-                }:
-                    result.append(loc)
-            else:
-                # Point location
-                if t in self._visible_types:
-                    result.append(loc)
-                elif "OtherLocation" in self._visible_types and t != "Teleporter":
-                    result.append(loc)
+
+            props = loc.get("Properties", {})
+            type_val = props.get("Type", "")
+            area_type = props.get("AreaType") or type_val
+
+            if area_type in visible:
+                result.append(loc)
+            elif type_val in visible:
+                result.append(loc)
         return result
+
+    def _visible_width_game(self) -> float:
+        """Current viewport width in game units (used by the zoom-detail gate)."""
+        w, h = self.width(), self.height()
+        if h == 0:
+            return 0.0
+        vis_h_img = self._img_tile_size / self._zoom
+        vis_w_img = (w / h) * vis_h_img
+        return vis_w_img * self._eu_ratio
+
+    @staticmethod
+    def _point_passes_zoom_gate(loc: dict, visible_width_game: float) -> bool:
+        """Return True if a point marker should be drawn at the current zoom."""
+        type_val = loc.get("Properties", {}).get("Type", "")
+        if type_val == "Teleporter":
+            return True
+        if type_val == "Outpost":
+            if loc.get("_near_tp"):
+                return visible_width_game <= _POINT_DETAIL_THRESHOLD_EU
+            return True
+        if type_val in _ZOOM_GATED_POINT_TYPES:
+            return visible_width_game <= _POINT_DETAIL_THRESHOLD_EU
+        return True
 
     # --- Rendering ---
 
@@ -463,11 +548,20 @@ class MapCanvas(QWidget):
             self._draw_location(painter, loc, has_search)
 
         # Second pass: point locations (on top)
+        visible_w_game = vis_w * self._eu_ratio
+        selected_id = self._selected.get("Id") if self._selected else None
         for loc in filtered:
             if loc.get("Properties", {}).get("Shape") in _SHAPE_TYPES:
                 continue
             bbox = loc.get("_img_bbox")
             if bbox and (bbox[2] < vp_x0 or bbox[0] > vp_x1 or bbox[3] < vp_y0 or bbox[1] > vp_y1):
+                continue
+            # Zoom gate — bypass for selection / search hits (already forced
+            # through the filter but re-check here to stay consistent)
+            loc_id = loc.get("Id")
+            forced = (loc_id == selected_id
+                      or (self._search_ids and loc_id in self._search_ids))
+            if not forced and not self._point_passes_zoom_gate(loc, visible_w_game):
                 continue
             self._draw_location(painter, loc, has_search)
 
@@ -586,39 +680,112 @@ class MapCanvas(QWidget):
 
     def _draw_point(self, painter: QPainter, loc: dict, props: dict,
                     is_hovered: bool, is_selected: bool):
-        """Draw a non-teleporter point location matching the website's styling."""
+        """Dispatch point-location rendering to its per-type marker shape."""
         cached = loc.get("_img_pt")
         if not cached:
             return
         wx, wy = self._img_to_wgt(cached[0], cached[1])
-        half = _LOC_HALF
+        loc_type = props.get("Type", "")
+        style = _MARKER_STYLES.get(loc_type, (QColor(255, 255, 255), "square"))
+        base_color, shape = style
+        r = _MARKER_RADIUS_ACTIVE if (is_hovered or is_selected) else _MARKER_RADIUS
 
         if is_selected:
             fill_color = QColor(255, 255, 0)     # yellow
             stroke_color = QColor(255, 165, 0)   # orange
             opacity = 1.0
-            line_w = 4
+            line_w = 3
         elif is_hovered:
             fill_color = QColor(255, 165, 0)     # orange
             stroke_color = QColor(255, 255, 0)   # yellow
-            opacity = 0.8
+            opacity = 0.95
             line_w = 2
         else:
-            fill_color = QColor(255, 255, 255)   # white
-            stroke_color = QColor(0, 0, 0)       # black
-            opacity = 0.7
-            line_w = 1
+            fill_color = base_color
+            stroke_color = QColor(0, 0, 0) if loc_type != "Teleporter" else QColor(255, 0, 0)
+            opacity = 0.9
+            line_w = 2 if loc_type == "Teleporter" else 1
 
-        rect = QRectF(wx - half, wy - half, half * 2, half * 2)
         painter.setOpacity(opacity)
         painter.setBrush(QBrush(fill_color))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRect(rect)
-        # Stroke at full opacity
+        self._draw_marker_shape(painter, shape, wx, wy, r, filled=True)
+
         painter.setOpacity(1.0)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(stroke_color, line_w))
-        painter.drawRect(rect)
+        self._draw_marker_shape(painter, shape, wx, wy, r, filled=False)
+
+        if shape == "ring":
+            # Inner dot for ring markers
+            painter.setBrush(QBrush(fill_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            inner = max(1.0, r * 0.45)
+            painter.drawEllipse(QPointF(wx, wy), inner, inner)
+
+    @staticmethod
+    def _draw_marker_shape(painter: QPainter, shape: str,
+                           x: float, y: float, r: float, filled: bool):
+        """Draw a marker geometry at (x, y) with half-size r."""
+        if shape == "circle" or shape == "ring":
+            painter.drawEllipse(QPointF(x, y), r, r)
+        elif shape == "square":
+            painter.drawRect(QRectF(x - r, y - r, r * 2, r * 2))
+        elif shape == "diamond":
+            poly = QPolygonF([
+                QPointF(x, y - r), QPointF(x + r, y),
+                QPointF(x, y + r), QPointF(x - r, y),
+            ])
+            painter.drawPolygon(poly)
+        elif shape == "roundedSquare":
+            painter.drawRoundedRect(QRectF(x - r, y - r, r * 2, r * 2), r * 0.35, r * 0.35)
+        elif shape == "triUp":
+            poly = QPolygonF([
+                QPointF(x, y - r),
+                QPointF(x + r, y + r * 0.85),
+                QPointF(x - r, y + r * 0.85),
+            ])
+            painter.drawPolygon(poly)
+        elif shape == "triDown":
+            poly = QPolygonF([
+                QPointF(x, y + r),
+                QPointF(x + r, y - r * 0.85),
+                QPointF(x - r, y - r * 0.85),
+            ])
+            painter.drawPolygon(poly)
+        elif shape == "pentagon":
+            pts = []
+            for i in range(5):
+                a = -math.pi / 2 + (i * 2 * math.pi) / 5
+                pts.append(QPointF(x + math.cos(a) * r, y + math.sin(a) * r))
+            painter.drawPolygon(QPolygonF(pts))
+        elif shape == "hexagon":
+            pts = []
+            for i in range(6):
+                a = (i * math.pi) / 3
+                pts.append(QPointF(x + math.cos(a) * r, y + math.sin(a) * r))
+            painter.drawPolygon(QPolygonF(pts))
+        elif shape == "star":
+            pts = []
+            inner = r * 0.45
+            for i in range(10):
+                rad = r if i % 2 == 0 else inner
+                a = -math.pi / 2 + (i * math.pi) / 5
+                pts.append(QPointF(x + math.cos(a) * rad, y + math.sin(a) * rad))
+            painter.drawPolygon(QPolygonF(pts))
+        elif shape == "cross":
+            t = r * 0.38
+            poly = QPolygonF([
+                QPointF(x - t, y - r), QPointF(x + t, y - r),
+                QPointF(x + t, y - t), QPointF(x + r, y - t),
+                QPointF(x + r, y + t), QPointF(x + t, y + t),
+                QPointF(x + t, y + r), QPointF(x - t, y + r),
+                QPointF(x - t, y + t), QPointF(x - r, y + t),
+                QPointF(x - r, y - t), QPointF(x - t, y - t),
+            ])
+            painter.drawPolygon(poly)
+        else:
+            painter.drawRect(QRectF(x - r, y - r, r * 2, r * 2))
 
     def _img_to_wgt(self, ix: float, iy: float) -> tuple[float, float]:
         """Fast image-to-widget transform using cached view params."""
@@ -701,10 +868,19 @@ class MapCanvas(QWidget):
         best: dict | None = None
         best_dist = float("inf")
         i2w = self._img_to_wgt
+        visible_w_game = vis_w * self._eu_ratio
+        selected_id = self._selected.get("Id") if self._selected else None
 
         for loc in filtered:
             props = loc.get("Properties", {})
             shape = props.get("Shape")
+            # Zoom gate matches draw loop — don't hit-test invisible point markers
+            if shape not in _SHAPE_TYPES:
+                loc_id = loc.get("Id")
+                forced = (loc_id == selected_id
+                          or (self._search_ids and loc_id in self._search_ids))
+                if not forced and not self._point_passes_zoom_gate(loc, visible_w_game):
+                    continue
 
             if shape == "Circle":
                 cached = loc.get("_img_center")

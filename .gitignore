@@ -6,6 +6,8 @@ client/config.json
 client/data/nexus_client.db
 client/data/cache/
 client/debug_output/
+client/loadout/generated/
+client/scripts/_*_output/
 client/chat.log
 client/image.png
 client/*.PNG

@@ -45,46 +45,22 @@ class ExchangeItemData:
 
 
 def _load_item_type_checker():
-    """Load common/itemTypes.js into a V8 context for markup type checks.
+    """Return an (item_type, item_name, sub_type) -> bool callable.
 
-    Returns a callable (type, name, subType) -> bool (True = percentage).
-    Falls back to a Python heuristic if py_mini_racer is not available.
+    Backed by the transpiled Python port of `common/itemTypes.js`. Returns
+    `None` if the port isn't available, in which case the caller uses a
+    Python heuristic fallback.
     """
     try:
-        from py_mini_racer import MiniRacer
-    except ImportError:
-        log.warning("py-mini-racer not available; using Python fallback for markup types")
-        return None
-
-    if not _ITEM_TYPES_JS.exists():
-        log.warning("itemTypes.js not found at %s; using Python fallback", _ITEM_TYPES_JS)
-        return None
-
-    try:
-        from ..loadout.js_bridge import _strip_esm
-        source = _ITEM_TYPES_JS.read_text(encoding="utf-8")
-        source = _strip_esm(source)
-
-        ctx = MiniRacer()
-        ctx.eval(source)
-        log.info("Loaded itemTypes.js for markup type resolution")
-
-        def check(item_type: str, item_name: str, sub_type: str | None = None) -> bool:
-            """Returns True if the item uses percentage markup."""
-            if sub_type:
-                return ctx.eval(f"isPercentMarkupType({_js_str(item_type)}, {_js_str(item_name)}, {_js_str(sub_type)})")
-            return ctx.eval(f"isPercentMarkupType({_js_str(item_type)}, {_js_str(item_name)})")
-
-        return check
+        from ..loadout.generated.item_types import isPercentMarkupType
     except Exception as e:
-        log.error("Failed to load itemTypes.js: %s", e)
+        log.error("Failed to import transpiled item_types: %s", e)
         return None
 
+    def check(item_type: str, item_name: str, sub_type: str | None = None) -> bool:
+        return bool(isPercentMarkupType(item_type, item_name, sub_type))
 
-def _js_str(value: str) -> str:
-    """Escape a Python string for inline JS."""
-    escaped = value.replace("\\", "\\\\").replace("'", "\\'")
-    return f"'{escaped}'"
+    return check
 
 
 class MarkupResolver:

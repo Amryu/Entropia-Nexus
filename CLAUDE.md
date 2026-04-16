@@ -1,37 +1,37 @@
 # General
 
-- Prefer existing components before creating new ones; make new controls easily discoverable
+- Prefer existing components before creating new; make new controls discoverable
 - Write notes in /claude for big tasks
 - Playwright testing: dev.entropianexus.com (API: 3000, Frontend: 3001)
-- Avoid magic numbers - use constants
-- Question your approach and estimate success rate. If less than 80% certain, ask instead of guessing.
-- After implementing, look for further steps that need fixing or optimizing — especially consistency, redundancy, and security issues.
-- After every feature addition, check if there is potential to consolidate existing code and find opportunities to reduce the line count (do not reduce line count by making lines more complicated)
-- Never use `nexusPool` in the frontend except for the purpose stated in the comment next to it
+- Avoid magic numbers — use constants
+- Question approach, estimate success. <80% certain? Ask, not guess.
+- After implementing, hunt further fixes/optimizations — consistency, redundancy, security
+- After feature add, consolidate code, cut line count (not by complicating lines)
+- Never use `nexusPool` in frontend except per comment next to it
 
 # Database
 
-- `/sql/<db>/dumps`: structure dumps (may be outdated)
-- `/sql/<db>/migrations`: changes during development - check here for missing tables
+- `/sql/<db>/dumps`: structure dumps (maybe outdated)
+- `/sql/<db>/migrations`: dev changes — check for missing tables
 - Create migration files for schema changes, never modify directly
-- Local/test databases are NOT in sync with production — do not rely on MCP query results for production data
-- Production data lives in the non-test MCP tools (`mcp__postgres-nexus__query`, `mcp__postgres-nexus-users__query`)
-- Migrations are the source of truth for schema
+- Local/test DBs NOT synced with prod — don't trust MCP results for prod data
+- Prod data lives in non-test MCP tools (`mcp__postgres-nexus__query`, `mcp__postgres-nexus-users__query`)
+- Migrations = schema source of truth
 
 # Client Config (`client/core/config.py`)
 
-- `AppConfig` is a `@dataclass` — add new fields with defaults directly (e.g. `field_name: type = default`)
-- **CRITICAL**: New fields must also be added to the `DEFAULTS` dict (~line 311). `save_config` iterates `DEFAULTS`, not the dataclass fields — missing entries won't be persisted.
-- **Tuple fields** (positions, ROIs) are stored as JSON arrays. Add the field name to the list-to-tuple conversion loop (~line 620) so they're converted back on load.
-- **Migrations**: Remove/rename old fields via `merged.pop("old_key", None)` before the `AppConfig()` constructor (see existing migrations around line 540+).
+- `AppConfig` is `@dataclass` — add new fields with defaults directly (e.g. `field_name: type = default`)
+- **CRITICAL**: New fields must go in `DEFAULTS` dict (~line 311). `save_config` iterates `DEFAULTS`, not dataclass fields — missing entries not persisted.
+- **Tuple fields** (positions, ROIs) stored as JSON arrays. Add field name to list-to-tuple conversion loop (~line 620) for load-back conversion.
+- **Migrations**: Remove/rename old fields via `merged.pop("old_key", None)` before `AppConfig()` constructor (see existing migrations ~line 540+).
 - Save with `save_config(config, config_path)` + `event_bus.publish(EVENT_CONFIG_CHANGED, config)`.
 
 # Guidelines
 
-- Read project-specific `guidelines.md` before working
-- Never use `alert()` - use notifications or dialogs
-- Ensure consistency: headers, breadcrumbs, back navigation (buttons, not links)
-- URL shortening maintenance is required: whenever a new public page route or pseudo-page route is added/changed, update `nexus/src/lib/server/short-url.js` mappings and keep `nexus/scripts/verify-short-route-coverage.mjs` passing.
+- Read project-specific `guidelines.md` before work
+- Never use `alert()` — use notifications/dialogs
+- Ensure consistency: headers, breadcrumbs, back nav (buttons, not links)
+- URL shortening upkeep required: new public/pseudo-page route added/changed? Update `nexus/src/lib/server/short-url.js` mappings, keep `nexus/scripts/verify-short-route-coverage.mjs` passing.
 
 # Client Threading (PyQt6)
 
@@ -42,9 +42,9 @@ Full patterns in `client/guidelines.md` §1–2. Key rules:
 
 ## Getting results back to the UI
 
-Use **one** of these — nothing else:
+Use **one** — nothing else:
 
-1. **`QThread` + `pyqtSignal`** (preferred for one-shot work with a result):
+1. **`QThread` + `pyqtSignal`** (preferred for one-shot work with result):
    ```python
    class _Worker(QThread):
        finished = pyqtSignal(object)
@@ -67,33 +67,33 @@ Use **one** of these — nothing else:
    background thread → event_bus.publish(EVENT_X) → AppSignals.x → widget._on_x()
    ```
 
-## Broken patterns — never use these
-- `QTimer.singleShot(0, callback)` from a background thread — timers are thread-local, callback never fires on the main event loop
+## Broken patterns — never use
+- `QTimer.singleShot(0, callback)` from background thread — timers thread-local, callback never fires on main loop
 - Bare `threading.Thread` calling `widget.setText()` or any Qt method directly — undefined behavior / crashes
 - `QMetaObject.invokeMethod` from raw threads — fragile, prefer signals
 
 # Svelte 5
 
-- **`{@const}` placement**: Must be a direct child of `{#each}`, `{#if}`, `{:else if}`, `{:else}`, `{#snippet}`, `{:then}`, `{:catch}`, `<svelte:fragment>`, `<svelte:boundary>` or `<Component>`. NEVER place inside `<tr>`, `<div>`, or other HTML elements. Place it right after `{#each ... as item}` before the `<tr>`/`<div>`.
-- **`$effect` does NOT run during SSR** — don't rely on it for initial state. For streamed data, initialize state to null and resolve promises in `$effect` on the client.
-- **Use `SvelteMap` / `SvelteSet` / `SvelteDate` / `SvelteURL`** from `svelte/reactivity` whenever you need a reactive Map/Set/Date/URL that's *mutated* (`.set`, `.add`, `.delete`, `.clear`). Plain `Map`/`Set` wrapped in `$state(...)` do NOT re-render on mutation — you'd have to reassign with a new instance each time. Only use plain collections in `$state` when you always replace them wholesale (never call their mutation methods).
-- **Capturing props in `$state(...)` initializers** triggers `state_referenced_locally` warnings because Svelte can't tell whether you wanted a live binding or a one-time snapshot. If a snapshot is genuinely intended, wrap the initializer in `untrack(() => ...)` from `svelte` to document the intent and silence the warning.
+- **`{@const}` placement**: Must be direct child of `{#each}`, `{#if}`, `{:else if}`, `{:else}`, `{#snippet}`, `{:then}`, `{:catch}`, `<svelte:fragment>`, `<svelte:boundary>` or `<Component>`. NEVER inside `<tr>`, `<div>`, other HTML elements. Place right after `{#each ... as item}` before `<tr>`/`<div>`.
+- **`$effect` does NOT run during SSR** — don't rely for initial state. Streamed data: init state to null, resolve promises in `$effect` on client.
+- **Use `SvelteMap` / `SvelteSet` / `SvelteDate` / `SvelteURL`** from `svelte/reactivity` when you need reactive Map/Set/Date/URL that's *mutated* (`.set`, `.add`, `.delete`, `.clear`). Plain `Map`/`Set` wrapped in `$state(...)` do NOT re-render on mutation — must reassign new instance each time. Use plain collections in `$state` only if always replacing wholesale (never call mutation methods).
+- **Capturing props in `$state(...)` initializers** triggers `state_referenced_locally` warnings — Svelte can't tell live binding vs one-time snapshot. Snapshot intended? Wrap initializer in `untrack(() => ...)` from `svelte` to document intent, silence warning.
 
 # UI/Theming
 
-- Always use CSS variables from `nexus/src/lib/style.css` - never hardcode colors
-- Ensure proper contrast in light/dark modes (controls, dropdowns, hover states)
+- Always use CSS variables from `nexus/src/lib/style.css` — never hardcode colors
+- Ensure contrast in light/dark modes (controls, dropdowns, hover states)
 - See `docs/ui-styling.md` for patterns (forms, dialogs, notifications, tables, etc.)
 
 # Security
 
-- API endpoints: verify privileges, validate input on both frontend and backend
-- When adding, changing, or removing OAuth-accessible API endpoints, update `nexus/src/lib/data/api-docs.md` to keep the user-facing API reference in sync
+- API endpoints: verify privileges, validate input both frontend/backend
+- Adding/changing/removing OAuth-accessible API endpoints? Update `nexus/src/lib/data/api-docs.md` to sync user-facing API reference
 
 # Documentation
 
-- Update docs in `/docs` when implementing features; keep in sync
-- Document database usage and API endpoints
+- Update docs in `/docs` when implementing features; keep synced
+- Document database usage, API endpoints
 
 | File | Description |
 |------|-------------|
@@ -114,14 +114,14 @@ Use **one** of these — nothing else:
 
 # Versioning
 
-Auto commit changes when substantial work has been done or a fix has been confirmed. Do not commit obvious experiments or debugging attempts (whenever something is incomplete). Be careful to not include any stray script files, passwords or other unwanted files/data.
+Auto commit when substantial work done or fix confirmed. Skip obvious experiments/debug attempts (anything incomplete). Avoid stray scripts, passwords, unwanted files/data.
 
 ## Client Release Checklist
 
-Files to update for a version bump:
+Files for version bump:
 1. `client/VERSION` — single line with version number (e.g. `0.4.1`)
-2. `client/data/changelog.json` — prepend new version entry with date and changes
-3. Git tag: `client-X.Y.Z` on the release commit
+2. `client/data/changelog.json` — prepend new version entry with date, changes
+3. Git tag: `client-X.Y.Z` on release commit
 
 # Testing
 
@@ -149,8 +149,8 @@ Use `tests/fixtures/auth.ts` for Playwright: `verifiedUser`, `loginAs('admin')`,
 
 # Responsiveness
 
-Make sites mobile-friendly when creating/reworking. Elements should be accessible, respect network data usage.
+Make sites mobile-friendly on create/rework. Elements accessible, respect network data usage.
 
 # Database Access (Test DBs Only)
 
-Test DB credentials are in the `.env` files. DO NOT modify normal development databases (except test users in nexus-users).
+Test DB credentials in `.env` files. DO NOT modify normal dev databases (except test users in nexus-users).

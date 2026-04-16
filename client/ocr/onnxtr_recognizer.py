@@ -1,8 +1,15 @@
-"""CRNN text recognition for radar coordinate OCR (raw onnxruntime).
+"""CRNN text recognition via raw onnxruntime.
 
 Lazily downloads and loads the crnn_mobilenet_v3_large model (8-bit
 quantized, ~9 MB) on first call.  Thread-safe: the model is loaded once
 and reused across ticks.
+
+Public API
+----------
+- ``recognize_text``       -- single-segment OCR (crops at 128 px)
+- ``recognize_text_wide``  -- word-segmented batched OCR for wide images
+- ``recognize_coordinate`` -- coordinate value from a row image
+- ``is_available``         -- check if the model is ready
 """
 
 from __future__ import annotations
@@ -299,6 +306,231 @@ def recognize_text(
         return None
 
     return text, confidence
+
+
+# ── Wide-text recognition ────────────────────────────────────────────────────
+# Scalar mean/std (the 3 ImageNet channels are nearly identical for this model)
+_SCALAR_MEAN = float(np.mean([0.694, 0.695, 0.693]))
+_SCALAR_STD = float(np.mean([0.299, 0.296, 0.301]))
+
+# Word segmentation: minimum gap width (px at 32 h) to split words.
+# Inter-word gaps are ~8-10 px; intra-character gaps are 1-4 px.
+_WORD_GAP_MIN_PX = 6
+
+
+def _find_word_segments(gray_32h: np.ndarray) -> list[tuple[int, int]]:
+    """Find word-level segments by detecting dark column gaps."""
+    w = gray_32h.shape[1]
+    col_mean = np.mean(gray_32h, axis=0)
+
+    median = float(np.median(col_mean))
+    text_mean = float(np.mean(col_mean[col_mean > median]))
+    bg_mean = float(np.mean(col_mean[col_mean <= median]))
+    gap_thr = bg_mean + (text_mean - bg_mean) * 0.15
+
+    is_gap = col_mean < gap_thr
+
+    segments: list[tuple[int, int]] = []
+    in_text = False
+    seg_start = 0
+    x = 0
+    while x < w:
+        if not is_gap[x] and not in_text:
+            seg_start = x
+            in_text = True
+            x += 1
+        elif is_gap[x] and in_text:
+            gap_start = x
+            while x < w and is_gap[x]:
+                x += 1
+            if x - gap_start >= _WORD_GAP_MIN_PX:
+                segments.append((seg_start, gap_start))
+                in_text = False
+        else:
+            x += 1
+    if in_text:
+        segments.append((seg_start, w))
+    return segments
+
+
+def _split_wide(gray_32h: np.ndarray, x0: int, x1: int) -> list[tuple[int, int]]:
+    """Force-split a segment wider than _INPUT_WIDTH at its darkest gap."""
+    if x1 - x0 <= _INPUT_WIDTH:
+        return [(x0, x1)]
+    col_mean = np.mean(gray_32h[:, x0:x1], axis=0)
+    margin = int((x1 - x0) * 0.2)
+    split_rel = int(np.argmin(col_mean[margin:-margin or 1])) + margin
+    mid = x0 + split_rel
+    return _split_wide(gray_32h, x0, mid) + _split_wide(gray_32h, mid, x1)
+
+
+def recognize_text_wide(
+    crop_bgr: np.ndarray,
+    min_confidence: float = 0.3,
+) -> tuple[str, float] | None:
+    """Recognize text from a wide BGR image using word-segmented batched inference.
+
+    Handles images wider than 128 px (at 32 px height) by splitting at
+    natural word boundaries, batching all segments into a single ONNX call,
+    and joining the results with spaces.
+
+    For images that fit in one segment this is equivalent to (but slightly
+    faster than) ``recognize_text`` because it skips PIL entirely.
+
+    Parameters
+    ----------
+    crop_bgr : np.ndarray
+        BGR image of the text region (any height, any width).
+    min_confidence : float
+        Minimum per-character confidence threshold.
+
+    Returns
+    -------
+    ``(text, confidence)`` or ``None`` if recognition fails.
+    """
+    session = _ensure_session()
+    if session is None or _input_name is None:
+        return None
+
+    prepared = _prepare_wide_batches(crop_bgr)
+    if prepared is None:
+        return None
+    gray32, batches = prepared
+    return _infer_gray_batch(session, gray32, batches, min_confidence)
+
+
+def _infer_gray_batch(
+    session,
+    gray32: np.ndarray,
+    regions: list[tuple[int, int]],
+    min_confidence: float,
+) -> tuple[str, float] | None:
+    """Build a batch tensor from grayscale regions and run one inference call."""
+    n = len(regions)
+    mean = _SCALAR_MEAN
+    std = _SCALAR_STD
+    pad_val = (0.0 - mean) / std
+
+    batch = np.full((n, 3, _INPUT_HEIGHT, _INPUT_WIDTH), pad_val, dtype=np.float32)
+    for i, (x0, x1) in enumerate(regions):
+        seg = gray32[:, x0:x1]
+        seg_w = min(seg.shape[1], _INPUT_WIDTH)
+        normalized = (seg[:, :seg_w].astype(np.float32) / 255.0 - mean) / std
+        batch[i, 0, :, :seg_w] = normalized
+        batch[i, 1, :, :seg_w] = normalized
+        batch[i, 2, :, :seg_w] = normalized
+
+    try:
+        outputs = session.run(None, {_input_name: batch})
+    except Exception:
+        return None
+
+    logits = outputs[0]  # [N, seq_len, 127]
+    parts: list[str] = []
+    confs: list[float] = []
+    for i in range(n):
+        text, conf = _ctc_decode(logits[i:i + 1])
+        text = text.strip()
+        if text:
+            parts.append(text)
+            confs.append(conf)
+
+    if not parts:
+        return None
+    joined = " ".join(parts)
+    avg_conf = sum(confs) / len(confs)
+    if avg_conf < min_confidence:
+        return None
+    return joined, avg_conf
+
+
+def _prepare_wide_batches(
+    crop_bgr: np.ndarray,
+) -> tuple[np.ndarray, list[tuple[int, int]]] | None:
+    """Prepare gray32 image and final batch ranges for wide-text recognition.
+
+    Returns ``(gray32, batches)`` or ``None`` on failure.
+    """
+    if cv2 is None or crop_bgr is None or crop_bgr.size == 0:
+        return None
+
+    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    new_w = max(1, round(w * _INPUT_HEIGHT / h))
+    gray32 = cv2.resize(gray, (new_w, _INPUT_HEIGHT), interpolation=cv2.INTER_CUBIC)
+
+    if new_w <= _INPUT_WIDTH:
+        return gray32, [(0, new_w)]
+
+    segments = _find_word_segments(gray32)
+    if not segments:
+        return None
+
+    # Group adjacent word segments into batches that fit within model width
+    batches: list[tuple[int, int]] = []
+    bs, be = segments[0]
+    for s, e in segments[1:]:
+        if e - bs <= _INPUT_WIDTH:
+            be = e
+        else:
+            batches.append((bs, be))
+            bs, be = s, e
+    batches.append((bs, be))
+
+    # Force-split any batches still wider than model input
+    final: list[tuple[int, int]] = []
+    for bx0, bx1 in batches:
+        final.extend(_split_wide(gray32, bx0, bx1))
+
+    return (gray32, final) if final else None
+
+
+def recognize_text_wide_iter(
+    crop_bgr: np.ndarray,
+    min_confidence: float = 0.3,
+):
+    """Generator that yields ``(text, confidence)`` progressively.
+
+    Lets callers stop early once they have enough information to act
+    (e.g., the prefix uniquely identifies a known item).
+
+    Yield order:
+    1. Result from the first batch only (~5 ms).
+    2. Result from all batches combined (~5 ms + ~20 ms for the rest).
+
+    For text that fits in a single batch, only one yield occurs.
+
+    Stopping iteration after the first yield skips the second inference
+    call and saves ~20 ms.
+    """
+    session = _ensure_session()
+    if session is None or _input_name is None:
+        return
+
+    prepared = _prepare_wide_batches(crop_bgr)
+    if prepared is None:
+        return
+    gray32, batches = prepared
+
+    if len(batches) == 1:
+        result = _infer_gray_batch(session, gray32, batches, min_confidence)
+        if result is not None:
+            yield result
+        return
+
+    # Phase 1: first batch only (fast path)
+    first = _infer_gray_batch(session, gray32, batches[:1], min_confidence)
+    if first is None:
+        return
+    yield first
+
+    # Phase 2: remaining batches (only runs if caller iterates again)
+    rest = _infer_gray_batch(session, gray32, batches[1:], min_confidence)
+    if rest is None:
+        return
+    combined_text = f"{first[0]} {rest[0]}"
+    combined_conf = min(first[1], rest[1])
+    yield (combined_text, combined_conf)
 
 
 def recognize_coordinate(

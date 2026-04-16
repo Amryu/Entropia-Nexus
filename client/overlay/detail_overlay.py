@@ -22,6 +22,7 @@ from PyQt6.QtGui import QFontMetrics, QPixmap
 
 from .overlay_widget import OverlayWidget
 from ..core.thread_utils import invoke_on_main
+from ..core.waypoint import format_waypoint
 from ..ui.icons import svg_icon, ARROW_LEFT, ARROW_RIGHT
 from ..ui.widgets.search_popup import WIKI_PATHS, ITEM_TYPES, get_type_name, get_display_type
 from ..data.wiki_columns import (
@@ -1638,6 +1639,7 @@ class DetailOverlayWidget(OverlayWidget):
         for spawn in spawns:
             spawn_name = spawn.get("Name") or "?"
             planet = deep_get(spawn, "Planet", "Name") or ""
+            planet_wp = _wp_planet(spawn)
             coords = deep_get(spawn, "Properties", "Coordinates") or {}
             density = deep_get(spawn, "Properties", "Density")
             mats = spawn.get("Maturities") or []
@@ -1719,7 +1721,7 @@ class DetailOverlayWidget(OverlayWidget):
                 brl.setContentsMargins(0, 0, 0, 0)
                 brl.setSpacing(4)
                 wp_name = f"{mob_name} {mat_str}" if mat_str and mat_str != "All" else mob_name
-                brl.addWidget(_overlay_waypoint_btn(planet, coords, wp_name))
+                brl.addWidget(_overlay_waypoint_btn(planet_wp, coords, wp_name))
                 brl.addWidget(_overlay_map_btn(planet, spawn.get("Id")))
                 brl.addStretch(1)
                 bl.addWidget(btn_row)
@@ -2318,6 +2320,7 @@ class DetailOverlayWidget(OverlayWidget):
 
         coords = deep_get(item, "Properties", "Coordinates") or {}
         planet = deep_get(item, "Planet", "Name") or ""
+        planet_wp = _wp_planet(item)
         name = item.get("Name") or ""
         lon = coords.get("Longitude")
         lat = coords.get("Latitude")
@@ -2334,7 +2337,7 @@ class DetailOverlayWidget(OverlayWidget):
                 f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
             )
             hl.addWidget(coord_lbl)
-            hl.addWidget(_overlay_waypoint_btn(planet, coords, name))
+            hl.addWidget(_overlay_waypoint_btn(planet_wp, coords, name))
             hl.addWidget(_overlay_map_btn(planet, item.get("Id")))
             hl.addStretch(1)
             vl.addWidget(hdr)
@@ -3320,19 +3323,18 @@ def _recipe_card(
     return card
 
 
+def _wp_planet(item: dict) -> str:
+    """Planet name for waypoints - game requires TechnicalName."""
+    return (deep_get(item, "Planet", "Properties", "TechnicalName")
+            or deep_get(item, "Planet", "Name")
+            or "")
+
+
 def _overlay_waypoint_btn(planet: str, coords: dict, name: str) -> QPushButton:
     """Compact waypoint copy button for the overlay."""
     from PyQt6.QtWidgets import QApplication
 
-    try:
-        lon = float(coords["Longitude"])
-        lat = float(coords["Latitude"])
-        alt = float(coords["Altitude"]) if coords.get("Altitude") is not None else 100
-    except (TypeError, ValueError, KeyError):
-        lon = lat = 0
-        alt = 100
-    clean_name = name.replace(",", "").strip()[:50]
-    wp = f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {clean_name}]"
+    wp = format_waypoint(planet, coords.get("Longitude", 0), coords.get("Latitude", 0), coords.get("Altitude"), name)
     btn = QPushButton()
     btn.setFixedSize(20, 18)
     btn.setIcon(svg_icon(_COPY_SVG, TEXT_DIM, 14))
@@ -4173,6 +4175,7 @@ def _build_location_details(item: dict, page_type: str, on_entity=None) -> QWidg
 
     loc_type = deep_get(item, "Properties", "Type") or "-"
     planet = deep_get(item, "Planet", "Name") or ""
+    planet_wp = _wp_planet(item)
     coords = deep_get(item, "Properties", "Coordinates") or {}
     name = item.get("Name") or ""
 
@@ -4191,7 +4194,7 @@ def _build_location_details(item: dict, page_type: str, on_entity=None) -> QWidg
         brl = QHBoxLayout(btn_row)
         brl.setContentsMargins(0, 2, 0, 2)
         brl.setSpacing(4)
-        brl.addWidget(_overlay_waypoint_btn(planet, coords, name))
+        brl.addWidget(_overlay_waypoint_btn(planet_wp, coords, name))
         brl.addWidget(_overlay_map_btn(planet, item.get("Id")))
         brl.addStretch(1)
         layout.addWidget(btn_row)
@@ -4365,6 +4368,7 @@ def _build_vendor_details(item: dict, page_type: str, on_entity=None) -> QWidget
     widget, layout = _details_container()
 
     planet = deep_get(item, "Planet", "Name") or ""
+    planet_wp = _wp_planet(item)
     location = deep_get(item, "Location", "Name")
     coords = deep_get(item, "Properties", "Coordinates") or {}
     name = item.get("Name") or ""
@@ -4394,7 +4398,7 @@ def _build_vendor_details(item: dict, page_type: str, on_entity=None) -> QWidget
         brl = QHBoxLayout(btn_row)
         brl.setContentsMargins(0, 2, 0, 2)
         brl.setSpacing(4)
-        brl.addWidget(_overlay_waypoint_btn(planet, coords, name))
+        brl.addWidget(_overlay_waypoint_btn(planet_wp, coords, name))
         brl.addWidget(_overlay_map_btn(planet, item.get("Id")))
         brl.addStretch(1)
         layout.addWidget(btn_row)
@@ -4408,6 +4412,7 @@ def _build_mission_details(item: dict, page_type: str, on_entity=None) -> QWidge
 
     mission_type = deep_get(item, "Properties", "Type") or "-"
     planet = deep_get(item, "Planet", "Name") or ""
+    planet_wp = _wp_planet(item)
     area = deep_get(item, "Area", "Name")
     steps = item.get("Steps") or item.get("Objectives") or []
     rewards = item.get("Rewards") or []
@@ -4459,7 +4464,7 @@ def _build_mission_details(item: dict, page_type: str, on_entity=None) -> QWidge
         brl.setContentsMargins(0, 2, 0, 2)
         brl.setSpacing(4)
         brl.addWidget(_overlay_waypoint_btn(
-            planet, start_coords, start_name or item.get("Name", ""),
+            planet_wp, start_coords, start_name or item.get("Name", ""),
         ))
         loc_id = start_loc.get("Id")
         if loc_id:

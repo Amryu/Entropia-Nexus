@@ -15,13 +15,21 @@ from ..core.constants import (
     EVENT_HUNT_ENCOUNTER_ENDED, EVENT_HUNT_SESSION_UPDATED,
     EVENT_HUNT_STARTED, EVENT_HUNT_ENDED, EVENT_HUNT_SPLIT,
     EVENT_HUNT_END_REQUESTED, EVENT_SESSION_AUTO_TIMEOUT,
-    EVENT_LOOT_BLACKLIST_CHANGED, EVENT_TOOL_COST_FILTER_CHANGED,
+    EVENT_ENHANCER_TIMELINE_EDITED,
+    EVENT_GEAR_OVERRIDE_CHANGED,
+    EVENT_LOOT_BLACKLIST_CHANGED, EVENT_SESSION_MARKUP_CHANGED,
+    EVENT_TOOL_COST_FILTER_CHANGED,
     EVENT_ACTIVE_LOADOUT_CHANGED, EVENT_SESSION_LOADOUT_UPDATED,
     EVENT_PLAYER_DEATH, EVENT_PLAYER_REVIVED, EVENT_OPEN_ENCOUNTER_UPDATED,
+    EVENT_EFFECT_RECEIVED,
+    EVENT_ENHANCER_REDETECT_PROMPT, EVENT_ENHANCER_REDETECT_DECISION,
 )
 from ..core.logger import get_logger
 from .combat_action_log import CombatAction, CombatActionLog
 from .encounter_manager import EncounterManager
+from .enhancer_inference import (
+    EnhancerInferenceEngine, InferenceEvent as EnhInfEvent,
+)
 from .entity_resolver import EntityResolver
 from .hunt_detector import HuntDetector
 from .loadout_manager import SessionLoadoutManager
@@ -146,9 +154,55 @@ class HuntTracker:
         self._active = False
         self._live = False  # True after chat log catchup completes
         self._last_activity_time: datetime | None = None
+        # Timestamp of the most recently closed encounter. Used to scope
+        # the "prepend idle tool use to next encounter" reassignment so
+        # we don't reach back through a whole session of orphan actions.
+        self._last_encounter_end_time: datetime | None = None
         self._auto_timeout = timedelta(milliseconds=config.session_auto_timeout_ms)
-        # Recent enhancer breaks for shrapnel correlation: list of (timestamp, shrapnel_ped)
+        # Bidirectional enhancer-shrapnel correlation. The enhancer break
+        # message and the shrapnel loot drop can arrive in EITHER order
+        # (varying by a couple of seconds), so we buffer both sides:
+        #
+        #   _recent_enhancer_breaks : breaks awaiting a matching shrapnel
+        #   _recent_shrapnel_items  : shrapnel loot awaiting a matching break
+        #
+        # When either arrives, it first checks the opposite buffer for
+        # a value-matching entry within ENHANCER_SHRAPNEL_WINDOW. If
+        # found, the two are merged (shrapnel is marked as enhancer
+        # refund retroactively). Otherwise the new event is added to
+        # its own buffer to wait for its counterpart.
         self._recent_enhancer_breaks: list[tuple[datetime, float]] = []
+        # (timestamp, encounter_ref, loot_item_ref, value_ped)
+        self._recent_shrapnel_items: list[
+            tuple[datetime, MobEncounter, "EncounterLootItem", float]
+        ] = []
+
+        # Enhancer auto-detection: per-tool state machine that watches
+        # damage/heal samples and infers enhancer presence from offset
+        # vs expected [min, max] range. See enhancer_inference.py.
+        self._enhancer_inference = EnhancerInferenceEngine()
+        # Active damage- and heal-modifying buffs keyed by lowercased
+        # effect name -> expiry time. The engine pauses the matching
+        # inference kind while any entry is live.
+        self._active_damage_buffs: dict[str, datetime] = {}
+        self._active_heal_buffs: dict[str, datetime] = {}
+        # Default buff duration assumed when the chat message doesn't
+        # carry explicit timing. 5 min is conservative; worst case a
+        # stale entry prevents inference for this long after expiry.
+        self._buff_default_duration = timedelta(minutes=5)
+        # Medical tool heal range cache (name -> (min, max)) populated
+        # lazily the first time we see the tool via OCR.
+        self._heal_tool_ranges: dict[str, tuple[float, float]] = {}
+        # Context from the last enhancer break, used to correlate a
+        # subsequent inference RESTART with that break (suggests the
+        # break count was inconsistent with observed damage).
+        self._last_break_validation: dict | None = None
+
+        # Cached config signature, computed on session start and re-
+        # compared on restore. When the hash changes between sessions
+        # we re-run recalculate_session() because tool costs, filters,
+        # or blacklists may have shifted and the stored stats are stale.
+        self._config_signature_cached: str | None = None
 
         # Register reload drop callback — fires when reload bar drops from >=100 to <100
         self._ocr_state.on_reload_drop(self._on_reload_drop)
@@ -166,9 +220,25 @@ class HuntTracker:
         event_bus.subscribe(EVENT_PLAYER_DEATH, self._on_player_death)
         event_bus.subscribe(EVENT_PLAYER_REVIVED, self._on_player_revived)
         event_bus.subscribe(EVENT_ENHANCER_BREAK, self._on_enhancer_break)
+        event_bus.subscribe(EVENT_EFFECT_RECEIVED, self._on_effect_received)
+        event_bus.subscribe(
+            EVENT_ENHANCER_REDETECT_DECISION, self._on_enhancer_redetect_decision,
+        )
         event_bus.subscribe(EVENT_LOOT_BLACKLIST_CHANGED, self._on_blacklist_changed)
         event_bus.subscribe(EVENT_TOOL_COST_FILTER_CHANGED, self._on_tool_filter_changed)
         event_bus.subscribe(EVENT_ACTIVE_LOADOUT_CHANGED, self._on_active_loadout_changed)
+        event_bus.subscribe(EVENT_GEAR_OVERRIDE_CHANGED, self._on_gear_override_changed)
+        event_bus.subscribe(EVENT_SESSION_MARKUP_CHANGED, self._on_session_markup_changed)
+
+        # Expose gear overrides to the inference engine. Called once at
+        # construction; the provider pulls fresh values on every cost
+        # lookup so later DB edits flow through without re-registration.
+        try:
+            self._tool_inference.set_override_provider(
+                lambda: self._db.get_all_gear_overrides()
+            )
+        except Exception as e:
+            log.warning("Failed to register gear override provider: %s", e)
 
     GLOBAL_CORRELATION_WINDOW = timedelta(seconds=10)
     # Window within which shrapnel loot is correlated to an enhancer break
@@ -232,6 +302,14 @@ class HuntTracker:
 
         session_id = row["id"]
         log.info("Restoring incomplete session: %s", session_id)
+
+        # 0. Drop orphaned partial encounters from the previous crash.
+        # These are rows with end_time IS NULL that the restore loop
+        # would skip anyway, but keeping them pollutes stats queries.
+        removed = self._db.delete_partial_encounters(session_id)
+        if removed:
+            log.info("Dropped %d orphaned partial encounter(s) from session %s",
+                     removed, session_id)
 
         # 1. Build HuntSession
         session = HuntSession(
@@ -307,6 +385,13 @@ class HuntTracker:
 
         # 6. Restore loadout manager + weapon signatures
         self._loadout_mgr.restore_session(session)
+
+        # 6b. Restore crash-recovery blobs (enhancer inference engine,
+        # shrapnel/break buffers, config signature). Must run AFTER
+        # loadout restore so any tool ranges the loadout manager
+        # registers are already in place — from_dict preserves
+        # matching ranges and resets mismatched ones cleanly.
+        self._restore_recovery_state(session_id)
 
         # 7. Seed hunt detector with the last hunt's state
         if session.hunts:
@@ -513,6 +598,9 @@ class HuntTracker:
         elif event_type == "self_heal":
             self._manager.on_heal(amount or 0, timestamp=now)
             self._log_non_damage_event("self_heal", amount or 0, now)
+            # Feed heal enhancer inference. The engine drops samples
+            # if no medical tool is registered/active or if paused.
+            self._feed_heal_enhancer_inference(amount or 0, now)
         elif event_type in ("player_evade", "player_dodge", "player_jam"):
             self._manager.on_player_avoid(timestamp=now)
             self._log_non_damage_event(event_type, 0.0, now)
@@ -573,6 +661,8 @@ class HuntTracker:
 
     def _handle_damage(self, amount: float, is_crit: bool, now: datetime):
         """Handle damage dealt with tool inference, cost tracking, and combat logging."""
+        prev_encounter_id = (self._manager.current_encounter.id
+                             if self._manager.current_encounter else None)
         closed = self._manager.on_damage_dealt(amount, is_crit=is_crit, timestamp=now)
 
         # If a CLOSING encounter was finalized (new shot after loot), persist it
@@ -586,6 +676,11 @@ class HuntTracker:
         enc = self._manager.current_encounter
         if not enc:
             return
+
+        # Prepend orphaned tool uses (heals, buffs) since the last
+        # encounter ended onto this freshly started encounter.
+        if enc.id != prev_encounter_id:
+            self._prepend_orphan_actions(enc)
 
         # Resolve mob ID if not yet set
         if enc.mob_id is None and enc.mob_name != "Unknown":
@@ -671,6 +766,325 @@ class HuntTracker:
             )
             self._combat_log.append(action)
 
+        # Feed the enhancer auto-detection engine. The engine itself
+        # skips crits and pauses on damage-modifying buffs, so we can
+        # unconditionally call it here. Transitions (CONFIRMED_*,
+        # RESTART) are handled on the returned Transition object.
+        self._feed_enhancer_inference(amount, is_crit, now)
+
+    def _feed_enhancer_inference(self, amount: float, is_crit: bool,
+                                 timestamp: datetime) -> None:
+        """Feed a damage sample into the enhancer inference engine."""
+        from .enhancer_inference import KIND_DAMAGE
+        self._expire_buffs(self._active_damage_buffs, timestamp,
+                           KIND_DAMAGE, "damage buffs expired")
+        transition = self._enhancer_inference.observe_damage(
+            amount, is_crit, timestamp,
+        )
+        self._handle_inference_transition(transition)
+
+    def _feed_heal_enhancer_inference(self, amount: float,
+                                      timestamp: datetime) -> None:
+        """Feed a self-heal sample into the enhancer inference engine.
+
+        Registers the currently-equipped medical tool lazily on first
+        use (looking up MinHeal/MaxHeal via data_client) so players
+        don't need to configure anything.
+        """
+        from .enhancer_inference import KIND_HEAL
+        self._expire_buffs(self._active_heal_buffs, timestamp,
+                           KIND_HEAL, "heal buffs expired")
+
+        # Lazy register: if the active OCR tool name is a known medical
+        # tool we haven't seen yet, look up its heal range and register.
+        ocr_tool = (self._ocr_state.state.ocr_tool_name or "").strip()
+        if ocr_tool and ocr_tool not in self._heal_tool_ranges:
+            rng = self._lookup_heal_range(ocr_tool)
+            if rng is not None:
+                self._heal_tool_ranges[ocr_tool] = rng
+                self._enhancer_inference.register_tool(
+                    ocr_tool, rng[0], rng[1], kind=KIND_HEAL,
+                )
+                self._enhancer_inference.set_active_tool(ocr_tool)
+
+        transition = self._enhancer_inference.observe_heal(amount, timestamp)
+        self._handle_inference_transition(transition)
+
+    def _expire_buffs(self, buffs: dict[str, datetime], timestamp: datetime,
+                      kind: str, resume_reason: str) -> None:
+        """Drop expired buffs and resume the matching inference kind."""
+        expired = [name for name, exp in buffs.items() if exp <= timestamp]
+        for name in expired:
+            del buffs[name]
+        if not buffs and self._enhancer_inference.is_paused(kind):
+            self._enhancer_inference.resume(kind, resume_reason)
+
+    def _handle_inference_transition(self, transition) -> None:
+        """Route a Transition emitted by the enhancer inference engine.
+
+        CONFIRMED_PRESENT: inject missing enhancer state, re-evaluate
+        loadout, and retroactively recalculate session cost.  The
+        confirmed-present hook emits its own tracking log entry so
+        the message can include the correction reason.
+
+        CONFIRMED_NONE: just log.
+
+        RESTART: log and correlate with any recent break so the user
+        can tell a manual change from a missed break.
+        """
+        if transition is None:
+            return
+        if transition.event == EnhInfEvent.CONFIRMED_PRESENT:
+            self._on_enhancer_inference_confirmed_present(transition)
+        elif transition.event == EnhInfEvent.CONFIRMED_NONE:
+            self._tracking_log.enhancer_inference(
+                "confirmed_none", transition.tool_name,
+            )
+        elif transition.event == EnhInfEvent.RESTART:
+            self._tracking_log.enhancer_inference(
+                "restart", transition.tool_name,
+                {"reason": transition.reason},
+            )
+            self._on_enhancer_inference_restart(transition)
+
+    def _lookup_heal_range(self, tool_name: str) -> tuple[float, float] | None:
+        """Look up MinHeal/MaxHeal for a medical tool from the data client."""
+        if not self._data_client:
+            return None
+        try:
+            tools = self._data_client.get_medical_tools() or []
+        except Exception:
+            return None
+        target = tool_name.strip().lower()
+        for t in tools:
+            name = (t.get("Name") or "").strip()
+            if not name or name.lower() != target:
+                continue
+            props = t.get("Properties") or {}
+            mn = props.get("MinHeal")
+            mx = props.get("MaxHeal")
+            if isinstance(mn, (int, float)) and isinstance(mx, (int, float)):
+                return float(mn), float(mx)
+        return None
+
+    def _on_enhancer_inference_confirmed_present(self, transition) -> None:
+        """Hook called when the engine confirms enhancers on a tool.
+
+        If the loadout's enhancer state has 0 active slots for the
+        corresponding enhancer type (damage-on-weapon or heal-on-heal-
+        tool), we've been charging cost at the no-enhancer rate — wrong.
+        This method:
+
+        1. Synthetically adds 1 active enhancer slot to the state so
+           the loadout re-evaluates with enhancer decay included.
+        2. The re-evaluation updates ``tool_inference`` signatures
+           with the corrected cost_per_shot.
+        3. Calls ``recalculate_session()`` which rebuilds encounter
+           cost totals from the combat log using the new signatures,
+           retroactively fixing every shot in the session.
+
+        We can only inject 1 slot as a lower bound because the observed
+        damage bonus doesn't uniquely determine the count (we'd need
+        per-enhancer-tier data).  A break event later will refine the
+        count as the normal break flow updates state.
+        """
+        enc = self._manager.current_encounter if self._manager else None
+        if enc is not None:
+            setattr(enc, "enhancers_inferred_present", True)
+            setattr(enc, "enhancers_inferred_tool", transition.tool_name)
+            setattr(enc, "enhancers_inferred_avg_bonus",
+                    transition.over_range_average)
+
+        # Determine the category/slot to adjust based on the tool kind.
+        from .enhancer_inference import KIND_HEAL
+        tool_state = self._enhancer_inference.get_state(
+            transition.tool_name, kind="damage",
+        ) or self._enhancer_inference.get_state(
+            transition.tool_name, kind=KIND_HEAL,
+        )
+        if tool_state is None:
+            return
+        if tool_state.kind == "damage":
+            category, slot_key = "weapon", "Damage"
+        else:
+            category, slot_key = "healing", "Heal"
+
+        # Check current state. If already has active slots, the loadout
+        # cost is already correct; nothing to fix retroactively.
+        state_slot = self._loadout_mgr._enhancer_state.get_slot(
+            category, slot_key,
+        )
+        if state_slot.active_slots > 0:
+            log.info(
+                "Enhancer inference confirmed on %r but state already "
+                "has %d active %s slot(s); no cost correction needed",
+                transition.tool_name, state_slot.active_slots, slot_key,
+            )
+            return
+
+        # Inject a synthetic "1 active slot" so re-evaluation includes
+        # enhancer decay. This is a conservative lower bound — the
+        # actual count may be higher, but this at least corrects the
+        # under-charging of cost.
+        #
+        # Safety: capture cost before the adjust. If the loadout
+        # calculator isn't ready or the evaluation fails silently,
+        # tool_inference will still hold the old signature (or none
+        # at all). Only proceed with recalculate_session() when the
+        # cost has actually increased — otherwise recalculating with
+        # an unchanged/missing signature would either be a no-op at
+        # best or wipe existing cost data at worst.
+        cost_before = self._tool_inference.get_cost_per_shot(
+            transition.tool_name,
+        )
+        log.info(
+            "Enhancer inference: injecting 1 %s.%s slot on %r "
+            "(avg observed bonus: +%.2f HP, cost before: %.4f PEC)",
+            category, slot_key, transition.tool_name,
+            transition.over_range_average, cost_before,
+        )
+        try:
+            self._loadout_mgr.on_enhancer_adjust(
+                category, slot_key, num_slots=1,
+            )
+        except Exception as e:
+            log.warning("Failed to inject enhancer slot: %s", e)
+            return
+
+        cost_after = self._tool_inference.get_cost_per_shot(
+            transition.tool_name,
+        )
+        if cost_after <= cost_before:
+            # Either the calculator is unavailable (no stats update),
+            # or the weapon happens to have no per-enhancer decay cost.
+            # Either way, a recalculate_session() call can't improve
+            # things and risks wiping cost data on a zero signature.
+            log.warning(
+                "Enhancer adjust on %r did not increase cost "
+                "(%.4f -> %.4f PEC); skipping retroactive recalc",
+                transition.tool_name, cost_before, cost_after,
+            )
+            self._tracking_log.enhancer_inference(
+                "confirmed_present", transition.tool_name,
+                {
+                    "over_avg": transition.over_range_average,
+                    "reason": "slot injected but loadout eval unchanged",
+                },
+            )
+            return
+
+        # Recompute all encounter costs using the updated signatures.
+        self.recalculate_session()
+        self._tracking_log.enhancer_inference(
+            "confirmed_present", transition.tool_name,
+            {
+                "over_avg": transition.over_range_average,
+                "reason": (
+                    f"injected 1 {slot_key.lower()} slot, "
+                    f"cost {cost_before:.4f}->{cost_after:.4f} PEC, "
+                    f"session recalculated"
+                ),
+            },
+        )
+
+    def _on_enhancer_inference_restart(self, transition) -> None:
+        """Hook called when the engine restarts its cycle for a tool.
+
+        The RESTART transition fires when unexplained damage (not
+        attributable to any tracked buff) contradicts a previously
+        CONFIRMED state.  Possible causes:
+
+        1. A missed enhancer break.
+        2. A manual add/remove by the player.
+        3. An untracked buff we didn't classify.
+
+        Since the engine has already transitioned back to UNKNOWN,
+        we prompt the user to choose how to handle it: redetect (let
+        the engine re-sample), manually configure the loadout, or
+        ignore the tool for the rest of the session.  The tool is
+        marked ``awaiting_decision`` so no further prompts fire
+        until the user answers.
+        """
+        enc = self._manager.current_encounter if self._manager else None
+        if enc is not None:
+            setattr(enc, "enhancers_inferred_present", False)
+            setattr(enc, "enhancers_inferred_restart_reason", transition.reason)
+
+        tool_name = transition.tool_name
+
+        # Correlate with a recent break on the same tool — anything
+        # within the last 15 s is likely break-related rather than manual.
+        mismatched_break = False
+        last = self._last_break_validation
+        if last and last.get("tool") == tool_name:
+            elapsed = datetime.utcnow() - last["timestamp"]
+            if elapsed <= timedelta(seconds=15):
+                mismatched_break = True
+                self._tracking_log.enhancer_inference(
+                    "mismatch", tool_name,
+                    {
+                        "reason": (
+                            f"damage stayed {transition.reason} "
+                            f"after break of {last.get('enhancer_name')}"
+                        ),
+                    },
+                )
+                self._last_break_validation = None
+
+        # Prompt the user. Mark the tool as awaiting a decision so no
+        # further restarts can pile up additional prompts for the same
+        # tool before the user answers.
+        self._enhancer_inference.mark_awaiting_decision(tool_name)
+        self._event_bus.publish(EVENT_ENHANCER_REDETECT_PROMPT, {
+            "tool_name": tool_name,
+            "reason": transition.reason,
+            "mismatched_break": mismatched_break,
+            "over_range_average": transition.over_range_average,
+        })
+
+    def _on_enhancer_redetect_decision(self, data) -> None:
+        """Handle the user's response to an enhancer redetect prompt.
+
+        Accepts a dict with ``tool_name`` and ``decision`` keys.
+        *decision* is one of:
+
+        - ``"redetect"`` : resume sampling, engine auto-detects again
+        - ``"manual"``   : same as redetect (the UI opened the loadout
+                           editor so the user can set enhancers
+                           explicitly; we still want fresh inference
+                           in case they edit incompletely)
+        - ``"ignore"``   : permanently disable auto-detection for
+                           this tool for the rest of the session
+        """
+        if not isinstance(data, dict):
+            return
+        tool_name = (data.get("tool_name") or "").strip()
+        if not tool_name:
+            return
+        decision = (data.get("decision") or "").strip().lower()
+        if decision == "ignore":
+            self._enhancer_inference.disable_tool(tool_name)
+            self._tracking_log.enhancer_inference(
+                "restart", tool_name,
+                {"reason": "user chose to ignore auto-detection"},
+            )
+            return
+        if decision in ("redetect", "manual"):
+            # Reset engine state for this tool and resume sampling.
+            # The next 15 in-range or over-range samples will produce
+            # a new CONFIRMED_* transition, which may retroactively
+            # correct cost again.
+            self._enhancer_inference.reset_tool(tool_name)
+            self._enhancer_inference.resolve_decision(tool_name)
+            self._tracking_log.enhancer_inference(
+                "restart", tool_name,
+                {"reason": f"user chose {decision}, re-detecting"},
+            )
+            return
+        # Unknown decision — treat as cancel (resume sampling, leave
+        # state as-is so progress already made is preserved).
+        self._enhancer_inference.resolve_decision(tool_name)
+
     def _on_loot(self, data):
         if not self._live or not self._active or not self._manager:
             return
@@ -724,6 +1138,29 @@ class HuntTracker:
         self._last_activity_time = datetime.utcnow()
         loot_target = self._manager.on_loot_group(raw_total, classified)
         self._loadout_mgr.on_loot()
+
+        # Late-arriving loot: if the manager matched to an encounter
+        # that was already closed+persisted (end_time set), re-persist
+        # it so the new loot rows + updated loot_total_ped make it to
+        # disk. Without this the new items only live in memory.
+        if (loot_target is not None
+                and loot_target.end_time is not None):
+            log.info("Post-kill loot attached to closed encounter %s (%s)",
+                     loot_target.id[:8], loot_target.mob_name)
+            self._persist_encounter(loot_target)
+
+        # Buffer any unmatched shrapnel items for retroactive
+        # correlation. The enhancer break message may arrive shortly
+        # after the loot drop; if so, _on_enhancer_break will flip
+        # the is_enhancer_shrapnel flag on the item we just created.
+        if loot_target is not None:
+            for loot_item in classified:
+                if (loot_item.item_name.lower() == "shrapnel"
+                        and not loot_item.is_enhancer_shrapnel):
+                    self._buffer_unmatched_shrapnel(
+                        loot_target, loot_item, loot_timestamp,
+                    )
+
         target_name = loot_target.mob_name if loot_target else mob_name
         self._tracking_log.loot_received(raw_total, len(classified), target_name)
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
@@ -744,14 +1181,42 @@ class HuntTracker:
         self._last_activity_time = datetime.utcnow()
         self._tracking_log.ocr_mob_detected(mob_name, source)
 
+        prev_encounter_id = (self._manager.current_encounter.id
+                             if self._manager.current_encounter else None)
         # Suspends old encounter (if any), activates/creates encounter for mob_name
         self._manager.on_mob_name_detected(mob_name, confidence, source, hp_pct=hp_pct)
+
+        enc = self._manager.current_encounter
+        if enc and enc.id != prev_encounter_id:
+            self._prepend_orphan_actions(enc)
 
         self._tracking_log.encounter_started(mob_name, source)
         self._event_bus.publish(EVENT_HUNT_ENCOUNTER_STARTED, {
             "mob_name": mob_name,
             "source": source,
         })
+
+    def _prepend_orphan_actions(self, encounter) -> None:
+        """Reassign tool uses that occurred between encounters onto *encounter*.
+
+        Any CombatAction with encounter_id=None whose timestamp is after
+        the previous encounter's end (or the session start) gets attached
+        to *encounter* and tagged phase="pre_encounter". Lets the UI show
+        heals and idle shots inside the next encounter's event log.
+        """
+        if not self._combat_log:
+            return
+        since = self._last_encounter_end_time
+        if since is None and self._session is not None:
+            since = self._session.start_time
+        if since is None:
+            return
+        reassigned = self._combat_log.reassign_unattached(
+            encounter.id, since, phase="pre_encounter",
+        )
+        if reassigned:
+            log.debug("Prepended %d orphan action(s) to encounter %s",
+                      len(reassigned), encounter.id[:8])
 
     def _on_tool_changed(self, data):
         if not self._live or not self._active or not self._manager:
@@ -764,6 +1229,18 @@ class HuntTracker:
         # Record on timeline for retroactive attribution
         now = datetime.utcnow()
         self._tool_inference.on_tool_detected(tool_name, now)
+
+        # Enhancer auto-detection: switch the engine's active tool.
+        # If we have a signature for this tool, register its damage
+        # range so the engine has a baseline to compare against.
+        if tool_name:
+            for sig in self._tool_inference._signatures:
+                if sig.weapon_name == tool_name:
+                    self._enhancer_inference.register_tool(
+                        tool_name, sig.damage_min, sig.damage_max,
+                    )
+                    break
+        self._enhancer_inference.set_active_tool(tool_name or None)
 
         # Retroactive enrichment — re-attribute events in current encounter
         # using the tool timeline via the combat log as source of truth
@@ -798,6 +1275,154 @@ class HuntTracker:
             enc = self._manager.current_encounter if self._manager else None
             if enc:
                 self._recalculate_encounter_stats(enc)
+
+    # Loadout gear slots that hold tools the player can actively use.
+    # Excludes purely cosmetic / passive slots (Pet, Armor, Clothing) so a
+    # creature or armor name containing the effect keyword can't false-match.
+    _ACTIVE_TOOL_GEAR_SLOTS = ("Weapon", "Healing", "Consumables")
+
+    def _equipped_active_tool_names(self) -> list[str]:
+        """All currently-equipped active-tool names from the loadout.
+
+        Covers weapons, medical tools/chips, effect chips, and consumables —
+        anything that can be held and used from the player status bar slot.
+        """
+        names: list[str] = []
+        loadout = self._loadout_mgr.active_loadout if self._loadout_mgr else None
+        gear = (loadout or {}).get("Gear") or {}
+        for slot in self._ACTIVE_TOOL_GEAR_SLOTS:
+            slot_value = gear.get(slot)
+            if isinstance(slot_value, dict):
+                name = (slot_value.get("Name") or "").strip()
+                if name:
+                    names.append(name)
+        return names
+
+    def _apply_inference_buff_pause(self, effect_name: str,
+                                    timestamp: datetime) -> None:
+        """Pause the enhancer inference engine if *effect_name* modifies
+        damage or heal output.
+
+        Effect messages can come from other players too, but we err on
+        the side of pausing — a brief unnecessary pause is harmless,
+        whereas observing samples under an uncounted buff would skew
+        the baseline and produce false CONFIRMED_PRESENT transitions.
+
+        Crit-only buffs are intentionally classified PASSIVE (not
+        DAMAGE_MOD) because the engine already excludes crits from its
+        sample intake.  Equipped damage-altering items (amplifiers,
+        scopes, sights) are already baked into the loadout-evaluated
+        range and don't need runtime tracking.
+        """
+        from ..chat_parser.effect_types import (
+            pauses_damage_inference, pauses_heal_inference,
+        )
+        from .enhancer_inference import KIND_DAMAGE, KIND_HEAL
+        key = effect_name.lower().strip()
+        expiry = timestamp + self._buff_default_duration
+        if pauses_damage_inference(effect_name):
+            self._active_damage_buffs[key] = expiry
+            if not self._enhancer_inference.is_paused(KIND_DAMAGE):
+                self._enhancer_inference.pause(
+                    KIND_DAMAGE, f"damage buff active: {effect_name}",
+                )
+        if pauses_heal_inference(effect_name):
+            self._active_heal_buffs[key] = expiry
+            if not self._enhancer_inference.is_paused(KIND_HEAL):
+                self._enhancer_inference.pause(
+                    KIND_HEAL, f"heal buff active: {effect_name}",
+                )
+
+    def _on_effect_received(self, event):
+        """Handle 'Received Effect Over Time: <name>' system messages.
+
+        Such effects can come from other players too (team healers, buffers),
+        so attribution requires a strong signal that *we* triggered it.  The
+        active tool slot can hold weapons, medical tools/chips, effect chips,
+        or consumables — all are checked.
+
+        Attribution paths:
+
+        1. OCR-detected active tool name contains the effect keyword
+           (e.g. effect 'Divine Intervention' + tool 'Divine Intervention Chip').
+           Stale OCR is still trusted here because the cached name persists
+           until a new tool is OCR'd; staleness just means no recent change.
+           -> definitive: charge the cost.
+
+        2. OCR has never seen any tool AND exactly one equipped item from
+           the loadout's active-tool slots matches the effect keyword.
+           -> probable: charge the cost (best-effort).
+
+        3. OCR shows a different tool, or no/multiple candidates exist.
+           -> ignore (likely another player's effect).
+
+        Utility tools like the Divine Intervention Chip don't fire damage
+        events, so this is the *only* path that adds their cost to a hunt.
+        """
+        if not self._live or not self._active or not self._manager:
+            return
+        effect_name = getattr(event, "effect_name", None)
+        if not effect_name:
+            return
+
+        effect_lc = effect_name.lower().strip()
+        if not effect_lc:
+            return
+
+        # Pause enhancer auto-detection if this is a damage- or heal-
+        # modifying buff. Harmless if it's someone else's buff — the
+        # pause expires after the default duration and the engine
+        # resumes automatically.
+        ts = getattr(event, "timestamp", None) or datetime.utcnow()
+        self._apply_inference_buff_pause(effect_name, ts)
+
+        ocr_tool = (self._ocr_state.state.ocr_tool_name or "").strip()
+
+        chosen_tool: str | None = None
+        confidence: float = 0.0
+        source: str = ""
+
+        if ocr_tool and effect_lc in ocr_tool.lower():
+            # Path 1: OCR confirms a matching tool is equipped right now.
+            # Stale OCR is fine — the cached name persists until the tool
+            # actually changes, so the last-known name is still current.
+            chosen_tool = ocr_tool
+            confidence = 0.95
+            source = "ocr_effect"
+        elif not ocr_tool:
+            # Path 2: OCR has never seen any tool. Walk the equipped
+            # active-tool slots (weapon, healing, consumables) for a match.
+            candidates = [
+                n for n in self._equipped_active_tool_names()
+                if effect_lc in n.lower()
+            ]
+            if len(candidates) == 1:
+                chosen_tool = candidates[0]
+                confidence = 0.65
+                source = "effect_inferred"
+            else:
+                return
+        else:
+            # OCR shows a different tool — likely another player's effect
+            return
+
+        if not self._tool_filter.should_include_cost(chosen_tool):
+            return
+
+        # Cost lookup. For weapons this returns the per-shot decay+ammo from
+        # the loaded signature. For medical/effect chips that aren't in the
+        # inference engine the cost will be 0 — we still record the use as a
+        # confirmation signal but don't add to encounter cost.
+        cost = self._tool_inference.get_cost_per_shot(chosen_tool)
+
+        enc = self._manager.current_encounter
+        if enc is not None and cost > 0:
+            enc.cost += cost
+        self._tracking_log.tool_attributed(
+            "effect", cost, chosen_tool, source, confidence,
+        )
+        log.info("Effect %r attributed to %s (+%.4f PEC, source=%s)",
+                 effect_name, chosen_tool, cost, source)
 
     def _on_global(self, data):
         """Correlate global events with recent encounters."""
@@ -899,19 +1524,42 @@ class HuntTracker:
         item_name = data.item_name if hasattr(data, 'item_name') else ""
         remaining = data.remaining if hasattr(data, 'remaining') else None
 
-        # Shrapnel correlation tracking
+        # Bidirectional shrapnel correlation. First check whether a
+        # shrapnel loot item already arrived (within the correlation
+        # window) that matches this break's PED value. If so, mark it
+        # retroactively so it's excluded from effective_loot_ped. If
+        # not, remember this break for a future shrapnel drop.
         if shrapnel_ped > 0:
-            self._recent_enhancer_breaks.append((timestamp, shrapnel_ped))
-            cutoff = datetime.utcnow() - self.ENHANCER_SHRAPNEL_WINDOW * 5
-            self._recent_enhancer_breaks = [
-                b for b in self._recent_enhancer_breaks if b[0] > cutoff
-            ]
+            matched = self._match_loot_against_break(timestamp, shrapnel_ped)
+            if not matched:
+                self._recent_enhancer_breaks.append((timestamp, shrapnel_ped))
+                cutoff = datetime.utcnow() - self.ENHANCER_SHRAPNEL_WINDOW * 5
+                self._recent_enhancer_breaks = [
+                    b for b in self._recent_enhancer_breaks if b[0] > cutoff
+                ]
 
         # Track on current encounter
         enc = self._manager.current_encounter if self._manager else None
         if enc:
             enc.enhancer_breaks += 1
             enc.enhancer_shrapnel_ped += shrapnel_ped
+
+        # Notify enhancer auto-detect engine: the post-break damage is
+        # expected to shift, so clear the contradiction counter. If the
+        # shift isn't observed (damage stays over-range), subsequent
+        # observe_damage() calls will eventually trigger RESTART — which
+        # the _handle_inference_transition() hook logs as a "restart"
+        # signal, implicitly flagging the missed break.
+        active_tool = (self._ocr_state.state.ocr_tool_name or "").strip()
+        if active_tool:
+            self._enhancer_inference.validate_break(active_tool)
+            # Remember the break-time state so the restart hook can
+            # attribute a subsequent cycle restart to this break.
+            self._last_break_validation = {
+                "tool": active_tool,
+                "timestamp": timestamp,
+                "enhancer_name": enhancer_name,
+            }
 
         # Decrement enhancer state and re-evaluate loadout
         delta = self._loadout_mgr.on_enhancer_break(
@@ -938,17 +1586,81 @@ class HuntTracker:
 
     def _match_enhancer_shrapnel(self, item_name: str, value_ped: float,
                                   loot_timestamp: datetime) -> bool:
-        """Check if a loot item is shrapnel from a recent enhancer break."""
+        """Check if a loot item is shrapnel from a recent enhancer break.
+
+        Returns True if the item matched an already-recorded break.
+        Non-shrapnel items always return False without side effects.
+
+        The caller is responsible for buffering unmatched shrapnel
+        items into ``_recent_shrapnel_items`` after the loot item is
+        constructed — see :meth:`_buffer_unmatched_shrapnel`.
+        """
         if item_name.lower() != "shrapnel":
             return False
-        now = datetime.utcnow()
         for i, (break_time, break_ped) in enumerate(self._recent_enhancer_breaks):
-            if (now - break_time) > self.ENHANCER_SHRAPNEL_WINDOW:
+            if abs(loot_timestamp - break_time) > self.ENHANCER_SHRAPNEL_WINDOW:
                 continue
             # Match by value: enhancer shrapnel value equals the enhancer's TT
             if abs(value_ped - break_ped) < 0.0001:
                 # Consume this break so it doesn't match again
                 self._recent_enhancer_breaks.pop(i)
+                return True
+        return False
+
+    def _buffer_unmatched_shrapnel(self, enc: MobEncounter,
+                                    loot_item: EncounterLootItem,
+                                    timestamp: datetime) -> None:
+        """Buffer a shrapnel loot item pending a future enhancer break.
+
+        Called when shrapnel arrives in loot but no recent enhancer
+        break explains it. If a break message arrives for the same
+        PED value within ENHANCER_SHRAPNEL_WINDOW, the item will be
+        retroactively flagged as enhancer shrapnel (and thereby
+        excluded from ``effective_loot_ped``).
+
+        Prunes entries older than 5x the window so the buffer can't
+        grow unbounded on a long session.
+        """
+        if loot_item.item_name.lower() != "shrapnel":
+            return
+        self._recent_shrapnel_items.append(
+            (timestamp, enc, loot_item, loot_item.value_ped),
+        )
+        cutoff = timestamp - self.ENHANCER_SHRAPNEL_WINDOW * 5
+        self._recent_shrapnel_items = [
+            s for s in self._recent_shrapnel_items if s[0] > cutoff
+        ]
+
+    def _match_loot_against_break(self, break_timestamp: datetime,
+                                   break_ped: float) -> bool:
+        """Check buffered unmatched shrapnel for a value match.
+
+        Called when an enhancer break message arrives. If a recent
+        shrapnel loot item matches the break's PED value, it's
+        retroactively flagged as enhancer shrapnel (excluded from
+        effective loot) and this method returns True. The caller
+        should then skip adding the break to ``_recent_enhancer_breaks``.
+        """
+        for i, (loot_ts, enc, loot_item, value_ped) in enumerate(
+            self._recent_shrapnel_items,
+        ):
+            if abs(break_timestamp - loot_ts) > self.ENHANCER_SHRAPNEL_WINDOW:
+                continue
+            if abs(value_ped - break_ped) < 0.0001:
+                # Retroactive fix: flip the flag on the buffered item.
+                # effective_loot_ped is a computed property, so the
+                # UI will reflect the change on next render.
+                loot_item.is_enhancer_shrapnel = True
+                self._recent_shrapnel_items.pop(i)
+                log.info(
+                    "Retroactive shrapnel correlation: %.4f PED on %s "
+                    "(break arrived after loot)",
+                    value_ped, enc.mob_name,
+                )
+                self._tracking_log.session_info(
+                    f"Shrapnel {value_ped:.2f} PED identified as enhancer "
+                    "refund (retroactive)"
+                )
                 return True
         return False
 
@@ -999,9 +1711,19 @@ class HuntTracker:
 
         self._merge_encounter_into(open_enc, target_enc)
 
-        # Persist changes
-        self._persist_encounter(target_enc)
-        self._persist_encounter(open_enc)
+        # Persist both sides of the merge in one transaction so a
+        # crash can't leave target.merged_from pointing at source while
+        # source.merged_into is still null (or vice versa). Rollback
+        # on any failure puts both back in their pre-merge state on
+        # disk. In-memory state is left merged; next restore will
+        # rebuild from the (now rolled back) DB rows.
+        try:
+            with self._db.transaction():
+                self._persist_encounter(target_enc)
+                self._persist_encounter(open_enc)
+        except Exception as e:
+            log.error("Merge persistence failed, rolling back: %s", e)
+            return False
 
         self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, target_enc.to_dict())
         self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
@@ -1011,6 +1733,61 @@ class HuntTracker:
 
         log.info("Merged open encounter %s into %s", open_enc.id[:8], target_enc.id[:8])
         return True
+
+    def replay_enhancer_timeline(self, from_encounter_id: str | None = None) -> int:
+        """Apply anchored enhancer timeline events to the current session.
+
+        Phase 3 MVP behavior:
+            * Loads anchored events from session_loadout_events (rows
+              with anchor_kind IS NOT NULL).
+            * Publishes EVENT_ENHANCER_TIMELINE_EDITED so UI panels can
+              re-read the timeline, then recalculates encounter costs
+              via the normal recalculate path so any gear overrides the
+              user layered to match the anchored state take effect.
+            * Returns the number of anchored events applied.
+
+        Cost adjustments directly from enhancer deltas (e.g. "2 Economy
+        enhancers reduce decay by 6.5%") are intentionally left to the
+        gear override layer for Phase 3: the user records the state via
+        the timeline dialog and adjusts the gear override to reflect
+        the resulting decay. This keeps the cost math in a single
+        predictable place instead of compounding two sources.
+
+        *from_encounter_id* scopes the recalculation to encounters
+        started at or after that encounter's start_time. Past encounters
+        are not touched.
+        """
+        if not self._session:
+            return 0
+        try:
+            events = self._db.get_anchored_loadout_events(self._session.id)
+        except Exception as e:
+            log.warning("replay_enhancer_timeline: load failed: %s", e)
+            events = []
+
+        cutoff = None
+        if from_encounter_id:
+            anchor_enc = self._find_encounter(from_encounter_id)
+            if anchor_enc is not None:
+                cutoff = anchor_enc.start_time
+
+        try:
+            if cutoff is not None:
+                self.recalculate_session(from_timestamp=cutoff)
+            else:
+                self.recalculate_session()
+        except TypeError:
+            # Older recalculate_session without kwarg support.
+            self.recalculate_session()
+        except Exception as e:
+            log.warning("replay_enhancer_timeline: recalc failed: %s", e)
+
+        self._event_bus.publish(EVENT_ENHANCER_TIMELINE_EDITED, {
+            "session_id": self._session.id,
+            "event_count": len(events),
+        })
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
+        return len(events)
 
     def abandon_open_encounter(self, open_encounter_id: str) -> bool:
         """Mark an open encounter as abandoned (standalone loss)."""
@@ -1031,6 +1808,37 @@ class HuntTracker:
 
         log.info("Abandoned open encounter %s (cost: %.2f PED)",
                  open_enc.id[:8], open_enc.cost)
+        return True
+
+    def resolve_open_encounter_as_kill(self, open_encounter_id: str,
+                                         loot_ped: float | None = None) -> bool:
+        """Mark an open encounter as a kill and optionally set its loot.
+
+        When *loot_ped* is provided the encounter's loot_total_ped is
+        overwritten; existing per-item rows are left alone for the loot
+        editor to touch up afterward. The encounter is removed from the
+        open list, persisted, and ``EVENT_HUNT_ENCOUNTER_ENDED`` plus
+        session updates are published.
+        """
+        open_enc = self._find_open_encounter(open_encounter_id)
+        if not open_enc:
+            return False
+
+        open_enc.outcome = "kill"
+        open_enc.is_open_ended = False
+        if loot_ped is not None:
+            open_enc.loot_total_ped = float(loot_ped)
+        self._open_encounters.remove(open_enc)
+
+        self._persist_encounter(open_enc)
+        self._event_bus.publish(EVENT_HUNT_ENCOUNTER_ENDED, open_enc.to_dict())
+        self._event_bus.publish(EVENT_OPEN_ENCOUNTER_UPDATED,
+                                self._get_open_encounters_data())
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED,
+                                self._build_summary())
+
+        log.info("Resolved open encounter %s as kill (loot: %.2f PED)",
+                 open_enc.id[:8], open_enc.loot_total_ped)
         return True
 
     def reopen_encounter(self, encounter_id: str) -> bool:
@@ -1159,6 +1967,32 @@ class HuntTracker:
         if self._active:
             self.recalculate_session()
 
+    def _on_gear_override_changed(self, _data):
+        """User edited a gear override - recompute cost for the session.
+
+        The override provider is already hot-loaded from the DB on every
+        cost lookup, so we just need to rebuild the accumulated encounter
+        costs and push fresh summaries.
+        """
+        if not self._active or not self._session:
+            return
+        try:
+            self.recalculate_session()
+        except Exception as e:
+            log.warning("recalculate_session after gear override failed: %s", e)
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
+
+    def _on_session_markup_changed(self, _data):
+        """Per-session (L) markup blob changed - publish a refresh.
+
+        No cost recomputation is needed: markup only affects loot
+        valuation, which MarkupResolver already consults lazily with the
+        session_id passed by the dashboard.
+        """
+        if not self._active:
+            return
+        self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
+
     def _on_blacklist_changed(self, _data):
         """Reclassify all in-memory loot items when blacklist config changes."""
         if not self._active or not self._session:
@@ -1282,6 +2116,115 @@ class HuntTracker:
         self._event_bus.publish(EVENT_HUNT_SESSION_UPDATED, self._build_summary())
         log.info("Session stats recalculated from combat log")
 
+    # -- Crash recovery state ------------------------------------------
+
+    def _compute_config_signature(self) -> str:
+        """Hash the config inputs that affect session stats.
+
+        The signature covers: blacklist version, tool filter rules,
+        loadout cost-per-shot inputs, and custom markup state. If any
+        of these change between sessions the stored encounter cost /
+        effective loot values are stale and must be recomputed.
+        """
+        import hashlib
+        parts = [
+            str(sorted(getattr(self._config, "loot_blacklist", []) or [])),
+            str(sorted(getattr(self._config, "tool_cost_filter", []) or [])),
+            str(getattr(self._config, "cost_settings_version", 0)),
+            str(getattr(self._config, "custom_markups_version", 0)),
+        ]
+        return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+    def _serialize_shrapnel_buffer(self) -> str:
+        """Encode (timestamp, value_ped) pairs for the break buffer.
+
+        Encounter/loot_item refs in _recent_shrapnel_items are NOT
+        serialized — they'd need to be rehydrated from the encounter
+        row on load, and the matching window is only 2 seconds anyway.
+        Any buffered shrapnel older than the window is dropped on
+        restore. The break buffer is just (timestamp, value) tuples.
+        """
+        return json.dumps([
+            [ts.isoformat(), value]
+            for ts, value in self._recent_enhancer_breaks
+        ])
+
+    def _save_recovery_state(self) -> None:
+        """Persist all crash-recovery blobs for the current session.
+
+        Called at the end of _persist_encounter so the engine state +
+        shrapnel buffers + config hash are committed atomically with
+        every kill. A crash between kills loses at most one encounter's
+        worth of post-kill state — the engine resumes from the last
+        finalized kill on restart.
+        """
+        if not self._session:
+            return
+        if self._config_signature_cached is None:
+            self._config_signature_cached = self._compute_config_signature()
+        try:
+            enh_blob = json.dumps(self._enhancer_inference.to_dict())
+            break_blob = self._serialize_shrapnel_buffer()
+            self._db.save_session_recovery_state(
+                self._session.id,
+                enhancer_inference_state=enh_blob,
+                break_buffer=break_blob,
+                config_signature=self._config_signature_cached,
+            )
+        except Exception as e:
+            log.warning("Failed to save session recovery state: %s", e)
+
+    def _restore_recovery_state(self, session_id: str) -> None:
+        """Hydrate enhancer inference + buffers + config hash from DB.
+
+        Tools are NOT auto-registered here — the tracker re-registers
+        them from the current catalog elsewhere in _try_restore_session.
+        from_dict on an empty catalog is safe: register_tool() with a
+        matching range is a no-op so loaded state survives; a changed
+        range triggers a clean reset.
+        """
+        blobs = self._db.get_session_recovery_state(session_id)
+
+        # Enhancer inference
+        enh_blob = blobs.get("enhancer_inference_state")
+        if enh_blob:
+            try:
+                self._enhancer_inference = EnhancerInferenceEngine.from_dict(
+                    json.loads(enh_blob),
+                )
+                log.info("Restored enhancer inference for %d tool(s)",
+                         len(self._enhancer_inference._tools))
+            except (ValueError, TypeError, json.JSONDecodeError) as e:
+                log.warning("Failed to restore enhancer inference: %s", e)
+
+        # Break buffer — drop anything older than 5x window (same
+        # cutoff policy used live in _buffer_unmatched_shrapnel).
+        break_blob = blobs.get("break_buffer")
+        if break_blob:
+            try:
+                raw = json.loads(break_blob)
+                now = datetime.utcnow()
+                cutoff = now - self.ENHANCER_SHRAPNEL_WINDOW * 5
+                self._recent_enhancer_breaks = [
+                    (datetime.fromisoformat(ts), value)
+                    for ts, value in raw
+                    if datetime.fromisoformat(ts) > cutoff
+                ]
+            except (ValueError, TypeError, json.JSONDecodeError) as e:
+                log.warning("Failed to restore break buffer: %s", e)
+
+        # Config signature — compare to current, trigger recalc on mismatch
+        stored_sig = blobs.get("config_signature")
+        current_sig = self._compute_config_signature()
+        self._config_signature_cached = current_sig
+        if stored_sig and stored_sig != current_sig:
+            log.info("Config changed since last session (%s -> %s); "
+                     "recalculating stats", stored_sig[:8], current_sig[:8])
+            try:
+                self.recalculate_session()
+            except Exception as e:
+                log.warning("Session recalc on restore failed: %s", e)
+
     def _persist_encounter(self, encounter):
         """Save a completed encounter and check for hunt boundaries."""
         # Capture OCR supporting data before persisting
@@ -1355,45 +2298,51 @@ class HuntTracker:
                     })
                     self._event_bus.publish(EVENT_HUNT_STARTED, new_hunt.to_dict())
 
-        # Persist the encounter (row may already exist from _ensure_encounter_in_db)
+        # Persist the encounter (row may already exist from _ensure_encounter_in_db).
+        # All encounter-scoped writes run in one transaction so a crash
+        # mid-persist cannot leave partial tool_stats or half-written
+        # loot rows — either everything lands or nothing does.
         self._ensure_encounter_in_db(encounter)
-        self._db.update_mob_encounter(
-            encounter.id,
-            hunt_id=encounter.hunt_id,
-            end_time=encounter.end_time.isoformat() if encounter.end_time else None,
-            mob_id=encounter.mob_id,
-            damage_dealt=encounter.damage_dealt,
-            damage_taken=encounter.damage_taken,
-            heals_received=encounter.heals_received,
-            loot_total_ped=encounter.loot_total_ped,
-            shots_fired=encounter.shots_fired,
-            critical_hits=encounter.critical_hits,
-            cost=encounter.cost,
-            confidence=encounter.confidence,
-            player_avoids=encounter.player_avoids,
-            target_avoids=encounter.target_avoids,
-            mob_misses=encounter.mob_misses,
-            deflects=encounter.deflects,
-            blocks=encounter.blocks,
-            outcome=encounter.outcome,
-            death_count=encounter.death_count,
-            killed_by_mob=encounter.killed_by_mob,
-            is_open_ended=1 if encounter.is_open_ended else 0,
-            is_shared_loot=1 if encounter.is_shared_loot else (0 if encounter.is_shared_loot is not None else None),
-            merged_into=encounter.merged_into,
-            merged_from=json.dumps(encounter.merged_from) if encounter.merged_from else None,
-        )
-        for stats in encounter.tool_stats.values():
-            self._db.upsert_encounter_tool_stat(
-                encounter.id, stats.tool_name,
-                shots_delta=stats.shots_fired,
-                damage_delta=stats.damage_dealt,
-                crits_delta=stats.critical_hits,
+        with self._db.transaction():
+            self._db.update_mob_encounter(
+                encounter.id,
+                hunt_id=encounter.hunt_id,
+                end_time=encounter.end_time.isoformat() if encounter.end_time else None,
+                mob_id=encounter.mob_id,
+                damage_dealt=encounter.damage_dealt,
+                damage_taken=encounter.damage_taken,
+                heals_received=encounter.heals_received,
+                loot_total_ped=encounter.loot_total_ped,
+                shots_fired=encounter.shots_fired,
+                critical_hits=encounter.critical_hits,
+                cost=encounter.cost,
+                confidence=encounter.confidence,
+                player_avoids=encounter.player_avoids,
+                target_avoids=encounter.target_avoids,
+                mob_misses=encounter.mob_misses,
+                deflects=encounter.deflects,
+                blocks=encounter.blocks,
+                outcome=encounter.outcome,
+                death_count=encounter.death_count,
+                killed_by_mob=encounter.killed_by_mob,
+                is_open_ended=1 if encounter.is_open_ended else 0,
+                is_shared_loot=1 if encounter.is_shared_loot else (0 if encounter.is_shared_loot is not None else None),
+                merged_into=encounter.merged_into,
+                merged_from=json.dumps(encounter.merged_from) if encounter.merged_from else None,
             )
-
-        # Persist loot items
-        if encounter.loot_items:
-            self._db.insert_encounter_loot_items(encounter.id, encounter.loot_items)
+            for stats in encounter.tool_stats.values():
+                self._db.upsert_encounter_tool_stat(
+                    encounter.id, stats.tool_name,
+                    shots_delta=stats.shots_fired,
+                    damage_delta=stats.damage_dealt,
+                    crits_delta=stats.critical_hits,
+                )
+            if encounter.loot_items:
+                self._db.insert_encounter_loot_items(encounter.id, encounter.loot_items)
+            # Crash-recovery blobs piggyback on the same tx so a crash
+            # after the encounter commits but before the recovery save
+            # can't leave the two out of sync.
+            self._save_recovery_state()
 
         # Update running stats and free memory
         if self._running_stats:
@@ -1401,6 +2350,12 @@ class HuntTracker:
         # Strip loot items — already persisted to DB.
         # Keep tool_stats (small) since merge operations need them.
         encounter.loot_items = []
+
+        # Window start for prepend-to-next: tool uses (heals, buffs,
+        # idle shots) that happen after this time with no active
+        # encounter will be attached to the next encounter that starts.
+        if encounter.end_time:
+            self._last_encounter_end_time = encounter.end_time
 
     def _start_timeout_checker(self):
         """Start periodic timeout checks for encounter closing and session inactivity."""

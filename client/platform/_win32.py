@@ -378,3 +378,26 @@ class Win32Backend:
             dwTimeout=0,
         )
         _user32.FlashWindowEx(ctypes.byref(fwi))
+
+    # --- Game state ---
+
+    def get_current_planet(self) -> str | None:
+        """Read the player's last visited planet from the EU client registry.
+
+        Key: HKCU\\Software\\MindArk\\Entropia Universe\\UserInfo
+        Value: LastVisitedPlanet (REG_SZ, e.g. 'Calypso')
+
+        Returns None if the registry value is missing or unreadable.
+        """
+        try:
+            import winreg
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\MindArk\Entropia Universe\UserInfo",
+            ) as key:
+                value, _ = winreg.QueryValueEx(key, "LastVisitedPlanet")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        except (FileNotFoundError, OSError):
+            return None
+        return None

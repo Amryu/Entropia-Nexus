@@ -88,6 +88,19 @@ class EnhancerBreakEvent:
 
 
 @dataclass
+class EffectReceivedEvent:
+    """A 'Received Effect Over Time: <name>' system message.
+
+    The effect can be applied by the player's own tool (e.g. Divine
+    Intervention Chip) OR by another player (e.g. a team healer).  This
+    event carries only the raw fact; cost attribution happens downstream
+    after cross-checking with the active-tool OCR.
+    """
+    timestamp: datetime
+    effect_name: str
+
+
+@dataclass
 class LootItem:
     timestamp: datetime
     item_name: str

@@ -21,6 +21,7 @@ from .wiki_detail import (
 from .fancy_table import ColumnDef
 from .multi_line_chart import MultiLineChart, ChartSeries
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get, get_item_name, fmt_int, fmt_bool
+from ...core.waypoint import format_waypoint
 from ..theme import (
     PRIMARY, SECONDARY, BORDER, HOVER, TEXT, TEXT_MUTED, ACCENT, SUCCESS,
 )
@@ -331,14 +332,7 @@ def _build_waypoint(spawn: dict, mob_name: str) -> str:
         coords = deep_get(spawn, "Properties", "Data") or {}
     x = coords.get("Longitude") or coords.get("x") or 0
     y = coords.get("Latitude") or coords.get("y") or 0
-    z = coords.get("Altitude") or 0
-    planet = (
-        deep_get(spawn, "Planet", "Properties", "TechnicalName")
-        or deep_get(spawn, "Planet", "Name")
-        or ""
-    )
-    clean_name = mob_name.replace(",", "").strip()[:50]
-    return f"/wp [{planet}, {x}, {y}, {z}, {clean_name}]"
+    return format_waypoint(spawn.get("Planet"), x, y, coords.get("Altitude"), mob_name)
 
 
 _ICON_SIZE = 14

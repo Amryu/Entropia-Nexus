@@ -138,6 +138,34 @@ def get_thumbnail_cache() -> ThumbnailCache | None:
 # Thumbnail generation helpers
 # ------------------------------------------------------------------
 
+_MIN_CLIP_SIZE = 10_000  # clips under 10 KB are almost certainly truncated
+
+
+def _read_video_frame(path: str):
+    """Read first frame from a video, returning the image or None.
+
+    cv2.VideoCapture.read() can hang indefinitely on truncated/corrupt
+    files (especially when called from a QThread where it creates a
+    spinning native FFmpeg thread).  Guard with size and metadata checks.
+    """
+    try:
+        if os.path.getsize(path) < _MIN_CLIP_SIZE:
+            return None
+    except OSError:
+        return None
+    cap = cv2.VideoCapture(path)
+    try:
+        # Reject files where the decoder can't determine basic properties
+        w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        if w < 1 or h < 1:
+            return None
+        ret, frame = cap.read()
+        return frame if ret else None
+    finally:
+        cap.release()
+
+
 def _generate_thumbnail_bytes(
     path: str, file_type: str, tw: int, th: int,
 ) -> tuple[bytes, int, int] | None:
@@ -157,11 +185,7 @@ def _generate_thumbnail_bytes(
         if os.path.isfile(thumb_path):
             source = cv2.imread(thumb_path)
         if source is None:
-            cap = cv2.VideoCapture(path)
-            ret, source = cap.read()
-            cap.release()
-            if not ret:
-                source = None
+            source = _read_video_frame(path)
     if source is None:
         return None
 
@@ -355,10 +379,8 @@ def generate_clip_thumbnail(
         if os.path.isfile(thumb_path):
             source = cv2.imread(thumb_path)
         if source is None:
-            cap = cv2.VideoCapture(path)
-            ret, source = cap.read()
-            cap.release()
-            if not ret or source is None:
+            source = _read_video_frame(path)
+            if source is None:
                 return None
         h, w = source.shape[:2]
         scale = min(width / w, height / h)

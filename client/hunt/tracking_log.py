@@ -122,6 +122,32 @@ class TrackingLog:
         """Log retroactive tool attribution."""
         self._emit("tool", f"Retroactive: {count} events → {tool_name} ({source})")
 
+    def enhancer_inference(self, event: str, tool_name: str,
+                           details: dict | None = None):
+        """Log an enhancer auto-detection transition.
+
+        *event* is one of 'confirmed_present', 'confirmed_none',
+        'restart', or 'mismatch'.  *details* may carry the observed
+        over-range average, the restart reason, etc.
+        """
+        labels = {
+            "confirmed_present": "CONFIRMED enhancers present on",
+            "confirmed_none": "CONFIRMED no enhancers on",
+            "restart": "Restart cycle on",
+            "mismatch": "Break mismatch on",
+        }
+        prefix = labels.get(event, f"Enhancer {event}:")
+        msg = f"{prefix} {tool_name}"
+        if details:
+            extras: list[str] = []
+            if "over_avg" in details:
+                extras.append(f"+{details['over_avg']:.2f} HP avg")
+            if "reason" in details and details["reason"]:
+                extras.append(details["reason"])
+            if extras:
+                msg += " (" + ", ".join(extras) + ")"
+        self._emit("enhancer", msg, details)
+
     # -- Encounter lifecycle --------------------------------------------------
 
     def encounter_started(self, mob_name: str, source: str):

@@ -181,9 +181,6 @@ class TestNativeImports:
     def test_mss(self):
         import mss  # noqa: F401
 
-    def test_py_mini_racer(self):
-        import py_mini_racer  # noqa: F401
-
     def test_pyqt6_core(self):
         from PyQt6 import QtWidgets, QtCore, QtGui, QtNetwork  # noqa: F401
 

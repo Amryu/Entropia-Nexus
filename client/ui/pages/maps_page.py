@@ -10,9 +10,11 @@ import threading
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLineEdit,
     QPushButton, QLabel, QApplication, QScrollArea, QSizePolicy,
-    QProgressBar,
+    QProgressBar, QFrame, QCheckBox,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
+from PyQt6.QtCore import (
+    Qt, pyqtSignal, QTimer, QEvent, QPropertyAnimation, QEasingCurve,
+)
 from PyQt6.QtGui import QPixmap, QFontMetrics
 
 import requests
@@ -20,6 +22,7 @@ import requests
 from ..widgets.map_canvas import MapCanvas
 from ..theme import PRIMARY, SECONDARY, BORDER, HOVER, ACCENT, ACCENT_HOVER, TEXT, TEXT_MUTED, MAIN_DARK
 from ...core.logger import get_logger
+from ...core.waypoint import format_waypoint
 
 log = get_logger("MapsPage")
 
@@ -70,15 +73,46 @@ PLANET_GROUPS: list[tuple[str, list[dict]]] = [
     ]),
 ]
 
-# Layer toggle definitions: (label, color, types_controlled, default_on)
-_LAYER_DEFS: list[tuple[str, str, set[str], bool]] = [
-    ("TP",  "#00FFFF", {"Teleporter"}, True),
-    ("LA",  "#4ade80", {"LandArea"}, True),
-    ("MA",  "#facc15", {"MobArea", "Creature"}, False),
-    ("PVP", "#ef4444", {"PvpArea", "PvpLootArea"}, False),
-    ("WE",  "#da70d6", {"WaveEventArea"}, False),
-    ("OTH", "#a78bfa", {"ZoneArea", "EventArea", "OtherArea", "OtherLocation"}, False),
+# ─── Layer filter config (must match nexus/src/lib/components/MapCanvas.svelte)
+# Main bottom-left buttons — click = exclusive, shift+click = toggle in set.
+# "OTH" opens a popover listing everything else.
+_MAIN_LAYERS: list[dict] = [
+    {"id": "TP",  "full": "Teleporters", "color": "#00FFFF", "types": ["Teleporter"]},
+    {"id": "LA",  "full": "Land Areas",  "color": "#4ade80", "types": ["LandArea"]},
+    {"id": "MA",  "full": "Mob Areas",   "color": "#facc15", "types": ["MobArea", "Creature"]},
+    {"id": "TR",  "full": "Tree Areas",  "color": "#15803d", "types": ["TreeArea"]},
+    {"id": "PVP", "full": "PvP Areas",   "color": "#ef4444", "types": ["PvpArea", "PvpLootArea"]},
+    {"id": "WE",  "full": "Wave Events", "color": "#da70d6", "types": ["WaveEventArea"]},
 ]
+
+# Everything not covered by a main button lives in the "Other" popover.
+_OTHER_GROUPS: list[dict] = [
+    {"label": "Points", "items": [
+        {"type": "Outpost",          "label": "Outposts"},
+        {"type": "Npc",              "label": "NPCs"},
+        {"type": "Vendor",           "label": "Vendors"},
+        {"type": "Interactable",     "label": "Interactables"},
+        {"type": "Camp",             "label": "Camps"},
+        {"type": "City",             "label": "Cities"},
+        {"type": "MagicalFlower",    "label": "Magical Flowers"},
+        {"type": "RevivalPoint",     "label": "Revival Points"},
+        {"type": "InstanceEntrance", "label": "Instance Entrances"},
+        {"type": "Estate",           "label": "Estates"},
+    ]},
+    {"label": "Areas", "items": [
+        {"type": "ZoneArea",   "label": "Zone Areas"},
+        {"type": "CityArea",   "label": "City Areas"},
+        {"type": "EstateArea", "label": "Estate Areas"},
+        {"type": "EventArea",  "label": "Event Areas"},
+    ]},
+]
+
+_DEFAULT_MAIN = {"TP", "MA", "TR", "PVP"}
+_DEFAULT_OTHER = {"Outpost"}
+
+_LAYER_BTN_COLLAPSED_W = 44
+_LAYER_BTN_EXPANDED_W = 200
+_LAYER_BTN_ANIM_MS = 220
 
 _IMAGE_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "cache", "maps")
 
@@ -671,11 +705,11 @@ class _LocationInfoPanel(QWidget):
         self._layout.setSpacing(0)
         self._scroll.setWidget(self._content)
 
-        self._planet_name: str = ""
+        self._planet: dict = {}
 
     def set_location(self, loc: dict, planet: dict, all_locations: list[dict]):
         """Populate the panel with location info."""
-        self._planet_name = planet.get("Name", "")
+        self._planet = planet or {}
 
         # Clear previous fixed-height constraint so layout can size freely.
         self.setMinimumHeight(0)
@@ -762,10 +796,8 @@ class _LocationInfoPanel(QWidget):
                     f" border-radius: 4px; padding: 4px 8px; margin-top: 6px; }}"
                     f"QPushButton:hover {{ background: {HOVER}; }}"
                 )
-                alt = coords.get("Altitude") or 100
                 wp_name = _mob_area_waypoint_name(loc) if loc_type == "MobArea" else name
-                clean_name = wp_name.replace(",", "").strip()[:50]
-                wp_text = f"/wp [{self._planet_name}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {clean_name}]"
+                wp_text = format_waypoint(self._planet, lon, lat, coords.get("Altitude"), wp_name)
                 wp_btn.clicked.connect(lambda _, t=wp_text: self._copy_to_clipboard(t, wp_btn))
                 self._layout.addWidget(wp_btn)
 
@@ -1088,6 +1120,168 @@ class _LocationInfoPanel(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# Layer filter widgets
+# ---------------------------------------------------------------------------
+
+
+class _LayerButton(QFrame):
+    """Bottom-left filter button. Smoothly expands on hover to reveal full name."""
+
+    clicked = pyqtSignal(bool)  # shift_held
+
+    def __init__(self, layer_id: str, full_name: str, color: str, parent=None):
+        super().__init__(parent)
+        self._layer_id = layer_id
+        self._full_name = full_name
+        self._color = color
+        self._active = False
+
+        self.setObjectName("LayerButton")
+        self.setFixedHeight(32)
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(_LAYER_BTN_COLLAPSED_W)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 0, 10, 0)
+        row.setSpacing(8)
+
+        self._short_label = QLabel(layer_id)
+        self._short_label.setStyleSheet(
+            f"color: {color}; font-size: 11px; font-weight: 700;"
+            f" background: transparent;"
+        )
+        self._short_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._short_label.setFixedWidth(22)
+        row.addWidget(self._short_label)
+
+        self._full_label = QLabel(full_name)
+        self._full_label.setStyleSheet(
+            f"color: {TEXT}; font-size: 11px; font-weight: 600;"
+            f" background: transparent;"
+        )
+        row.addWidget(self._full_label)
+        row.addStretch(1)
+
+        self._anim = QPropertyAnimation(self, b"maximumWidth", self)
+        self._anim.setDuration(_LAYER_BTN_ANIM_MS)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._refresh_style()
+
+    def set_active(self, active: bool) -> None:
+        if self._active != active:
+            self._active = active
+            self._refresh_style()
+
+    def is_active(self) -> bool:
+        return self._active
+
+    def layer_id(self) -> str:
+        return self._layer_id
+
+    def _refresh_style(self) -> None:
+        border = ACCENT if self._active else BORDER
+        bg = "rgba(0, 0, 0, 210)" if self._active else "rgba(0, 0, 0, 160)"
+        self.setStyleSheet(
+            f"QFrame#LayerButton {{ background: {bg};"
+            f" border: 1px solid {border}; border-radius: 4px; }}"
+        )
+
+    def enterEvent(self, event):
+        self._animate_to(_LAYER_BTN_EXPANDED_W)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._animate_to(_LAYER_BTN_COLLAPSED_W)
+        super().leaveEvent(event)
+
+    def _animate_to(self, target_w: int) -> None:
+        self._anim.stop()
+        self._anim.setStartValue(self.maximumWidth())
+        self._anim.setEndValue(target_w)
+        self._anim.start()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.clicked.emit(shift)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
+class _OtherPopover(QFrame):
+    """Floating popover listing non-main layer types with select-all/none controls."""
+
+    item_toggled = pyqtSignal(str, bool)    # type_name, checked
+    select_all_clicked = pyqtSignal()
+    select_none_clicked = pyqtSignal()
+
+    def __init__(self, groups: list[dict], parent=None):
+        super().__init__(parent)
+        self.setObjectName("OtherPopover")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"QFrame#OtherPopover {{ background: rgba(10, 10, 14, 245);"
+            f" border: 1px solid {BORDER}; border-radius: 6px; }}"
+            f" QLabel {{ color: {TEXT}; background: transparent; }}"
+            f" QCheckBox {{ color: {TEXT}; font-size: 11px; spacing: 6px;"
+            f"   background: transparent; }}"
+            f" QCheckBox::indicator {{ width: 12px; height: 12px; }}"
+            f" QPushButton {{ color: {ACCENT}; background: transparent;"
+            f"   border: 1px solid {BORDER}; border-radius: 3px;"
+            f"   padding: 3px 6px; font-size: 10px; }}"
+            f" QPushButton:hover {{ background: rgba(255, 255, 255, 15); }}"
+        )
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(4)
+
+        header = QHBoxLayout()
+        header.setSpacing(6)
+        sel_all = QPushButton("Select all")
+        sel_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        sel_all.clicked.connect(self.select_all_clicked.emit)
+        header.addWidget(sel_all, 1)
+        sel_none = QPushButton("Select none")
+        sel_none.setCursor(Qt.CursorShape.PointingHandCursor)
+        sel_none.clicked.connect(self.select_none_clicked.emit)
+        header.addWidget(sel_none, 1)
+        outer.addLayout(header)
+
+        self._checks: dict[str, QCheckBox] = {}
+        for group in groups:
+            group_label = QLabel(group["label"].upper())
+            group_label.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700;"
+                f" letter-spacing: 0.5px; padding-top: 4px;"
+            )
+            outer.addWidget(group_label)
+            for item in group["items"]:
+                cb = QCheckBox(item["label"])
+                cb.setCursor(Qt.CursorShape.PointingHandCursor)
+                type_name = item["type"]
+                cb.toggled.connect(
+                    lambda checked, t=type_name: self.item_toggled.emit(t, checked)
+                )
+                outer.addWidget(cb)
+                self._checks[type_name] = cb
+
+        self.setMinimumWidth(200)
+        self.adjustSize()
+
+    def set_state(self, active: set[str]) -> None:
+        for name, cb in self._checks.items():
+            cb.blockSignals(True)
+            cb.setChecked(name in active)
+            cb.blockSignals(False)
+
+
+# ---------------------------------------------------------------------------
 # MapsPage
 # ---------------------------------------------------------------------------
 
@@ -1180,23 +1374,46 @@ class MapsPage(QWidget):
         # Bottom-left: layer toggles
         self._layer_overlay = QWidget(self)
         self._layer_overlay.setStyleSheet("background: transparent;")
+        # Container must be wide enough to fit a fully-expanded button
+        self._layer_overlay.setFixedWidth(_LAYER_BTN_EXPANDED_W)
         layer_layout = QVBoxLayout(self._layer_overlay)
         layer_layout.setContentsMargins(0, 0, 0, 0)
         layer_layout.setSpacing(6)
+        layer_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self._layer_buttons: list[tuple[QPushButton, set[str]]] = []
-        for label, color, types, default_on in _LAYER_DEFS:
-            btn = QPushButton(label)
-            btn.setFixedSize(44, 32)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setCheckable(True)
-            btn.setChecked(default_on)
-            btn.setStyleSheet(self._layer_btn_style(color, default_on))
-            btn.toggled.connect(
-                lambda checked, b=btn, c=color: self._on_layer_toggled(b, c, checked)
-            )
-            layer_layout.addWidget(btn)
-            self._layer_buttons.append((btn, types))
+        self._active_main: set[str] = set(_DEFAULT_MAIN)
+        self._active_other: set[str] = set(_DEFAULT_OTHER)
+        self._layer_buttons: dict[str, _LayerButton] = {}
+
+        for cfg in _MAIN_LAYERS:
+            btn = _LayerButton(cfg["id"], cfg["full"], cfg["color"], self._layer_overlay)
+            btn.set_active(cfg["id"] in self._active_main)
+            btn.setToolTip(f"{cfg['full']} — click to show only, Shift+click to toggle")
+            btn.clicked.connect(lambda shift, i=cfg["id"]: self._on_main_layer_clicked(i, shift))
+            layer_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft)
+            self._layer_buttons[cfg["id"]] = btn
+
+        # Other button
+        self._other_btn = _LayerButton("OTH", "Other\u2026", "#a78bfa", self._layer_overlay)
+        self._other_btn.set_active(bool(self._active_other))
+        self._other_btn.setToolTip("Other layers — open picker")
+        self._other_btn.clicked.connect(lambda shift: self._toggle_other_popover())
+        layer_layout.addWidget(self._other_btn, 0, Qt.AlignmentFlag.AlignLeft)
+
+        hint = QLabel("Shift+click for multi")
+        hint.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 10px;"
+            f" background: transparent; padding-top: 2px;"
+        )
+        layer_layout.addWidget(hint, 0, Qt.AlignmentFlag.AlignLeft)
+
+        # Popover (parented to self so it can float above siblings)
+        self._other_popover = _OtherPopover(_OTHER_GROUPS, self)
+        self._other_popover.item_toggled.connect(self._on_other_item_toggled)
+        self._other_popover.select_all_clicked.connect(self._on_other_select_all)
+        self._other_popover.select_none_clicked.connect(self._on_other_select_none)
+        self._other_popover.set_state(self._active_other)
+        self._other_popover.hide()
 
         self._layer_overlay.adjustSize()
 
@@ -1270,18 +1487,7 @@ class MapsPage(QWidget):
         self._search_dropdown.raise_()
         self._info_panel.raise_()
 
-    # --- Layer toggle style ---
-
-    @staticmethod
-    def _layer_btn_style(color: str, active: bool) -> str:
-        opacity = "1.0" if active else "0.5"
-        border_color = ACCENT if active else BORDER
-        return (
-            f"QPushButton {{ color: {color}; font-size: 11px; font-weight: 700;"
-            f" background: rgba(0,0,0,0.75); border: 1px solid {border_color};"
-            f" border-radius: 4px; padding: 0px; }}"
-            f"QPushButton:hover {{ background: rgba(0,0,0,0.9); }}"
-        )
+    # --- Layer toggle style (legacy helper kept for reference) ---
 
     # --- Data loading ---
 
@@ -1408,7 +1614,7 @@ class MapsPage(QWidget):
         self._loading_label.hide()
         self._hide_info_panel()
         self._canvas.set_planet(planet, pixmap, locations)
-        self._on_layers_changed()  # Apply current layer state
+        self._apply_layers()  # Apply current layer state
         self._apply_search()       # Apply current search
         self._position_overlays()
         self._top_overlay.raise_()
@@ -1456,16 +1662,87 @@ class MapsPage(QWidget):
 
     # --- Layers ---
 
-    def _on_layer_toggled(self, btn: QPushButton, color: str, checked: bool):
-        btn.setStyleSheet(self._layer_btn_style(color, checked))
-        self._on_layers_changed()
+    def _on_main_layer_clicked(self, layer_id: str, shift: bool) -> None:
+        if shift:
+            if layer_id in self._active_main:
+                self._active_main.remove(layer_id)
+            else:
+                self._active_main.add(layer_id)
+        else:
+            # Exclusive among main buttons — clicked only, OTH selection untouched
+            self._active_main = {layer_id}
+        self._refresh_layer_buttons()
+        self._apply_layers()
 
-    def _on_layers_changed(self):
+    def _toggle_other_popover(self) -> None:
+        if self._other_popover.isVisible():
+            self._other_popover.hide()
+            return
+        self._other_popover.adjustSize()
+        self._position_other_popover()
+        self._other_popover.show()
+        self._other_popover.raise_()
+
+    def _position_other_popover(self) -> None:
+        if not self._other_popover:
+            return
+        btn = self._other_btn
+        # Anchor popover to the right of the bottom-left overlay, bottom-aligned with OTH btn
+        overlay_pos = self._layer_overlay.pos()
+        btn_pos = btn.pos()  # relative to overlay
+        btn_abs_x = overlay_pos.x() + btn_pos.x() + btn.width() + 8
+        btn_abs_y = overlay_pos.y() + btn_pos.y() + btn.height() \
+                    - self._other_popover.height()
+        btn_abs_y = max(10, btn_abs_y)
+        self._other_popover.move(btn_abs_x, btn_abs_y)
+
+    def _on_other_item_toggled(self, type_name: str, checked: bool) -> None:
+        if checked:
+            self._active_other.add(type_name)
+        else:
+            self._active_other.discard(type_name)
+        self._refresh_layer_buttons()
+        self._apply_layers()
+
+    def _on_other_select_all(self) -> None:
+        all_items = set()
+        for g in _OTHER_GROUPS:
+            for it in g["items"]:
+                all_items.add(it["type"])
+        self._active_other = all_items
+        self._other_popover.set_state(self._active_other)
+        self._refresh_layer_buttons()
+        self._apply_layers()
+
+    def _on_other_select_none(self) -> None:
+        self._active_other = set()
+        self._other_popover.set_state(self._active_other)
+        self._refresh_layer_buttons()
+        self._apply_layers()
+
+    def _refresh_layer_buttons(self) -> None:
+        for lid, btn in self._layer_buttons.items():
+            btn.set_active(lid in self._active_main)
+        self._other_btn.set_active(bool(self._active_other))
+
+    def _apply_layers(self) -> None:
         visible: set[str] = set()
-        for btn, types in self._layer_buttons:
-            if btn.isChecked():
-                visible |= types
+        for cfg in _MAIN_LAYERS:
+            if cfg["id"] in self._active_main:
+                visible |= set(cfg["types"])
+        visible |= self._active_other
         self._canvas.set_layers(visible)
+
+    def mousePressEvent(self, event):
+        # Click outside the popover closes it
+        if self._other_popover.isVisible():
+            gp = event.position().toPoint()
+            if not self._other_popover.geometry().contains(gp):
+                if not self._other_btn.geometry().translated(
+                    self._layer_overlay.pos()
+                ).contains(gp):
+                    self._other_popover.hide()
+        super().mousePressEvent(event)
 
     # --- Search ---
 

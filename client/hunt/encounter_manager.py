@@ -36,6 +36,11 @@ class EncounterManager:
     # Loot deduplication: skip identical loot groups arriving within this window
     LOOT_DEDUP_WINDOW = timedelta(seconds=2)
 
+    # How long after an encounter closes we still accept late-arriving loot.
+    # Covers lag / OCR death detection racing the loot drop. Loot arriving
+    # after this window is truly orphaned and gets dropped.
+    POST_KILL_LOOT_WINDOW = timedelta(seconds=5)
+
     def __init__(self, config, session: HuntSession):
         self._config = config
         self._session = session
@@ -65,6 +70,11 @@ class EncounterManager:
         # Loot deduplication state
         self._last_loot_fingerprint: tuple | None = None
         self._last_loot_time: datetime | None = None
+
+        # Recently closed encounters kept as a fallback for late loot.
+        # (close_time, encounter) tuples, pruned on access to the
+        # POST_KILL_LOOT_WINDOW.
+        self._recently_closed: list[tuple[datetime, MobEncounter]] = []
 
     @property
     def state(self) -> EncounterState:
@@ -128,6 +138,25 @@ class EncounterManager:
         (after damage was dealt), it's likely a new mob of the same type.
         """
         now = datetime.utcnow()
+
+        # Placeholder adoption: if the active encounter is an anonymous
+        # placeholder (created by combat arriving before any OCR), rename it
+        # in place so its early damage/tool_stats aren't orphaned onto a
+        # phantom "Unknown" entry. Only adopt interpolated placeholders —
+        # user- and OCR-sourced names are authoritative and must still
+        # trigger a target switch.
+        if (self._active
+                and self._active.mob_name_source == "interpolated"
+                and mob_name):
+            log.info("Adopted placeholder encounter %s → %s",
+                     self._active.id[:8], mob_name)
+            self._active.mob_name = mob_name
+            self._active.mob_name_source = source
+            self._active.confidence = max(self._active.confidence, confidence)
+            if hp_pct is not None:
+                self._encounter_hp[self._active.id] = hp_pct
+            self._update_alive(self._active.id, EncounterState.ACTIVE, now)
+            return
 
         # Same mob as active → check if HP suggests a different individual
         if self._active and self._active.mob_name == mob_name:
@@ -403,29 +432,38 @@ class EncounterManager:
 
         Priority: most recently active encounter that has damage but no loot.
         If multiple candidates, prefer the one with the most recent event time.
+
+        Fallback: if no alive encounter fits, check recently-closed
+        encounters within POST_KILL_LOOT_WINDOW. This catches the race
+        where a kill finalizes before its loot drop arrives. The
+        caller is responsible for re-persisting the encounter if it
+        was already flushed to DB.
         """
         candidates = []
         for enc, state, last_event in self._alive.values():
             if enc.damage_dealt > 0 and enc.loot_total_ped == 0:
                 candidates.append((enc, last_event))
 
-        if not candidates:
-            # Fallback: active encounter even if it has no damage yet
-            return self._active
+        if candidates:
+            # Sort by last event time descending — most recently fought first
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            if len(candidates) > 1:
+                # Active may be a fresh switch; prefer the recently-fought one
+                return candidates[0][0]
+            return candidates[0][0]
 
-        # Sort by last event time descending — most recently fought first
-        candidates.sort(key=lambda x: x[1], reverse=True)
+        # No alive candidates — check recently-closed for late loot.
+        self._prune_recently_closed(now)
+        if self._recently_closed:
+            # Most recent first; prefer ones without loot yet
+            for _t, enc in reversed(self._recently_closed):
+                if enc.loot_total_ped == 0:
+                    return enc
+            # Everything already has loot — tack it onto the most recent
+            return self._recently_closed[-1][1]
 
-        # If the active encounter just started (after a switch) and there's a
-        # suspended encounter that was fought more recently overall, prefer it
-        if len(candidates) > 1:
-            best = candidates[0][0]
-            # If the best candidate is NOT the active encounter, it means
-            # there's a suspended encounter that was fought more recently —
-            # this is likely the one that produced the loot
-            return best
-
-        return candidates[0][0]
+        # Final fallback: active encounter even if it has no damage yet
+        return self._active
 
     def _close_encounter(self, enc: MobEncounter, now: datetime,
                           outcome: str | None = None) -> MobEncounter:
@@ -438,4 +476,13 @@ class EncounterManager:
         self._encounter_hp.pop(enc.id, None)
         if self._active is enc:
             self._active = None
+        # Keep a short-window reference so late-arriving loot can still
+        # attach (see _find_loot_target). Pruning happens on access.
+        self._recently_closed.append((now, enc))
         return enc
+
+    def _prune_recently_closed(self, now: datetime) -> None:
+        cutoff = now - self.POST_KILL_LOOT_WINDOW
+        self._recently_closed = [
+            (t, e) for t, e in self._recently_closed if t > cutoff
+        ]
