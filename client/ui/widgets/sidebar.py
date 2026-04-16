@@ -189,11 +189,12 @@ class IconSidebar(QWidget):
     notification_clicked = pyqtSignal()
     profile_clicked = pyqtSignal()
 
-    def __init__(self, *, signals=None, config=None, parent=None):
+    def __init__(self, *, signals=None, config=None, hidden_pages=None, parent=None):
         super().__init__(parent)
         self._signals = signals
         self._config = config
         self._avatar_loader = None
+        self._hidden_pages = hidden_pages or set()
 
         self.setFixedWidth(SIDEBAR_WIDTH)
         self.setObjectName("iconSidebar")
@@ -204,14 +205,22 @@ class IconSidebar(QWidget):
 
         self._buttons: list[QPushButton] = []
         self._icon_data: list[str] = []
-        self._active_index = 0
+        self._active_btn = 0
+        self._btn_to_page: list[int] = []
+        self._page_to_btn: dict[int, int] = {}
 
-        # Top page buttons
-        for i, (svg_data, tooltip) in enumerate(PAGE_ICONS):
-            btn = self._create_button(svg_data, tooltip, i)
+        # Top page buttons (skip hidden pages)
+        btn_pos = 0
+        for page_idx, (svg_data, tooltip) in enumerate(PAGE_ICONS):
+            if page_idx in self._hidden_pages:
+                continue
+            btn = self._create_button(svg_data, tooltip, btn_pos)
             layout.addWidget(btn)
             self._buttons.append(btn)
             self._icon_data.append(svg_data)
+            self._btn_to_page.append(page_idx)
+            self._page_to_btn[page_idx] = btn_pos
+            btn_pos += 1
 
         layout.addStretch()
 
@@ -221,12 +230,15 @@ class IconSidebar(QWidget):
         layout.addWidget(self._bell_btn)
 
         # Settings at bottom
+        settings_page = len(PAGE_ICONS)
         settings_btn = self._create_button(
-            SETTINGS_ENTRY[0], SETTINGS_ENTRY[1], len(PAGE_ICONS)
+            SETTINGS_ENTRY[0], SETTINGS_ENTRY[1], btn_pos,
         )
         layout.addWidget(settings_btn)
         self._buttons.append(settings_btn)
         self._icon_data.append(SETTINGS_ENTRY[0])
+        self._btn_to_page.append(settings_page)
+        self._page_to_btn[settings_page] = btn_pos
 
         # User avatar (below settings) — clickable to open profile
         self._avatar_btn = QPushButton()
@@ -259,26 +271,33 @@ class IconSidebar(QWidget):
         if signals:
             signals.auth_state_changed.connect(self._on_auth_changed)
 
-    def _create_button(self, svg_data: str, tooltip: str, index: int) -> QPushButton:
+    def _create_button(self, svg_data: str, tooltip: str, btn_pos: int) -> QPushButton:
         btn = QPushButton()
         btn.setToolTip(tooltip)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        btn.clicked.connect(lambda _, i=index: self.set_active(i))
+        btn.clicked.connect(lambda _, p=btn_pos: self._on_btn_clicked(p))
         return btn
 
-    def set_active(self, index: int):
-        """Switch to a page and update button styles."""
-        if index == self._active_index:
-            return
-        self._active_index = index
-        self._apply_styles()
-        self.page_changed.emit(index)
+    def _on_btn_clicked(self, btn_pos: int):
+        page_idx = self._btn_to_page[btn_pos]
+        self.set_active(page_idx)
 
-    def set_active_no_emit(self, index: int):
-        """Update visual active state without emitting page_changed."""
-        self._active_index = index
+    def set_active(self, page_index: int):
+        """Switch to a page and update button styles."""
+        btn_pos = self._page_to_btn.get(page_index)
+        if btn_pos is None or btn_pos == self._active_btn:
+            return
+        self._active_btn = btn_pos
         self._apply_styles()
+        self.page_changed.emit(page_index)
+
+    def set_active_no_emit(self, page_index: int):
+        """Update visual active state without emitting page_changed."""
+        btn_pos = self._page_to_btn.get(page_index)
+        if btn_pos is not None:
+            self._active_btn = btn_pos
+            self._apply_styles()
 
     def set_unread_count(self, count: int):
         """Update the notification bell badge."""
@@ -286,7 +305,7 @@ class IconSidebar(QWidget):
 
     def _apply_styles(self):
         for i, btn in enumerate(self._buttons):
-            active = i == self._active_index
+            active = i == self._active_btn
             btn.setStyleSheet(_button_style(active=active))
             color = ACCENT if active else TEXT_MUTED
             btn.setIcon(svg_icon(self._icon_data[i], color, ICON_SIZE))

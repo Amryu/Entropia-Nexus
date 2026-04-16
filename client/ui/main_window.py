@@ -17,6 +17,7 @@ from .widgets.sidebar import IconSidebar
 from .widgets.status_bar import StatusBar
 from .pages.dashboard import DashboardPage
 from ..core.logger import get_logger
+from ..core.build_flags import is_dev_build
 from ..platform import backend as _platform
 
 log = get_logger("MainWindow")
@@ -162,7 +163,9 @@ class MainWindow(QWidget):
         middle.setSpacing(0)
 
         # Sidebar
-        self._sidebar = IconSidebar(signals=signals, config=config)
+        hidden_pages = set() if is_dev_build() else {PAGE_HUNT}
+        self._sidebar = IconSidebar(signals=signals, config=config,
+                                    hidden_pages=hidden_pages)
         self._sidebar.page_changed.connect(self._on_page_changed)
         self._sidebar.profile_clicked.connect(self._on_sidebar_profile_clicked)
         middle.addWidget(self._sidebar)
@@ -201,12 +204,13 @@ class MainWindow(QWidget):
             PAGE_INVENTORY: self._create_inventory_page,
             PAGE_EXCHANGE: self._create_exchange_page,
             PAGE_TRACKER: self._create_tracker_page,
-            PAGE_HUNT: self._create_hunt_page,
             PAGE_GALLERY: self._create_gallery_page,
             PAGE_SETTINGS: self._create_settings_page,
             PAGE_PROFILE: self._create_profile_page,
             PAGE_SOCIETY: self._create_society_page,
         }
+        if is_dev_build():
+            self._page_factories[PAGE_HUNT] = self._create_hunt_page
 
         # Listen for API scope errors (403 from missing OAuth scopes)
         signals.api_scope_error.connect(self._on_api_scope_error)
