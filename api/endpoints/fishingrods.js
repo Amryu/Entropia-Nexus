@@ -25,6 +25,7 @@ function formatFishingRod(x, data) {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
+        AmmoBurn: x.AmmoBurn !== null ? Number(x.AmmoBurn) : null,
       },
       Skill: {
         LearningIntervalStart: x.MinLevel !== null ? Number(x.MinLevel) : null,

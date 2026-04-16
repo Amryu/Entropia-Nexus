@@ -458,6 +458,7 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },
       { name: "MinTT", value: x => x.Properties.Economy?.MinTT ?? null },
       { name: "Decay", value: x => x.Properties.Economy?.Decay ?? null },
+      { name: "AmmoBurn", value: x => x.Properties.Economy?.AmmoBurn ?? null },
       { name: "ProfessionId", value: async (x, c) => {
         if (!x.Profession?.Name) return null;
         return c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.Profession.Name]).then(res => res.rows[0]?.Id ?? null);

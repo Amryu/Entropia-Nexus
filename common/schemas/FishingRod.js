@@ -25,9 +25,10 @@ export const FishingRod = {
           "properties": {
             "MaxTT": { "type": ["number", "null"], "default": null },
             "MinTT": { "type": ["number", "null"], "default": null },
-            "Decay": { "type": ["number", "null"], "default": null }
+            "Decay": { "type": ["number", "null"], "default": null },
+            "AmmoBurn": { "type": ["integer", "null"], "default": null }
           },
-          "required": ["MaxTT", "MinTT", "Decay"]
+          "required": ["MaxTT", "MinTT", "Decay", "AmmoBurn"]
         },
         "Skill": {
           "type": "object",

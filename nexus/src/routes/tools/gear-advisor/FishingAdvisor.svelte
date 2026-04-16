@@ -89,6 +89,7 @@
     { key: 'Properties.Skill.LearningIntervalEnd', label: 'Max Lvl', align: 'right' },
     { key: 'Properties.Economy.MaxTT', label: 'MaxTT', align: 'right', suffix: 'PED' },
     { key: 'Properties.Economy.Decay', label: 'Decay', align: 'right', suffix: 'PEC' },
+    { key: 'Properties.Economy.AmmoBurn', label: 'Ammo Burn', align: 'right' },
   ];
 
   const SLOT_COLUMNS = {
@@ -218,7 +219,7 @@
 
   let economySummary = $derived.by(() => {
     const all = [rodEntity, reelEntity, blankEntity, lineEntity, lureEntity];
-    let weight = 0, maxTT = 0, decay = 0;
+    let weight = 0, maxTT = 0, decay = 0, ammoBurn = 0;
     let hasAny = false;
     for (const e of all) {
       if (!e) continue;
@@ -227,8 +228,10 @@
       if (p.Weight != null) weight += p.Weight;
       if (p.Economy?.MaxTT != null) maxTT += p.Economy.MaxTT;
       if (p.Economy?.Decay != null) decay += p.Economy.Decay;
+      if (p.Economy?.AmmoBurn != null) ammoBurn += p.Economy.AmmoBurn;
     }
-    return hasAny ? { weight, maxTT, decay } : null;
+    const cost = decay != null && ammoBurn != null ? decay + ammoBurn / 100 : null;
+    return hasAny ? { weight, maxTT, decay, ammoBurn, cost } : null;
   });
 
   let itemCount = $derived(
@@ -459,6 +462,9 @@
               {#if rodEntity.Properties.Economy?.Decay != null}
                 <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{fmtStat(rodEntity.Properties.Economy.Decay)} PEC</span></div>
               {/if}
+              {#if rodEntity.Properties.Economy?.AmmoBurn != null}
+                <div class="stat-row"><span class="stat-label">Ammo Burn</span><span class="stat-value">{rodEntity.Properties.Economy.AmmoBurn}</span></div>
+              {/if}
               {#if rodEntity.Properties.Weight != null}
                 <div class="stat-row"><span class="stat-label">Weight</span><span class="stat-value">{fmtStat(rodEntity.Properties.Weight)} kg</span></div>
               {/if}
@@ -581,6 +587,18 @@
               <span class="stat-label">Total Decay</span>
               <span class="stat-value">{fmtStat(economySummary.decay)} PEC</span>
             </div>
+            {#if economySummary.ammoBurn > 0}
+              <div class="stat-row">
+                <span class="stat-label">Total Ammo Burn</span>
+                <span class="stat-value">{economySummary.ammoBurn}</span>
+              </div>
+            {/if}
+            {#if economySummary.cost != null}
+              <div class="stat-row stat-row-highlight">
+                <span class="stat-label">Cost</span>
+                <span class="stat-value">{fmtStat(economySummary.cost)} PEC</span>
+              </div>
+            {/if}
           </div>
         {/if}
       {/if}
@@ -881,6 +899,17 @@
   .stat-value {
     font-weight: 500;
     font-variant-numeric: tabular-nums;
+    color: var(--text-color);
+  }
+
+  .stat-row-highlight {
+    border-top: 1px solid var(--border-color);
+    margin-top: 2px;
+    padding-top: 4px;
+    font-weight: 600;
+  }
+
+  .stat-row-highlight .stat-label {
     color: var(--text-color);
   }
 
