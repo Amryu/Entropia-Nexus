@@ -1699,7 +1699,7 @@
                   <div class="ranking-card-header {category.colorClass}">{category.label}</div>
                   {#each entries as entry}
                     <div class="ranking-entry">
-                      <span class="ranking-target">{entry.target}</span>
+                      <a href="/globals/target/{encodeURIComponent(entry.target)}" class="ranking-target" title={entry.target}>{entry.target}</a>
                       {#if globalsAthMode === 'best' || globalsAthMode === 'bestTarget'}
                         {@const r = entry.best_rank}
                         <span class="ranking-value">{formatPedShort(entry.best_value)} PED</span>
@@ -1725,7 +1725,7 @@
               {#if globalsRareItems.length > 0}
                 {#each globalsRareItems as item}
                   <div class="highlight-row">
-                    <span class="highlight-name">{item.target}</span>
+                    <span class="highlight-name" title={item.target}>{item.target}</span>
                     <span class="highlight-value">{formatPedShort(item.value)} PED</span>
                     {#if item.ath}<span class="highlight-badge ath">ATH</span>{:else if item.hof}<span class="highlight-badge hof">HoF</span>{/if}
                     <span class="highlight-time">{timeAgo(item.timestamp)}</span>
@@ -1740,7 +1740,7 @@
               {#if globalsDiscoveries.length > 0}
                 {#each globalsDiscoveries as ach}
                   <div class="highlight-row">
-                    <span class="highlight-name">{ach.target}</span>
+                    <span class="highlight-name" title={ach.target}>{ach.target}</span>
                     {#if ach.ath}<span class="highlight-badge ath">ATH</span>{:else if ach.hof}<span class="highlight-badge hof">HoF</span>{/if}
                     <span class="highlight-time">{timeAgo(ach.timestamp)}</span>
                   </div>
@@ -1781,7 +1781,7 @@
                 <tbody>
                   {#each globalsDisplayRows as row}
                     <tr>
-                      <td class="col-target"><a href="/globals/target/{encodeURIComponent(row.target)}" class="globals-target-link">{row.target}</a></td>
+                      <td class="col-target"><a href="/globals/target/{encodeURIComponent(row.target)}" class="globals-target-link" title={row.target}>{row.target}</a></td>
                       <td class="col-type"><span class="globals-type-badge globals-type-{row.type}">{row.typeLabel}</span></td>
                       <td class="col-num right">{row.count.toLocaleString()}</td>
                       <td class="col-num right font-mono">{formatPedShort(row.total_value)} PED</td>
@@ -3212,7 +3212,7 @@
 
   .globals-rankings-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 10px;
   }
 
@@ -3260,6 +3260,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 500;
+    color: var(--text-color);
+    text-decoration: none;
+  }
+
+  .ranking-target:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
   }
 
   .ranking-value {
