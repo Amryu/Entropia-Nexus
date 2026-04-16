@@ -121,6 +121,7 @@ class GlobalType(Enum):
     TEAM_KILL = "team_kill"
     DEPOSIT = "deposit"
     CRAFT = "craft"
+    FISH = "fish"
     RARE_ITEM = "rare_item"
     DISCOVERY = "discovery"
     TIER = "tier"

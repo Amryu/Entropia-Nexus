@@ -274,6 +274,7 @@ _GLOBAL_TYPE_COLORS = {
     "team_kill": "#ef4444",
     "deposit": "#3b82f6",
     "craft": "#a855f7",
+    "fish": "#06b6d4",
     "rare_item": "#f59e0b",
     "discovery": "#10b981",
 }

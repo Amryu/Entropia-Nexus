@@ -18,7 +18,7 @@ from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRepl
 
 from ..theme import (
     TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, BORDER, HOVER, SECONDARY, PRIMARY,
-    WARNING, SUCCESS, MAIN_DARK, FONT_FAMILY,
+    WARNING, SUCCESS, INFO, MAIN_DARK, FONT_FAMILY,
 )
 from ..icons import svg_icon, SETTINGS, BELL
 from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
@@ -56,6 +56,7 @@ _GLOBAL_TYPE_LABELS = {
     GlobalType.TEAM_KILL: ("Hunt",  TEXT),
     GlobalType.DEPOSIT:   ("Mine",  WARNING),
     GlobalType.CRAFT:     ("Craft", SUCCESS),
+    GlobalType.FISH:      ("Fish",  INFO),
     GlobalType.RARE_ITEM: ("Rare",  ACCENT),
 }
 

@@ -23,6 +23,7 @@ _TYPE_LABELS: dict[str, str] = {
     GlobalType.TEAM_KILL.value: "Team Kill",
     GlobalType.DEPOSIT.value: "Deposit",
     GlobalType.CRAFT.value: "Craft",
+    GlobalType.FISH.value: "Fish",
     GlobalType.RARE_ITEM.value: "Rare Item",
     GlobalType.DISCOVERY.value: "Discovery",
     GlobalType.TIER.value: "Tier",

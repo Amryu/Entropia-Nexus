@@ -35,6 +35,7 @@ SUCCESS = "#16a34a"
 SUCCESS_BG = "#1a3a2a"
 WARNING = "#fbbf24"
 WARNING_BG = "#3a3020"
+INFO = "#06b6d4"
 
 # Diff badges (inventory import, history)
 DIFF_ADDED = "#48b868"

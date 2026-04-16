@@ -1274,7 +1274,7 @@ class ProfileOverlayWidget(OverlayWidget):
         self._globals_stack_index = self._content_stack.count() - 1
 
         # Per-section toggle state and refresh timers
-        self._globals_sort_best = {"hunting": False, "mining": False, "crafting": False}
+        self._globals_sort_best = {"hunting": False, "mining": False, "crafting": False, "fishing": False}
         self._globals_recent_timer = QTimer(self)
         self._globals_recent_timer.timeout.connect(self._poll_globals)
         self._globals_full_timer = QTimer(self)
@@ -1400,9 +1400,11 @@ class ProfileOverlayWidget(OverlayWidget):
         kill_count = summary.get("kill_count", 0) + summary.get("team_kill_count", 0)
         deposit_count = summary.get("deposit_count", 0)
         craft_count = summary.get("craft_count", 0)
+        fish_count = summary.get("fish_count", 0)
         layout.addWidget(_stat_row("Hunting", str(kill_count)))
         layout.addWidget(_stat_row("Mining", str(deposit_count)))
         layout.addWidget(_stat_row("Crafting", str(craft_count)))
+        layout.addWidget(_stat_row("Fishing", str(fish_count)))
 
         # --- Recent globals ---
         recent = data.get("recent", [])
@@ -1421,6 +1423,7 @@ class ProfileOverlayWidget(OverlayWidget):
         hunting = data.get("hunting", [])
         resources = data.get("mining", {}).get("resources", [])
         crafts = data.get("crafting", {}).get("items", [])
+        fishes = data.get("fishing", {}).get("targets", [])
 
         if hunting:
             layout.addWidget(_separator())
@@ -1445,6 +1448,14 @@ class ProfileOverlayWidget(OverlayWidget):
             self._crafting_container = container
             layout.addWidget(container)
             self._populate_crafting(container, crafts)
+
+        if fishes:
+            layout.addWidget(_separator())
+            header, container = self._build_top_section_header("TOP FISHING", "fishing")
+            layout.addWidget(header)
+            self._fishing_container = container
+            layout.addWidget(container)
+            self._populate_fishing(container, fishes)
 
         # --- View all ---
         layout.addWidget(_separator())
@@ -1505,6 +1516,7 @@ class ProfileOverlayWidget(OverlayWidget):
             type_colors = {
                 "kill": "#ef4444", "team_kill": "#ef4444",
                 "deposit": "#3b82f6", "craft": "#a855f7",
+                "fish": "#06b6d4",
                 "rare_item": "#f59e0b", "discovery": "#10b981",
             }
             badge_color = type_colors.get(gtype, TEXT_DIM)
@@ -1636,6 +1648,12 @@ class ProfileOverlayWidget(OverlayWidget):
                 self._crafting_container,
                 data.get("crafting", {}).get("items", []),
             )
+        elif section_key == "fishing" and hasattr(self, "_fishing_container"):
+            self._clear_container(self._fishing_container)
+            self._populate_fishing(
+                self._fishing_container,
+                data.get("fishing", {}).get("targets", []),
+            )
 
     @staticmethod
     def _clear_container(container: QWidget):
@@ -1706,6 +1724,24 @@ class ProfileOverlayWidget(OverlayWidget):
                 count = item.get("crafts", 0)
                 value = item.get("total_value", 0)
                 sub = f"{count} crafts · {value:,.0f} PED"
+            layout.addWidget(_clickable_row(name, sub=sub))
+
+    def _populate_fishing(self, container: QWidget, fishes: list[dict]):
+        layout = container.layout()
+        best = self._globals_sort_best["fishing"]
+        if best:
+            items = sorted(fishes, key=lambda f: f.get("best_value", 0), reverse=True)
+        else:
+            items = fishes
+        for item in items[:5]:
+            name = item.get("target", "Unknown")
+            if best:
+                value = item.get("best_value", 0)
+                sub = f"{value:,.0f} PED"
+            else:
+                count = item.get("catches", 0)
+                value = item.get("total_value", 0)
+                sub = f"{count} catches · {value:,.0f} PED"
             layout.addWidget(_clickable_row(name, sub=sub))
 
     # --- Settings tab (owner only) ---
