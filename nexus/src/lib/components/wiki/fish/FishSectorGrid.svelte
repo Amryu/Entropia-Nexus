@@ -1,18 +1,27 @@
 <!--
   @component FishSectorGrid
-  Clickable sector grid for marking fish locations on planet maps.
+  Canvas-based sector grid for marking fish locations on planet maps.
   Each server tile (8x8km) is subdivided into a 4x4 sub-grid (2x2km cells).
+  Features: map background, pan/zoom, Calypso deadzones.
 -->
 <script>
   // @ts-nocheck
+  import { untrack } from 'svelte';
+
   const SUB_DIVISIONS = 4;
+  const CELL_SIZE = 20;
+  const LABEL_MARGIN = 32;
+  const MIN_ZOOM = 0.15;
+  const MAX_ZOOM = 8;
+  const DRAG_THRESHOLD = 4;
+
   const RARITIES = ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Extremely Rare'];
   const RARITY_COLORS = {
-    'Common':         'rgba(34, 197, 94, 0.45)',
-    'Uncommon':       'rgba(59, 130, 246, 0.45)',
-    'Rare':           'rgba(234, 179, 8, 0.5)',
-    'Very Rare':      'rgba(239, 68, 68, 0.5)',
-    'Extremely Rare': 'rgba(168, 85, 247, 0.55)'
+    'Common':         'rgba(34, 197, 94, 0.55)',
+    'Uncommon':       'rgba(59, 130, 246, 0.55)',
+    'Rare':           'rgba(234, 179, 8, 0.6)',
+    'Very Rare':      'rgba(239, 68, 68, 0.6)',
+    'Extremely Rare': 'rgba(168, 85, 247, 0.65)'
   };
   const RARITY_BORDER = {
     'Common':         '#22c55e',
@@ -21,6 +30,14 @@
     'Very Rare':      '#ef4444',
     'Extremely Rare': '#a855f7'
   };
+
+  // Calypso deadzones in tile coordinates (0-indexed)
+  const CALYPSO_DEADZONES = [
+    { rowMin: 5, rowMax: 8, colMin: 0, colMax: 3 },
+    { rowMin: 6, rowMax: 8, colMin: 4, colMax: 4 },
+    { rowMin: 0, rowMax: 3, colMin: 3, colMax: 8 },
+    { rowMin: 4, rowMax: 4, colMin: 5, colMax: 8 },
+  ];
 
   let {
     locations = [],
@@ -33,6 +50,27 @@
   let activeTabIndex = $state(0);
   let selectedCol = $state(null);
   let selectedRow = $state(null);
+  let canvasEl = $state(null);
+  let containerEl = $state(null);
+  let mapImage = $state(null);
+  let canvasWidth = $state(600);
+  let canvasHeight = $state(420);
+  let zoom = $state(1);
+  let panX = $state(0);
+  let panY = $state(0);
+  let hoveredCol = $state(null);
+  let hoveredRow = $state(null);
+
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let dragStartPanX = 0;
+  let dragStartPanY = 0;
+  let hasDragged = false;
+  let drawQueued = false;
+  let globalMoveHandler = null;
+  let globalUpHandler = null;
+  let resizeObserver = null;
 
   function colLabel(c) {
     if (c < 26) return String.fromCharCode(65 + c);
@@ -61,6 +99,7 @@
   });
 
   let activePlanet = $derived(relevantPlanets[Math.min(activeTabIndex, relevantPlanets.length - 1)] ?? null);
+  let activePlanetName = $derived(activePlanet?.name);
 
   function findSector(sectors, col, row) {
     return sectors?.find(s => s.Col === col && s.Row === row) ?? null;
@@ -70,6 +109,478 @@
     if (selectedCol == null || selectedRow == null || !activePlanet) return null;
     return findSector(activePlanet.sectors, selectedCol, selectedRow);
   });
+
+  function isDeadzone(planetName, col, row) {
+    if (planetName !== 'Calypso') return false;
+    const tc = Math.floor(col / SUB_DIVISIONS);
+    const tr = Math.floor(row / SUB_DIVISIONS);
+    return CALYPSO_DEADZONES.some(dz =>
+      tr >= dz.rowMin && tr <= dz.rowMax && tc >= dz.colMin && tc <= dz.colMax
+    );
+  }
+
+  function getMapImageUrl(name) {
+    return `/${name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}.jpg`;
+  }
+
+  function canvasToWorld(cx, cy) {
+    return { x: (cx - panX) / zoom, y: (cy - panY) / zoom };
+  }
+
+  function cellAtCanvas(cx, cy) {
+    if (!activePlanet) return null;
+    const w = canvasToWorld(cx, cy);
+    const gx = w.x - LABEL_MARGIN;
+    const gy = w.y - LABEL_MARGIN;
+    if (gx < 0 || gy < 0) return null;
+    const col = Math.floor(gx / CELL_SIZE);
+    const vr = Math.floor(gy / CELL_SIZE);
+    if (col < 0 || col >= activePlanet.width || vr < 0 || vr >= activePlanet.height) return null;
+    return { col, row: activePlanet.height - 1 - vr };
+  }
+
+  let hoverInfo = $derived.by(() => {
+    if (hoveredCol == null || hoveredRow == null || !activePlanet) return null;
+    const tc = Math.floor(hoveredCol / SUB_DIVISIONS);
+    const tr = Math.floor(hoveredRow / SUB_DIVISIONS);
+    const tileName = rowLabel(tr) + colLabel(tc);
+    const isDz = isDeadzone(activePlanet.name, hoveredCol, hoveredRow);
+    if (isDz) return `${tileName} (inaccessible)`;
+    const sector = findSector(activePlanet.sectors, hoveredCol, hoveredRow);
+    if (sector) return `${tileName} - ${sector.Rarity}${sector.Note ? ' - ' + sector.Note : ''}`;
+    return tileName;
+  });
+
+  // --- Drawing ---
+
+  function requestDraw() {
+    if (drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(() => { drawQueued = false; draw(); });
+  }
+
+  function draw() {
+    if (!canvasEl || !activePlanet) return;
+    const ctx = canvasEl.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillStyle = '#12121f';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+
+    const gx = LABEL_MARGIN;
+    const gy = LABEL_MARGIN;
+    const gridW = activePlanet.width * CELL_SIZE;
+    const gridH = activePlanet.height * CELL_SIZE;
+
+    // Grid area background
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(gx, gy, gridW, gridH);
+
+    // Map image
+    if (mapImage) {
+      ctx.globalAlpha = 0.6;
+      ctx.drawImage(mapImage, gx, gy, gridW, gridH);
+      ctx.globalAlpha = 1;
+    }
+
+    // Deadzone overlay
+    if (activePlanet.name === 'Calypso') {
+      for (const dz of CALYPSO_DEADZONES) {
+        const x1 = gx + dz.colMin * SUB_DIVISIONS * CELL_SIZE;
+        const vrMax = activePlanet.tileHeight - 1 - dz.rowMax;
+        const y1 = gy + vrMax * SUB_DIVISIONS * CELL_SIZE;
+        const w = (dz.colMax - dz.colMin + 1) * SUB_DIVISIONS * CELL_SIZE;
+        const h = (dz.rowMax - dz.rowMin + 1) * SUB_DIVISIONS * CELL_SIZE;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(x1, y1, w, h);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x1, y1, w, h);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 50, 50, 0.12)';
+        ctx.lineWidth = 1;
+        const stride = 12;
+        for (let d = 0; d < w + h; d += stride) {
+          ctx.beginPath();
+          ctx.moveTo(x1 + d, y1);
+          ctx.lineTo(x1 + d - h, y1 + h);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    // Sector fills
+    for (const s of activePlanet.sectors) {
+      const sx = gx + s.Col * CELL_SIZE;
+      const sy = gy + (activePlanet.height - 1 - s.Row) * CELL_SIZE;
+      ctx.fillStyle = RARITY_COLORS[s.Rarity] || RARITY_COLORS['Common'];
+      ctx.fillRect(sx, sy, CELL_SIZE, CELL_SIZE);
+      ctx.strokeStyle = RARITY_BORDER[s.Rarity] || '#fff';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(sx + 0.5, sy + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+    }
+
+    // Minor grid lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 0.5;
+    for (let c = 0; c <= activePlanet.width; c++) {
+      if (c % SUB_DIVISIONS === 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(gx + c * CELL_SIZE, gy);
+      ctx.lineTo(gx + c * CELL_SIZE, gy + gridH);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= activePlanet.height; r++) {
+      if (r % SUB_DIVISIONS === 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy + r * CELL_SIZE);
+      ctx.lineTo(gx + gridW, gy + r * CELL_SIZE);
+      ctx.stroke();
+    }
+
+    // Major grid lines (tile boundaries)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1.5;
+    for (let c = 0; c <= activePlanet.width; c += SUB_DIVISIONS) {
+      ctx.beginPath();
+      ctx.moveTo(gx + c * CELL_SIZE, gy);
+      ctx.lineTo(gx + c * CELL_SIZE, gy + gridH);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= activePlanet.height; r += SUB_DIVISIONS) {
+      ctx.beginPath();
+      ctx.moveTo(gx, gy + r * CELL_SIZE);
+      ctx.lineTo(gx + gridW, gy + r * CELL_SIZE);
+      ctx.stroke();
+    }
+
+    // Hover highlight
+    if (hoveredCol != null && hoveredRow != null) {
+      const hx = gx + hoveredCol * CELL_SIZE;
+      const hy = gy + (activePlanet.height - 1 - hoveredRow) * CELL_SIZE;
+      const isDz = isDeadzone(activePlanet.name, hoveredCol, hoveredRow);
+      ctx.fillStyle = isDz ? 'rgba(255, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.2)';
+      ctx.fillRect(hx, hy, CELL_SIZE, CELL_SIZE);
+      if (!isDz) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(hx + 0.5, hy + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+      }
+    }
+
+    // Selection highlight
+    if (selectedCol != null && selectedRow != null) {
+      const sx = gx + selectedCol * CELL_SIZE;
+      const sy = gy + (activePlanet.height - 1 - selectedRow) * CELL_SIZE;
+      ctx.strokeStyle = '#4a9eff';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(sx + 1, sy + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+    }
+
+    // Labels at tile boundaries
+    const fontSize = Math.min(18, Math.max(8, 11 / zoom));
+    ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+    ctx.fillStyle = 'rgba(200, 200, 200, 0.85)';
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (let tc = 0; tc < activePlanet.tileWidth; tc++) {
+      const x = gx + tc * SUB_DIVISIONS * CELL_SIZE + (SUB_DIVISIONS * CELL_SIZE) / 2;
+      ctx.fillText(colLabel(tc), x, gy - 3 / zoom);
+    }
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let tr = 0; tr < activePlanet.tileHeight; tr++) {
+      const vtRow = activePlanet.tileHeight - 1 - tr;
+      const y = gy + vtRow * SUB_DIVISIONS * CELL_SIZE + (SUB_DIVISIONS * CELL_SIZE) / 2;
+      ctx.fillText(rowLabel(tr), gx - 4 / zoom, y);
+    }
+
+    ctx.restore();
+  }
+
+  // --- Interaction ---
+
+  function handleMouseDown(e) {
+    if (e.button !== 0) return;
+    isDragging = true;
+    hasDragged = false;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragStartPanX = panX;
+    dragStartPanY = panY;
+    if (canvasEl) canvasEl.style.cursor = 'grabbing';
+
+    globalMoveHandler = handleGlobalMouseMove;
+    globalUpHandler = handleGlobalMouseUp;
+    window.addEventListener('mousemove', globalMoveHandler);
+    window.addEventListener('mouseup', globalUpHandler);
+  }
+
+  function handleGlobalMouseMove(e) {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    if (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) hasDragged = true;
+    panX = dragStartPanX + dx;
+    panY = dragStartPanY + dy;
+    requestDraw();
+  }
+
+  function handleGlobalMouseUp(e) {
+    window.removeEventListener('mousemove', globalMoveHandler);
+    window.removeEventListener('mouseup', globalUpHandler);
+    globalMoveHandler = null;
+    globalUpHandler = null;
+
+    const wasDragging = isDragging;
+    isDragging = false;
+    updateCursor(e);
+
+    if (wasDragging && !hasDragged && canvasEl) {
+      const rect = canvasEl.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const cell = cellAtCanvas(cx, cy);
+      if (cell) handleCellClick(cell.col, cell.row);
+    }
+  }
+
+  function handleCanvasMouseMove(e) {
+    if (isDragging) return;
+    const rect = canvasEl?.getBoundingClientRect();
+    if (!rect) return;
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const cell = cellAtCanvas(cx, cy);
+    const newCol = cell?.col ?? null;
+    const newRow = cell?.row ?? null;
+    if (newCol !== hoveredCol || newRow !== hoveredRow) {
+      hoveredCol = newCol;
+      hoveredRow = newRow;
+      updateCursor(e);
+      requestDraw();
+    }
+  }
+
+  function updateCursor(e) {
+    if (!canvasEl) return;
+    if (isDragging) { canvasEl.style.cursor = 'grabbing'; return; }
+    if (hoveredCol == null) { canvasEl.style.cursor = 'grab'; return; }
+    if (isEditMode && isDeadzone(activePlanet?.name, hoveredCol, hoveredRow)) {
+      canvasEl.style.cursor = 'not-allowed';
+    } else if (isEditMode) {
+      canvasEl.style.cursor = 'pointer';
+    } else {
+      canvasEl.style.cursor = 'grab';
+    }
+  }
+
+  function handleContextMenu(e) {
+    e.preventDefault();
+    if (!isEditMode || !activePlanet) return;
+    const rect = canvasEl?.getBoundingClientRect();
+    if (!rect) return;
+    const cell = cellAtCanvas(e.clientX - rect.left, e.clientY - rect.top);
+    if (!cell) return;
+    const existing = findSector(activePlanet.sectors, cell.col, cell.row);
+    if (existing) {
+      const newSectors = activePlanet.sectors.filter(s => !(s.Col === cell.col && s.Row === cell.row));
+      if (selectedCol === cell.col && selectedRow === cell.row) {
+        selectedCol = null;
+        selectedRow = null;
+      }
+      emitChange(activePlanet.name, newSectors);
+    }
+  }
+
+  function handleMouseLeave() {
+    if (isDragging) return;
+    hoveredCol = null;
+    hoveredRow = null;
+    if (canvasEl) canvasEl.style.cursor = 'grab';
+    requestDraw();
+  }
+
+  function handleWheel(e) {
+    e.preventDefault();
+    const rect = canvasEl.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const wb = canvasToWorld(cx, cy);
+    const factor = e.deltaY > 0 ? 0.88 : 1.14;
+    zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+    panX = cx - wb.x * zoom;
+    panY = cy - wb.y * zoom;
+    requestDraw();
+  }
+
+  // Touch: pinch-to-zoom + single-finger pan
+  let touchStartDist = 0;
+  let touchStartZoom = 1;
+
+  function handleTouchStart(e) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      isDragging = true;
+      hasDragged = false;
+      dragStartX = e.touches[0].clientX;
+      dragStartY = e.touches[0].clientY;
+      dragStartPanX = panX;
+      dragStartPanY = panY;
+    } else if (e.touches.length === 2) {
+      isDragging = false;
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      touchStartDist = Math.hypot(dx, dy);
+      touchStartZoom = zoom;
+      dragStartPanX = panX;
+      dragStartPanY = panY;
+      dragStartX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      dragStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    }
+  }
+
+  function handleTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 1 && isDragging) {
+      const dx = e.touches[0].clientX - dragStartX;
+      const dy = e.touches[0].clientY - dragStartY;
+      if (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) hasDragged = true;
+      panX = dragStartPanX + dx;
+      panY = dragStartPanY + dy;
+      requestDraw();
+    } else if (e.touches.length === 2) {
+      hasDragged = true;
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      const dist = Math.hypot(dx, dy);
+      const rect = canvasEl.getBoundingClientRect();
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+      const wb = { x: (midX - dragStartPanX) / touchStartZoom, y: (midY - dragStartPanY) / touchStartZoom };
+      zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, touchStartZoom * (dist / touchStartDist)));
+      panX = midX - wb.x * zoom;
+      panY = midY - wb.y * zoom;
+      requestDraw();
+    }
+  }
+
+  function handleTouchEnd(e) {
+    if (e.touches.length === 0) {
+      if (!hasDragged && e.changedTouches.length > 0) {
+        const rect = canvasEl.getBoundingClientRect();
+        const cx = e.changedTouches[0].clientX - rect.left;
+        const cy = e.changedTouches[0].clientY - rect.top;
+        const cell = cellAtCanvas(cx, cy);
+        if (cell) handleCellClick(cell.col, cell.row);
+      }
+      isDragging = false;
+    }
+  }
+
+  // --- View management ---
+
+  function updateCanvasSize() {
+    if (!canvasEl) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvasEl.width = canvasWidth * dpr;
+    canvasEl.height = canvasHeight * dpr;
+  }
+
+  function fitToView() {
+    if (!activePlanet || canvasWidth <= 0 || canvasHeight <= 0) return;
+    const totalW = LABEL_MARGIN + activePlanet.width * CELL_SIZE + 8;
+    const totalH = LABEL_MARGIN + activePlanet.height * CELL_SIZE + 8;
+    const scaleX = canvasWidth / totalW;
+    const scaleY = canvasHeight / totalH;
+    zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(scaleX, scaleY) * 0.95));
+    panX = (canvasWidth - totalW * zoom) / 2;
+    panY = (canvasHeight - totalH * zoom) / 2;
+  }
+
+  // --- Actions (lifecycle binding) ---
+
+  function setupCanvas(el) {
+    canvasEl = el;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    el.addEventListener('touchstart', handleTouchStart, { passive: false });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+    updateCanvasSize();
+    fitToView();
+    requestDraw();
+
+    return {
+      destroy() {
+        canvasEl = null;
+        el.removeEventListener('wheel', handleWheel);
+        el.removeEventListener('touchstart', handleTouchStart);
+        el.removeEventListener('touchmove', handleTouchMove);
+        el.removeEventListener('touchend', handleTouchEnd);
+        if (globalMoveHandler) {
+          window.removeEventListener('mousemove', globalMoveHandler);
+          window.removeEventListener('mouseup', globalUpHandler);
+        }
+      }
+    };
+  }
+
+  function setupContainer(el) {
+    containerEl = el;
+    let initialFitDone = false;
+    resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width } = entry.contentRect;
+        if (width <= 0) continue;
+        canvasWidth = Math.floor(width);
+        canvasHeight = Math.floor(Math.min(Math.max(width * 0.75, 300), 600));
+        updateCanvasSize();
+        if (!initialFitDone) { fitToView(); initialFitDone = true; }
+        requestDraw();
+      }
+    });
+    resizeObserver.observe(el);
+    return {
+      destroy() {
+        containerEl = null;
+        resizeObserver?.disconnect();
+      }
+    };
+  }
+
+  // --- Effects ---
+
+  $effect(() => {
+    const name = activePlanetName;
+    if (!name) { mapImage = null; return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { if (activePlanetName === name) { mapImage = img; requestDraw(); } };
+    img.onerror = () => { if (activePlanetName === name) { mapImage = null; requestDraw(); } };
+    img.src = getMapImageUrl(name);
+    untrack(() => { fitToView(); updateCanvasSize(); requestDraw(); });
+  });
+
+  $effect(() => {
+    activePlanet;
+    selectedCol;
+    selectedRow;
+    mapImage;
+    requestDraw();
+  });
+
+  // --- Data mutation ---
 
   function emitChange(planetName, newSectors) {
     let newLocations = (locations || []).map(l =>
@@ -89,8 +600,8 @@
   }
 
   function handleCellClick(col, row) {
-    if (!isEditMode) return;
-    if (!activePlanet) return;
+    if (!isEditMode || !activePlanet) return;
+    if (isDeadzone(activePlanet.name, col, row)) return;
 
     const existing = findSector(activePlanet.sectors, col, row);
     if (existing) {
@@ -134,6 +645,31 @@
     selectedRow = null;
     emitChange(activePlanet.name, newSectors);
   }
+
+  function zoomIn() {
+    const cx = canvasWidth / 2;
+    const cy = canvasHeight / 2;
+    const wb = canvasToWorld(cx, cy);
+    zoom = Math.min(MAX_ZOOM, zoom * 1.4);
+    panX = cx - wb.x * zoom;
+    panY = cy - wb.y * zoom;
+    requestDraw();
+  }
+
+  function zoomOut() {
+    const cx = canvasWidth / 2;
+    const cy = canvasHeight / 2;
+    const wb = canvasToWorld(cx, cy);
+    zoom = Math.max(MIN_ZOOM, zoom / 1.4);
+    panX = cx - wb.x * zoom;
+    panY = cy - wb.y * zoom;
+    requestDraw();
+  }
+
+  function resetView() {
+    fitToView();
+    requestDraw();
+  }
 </script>
 
 {#if relevantPlanets.length === 0}
@@ -159,40 +695,28 @@
   {/if}
 
   {#if activePlanet}
-    <div class="grid-container" style="max-width: {Math.min(activePlanet.width * 20 + 28, 800)}px;">
-      <div class="sector-grid"
-        style="grid-template-columns: 24px repeat({activePlanet.width}, 1fr); grid-template-rows: 20px repeat({activePlanet.height}, 1fr);"
-      >
-        <div class="grid-corner"></div>
-        {#each Array(activePlanet.width) as _, col}
-          <div class="col-label" class:tile-boundary={col % SUB_DIVISIONS === 0}>{col % SUB_DIVISIONS === 0 ? colLabel(col) : ''}</div>
-        {/each}
+    <div class="canvas-wrapper" use:setupContainer>
+      <canvas
+        use:setupCanvas
+        class="sector-canvas"
+        style="width: {canvasWidth}px; height: {canvasHeight}px;"
+        onmousedown={handleMouseDown}
+        onmousemove={handleCanvasMouseMove}
+        onmouseleave={handleMouseLeave}
+        oncontextmenu={handleContextMenu}
+      ></canvas>
 
-        {#each Array(activePlanet.height) as _, ri}
-          {@const row = activePlanet.height - 1 - ri}
-          <div class="row-label" class:tile-boundary={row % SUB_DIVISIONS === 0}>{row % SUB_DIVISIONS === 0 ? rowLabel(row) : ''}</div>
-          {#each Array(activePlanet.width) as _, col}
-            {@const sector = findSector(activePlanet.sectors, col, row)}
-            {@const isSelected = isEditMode && selectedCol === col && selectedRow === row}
-            <button
-              class="sector-cell"
-              class:active={!!sector}
-              class:selected={isSelected}
-              class:border-right={col % SUB_DIVISIONS === SUB_DIVISIONS - 1}
-              class:border-bottom={row % SUB_DIVISIONS === 0}
-              class:border-left={col % SUB_DIVISIONS === 0}
-              class:border-top={row % SUB_DIVISIONS === SUB_DIVISIONS - 1}
-              style={sector ? `background-color: ${RARITY_COLORS[sector.Rarity]};` : ''}
-              title={sector ? `${sectorNotation(col, row)}: ${sector.Rarity}${sector.Note ? ' - ' + sector.Note : ''}` : sectorNotation(col, row)}
-              onclick={() => handleCellClick(col, row)}
-              disabled={!isEditMode && !sector}
-            ></button>
-          {/each}
-        {/each}
+      <div class="canvas-controls">
+        <button class="ctrl-btn" onclick={zoomIn} title="Zoom in">+</button>
+        <button class="ctrl-btn" onclick={zoomOut} title="Zoom out">&minus;</button>
+        <button class="ctrl-btn reset-btn" onclick={resetView} title="Reset view">Fit</button>
       </div>
+
+      {#if hoverInfo}
+        <div class="hover-info">{hoverInfo}</div>
+      {/if}
     </div>
 
-    <!-- Rarity legend -->
     <div class="legend">
       {#each RARITIES as r}
         <div class="legend-item">
@@ -200,9 +724,14 @@
           <span>{r}</span>
         </div>
       {/each}
+      {#if activePlanet.name === 'Calypso'}
+        <div class="legend-item">
+          <span class="legend-swatch deadzone-swatch"></span>
+          <span>Inaccessible</span>
+        </div>
+      {/if}
     </div>
 
-    <!-- Edit panel for selected sector -->
     {#if isEditMode && selectedSector}
       <div class="sector-detail">
         <div class="detail-header">
@@ -275,71 +804,66 @@
     color: var(--text-muted, #999);
   }
 
-  .grid-container {
-    overflow-x: auto;
+  .canvas-wrapper {
+    position: relative;
     margin-bottom: 10px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-color, #555);
   }
 
-  .sector-grid {
-    display: grid;
-    gap: 0;
-    width: fit-content;
+  .sector-canvas {
+    display: block;
+    cursor: grab;
+    touch-action: none;
   }
 
-  .grid-corner {
-    /* empty top-left cell */
+  .canvas-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .col-label, .row-label {
+  .ctrl-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 9px;
+    backdrop-filter: blur(4px);
+  }
+
+  .ctrl-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+  }
+
+  .reset-btn {
+    font-size: 10px;
     font-weight: 600;
-    color: var(--text-muted, #999);
-    user-select: none;
   }
 
-  .col-label {
-    padding-bottom: 2px;
-  }
-
-  .row-label {
-    padding-right: 2px;
-    min-width: 24px;
-  }
-
-  .sector-cell {
-    aspect-ratio: 1;
-    min-width: 10px;
-    min-height: 10px;
-    border: 1px solid var(--border-color-subtle, rgba(128, 128, 128, 0.15));
-    background: transparent;
-    cursor: default;
-    padding: 0;
-    transition: background-color 0.1s;
-  }
-
-  .sector-cell.border-right { border-right: 2px solid var(--border-color, #555); }
-  .sector-cell.border-bottom { border-bottom: 2px solid var(--border-color, #555); }
-  .sector-cell.border-left { border-left: 2px solid var(--border-color, #555); }
-  .sector-cell.border-top { border-top: 2px solid var(--border-color, #555); }
-
-  .sector-cell.active {
-    cursor: pointer;
-  }
-
-  .sector-cell.selected {
-    box-shadow: inset 0 0 0 2px var(--accent-color, #4a9eff);
-  }
-
-  .sector-cell:not(:disabled):hover {
-    background-color: var(--hover-color, rgba(128, 128, 128, 0.12));
-    cursor: pointer;
-  }
-
-  .sector-cell:disabled {
-    cursor: default;
+  .hover-info {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+    border-radius: 4px;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
   }
 
   .legend {
@@ -362,6 +886,17 @@
     height: 14px;
     border-radius: 3px;
     border: 1px solid;
+  }
+
+  .deadzone-swatch {
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(0, 0, 0, 0.5),
+      rgba(0, 0, 0, 0.5) 2px,
+      rgba(255, 50, 50, 0.15) 2px,
+      rgba(255, 50, 50, 0.15) 4px
+    );
+    border-color: rgba(255, 50, 50, 0.3);
   }
 
   .sector-detail {
