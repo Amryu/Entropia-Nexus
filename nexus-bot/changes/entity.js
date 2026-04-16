@@ -989,18 +989,15 @@ export const UpsertConfigs = {
         return matId + 1000000;
       }},
       { name: "SpeciesId", value: async (x, c) => {
-        // Multiple fish can share a species (many:1). CodexBaseCost is a
-        // species-level property so updating it from any member is correct.
         const speciesName = x.Species?.Name || x.Name;
         if (!speciesName) return null;
-        const baseCost = x.Species?.CodexBaseCost ?? null;
         await c.query(
           `INSERT INTO "MobSpecies" ("Name", "CodexBaseCost", "CodexType")
-           VALUES ($1, $2, 'Fish'::"CodexType")
+           VALUES ($1, 6, 'Fish'::"CodexType")
            ON CONFLICT ("Name") DO UPDATE SET
-             "CodexBaseCost" = COALESCE(EXCLUDED."CodexBaseCost", "MobSpecies"."CodexBaseCost"),
+             "CodexBaseCost" = COALESCE("MobSpecies"."CodexBaseCost", 6),
              "CodexType" = 'Fish'::"CodexType"`,
-          [speciesName, baseCost]
+          [speciesName]
         );
         return await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [speciesName]).then(res => res.rows[0]?.Id ?? null);
       }},

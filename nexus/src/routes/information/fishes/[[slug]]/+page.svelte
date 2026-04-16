@@ -54,7 +54,7 @@
       RodTypes: []
     },
     Sizes: [],
-    Species: { Name: '', CodexBaseCost: null },
+    Species: { Name: '' },
     FishOil: { Name: null },
     PreferredLure: { Name: null },
     Planets: [],
@@ -203,9 +203,8 @@
   let canEdit = $derived(user?.verified || user?.grants?.includes('wiki.edit'));
   let navItems = $derived(allItems);
   let skillsList = $derived(data.skillsList || []);
-  let speciesCodexBaseCost = $derived(activeEntity?.Species?.CodexBaseCost ?? activeEntity?.Species?.Properties?.CodexBaseCost);
+  const speciesCodexBaseCost = 6;
   let speciesCodexType = $derived(activeEntity?.Species?.Properties?.CodexType ?? 'Fish');
-  let hasCodex = $derived(speciesCodexBaseCost != null);
 
   let sortedSizes = $derived.by(() => {
     const sizes = activeEntity?.Sizes || [];
@@ -302,13 +301,11 @@
       .map(s => ({ value: s.Name, label: s.Name, _raw: s }));
   });
 
-  // Pre-fill BaseCost when an existing species is picked.
   function handleSpeciesSelect(e) {
     const name = e?.value ?? '';
     updateField('Species.Name', name);
-    const existing = (data.speciesList || []).find(s => s.Name === name);
-    if (existing?.Properties?.CodexBaseCost != null) {
-      updateField('Species.CodexBaseCost', Number(existing.Properties.CodexBaseCost));
+    if (name && !activeEntity?.FishOil?.Name) {
+      updateField('FishOil.Name', `${name} Fish Oil`);
     }
   }
 
@@ -810,7 +807,7 @@
           />
         </DataSection>
 
-        {#if !isCreateMode && hasCodex}
+        {#if !isCreateMode}
           <DataSection title="Codex Calculator" expanded={true}>
             <MobCodex
               baseCost={speciesCodexBaseCost}
