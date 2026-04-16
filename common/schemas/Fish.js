@@ -46,21 +46,6 @@ export const Fish = {
           },
           "default": []
         },
-        "Weight": {
-          "type": ["number", "null"],
-          "default": null
-        },
-        "Economy": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "MaxTT": {
-              "type": ["number", "null"],
-              "default": null
-            }
-          },
-          "required": ["MaxTT"]
-        },
         "RodTypes": {
           "type": "array",
           "items": {
@@ -76,8 +61,6 @@ export const Fish = {
         "Difficulty",
         "MinDepth",
         "TimesOfDay",
-        "Weight",
-        "Economy",
         "RodTypes"
       ]
     },

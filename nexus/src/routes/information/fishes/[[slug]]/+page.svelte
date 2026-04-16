@@ -507,14 +507,7 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.Weight}
-                path="Properties.Weight"
-                type="number"
-                placeholder="-"
-              />
-            </span>
+            <span class="stat-value">0.01 kg</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Species</span>
@@ -537,19 +530,11 @@
           </div>
         </div>
 
-        <!-- Economy: TT value from the backing Materials row -->
         <div class="stats-section">
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Max TT</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.Economy?.MaxTT}
-                path="Properties.Economy.MaxTT"
-                type="number"
-                placeholder="-"
-              />
-            </span>
+            <span class="stat-value">0.01 PED</span>
           </div>
         </div>
 

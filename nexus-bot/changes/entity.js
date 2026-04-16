@@ -950,8 +950,8 @@ export const UpsertConfigs = {
         //     duplicating it), then write Weight/Value either way.
         //
         // ItemId is Materials.Id + 1000000 (Items view offset for Materials).
-        const weight = x.Properties?.Weight ?? null;
-        const ttValue = x.Properties?.Economy?.MaxTT ?? null;
+        const weight = 0.01;
+        const ttValue = 0.01;
 
         if (x.Id) {
           const existing = await c.query(

@@ -119,9 +119,9 @@ function formatFish(f, rel) {
       Difficulty: f.Difficulty,
       MinDepth: f.MinDepth != null ? Number(f.MinDepth) : null,
       TimesOfDay: Array.isArray(f.TimeOfDay) ? f.TimeOfDay : (f.TimeOfDay ? f.TimeOfDay.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
-      Weight: f.MatWeight != null ? Number(f.MatWeight) : null,
+      Weight: 0.01,
       Economy: {
-        MaxTT: f.MatValue != null ? Number(f.MatValue) : null,
+        MaxTT: 0.01,
       },
       Biomes: rel.biomesByFish[f.Id] || [],
       RodTypes: rel.rodTypesByFish[f.Id] || [],
