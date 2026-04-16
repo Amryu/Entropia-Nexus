@@ -118,7 +118,7 @@ function formatFish(f, rel) {
       Description: f.Description,
       Difficulty: f.Difficulty,
       MinDepth: f.MinDepth != null ? Number(f.MinDepth) : null,
-      TimesOfDay: f.TimeOfDay || [],
+      TimesOfDay: Array.isArray(f.TimeOfDay) ? f.TimeOfDay : (f.TimeOfDay ? f.TimeOfDay.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
       Weight: f.MatWeight != null ? Number(f.MatWeight) : null,
       Economy: {
         MaxTT: f.MatValue != null ? Number(f.MatValue) : null,
