@@ -302,9 +302,9 @@
 
       if (!itemName) continue; // skip empty-name entries (containers without items)
 
-      // Skip blueprint books — not real tradeable items
+      // Skip blueprint/recipe books — not real tradeable items
       const trimmedName = String(itemName).trim();
-      if (/\(Vol\.\s*\d+\)/.test(trimmedName) || trimmedName.startsWith('Blueprints:')) continue;
+      if (/\(Vol\.\s*\d+\)/.test(trimmedName) || trimmedName.startsWith('Blueprints:') || trimmedName.startsWith('Recipes:')) continue;
 
       // Resolve storage location (STORAGE/CARRIED)
       const containerRefId = raw.containerRefId ?? raw.container_ref_id ?? null;

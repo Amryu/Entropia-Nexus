@@ -315,7 +315,7 @@ def _process_items(
         item_name = re.sub(r'\s+', ' ', str(item_name)).strip()
 
         # Skip blueprint books
-        if re.search(r'\(Vol\.\s*\d+\)', item_name) or item_name.startswith('Blueprints:'):
+        if re.search(r'\(Vol\.\s*\d+\)', item_name) or item_name.startswith(('Blueprints:', 'Recipes:')):
             continue
 
         qty = raw.get('quantity') or raw.get('Quantity') or raw.get('qty') or raw.get('Qty') or 1

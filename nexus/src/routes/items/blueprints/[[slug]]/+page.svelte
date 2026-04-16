@@ -462,18 +462,18 @@
     }
   }
 
-  /** Auto-fill Product and Book from blueprint name */
+  /** Auto-fill Product and Book from blueprint/recipe name */
   function handleNameChange(data) {
     if (!$editMode) return;
     const name = data.value || '';
-    const match = name.match(/^(.+?)\s+Blueprint(?:\s+\(L\))?$/);
+    const match = name.match(/^(.+?)\s+(?:Blueprint|Recipe)(?:\s+\(L\))?$/);
     if (match) {
       const productName = match[1].trim();
       updateField('Product.Name', productName);
       autoFillAmountForProduct(productName);
       autoFillFromProduct(productName);
     }
-    if (name.endsWith('Blueprint (L)')) {
+    if (name.endsWith('Blueprint (L)') || name.endsWith('Recipe (L)')) {
       updateField('Book.Name', 'Limited (Vol. 1) (C)');
     }
   }
@@ -590,15 +590,17 @@
     : ($viewingPendingChange && $existingPendingChange?.changes)
       ? applyChangesToEntity(blueprint, $existingPendingChange.changes)
       : blueprint);
+  let isRecipe = $derived(/\bRecipe\b/.test(activeEntity?.Name || ''));
+  let entityLabel = $derived(isRecipe ? 'Recipe' : 'Blueprint');
   // Breadcrumbs
   let breadcrumbs = $derived([
     { label: 'Items', href: '/items' },
     { label: 'Blueprints', href: '/items/blueprints' },
-    ...(activeEntity ? [{ label: activeEntity.Name || 'New Blueprint' }] : [])
+    ...(activeEntity ? [{ label: activeEntity.Name || `New ${entityLabel}` }] : [])
   ]);
   // SEO
   let seoDescription = $derived(activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Blueprint'} - Level ${activeEntity?.Properties?.Level || '?'} ${activeEntity?.Properties?.Type || ''} blueprint in Entropia Universe.`);
+    `${activeEntity?.Name || entityLabel} - Level ${activeEntity?.Properties?.Level || '?'} ${activeEntity?.Properties?.Type || ''} ${entityLabel.toLowerCase()} in Entropia Universe.`);
   let canonicalUrl = $derived(blueprint
     ? `https://entropianexus.com/items/blueprints/${encodeURIComponentSafe(blueprint.Name)}`
     : 'https://entropianexus.com/items/blueprints');
@@ -677,12 +679,12 @@
               value={activeEntity?.Name}
               path="Name"
               type="text"
-              placeholder="Blueprint Name"
+              placeholder="{entityLabel} Name"
               onchange={handleNameChange}
             />
           </div>
           <div class="infobox-subtitle">
-            <span class="type-badge">{(activeEntity?.Properties?.Type || 'Blueprint').replace(/ Component$/, ' C.')}</span>
+            <span class="type-badge">{(activeEntity?.Properties?.Type || entityLabel).replace(/ Component$/, ' C.')}</span>
             <span class="type-badge">Level {activeEntity?.Properties?.Level ?? '?'}</span>
             {#if activeEntity?.Properties?.IsRare}<span class="item-flag-badge rare">Rare</span>{/if}
             {#if activeEntity?.Properties?.IsUntradeable}<span class="item-flag-badge untradeable">Untradeable</span>{/if}
