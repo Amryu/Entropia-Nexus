@@ -1124,20 +1124,6 @@
           placeholder="Search fish..."
           bind:value={fishingSearchQuery}
         />
-        {#if isFishingPlanet && fishingSectorMap}
-          <div class="view-toggle">
-            <button
-              class="view-btn"
-              class:active={!fishingViewActive}
-              onclick={() => { if (fishingViewActive) toggleFishingView(); }}
-            >Map</button>
-            <button
-              class="view-btn"
-              class:active={fishingViewActive}
-              onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
-            >Fishing</button>
-          </div>
-        {/if}
       </div>
 
       {#if fishingSearchResults.length > 0}
@@ -1181,20 +1167,6 @@
             </button>
           {/if}
         {/if}
-        {#if isFishingPlanet && fishingSectorMap}
-          <div class="view-toggle">
-            <button
-              class="view-btn"
-              class:active={!fishingViewActive}
-              onclick={() => { if (fishingViewActive) toggleFishingView(); }}
-            >Map</button>
-            <button
-              class="view-btn"
-              class:active={fishingViewActive}
-              onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
-            >Fishing</button>
-          </div>
-        {/if}
       </div>
 
       {#if searchOpen && searchResults.length > 0}
@@ -1223,6 +1195,21 @@
   </div>
   {/if}
 
+  {#if isFishingPlanet && fishingSectorMap && !(isEmbed && embedHideSearch)}
+    <div class="view-toggle standalone">
+      <button
+        class="view-btn"
+        class:active={!fishingViewActive}
+        onclick={() => { if (fishingViewActive) toggleFishingView(); }}
+      >Map</button>
+      <button
+        class="view-btn"
+        class:active={fishingViewActive}
+        onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
+      >Fishing</button>
+    </div>
+  {/if}
+
   {#if fishingViewActive && selectedSectorData && !(isEmbed && embedHidePanel)}
     <aside class="map-info-panel fishing-panel">
       <div class="info-header">
@@ -1248,7 +1235,7 @@
           <h4>Fish in this sector</h4>
           <div class="fish-list">
             {#each selectedSectorData.fish as fish}
-              <a class="fish-item" href="/information/fishes/{fish.Id}">
+              <a class="fish-item" href="/information/fishes/{encodeURIComponent(fish.Name)}">
                 <span class="fish-name" style="color: {FISH_RARITY_COLORS[fish.Rarity]}">{fish.Name}</span>
                 <span class="fish-rarity" style="color: {FISH_RARITY_COLORS[fish.Rarity]}">{fish.Rarity}</span>
                 {#if fish.Difficulty}
@@ -2544,6 +2531,13 @@
       min-width: 0;
     }
 
+    .view-toggle.standalone {
+      left: 50%;
+      transform: translateX(-50%);
+      top: auto;
+      bottom: 16px;
+    }
+
     .dialog-backdrop {
       padding: 8px;
       align-items: center;
@@ -2691,6 +2685,13 @@
   .view-toggle {
     display: flex;
     flex-shrink: 0;
+  }
+
+  .view-toggle.standalone {
+    position: absolute;
+    top: 16px;
+    left: calc(16px + 320px + 10px);
+    z-index: 20;
   }
 
   .view-btn {
