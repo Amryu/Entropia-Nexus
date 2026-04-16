@@ -48,8 +48,6 @@
       Difficulty: null,
       MinDepth: null,
       TimesOfDay: [],
-      Weight: null,
-      Economy: { MaxTT: null },
       Biomes: [],
       RodTypes: []
     },
@@ -119,20 +117,6 @@
       getValue: (item) => item.Species?.Name,
       format: (v) => v || '-'
     },
-    weight: {
-      key: 'weight',
-      header: 'Weight',
-      width: '70px',
-      getValue: (item) => item.Properties?.Weight,
-      format: (v) => v != null ? `${v} kg` : '-'
-    },
-    maxTT: {
-      key: 'maxTT',
-      header: 'Max TT',
-      width: '70px',
-      getValue: (item) => item.Properties?.Economy?.MaxTT,
-      format: (v) => v != null ? `${v} PED` : '-'
-    },
     timeOfDay: {
       key: 'timeOfDay',
       header: 'Time of Day',
@@ -166,7 +150,7 @@
   const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty];
   const navFullWidthColumns = [
     fishColumnDefs.biome, fishColumnDefs.difficulty, fishColumnDefs.species,
-    fishColumnDefs.weight, fishColumnDefs.maxTT, fishColumnDefs.timeOfDay
+    fishColumnDefs.timeOfDay
   ];
   const allAvailableColumns = Object.values(fishColumnDefs);
 
@@ -506,10 +490,6 @@
             </span>
           </div>
           <div class="stat-row">
-            <span class="stat-label">Weight</span>
-            <span class="stat-value">0.01 kg</span>
-          </div>
-          <div class="stat-row">
             <span class="stat-label">Species</span>
             <span class="stat-value">
               {#if $editMode}
@@ -527,14 +507,6 @@
                 <span class="species-state">{isExistingSpecies ? 'existing' : 'new'}</span>
               {/if}
             </span>
-          </div>
-        </div>
-
-        <div class="stats-section">
-          <h4 class="section-title">Economy</h4>
-          <div class="stat-row">
-            <span class="stat-label">Max TT</span>
-            <span class="stat-value">0.01 PED</span>
           </div>
         </div>
 

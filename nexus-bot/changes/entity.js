@@ -938,57 +938,6 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties?.Description ?? null },
-      { name: "ItemId", value: async (x, c) => {
-        // Fish IS the material - not a foreign reference to one. The upsert
-        // owns the Materials row that backs this fish:
-        //
-        //   * Update path (x.Id set): resolve the existing Fish row's
-        //     ItemId, locate the Materials row, and write Name/Weight/Value
-        //     back to it so the material stays in sync with the fish edit.
-        //   * Create path: find-or-create a Materials row by Name (so a
-        //     Fish can attach to a pre-existing generic material without
-        //     duplicating it), then write Weight/Value either way.
-        //
-        // ItemId is Materials.Id + 1000000 (Items view offset for Materials).
-        const weight = 0.01;
-        const ttValue = 0.01;
-
-        if (x.Id) {
-          const existing = await c.query(
-            `SELECT "ItemId" FROM ONLY "Fish" WHERE "Id" = $1`,
-            [x.Id]
-          );
-          const existingItemId = existing.rows[0]?.ItemId;
-          if (existingItemId) {
-            const matId = existingItemId - 1000000;
-            await c.query(
-              `UPDATE ONLY "Materials" SET "Name" = $1, "Weight" = $2, "Value" = $3 WHERE "Id" = $4`,
-              [x.Name, weight, ttValue, matId]
-            );
-            return existingItemId;
-          }
-        }
-
-        // Find-or-create Materials row by name
-        const found = await c.query(
-          `SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1 ORDER BY "Id" LIMIT 1`,
-          [x.Name]
-        );
-        let matId = found.rows[0]?.Id;
-        if (matId) {
-          await c.query(
-            `UPDATE ONLY "Materials" SET "Weight" = $1, "Value" = $2 WHERE "Id" = $3`,
-            [weight, ttValue, matId]
-          );
-        } else {
-          const inserted = await c.query(
-            `INSERT INTO "Materials" ("Name", "Weight", "Value") VALUES ($1, $2, $3) RETURNING "Id"`,
-            [x.Name, weight, ttValue]
-          );
-          matId = inserted.rows[0].Id;
-        }
-        return matId + 1000000;
-      }},
       { name: "SpeciesId", value: async (x, c) => {
         const speciesName = x.Species?.Name || x.Name;
         if (!speciesName) return null;
@@ -1901,13 +1850,37 @@ async function applyFishSizesChanges(client, fishId, sizes) {
     [fishId, sizes.map(s => s.Name)]
   );
 
-  await Promise.all(sizes.map(size => client.query(
-    `INSERT INTO "FishSizes" ("FishId", "Name", "Strength", "ScrapsToRefine")
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT ("FishId", "Name") DO UPDATE SET
-       "Strength" = $3, "ScrapsToRefine" = $4`,
-    [fishId, size.Name, size.Strength ?? null, size.ScrapsToRefine ?? null]
-  )));
+  const weight = 0.01;
+  const ttValue = 0.01;
+
+  for (const size of sizes) {
+    const existing = await client.query(
+      `SELECT "ItemId" FROM ONLY "FishSizes" WHERE "FishId" = $1 AND "Name" = $2`,
+      [fishId, size.Name]
+    );
+    let itemId = existing.rows[0]?.ItemId ?? null;
+
+    if (itemId) {
+      await client.query(
+        `UPDATE ONLY "Materials" SET "Name" = $1, "Weight" = $2, "Value" = $3 WHERE "Id" = $4`,
+        [size.Name, weight, ttValue, itemId - 1000000]
+      );
+    } else {
+      const inserted = await client.query(
+        `INSERT INTO "Materials" ("Name", "Weight", "Value") VALUES ($1, $2, $3) RETURNING "Id"`,
+        [size.Name, weight, ttValue]
+      );
+      itemId = inserted.rows[0].Id + 1000000;
+    }
+
+    await client.query(
+      `INSERT INTO "FishSizes" ("FishId", "Name", "Strength", "ScrapsToRefine", "ItemId")
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT ("FishId", "Name") DO UPDATE SET
+         "Strength" = $3, "ScrapsToRefine" = $4, "ItemId" = $5`,
+      [fishId, size.Name, size.Strength ?? null, size.ScrapsToRefine ?? null, itemId]
+    );
+  }
 }
 
 async function applyFishSectorLocationsChanges(client, fishId, locations) {
