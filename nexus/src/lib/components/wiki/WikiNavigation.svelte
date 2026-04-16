@@ -512,6 +512,7 @@
           for (const part of parts) {
             itemValue = itemValue?.[part];
           }
+          if (Array.isArray(itemValue)) return itemValue.some(v => value.includes(v));
           return value.includes(itemValue);
         });
       } else {
@@ -522,6 +523,7 @@
           for (const part of parts) {
             itemValue = itemValue?.[part];
           }
+          if (Array.isArray(itemValue)) return itemValue.includes(value);
           return itemValue === value;
         });
       }

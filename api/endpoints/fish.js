@@ -14,18 +14,20 @@ const baseQuery = `
          ms."CodexType" AS "SpeciesCodexType",
          mat."Weight" AS "MatWeight",
          mat."Value" AS "MatValue",
-         lure_t."Name" AS "PreferredLureName"
+         lure_t."Name" AS "PreferredLureName",
+         oil_t."Name" AS "FishOilName"
     FROM ONLY "Fish" f
     LEFT JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
     LEFT JOIN ONLY "Materials" mat ON mat."Id" = f."ItemId" - 1000000
     LEFT JOIN "Items" lure_t ON lure_t."Id" = f."PreferredLureId"
+    LEFT JOIN "Items" oil_t ON oil_t."Id" = f."FishOilItemId"
 `;
 
 async function loadRelated(fishRows) {
   const ids = fishRows.map(r => r.Id);
-  if (ids.length === 0) return { planetsByFish: {}, rodTypesByFish: {} };
+  if (ids.length === 0) return { planetsByFish: {}, rodTypesByFish: {}, sizesByFish: {}, biomesByFish: {} };
 
-  const [planetsRes, rodRes] = await Promise.all([
+  const [planetsRes, rodRes, sizesRes, biomesRes] = await Promise.all([
     pool.query(
       `SELECT fp."FishId", p."Id" AS "PlanetId", p."Name" AS "PlanetName"
        FROM ONLY "FishPlanets" fp
@@ -35,6 +37,17 @@ async function loadRelated(fishRows) {
     ),
     pool.query(
       `SELECT "FishId", "RodType" FROM ONLY "FishRodTypes" WHERE "FishId" = ANY($1::int[])`,
+      [ids]
+    ),
+    pool.query(
+      `SELECT "FishId", "Name", "Strength", "ScrapsToRefine"
+       FROM ONLY "FishSizes"
+       WHERE "FishId" = ANY($1::int[])
+       ORDER BY "Id"`,
+      [ids]
+    ),
+    pool.query(
+      `SELECT "FishId", "Biome" FROM ONLY "FishBiomes" WHERE "FishId" = ANY($1::int[])`,
       [ids]
     ),
   ]);
@@ -52,7 +65,21 @@ async function loadRelated(fishRows) {
     (rodTypesByFish[r.FishId] ||= []).push(r.RodType);
   }
 
-  return { planetsByFish, rodTypesByFish };
+  const sizesByFish = {};
+  for (const r of sizesRes.rows) {
+    (sizesByFish[r.FishId] ||= []).push({
+      Name: r.Name,
+      Strength: r.Strength != null ? Number(r.Strength) : null,
+      ScrapsToRefine: r.ScrapsToRefine != null ? Number(r.ScrapsToRefine) : null,
+    });
+  }
+
+  const biomesByFish = {};
+  for (const r of biomesRes.rows) {
+    (biomesByFish[r.FishId] ||= []).push(r.Biome);
+  }
+
+  return { planetsByFish, rodTypesByFish, sizesByFish, biomesByFish };
 }
 
 function formatFish(f, rel) {
@@ -61,9 +88,6 @@ function formatFish(f, rel) {
     Name: f.Name,
     Properties: {
       Description: f.Description,
-      Biome: f.Biome,
-      Size: f.Size != null ? Number(f.Size) : null,
-      Strength: f.Strength != null ? Number(f.Strength) : null,
       Difficulty: f.Difficulty,
       MinDepth: f.MinDepth != null ? Number(f.MinDepth) : null,
       TimeOfDay: f.TimeOfDay,
@@ -71,8 +95,10 @@ function formatFish(f, rel) {
       Economy: {
         MaxTT: f.MatValue != null ? Number(f.MatValue) : null,
       },
+      Biomes: rel.biomesByFish[f.Id] || [],
       RodTypes: rel.rodTypesByFish[f.Id] || [],
     },
+    Sizes: rel.sizesByFish[f.Id] || [],
     Species: f.SpeciesName ? {
       Name: f.SpeciesName,
       Properties: {
@@ -80,6 +106,10 @@ function formatFish(f, rel) {
         CodexType: f.SpeciesCodexType ?? null
       },
       Links: { "$Url": `/mobspecies/${f.SpeciesId}` }
+    } : null,
+    FishOil: f.FishOilName ? {
+      Name: f.FishOilName,
+      Links: { "$Url": `/items/${f.FishOilItemId}` }
     } : null,
     PreferredLure: f.PreferredLureName ? {
       Name: f.PreferredLureName,
@@ -103,7 +133,7 @@ async function getFish(idOrName) {
   return formatFish(row, rel);
 }
 
-const CACHE_KEYS = ['Fish', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials'];
+const CACHE_KEYS = ['Fish', 'FishSizes', 'FishBiomes', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials'];
 
 function register(app) {
   /**

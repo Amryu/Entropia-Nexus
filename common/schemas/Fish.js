@@ -21,18 +21,13 @@ export const Fish = {
           "type": ["string", "null"],
           "default": null
         },
-        "Biome": {
-          "type": ["string", "null"],
-          "enum": ["Sea", "River", "Lake", "Deep Ocean", "Sky", null],
-          "default": null
-        },
-        "Size": {
-          "type": ["number", "null"],
-          "default": null
-        },
-        "Strength": {
-          "type": ["number", "null"],
-          "default": null
+        "Biomes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["Sea", "River", "Lake", "Deep Ocean", "Sky"]
+          },
+          "default": []
         },
         "Difficulty": {
           "type": ["string", "null"],
@@ -74,9 +69,7 @@ export const Fish = {
       },
       "required": [
         "Description",
-        "Biome",
-        "Size",
-        "Strength",
+        "Biomes",
         "Difficulty",
         "MinDepth",
         "TimeOfDay",
@@ -84,6 +77,20 @@ export const Fish = {
         "Economy",
         "RodTypes"
       ]
+    },
+    "Sizes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "Name": { "type": "string" },
+          "Strength": { "type": ["number", "null"], "default": null },
+          "ScrapsToRefine": { "type": ["integer", "null"], "default": null }
+        },
+        "required": ["Name"]
+      },
+      "default": []
     },
     "Species": {
       "type": "object",
@@ -94,6 +101,7 @@ export const Fish = {
       },
       "required": ["Name"]
     },
+    "FishOil": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "PreferredLure": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Planets": {
       "type": "array",

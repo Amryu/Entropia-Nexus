@@ -42,17 +42,17 @@
     Name: '',
     Properties: {
       Description: '',
-      Biome: null,
-      Size: null,
-      Strength: null,
       Difficulty: null,
       MinDepth: null,
       TimeOfDay: null,
       Weight: null,
       Economy: { MaxTT: null },
+      Biomes: [],
       RodTypes: []
     },
+    Sizes: [],
     Species: { Name: '', CodexBaseCost: null },
+    FishOil: { Name: null },
     PreferredLure: { Name: null },
     Planets: []
   };
@@ -80,7 +80,7 @@
 
   const navFilters = [
     {
-      key: 'Properties.Biome',
+      key: 'Properties.Biomes',
       label: 'Biome',
       values: BIOMES.map(b => ({ value: b, label: b }))
     },
@@ -97,7 +97,7 @@
       header: 'Biome',
       width: '100px',
       filterPlaceholder: 'Sea',
-      getValue: (item) => item.Properties?.Biome,
+      getValue: (item) => (item.Properties?.Biomes || []).join(', '),
       format: (v) => v || '-'
     },
     difficulty: {
@@ -107,19 +107,11 @@
       filterPlaceholder: 'Easy',
       getValue: (item) => item.Properties?.Difficulty,
       format: (v) => v || '-'
-    },
-    size: {
-      key: 'size',
-      header: 'Size',
-      width: '60px',
-      filterPlaceholder: '>10',
-      getValue: (item) => item.Properties?.Size,
-      format: (v) => v != null ? v : '-'
     }
   };
 
   const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty];
-  const navFullWidthColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty, fishColumnDefs.size];
+  const navFullWidthColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty];
   const allAvailableColumns = Object.values(fishColumnDefs);
 
   // Lazy-load edit dependencies on edit activation
@@ -199,6 +191,31 @@
       .map(it => ({ value: it.Name, label: it.Name }));
   });
 
+  let oilItemOptions = $derived.by(() => {
+    if (!$editMode || !Array.isArray(data.itemsList)) return [];
+    return data.itemsList
+      .filter(it => it?.Properties?.Type === 'Material' && it.Name.toLowerCase().includes('oil'))
+      .map(it => ({ value: it.Name, label: it.Name }));
+  });
+
+  function addSize() {
+    const current = Array.isArray(activeEntity?.Sizes) ? [...activeEntity.Sizes] : [];
+    current.push({ Name: '', Strength: null, ScrapsToRefine: null });
+    updateField('Sizes', current);
+  }
+
+  function removeSize(index) {
+    const current = (activeEntity?.Sizes || []).filter((_, i) => i !== index);
+    updateField('Sizes', current);
+  }
+
+  function updateSize(index, field, value) {
+    const current = (activeEntity?.Sizes || []).map((s, i) =>
+      i === index ? { ...s, [field]: value } : s
+    );
+    updateField('Sizes', current);
+  }
+
   // Only Fish-type species are offered in the picker. Typing a name not in
   // the list creates a new Fish species on save.
   let fishSpeciesOptions = $derived.by(() => {
@@ -224,7 +241,27 @@
     return data.speciesList.some(s => s.Name === name && s.Properties?.CodexType === 'Fish');
   });
 
-  // ===== Multi-select add/remove for rod types and planets =====
+  // ===== Multi-select add/remove for biomes, rod types, and planets =====
+
+  let biomeAddOptions = $derived.by(() => {
+    const selected = new Set(activeEntity?.Properties?.Biomes || []);
+    return BIOMES
+      .filter(b => !selected.has(b))
+      .map(b => ({ value: b, label: b }));
+  });
+
+  function addBiome(b) {
+    if (!b) return;
+    const current = Array.isArray(activeEntity?.Properties?.Biomes) ? [...activeEntity.Properties.Biomes] : [];
+    if (current.includes(b)) return;
+    current.push(b);
+    updateField('Properties.Biomes', current);
+  }
+
+  function removeBiome(b) {
+    const current = (activeEntity?.Properties?.Biomes || []).filter(x => x !== b);
+    updateField('Properties.Biomes', current);
+  }
 
   // Remaining rod-type options (not yet selected).
   let rodTypeAddOptions = $derived.by(() => {
@@ -336,37 +373,21 @@
           {/if}
         </div>
 
-        <!-- Tier-1: 3 display-only primary stats (no inputs) -->
+        <!-- Tier-1: display-only primary stats (no inputs) -->
         <div class="stats-section tier-1 tier-blue">
           <div class="stat-row primary">
             <span class="stat-label">Biome</span>
-            <span class="stat-value">{activeEntity?.Properties?.Biome || 'N/A'}</span>
+            <span class="stat-value">{(activeEntity?.Properties?.Biomes || []).join(', ') || 'N/A'}</span>
           </div>
           <div class="stat-row primary">
             <span class="stat-label">Difficulty</span>
             <span class="stat-value">{activeEntity?.Properties?.Difficulty || 'N/A'}</span>
-          </div>
-          <div class="stat-row primary">
-            <span class="stat-label">Size</span>
-            <span class="stat-value">{activeEntity?.Properties?.Size != null ? `${activeEntity.Properties.Size} cm` : 'N/A'}</span>
           </div>
         </div>
 
         <!-- General: editable core attributes (dropdowns + numbers) -->
         <div class="stats-section">
           <h4 class="section-title">General</h4>
-          <div class="stat-row">
-            <span class="stat-label">Biome</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.Biome}
-                path="Properties.Biome"
-                type="select"
-                placeholder="Select biome"
-                options={BIOMES.map(b => ({ value: b, label: b }))}
-              />
-            </span>
-          </div>
           <div class="stat-row">
             <span class="stat-label">Difficulty</span>
             <span class="stat-value">
@@ -388,28 +409,6 @@
                 type="select"
                 placeholder="Any"
                 options={TIMES_OF_DAY.map(t => ({ value: t, label: t }))}
-              />
-            </span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Size (cm)</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.Size}
-                path="Properties.Size"
-                type="number"
-                placeholder="-"
-              />
-            </span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Strength</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeEntity?.Properties?.Strength}
-                path="Properties.Strength"
-                type="number"
-                placeholder="-"
               />
             </span>
           </div>
@@ -451,6 +450,71 @@
               />
             </span>
           </div>
+        </div>
+
+        <!-- Fish Oil -->
+        <div class="stats-section">
+          <h4 class="section-title">Fish Oil</h4>
+          <div class="stat-row stat-row-block">
+            <span class="stat-value stat-value-block">
+              {#if $editMode}
+                <SearchInput
+                  value={activeEntity?.FishOil?.Name || ''}
+                  placeholder="Search oil material..."
+                  options={oilItemOptions}
+                  onchange={(e) => updateField('FishOil.Name', e.value)}
+                  onselect={(e) => updateField('FishOil.Name', e.value)}
+                />
+              {:else}
+                {activeEntity?.FishOil?.Name || 'N/A'}
+              {/if}
+            </span>
+          </div>
+        </div>
+
+        <!-- Sizes (maturities) -->
+        <div class="stats-section">
+          <h4 class="section-title">Sizes</h4>
+          {#if (activeEntity?.Sizes || []).length > 0}
+            <div class="sizes-table">
+              <div class="sizes-header">
+                <span class="sizes-col-name">Name</span>
+                <span class="sizes-col-num">Strength</span>
+                <span class="sizes-col-num">Scraps</span>
+                {#if $editMode}<span class="sizes-col-action"></span>{/if}
+              </div>
+              {#each activeEntity.Sizes as size, i}
+                <div class="sizes-row">
+                  {#if $editMode}
+                    <span class="sizes-col-name">
+                      <input type="text" class="size-input" value={size.Name} placeholder="Size name"
+                        onchange={(e) => updateSize(i, 'Name', e.currentTarget.value)} />
+                    </span>
+                    <span class="sizes-col-num">
+                      <input type="number" class="size-input size-input-num" value={size.Strength}
+                        placeholder="-" onchange={(e) => updateSize(i, 'Strength', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
+                    </span>
+                    <span class="sizes-col-num">
+                      <input type="number" class="size-input size-input-num" value={size.ScrapsToRefine}
+                        placeholder="-" onchange={(e) => updateSize(i, 'ScrapsToRefine', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
+                    </span>
+                    <span class="sizes-col-action">
+                      <button type="button" class="chip-remove" aria-label="Remove size" onclick={() => removeSize(i)}>×</button>
+                    </span>
+                  {:else}
+                    <span class="sizes-col-name">{size.Name}</span>
+                    <span class="sizes-col-num">{size.Strength ?? '-'}</span>
+                    <span class="sizes-col-num">{size.ScrapsToRefine ?? '-'}</span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {:else if !$editMode}
+            <p class="empty-note">No sizes set</p>
+          {/if}
+          {#if $editMode}
+            <button type="button" class="add-btn" onclick={addSize}>+ Add size</button>
+          {/if}
         </div>
 
         <!-- Species (codex) -->
@@ -507,6 +571,37 @@
               {/if}
             </span>
           </div>
+        </div>
+
+        <!-- Biomes: multi-select via dropdown + chip list -->
+        <div class="stats-section">
+          <h4 class="section-title">Biomes</h4>
+          {#if (activeEntity?.Properties?.Biomes || []).length > 0}
+            <div class="chip-list">
+              {#each activeEntity.Properties.Biomes as b}
+                <span class="chip">
+                  {b}
+                  {#if $editMode}
+                    <button type="button" class="chip-remove" aria-label="Remove {b}" onclick={() => removeBiome(b)}>×</button>
+                  {/if}
+                </span>
+              {/each}
+            </div>
+          {:else if !$editMode}
+            <p class="empty-note">None set</p>
+          {/if}
+          {#if $editMode && biomeAddOptions.length > 0}
+            <select
+              class="add-select"
+              value=""
+              onchange={(e) => { addBiome(e.currentTarget.value); e.currentTarget.value = ''; }}
+            >
+              <option value="" disabled>+ Add biome…</option>
+              {#each biomeAddOptions as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          {/if}
         </div>
 
         <!-- Rod types: multi-select via dropdown + chip list -->
@@ -703,5 +798,86 @@
     color: var(--text-muted, #999);
     font-style: italic;
     margin: 0;
+  }
+
+  /* Sizes mini-table inside infobox */
+  .sizes-table {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+  }
+
+  .sizes-header {
+    display: flex;
+    gap: 4px;
+    font-weight: 600;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-color, #555);
+    color: var(--text-muted, #999);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .sizes-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 2px 0;
+  }
+
+  .sizes-col-name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sizes-col-num {
+    width: 60px;
+    text-align: right;
+  }
+
+  .sizes-col-action {
+    width: 20px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .size-input {
+    width: 100%;
+    padding: 3px 6px;
+    background-color: var(--bg-color, var(--primary-color));
+    color: var(--text-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    font-size: 12px;
+    box-sizing: border-box;
+  }
+
+  .size-input:focus {
+    border-color: var(--accent-color, #4a9eff);
+    outline: none;
+  }
+
+  .size-input-num {
+    text-align: right;
+  }
+
+  .add-btn {
+    width: 100%;
+    padding: 6px 8px;
+    margin-top: 6px;
+    background-color: var(--bg-color, var(--primary-color));
+    color: var(--text-muted, #999);
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  .add-btn:hover {
+    border-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
   }
 </style>

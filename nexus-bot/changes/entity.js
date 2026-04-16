@@ -988,9 +988,8 @@ export const UpsertConfigs = {
         return matId + 1000000;
       }},
       { name: "SpeciesId", value: async (x, c) => {
-        // Fish ↔ MobSpecies is 1:1. Always upsert the species row by the
-        // name provided in the form (defaults to the fish's own Name when
-        // not set) and force CodexType='Fish'.
+        // Multiple fish can share a species (many:1). CodexBaseCost is a
+        // species-level property so updating it from any member is correct.
         const speciesName = x.Species?.Name || x.Name;
         if (!speciesName) return null;
         const baseCost = x.Species?.CodexBaseCost ?? null;
@@ -1004,17 +1003,20 @@ export const UpsertConfigs = {
         );
         return await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [speciesName]).then(res => res.rows[0]?.Id ?? null);
       }},
-      { name: "Biome", value: x => x.Properties?.Biome ?? null },
-      { name: "Size", value: x => x.Properties?.Size ?? null },
-      { name: "Strength", value: x => x.Properties?.Strength ?? null },
       { name: "Difficulty", value: x => x.Properties?.Difficulty ?? null },
       { name: "MinDepth", value: x => x.Properties?.MinDepth ?? null },
       { name: "PreferredLureId", value: async (x, c) => {
         if (!x.PreferredLure?.Name) return null;
-        // Only FishingLure items are valid preferred lures.
         return await c.query(
           `SELECT "Id" FROM "Items" WHERE "Name" = $1 AND "Type" = 'FishingLure'`,
           [x.PreferredLure.Name]
+        ).then(res => res.rows[0]?.Id ?? null);
+      }},
+      { name: "FishOilItemId", value: async (x, c) => {
+        if (!x.FishOil?.Name) return null;
+        return await c.query(
+          `SELECT "Id" FROM "Items" WHERE "Name" = $1`,
+          [x.FishOil.Name]
         ).then(res => res.rows[0]?.Id ?? null);
       }},
       { name: "TimeOfDay", value: x => x.Properties?.TimeOfDay ?? null }
@@ -1022,7 +1024,9 @@ export const UpsertConfigs = {
     table: "Fish",
     relationChangeFunc: async (client, id, x) => {
       await applyFishPlanetsChanges(client, id, x.Planets || []);
+      await applyFishBiomesChanges(client, id, x.Properties?.Biomes || []);
       await applyFishRodTypesChanges(client, id, x.Properties?.RodTypes || []);
+      await applyFishSizesChanges(client, id, x.Sizes || []);
     }
   },
   Mission: {
@@ -1841,6 +1845,19 @@ async function applyMobAttackChanges(client, maturityId, attacks) {
   ]);
 }
 
+async function applyFishBiomesChanges(client, fishId, biomes) {
+  biomes = Array.isArray(biomes) ? biomes.filter(Boolean) : [];
+
+  await client.query(
+    `DELETE FROM "FishBiomes" WHERE "FishId" = $1 AND "Biome" NOT IN (SELECT * FROM unnest($2::"FishBiome"[]))`,
+    [fishId, biomes]
+  );
+  await Promise.all(biomes.map(b => client.query(
+    `INSERT INTO "FishBiomes" ("FishId", "Biome") VALUES ($1, $2::"FishBiome") ON CONFLICT DO NOTHING`,
+    [fishId, b]
+  )));
+}
+
 async function applyFishPlanetsChanges(client, fishId, planets) {
   planets = Array.isArray(planets) ? planets : [];
 
@@ -1871,6 +1888,25 @@ async function applyFishRodTypesChanges(client, fishId, rodTypes) {
   await Promise.all(rodTypes.map(rt => client.query(
     `INSERT INTO "FishRodTypes" ("FishId", "RodType") VALUES ($1, $2::"FishingRodType") ON CONFLICT DO NOTHING`,
     [fishId, rt]
+  )));
+}
+
+async function applyFishSizesChanges(client, fishId, sizes) {
+  sizes = Array.isArray(sizes) ? sizes.filter(s => s?.Name) : [];
+
+  await client.query(
+    `DELETE FROM ONLY "FishSizes"
+     WHERE "FishId" = $1
+       AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`,
+    [fishId, sizes.map(s => s.Name)]
+  );
+
+  await Promise.all(sizes.map(size => client.query(
+    `INSERT INTO "FishSizes" ("FishId", "Name", "Strength", "ScrapsToRefine")
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT ("FishId", "Name") DO UPDATE SET
+       "Strength" = $3, "ScrapsToRefine" = $4`,
+    [fishId, size.Name, size.Strength ?? null, size.ScrapsToRefine ?? null]
   )));
 }
 

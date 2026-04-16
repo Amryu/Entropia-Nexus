@@ -88,7 +88,8 @@ const NAMED_ENTITY_PATHS = {
   Material: ['RefiningRecipes[].Ingredients[].Item'],
   Strongbox: ['Loots[].Item'],
   Skill: ['Category', 'Professions[].Profession', 'Unlocks[].Profession'],
-  Profession: ['Category', 'Skills[].Skill', 'Unlocks[].Skill']
+  Profession: ['Category', 'Skills[].Skill', 'Unlocks[].Skill'],
+  Fish: ['Species', 'FishOil', 'PreferredLure', 'Planets[]']
 };
 
 function normalizeNamedEntity(value) {
