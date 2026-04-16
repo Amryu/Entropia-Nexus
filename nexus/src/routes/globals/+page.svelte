@@ -371,8 +371,9 @@
   }
 
   function buildActivityChart(textMuted, borderColor) {
-    if (!activityCanvas || !stats?.activity?.length) return;
     if (activityChart) activityChart.destroy();
+    activityChart = null;
+    if (!activityCanvas || !stats?.activity?.length) return;
 
     const accentColor = getComputedCssVar('--accent-color') || '#60b0ff';
     const valueColor = '#2ecc71';
@@ -449,8 +450,9 @@
   }
 
   function buildTopPlayersChart(textMuted, borderColor) {
-    if (!topPlayersCanvas || !stats?.top_players?.length) return;
     if (topPlayersChart) topPlayersChart.destroy();
+    topPlayersChart = null;
+    if (!topPlayersCanvas || !stats?.top_players?.length) return;
 
     const accentColor = getComputedCssVar('--accent-color') || '#60b0ff';
     const players = stats.top_players.slice(0, 8);
@@ -495,8 +497,9 @@
   }
 
   function buildTopTargetsChart(textMuted, borderColor) {
-    if (!topTargetsCanvas || !stats?.top_targets?.length) return;
     if (topTargetsChart) topTargetsChart.destroy();
+    topTargetsChart = null;
+    if (!topTargetsCanvas || !stats?.top_targets?.length) return;
 
     const targets = stats.top_targets.slice(0, 8);
     const countLabel = typeFilter === 'deposit' ? 'Count' : typeFilter === 'craft' ? 'Count' : 'Count';

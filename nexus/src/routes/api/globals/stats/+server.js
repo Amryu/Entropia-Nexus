@@ -206,8 +206,9 @@ export async function GET({ url, request }) {
 
       const summary = summaryResult.rows[0];
       const smRow = spaceMiningResult.rows[0];
-      const smCount = parseInt(smRow?.count) || 0;
-      const smValue = parseFloat(smRow?.value) || 0;
+      const typeIncludesDeposit = !typeFilterArr || typeFilterArr.includes('deposit');
+      const smCount = typeIncludesDeposit ? (parseInt(smRow?.count) || 0) : 0;
+      const smValue = typeIncludesDeposit ? (parseFloat(smRow?.value) || 0) : 0;
 
       return new Response(JSON.stringify({
         summary: {
