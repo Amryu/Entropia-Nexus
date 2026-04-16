@@ -316,15 +316,16 @@ export async function GET({ params, url, locals }) {
       return getResponse({ error: 'Target not found' }, 404);
     }
 
-    // Derive wiki URL for mob targets (hunting types with mob_id)
+    // Derive mob base name and wiki URL for mob targets (hunting types with mob_id)
     let wikiUrl = null;
+    let mobName = null;
     const mobId = resolvedMobId || summary.mob_id;
     const isHunting = summary.primary_type === 'kill' || summary.primary_type === 'team_kill';
-    if (mobId && isHunting) {
-      const mobName = maturitiesResult.rows.length > 1
-        ? extractMobName(maturitiesResult.rows[0].target_name)
-        : targetName;
+    if (mobId && isHunting && maturitiesResult.rows.length > 1) {
+      mobName = extractMobName(maturitiesResult.rows[0].target_name);
       wikiUrl = `/information/mobs/${encodeURIComponentSafe(mobName)}`;
+    } else if (mobId && isHunting) {
+      wikiUrl = `/information/mobs/${encodeURIComponentSafe(targetName)}`;
     }
 
     // Build maturities list (only if there are multiple variants)
@@ -363,6 +364,7 @@ export async function GET({ params, url, locals }) {
       target: targetName,
       primary_type: summary.primary_type,
       mob_id: mobId,
+      mob_name: mobName,
       wiki_url: wikiUrl,
       summary: {
         total_count: parseInt(summary.total_count),

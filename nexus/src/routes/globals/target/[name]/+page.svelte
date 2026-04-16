@@ -13,7 +13,8 @@
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale,
                  Tooltip, Filler, BarController, BarElement, CategoryScale);
 
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
+  import { page } from '$app/stores';
   import SearchInput from '$lib/components/SearchInput.svelte';
   import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
   import { TYPE_CONFIG } from '$lib/data/globals-constants.js';
@@ -134,6 +135,12 @@
   // (applyData is opaque to the compiler, breaking SSR reactive ordering)
   $effect(() => {
     if (initialData) {
+      // Redirect maturity targets to their mob base name
+      const mobName = initialData.mob_name;
+      if (mobName && mobName.toLowerCase() !== targetName.toLowerCase()) {
+        goto(`/globals/target/${encodeURIComponent(mobName)}?maturity=${encodeURIComponent(targetName)}`, { replaceState: true });
+        return;
+      }
       summary = initialData.summary;
       topPlayers = initialData.top_players || [];
       activity = initialData.activity || [];
@@ -141,6 +148,15 @@
       primaryType = initialData.primary_type;
       maturities = initialData.maturities || [];
       wikiUrl = initialData.wiki_url || null;
+      // Auto-select maturity from query param and refetch filtered data
+      const maturityParam = $page.url.searchParams.get('maturity');
+      if (maturityParam && maturities.some(m => m.target === maturityParam)) {
+        selectedMaturities = [maturityParam];
+        const cleanUrl = new URL($page.url);
+        cleanUrl.searchParams.delete('maturity');
+        replaceState(cleanUrl, {});
+        refetchData();
+      }
     }
   });
 
