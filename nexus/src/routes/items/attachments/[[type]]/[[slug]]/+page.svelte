@@ -376,7 +376,13 @@
     socket: { key: 'socket', header: 'Socket', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Socket, format: (v) => v != null ? v : '-' },
     minLevel: { key: 'minLevel', header: 'Min Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.MinProfessionLevel, format: (v) => v != null ? v : '-' },
     maxLevel: { key: 'maxLevel', header: 'Max Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.MaxProfessionLevel, format: (v) => v != null ? v : '-' },
-    lvl: { key: 'lvl', header: 'Level', width: '70px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level, format: (v) => v != null ? v : '-' }
+    lvl: { key: 'lvl', header: 'Level', width: '70px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level, format: (v) => v != null ? v : '-' },
+    strength: { key: 'strength', header: 'Strength', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Strength, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
+    speed: { key: 'speed', header: 'Speed', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Speed, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
+    flexibility: { key: 'flexibility', header: 'Flexibility', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Flexibility, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
+    length: { key: 'length', header: 'Length', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Length, format: (v) => v != null ? `${clampDecimals(v, 0, 2)}m` : '-' },
+    depth: { key: 'depth', header: 'Depth', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Depth, format: (v) => v != null ? `${clampDecimals(v, 0, 2)}m` : '-' },
+    quality: { key: 'quality', header: 'Quality', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Quality, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' }
   };
 
   // Type-specific sidebar table columns
@@ -396,6 +402,14 @@
         return [columnDefs.type, columnDefs.tier];
       case 'mindforceimplants':
         return [columnDefs.abs, columnDefs.lvl];
+      case 'fishingreels':
+        return [columnDefs.strength, columnDefs.speed];
+      case 'fishingblanks':
+        return [columnDefs.strength, columnDefs.flexibility];
+      case 'fishinglines':
+        return [columnDefs.strength, columnDefs.flexibility];
+      case 'fishinglures':
+        return [columnDefs.depth, columnDefs.quality];
       default:
         return [columnDefs.cat, columnDefs.eff];
     }
@@ -417,6 +431,14 @@
         return [columnDefs.type, columnDefs.tier, columnDefs.tool, columnDefs.socket, columnDefs.maxTT, columnDefs.weight];
       case 'mindforceimplants':
         return [columnDefs.abs, columnDefs.maxLevel, columnDefs.lvl, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
+      case 'fishingreels':
+        return [columnDefs.strength, columnDefs.speed, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+      case 'fishingblanks':
+        return [columnDefs.strength, columnDefs.flexibility, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+      case 'fishinglines':
+        return [columnDefs.flexibility, columnDefs.strength, columnDefs.length, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+      case 'fishinglures':
+        return [columnDefs.depth, columnDefs.quality, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       default:
         return [columnDefs.cat, columnDefs.eff, columnDefs.maxTT, columnDefs.weight];
     }
@@ -1100,9 +1122,9 @@
             </div>
           {/if}
 
-          {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'absorbers'}
+          {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'absorbers' || additional.type === 'fishingreels' || additional.type === 'fishingblanks' || additional.type === 'fishinglines' || additional.type === 'fishinglures'}
             <div class="stat-row">
-              <span class="stat-label">Decay</span>
+              <span class="stat-label">Decay/Use</span>
               <span class="stat-value">
                 <InlineEdit
                   value={activeEntity?.Properties?.Economy?.Decay}
