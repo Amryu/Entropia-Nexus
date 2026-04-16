@@ -41,7 +41,7 @@ Items-only search with optional type filtering.
 | `limit` | integer | Max results (default 50) |
 | `armorParts` | string | Set to `true` to return individual armor pieces instead of armor sets |
 
-**Valid types:** `Weapon`, `Armor`, `Clothing`, `Tool`, `Material`, `Blueprint`, `Component`, `Furniture`, `Enhancer`, `Attachment`, `ArmorSet`, `Consumable`, `Mining`, `Amplifier`, `Vehicle`
+**Valid types:** `Weapon`, `Armor`, `Clothing`, `Tool`, `Material`, `Blueprint`, `Component`, `Furniture`, `Enhancer`, `Attachment`, `ArmorSet`, `Consumable`, `Mining`, `Amplifier`, `Vehicle`, `Fish`, `Food`, `FishingRod`, `FishingReel`, `FishingBlank`, `FishingLine`, `FishingLure`
 
 ### Entity Data
 
@@ -67,6 +67,13 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/excavators` | Excavators with effects and tiers |
 | `/finderamplifiers` | Finder amplifiers |
 | `/finders` | Finders with effects and tiers |
+| `/fishes` | Fish with species, biomes, sizes, difficulty, times of day, preferred lures, and sector locations |
+| `/fish-locations` | Fish sector locations grouped by planet (supports `?planet=Name` filter) |
+| `/fishingblanks` | Fishing rod blanks (components) with strength and flexibility |
+| `/fishinglines` | Fishing lines (components) with flexibility, strength, and length |
+| `/fishinglures` | Fishing lures (attachments) with depth and quality |
+| `/fishingreels` | Fishing reels with strength and speed |
+| `/fishingrods` | Fishing rods with rod type, skill requirements, ammo burn, and linked profession |
 | `/furniture` | Furniture items |
 | `/items` | All items (supports `?Ids=1,2,3` for batch fetch) |
 | `/medicalchips` | Medical chips with effects |
@@ -77,7 +84,7 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/refiners` | Refiner tools |
 | `/scanners` | Scanner tools |
 | `/signs` | Sign items |
-| `/stimulants` | Consumable items with effects |
+| `/stimulants` | Consumable items with effects (includes food from cooking) |
 | `/storagecontainers` | Storage containers |
 | `/strongboxes` | Strongbox items |
 | `/teleportationchips` | Teleportation chips |
