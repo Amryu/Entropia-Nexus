@@ -111,11 +111,63 @@
       filterPlaceholder: 'Easy',
       getValue: (item) => item.Properties?.Difficulty,
       format: (v) => v || '-'
+    },
+    species: {
+      key: 'species',
+      header: 'Species',
+      width: '100px',
+      getValue: (item) => item.Species?.Name,
+      format: (v) => v || '-'
+    },
+    weight: {
+      key: 'weight',
+      header: 'Weight',
+      width: '70px',
+      getValue: (item) => item.Properties?.Weight,
+      format: (v) => v != null ? `${v} kg` : '-'
+    },
+    maxTT: {
+      key: 'maxTT',
+      header: 'Max TT',
+      width: '70px',
+      getValue: (item) => item.Properties?.Economy?.MaxTT,
+      format: (v) => v != null ? `${v} PED` : '-'
+    },
+    timeOfDay: {
+      key: 'timeOfDay',
+      header: 'Time of Day',
+      width: '90px',
+      getValue: (item) => item.Properties?.TimeOfDay,
+      format: (v) => v || 'Any'
+    },
+    minDepth: {
+      key: 'minDepth',
+      header: 'Min Depth',
+      width: '80px',
+      getValue: (item) => item.Properties?.MinDepth,
+      format: (v) => v != null ? `${v} m` : '-'
+    },
+    rodTypes: {
+      key: 'rodTypes',
+      header: 'Rod Types',
+      width: '120px',
+      getValue: (item) => (item.Properties?.RodTypes || []).join(', '),
+      format: (v) => v || '-'
+    },
+    lure: {
+      key: 'lure',
+      header: 'Preferred Lure',
+      width: '120px',
+      getValue: (item) => item.PreferredLure?.Name,
+      format: (v) => v || '-'
     }
   };
 
   const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty];
-  const navFullWidthColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty];
+  const navFullWidthColumns = [
+    fishColumnDefs.biome, fishColumnDefs.difficulty, fishColumnDefs.species,
+    fishColumnDefs.weight, fishColumnDefs.maxTT, fishColumnDefs.timeOfDay
+  ];
   const allAvailableColumns = Object.values(fishColumnDefs);
 
   // Lazy-load edit dependencies on edit activation
@@ -191,8 +243,19 @@
     ...(activeEntity ? [{ label: activeEntity.Name || 'New Fish' }] : [])
   ]);
 
-  let seoDescription = $derived(activeEntity?.Properties?.Description ||
-    `${activeEntity?.Name || 'Fish'} - ${(activeEntity?.Properties?.Biomes || []).join(', ') || ''} fish in Entropia Universe.`);
+  let seoDescription = $derived.by(() => {
+    if (activeEntity?.Properties?.Description) return activeEntity.Properties.Description;
+    const name = activeEntity?.Name || 'Fish';
+    const biomes = (activeEntity?.Properties?.Biomes || []).join(', ');
+    const difficulty = activeEntity?.Properties?.Difficulty;
+    const species = activeEntity?.Species?.Name;
+    const parts = [name];
+    if (species) parts.push(`${species} species`);
+    if (biomes) parts.push(biomes);
+    if (difficulty) parts.push(`${difficulty} difficulty`);
+    parts.push('fish in Entropia Universe');
+    return parts.join(' - ');
+  });
   let canonicalUrl = $derived(fish
     ? `https://entropianexus.com/information/fishes/${encodeURIComponentSafe(fish.Name)}`
     : 'https://entropianexus.com/information/fishes');
@@ -326,7 +389,7 @@
   entityType="Fish"
   entity={activeEntity}
   imageUrl={entityImageUrl}
-  sidebarColumns={navTableColumns}
+  sidebarColumns={allAvailableColumns}
   sidebarEntity={activeEntity}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}

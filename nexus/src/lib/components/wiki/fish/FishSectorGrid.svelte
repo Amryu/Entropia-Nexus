@@ -60,6 +60,8 @@
   let panY = $state(0);
   let hoveredCol = $state(null);
   let hoveredRow = $state(null);
+  let mouseX = $state(0);
+  let mouseY = $state(0);
 
   let isDragging = false;
   let dragStartX = 0;
@@ -218,14 +220,39 @@
     }
 
     // Sector fills
+    const sectorSet = new Set();
     for (const s of activePlanet.sectors) {
+      sectorSet.add(`${s.Col},${s.Row}`);
       const sx = gx + s.Col * CELL_SIZE;
       const sy = gy + (activePlanet.height - 1 - s.Row) * CELL_SIZE;
       ctx.fillStyle = RARITY_COLORS[s.Rarity] || RARITY_COLORS['Common'];
       ctx.fillRect(sx, sy, CELL_SIZE, CELL_SIZE);
-      ctx.strokeStyle = RARITY_BORDER[s.Rarity] || '#fff';
-      ctx.lineWidth = 0.8;
-      ctx.strokeRect(sx + 0.5, sy + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+    }
+
+    // Sector borders - only draw edges not shared with same-rarity neighbor
+    ctx.lineWidth = 1.2;
+    for (const s of activePlanet.sectors) {
+      const sx = gx + s.Col * CELL_SIZE;
+      const sy = gy + (activePlanet.height - 1 - s.Row) * CELL_SIZE;
+      const color = RARITY_BORDER[s.Rarity] || '#fff';
+      ctx.strokeStyle = color;
+
+      const neighbors = [
+        { dc: 0, dr: 1, edge: () => { ctx.moveTo(sx, sy); ctx.lineTo(sx + CELL_SIZE, sy); } },
+        { dc: 0, dr: -1, edge: () => { ctx.moveTo(sx, sy + CELL_SIZE); ctx.lineTo(sx + CELL_SIZE, sy + CELL_SIZE); } },
+        { dc: -1, dr: 0, edge: () => { ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + CELL_SIZE); } },
+        { dc: 1, dr: 0, edge: () => { ctx.moveTo(sx + CELL_SIZE, sy); ctx.lineTo(sx + CELL_SIZE, sy + CELL_SIZE); } },
+      ];
+
+      for (const n of neighbors) {
+        const nc = s.Col + n.dc;
+        const nr = s.Row + n.dr;
+        const adj = activePlanet.sectors.find(o => o.Col === nc && o.Row === nr);
+        if (adj && adj.Rarity === s.Rarity) continue;
+        ctx.beginPath();
+        n.edge();
+        ctx.stroke();
+      }
     }
 
     // Minor grid lines
@@ -356,12 +383,12 @@
   }
 
   function handleCanvasMouseMove(e) {
-    if (isDragging) return;
     const rect = canvasEl?.getBoundingClientRect();
     if (!rect) return;
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const cell = cellAtCanvas(cx, cy);
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+    if (isDragging) return;
+    const cell = cellAtCanvas(mouseX, mouseY);
     const newCol = cell?.col ?? null;
     const newRow = cell?.row ?? null;
     if (newCol !== hoveredCol || newRow !== hoveredRow) {
@@ -713,7 +740,7 @@
       </div>
 
       {#if hoverInfo}
-        <div class="hover-info">{hoverInfo}</div>
+        <div class="hover-info" style="left: {mouseX + 12}px; top: {mouseY - 28}px;">{hoverInfo}</div>
       {/if}
     </div>
 
@@ -855,15 +882,15 @@
 
   .hover-info {
     position: absolute;
-    bottom: 8px;
-    left: 8px;
     padding: 4px 10px;
-    background: rgba(0, 0, 0, 0.6);
-    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.75);
+    color: rgba(255, 255, 255, 0.9);
     font-size: 12px;
     border-radius: 4px;
     pointer-events: none;
     backdrop-filter: blur(4px);
+    white-space: nowrap;
+    z-index: 10;
   }
 
   .legend {
