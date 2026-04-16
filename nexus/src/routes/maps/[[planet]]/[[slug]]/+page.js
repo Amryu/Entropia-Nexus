@@ -25,12 +25,21 @@ export async function load({ fetch, params, url, parent }) {
   const mode = url.searchParams.get('mode') || 'view';
   const changeId = url.searchParams.get('changeId');
 
-  const [locationsData, activeEventsData] = await Promise.all([
+  const FISHING_PLANET_NAMES = new Set(['Calypso', 'ARIS', 'Setesh', 'ROCKtropia', 'Next Island']);
+  const isFishingPlanet = FISHING_PLANET_NAMES.has(planet.Name);
+
+  const fetches = [
     apiCall(fetch, '/locations?Planet=' + planet.Name),
     apiCall(fetch, '/api/events/active')
-  ]);
+  ];
+  if (isFishingPlanet) {
+    fetches.push(apiCall(fetch, '/fish-locations?planet=' + encodeURIComponent(planet.Name)));
+  }
+  const [locationsData, activeEventsData, fishLocationsData] = await Promise.all(fetches);
   let locations = locationsData || [];
   const activeRecurringEvents = activeEventsData?.active || [];
+
+  const fishLocations = fishLocationsData || null;
 
   if (!params.planet && !params.slug) {
     return pageResponse(
@@ -40,6 +49,7 @@ export async function load({ fetch, params, url, parent }) {
         locations,
         planet,
         activeRecurringEvents,
+        fishLocations,
       }
     );
   }
@@ -54,6 +64,7 @@ export async function load({ fetch, params, url, parent }) {
         locations,
         planet,
         activeRecurringEvents,
+        fishLocations,
       },
       404);
   }
@@ -65,6 +76,7 @@ export async function load({ fetch, params, url, parent }) {
       locations,
       planet,
       activeRecurringEvents,
+      fishLocations,
     }
   );
 

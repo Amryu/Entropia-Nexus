@@ -17,7 +17,10 @@
     getMobAreaShortName,
     getMobAreaDifficulty,
     formatMobAreaMaturities,
-    planetGroups
+    planetGroups,
+    FISHING_PLANETS,
+    FISH_RARITY_COLORS,
+    FISH_RARITY_ORDER
   } from '$lib/mapUtil';
 
   import MapCanvas from '$lib/components/MapCanvas.svelte';
@@ -82,6 +85,12 @@
   let panelLoading = $state(false);
   let activatingLeaflet = false;
   let autoLeafletHandledKey = null;
+
+  // --- Fishing view state ---
+  let fishingViewActive = $state(false);
+  let fishingSearchQuery = $state('');
+  let selectedFishingSector = $state(null);
+  let hoveredFishingSector = $state(null);
 
   // --- Leaflet Edit Mode state ---
   let leafletEditMode = $state(false);
@@ -307,7 +316,39 @@
 
 
 
+  function toggleFishingView() {
+    fishingViewActive = !fishingViewActive;
+    if (!fishingViewActive) {
+      fishingSearchQuery = '';
+      selectedFishingSector = null;
+      hoveredFishingSector = null;
+    } else {
+      selectedLocation = null;
+      searchQuery = '';
+    }
+  }
+
+  function handleFishingSectorClick(col, row) {
+    if (col == null) {
+      selectedFishingSector = null;
+      return;
+    }
+    selectedFishingSector = { Col: col, Row: row };
+  }
+
+  function sectorLabel(col, row) {
+    const tileCol = Math.floor(col / 4);
+    const tileRow = Math.floor(row / 4);
+    const subCol = col % 4;
+    const subRow = row % 4;
+    const colLetter = tileCol < 26 ? String.fromCharCode(65 + tileCol) : String.fromCharCode(65 + Math.floor(tileCol / 26) - 1) + String.fromCharCode(65 + (tileCol % 26));
+    return `${colLetter}${tileRow + 1} (${subCol + 1},${subRow + 1})`;
+  }
+
   function handleMainPlanetChange() {
+    fishingViewActive = false;
+    fishingSearchQuery = '';
+    selectedFishingSector = null;
     const group = planetGroups[selectedMainPlanet] || [];
     const target = group[0]?._type;
     if (target) {
@@ -317,6 +358,9 @@
 
   function handleSubAreaChange() {
     if (selectedSubArea) {
+      fishingViewActive = false;
+      fishingSearchQuery = '';
+      selectedFishingSector = null;
       goto(`/maps/${selectedSubArea}`);
     }
   }
@@ -692,6 +736,76 @@
   let hasPendingChanges = $derived(userPendingCreates.length + userPendingUpdates.length > 0);
   let locations = $derived(data?.additional?.locations || []);
   let activeRecurringEvents = $derived(new Set(data?.additional?.activeRecurringEvents || []));
+  let fishLocationsData = $derived(data?.additional?.fishLocations);
+  let isFishingPlanet = $derived(currentPlanet && FISHING_PLANETS.has(currentPlanet.Name));
+
+  // Build fishing overlay data structure for MapCanvas
+  let fishingSectorMap = $derived.by(() => {
+    if (!fishLocationsData?.Sectors?.length) return null;
+    const map = new Map();
+    for (const sector of fishLocationsData.Sectors) {
+      const key = `${sector.Col},${sector.Row}`;
+      const bestIdx = Math.max(...sector.Fish.map(f => FISH_RARITY_ORDER.indexOf(f.Rarity)));
+      const bestRarity = FISH_RARITY_ORDER[bestIdx] || 'Common';
+      map.set(key, {
+        color: FISH_RARITY_COLORS[bestRarity],
+        bestRarity,
+        fish: sector.Fish,
+        col: sector.Col,
+        row: sector.Row,
+      });
+    }
+    return map;
+  });
+
+  let fishingSearchKeys = $derived.by(() => {
+    if (!fishingViewActive || !fishingSectorMap) return null;
+    const query = fishingSearchQuery.trim();
+    if (!query) return null;
+    const keys = new Set();
+    for (const [key, data] of fishingSectorMap) {
+      for (const fish of data.fish) {
+        if (fuzzyScore(fish.Name, query) > 0) {
+          keys.add(key);
+          break;
+        }
+      }
+    }
+    return keys;
+  });
+
+  let fishingOverlay = $derived.by(() => {
+    if (!fishingViewActive || !fishingSectorMap) return null;
+    return {
+      sectors: fishingSectorMap,
+      searchKeys: fishingSearchKeys,
+    };
+  });
+
+  let fishingSearchResults = $derived.by(() => {
+    if (!fishingViewActive || !fishingSectorMap) return [];
+    const query = fishingSearchQuery.trim();
+    if (!query) return [];
+    const results = [];
+    const seen = new Set();
+    for (const [key, data] of fishingSectorMap) {
+      for (const fish of data.fish) {
+        const score = fuzzyScore(fish.Name, query);
+        if (score > 0 && !seen.has(fish.Id)) {
+          seen.add(fish.Id);
+          results.push({ ...fish, score, sectorKey: key, col: data.col, row: data.row });
+        }
+      }
+    }
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, 20);
+  });
+
+  let selectedSectorData = $derived.by(() => {
+    if (!selectedFishingSector || !fishingSectorMap) return null;
+    const key = `${selectedFishingSector.Col},${selectedFishingSector.Row}`;
+    return fishingSectorMap.get(key) || null;
+  });
   $effect(() => {
     if (locations) {
       const slug = $page.params.slug;
@@ -935,6 +1049,10 @@
             : (searchOpen ? searchResults : [])}
           embedMode={isEmbed}
           hideLayerToggles={isEmbed && embedHideLayers}
+          {fishingOverlay}
+          {selectedFishingSector}
+          bind:hoveredFishingSector
+          onfishingsectorclick={handleFishingSectorClick}
         />
       {:else}
         <div class="maps-overview">
@@ -995,61 +1113,153 @@
           {/each}
         </select>
       </div>
+      {#if isFishingPlanet && fishingSectorMap}
+        <div class="control-group view-toggle">
+          <button
+            class="view-btn"
+            class:active={!fishingViewActive}
+            onclick={() => { if (fishingViewActive) toggleFishingView(); }}
+          >Map</button>
+          <button
+            class="view-btn"
+            class:active={fishingViewActive}
+            onclick={() => { if (!fishingViewActive) toggleFishingView(); }}
+          >Fishing</button>
+        </div>
+      {/if}
     </div>
     {/if}
 
-    <div class="search-row">
-      <input
-        class="search-input"
-        type="text"
-        placeholder="Search locations..."
-        bind:value={searchQuery}
-        onfocus={() => searchOpen = true}
-        onblur={handleSearchBlur}
-        onkeydown={handleSearchKeydown}
-      />
-
-      {#if isEditAllowed}
-        <button class="create-btn" onclick={handleCreate} title={canCreateNew ? 'Create new location/area' : 'Create limit reached'} disabled={!canCreateNew}>
-          +
-        </button>
-        {#if hasPendingChanges}
-          <button class="pending-btn" onclick={() => pendingDialogOpen = true} title="Your pending changes">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <path d="M12 6v6l4 2"></path>
-            </svg>
-          </button>
-        {/if}
-      {/if}
-    </div>
-
-    {#if searchOpen && searchResults.length > 0}
-      <!-- svelte-ignore a11y_no_static_element_interactions -- mouse hover tracking for search results dropdown; keyboard nav handled via parent input -->
-      <div
-        class="search-results"
-        onmouseenter={() => searchResultsHovered = true}
-        onmouseleave={() => { searchResultsHovered = false; hoveredLocation = null; }}
-      >
-        {#each searchResults as result, index}
-          <button
-            class="search-result"
-            class:active={searchSelectedIndex === index}
-            onclick={() => { searchSelectedIndex = index; if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
-            onmouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; mapRef?.panTo(result); }}
-            onmouseleave={() => {}}
-          >
-            <span class="result-index">{index + 1}</span>
-            <span class="result-name" style={result._difficulty?.color ? `color: ${result._difficulty.color}` : ''}>{getDisplayName(result)}</span>
-            <span class="result-type">{result.Properties?.Type || 'Location'}</span>
-          </button>
-        {/each}
+    {#if fishingViewActive}
+      <div class="search-row">
+        <input
+          class="search-input"
+          type="text"
+          placeholder="Search fish..."
+          bind:value={fishingSearchQuery}
+        />
       </div>
+
+      {#if fishingSearchResults.length > 0}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="search-results">
+          {#each fishingSearchResults as result, index}
+            <button
+              class="search-result"
+              class:active={selectedFishingSector?.Col === result.col && selectedFishingSector?.Row === result.row}
+              onclick={() => { selectedFishingSector = { Col: result.col, Row: result.row }; }}
+            >
+              <span class="result-index" style="background-color: {FISH_RARITY_COLORS[result.Rarity]}; color: #000;">{index + 1}</span>
+              <span class="result-name" style="color: {FISH_RARITY_COLORS[result.Rarity]}">{result.Name}</span>
+              <span class="result-type">{result.Rarity}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    {:else}
+      <div class="search-row">
+        <input
+          class="search-input"
+          type="text"
+          placeholder="Search locations..."
+          bind:value={searchQuery}
+          onfocus={() => searchOpen = true}
+          onblur={handleSearchBlur}
+          onkeydown={handleSearchKeydown}
+        />
+
+        {#if isEditAllowed}
+          <button class="create-btn" onclick={handleCreate} title={canCreateNew ? 'Create new location/area' : 'Create limit reached'} disabled={!canCreateNew}>
+            +
+          </button>
+          {#if hasPendingChanges}
+            <button class="pending-btn" onclick={() => pendingDialogOpen = true} title="Your pending changes">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 6v6l4 2"></path>
+              </svg>
+            </button>
+          {/if}
+        {/if}
+      </div>
+
+      {#if searchOpen && searchResults.length > 0}
+        <!-- svelte-ignore a11y_no_static_element_interactions -- mouse hover tracking for search results dropdown; keyboard nav handled via parent input -->
+        <div
+          class="search-results"
+          onmouseenter={() => searchResultsHovered = true}
+          onmouseleave={() => { searchResultsHovered = false; hoveredLocation = null; }}
+        >
+          {#each searchResults as result, index}
+            <button
+              class="search-result"
+              class:active={searchSelectedIndex === index}
+              onclick={() => { searchSelectedIndex = index; if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
+              onmouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; mapRef?.panTo(result); }}
+              onmouseleave={() => {}}
+            >
+              <span class="result-index">{index + 1}</span>
+              <span class="result-name" style={result._difficulty?.color ? `color: ${result._difficulty.color}` : ''}>{getDisplayName(result)}</span>
+              <span class="result-type">{result.Properties?.Type || 'Location'}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
   {/if}
 
-  {#if activeLocation && !$existingPendingChange && !(isEmbed && embedHidePanel)}
+  {#if fishingViewActive && selectedSectorData && !(isEmbed && embedHidePanel)}
+    <aside class="map-info-panel fishing-panel">
+      <div class="info-header">
+        <div class="header-main">
+          <div class="header-text">
+            <div class="info-title-row">
+              <div class="info-title">Sector {sectorLabel(selectedFishingSector.Col, selectedFishingSector.Row)}</div>
+              <button class="icon-btn" onclick={() => selectedFishingSector = null} title="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+            <div class="info-subtitle">
+              <span class="type-label">{selectedSectorData.fish.length} fish species</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="info-section">
+          <h4>Fish in this sector</h4>
+          <div class="fish-list">
+            {#each selectedSectorData.fish as fish}
+              <a class="fish-item" href="/information/fishes/{fish.Id}">
+                <span class="fish-name" style="color: {FISH_RARITY_COLORS[fish.Rarity]}">{fish.Name}</span>
+                <span class="fish-rarity" style="color: {FISH_RARITY_COLORS[fish.Rarity]}">{fish.Rarity}</span>
+                {#if fish.Difficulty}
+                  <span class="fish-difficulty">{fish.Difficulty}</span>
+                {/if}
+              </a>
+            {/each}
+          </div>
+        </div>
+        <div class="info-section">
+          <h4>Rarity Legend</h4>
+          <div class="fishing-legend">
+            {#each FISH_RARITY_ORDER as rarity}
+              <div class="fishing-legend-item">
+                <span class="fishing-legend-swatch" style="background-color: {FISH_RARITY_COLORS[rarity]};"></span>
+                <span>{rarity}</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </div>
+    </aside>
+  {/if}
+
+  {#if activeLocation && !fishingViewActive && !$existingPendingChange && !(isEmbed && embedHidePanel)}
     <aside
       class="map-info-panel"
       class:mobile={isMobile}
@@ -2461,6 +2671,109 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /* View mode toggle (Map / Fishing) */
+  .view-toggle {
+    display: flex;
+    gap: 0;
+    align-self: flex-end;
+  }
+
+  .view-btn {
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .view-btn:first-child {
+    border-radius: 4px 0 0 4px;
+  }
+
+  .view-btn:last-child {
+    border-radius: 0 4px 4px 0;
+    border-left: none;
+  }
+
+  .view-btn.active {
+    background: var(--accent-color, #4a9eff);
+    color: white;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .view-btn:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+  }
+
+  /* Fishing panel */
+  .fishing-panel {
+    overflow-y: auto;
+  }
+
+  .fish-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .fish-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: background 0.12s;
+  }
+
+  .fish-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .fish-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .fish-rarity {
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
+  .fish-difficulty {
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+  }
+
+  .fishing-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .fishing-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .fishing-legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
   }
 
 </style>

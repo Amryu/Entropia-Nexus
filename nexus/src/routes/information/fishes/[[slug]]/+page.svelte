@@ -20,6 +20,7 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
   import MobCodex from '$lib/components/wiki/mobs/MobCodex.svelte';
   import FishSectorGrid from '$lib/components/wiki/fish/FishSectorGrid.svelte';
+  import { FISHING_PLANETS } from '$lib/mapUtil';
 
   import {
     editMode,
@@ -300,7 +301,7 @@
   let planetAddOptions = $derived.by(() => {
     const selected = new Set((activeEntity?.Planets || []).map(p => p?.Name).filter(Boolean));
     return (data.planetsList || [])
-      .filter(p => p?.Name && !selected.has(p.Name))
+      .filter(p => p?.Name && !selected.has(p.Name) && FISHING_PLANETS.has(p.Name))
       .map(p => ({ value: p.Name, label: p.Name }));
   });
 

@@ -162,6 +162,86 @@ async function getFish(idOrName) {
   return formatFish(row, rel);
 }
 
+const FISH_LOCATION_CACHE_KEYS = ['Fish', 'FishSectorLocations', 'FishPlanets', 'Planets'];
+
+async function getFishLocationsByPlanet(planetName) {
+  const { rows } = await pool.query(`
+    SELECT fsl."FishId", fsl."SectorCol" AS "Col", fsl."SectorRow" AS "Row",
+           fsl."Rarity", fsl."Note",
+           f."Name" AS "FishName", f."Difficulty" AS "FishDifficulty",
+           p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight"
+    FROM ONLY "FishSectorLocations" fsl
+    JOIN ONLY "Fish" f ON f."Id" = fsl."FishId"
+    JOIN ONLY "Planets" p ON p."Id" = fsl."PlanetId"
+    WHERE p."Name" = $1
+    ORDER BY fsl."SectorCol", fsl."SectorRow", f."Name"
+  `, [planetName]);
+
+  const sectors = {};
+  let planetWidth = 0, planetHeight = 0;
+  for (const r of rows) {
+    const key = `${r.Col},${r.Row}`;
+    if (!sectors[key]) {
+      sectors[key] = { Col: r.Col, Row: r.Row, Fish: [] };
+    }
+    sectors[key].Fish.push({
+      Id: r.FishId,
+      Name: r.FishName,
+      Rarity: r.Rarity,
+      Difficulty: r.FishDifficulty,
+      Note: r.Note || null,
+      Links: { "$Url": `/fishes/${r.FishId}` }
+    });
+    planetWidth = r.PlanetWidth;
+    planetHeight = r.PlanetHeight;
+  }
+
+  return {
+    Width: planetWidth,
+    Height: planetHeight,
+    Sectors: Object.values(sectors)
+  };
+}
+
+async function getAllFishLocations() {
+  const { rows } = await pool.query(`
+    SELECT fsl."FishId", fsl."PlanetId", fsl."SectorCol" AS "Col", fsl."SectorRow" AS "Row",
+           fsl."Rarity", fsl."Note",
+           f."Name" AS "FishName", f."Difficulty" AS "FishDifficulty",
+           p."Name" AS "PlanetName", p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight"
+    FROM ONLY "FishSectorLocations" fsl
+    JOIN ONLY "Fish" f ON f."Id" = fsl."FishId"
+    JOIN ONLY "Planets" p ON p."Id" = fsl."PlanetId"
+    ORDER BY p."Name", fsl."SectorCol", fsl."SectorRow", f."Name"
+  `);
+
+  const byPlanet = {};
+  for (const r of rows) {
+    if (!byPlanet[r.PlanetName]) {
+      byPlanet[r.PlanetName] = { Width: r.PlanetWidth, Height: r.PlanetHeight, Sectors: {} };
+    }
+    const planet = byPlanet[r.PlanetName];
+    const key = `${r.Col},${r.Row}`;
+    if (!planet.Sectors[key]) {
+      planet.Sectors[key] = { Col: r.Col, Row: r.Row, Fish: [] };
+    }
+    planet.Sectors[key].Fish.push({
+      Id: r.FishId,
+      Name: r.FishName,
+      Rarity: r.Rarity,
+      Difficulty: r.FishDifficulty,
+      Note: r.Note || null,
+      Links: { "$Url": `/fishes/${r.FishId}` }
+    });
+  }
+
+  const result = {};
+  for (const [name, data] of Object.entries(byPlanet)) {
+    result[name] = { Width: data.Width, Height: data.Height, Sectors: Object.values(data.Sectors) };
+  }
+  return result;
+}
+
 const CACHE_KEYS = ['Fish', 'FishSizes', 'FishBiomes', 'FishSectorLocations', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials'];
 
 function register(app) {
@@ -208,6 +288,22 @@ function register(app) {
     } catch (e) {
       console.error('Failed to fetch fish', e);
       res.status(500).json({ error: 'Failed to fetch fish' });
+    }
+  });
+
+  app.get('/fish-locations', async (req, res) => {
+    try {
+      const planet = req.query.planet;
+      if (planet) {
+        const data = await withCache(`/fish-locations/${planet}`, FISH_LOCATION_CACHE_KEYS, () => getFishLocationsByPlanet(planet));
+        res.json(data);
+      } else {
+        const data = await withCache('/fish-locations', FISH_LOCATION_CACHE_KEYS, getAllFishLocations);
+        res.json(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch fish locations', e);
+      res.status(500).json({ error: 'Failed to fetch fish locations' });
     }
   });
 }

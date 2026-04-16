@@ -358,6 +358,115 @@
     ctx.restore();
   }
 
+  const SUB_DIVISIONS = 4;
+
+  function drawFishingOverlay(ctx) {
+    if (!fishingOverlay || !imageTileSize || !planet) return;
+    const cellSize = imageTileSize / SUB_DIVISIONS;
+    const totalRows = planet.Properties.Map.Height * SUB_DIVISIONS;
+    const sectors = fishingOverlay.sectors;
+    const searchKeys = fishingOverlay.searchKeys;
+    const hasSearch = searchKeys != null && searchKeys.size > 0;
+    const selKey = selectedFishingSector ? `${selectedFishingSector.Col},${selectedFishingSector.Row}` : null;
+    const hovKey = hoveredFishingSector ? `${hoveredFishingSector.Col},${hoveredFishingSector.Row}` : null;
+
+    ctx.save();
+    for (const [key, data] of sectors) {
+      const [colStr, rowStr] = key.split(',');
+      const col = Number(colStr);
+      const row = Number(rowStr);
+      const imgX = col * cellSize;
+      const imgY = (totalRows - row - 1) * cellSize;
+      const topLeft = imageCoordsToCanvasCoords(imgX, imgY);
+      const bottomRight = imageCoordsToCanvasCoords(imgX + cellSize, imgY + cellSize);
+      const w = bottomRight.x - topLeft.x;
+      const h = bottomRight.y - topLeft.y;
+
+      const isSel = key === selKey;
+      const isHov = key === hovKey;
+      const isSearchHit = hasSearch && searchKeys.has(key);
+
+      if (hasSearch && !isSearchHit && !isSel && !isHov) {
+        ctx.globalAlpha = 0.08;
+        ctx.fillStyle = '#666';
+        ctx.fillRect(topLeft.x, topLeft.y, w, h);
+        continue;
+      }
+
+      if (isSel) {
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = data.color;
+        ctx.fillRect(topLeft.x, topLeft.y, w, h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(topLeft.x, topLeft.y, w, h);
+      } else if (isHov) {
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = data.color;
+        ctx.fillRect(topLeft.x, topLeft.y, w, h);
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(topLeft.x, topLeft.y, w, h);
+      } else {
+        ctx.globalAlpha = hasSearch && isSearchHit ? 0.5 : 0.35;
+        ctx.fillStyle = data.color;
+        ctx.fillRect(topLeft.x, topLeft.y, w, h);
+      }
+    }
+
+    // Grid lines
+    const totalCols = planet.Properties.Map.Width * SUB_DIVISIONS;
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+
+    for (let col = 0; col <= totalCols; col++) {
+      const isMajor = col % SUB_DIVISIONS === 0;
+      ctx.lineWidth = isMajor ? 1.5 : 0.5;
+      if (!isMajor) ctx.globalAlpha = 0.12;
+      else ctx.globalAlpha = 0.25;
+      const x = col * cellSize;
+      const start = imageCoordsToCanvasCoords(x, 0);
+      const end = imageCoordsToCanvasCoords(x, totalRows * cellSize);
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+    }
+    for (let row = 0; row <= totalRows; row++) {
+      const isMajor = row % SUB_DIVISIONS === 0;
+      ctx.lineWidth = isMajor ? 1.5 : 0.5;
+      if (!isMajor) ctx.globalAlpha = 0.12;
+      else ctx.globalAlpha = 0.25;
+      const y = row * cellSize;
+      const start = imageCoordsToCanvasCoords(0, (totalRows - row) * cellSize);
+      const end = imageCoordsToCanvasCoords(totalCols * cellSize, (totalRows - row) * cellSize);
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function getFishingSectorAtCanvasPos(x, y) {
+    if (!fishingOverlay || !imageTileSize || !planet) return null;
+    const imageCoords = canvasCoordsToImageCoords(x, y);
+    const cellSize = imageTileSize / SUB_DIVISIONS;
+    const totalRows = planet.Properties.Map.Height * SUB_DIVISIONS;
+    const col = Math.floor(imageCoords.x / cellSize);
+    const row = totalRows - 1 - Math.floor(imageCoords.y / cellSize);
+    if (col < 0 || row < 0) return null;
+    if (col >= planet.Properties.Map.Width * SUB_DIVISIONS) return null;
+    if (row >= totalRows) return null;
+    const key = `${col},${row}`;
+    if (fishingOverlay.sectors.has(key)) {
+      return { Col: col, Row: row, key };
+    }
+    return null;
+  }
+
   import { writable } from 'svelte/store';
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
@@ -390,7 +499,11 @@
     searchResults = [],
     activeRecurringEvents = new Set(),
     embedMode = false,
-    hideLayerToggles = false
+    hideLayerToggles = false,
+    fishingOverlay = null,
+    selectedFishingSector = null,
+    hoveredFishingSector = $bindable(null),
+    onfishingsectorclick,
   } = $props();
   let filteredLocations = [];
   let filteredAreas = [];
@@ -1098,6 +1211,11 @@
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, srcX, srcY, visibleWidth, visibleHeight, 0, 0, destWidth, destHeight);
 
+    // Draw fishing overlay (below location overlays)
+    if (fishingOverlay) {
+      drawFishingOverlay(ctx);
+    }
+
     // Ensure image-space cache is ready for all visible locations
     prepareLocationsCache();
 
@@ -1112,47 +1230,50 @@
       return bb.x1 >= viewX0 && bb.x0 <= viewX1 && bb.y1 >= viewY0 && bb.y0 <= viewY1;
     };
 
-    // Draw areas first (below), then point locations on top
-    // Cache reactive values to avoid repeated proxy reads in hot loop
-    const _searchMap = searchResultMap;
-    const _hoveredId = hovered?.Id;
-    const _selectedId = selected?.Id;
-    const hasSearch = _searchMap.size > 0;
+    // Skip location overlays when fishing overlay is active
+    if (!fishingOverlay) {
+      // Draw areas first (below), then point locations on top
+      // Cache reactive values to avoid repeated proxy reads in hot loop
+      const _searchMap = searchResultMap;
+      const _hoveredId = hovered?.Id;
+      const _selectedId = selected?.Id;
+      const hasSearch = _searchMap.size > 0;
 
-    // First pass: draw areas (they go underneath)
-    for (const loc of filteredAreas) {
-      if (!isInViewport(loc)) continue;
-      const isHov = _hoveredId != null && loc.Id === _hoveredId;
-      const isSel = _selectedId != null && loc.Id === _selectedId;
-      if (hasSearch && _searchMap.has(loc.Id) && !isHov && !isSel) {
-        drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
-      } else if (hasSearch && !_searchMap.has(loc.Id) && !isHov && !isSel) {
-        drawDesaturated(ctx, loc);
-      } else {
-        drawShape(ctx, loc, isHov, isSel);
+      // First pass: draw areas (they go underneath)
+      for (const loc of filteredAreas) {
+        if (!isInViewport(loc)) continue;
+        const isHov = _hoveredId != null && loc.Id === _hoveredId;
+        const isSel = _selectedId != null && loc.Id === _selectedId;
+        if (hasSearch && _searchMap.has(loc.Id) && !isHov && !isSel) {
+          drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
+        } else if (hasSearch && !_searchMap.has(loc.Id) && !isHov && !isSel) {
+          drawDesaturated(ctx, loc);
+        } else {
+          drawShape(ctx, loc, isHov, isSel);
+        }
       }
-    }
 
-    // Second pass: draw point locations (they go on top)
-    // Compute visible width in game units for zoom gate
-    const _visGameW = (imageTileSize / zoom) * (canvasBounds.width / canvasBounds.height)
-                      * imageToEntropiaRatio;
-    for (const loc of filteredPoints) {
-      if (!isInViewport(loc)) continue;
-      const isHov = _hoveredId != null && loc.Id === _hoveredId;
-      const isSel = _selectedId != null && loc.Id === _selectedId;
-      const isTeleporter = loc.Properties?.Type === 'Teleporter';
-      const isSearchHit = _searchMap.has(loc.Id);
-      // Zoom gate — bypass for hover/selection/search hits
-      if (!isHov && !isSel && !isSearchHit && !pointPassesZoomGate(loc, _visGameW)) {
-        continue;
-      }
-      if (hasSearch && isSearchHit && !isHov && !isSel) {
-        drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
-      } else if (hasSearch && !isSearchHit && !isHov && !isSel && !isTeleporter) {
-        drawDesaturated(ctx, loc);
-      } else {
-        drawShape(ctx, loc, isHov, isSel);
+      // Second pass: draw point locations (they go on top)
+      // Compute visible width in game units for zoom gate
+      const _visGameW = (imageTileSize / zoom) * (canvasBounds.width / canvasBounds.height)
+                        * imageToEntropiaRatio;
+      for (const loc of filteredPoints) {
+        if (!isInViewport(loc)) continue;
+        const isHov = _hoveredId != null && loc.Id === _hoveredId;
+        const isSel = _selectedId != null && loc.Id === _selectedId;
+        const isTeleporter = loc.Properties?.Type === 'Teleporter';
+        const isSearchHit = _searchMap.has(loc.Id);
+        // Zoom gate — bypass for hover/selection/search hits
+        if (!isHov && !isSel && !isSearchHit && !pointPassesZoomGate(loc, _visGameW)) {
+          continue;
+        }
+        if (hasSearch && isSearchHit && !isHov && !isSel) {
+          drawSearchResult(ctx, loc, _searchMap.get(loc.Id));
+        } else if (hasSearch && !isSearchHit && !isHov && !isSel && !isTeleporter) {
+          drawDesaturated(ctx, loc);
+        } else {
+          drawShape(ctx, loc, isHov, isSel);
+        }
       }
     }
 
@@ -1280,7 +1401,6 @@
 
   function handleCanvasMouseMove(event) {
     if (dragging) {
-      // During pan, skip expensive hit detection
       if (hovered) {
         hovered = null;
         canvasHover = null;
@@ -1289,12 +1409,41 @@
         tooltipShow = false;
         markDirty();
       }
+      if (hoveredFishingSector) {
+        hoveredFishingSector = null;
+        markDirty();
+      }
       return;
     }
     const rect = canvasElement.getBoundingClientRect();
     const x = (event.clientX - rect.left);
     const y = (event.clientY - rect.top);
     updateTransform();
+
+    // Fishing overlay hover takes priority when active
+    if (fishingOverlay) {
+      const prevHovKey = hoveredFishingSector ? `${hoveredFishingSector.Col},${hoveredFishingSector.Row}` : null;
+      const sector = getFishingSectorAtCanvasPos(x, y);
+      if (sector) {
+        hoveredFishingSector = { Col: sector.Col, Row: sector.Row };
+        canvasElement.style.cursor = 'pointer';
+        const sectorData = fishingOverlay.sectors.get(sector.key);
+        const fishNames = sectorData?.fish?.map(f => f.Name).join(', ') || '';
+        tooltipText = fishNames;
+        tooltipShow = !!fishNames;
+        tooltipPos = { x: event.clientX, y: event.clientY };
+      } else {
+        hoveredFishingSector = null;
+        canvasElement.style.cursor = 'default';
+        tooltipShow = false;
+      }
+      hovered = null;
+      canvasHover = null;
+      const newKey = hoveredFishingSector ? `${hoveredFishingSector.Col},${hoveredFishingSector.Row}` : null;
+      if (newKey !== prevHovKey) markDirty();
+      return;
+    }
+
     prepareLocationsCache();
     const hit = getShapeAtCanvasPos(x, y);
     const prevHovered = hovered;
@@ -1449,6 +1598,19 @@
     const x = (event.clientX - rect.left);
     const y = (event.clientY - rect.top);
     updateTransform();
+
+    // Fishing overlay click
+    if (fishingOverlay) {
+      const sector = getFishingSectorAtCanvasPos(x, y);
+      if (sector) {
+        onfishingsectorclick?.(sector.Col, sector.Row);
+      } else {
+        onfishingsectorclick?.(null, null);
+      }
+      markDirty();
+      return;
+    }
+
     prepareLocationsCache();
     const hitBuffer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 28 : 0;
     const hits = getAllShapesAtCanvasPos(x, y, hitBuffer);
@@ -1795,6 +1957,7 @@
   }
 
   $effect(() => { searchResultMap = new Map(searchResults.map((sr, i) => [sr.Id, i])); if (browser) markDirty(); });
+  $effect(() => { if (fishingOverlay) markDirty(); });
   $effect(() => {
     if (locations) {
       computeOutpostCull(locations);
@@ -2067,8 +2230,8 @@
   <canvas use:contextmenu={mapContextMenuObject} bind:this={canvasElement} onmousedown={onMouseDown} onmousemove={onMouseMove} onmouseup={onMouseUp} onmouseleave={onMouseUp} onwheel={onWheel}>
   </canvas>
 
-  <!-- Layer toggles (bottom-left, desktop only) -->
-  {#if !hideLayerToggles}
+  <!-- Layer toggles (bottom-left, desktop only) — hidden when fishing overlay is active -->
+  {#if !hideLayerToggles && !fishingOverlay}
   <div class="layer-toggles">
     {#each MAIN_LAYERS as layer (layer.id)}
       <button

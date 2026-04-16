@@ -210,6 +210,18 @@ export function getTooltipText(location) {
   return `${name.length > 50 ? name.substring(0,47) + '...' :  name} - <span style="color: gray;">(Right-click to copy)</span><br />${getWaypointFromLocation(location)}`;
 }
 
+export const FISHING_PLANETS = new Set(['Calypso', 'ARIS', 'Setesh', 'ROCKtropia', 'Next Island']);
+
+export const FISH_RARITY_COLORS = {
+  'Common':         'rgb(100, 230, 50)',
+  'Uncommon':       'rgb(200, 230, 0)',
+  'Rare':           'rgb(255, 200, 0)',
+  'Very Rare':      'rgb(255, 120, 0)',
+  'Extremely Rare': 'rgb(255, 50, 30)'
+};
+
+export const FISH_RARITY_ORDER = ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Extremely Rare'];
+
 export const planetGroups = {
   Calypso: [
     { Name: 'Calypso', _type: 'calypso' },
