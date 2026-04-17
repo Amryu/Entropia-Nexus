@@ -13,6 +13,11 @@ export const FishingBlank = {
         "IsUntradeable": { "type": ["boolean", "null"], "default": null },
         "IsRare": { "type": ["boolean", "null"], "default": null },
         "Weight": { "type": ["number", "null"], "default": null },
+        "RodCategory": {
+          "type": "string",
+          "enum": ["Regular", "Fly Fishing", "Deep Ocean"],
+          "default": "Regular"
+        },
         "Strength": { "type": ["number", "null"], "default": null },
         "Flexibility": { "type": ["number", "null"], "default": null },
         "Economy": {
@@ -26,7 +31,7 @@ export const FishingBlank = {
           "required": ["MaxTT", "MinTT", "Decay"]
         }
       },
-      "required": ["Description", "Weight", "Economy"]
+      "required": ["Description", "Weight", "RodCategory", "Economy"]
     }
   },
   "required": ["Name", "Properties"]

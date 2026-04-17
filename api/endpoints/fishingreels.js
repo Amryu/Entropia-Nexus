@@ -16,6 +16,7 @@ function formatFishingReel(x, data) {
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
+      RodCategory: x.RodCategory ?? 'Regular',
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Speed: x.Speed !== null ? Number(x.Speed) : null,
       Economy: {

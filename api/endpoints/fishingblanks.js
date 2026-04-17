@@ -16,6 +16,7 @@ function formatFishingBlank(x, data) {
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
+      RodCategory: x.RodCategory ?? 'Regular',
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Flexibility: x.Flexibility !== null ? Number(x.Flexibility) : null,
       Economy: {

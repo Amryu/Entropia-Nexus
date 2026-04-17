@@ -16,6 +16,7 @@ function formatFishingLine(x, data) {
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
+      RodCategory: x.RodCategory ?? 'Regular',
       Flexibility: x.Flexibility !== null ? Number(x.Flexibility) : null,
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Length: x.Length !== null ? Number(x.Length) : null,

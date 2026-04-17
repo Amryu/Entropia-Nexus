@@ -21,11 +21,17 @@
 
   const alpha = (a, b) => (a?.Name || '').localeCompare(b?.Name || '', undefined, { numeric: true });
 
+  // Casting/Angling share a Regular attachment pool; Fly Fishing and Deep
+  // Ocean rods each need a category-specific attachment. Baitfishing takes
+  // no attachments and is filtered out of the rod list entirely.
+  const ROD_TYPE_TO_CATEGORY = {
+    'Casting': 'Regular',
+    'Angling': 'Regular',
+    'Fly Fishing': 'Fly Fishing',
+    'Deep Ocean Fishing': 'Deep Ocean'
+  };
+
   let rods = $derived(fishingRods.filter(r => r.Properties?.RodType !== 'Baitfishing').sort(alpha));
-  let reels = $derived([...fishingReels].sort(alpha));
-  let blanks = $derived([...fishingBlanks].sort(alpha));
-  let lines = $derived([...fishingLines].sort(alpha));
-  let lures = $derived([...fishingLures].sort(alpha));
 
   // ===== State =====
   let rod = $state(null);
@@ -67,10 +73,38 @@
 
   // ===== Resolved entities =====
   let rodEntity = $derived(rod ? rods.find(e => e.Name === rod) || fishingRods.find(e => e.Name === rod) : null);
+
+  // When a rod is selected, restrict each attachment pool to items whose
+  // RodCategory matches. Unknown/missing RodCategory is treated as 'Regular'
+  // so legacy rows still surface. With no rod selected, show everything.
+  let requiredCategory = $derived(ROD_TYPE_TO_CATEGORY[rodEntity?.Properties?.RodType] ?? null);
+  const matchesCategory = (it) => !requiredCategory || (it?.Properties?.RodCategory ?? 'Regular') === requiredCategory;
+
+  let reels = $derived(fishingReels.filter(matchesCategory).sort(alpha));
+  let blanks = $derived(fishingBlanks.filter(matchesCategory).sort(alpha));
+  let lines = $derived(fishingLines.filter(matchesCategory).sort(alpha));
+  let lures = $derived(fishingLures.filter(matchesCategory).sort(alpha));
+
   let reelEntity = $derived(reel ? reels.find(e => e.Name === reel) : null);
   let blankEntity = $derived(blank ? blanks.find(e => e.Name === blank) : null);
   let lineEntity = $derived(line ? lines.find(e => e.Name === line) : null);
   let lureEntity = $derived(lure ? lures.find(e => e.Name === lure) : null);
+
+  // Clear any attachment that became incompatible when the rod changed.
+  // Uses the unfiltered pools so we can tell "selection exists but mismatched"
+  // apart from "selection exists and still valid".
+  $effect(() => {
+    if (!prefLoaded || !requiredCategory) return;
+    const mismatch = (name, pool) => {
+      if (!name) return false;
+      const it = pool.find(e => e.Name === name);
+      return it && (it.Properties?.RodCategory ?? 'Regular') !== requiredCategory;
+    };
+    if (mismatch(reel, fishingReels)) reel = null;
+    if (mismatch(blank, fishingBlanks)) blank = null;
+    if (mismatch(line, fishingLines)) line = null;
+    if (mismatch(lure, fishingLures)) lure = null;
+  });
 
   const SLOTS = [
     { key: 'reel', label: 'Reel', stats: ['Strength', 'Speed'] },

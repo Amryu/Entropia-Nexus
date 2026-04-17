@@ -230,22 +230,26 @@
         base.Properties.MaxProfessionLevel = 0;
         break;
       case 'fishingreels':
+        base.Properties.RodCategory = 'Regular';
         base.Properties.Strength = null;
         base.Properties.Speed = null;
         base.Properties.Economy.Decay = null;
         break;
       case 'fishingblanks':
+        base.Properties.RodCategory = 'Regular';
         base.Properties.Strength = null;
         base.Properties.Flexibility = null;
         base.Properties.Economy.Decay = null;
         break;
       case 'fishinglines':
+        base.Properties.RodCategory = 'Regular';
         base.Properties.Flexibility = null;
         base.Properties.Strength = null;
         base.Properties.Length = null;
         base.Properties.Economy.Decay = null;
         break;
       case 'fishinglures':
+        base.Properties.RodCategory = 'Regular';
         base.Properties.LureType = null;
         base.Properties.Depth = null;
         base.Properties.Quality = null;
@@ -384,7 +388,8 @@
     length: { key: 'length', header: 'Length', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Length, format: (v) => v != null ? `${clampDecimals(v, 0, 2)}m` : '-' },
     depth: { key: 'depth', header: 'Depth', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Depth, format: (v) => v != null ? `${clampDecimals(v, 0, 2)}m` : '-' },
     quality: { key: 'quality', header: 'Quality', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Quality, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
-    lureType: { key: 'lureType', header: 'Lure Type', width: '85px', filterPlaceholder: 'Jig', getValue: (item) => item.Properties?.LureType, format: (v) => v || '-' }
+    lureType: { key: 'lureType', header: 'Lure Type', width: '85px', filterPlaceholder: 'Jig', getValue: (item) => item.Properties?.LureType, format: (v) => v || '-' },
+    rodCategory: { key: 'rodCategory', header: 'Fits Rod', width: '90px', filterPlaceholder: 'Fly', getValue: (item) => item.Properties?.RodCategory, format: (v) => v || '-' }
   };
 
   // Type-specific sidebar table columns
@@ -405,13 +410,13 @@
       case 'mindforceimplants':
         return [columnDefs.abs, columnDefs.lvl];
       case 'fishingreels':
-        return [columnDefs.strength, columnDefs.speed];
+        return [columnDefs.rodCategory, columnDefs.strength, columnDefs.speed];
       case 'fishingblanks':
-        return [columnDefs.strength, columnDefs.flexibility];
+        return [columnDefs.rodCategory, columnDefs.strength, columnDefs.flexibility];
       case 'fishinglines':
-        return [columnDefs.strength, columnDefs.flexibility];
+        return [columnDefs.rodCategory, columnDefs.strength, columnDefs.flexibility];
       case 'fishinglures':
-        return [columnDefs.lureType, columnDefs.depth, columnDefs.quality];
+        return [columnDefs.rodCategory, columnDefs.lureType, columnDefs.depth, columnDefs.quality];
       default:
         return [columnDefs.cat, columnDefs.eff];
     }
@@ -434,13 +439,13 @@
       case 'mindforceimplants':
         return [columnDefs.abs, columnDefs.maxLevel, columnDefs.lvl, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
       case 'fishingreels':
-        return [columnDefs.strength, columnDefs.speed, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+        return [columnDefs.rodCategory, columnDefs.strength, columnDefs.speed, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       case 'fishingblanks':
-        return [columnDefs.strength, columnDefs.flexibility, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+        return [columnDefs.rodCategory, columnDefs.strength, columnDefs.flexibility, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       case 'fishinglines':
-        return [columnDefs.flexibility, columnDefs.strength, columnDefs.length, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+        return [columnDefs.rodCategory, columnDefs.flexibility, columnDefs.strength, columnDefs.length, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       case 'fishinglures':
-        return [columnDefs.lureType, columnDefs.depth, columnDefs.quality, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+        return [columnDefs.rodCategory, columnDefs.lureType, columnDefs.depth, columnDefs.quality, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       default:
         return [columnDefs.cat, columnDefs.eff, columnDefs.maxTT, columnDefs.weight];
     }
@@ -618,6 +623,11 @@
     { value: 'Flys', label: 'Flys' },
     { value: 'Spinners', label: 'Spinners' },
     { value: 'Spoons', label: 'Spoons' }
+  ];
+  const rodCategoryOptions = [
+    { value: 'Regular', label: 'Regular' },
+    { value: 'Fly Fishing', label: 'Fly Fishing' },
+    { value: 'Deep Ocean', label: 'Deep Ocean' }
   ];
 
   // ========== PANEL STATE PERSISTENCE ==========
@@ -961,6 +971,17 @@
             </div>
           {:else if additional.type === 'fishingreels'}
             <div class="stat-row">
+              <span class="stat-label">Fits Rod</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.RodCategory}
+                  path="Properties.RodCategory"
+                  type="select"
+                  options={rodCategoryOptions}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
               <span class="stat-label">Strength</span>
               <span class="stat-value">
                 <InlineEdit value={activeEntity?.Properties?.Strength} path="Properties.Strength" type="number" />
@@ -974,6 +995,17 @@
             </div>
           {:else if additional.type === 'fishingblanks'}
             <div class="stat-row">
+              <span class="stat-label">Fits Rod</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.RodCategory}
+                  path="Properties.RodCategory"
+                  type="select"
+                  options={rodCategoryOptions}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
               <span class="stat-label">Strength</span>
               <span class="stat-value">
                 <InlineEdit value={activeEntity?.Properties?.Strength} path="Properties.Strength" type="number" />
@@ -986,6 +1018,17 @@
               </span>
             </div>
           {:else if additional.type === 'fishinglines'}
+            <div class="stat-row">
+              <span class="stat-label">Fits Rod</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.RodCategory}
+                  path="Properties.RodCategory"
+                  type="select"
+                  options={rodCategoryOptions}
+                />
+              </span>
+            </div>
             <div class="stat-row">
               <span class="stat-label">Flexibility</span>
               <span class="stat-value">
@@ -1005,6 +1048,17 @@
               </span>
             </div>
           {:else if additional.type === 'fishinglures'}
+            <div class="stat-row">
+              <span class="stat-label">Fits Rod</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.RodCategory}
+                  path="Properties.RodCategory"
+                  type="select"
+                  options={rodCategoryOptions}
+                />
+              </span>
+            </div>
             <div class="stat-row">
               <span class="stat-label">Lure Type</span>
               <span class="stat-value">
