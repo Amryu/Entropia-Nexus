@@ -464,7 +464,11 @@
   // Filtered and sorted items
   let filteredItems = $derived.by(() => {
     if (!items) return [];
-    let result = items;
+    // Baseline: alphabetical by Name with stable numeric collation.
+    // Subsequent stable sorts (fuzzy score, sortColumn, filter sortFn) keep alphabetical tiebreak.
+    let result = [...items].sort((a, b) =>
+      String(a?.Name ?? '').localeCompare(String(b?.Name ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+    );
 
     // Apply main search filter with fuzzy matching
     if (searchQuery && searchQuery.trim().length > 0) {
