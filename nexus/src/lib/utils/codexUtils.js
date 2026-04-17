@@ -30,6 +30,21 @@ export const FISH_CODEX_SKILLS = [
 ];
 
 /**
+ * Bonus skills available on fish codex ranks where rank % 5 === 2 (ranks 2, 7, 12, 17, 22).
+ * These are additional skills on top of the base fishing skills, all at 1x multiplier.
+ */
+export const FISH_CODEX_BONUS_SKILLS = [
+  { name: 'Fishing Rod Technology', multiplier: 1.0 },
+  { name: 'Fishing Attachment Technology', multiplier: 1.0 },
+  { name: 'Gutting', multiplier: 1.0 },
+  { name: 'Anatomy', multiplier: 1.0 }
+];
+
+export function isFishBonusRank(rank) {
+  return rank % 5 === 2;
+}
+
+/**
  * Codex skill categories — determines which skills are available at which ranks.
  * These are specific to the codex game mechanic and don't map to DB skill categories.
  */

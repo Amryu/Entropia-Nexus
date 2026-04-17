@@ -11,10 +11,12 @@
     REWARD_DIVISORS,
     CODEX_SKILL_CATEGORIES,
     FISH_CODEX_SKILLS,
+    FISH_CODEX_BONUS_SKILLS,
     FISH_CODEX_DIVISOR,
     getCategoryForRank,
     getCumulativeCost,
-    calcCumulativeSkillGain
+    calcCumulativeSkillGain,
+    isFishBonusRank
   } from '$lib/utils/codexUtils';
 
   /**
@@ -187,6 +189,7 @@
   );
   let rewardDivisor = $derived(isFishCodex ? FISH_CODEX_DIVISOR : REWARD_DIVISORS[category]);
   let isCat4Rank = $derived(codexType === 'MobLooter' && (selectedRank + 1) % 10 === 5);
+  let isFishBonus = $derived(isFishCodex && isFishBonusRank(selectedRank + 1));
   let costForRank = $derived(baseCost ? CODEX_MULTIPLIERS[selectedRank] * baseCost : null);
   let cumulativeCost = $derived(baseCost ? getCumulativeCost(selectedRank, baseCost) : null);
   let displayCost = $derived(showCumulative ? cumulativeCost : costForRank);
@@ -199,9 +202,21 @@
     return map;
   });
 
+  let fishBonusMultiplierBySkill = $derived.by(() => {
+    const map = {};
+    for (const s of FISH_CODEX_BONUS_SKILLS) map[s.name] = s.multiplier;
+    return map;
+  });
+
   function getFishRewardValue(skillName) {
     if (!costForRank) return 'N/A';
     const mult = fishMultiplierBySkill[skillName] ?? 1;
+    return (costForRank / rewardDivisor * mult).toFixed(4);
+  }
+
+  function getFishBonusRewardValue(skillName) {
+    if (!costForRank) return 'N/A';
+    const mult = fishBonusMultiplierBySkill[skillName] ?? 1;
     return (costForRank / rewardDivisor * mult).toFixed(4);
   }
 
@@ -227,11 +242,13 @@
                 {@const isSelected = selectedRank === rankIndex}
                 {@const rankCategory = isFishCodex ? 'fish' : getCategoryForRank(rankIndex + 1)}
                 {@const isCat4 = codexType === 'MobLooter' && (rankIndex + 1) % 10 === 5}
+                {@const isFishBonusBtn = isFishCodex && isFishBonusRank(rankIndex + 1)}
                 {@const displayValue = showCumulative ? getCumulativeCost(rankIndex, baseCost) : multiplier * baseCost}
                 <button
                   class="rank-btn cat-{rankCategory}"
                   class:selected={isSelected}
                   class:cat4-bonus={isCat4}
+                  class:fish-bonus={isFishBonusBtn}
                   onclick={() => selectedRank = rankIndex}
                   title="Rank {rankIndex + 1}: {displayValue} PED"
                 >
@@ -283,6 +300,17 @@
                 <span>+Cat 4</span>
               </div>
             {/if}
+          </div>
+        {:else}
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-swatch cat-fish"></span>
+              <span>Fishing</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch fish-bonus"></span>
+              <span>+Bonus</span>
+            </div>
           </div>
         {/if}
       </div>
@@ -361,6 +389,33 @@
           </div>
         {/if}
 
+        {#if isFishBonus}
+          <div class="fish-bonus-section">
+            <div class="fish-bonus-header">
+              <span>Bonus Skills (Choose One)</span>
+              <span class="fish-bonus-badge">Bonus</span>
+            </div>
+            <div class="skills-list fish-bonus">
+              {#each FISH_CODEX_BONUS_SKILLS as bonusSkill}
+                {@const badges = getSkillBadges(bonusSkill.name)}
+                <div class="skill-row" class:has-badge={badges.length > 0}>
+                  <a href={getTypeLink(bonusSkill.name, 'Skill')} class="skill-name skill-link">{bonusSkill.name}</a>
+                  <span class="skill-badges">
+                    <span class="skill-badge fish-mult" title="{bonusSkill.multiplier}x reward multiplier">{bonusSkill.multiplier}x</span>
+                    {#each badges as badge}
+                      <span
+                        class="skill-badge {badge.level} {badge.type}"
+                        title={getBadgeTitle(badge)}
+                      >{badge.label}</span>
+                    {/each}
+                  </span>
+                  <span class="skill-value">{getFishBonusRewardValue(bonusSkill.name)}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
         <!-- Cumulative Summary by Category -->
         <div class="cumulative-summary">
           <div class="summary-title">Cumulative Skill Gain (Ranks 1-{selectedRank + 1})</div>
@@ -371,6 +426,13 @@
                 <div class="summary-item cat-fish">
                   <span class="summary-label">{fs.name} ({fs.multiplier}x)</span>
                   <span class="summary-value">{cumGain} PED</span>
+                </div>
+              {/each}
+              {#each FISH_CODEX_BONUS_SKILLS as bs}
+                {@const bonusCumGain = baseCost ? Array.from({ length: selectedRank + 1 }, (_, i) => isFishBonusRank(i + 1) ? CODEX_MULTIPLIERS[i] * baseCost / FISH_CODEX_DIVISOR * bs.multiplier : 0).reduce((a, b) => a + b, 0).toFixed(4) : '0'}
+                <div class="summary-item cat-fish-bonus">
+                  <span class="summary-label">{bs.name} ({bs.multiplier}x)</span>
+                  <span class="summary-value">{bonusCumGain} PED</span>
                 </div>
               {/each}
             </div>
@@ -402,7 +464,7 @@
         <span class="cat4-note">Category 4 bonus available on ranks 5, 15, 25</span>
       {/if}
       {#if isFishCodex}
-        <span class="cat4-note">Same skills available at every rank</span>
+        <span class="cat4-note">Bonus skills on ranks 2, 7, 12, 17, 22</span>
       {/if}
     </div>
   {/if}
@@ -875,6 +937,57 @@
 
   .skills-list.cat4 .skill-value {
     color: var(--warning-color);
+  }
+
+  /* Fish Bonus Section */
+  .rank-btn.fish-bonus {
+    position: relative;
+    box-shadow: inset 0 0 0 2px var(--info-color, #38bdf8);
+  }
+
+  .fish-bonus-section {
+    border-top: 1px solid var(--border-color);
+    padding: 12px 16px;
+    background: var(--cat-fish-bonus-bg, rgba(56, 189, 248, 0.08));
+    flex-shrink: 0;
+  }
+
+  .fish-bonus-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--info-color, #38bdf8);
+  }
+
+  .fish-bonus-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--info-color, #38bdf8);
+    color: white;
+    text-transform: uppercase;
+  }
+
+  .skills-list.fish-bonus .skill-row {
+    border-color: rgba(0, 0, 0, 0.1);
+    padding: 4px 0;
+  }
+
+  .skills-list.fish-bonus .skill-value {
+    color: var(--info-color, #38bdf8);
+  }
+
+  .summary-item.cat-fish-bonus {
+    background-color: var(--cat-fish-bonus-bg, rgba(56, 189, 248, 0.1));
+  }
+
+  .legend-swatch.fish-bonus {
+    background-color: var(--cat-fish-bg, rgba(56, 189, 248, 0.25));
+    box-shadow: inset 0 0 0 2px var(--info-color, #38bdf8);
   }
 
   /* Cumulative Summary */
