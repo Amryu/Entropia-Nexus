@@ -13,6 +13,11 @@ export const FishingLure = {
         "IsUntradeable": { "type": ["boolean", "null"], "default": null },
         "IsRare": { "type": ["boolean", "null"], "default": null },
         "Weight": { "type": ["number", "null"], "default": null },
+        "LureType": {
+          "type": ["string", "null"],
+          "enum": ["Sinkers", "Lures", "Baits", "Worms", "Jigs", "Flys", "Spinners", "Spoons", null],
+          "default": null
+        },
         "Depth": { "type": ["number", "null"], "default": null },
         "Quality": { "type": ["number", "null"], "default": null },
         "Economy": {

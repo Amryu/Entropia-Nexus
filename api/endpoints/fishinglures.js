@@ -16,6 +16,7 @@ function formatFishingLure(x, data) {
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
+      LureType: x.LureType ?? null,
       Depth: x.Depth !== null ? Number(x.Depth) : null,
       Quality: x.Quality !== null ? Number(x.Quality) : null,
       Economy: {

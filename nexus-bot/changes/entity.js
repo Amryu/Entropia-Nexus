@@ -522,6 +522,7 @@ export const UpsertConfigs = {
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
+      { name: "LureType", value: x => x.Properties.LureType ?? null },
       { name: "Depth", value: x => x.Properties.Depth ?? null },
       { name: "Quality", value: x => x.Properties.Quality ?? null },
       { name: "MaxTT", value: x => x.Properties.Economy?.MaxTT ?? null },

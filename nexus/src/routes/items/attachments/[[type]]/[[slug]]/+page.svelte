@@ -246,6 +246,7 @@
         base.Properties.Economy.Decay = null;
         break;
       case 'fishinglures':
+        base.Properties.LureType = null;
         base.Properties.Depth = null;
         base.Properties.Quality = null;
         base.Properties.Economy.Decay = null;
@@ -382,7 +383,8 @@
     flexibility: { key: 'flexibility', header: 'Flexibility', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Flexibility, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
     length: { key: 'length', header: 'Length', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Length, format: (v) => v != null ? `${clampDecimals(v, 0, 2)}m` : '-' },
     depth: { key: 'depth', header: 'Depth', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Depth, format: (v) => v != null ? `${clampDecimals(v, 0, 2)}m` : '-' },
-    quality: { key: 'quality', header: 'Quality', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Quality, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' }
+    quality: { key: 'quality', header: 'Quality', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Quality, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
+    lureType: { key: 'lureType', header: 'Lure Type', width: '85px', filterPlaceholder: 'Jig', getValue: (item) => item.Properties?.LureType, format: (v) => v || '-' }
   };
 
   // Type-specific sidebar table columns
@@ -409,7 +411,7 @@
       case 'fishinglines':
         return [columnDefs.strength, columnDefs.flexibility];
       case 'fishinglures':
-        return [columnDefs.depth, columnDefs.quality];
+        return [columnDefs.lureType, columnDefs.depth, columnDefs.quality];
       default:
         return [columnDefs.cat, columnDefs.eff];
     }
@@ -438,7 +440,7 @@
       case 'fishinglines':
         return [columnDefs.flexibility, columnDefs.strength, columnDefs.length, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       case 'fishinglures':
-        return [columnDefs.depth, columnDefs.quality, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+        return [columnDefs.lureType, columnDefs.depth, columnDefs.quality, columnDefs.decay, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
       default:
         return [columnDefs.cat, columnDefs.eff, columnDefs.maxTT, columnDefs.weight];
     }
@@ -606,6 +608,16 @@
     { value: 'Melee', label: 'Melee' },
     { value: 'Matrix', label: 'Matrix' },
     { value: 'Mindforce', label: 'Mindforce' }
+  ];
+  const lureTypeOptions = [
+    { value: 'Sinkers', label: 'Sinkers' },
+    { value: 'Lures', label: 'Lures' },
+    { value: 'Baits', label: 'Baits' },
+    { value: 'Worms', label: 'Worms' },
+    { value: 'Jigs', label: 'Jigs' },
+    { value: 'Flys', label: 'Flys' },
+    { value: 'Spinners', label: 'Spinners' },
+    { value: 'Spoons', label: 'Spoons' }
   ];
 
   // ========== PANEL STATE PERSISTENCE ==========
@@ -993,6 +1005,17 @@
               </span>
             </div>
           {:else if additional.type === 'fishinglures'}
+            <div class="stat-row">
+              <span class="stat-label">Lure Type</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.LureType}
+                  path="Properties.LureType"
+                  type="select"
+                  options={lureTypeOptions}
+                />
+              </span>
+            </div>
             <div class="stat-row">
               <span class="stat-label">Depth (m)</span>
               <span class="stat-value">
