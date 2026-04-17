@@ -7,11 +7,9 @@ const baseQuery = `
          ms."Name" AS "SpeciesName",
          ms."CodexBaseCost" AS "SpeciesCodexBaseCost",
          ms."CodexType" AS "SpeciesCodexType",
-         lure_t."Name" AS "PreferredLureName",
          oil_t."Name" AS "FishOilName"
     FROM ONLY "Fish" f
     LEFT JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
-    LEFT JOIN "Items" lure_t ON lure_t."Id" = f."PreferredLureId"
     LEFT JOIN "Items" oil_t ON oil_t."Id" = f."FishOilItemId"
 `;
 
@@ -115,6 +113,9 @@ function formatFish(f, rel) {
       TimesOfDay: Array.isArray(f.TimeOfDay) ? f.TimeOfDay : (f.TimeOfDay ? f.TimeOfDay.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
       Biomes: rel.biomesByFish[f.Id] || [],
       RodTypes: rel.rodTypesByFish[f.Id] || [],
+      PreferredLureTypes: Array.isArray(f.PreferredLureTypes)
+        ? f.PreferredLureTypes
+        : (f.PreferredLureTypes ? f.PreferredLureTypes.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
     },
     Sizes: rel.sizesByFish[f.Id] || [],
     Species: f.SpeciesName ? {
@@ -128,10 +129,6 @@ function formatFish(f, rel) {
     FishOil: f.FishOilName ? {
       Name: f.FishOilName,
       Links: { "$Url": `/items/${f.FishOilItemId}` }
-    } : null,
-    PreferredLure: f.PreferredLureName ? {
-      Name: f.PreferredLureName,
-      Links: { "$Url": `/items/${f.PreferredLureId}` }
     } : null,
     Planets: rel.planetsByFish[f.Id] || [],
     Locations: rel.locationsByFish[f.Id] || [],

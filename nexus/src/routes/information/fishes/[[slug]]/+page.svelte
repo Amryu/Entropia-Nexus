@@ -40,6 +40,7 @@
   const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Very Hard', 'Elite'];
   const TIMES_OF_DAY = ['Dawn', 'Day', 'Sunset', 'Night'];
   const ROD_TYPES = ['Casting', 'Angling', 'Fly Fishing', 'Deep Ocean Fishing', 'Baitfishing'];
+  const LURE_TYPES = ['Sinkers', 'Lures', 'Baits', 'Worms', 'Jigs', 'Flys', 'Spinners', 'Spoons'];
 
   const emptyEntity = {
     Name: '',
@@ -49,12 +50,12 @@
       MinDepth: null,
       TimesOfDay: [],
       Biomes: [],
-      RodTypes: []
+      RodTypes: [],
+      PreferredLureTypes: []
     },
     Sizes: [],
     Species: { Name: '' },
     FishOil: { Name: null },
-    PreferredLure: { Name: null },
     Planets: [],
     Locations: []
   };
@@ -140,9 +141,9 @@
     },
     lure: {
       key: 'lure',
-      header: 'Preferred Lure',
-      width: '120px',
-      getValue: (item) => item.PreferredLure?.Name,
+      header: 'Preferred Lures',
+      width: '140px',
+      getValue: (item) => (item.Properties?.PreferredLureTypes || []).join(', '),
       format: (v) => v || '-'
     }
   };
@@ -157,10 +158,9 @@
   // Lazy-load edit dependencies on edit activation
   let editDepsLoading = $state(false);
   $effect(() => {
-    if ($editMode && data.itemsList === null && !untrack(() => editDepsLoading)) {
+    if ($editMode && data.materialsList === null && !untrack(() => editDepsLoading)) {
       editDepsLoading = true;
       loadEditDeps([
-        { key: 'itemsList', url: '/api/items?limit=5000' },
         { key: 'materialsList', url: '/api/materials?limit=5000' },
         { key: 'planetsList', url: '/api/planets' },
         { key: 'speciesList', url: '/api/mobspecies' }
@@ -243,13 +243,6 @@
     ? `https://entropianexus.com/information/fishes/${encodeURIComponentSafe(fish.Name)}`
     : 'https://entropianexus.com/information/fishes');
   let entityImageUrl = $derived(fish?.Id ? `/api/img/fish/${fish.Id}` : null);
-
-  let lureItemOptions = $derived.by(() => {
-    if (!$editMode || !Array.isArray(data.itemsList)) return [];
-    return data.itemsList
-      .filter(it => it?.Properties?.Type === 'FishingLure')
-      .map(it => ({ value: it.Name, label: it.Name }));
-  });
 
   let oilItemOptions = $derived.by(() => {
     if (!$editMode || !Array.isArray(data.materialsList)) return [];
@@ -360,6 +353,26 @@
   function removeRodType(rt) {
     const current = (activeEntity?.Properties?.RodTypes || []).filter(x => x !== rt);
     updateField('Properties.RodTypes', current);
+  }
+
+  let lureTypeAddOptions = $derived.by(() => {
+    const selected = new Set(activeEntity?.Properties?.PreferredLureTypes || []);
+    return LURE_TYPES
+      .filter(lt => !selected.has(lt))
+      .map(lt => ({ value: lt, label: lt }));
+  });
+
+  function addLureType(lt) {
+    if (!lt) return;
+    const current = Array.isArray(activeEntity?.Properties?.PreferredLureTypes) ? [...activeEntity.Properties.PreferredLureTypes] : [];
+    if (current.includes(lt)) return;
+    current.push(lt);
+    updateField('Properties.PreferredLureTypes', current);
+  }
+
+  function removeLureType(lt) {
+    const current = (activeEntity?.Properties?.PreferredLureTypes || []).filter(x => x !== lt);
+    updateField('Properties.PreferredLureTypes', current);
   }
 
   // Remaining planet options (not yet selected).
@@ -532,26 +545,6 @@
           </div>
         </div>
 
-        <!-- Preferred lure -->
-        <div class="stats-section">
-          <h4 class="section-title">Preferred Lure</h4>
-          <div class="stat-row stat-row-block">
-            <span class="stat-value stat-value-block">
-              {#if $editMode}
-                <SearchInput
-                  value={activeEntity?.PreferredLure?.Name || ''}
-                  placeholder="Search lure..."
-                  options={lureItemOptions}
-                  onchange={(e) => updateField('PreferredLure.Name', e.value)}
-                  onselect={(e) => updateField('PreferredLure.Name', e.value)}
-                />
-              {:else}
-                {activeEntity?.PreferredLure?.Name || 'N/A'}
-              {/if}
-            </span>
-          </div>
-        </div>
-
         <!-- Classifications: consolidated multi-select panel -->
         <div class="stats-section">
           <h4 class="section-title">Classifications</h4>
@@ -628,6 +621,32 @@
               <select class="add-select" value="" onchange={(e) => { addRodType(e.currentTarget.value); e.currentTarget.value = ''; }}>
                 <option value="" disabled>+ Add…</option>
                 {#each rodTypeAddOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            {/if}
+          </div>
+
+          <div class="multi-group">
+            <span class="multi-label">Preferred Lures</span>
+            {#if (activeEntity?.Properties?.PreferredLureTypes || []).length > 0}
+              <div class="chip-list">
+                {#each activeEntity.Properties.PreferredLureTypes as lt}
+                  <span class="chip">
+                    {lt}
+                    {#if $editMode}
+                      <button type="button" class="chip-remove" aria-label="Remove {lt}" onclick={() => removeLureType(lt)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {:else if !$editMode}
+              <span class="empty-inline">-</span>
+            {/if}
+            {#if $editMode && lureTypeAddOptions.length > 0}
+              <select class="add-select" value="" onchange={(e) => { addLureType(e.currentTarget.value); e.currentTarget.value = ''; }}>
+                <option value="" disabled>+ Add…</option>
+                {#each lureTypeAddOptions as opt}
                   <option value={opt.value}>{opt.label}</option>
                 {/each}
               </select>

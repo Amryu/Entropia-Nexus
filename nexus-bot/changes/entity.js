@@ -954,13 +954,7 @@ export const UpsertConfigs = {
       }},
       { name: "Difficulty", value: x => x.Properties?.Difficulty ?? null },
       { name: "MinDepth", value: x => x.Properties?.MinDepth ?? null },
-      { name: "PreferredLureId", value: async (x, c) => {
-        if (!x.PreferredLure?.Name) return null;
-        return await c.query(
-          `SELECT "Id" FROM "Items" WHERE "Name" = $1 AND "Type" = 'FishingLure'`,
-          [x.PreferredLure.Name]
-        ).then(res => res.rows[0]?.Id ?? null);
-      }},
+      { name: "PreferredLureTypes", value: x => Array.isArray(x.Properties?.PreferredLureTypes) ? x.Properties.PreferredLureTypes : [] },
       { name: "FishOilItemId", value: async (x, c) => {
         if (!x.FishOil?.Name) return null;
         return await c.query(

@@ -74,22 +74,20 @@ export async function load({ fetch, params, url, parent }) {
   }
   response.skillsList = cachedSkills;
 
-  // Edit-mode dependencies: item/lure picker, planet toggles, plus the list
-  // of existing Fish-type species so the form can distinguish "pick existing"
-  // from "create new". Species list is filtered client-side on CodexType.
+  // Edit-mode dependencies: oil material picker, planet toggles, plus the
+  // list of existing Fish-type species so the form can distinguish
+  // "pick existing" from "create new". Species list is filtered client-side
+  // on CodexType.
   if (isCreateMode) {
-    const [itemsData, materialsData, planetsData, speciesData] = await Promise.all([
-      apiCall(fetch, '/items?limit=5000').catch(() => []),
+    const [materialsData, planetsData, speciesData] = await Promise.all([
       apiCall(fetch, '/materials?limit=5000').catch(() => []),
       apiCall(fetch, '/planets').catch(() => []),
       apiCall(fetch, '/mobspecies').catch(() => [])
     ]);
-    response.itemsList = itemsData || [];
     response.materialsList = materialsData || [];
     response.planetsList = planetsData || [];
     response.speciesList = speciesData || [];
   } else {
-    response.itemsList = null;
     response.materialsList = null;
     response.planetsList = null;
     response.speciesList = null;

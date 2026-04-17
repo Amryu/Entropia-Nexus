@@ -53,6 +53,14 @@ export const Fish = {
             "enum": ["Casting", "Angling", "Fly Fishing", "Deep Ocean Fishing", "Baitfishing"]
           },
           "default": []
+        },
+        "PreferredLureTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["Sinkers", "Lures", "Baits", "Worms", "Jigs", "Flys", "Spinners", "Spoons"]
+          },
+          "default": []
         }
       },
       "required": [
@@ -61,7 +69,8 @@ export const Fish = {
         "Difficulty",
         "MinDepth",
         "TimesOfDay",
-        "RodTypes"
+        "RodTypes",
+        "PreferredLureTypes"
       ]
     },
     "Sizes": {
@@ -88,7 +97,6 @@ export const Fish = {
       "required": ["Name"]
     },
     "FishOil": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
-    "PreferredLure": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Planets": {
       "type": "array",
       "items": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
