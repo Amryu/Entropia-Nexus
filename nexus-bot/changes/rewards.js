@@ -43,6 +43,8 @@ export function getEntityApiCollection(entityType) {
     case 'CreatureControlCapsule':
     case 'Capsule':
       return 'capsules';
+    case 'Fish':
+      return 'fishes';
     default:
       return `${entityType.toLowerCase()}s`;
   }
