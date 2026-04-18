@@ -79,5 +79,15 @@ export async function load({ fetch, params, url, parent }) {
   // Edit-mode dependency: only load server-side in create mode
   response.professions = isCreateMode ? ((await apiCall(fetch, '/professions').catch(() => [])) || []) : null;
 
+  // Profession changes share junction tables with Skill changes; an open
+  // Profession change locks the Professions/Unlocks editors on this page.
+  try {
+    const res = await fetch('/api/changes/any-open?entity=Profession');
+    const data = res.ok ? await res.json() : null;
+    response.openProfessionChangeCount = data?.counts?.Profession ?? 0;
+  } catch {
+    response.openProfessionChangeCount = 0;
+  }
+
   return response;
 }

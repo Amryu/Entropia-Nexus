@@ -8,9 +8,9 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
-  import { onMount, onDestroy, setContext } from 'svelte';
+  import { onMount, onDestroy, setContext, untrack } from 'svelte';
   setContext('wikiContributeCategory', 'profession');
-  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { hasVisibleText } from '$lib/sanitize.js';
 
   // Wiki components
@@ -20,6 +20,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Profession-specific components
   import ProfessionSkills from '$lib/components/wiki/professions/ProfessionSkills.svelte';
@@ -42,7 +43,27 @@
     changeMetadata
   } from '$lib/stores/wikiEditState.js';
 
-  let { data } = $props();
+  let skillOptions = $derived((data?.skills || [])
+    .filter(s => s?.Name)
+    .map(s => ({ label: s.Name, value: s.Name })));
+  let openSkillChangeCount = $derived(data?.openSkillChangeCount ?? 0);
+  let crossEntityLocked = $derived(openSkillChangeCount > 0);
+
+  let { data = $bindable() } = $props();
+
+  // Lazy-load skill list when edit mode activates (create mode loads server-side).
+  let editDepsLoading = $state(false);
+  $effect(() => {
+    if ($editMode && data.skills === null && !untrack(() => editDepsLoading)) {
+      editDepsLoading = true;
+      loadEditDeps([
+        { key: 'skills', url: '/api/skills' }
+      ]).then(deps => {
+        data = { ...data, ...deps };
+        editDepsLoading = false;
+      });
+    }
+  });
 
 
 
@@ -211,6 +232,53 @@
     return `category-${lower}`;
   }
 
+  // ========== SKILL COMPONENT / UNLOCK EDITING ==========
+  function updateSkillEntry(index, field, value) {
+    const entries = [...(activeEntity?.Skills || [])];
+    const entry = entries[index] || { Skill: { Name: '' }, Weight: null };
+    if (field === 'Skill') {
+      entry.Skill = { ...(entry.Skill || {}), Name: value };
+    } else {
+      entry.Weight = value === '' || value === null ? null : Number(value);
+    }
+    entries[index] = entry;
+    updateField('Skills', entries);
+  }
+
+  function addSkillEntry() {
+    const entries = [...(activeEntity?.Skills || [])];
+    entries.push({ Skill: { Name: '' }, Weight: null });
+    updateField('Skills', entries);
+  }
+
+  function removeSkillEntry(index) {
+    const entries = (activeEntity?.Skills || []).filter((_, i) => i !== index);
+    updateField('Skills', entries);
+  }
+
+  function updateUnlockEntry(index, field, value) {
+    const entries = [...(activeEntity?.Unlocks || [])];
+    const entry = entries[index] || { Skill: { Name: '' }, Level: null };
+    if (field === 'Skill') {
+      entry.Skill = { ...(entry.Skill || {}), Name: value };
+    } else {
+      entry.Level = value === '' || value === null ? null : Number(value);
+    }
+    entries[index] = entry;
+    updateField('Unlocks', entries);
+  }
+
+  function addUnlockEntry() {
+    const entries = [...(activeEntity?.Unlocks || [])];
+    entries.push({ Skill: { Name: '' }, Level: null });
+    updateField('Unlocks', entries);
+  }
+
+  function removeUnlockEntry(index) {
+    const entries = (activeEntity?.Unlocks || []).filter((_, i) => i !== index);
+    updateField('Unlocks', entries);
+  }
+
   let profession = $derived(data.object);
   let user = $derived(data.session?.user);
   let allItems = $derived(data.allItems || []);
@@ -303,6 +371,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if activeEntity || isCreateMode}
     <!-- Pending Change Banner -->
@@ -437,18 +506,62 @@
           {/if}
         </div>
         <!-- Skill Components Section -->
-        <DataSection
-          title="Skill Components"
-          icon=""
-          bind:expanded={panelStates.skills}
-          subtitle="{skillCount} skill{skillCount > 1 ? 's' : ''}"
-          ontoggle={savePanelStates}
-        >
-          <ProfessionSkills skills={activeEntity?.Skills} />
-        </DataSection>
+        {#if $editMode || (activeEntity?.Skills && activeEntity.Skills.length > 0)}
+          <DataSection
+            title="Skill Components"
+            icon=""
+            bind:expanded={panelStates.skills}
+            subtitle="{skillCount} skill{skillCount > 1 ? 's' : ''}"
+            ontoggle={savePanelStates}
+          >
+            {#if $editMode && crossEntityLocked}
+              <div class="cross-entity-lock">
+                Skill edits are locked while {openSkillChangeCount} skill change{openSkillChangeCount === 1 ? ' is' : 's are'} open.
+                Approve or deny the open skill change{openSkillChangeCount === 1 ? '' : 's'} before editing skill components here.
+              </div>
+              <ProfessionSkills skills={activeEntity?.Skills} />
+            {:else if $editMode}
+              <div class="prof-edit-list">
+                {#each activeEntity?.Skills || [] as entry, index (index)}
+                  {@const missingSkill = !(entry?.Skill?.Name || '').trim()}
+                  {@const missingWeight = entry?.Weight === null || entry?.Weight === undefined || entry?.Weight === ''}
+                  <div class="prof-edit-row" class:invalid={missingSkill || missingWeight}>
+                    <div class="prof-edit-search" class:invalid={missingSkill}>
+                      <SearchInput
+                        value={entry?.Skill?.Name || ''}
+                        options={skillOptions}
+                        placeholder="Skill"
+                        onselect={(e) => updateSkillEntry(index, 'Skill', e.value)}
+                        onchange={(e) => updateSkillEntry(index, 'Skill', e.value)}
+                      />
+                    </div>
+                    <input
+                      class="prof-edit-number"
+                      class:invalid={missingWeight}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Weight"
+                      value={entry?.Weight ?? ''}
+                      oninput={(e) => updateSkillEntry(index, 'Weight', e.target.value)}
+                    />
+                    <button class="prof-edit-remove" onclick={() => removeSkillEntry(index)} aria-label="Remove skill">
+                      ×
+                    </button>
+                  </div>
+                {/each}
+                <button class="prof-edit-add" onclick={addSkillEntry}>
+                  + Add skill
+                </button>
+              </div>
+            {:else}
+              <ProfessionSkills skills={activeEntity?.Skills} />
+            {/if}
+          </DataSection>
+        {/if}
 
         <!-- Skill Unlocks Section -->
-        {#if activeEntity?.Unlocks && activeEntity.Unlocks.length > 0}
+        {#if $editMode || (activeEntity?.Unlocks && activeEntity.Unlocks.length > 0)}
           <DataSection
             title="Skill Unlocks"
             icon=""
@@ -456,7 +569,48 @@
             subtitle="{unlockCount} unlock{unlockCount > 1 ? 's' : ''}"
             ontoggle={savePanelStates}
           >
-            <ProfessionUnlocks unlocks={activeEntity.Unlocks} />
+            {#if $editMode && crossEntityLocked}
+              <div class="cross-entity-lock">
+                Skill unlock edits are locked while {openSkillChangeCount} skill change{openSkillChangeCount === 1 ? ' is' : 's are'} open.
+              </div>
+              <ProfessionUnlocks unlocks={activeEntity.Unlocks} />
+            {:else if $editMode}
+              <div class="prof-edit-list">
+                {#each activeEntity?.Unlocks || [] as entry, index (index)}
+                  {@const missingSkill = !(entry?.Skill?.Name || '').trim()}
+                  {@const missingLevel = entry?.Level === null || entry?.Level === undefined || entry?.Level === ''}
+                  <div class="prof-edit-row" class:invalid={missingSkill || missingLevel}>
+                    <div class="prof-edit-search" class:invalid={missingSkill}>
+                      <SearchInput
+                        value={entry?.Skill?.Name || ''}
+                        options={skillOptions}
+                        placeholder="Skill"
+                        onselect={(e) => updateUnlockEntry(index, 'Skill', e.value)}
+                        onchange={(e) => updateUnlockEntry(index, 'Skill', e.value)}
+                      />
+                    </div>
+                    <input
+                      class="prof-edit-number"
+                      class:invalid={missingLevel}
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Level"
+                      value={entry?.Level ?? ''}
+                      oninput={(e) => updateUnlockEntry(index, 'Level', e.target.value)}
+                    />
+                    <button class="prof-edit-remove" onclick={() => removeUnlockEntry(index)} aria-label="Remove unlock">
+                      ×
+                    </button>
+                  </div>
+                {/each}
+                <button class="prof-edit-add" onclick={addUnlockEntry}>
+                  + Add unlock
+                </button>
+              </div>
+            {:else}
+              <ProfessionUnlocks unlocks={activeEntity.Unlocks} />
+            {/if}
           </DataSection>
         {/if}
       </article>
@@ -492,4 +646,108 @@
     background-color: #6b7280;
   }
 
+  .cross-entity-lock {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background-color: var(--warning-bg, rgba(251, 191, 36, 0.12));
+    border-left: 3px solid var(--warning-color, #fbbf24);
+    color: var(--text-color);
+    font-size: 13px;
+    border-radius: 4px;
+    line-height: 1.4;
+  }
+
+  .prof-edit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .prof-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 4px;
+    border-left: 3px solid var(--accent-color, #4a9eff);
+  }
+
+  .prof-edit-row.invalid {
+    border-left-color: var(--error-color, #ff6b6b);
+  }
+
+  .prof-edit-search {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .prof-edit-search.invalid :global(.local-search input) {
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .prof-edit-number {
+    width: 70px;
+    padding: 5px 6px;
+    font-size: 13px;
+    text-align: left;
+    background-color: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .prof-edit-number:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .prof-edit-number.invalid {
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .prof-edit-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: auto;
+    background-color: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--error-color, #ff6b6b);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .prof-edit-remove:hover {
+    background-color: var(--error-color, #ff6b6b);
+    color: white;
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .prof-edit-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+  }
+
+  .prof-edit-add:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+  }
 </style>

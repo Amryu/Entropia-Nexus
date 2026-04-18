@@ -234,6 +234,19 @@ export async function getOpenChangeByEntityId(entity, id, type = null) {
   return rows[0] || null;
 }
 
+// Count open changes across all entities of a given type (any entity id).
+// Used to block cross-entity edits: Profession and Skill both write to the
+// ProfessionSkills/SkillUnlocks junction tables, so concurrent approvals
+// could clobber each other.
+export async function countOpenChangesForEntity(entity) {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM changes
+     WHERE entity = $1 AND state IN ('Draft', 'Pending', 'DirectApply', 'ApplyFailed')`,
+    [entity]
+  );
+  return rows[0]?.count ?? 0;
+}
+
 export async function updateChange(id, data, state) {
   const query = 'UPDATE changes SET data = $2, state = $3 WHERE id = $1 RETURNING id, content_updated_at';
   const values = [id, data, state];

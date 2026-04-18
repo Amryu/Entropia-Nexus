@@ -1,8 +1,91 @@
 //@ts-nocheck
-import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getOpenChangeByEntityId, getChangesFiltered } from "$lib/server/db.js"
+import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getOpenChangeByEntityId, getChangesFiltered, countOpenChangesForEntity } from "$lib/server/db.js"
 import { apiCall, getResponse } from "$lib/util.js";
 import { sanitizeRichText } from "$lib/server/sanitizeRichText.js";
 import { getValidator } from "$lib/server/schemaValidator.js";
+
+/**
+ * Skill and Profession changes both write to the ProfessionSkills and
+ * SkillUnlocks junction tables on approval. Allowing concurrent open changes
+ * on both sides lets the bot's DELETE+upsert rewrites clobber each other.
+ *
+ * For each side we list the cross-entity arrays, the field holding the named
+ * reference inside each item, and the secondary scalar (Weight or Level)
+ * stored in the junction row. Extraction is used to diff what actually lands
+ * in the DB, ignoring richer reference fields (Properties, Links) returned
+ * by the live API.
+ */
+const CROSS_ENTITY_PAIRS = {
+  Skill: {
+    opposite: 'Profession',
+    arrays: [
+      { field: 'Professions', ref: 'Profession', scalar: 'Weight' },
+      { field: 'Unlocks', ref: 'Profession', scalar: 'Level' },
+    ],
+  },
+  Profession: {
+    opposite: 'Skill',
+    arrays: [
+      { field: 'Skills', ref: 'Skill', scalar: 'Weight' },
+      { field: 'Unlocks', ref: 'Skill', scalar: 'Level' },
+    ],
+  },
+};
+
+function normalizeJunctionArray(arr, ref, scalar) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map(x => {
+      const name = x?.[ref]?.Name ?? null;
+      const value = x?.[scalar];
+      return name == null ? null : `${name}\u0000${value ?? ''}`;
+    })
+    .filter(Boolean)
+    .sort();
+}
+
+function junctionArrayEquals(a, b, ref, scalar) {
+  const aa = normalizeJunctionArray(a, ref, scalar);
+  const bb = normalizeJunctionArray(b, ref, scalar);
+  if (aa.length !== bb.length) return false;
+  return aa.every((v, i) => v === bb[i]);
+}
+
+/**
+ * Fetch the current live state of an entity for cross-entity diffing.
+ * Returns null if the entity doesn't exist yet (Create change) or on error.
+ */
+async function fetchCurrentEntity(fetch, entity, entityId) {
+  if (!entityId) return null;
+  const collection = entity === 'Skill' ? 'skills' : entity === 'Profession' ? 'professions' : null;
+  if (!collection) return null;
+  return await apiCall(fetch, `/${collection}/${encodeURIComponent(entityId)}`);
+}
+
+/**
+ * If the incoming change body modifies a cross-entity array and the opposite
+ * entity has any open changes, return a 409 response. Otherwise null.
+ */
+async function checkCrossEntityLock(fetch, entity, body, changeType) {
+  const pair = CROSS_ENTITY_PAIRS[entity];
+  if (!pair) return null;
+
+  const entityId = changeType === 'Create' ? null : (body?.Id ?? body?.ItemId ?? null);
+  const current = await fetchCurrentEntity(fetch, entity, entityId);
+
+  const modified = pair.arrays.some(({ field, ref, scalar }) =>
+    !junctionArrayEquals(body?.[field], current?.[field], ref, scalar)
+  );
+  if (!modified) return null;
+
+  const openCount = await countOpenChangesForEntity(pair.opposite);
+  if (openCount === 0) return null;
+
+  const fieldNames = pair.arrays.map(a => a.field).join(' or ');
+  return getResponse({
+    error: `Cannot modify ${fieldNames} while there ${openCount === 1 ? 'is' : 'are'} ${openCount} open ${pair.opposite} change${openCount === 1 ? '' : 's'}. These fields share database tables and concurrent edits would conflict.`
+  }, 409);
+}
 
 /**
  * Recursively trims all string values in an object or array.
@@ -159,7 +242,7 @@ export async function GET({ params, url }) {
 }
 
 // UPDATE
-export async function PUT({ params, request, locals, url }) {
+export async function PUT({ params, request, locals, url, fetch }) {
   let user = locals.session?.user;
 
   if (!user) {
@@ -220,6 +303,11 @@ export async function PUT({ params, request, locals, url }) {
     if (errorResponse) {
       return errorResponse;
     }
+
+    errorResponse = await checkCrossEntityLock(fetch, entity, body, change.type);
+    if (errorResponse) {
+      return errorResponse;
+    }
   }
   else {
     body = change.data;
@@ -239,7 +327,7 @@ export async function PUT({ params, request, locals, url }) {
 }
 
 // CREATE
-export async function POST({ request, params, locals, url }) {
+export async function POST({ request, params, locals, url, fetch }) {
   let user = locals.session?.user;
 
   if (!user) {
@@ -277,6 +365,11 @@ export async function POST({ request, params, locals, url }) {
   sanitizeBody(body);
 
   let errorResponse = validateChange(body, entity);
+  if (errorResponse) {
+    return errorResponse;
+  }
+
+  errorResponse = await checkCrossEntityLock(fetch, entity, body, type);
   if (errorResponse) {
     return errorResponse;
   }

@@ -182,6 +182,8 @@
   let professionOptions = $derived((allProfessions || [])
     .filter((prof) => prof?.Name)
     .map((prof) => ({ label: prof.Name, value: prof.Name })));
+  let openProfessionChangeCount = $derived(data?.openProfessionChangeCount ?? 0);
+  let crossEntityLocked = $derived(openProfessionChangeCount > 0);
 
   const skillColumnDefs = {
     category: {
@@ -582,7 +584,13 @@
             subtitle="{professionCount} profession{professionCount !== 1 ? 's' : ''}"
             ontoggle={savePanelStates}
           >
-            {#if $editMode}
+            {#if $editMode && crossEntityLocked}
+              <div class="cross-entity-lock">
+                Profession edits are locked while {openProfessionChangeCount} profession change{openProfessionChangeCount === 1 ? ' is' : 's are'} open.
+                Approve or deny the open profession change{openProfessionChangeCount === 1 ? '' : 's'} before editing professions here.
+              </div>
+              <SkillProfessions professions={activeSkill?.Professions} />
+            {:else if $editMode}
               <div class="skill-edit-list">
                 {#each activeSkill?.Professions || [] as entry, index (index)}
                   {@const missingProfession = !(entry?.Profession?.Name || '').trim()}
@@ -631,7 +639,12 @@
             subtitle="{unlockCount} profession{unlockCount !== 1 ? 's' : ''}"
             ontoggle={savePanelStates}
           >
-            {#if $editMode}
+            {#if $editMode && crossEntityLocked}
+              <div class="cross-entity-lock">
+                Unlock edits are locked while {openProfessionChangeCount} profession change{openProfessionChangeCount === 1 ? ' is' : 's are'} open.
+              </div>
+              <SkillUnlockedBy unlocks={activeSkill.Unlocks} />
+            {:else if $editMode}
               <div class="skill-edit-list">
                 {#each activeSkill?.Unlocks || [] as entry, index (index)}
                   {@const missingProfession = !(entry?.Profession?.Name || '').trim()}
@@ -859,5 +872,14 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-
+  .cross-entity-lock {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background-color: var(--warning-bg, rgba(251, 191, 36, 0.12));
+    border-left: 3px solid var(--warning-color, #fbbf24);
+    color: var(--text-color);
+    font-size: 13px;
+    border-radius: 4px;
+    line-height: 1.4;
+  }
 </style>

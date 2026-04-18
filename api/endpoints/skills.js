@@ -66,7 +66,7 @@ function formatSkill(x, data, classIds) {
       IsExtractable: !!x.IsExtractable,
     },
     Professions: professionSkills,
-    Unlocks: unlocks.length > 0 ? unlocks : null,
+    Unlocks: unlocks,
     Category: {
       Name: x.Category,
       Links: { $Url: `/skillcategories/${x.CategoryId}` },

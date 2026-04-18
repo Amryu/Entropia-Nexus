@@ -7,7 +7,7 @@
 let items;
 
 import { redirect } from '@sveltejs/kit';
-import { decodeURIComponentSafe, encodeURIComponentSafe, handlePageLoad, loadPendingChangesData } from '$lib/util';
+import { apiCall, decodeURIComponentSafe, encodeURIComponentSafe, handlePageLoad, loadPendingChangesData } from '$lib/util';
 
 export async function load({ fetch, params, url, parent }) {
   if (url.searchParams.get('mode') === 'view') {
@@ -75,6 +75,19 @@ export async function load({ fetch, params, url, parent }) {
   response.userPendingUpdates = pendingData.userPendingUpdates;
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
+
+  // Skill list needed for the in-page editors (create mode loads now, view/edit lazy-loads).
+  response.skills = isCreateMode ? ((await apiCall(fetch, '/skills').catch(() => [])) || []) : null;
+
+  // Skill changes share junction tables with Profession changes; an open Skill
+  // change locks the Skills/Unlocks editors on this page.
+  try {
+    const res = await fetch('/api/changes/any-open?entity=Skill');
+    const data = res.ok ? await res.json() : null;
+    response.openSkillChangeCount = data?.counts?.Skill ?? 0;
+  } catch {
+    response.openSkillChangeCount = 0;
+  }
 
   return response;
 }
