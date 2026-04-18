@@ -7,7 +7,7 @@ import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedCha
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
-import { handleReward, fetchEntityForReward, isAuthorizedReviewer, isDiscordAdmin, postRewardSummary } from './changes/rewards.js';
+import { handleReward, fetchEntityForReward, isAuthorizedReviewer, isDiscordAdmin, postRewardSummary, getEntityApiCollection } from './changes/rewards.js';
 import { getTypeLink, getStateLabel } from './util.js';
 import { renderMapChange } from './mapRenderer.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
@@ -88,21 +88,6 @@ async function fetchPlanetData(planetName) {
     return data;
   } catch {
     return null;
-  }
-}
-
-function getEntityApiCollection(entityType) {
-  switch (entityType) {
-    case 'TeleportChip':
-    case 'TeleportationChip':
-      return 'teleportationchips';
-    case 'CreatureControlCapsule':
-    case 'Capsule':
-      return 'capsules';
-    case 'Area':
-      return 'locations';
-    default:
-      return `${entityType.toLowerCase()}s`;
   }
 }
 

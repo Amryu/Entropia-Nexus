@@ -43,6 +43,8 @@ export function getEntityApiCollection(entityType) {
     case 'CreatureControlCapsule':
     case 'Capsule':
       return 'capsules';
+    case 'Area':
+      return 'locations';
     case 'Fish':
       return 'fishes';
     default:
