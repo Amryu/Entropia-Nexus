@@ -91,12 +91,67 @@ async function getMissionObjectives(stepIds) {
   return rows;
 }
 
+const SKILL_IMPLANT_SUFFIX_RE = / Skill Implant \(L\)$/;
+
+async function resolveSkillNames(skillItemIds) {
+  if (!skillItemIds.length) return {};
+  const { rows } = await pool.query(
+    'SELECT "Id", "Name" FROM ONLY "Items" WHERE "Id" = ANY($1)',
+    [skillItemIds]
+  );
+  const map = {};
+  for (const row of rows) {
+    if (!row?.Name) continue;
+    const stripped = row.Name.replace(SKILL_IMPLANT_SUFFIX_RE, '').trim();
+    map[row.Id] = stripped || row.Name;
+  }
+  return map;
+}
+
+function collectSkillArrays(reward) {
+  // Flat mode: reward.Skills is the list.
+  // Choice mode: reward.Items is an array of packages, each with its own Skills.
+  const arrays = [];
+  if (Array.isArray(reward?.Skills)) arrays.push(reward.Skills);
+  if (Array.isArray(reward?.Items)) {
+    for (const entry of reward.Items) {
+      if (entry && Array.isArray(entry.Skills)) arrays.push(entry.Skills);
+    }
+  }
+  return arrays;
+}
+
+async function enrichRewardSkillNames(rewards) {
+  const missing = new Set();
+  for (const reward of rewards) {
+    for (const skills of collectSkillArrays(reward)) {
+      for (const s of skills) {
+        if (!s?.skillName && Number.isFinite(Number(s?.skillItemId))) {
+          missing.add(Number(s.skillItemId));
+        }
+      }
+    }
+  }
+  if (!missing.size) return;
+  const nameMap = await resolveSkillNames([...missing]);
+  for (const reward of rewards) {
+    for (const skills of collectSkillArrays(reward)) {
+      for (const s of skills) {
+        if (!s.skillName && s.skillItemId != null && nameMap[s.skillItemId]) {
+          s.skillName = nameMap[s.skillItemId];
+        }
+      }
+    }
+  }
+}
+
 async function getMissionRewards(missionIds) {
   if (!missionIds.length) return [];
   const { rows } = await pool.query(
     'SELECT * FROM ONLY "MissionRewards" WHERE "MissionId" = ANY($1)',
     [missionIds]
   );
+  await enrichRewardSkillNames(rows);
   return rows;
 }
 

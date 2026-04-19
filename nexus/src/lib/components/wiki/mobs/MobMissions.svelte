@@ -81,10 +81,13 @@
         }
       }
       for (const skill of (pkg.Skills || [])) {
-        const name = skill.skillName || `Skill #${skill.skillItemId}`;
-        const safeName = escapeHtml(name);
+        const name = skill.skillName;
         const ped = skill.pedValue ? ` (+${formatPed(skill.pedValue)} PED)` : '';
-        pkgParts.push(`<a href="/information/skills/${encodeURIComponentSafe(name)}" class="wiki-link">${safeName}</a>${ped}`);
+        if (name) {
+          pkgParts.push(`<a href="/information/skills/${encodeURIComponentSafe(name)}" class="wiki-link">${escapeHtml(name)}</a>${ped}`);
+        } else {
+          pkgParts.push(`<span>Skill #${skill.skillItemId}</span>${ped}`);
+        }
       }
       for (const unlock of (pkg.Unlocks || [])) {
         pkgParts.push(`<span class="reward-unlock">${escapeHtml(unlock)}</span>`);
