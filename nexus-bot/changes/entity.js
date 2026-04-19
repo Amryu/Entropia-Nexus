@@ -1865,11 +1865,23 @@ async function applyFishSizesChanges(client, fishId, sizes) {
         [size.Name, weight, ttValue, itemId - 1000000]
       );
     } else {
-      const inserted = await client.query(
-        `INSERT INTO "Materials" ("Name", "Weight", "Value") VALUES ($1, $2, $3) RETURNING "Id"`,
-        [size.Name, weight, ttValue]
+      const byName = await client.query(
+        `SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1`,
+        [size.Name]
       );
-      itemId = inserted.rows[0].Id + 1000000;
+      if (byName.rows[0]) {
+        await client.query(
+          `UPDATE ONLY "Materials" SET "Weight" = $1, "Value" = $2 WHERE "Id" = $3`,
+          [weight, ttValue, byName.rows[0].Id]
+        );
+        itemId = byName.rows[0].Id + 1000000;
+      } else {
+        const inserted = await client.query(
+          `INSERT INTO "Materials" ("Name", "Weight", "Value") VALUES ($1, $2, $3) RETURNING "Id"`,
+          [size.Name, weight, ttValue]
+        );
+        itemId = inserted.rows[0].Id + 1000000;
+      }
     }
 
     await client.query(
