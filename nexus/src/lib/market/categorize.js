@@ -23,7 +23,12 @@ export function categorizeItems(items, {
   blueprints,
   materials,
   vehicles,
-  strongboxes
+  strongboxes,
+  fishingRods,
+  fishingReels,
+  fishingBlanks,
+  fishingLines,
+  fishingLures
 } = {}) {
   const categorized = makeEmptyCategories();
   // If detailed datasets are provided, skip base-items for those types to avoid duplication
@@ -137,6 +142,11 @@ export function categorizeItems(items, {
   (finders || []).forEach(f => categorized.tools.mining.finders.push(f));
   (finderAmplifiers || []).forEach(a => categorized.tools.mining.amplifiers.push(a));
   (excavators || []).forEach(e => categorized.tools.mining.excavators.push(e));
+  (fishingRods || []).forEach(r => categorized.tools.fishing.rods.push(r));
+  (fishingReels || []).forEach(r => categorized.tools.fishing.reels.push(r));
+  (fishingBlanks || []).forEach(b => categorized.tools.fishing.blanks.push(b));
+  (fishingLines || []).forEach(l => categorized.tools.fishing.lines.push(l));
+  (fishingLures || []).forEach(l => categorized.tools.fishing.lures.push(l));
   (scanners || []).forEach(s => categorized.tools.scanning.push(s));
   (miscTools || []).forEach(tool => categorizeMiscTool(tool, categorized.tools, categorized.skill_implants));
 
@@ -188,6 +198,7 @@ function makeEmptyCategories() {
     tools: {
       medical: [],
       mining: { finders: [], amplifiers: [], excavators: [] },
+      fishing: { rods: [], reels: [], blanks: [], lines: [], lures: [] },
       scanning: [],
       harvesting: [],
       mindforce: [],
@@ -208,6 +219,7 @@ function makeEmptyCategories() {
     },
     materials: {
       animal_oils: [], leather: [], robot_parts: [], timber: [], fragments: [], forageables: [], extractors: [],
+      fishes: [],
       ores: { raw: [], refined: [] }, enmatter: { raw: [], refined: [] }, treasure: { raw: [], refined: [] },
       crafted_components: [], looted_components: [], designing: { textures: [], paint_cans: [], beauty_products: [] }, other: []
     },
@@ -471,9 +483,11 @@ function categorizeBlueprint(item, blueprints) {
 
 function categorizeMaterial(item, materials) {
   const t = item?.Properties?.Type?.toLowerCase?.() || '';
+  const topType = item?.Type?.toLowerCase?.() || '';
   const name = item?.Name?.toLowerCase?.() || '';
 
-  if (t === 'texture leathers' || t === 'tailoring materials') materials.leather.push(item);
+  if (topType === 'fish' || t === 'fish' || name === 'fish scrap') materials.fishes.push(item);
+  else if (t === 'texture leathers' || t === 'tailoring materials') materials.leather.push(item);
   else if (t === 'wood' || t === 'wood component') materials.timber.push(item);
   else if (t === 'fragment' || name === 'nova fragment' || name === 'blazar fragment') materials.fragments.push(item);
   else if (t === 'food') materials.forageables.push(item);
@@ -554,7 +568,7 @@ const ITEM_TYPE_CATEGORY_MAP = {
   'Blueprint': 'Blueprints',
   'Capsule': 'Consumables',
   'Material': 'Materials',
-  'Fish': 'Materials',
+  'Fish': 'Materials > Fishes',
   'Consumable': 'Consumables',
   'Food': 'Consumables',
   'Vehicle': 'Vehicles',
@@ -565,11 +579,11 @@ const ITEM_TYPE_CATEGORY_MAP = {
   'StorageContainer': 'Furnishings',
   'Sign': 'Furnishings',
   'Strongbox': 'Strongboxes',
-  'FishingRod': 'Tools',
-  'FishingReel': 'Attachments',
-  'FishingBlank': 'Attachments',
-  'FishingLine': 'Attachments',
-  'FishingLure': 'Attachments'
+  'FishingRod': 'Tools > Fishing > Rods',
+  'FishingReel': 'Tools > Fishing > Reels',
+  'FishingBlank': 'Tools > Fishing > Blanks',
+  'FishingLine': 'Tools > Fishing > Lines',
+  'FishingLure': 'Tools > Fishing > Lures'
 };
 
 /**

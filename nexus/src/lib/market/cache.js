@@ -73,7 +73,12 @@ async function fetchAllDatasets(fetch) {
     blueprints,
     materials,
     vehicles,
-    strongboxes
+    strongboxes,
+    fishingRods,
+    fishingReels,
+    fishingBlanks,
+    fishingLines,
+    fishingLures
   ] = await Promise.all([
     apiCall(fetch, "/weapons"),
     apiCall(fetch, "/weaponamplifiers"),
@@ -96,7 +101,12 @@ async function fetchAllDatasets(fetch) {
     apiCall(fetch, "/blueprints"),
     apiCall(fetch, "/materials"),
     apiCall(fetch, "/vehicles"),
-    apiCall(fetch, "/strongboxes")
+    apiCall(fetch, "/strongboxes"),
+    apiCall(fetch, "/fishingrods"),
+    apiCall(fetch, "/fishingreels"),
+    apiCall(fetch, "/fishingblanks"),
+    apiCall(fetch, "/fishinglines"),
+    apiCall(fetch, "/fishinglures")
   ]);
 
   return {
@@ -123,7 +133,12 @@ async function fetchAllDatasets(fetch) {
       blueprints,
       materials,
       vehicles,
-      strongboxes
+      strongboxes,
+      fishingRods,
+      fishingReels,
+      fishingBlanks,
+      fishingLines,
+      fishingLures
     }
   };
 }
@@ -373,6 +388,12 @@ async function itemsDeltaRefresh(fetch) {
       if (t === 'vehicle') need.add('vehicles');
       if (t === 'medicalchip') need.add('medicalChips');
       if (t === 'strongbox') need.add('strongboxes');
+      if (t === 'fishingrod') need.add('fishingRods');
+      if (t === 'fishingreel') need.add('fishingReels');
+      if (t === 'fishingblank') need.add('fishingBlanks');
+      if (t === 'fishingline') need.add('fishingLines');
+      if (t === 'fishinglure') need.add('fishingLures');
+      if (t === 'fish') need.add('materials');
     }
 
     const updates = {};
@@ -398,7 +419,12 @@ async function itemsDeltaRefresh(fetch) {
       need.has('materials') ? apiCall(fetch, '/materials').then(v => { updates.materials = v; }) : Promise.resolve(),
       need.has('vehicles') ? apiCall(fetch, '/vehicles').then(v => { updates.vehicles = v; }) : Promise.resolve(),
       need.has('medicalChips') ? apiCall(fetch, '/medicalchips').then(v => { updates.medicalChips = v; }) : Promise.resolve(),
-      need.has('strongboxes') ? apiCall(fetch, '/strongboxes').then(v => { updates.strongboxes = v; }) : Promise.resolve()
+      need.has('strongboxes') ? apiCall(fetch, '/strongboxes').then(v => { updates.strongboxes = v; }) : Promise.resolve(),
+      need.has('fishingRods') ? apiCall(fetch, '/fishingrods').then(v => { updates.fishingRods = v; }) : Promise.resolve(),
+      need.has('fishingReels') ? apiCall(fetch, '/fishingreels').then(v => { updates.fishingReels = v; }) : Promise.resolve(),
+      need.has('fishingBlanks') ? apiCall(fetch, '/fishingblanks').then(v => { updates.fishingBlanks = v; }) : Promise.resolve(),
+      need.has('fishingLines') ? apiCall(fetch, '/fishinglines').then(v => { updates.fishingLines = v; }) : Promise.resolve(),
+      need.has('fishingLures') ? apiCall(fetch, '/fishinglures').then(v => { updates.fishingLures = v; }) : Promise.resolve()
     ]);
 
     cache.detailed = { ...cache.detailed, ...updates };
