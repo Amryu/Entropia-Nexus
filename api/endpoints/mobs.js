@@ -3,6 +3,7 @@ const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { getMobLoots, formatMobLoot } = require('./mobloots');
 const { getMobMaturities, formatMobMaturity } = require('./mobmaturities');
 const { getLocations } = require('./locations');
+const { getMissionsForMob } = require('./missions');
 const { ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -207,6 +208,25 @@ function register(app){
    *      '404':
    *        description: Mob not found
    */
+  app.get('/mobs/:mob/missions', async (req, res) => {
+    try {
+      if (res.headersSent || res.writableEnded) return;
+      const row = await getObjectByIdOrName(
+        'SELECT "Id", "SpeciesId" FROM ONLY "Mobs"',
+        'Mobs',
+        req.params.mob
+      );
+      if (!row) {
+        if (!res.headersSent) res.status(404).send();
+        return;
+      }
+      const speciesId = Number.isFinite(Number(row.SpeciesId)) ? Number(row.SpeciesId) : null;
+      const missions = await getMissionsForMob(row.Id, speciesId);
+      if (!res.headersSent) res.json(missions);
+    } catch (e) {
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch mob missions' });
+    }
+  });
   app.get('/mobs/:mob', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;

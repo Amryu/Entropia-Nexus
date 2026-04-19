@@ -138,6 +138,8 @@ export async function load({ fetch, params, url, parent }) {
     await Promise.all(response.object.Loots.map(async (x) => {
       x.Item.Links.$ItemUrl = await resolveItemLink(fetch, x.Item);
     }));
+
+    response.mobMissions = await apiCall(fetch, `/mobs/${response.object.Id}/missions`).catch(() => []) || [];
   }
 
   return response;

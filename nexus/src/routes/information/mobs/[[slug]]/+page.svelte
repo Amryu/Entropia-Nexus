@@ -29,6 +29,7 @@
   // Mob-specific components
   import MobMaturities from '$lib/components/wiki/mobs/MobMaturities.svelte';
   import MobLoots from '$lib/components/wiki/mobs/MobLoots.svelte';
+  import MobMissions from '$lib/components/wiki/mobs/MobMissions.svelte';
   import MobLocations from '$lib/components/wiki/mobs/MobLocations.svelte';
   import MobCodex from '$lib/components/wiki/mobs/MobCodex.svelte';
   import MobDamageGrid from '$lib/components/wiki/mobs/MobDamageGrid.svelte';
@@ -86,6 +87,7 @@
   });
 
   let mob = $derived(data.object);
+  let mobMissions = $derived(data.mobMissions || []);
   let user = $derived(data.session?.user);
   let allItems = $derived(data.allItems || []);
   let speciesList = $derived(data.speciesList || []);
@@ -924,6 +926,7 @@
     maturities: true,
     locations: true,
     loots: true,
+    missions: true,
     codex: true,
     globals: false,
     armorRecommendations: false
@@ -1699,6 +1702,19 @@
             {:else}
               <MobLoots loots={activeMob.Loots} />
             {/if}
+          </DataSection>
+        {/if}
+
+        <!-- Missions Section -->
+        {#if !isCreateMode && mobMissions.length > 0}
+          <DataSection
+            title="Missions"
+            icon=""
+            bind:expanded={panelStates.missions}
+            subtitle="{mobMissions.length} mission{mobMissions.length !== 1 ? 's' : ''}"
+            ontoggle={savePanelStates}
+          >
+            <MobMissions missions={mobMissions} />
           </DataSection>
         {/if}
 

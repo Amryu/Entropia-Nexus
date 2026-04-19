@@ -294,6 +294,47 @@ async function getMissionLocalGraph(missionId) {
   };
 }
 
+async function getMissionsForMob(mobId, speciesId = null) {
+  if (!Number.isFinite(mobId)) return [];
+
+  const params = [mobId];
+  let speciesClause = '';
+  if (Number.isFinite(speciesId)) {
+    params.push(speciesId);
+    speciesClause = ` OR mo."Payload" @> jsonb_build_object('mobSpecies', jsonb_build_array($${params.length}::int))`;
+  }
+
+  const { rows: matchRows } = await pool.query(
+    `SELECT ms."MissionId", mo."Type", mo."Payload"
+     FROM ONLY "MissionObjectives" mo
+     JOIN ONLY "MissionSteps" ms ON mo."StepId" = ms."Id"
+     WHERE mo."Payload" @> jsonb_build_object('mobs', jsonb_build_array(jsonb_build_object('mobId', $1::int)))
+       ${speciesClause}`,
+    params
+  );
+
+  if (!matchRows.length) return [];
+
+  const objectivesByMission = {};
+  for (const row of matchRows) {
+    (objectivesByMission[row.MissionId] ||= []).push({ Type: row.Type, Payload: row.Payload });
+  }
+
+  const missionIds = Object.keys(objectivesByMission).map(Number);
+  const { rows: missionRows } = await pool.query(
+    baseQuery + ' WHERE "Missions"."Id" = ANY($1) ORDER BY "Missions"."Name"',
+    [missionIds]
+  );
+
+  const related = await loadMissionRelated(missionIds);
+
+  return missionRows.map(row => ({
+    ...formatMissionSummary(row),
+    MatchingObjectives: objectivesByMission[row.Id] || [],
+    Rewards: related.Rewards[row.Id] || { Items: [], Skills: [], Unlocks: [] }
+  }));
+}
+
 async function getMissionGraph(idOrName) {
   const row = await getObjectByIdOrName('SELECT "Id", "MissionChainId" FROM ONLY "Missions"', 'Missions', idOrName);
   if (!row) return null;
@@ -349,6 +390,7 @@ module.exports = {
   getMission,
   getMissionGraph,
   getMissionChainGraph,
+  getMissionsForMob,
   formatMissionSummary,
   formatMissionDetail
 };
