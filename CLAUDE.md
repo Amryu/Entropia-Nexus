@@ -15,7 +15,7 @@
 - `/sql/<db>/migrations`: dev changes — check for missing tables
 - Create migration files for schema changes, never modify directly
 - Local/test DBs NOT synced with prod — don't trust MCP results for prod data
-- Prod data lives in non-test MCP tools (`mcp__postgres-nexus__query`, `mcp__postgres-nexus-users__query`)
+- Prod data lives in `_prod`-suffixed MCP tools (`mcp__postgres-nexus-prod__query`, `mcp__postgres-nexus-users-prod__query`). Non-suffixed `mcp__postgres-nexus__query` / `mcp__postgres-nexus-users__query` point at local dev.
 - Migrations = schema source of truth
 
 # Client Config (`client/core/config.py`)

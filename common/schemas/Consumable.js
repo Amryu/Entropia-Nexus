@@ -34,7 +34,7 @@ export const Consumable = {
         },
         "Type": {
           "type": "string",
-          "enum": ["Chip", "Nanobots", "Pill"]
+          "enum": ["Chip", "Nanobots", "Pill", "Food"]
         },
         "Economy": {
           "type": "object",
