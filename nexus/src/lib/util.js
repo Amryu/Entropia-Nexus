@@ -236,7 +236,7 @@ export function getTypeLink(name, type, subType = null, id = null) {
     case 'FishingLure':
       return `/items/attachments/fishinglures/${encodeURIComponentSafe(name)}`;
     case 'Fish':
-      return `/items/materials/${encodeURIComponentSafe(name)}`;
+      return `/information/fishes/${encodeURIComponentSafe(name)}`;
     case 'Food':
       // Food is stored in Consumables with Type='Food'; still uses the
       // consumables stimulants route.
