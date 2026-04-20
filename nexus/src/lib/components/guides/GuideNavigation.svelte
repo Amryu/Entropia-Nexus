@@ -10,11 +10,13 @@
    * @property {any} [currentSlug]
    */
 
+  import { SvelteSet } from 'svelte/reactivity';
+
   /** @type {Props} */
   let { tree = [], currentSlug = null } = $props();
 
-  let expandedCategories = $state(new Set());
-  let expandedChapters = $state(new Set());
+  let expandedCategories = new SvelteSet();
+  let expandedChapters = new SvelteSet();
 
   // Auto-expand to show current lesson
   $effect(() => {
