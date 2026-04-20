@@ -1,12 +1,13 @@
 // Sync first-time discovery globals from nexus_users.ingested_globals into
-// nexus."FishDiscoveries". Until a fish (or its linked fish-oil material)
-// has a confirmed discovery global, the fish and its materials are hidden
-// from all public listings. The sync is additive — once a fish is marked
-// discovered, we keep it that way even if the global row is later removed.
+// nexus."FishDiscoveries". Until a fish has its own confirmed discovery
+// global, it and its materials are hidden from all public listings. The
+// sync is additive — once a fish is marked discovered, we keep it that
+// way even if the global row is later removed.
 //
-// Since migration 090 each Fish row already represents a specific in-game
-// size (the old FishSizes table is gone), so matching by Fish.Name and by
-// the oil item name is sufficient.
+// Matching is on Fish.Name only. Earlier logic also matched the family oil
+// (`{Species.Name} Fish Oil`) and marked every fish in that family as
+// discovered on first oil loot, which leaked undiscovered sizes through
+// the public listings.
 
 import { poolUsers } from './db.js';
 import pg from 'pg';
@@ -16,34 +17,17 @@ const poolNexus = new pg.Pool({
 });
 
 async function loadFishNameMap() {
-  const [fishRes, oilRes] = await Promise.all([
-    poolNexus.query(`SELECT "Id", "Name" FROM ONLY "Fish"`),
-    // Fish oil is resolved by naming convention: `{Species.Name} Fish Oil`.
-    // A discovery global whose target_name matches the family oil marks
-    // every fish in the family as discovered, so one oil name can map to
-    // many FishIds here.
-    poolNexus.query(`
-      SELECT f."Id" AS "FishId", (ms."Name" || ' Fish Oil') AS "Name"
-        FROM ONLY "Fish" f
-        JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
-       WHERE ms."CodexType" = 'Fish'::"CodexType"
-    `),
-  ]);
+  const { rows } = await poolNexus.query(`SELECT "Id", "Name" FROM ONLY "Fish"`);
 
-  // name (lowercased) -> Set of FishIds. An oil name can map to many fish
-  // (all Cod fish share "Cod Fish Oil"); Fish.Name is unique per in-game
-  // size since migration 090 split them out. Kept as a Set for safety.
   const nameToFishIds = new Map();
-  function add(name, fishId) {
-    if (!name || fishId == null) return;
-    const key = String(name).trim().toLowerCase();
-    if (!key) return;
+  for (const r of rows) {
+    if (!r.Name || r.Id == null) continue;
+    const key = String(r.Name).trim().toLowerCase();
+    if (!key) continue;
     let s = nameToFishIds.get(key);
     if (!s) { s = new Set(); nameToFishIds.set(key, s); }
-    s.add(fishId);
+    s.add(r.Id);
   }
-  for (const r of fishRes.rows) add(r.Name, r.Id);
-  for (const r of oilRes.rows) add(r.Name, r.FishId);
   return nameToFishIds;
 }
 

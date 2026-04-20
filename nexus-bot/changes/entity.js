@@ -969,7 +969,6 @@ export const UpsertConfigs = {
       { name: "Strength", value: x => x.Properties?.Strength ?? null },
       { name: "ScrapsToRefine", value: x => x.Properties?.ScrapsToRefine ?? null },
       { name: "Weight", value: x => x.Properties?.Weight ?? null },
-      { name: "PreferredLureTypes", value: x => Array.isArray(x.Properties?.PreferredLureTypes) ? x.Properties.PreferredLureTypes : [] },
       { name: "ItemId", value: async (x, c) => {
         // Per-fish material item (the fish you catch). Resolve via name on
         // the Items view so the frontend only has to submit the item name.

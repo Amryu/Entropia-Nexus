@@ -124,9 +124,6 @@ function formatFish(f, rel) {
         : null,
       Biomes: rel.biomesByFish[f.Id] || [],
       RodTypes: rel.rodTypesByFish[f.Id] || [],
-      PreferredLureTypes: Array.isArray(f.PreferredLureTypes)
-        ? f.PreferredLureTypes
-        : (f.PreferredLureTypes ? f.PreferredLureTypes.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
     },
     Species: f.SpeciesName ? {
       Name: f.SpeciesName,

@@ -38,25 +38,8 @@
   let { data = $bindable() } = $props();
 
   const BIOMES = ['Sea', 'River', 'Lake', 'Deep Ocean'];
-  // Renamed in UI to "Tier" (4 steps). Backing column is still
-  // Properties.Difficulty because the DB column was renamed in-place via
-  // the FishDifficulty -> FishTier enum swap in migration 090.
-  const TIERS = ['Easy', 'Medium', 'Hard', 'Very Hard'];
+  const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Very Hard'];
   const ROD_TYPES = ['Casting', 'Angling', 'Fly Fishing', 'Deep Ocean Fishing', 'Baitfishing'];
-  const LURE_TYPES = ['Sinkers', 'Lures', 'Baits', 'Worms', 'Jigs', 'Flys', 'Spinners', 'Spoons'];
-
-  // Weight (0..1, lower = rarer) -> categorical Rarity label. Mirrors the
-  // buckets used by the API (api/endpoints/fish.js:weightToRarityLabel).
-  function weightToRarityLabel(w) {
-    if (w == null) return null;
-    const n = Number(w);
-    if (!Number.isFinite(n)) return null;
-    if (n >= 0.5)  return 'Common';
-    if (n >= 0.2)  return 'Uncommon';
-    if (n >= 0.05) return 'Rare';
-    if (n >= 0.01) return 'Very Rare';
-    return 'Extremely Rare';
-  }
 
   const emptyEntity = {
     Name: '',
@@ -67,10 +50,10 @@
       Strength: null,
       ScrapsToRefine: null,
       Weight: null,
+      Rarity: null,
       TimeOfDay: null,
       Biomes: [],
-      RodTypes: [],
-      PreferredLureTypes: []
+      RodTypes: []
     },
     Species: { Name: '' },
     FishOil: { Name: null },
@@ -107,8 +90,8 @@
     },
     {
       key: 'Properties.Difficulty',
-      label: 'Tier',
-      values: TIERS.map(t => ({ value: t, label: t }))
+      label: 'Difficulty',
+      values: DIFFICULTIES.map(d => ({ value: d, label: d }))
     }
   ];
 
@@ -121,9 +104,9 @@
       getValue: (item) => (item.Properties?.Biomes || []).join(', '),
       format: (v) => v || '-'
     },
-    tier: {
-      key: 'tier',
-      header: 'Tier',
+    difficulty: {
+      key: 'difficulty',
+      header: 'Difficulty',
       width: '90px',
       filterPlaceholder: 'Easy',
       getValue: (item) => item.Properties?.Difficulty,
@@ -140,7 +123,7 @@
       key: 'rarity',
       header: 'Rarity',
       width: '110px',
-      getValue: (item) => weightToRarityLabel(item.Properties?.Weight),
+      getValue: (item) => item.Properties?.Rarity,
       format: (v) => v || '-'
     },
     strength: {
@@ -187,19 +170,12 @@
       width: '120px',
       getValue: (item) => (item.Properties?.RodTypes || []).join(', '),
       format: (v) => v || '-'
-    },
-    lure: {
-      key: 'lure',
-      header: 'Preferred Lures',
-      width: '140px',
-      getValue: (item) => (item.Properties?.PreferredLureTypes || []).join(', '),
-      format: (v) => v || '-'
     }
   };
 
-  const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.tier, fishColumnDefs.rarity];
+  const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty, fishColumnDefs.rarity];
   const navFullWidthColumns = [
-    fishColumnDefs.biome, fishColumnDefs.tier, fishColumnDefs.species,
+    fishColumnDefs.biome, fishColumnDefs.difficulty, fishColumnDefs.species,
     fishColumnDefs.rarity, fishColumnDefs.timeOfDay
   ];
   const allAvailableColumns = Object.values(fishColumnDefs);
@@ -274,12 +250,12 @@
     if (activeEntity?.Properties?.Description) return activeEntity.Properties.Description;
     const name = activeEntity?.Name || 'Fish';
     const biomes = (activeEntity?.Properties?.Biomes || []).join(', ');
-    const tier = activeEntity?.Properties?.Difficulty;
+    const difficulty = activeEntity?.Properties?.Difficulty;
     const family = activeEntity?.Species?.Name;
     const parts = [name];
     if (family) parts.push(`${family} family`);
     if (biomes) parts.push(biomes);
-    if (tier) parts.push(`${tier} tier`);
+    if (difficulty) parts.push(`${difficulty} difficulty`);
     parts.push('fish in Entropia Universe');
     return parts.join(' - ');
   });
@@ -366,26 +342,6 @@
   function removeRodType(rt) {
     const current = (activeEntity?.Properties?.RodTypes || []).filter(x => x !== rt);
     updateField('Properties.RodTypes', current);
-  }
-
-  let lureTypeAddOptions = $derived.by(() => {
-    const selected = new Set(activeEntity?.Properties?.PreferredLureTypes || []);
-    return LURE_TYPES
-      .filter(lt => !selected.has(lt))
-      .map(lt => ({ value: lt, label: lt }));
-  });
-
-  function addLureType(lt) {
-    if (!lt) return;
-    const current = Array.isArray(activeEntity?.Properties?.PreferredLureTypes) ? [...activeEntity.Properties.PreferredLureTypes] : [];
-    if (current.includes(lt)) return;
-    current.push(lt);
-    updateField('Properties.PreferredLureTypes', current);
-  }
-
-  function removeLureType(lt) {
-    const current = (activeEntity?.Properties?.PreferredLureTypes || []).filter(x => x !== lt);
-    updateField('Properties.PreferredLureTypes', current);
   }
 
   // Remaining planet options (not yet selected).
@@ -477,14 +433,14 @@
           {/if}
         </div>
 
-        <!-- Tier-1: display-only primary stats (no inputs) -->
+        <!-- Primary display-only stats (no inputs) -->
         <div class="stats-section tier-1 tier-blue">
           <div class="stat-row primary">
             <span class="stat-label">Biome</span>
             <span class="stat-value">{(activeEntity?.Properties?.Biomes || []).join(', ') || 'N/A'}</span>
           </div>
           <div class="stat-row primary">
-            <span class="stat-label">Tier</span>
+            <span class="stat-label">Difficulty</span>
             <span class="stat-value">{activeEntity?.Properties?.Difficulty || 'N/A'}</span>
           </div>
         </div>
@@ -493,14 +449,14 @@
         <div class="stats-section">
           <h4 class="section-title">General</h4>
           <div class="stat-row">
-            <span class="stat-label">Tier</span>
+            <span class="stat-label">Difficulty</span>
             <span class="stat-value">
               <InlineEdit
                 value={activeEntity?.Properties?.Difficulty}
                 path="Properties.Difficulty"
                 type="select"
-                placeholder="Select tier"
-                options={TIERS.map(t => ({ value: t, label: t }))}
+                placeholder="Select difficulty"
+                options={DIFFICULTIES.map(d => ({ value: d, label: d }))}
               />
             </span>
           </div>
@@ -539,21 +495,7 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Rarity</span>
-            <span class="stat-value">
-              {#if $editMode}
-                <InlineEdit
-                  value={activeEntity?.Properties?.Weight}
-                  path="Properties.Weight"
-                  type="number"
-                  placeholder="Weight 0..1"
-                />
-                {#if activeEntity?.Properties?.Weight != null}
-                  <span class="rarity-label">→ {weightToRarityLabel(activeEntity.Properties.Weight) ?? '-'}</span>
-                {/if}
-              {:else}
-                {weightToRarityLabel(activeEntity?.Properties?.Weight) ?? 'N/A'}
-              {/if}
-            </span>
+            <span class="stat-value">{activeEntity?.Properties?.Rarity || 'N/A'}</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Family</span>
@@ -572,13 +514,9 @@
               {/if}
             </span>
           </div>
-        </div>
-
-        <!-- Fish Oil -->
-        <div class="stats-section">
-          <h4 class="section-title">Fish Oil</h4>
-          <div class="stat-row stat-row-block">
-            <span class="stat-value stat-value-block">
+          <div class="stat-row">
+            <span class="stat-label">Fish Oil</span>
+            <span class="stat-value">
               {#if $editMode}
                 <SearchInput
                   value={activeEntity?.FishOil?.Name || ''}
@@ -656,32 +594,6 @@
               <select class="add-select" value="" onchange={(e) => { addRodType(e.currentTarget.value); e.currentTarget.value = ''; }}>
                 <option value="" disabled>+ Add…</option>
                 {#each rodTypeAddOptions as opt}
-                  <option value={opt.value}>{opt.label}</option>
-                {/each}
-              </select>
-            {/if}
-          </div>
-
-          <div class="multi-group">
-            <span class="multi-label">Preferred Lures</span>
-            {#if (activeEntity?.Properties?.PreferredLureTypes || []).length > 0}
-              <div class="chip-list">
-                {#each activeEntity.Properties.PreferredLureTypes as lt}
-                  <span class="chip">
-                    {lt}
-                    {#if $editMode}
-                      <button type="button" class="chip-remove" aria-label="Remove {lt}" onclick={() => removeLureType(lt)}>×</button>
-                    {/if}
-                  </span>
-                {/each}
-              </div>
-            {:else if !$editMode}
-              <span class="empty-inline">-</span>
-            {/if}
-            {#if $editMode && lureTypeAddOptions.length > 0}
-              <select class="add-select" value="" onchange={(e) => { addLureType(e.currentTarget.value); e.currentTarget.value = ''; }}>
-                <option value="" disabled>+ Add…</option>
-                {#each lureTypeAddOptions as opt}
                   <option value={opt.value}>{opt.label}</option>
                 {/each}
               </select>
@@ -790,16 +702,6 @@
   :global(.stat-value.stat-value-block) {
     display: block;
     width: 100%;
-  }
-
-  /* Derived rarity label beside the numeric Weight input */
-  .rarity-label {
-    display: inline-block;
-    margin-left: 8px;
-    font-size: 11px;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
 
   /* Grouped multi-select rows inside a single Classifications section */

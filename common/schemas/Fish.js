@@ -80,14 +80,6 @@ export const Fish = {
             "enum": ["Casting", "Angling", "Fly Fishing", "Deep Ocean Fishing", "Baitfishing"]
           },
           "default": []
-        },
-        "PreferredLureTypes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": ["Sinkers", "Lures", "Baits", "Worms", "Jigs", "Flys", "Spinners", "Spoons"]
-          },
-          "default": []
         }
       },
       "required": [
@@ -99,8 +91,7 @@ export const Fish = {
         "ScrapsToRefine",
         "Weight",
         "TimeOfDay",
-        "RodTypes",
-        "PreferredLureTypes"
+        "RodTypes"
       ]
     },
     "Species": {

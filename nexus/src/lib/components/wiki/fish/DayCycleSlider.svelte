@@ -57,22 +57,6 @@
     return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
   }
 
-  function fmtLabel(v) {
-    if (v == null) return '—';
-    // Display as HH:MM on a 24h clock so the cycle is readable.
-    const total = v * 24;
-    const h = Math.floor(total);
-    const m = Math.round((total - h) * 60);
-    const hh = h >= 24 ? '00' : String(h).padStart(2, '0');
-    const mm = String(m).padStart(2, '0');
-    return `${hh}:${mm}`;
-  }
-
-  let rangeLabel = $derived.by(() => {
-    if (isUnknown) return 'Unknown';
-    return `${fmtLabel(start)} – ${fmtLabel(end)}${start > end ? ' (wraps)' : ''}`;
-  });
-
   // Active painted segments (as [leftPct, rightPct] pairs). Wrap -> two
   // segments. Equal start/end -> full cycle (cyclic interpretation).
   let segments = $derived.by(() => {
@@ -153,16 +137,22 @@
 </script>
 
 <div class="day-cycle">
-  <div class="day-cycle-header">
-    <span class="range-label">{rangeLabel}</span>
-    {#if editable}
+  {#if editable || isUnknown}
+    <div class="day-cycle-header">
       {#if isUnknown}
-        <button type="button" class="mini-btn" onclick={setDefault}>Set range</button>
+        <span class="range-label">Unknown</span>
       {:else}
-        <button type="button" class="mini-btn" onclick={setUnknown}>Mark unknown</button>
+        <span></span>
       {/if}
-    {/if}
-  </div>
+      {#if editable}
+        {#if isUnknown}
+          <button type="button" class="mini-btn" onclick={setDefault}>Set range</button>
+        {:else}
+          <button type="button" class="mini-btn" onclick={setUnknown}>Mark unknown</button>
+        {/if}
+      {/if}
+    </div>
+  {/if}
 
   <div
     class="track"
@@ -174,15 +164,14 @@
     <!-- Full day/night gradient, dimmed. Midnight at both ends, noon in the middle. -->
     <div class="track-base"></div>
 
-    <!-- Active segments repaint the gradient at full brightness. Each
-         segment uses a background-size + background-position trick so the
-         gradient stays aligned with the underlying track, preserving the
-         day/night cue. -->
+    <!-- Active segments repaint the same full-width gradient at full
+         brightness; clip-path reveals only the active range so the colors
+         stay pixel-aligned with the underlying base gradient. -->
     {#each segments as [l, r]}
       {#if r > l}
         <div
           class="track-active"
-          style="left:{l}%; width:{r - l}%; background-size:{100 / ((r - l) / 100)}% 100%; background-position:-{l / ((r - l) / 100)}% 0;"
+          style="clip-path: inset(0 {100 - r}% 0 {l}%);"
         ></div>
       {/if}
     {/each}
@@ -202,12 +191,9 @@
         aria-valuemin={0}
         aria-valuemax={1}
         aria-valuenow={start}
-        aria-valuetext={fmtLabel(start)}
         onpointerdown={(e) => onPointerDown(e, 'start')}
         onkeydown={(e) => onKeydown(e, 'start')}
-      >
-        <span class="thumb-label">{fmtLabel(start)}</span>
-      </div>
+      ></div>
       <div
         class="thumb"
         style="left:{endPct}%"
@@ -217,21 +203,10 @@
         aria-valuemin={0}
         aria-valuemax={1}
         aria-valuenow={end}
-        aria-valuetext={fmtLabel(end)}
         onpointerdown={(e) => onPointerDown(e, 'end')}
         onkeydown={(e) => onKeydown(e, 'end')}
-      >
-        <span class="thumb-label">{fmtLabel(end)}</span>
-      </div>
+      ></div>
     {/if}
-  </div>
-
-  <div class="day-cycle-axis">
-    <span>00:00</span>
-    <span>06:00</span>
-    <span>12:00</span>
-    <span>18:00</span>
-    <span>24:00</span>
   </div>
 </div>
 
@@ -317,6 +292,8 @@
   }
 
   .track-active {
+    left: 0;
+    right: 0;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
   }
 
@@ -351,27 +328,5 @@
 
   .thumb:active {
     cursor: grabbing;
-  }
-
-  .thumb-label {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 4px);
-    transform: translateX(-50%);
-    font-size: 10px;
-    padding: 1px 5px;
-    background: var(--bg-color, var(--primary-color, #1a1a1a));
-    color: var(--text-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 3px;
-    white-space: nowrap;
-    pointer-events: none;
-  }
-
-  .day-cycle-axis {
-    display: flex;
-    justify-content: space-between;
-    font-size: 10px;
-    color: var(--text-muted, #999);
   }
 </style>
