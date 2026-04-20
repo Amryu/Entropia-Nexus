@@ -1,13 +1,16 @@
-// One-shot seeder for the 101 fish from `fish-catalog.mjs`. Idempotent:
-// safe to re-run. Upserts everything by Name, then runs the discovery
-// sync so already-discovered fish flip visible before the next bot cycle.
+// Seeds the 100 fish from `fish-catalog.mjs`. Idempotent — safe to re-run.
+// Upserts every fish by Name, replaces its junction rows wholesale, then
+// runs the discovery sync so already-globaled fish flip visible without
+// waiting for the next bot cycle.
 //
-// Usage:
+// Runs automatically on nexus-bot startup (see `bot.js:runFishCatalogSeed`).
+// Can also be invoked directly for one-off re-seeds:
 //   node nexus-bot/scripts/seed-fish-catalog.mjs
 //
 // Needs POSTGRES_NEXUS_CONNECTION_STRING and, for the discovery sync
 // step, POSTGRES_USERS_CONNECTION_STRING.
 
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import pg from 'pg';
 import { CATALOG, FAMILIES, tierToDifficulty } from './fish-catalog.mjs';
@@ -159,7 +162,7 @@ async function upsertFish(client, entry, speciesIdByName) {
 
 async function cleanupLegacySpecies(client) {
   // Delete any MobSpecies row with CodexType='Fish' that is neither one of
-  // the 11 canonical families nor referenced by a Fish row. Post-seed,
+  // the 10 canonical families nor referenced by a Fish row. Post-seed,
   // every Fish.SpeciesId points at a family, so the old per-fish species
   // rows (e.g. "Calypsocod", "Catfish") are orphans.
   const res = await client.query(
@@ -173,10 +176,16 @@ async function cleanupLegacySpecies(client) {
   return res.rows;
 }
 
-async function main() {
+/**
+ * Core seed + discovery-sync routine. Exported so the bot can run it on
+ * startup without spawning a subprocess. Returns a summary suitable for
+ * logging; throws on unrecoverable errors (caller decides how to react).
+ */
+export async function seedFishCatalog() {
   const client = await poolNexus.connect();
   let seeded = 0;
   let skipped = 0;
+  let removed = [];
   try {
     await client.query('BEGIN');
 
@@ -200,30 +209,48 @@ async function main() {
       }
     }
 
-    const removed = await cleanupLegacySpecies(client);
+    removed = await cleanupLegacySpecies(client);
 
     await client.query('COMMIT');
-
-    console.log(`[seed] ${seeded} fish upserted, ${skipped} skipped, ${removed.length} legacy species removed:`, removed.map(r => r.Name));
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('[seed] transaction rolled back:', e);
-    process.exitCode = 1;
+    throw e;
   } finally {
     client.release();
   }
 
-  // After the catalog is in place, ask the discovery sync to run so any
-  // existing globals whose target_name matches a seeded Fish.Name flip
-  // the fish visible immediately rather than on the next bot cycle.
+  // Run the discovery sync so existing globals matching a newly-seeded
+  // Fish.Name flip visible right away instead of on the next bot cycle.
+  let discoverySync = null;
   try {
-    const result = await syncFishDiscoveries();
-    console.log(`[seed] FishDiscoveries synced:`, result);
+    discoverySync = await syncFishDiscoveries();
   } catch (e) {
     console.error('[seed] discovery sync failed (fish will become visible on next bot cycle):', e.message);
   }
 
+  return { seeded, skipped, removed: removed.map(r => r.Name), discoverySync };
+}
+
+// CLI entrypoint: only runs when the file is invoked directly, not when
+// imported by bot.js. Closes the pool at the end so node exits cleanly.
+async function cli() {
+  try {
+    const summary = await seedFishCatalog();
+    console.log(
+      `[seed] ${summary.seeded} fish upserted, ${summary.skipped} skipped, ` +
+      `${summary.removed.length} legacy species removed:`,
+      summary.removed
+    );
+    if (summary.discoverySync) {
+      console.log(`[seed] FishDiscoveries synced:`, summary.discoverySync);
+    }
+  } catch (e) {
+    console.error('[seed] transaction rolled back:', e);
+    process.exitCode = 1;
+  }
   await poolNexus.end();
 }
 
-main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  cli();
+}

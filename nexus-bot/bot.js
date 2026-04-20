@@ -11,7 +11,7 @@ import { handleReward, fetchEntityForReward, isAuthorizedReviewer, isDiscordAdmi
 import { getTypeLink, getStateLabel } from './util.js';
 import { renderMapChange } from './mapRenderer.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
-import { syncFishDiscoveries } from './fish-discoveries.js';
+import { seedFishCatalog } from './scripts/seed-fish-catalog.mjs';
 import { checkAuctions, refreshAuctionColors } from './auctions.js';
 import { collectEuName } from './commands/verification/setEuName.js';
 import { resumeVerification } from './commands/verification/verifyUser.js';
@@ -2510,21 +2510,30 @@ async function runMarketPriceResolution() {
 setInterval(() => runScheduled('runMarketPriceResolution', runMarketPriceResolution), 60 * 60 * 1000);
 runScheduled('runMarketPriceResolution', runMarketPriceResolution); // Run once on startup
 
-// Denormalize fish discovery globals (nexus_users) into nexus.FishDiscoveries.
-// Without this, no fish is visible on the public site. Runs every 10 minutes
-// plus once on startup so new discoveries surface quickly.
-async function runFishDiscoverySync() {
+// Refresh fish data from the bundled catalog (fish-catalog.mjs) and
+// denormalize discovery globals (nexus_users) into nexus.FishDiscoveries.
+// The seed step is authoritative for catalog fields (Family/Tier/Weight/
+// Strength/MinDepth/TimeOfDay/Rods/Biomes/Planets) and keeps the 10
+// family oils + every fish Material row present; the discovery sync
+// immediately after matches target_name globals to Fish.Name and flips
+// fish visible. Seed + sync on startup plus every 10 min so newly-
+// discovered fish don't wait for a bot restart.
+async function runFishCatalogSeed() {
   try {
-    const r = await syncFishDiscoveries();
-    if (r && r.total > 0) {
-      console.log(`Fish discoveries synced: ${r.total} matched, ${r.affected} row(s) upserted`);
+    const r = await seedFishCatalog();
+    const parts = [`${r.seeded} fish upserted`];
+    if (r.skipped) parts.push(`${r.skipped} skipped`);
+    if (r.removed?.length) parts.push(`${r.removed.length} legacy species removed`);
+    if (r.discoverySync?.total) {
+      parts.push(`${r.discoverySync.total} discoveries matched, ${r.discoverySync.affected} upserted`);
     }
+    console.log(`Fish catalog: ${parts.join(', ')}`);
   } catch (e) {
-    console.error('Error syncing fish discoveries:', e);
+    console.error('Error running fish catalog seed:', e);
   }
 }
-setInterval(() => runScheduled('runFishDiscoverySync', runFishDiscoverySync), 10 * 60 * 1000);
-runScheduled('runFishDiscoverySync', runFishDiscoverySync);
+setInterval(() => runScheduled('runFishCatalogSeed', runFishCatalogSeed), 10 * 60 * 1000);
+runScheduled('runFishCatalogSeed', runFishCatalogSeed);
 
 // Snapshot exchange prices then compute exchange summaries at quarter-hour boundaries (:00, :15, :30, :45)
 const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
