@@ -294,7 +294,9 @@
   .track-active {
     left: 0;
     right: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+      0 0 0 1px rgba(0, 0, 0, 0.45);
   }
 
   .tick {
