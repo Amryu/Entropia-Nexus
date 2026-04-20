@@ -25,7 +25,7 @@ export const Fish = {
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["Sea", "River", "Lake", "Deep Ocean", "Sky"]
+            "enum": ["Sea", "River", "Lake", "Deep Ocean"]
           },
           "default": []
         },

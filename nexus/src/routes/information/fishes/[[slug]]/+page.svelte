@@ -36,7 +36,7 @@
 
   let { data = $bindable() } = $props();
 
-  const BIOMES = ['Sea', 'River', 'Lake', 'Deep Ocean', 'Sky'];
+  const BIOMES = ['Sea', 'River', 'Lake', 'Deep Ocean'];
   const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Very Hard', 'Elite'];
   const TIMES_OF_DAY = ['Dawn', 'Day', 'Sunset', 'Night'];
   const ROD_TYPES = ['Casting', 'Angling', 'Fly Fishing', 'Deep Ocean Fishing', 'Baitfishing'];

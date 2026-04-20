@@ -890,7 +890,6 @@
           { label: 'River', url: 'fishes?Properties.Biome=River' },
           { label: 'Lake', url: 'fishes?Properties.Biome=Lake' },
           { label: 'Deep Ocean', url: 'fishes?Properties.Biome=Deep%20Ocean' },
-          { label: 'Sky', url: 'fishes?Properties.Biome=Sky' },
         ]},
         { label: 'Missions', url: 'missions', children: [
           { label: 'Calypso', url: 'missions?planet=Calypso' },
