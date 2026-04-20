@@ -114,7 +114,7 @@ BEGIN
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Fishing in Entropia Universe</h2>
+$html$
 <p>Fishing is a resource-collecting activity built around four mini-games: <strong>Angling</strong>, <strong>Casting</strong>, <strong>Fly Fishing</strong>, and <strong>Deep Ocean</strong>. Your rod choice determines which mini-game you play and which profession ticks up. Attachments shape difficulty, reach, and what bites.</p>
 <p>The five fishing professions are:</p>
 <ul>
@@ -138,7 +138,7 @@ $html$<h2>Fishing in Entropia Universe</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Fishing Rods</h2>
+$html$
 <p>The rod is the foundation of any fishing setup. Browse the full catalogue at <a href="/items/tools/fishingrods">Items &gt; Tools &gt; Fishing Rods</a>.</p>
 <p>Each rod determines:</p>
 <ul>
@@ -160,7 +160,7 @@ $html$<h2>Fishing Rods</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Reels</h2>
+$html$
 <p>Reels add Strength plus a unique <strong>Speed</strong> stat. Browse them at <a href="/items/attachments/fishingreels">Items &gt; Attachments &gt; Fishing Reels</a>.</p>
 <ul>
   <li>In <strong>Angling</strong>, higher Speed appears to make the bar move faster.</li>
@@ -177,7 +177,7 @@ $html$<h2>Reels</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Lines</h2>
+$html$
 <p>Lines add Strength and Flexibility plus a unique <strong>Line Length</strong> stat. Browse them at <a href="/items/attachments/fishinglines">Items &gt; Attachments &gt; Fishing Lines</a>.</p>
 <ul>
   <li>In <strong>Casting</strong>, Length sets the total bar length of the catch mini-game - a longer line means a longer bar to drag the fish across.</li>
@@ -194,7 +194,7 @@ $html$<h2>Lines</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Blanks</h2>
+$html$
 <p>Blanks are pure stat sticks - they add Strength and Flexibility with no unique mechanic. Browse them at <a href="/items/attachments/fishingblanks">Items &gt; Attachments &gt; Fishing Blanks</a>.</p>$html$, 0);
 
   INSERT INTO guide_lessons (chapter_id, title, slug, sort_order)
@@ -207,7 +207,7 @@ $html$<h2>Blanks</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Lures</h2>
+$html$
 <p>Lures carry two unique stats. Browse them at <a href="/items/attachments/fishinglures">Items &gt; Attachments &gt; Fishing Lures</a>.</p>
 <ul>
   <li><strong>Quality</strong> - speeds up how quickly a fish bites.</li>
@@ -227,7 +227,7 @@ $html$<h2>Lures</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Angling</h2>
+$html$
 <p>Profession: <a href="/information/professions/Baiter">Baiter</a>. Skill: <a href="/information/skills/Angling">Angling</a>.</p>
 <p>A "chase the fish" mini-game. A bar moves around; you keep your indicator on the fish to fill a progress meter.</p>
 <ul>
@@ -246,7 +246,7 @@ $html$<h2>Angling</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Casting</h2>
+$html$
 <p>Profession: <a href="/information/professions/Cast%20Fisher">Cast Fisher</a>. Skill: <a href="/information/skills/Casting">Casting</a>.</p>
 <p>Casting splits into two phases.</p>
 <h3>Throw phase</h3>
@@ -277,7 +277,7 @@ $html$<h2>Casting</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Fly Fishing</h2>
+$html$
 <p>Profession: <a href="/information/professions/Fly%20Fisher">Fly Fisher</a>. Skill: <a href="/information/skills/Fly%20Fishing">Fly Fishing</a>.</p>
 <p>The catch portion is identical to <a href="/information/guides/fishing-angling">Angling</a>. The throw mini-game is different - details to be added once confirmed in-game.</p>$html$, 0);
 
@@ -291,7 +291,7 @@ $html$<h2>Fly Fishing</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Deep Ocean</h2>
+$html$
 <p>Profession: <a href="/information/professions/Deep%20Ocean%20Fisher">Deep Ocean Fisher</a>. Skill: <a href="/information/skills/Deep%20Ocean%20Fishing">Deep Ocean Fishing</a>.</p>
 <p>Mechanically identical to <a href="/information/guides/fishing-casting">Casting</a>, with two requirements:</p>
 <ul>
@@ -309,7 +309,7 @@ $html$<h2>Deep Ocean</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Baitfishing</h2>
+$html$
 <p>Profession: <a href="/information/professions/Baitfisher">Baitfisher</a>. Skill: <a href="/information/skills/Baitfishing">Baitfishing</a>.</p>
 <p>The <strong>Baitfishing Rod</strong> uses the <a href="/information/guides/fishing-angling">Angling</a> mini-game but with a key twist:</p>
 <ul>
@@ -333,7 +333,7 @@ $html$<h2>Baitfishing</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Biomes</h2>
+$html$
 <p>Four biomes only:</p>
 <ul>
   <li><strong>Lake</strong></li>
@@ -353,7 +353,7 @@ $html$<h2>Biomes</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Hot Spots</h2>
+$html$
 <p>You may occasionally see splashes in the water (similar to the splash a rod makes when it hits the surface after a throw). These hot spots last roughly <strong>5-10 minutes</strong> and appear to raise hook rate while you fish inside them.</p>$html$, 0);
 
   INSERT INTO guide_lessons (chapter_id, title, slug, sort_order)
@@ -366,7 +366,7 @@ $html$<h2>Hot Spots</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Other Modifiers</h2>
+$html$
 <p>Beyond biome, four extra factors gate which fish can bite:</p>
 <ul>
   <li><strong>Planet</strong> - some fish are unique to specific planets.</li>
@@ -388,7 +388,7 @@ $html$<h2>Other Modifiers</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Fish Species</h2>
+$html$
 <p>Ten species are currently known:</p>
 <ul>
   <li>Cod</li>
@@ -417,7 +417,7 @@ $html$<h2>Fish Species</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Refining Fish into Oil</h2>
+$html$
 <ul>
   <li><a href="/items/materials/Fish%20Scrap">Fish Scrap</a> + 10 Fish &rarr; <em>&lt;Species&gt;</em> Fish Oil. The required Fish Scrap quantity varies by species.</li>
   <li><strong>Tip:</strong> refining a species-specific oil a second time yields generic <a href="/items/materials/Fish%20Oil">Fish Oil</a>. For example, <a href="/items/materials/Cod%20Fish%20Oil">Cod Fish Oil</a> &rarr; Fish Oil.</li>
@@ -433,7 +433,7 @@ $html$<h2>Refining Fish into Oil</h2>
   RETURNING id INTO v_lesson_id;
   DELETE FROM guide_paragraphs WHERE lesson_id = v_lesson_id;
   INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order) VALUES (v_lesson_id,
-$html$<h2>Port Atlantis AI Dailies</h2>
+$html$
 <p>Two AI dailies in Port Atlantis can request caught fish, located at <span data-waypoint="[Calypso, 61426, 74267, 100, AI Dailies]" data-label="AI Dailies" class="waypoint-inline" title="Click to copy waypoint: /wp [Calypso, 61426, 74267, 100, AI Dailies]">AI Dailies</span>. Rewards include a small amount of <a href="/items/materials/Spool%20Cell">Spool Cells</a> and Fishing/Cooking-related <strong>blueprint clicks</strong>.</p>$html$, 0);
 
   -- Drop the Quick Reference lesson if a prior run of this migration created it.
