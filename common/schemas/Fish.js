@@ -31,20 +31,47 @@ export const Fish = {
         },
         "Difficulty": {
           "type": ["string", "null"],
-          "enum": ["Easy", "Medium", "Hard", "Very Hard", "Elite", null],
+          "enum": ["Easy", "Medium", "Hard", "Very Hard", null],
           "default": null
         },
         "MinDepth": {
           "type": ["number", "null"],
           "default": null
         },
-        "TimesOfDay": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": ["Dawn", "Day", "Sunset", "Night"]
-          },
-          "default": []
+        "Strength": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "ScrapsToRefine": {
+          "type": ["integer", "null"],
+          "default": null
+        },
+        "Weight": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "default": null
+        },
+        "TimeOfDay": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "Start": {
+                  "type": "number",
+                  "enum": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
+                },
+                "End": {
+                  "type": "number",
+                  "enum": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
+                }
+              },
+              "required": ["Start", "End"]
+            }
+          ],
+          "default": null
         },
         "RodTypes": {
           "type": "array",
@@ -68,24 +95,13 @@ export const Fish = {
         "Biomes",
         "Difficulty",
         "MinDepth",
-        "TimesOfDay",
+        "Strength",
+        "ScrapsToRefine",
+        "Weight",
+        "TimeOfDay",
         "RodTypes",
         "PreferredLureTypes"
       ]
-    },
-    "Sizes": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "Name": { "type": "string" },
-          "Strength": { "type": ["number", "null"], "default": null },
-          "ScrapsToRefine": { "type": ["integer", "null"], "default": null }
-        },
-        "required": ["Name"]
-      },
-      "default": []
     },
     "Species": {
       "type": "object",

@@ -67,7 +67,7 @@ All entity endpoints follow the pattern: `GET /{collection}` returns all entries
 | `/excavators` | Excavators with effects and tiers |
 | `/finderamplifiers` | Finder amplifiers |
 | `/finders` | Finders with effects and tiers |
-| `/fishes` | Fish with species, biomes, sizes, difficulty, times of day, preferred lures, and sector locations |
+| `/fishes` | Fish with species, biomes, sizes, difficulty, time-of-day window, preferred lures, and sector locations |
 | `/fish-locations` | Fish sector locations grouped by planet (supports `?planet=Name` filter) |
 | `/fishingblanks` | Fishing rod blanks (components) with strength and flexibility |
 | `/fishinglines` | Fishing lines (components) with flexibility, strength, and length |

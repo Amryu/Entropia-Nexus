@@ -2,6 +2,9 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
+// Fish are hidden from all public queries until they have a confirmed
+// discovery global (populated by nexus-bot into "FishDiscoveries").
+// INNER JOIN, not LEFT JOIN — an undiscovered fish must not appear.
 const baseQuery = `
   SELECT f.*,
          ms."Name" AS "SpeciesName",
@@ -9,15 +12,30 @@ const baseQuery = `
          ms."CodexType" AS "SpeciesCodexType",
          oil_t."Name" AS "FishOilName"
     FROM ONLY "Fish" f
+    INNER JOIN "FishDiscoveries" fd ON fd."FishId" = f."Id"
     LEFT JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
     LEFT JOIN "Items" oil_t ON oil_t."Id" = f."FishOilItemId"
 `;
 
+// Map a catalog rarity weight (0..1, lower = rarer) to the same rarity
+// labels already in use on FishSectorLocations so the wiki can reuse its
+// styling + copy. Buckets chosen from the catalog weight distribution.
+function weightToRarityLabel(w) {
+  if (w == null) return null;
+  const n = Number(w);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 0.5)  return 'Common';
+  if (n >= 0.2)  return 'Uncommon';
+  if (n >= 0.05) return 'Rare';
+  if (n >= 0.01) return 'Very Rare';
+  return 'Extremely Rare';
+}
+
 async function loadRelated(fishRows) {
   const ids = fishRows.map(r => r.Id);
-  if (ids.length === 0) return { planetsByFish: {}, rodTypesByFish: {}, sizesByFish: {}, biomesByFish: {}, locationsByFish: {} };
+  if (ids.length === 0) return { planetsByFish: {}, rodTypesByFish: {}, biomesByFish: {}, locationsByFish: {} };
 
-  const [planetsRes, rodRes, sizesRes, biomesRes, sectorsRes] = await Promise.all([
+  const [planetsRes, rodRes, biomesRes, sectorsRes] = await Promise.all([
     pool.query(
       `SELECT fp."FishId", p."Id" AS "PlanetId", p."Name" AS "PlanetName",
               p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight"
@@ -28,13 +46,6 @@ async function loadRelated(fishRows) {
     ),
     pool.query(
       `SELECT "FishId", "RodType" FROM ONLY "FishRodTypes" WHERE "FishId" = ANY($1::int[])`,
-      [ids]
-    ),
-    pool.query(
-      `SELECT "FishId", "Name", "Strength", "ScrapsToRefine", "ItemId"
-       FROM ONLY "FishSizes"
-       WHERE "FishId" = ANY($1::int[])
-       ORDER BY "Id"`,
       [ids]
     ),
     pool.query(
@@ -67,17 +78,6 @@ async function loadRelated(fishRows) {
     (rodTypesByFish[r.FishId] ||= []).push(r.RodType);
   }
 
-  const sizesByFish = {};
-  for (const r of sizesRes.rows) {
-    (sizesByFish[r.FishId] ||= []).push({
-      Name: r.Name,
-      Strength: r.Strength != null ? Number(r.Strength) : null,
-      ScrapsToRefine: r.ScrapsToRefine != null ? Number(r.ScrapsToRefine) : null,
-      Weight: 0.01,
-      MaxTT: 0.01,
-    });
-  }
-
   const biomesByFish = {};
   for (const r of biomesRes.rows) {
     (biomesByFish[r.FishId] ||= []).push(r.Biome);
@@ -99,7 +99,7 @@ async function loadRelated(fishRows) {
     });
   }
 
-  return { planetsByFish, rodTypesByFish, sizesByFish, biomesByFish, locationsByFish };
+  return { planetsByFish, rodTypesByFish, biomesByFish, locationsByFish };
 }
 
 function formatFish(f, rel) {
@@ -110,14 +110,18 @@ function formatFish(f, rel) {
       Description: f.Description,
       Difficulty: f.Difficulty,
       MinDepth: f.MinDepth != null ? Number(f.MinDepth) : null,
-      TimesOfDay: Array.isArray(f.TimeOfDay) ? f.TimeOfDay : (f.TimeOfDay ? f.TimeOfDay.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
+      Strength: f.Strength != null ? Number(f.Strength) : null,
+      ScrapsToRefine: f.ScrapsToRefine != null ? Number(f.ScrapsToRefine) : null,
+      Rarity: weightToRarityLabel(f.Weight),
+      TimeOfDay: (f.TimeOfDayStart != null && f.TimeOfDayEnd != null)
+        ? { Start: Number(f.TimeOfDayStart), End: Number(f.TimeOfDayEnd) }
+        : null,
       Biomes: rel.biomesByFish[f.Id] || [],
       RodTypes: rel.rodTypesByFish[f.Id] || [],
       PreferredLureTypes: Array.isArray(f.PreferredLureTypes)
         ? f.PreferredLureTypes
         : (f.PreferredLureTypes ? f.PreferredLureTypes.replace(/[{}]/g, '').split(',').filter(Boolean) : []),
     },
-    Sizes: rel.sizesByFish[f.Id] || [],
     Species: f.SpeciesName ? {
       Name: f.SpeciesName,
       Properties: {
@@ -149,7 +153,7 @@ async function getFish(idOrName) {
   return formatFish(row, rel);
 }
 
-const FISH_LOCATION_CACHE_KEYS = ['Fish', 'FishSectorLocations', 'FishPlanets', 'Planets'];
+const FISH_LOCATION_CACHE_KEYS = ['Fish', 'FishSectorLocations', 'FishPlanets', 'Planets', 'FishDiscoveries'];
 
 async function getFishLocationsByPlanet(planetName) {
   const { rows } = await pool.query(`
@@ -159,6 +163,7 @@ async function getFishLocationsByPlanet(planetName) {
            p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight"
     FROM ONLY "FishSectorLocations" fsl
     JOIN ONLY "Fish" f ON f."Id" = fsl."FishId"
+    INNER JOIN "FishDiscoveries" fd ON fd."FishId" = f."Id"
     JOIN ONLY "Planets" p ON p."Id" = fsl."PlanetId"
     WHERE p."Name" = $1
     ORDER BY fsl."SectorCol", fsl."SectorRow", f."Name"
@@ -198,6 +203,7 @@ async function getAllFishLocations() {
            p."Name" AS "PlanetName", p."Width" AS "PlanetWidth", p."Height" AS "PlanetHeight"
     FROM ONLY "FishSectorLocations" fsl
     JOIN ONLY "Fish" f ON f."Id" = fsl."FishId"
+    INNER JOIN "FishDiscoveries" fd ON fd."FishId" = f."Id"
     JOIN ONLY "Planets" p ON p."Id" = fsl."PlanetId"
     ORDER BY p."Name", fsl."SectorCol", fsl."SectorRow", f."Name"
   `);
@@ -229,7 +235,7 @@ async function getAllFishLocations() {
   return result;
 }
 
-const CACHE_KEYS = ['Fish', 'FishSizes', 'FishBiomes', 'FishSectorLocations', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials'];
+const CACHE_KEYS = ['Fish', 'FishBiomes', 'FishSectorLocations', 'FishPlanets', 'FishRodTypes', 'MobSpecies', 'Planets', 'Materials', 'FishDiscoveries'];
 
 function register(app) {
   /**

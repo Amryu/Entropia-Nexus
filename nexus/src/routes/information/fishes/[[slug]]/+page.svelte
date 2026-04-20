@@ -20,6 +20,7 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
   import MobCodex from '$lib/components/wiki/mobs/MobCodex.svelte';
   import FishSectorGrid from '$lib/components/wiki/fish/FishSectorGrid.svelte';
+  import DayCycleSlider from '$lib/components/wiki/fish/DayCycleSlider.svelte';
   import { FISHING_PLANETS } from '$lib/mapUtil';
 
   import {
@@ -37,10 +38,25 @@
   let { data = $bindable() } = $props();
 
   const BIOMES = ['Sea', 'River', 'Lake', 'Deep Ocean'];
-  const DIFFICULTIES = ['Easy', 'Medium', 'Hard', 'Very Hard', 'Elite'];
-  const TIMES_OF_DAY = ['Dawn', 'Day', 'Sunset', 'Night'];
+  // Renamed in UI to "Tier" (4 steps). Backing column is still
+  // Properties.Difficulty because the DB column was renamed in-place via
+  // the FishDifficulty -> FishTier enum swap in migration 090.
+  const TIERS = ['Easy', 'Medium', 'Hard', 'Very Hard'];
   const ROD_TYPES = ['Casting', 'Angling', 'Fly Fishing', 'Deep Ocean Fishing', 'Baitfishing'];
   const LURE_TYPES = ['Sinkers', 'Lures', 'Baits', 'Worms', 'Jigs', 'Flys', 'Spinners', 'Spoons'];
+
+  // Weight (0..1, lower = rarer) -> categorical Rarity label. Mirrors the
+  // buckets used by the API (api/endpoints/fish.js:weightToRarityLabel).
+  function weightToRarityLabel(w) {
+    if (w == null) return null;
+    const n = Number(w);
+    if (!Number.isFinite(n)) return null;
+    if (n >= 0.5)  return 'Common';
+    if (n >= 0.2)  return 'Uncommon';
+    if (n >= 0.05) return 'Rare';
+    if (n >= 0.01) return 'Very Rare';
+    return 'Extremely Rare';
+  }
 
   const emptyEntity = {
     Name: '',
@@ -48,12 +64,14 @@
       Description: '',
       Difficulty: null,
       MinDepth: null,
-      TimesOfDay: [],
+      Strength: null,
+      ScrapsToRefine: null,
+      Weight: null,
+      TimeOfDay: null,
       Biomes: [],
       RodTypes: [],
       PreferredLureTypes: []
     },
-    Sizes: [],
     Species: { Name: '' },
     FishOil: { Name: null },
     Planets: [],
@@ -89,8 +107,8 @@
     },
     {
       key: 'Properties.Difficulty',
-      label: 'Difficulty',
-      values: DIFFICULTIES.map(d => ({ value: d, label: d }))
+      label: 'Tier',
+      values: TIERS.map(t => ({ value: t, label: t }))
     }
   ];
 
@@ -103,9 +121,9 @@
       getValue: (item) => (item.Properties?.Biomes || []).join(', '),
       format: (v) => v || '-'
     },
-    difficulty: {
-      key: 'difficulty',
-      header: 'Difficulty',
+    tier: {
+      key: 'tier',
+      header: 'Tier',
       width: '90px',
       filterPlaceholder: 'Easy',
       getValue: (item) => item.Properties?.Difficulty,
@@ -113,17 +131,48 @@
     },
     species: {
       key: 'species',
-      header: 'Species',
+      header: 'Family',
       width: '100px',
       getValue: (item) => item.Species?.Name,
       format: (v) => v || '-'
+    },
+    rarity: {
+      key: 'rarity',
+      header: 'Rarity',
+      width: '110px',
+      getValue: (item) => weightToRarityLabel(item.Properties?.Weight),
+      format: (v) => v || '-'
+    },
+    strength: {
+      key: 'strength',
+      header: 'Strength',
+      width: '80px',
+      getValue: (item) => item.Properties?.Strength,
+      format: (v) => v != null ? v : '-'
+    },
+    scrapsToRefine: {
+      key: 'scrapsToRefine',
+      header: 'Scraps',
+      width: '80px',
+      getValue: (item) => item.Properties?.ScrapsToRefine,
+      format: (v) => v != null ? v : '-'
     },
     timeOfDay: {
       key: 'timeOfDay',
       header: 'Time of Day',
       width: '110px',
-      getValue: (item) => (item.Properties?.TimesOfDay || []).join(', '),
-      format: (v) => v || 'Any'
+      getValue: (item) => {
+        const t = item.Properties?.TimeOfDay;
+        if (!t || t.Start == null || t.End == null) return null;
+        const fmt = (v) => {
+          const total = v * 24;
+          const h = Math.floor(total);
+          const m = Math.round((total - h) * 60);
+          return `${String(h >= 24 ? 0 : h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        };
+        return `${fmt(t.Start)}–${fmt(t.End)}`;
+      },
+      format: (v) => v || 'Unknown'
     },
     minDepth: {
       key: 'minDepth',
@@ -148,10 +197,10 @@
     }
   };
 
-  const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.difficulty];
+  const navTableColumns = [fishColumnDefs.biome, fishColumnDefs.tier, fishColumnDefs.rarity];
   const navFullWidthColumns = [
-    fishColumnDefs.biome, fishColumnDefs.difficulty, fishColumnDefs.species,
-    fishColumnDefs.timeOfDay
+    fishColumnDefs.biome, fishColumnDefs.tier, fishColumnDefs.species,
+    fishColumnDefs.rarity, fishColumnDefs.timeOfDay
   ];
   const allAvailableColumns = Object.values(fishColumnDefs);
 
@@ -190,11 +239,6 @@
   const speciesCodexBaseCost = 6;
   let speciesCodexType = $derived(activeEntity?.Species?.Properties?.CodexType ?? 'Fish');
 
-  let sortedSizes = $derived.by(() => {
-    const sizes = activeEntity?.Sizes || [];
-    return [...sizes].sort((a, b) => (a.ScrapsToRefine ?? Infinity) - (b.ScrapsToRefine ?? Infinity));
-  });
-
   $effect(() => {
     if (user) {
       const entity = isCreateMode ? (existingChange?.data || emptyEntity) : fish;
@@ -230,12 +274,12 @@
     if (activeEntity?.Properties?.Description) return activeEntity.Properties.Description;
     const name = activeEntity?.Name || 'Fish';
     const biomes = (activeEntity?.Properties?.Biomes || []).join(', ');
-    const difficulty = activeEntity?.Properties?.Difficulty;
-    const species = activeEntity?.Species?.Name;
+    const tier = activeEntity?.Properties?.Difficulty;
+    const family = activeEntity?.Species?.Name;
     const parts = [name];
-    if (species) parts.push(`${species} species`);
+    if (family) parts.push(`${family} family`);
     if (biomes) parts.push(biomes);
-    if (difficulty) parts.push(`${difficulty} difficulty`);
+    if (tier) parts.push(`${tier} tier`);
     parts.push('fish in Entropia Universe');
     return parts.join(' - ');
   });
@@ -251,46 +295,27 @@
       .map(it => ({ value: it.Name, label: it.Name }));
   });
 
-  function addSize() {
-    const current = Array.isArray(activeEntity?.Sizes) ? [...activeEntity.Sizes] : [];
-    current.push({ Name: '', Strength: null, ScrapsToRefine: null });
-    updateField('Sizes', current);
-  }
 
-  function removeSize(index) {
-    const current = (activeEntity?.Sizes || []).filter((_, i) => i !== index);
-    updateField('Sizes', current);
-  }
-
-  function updateSize(index, field, value) {
-    const current = (activeEntity?.Sizes || []).map((s, i) =>
-      i === index ? { ...s, [field]: value } : s
-    );
-    updateField('Sizes', current);
-  }
-
-  // Only Fish-type species are offered in the picker. Typing a name not in
-  // the list creates a new Fish species on save.
+  // Family dropdown: fed from MobSpecies rows with CodexType='Fish'. Seeded
+  // to the 11 game families (Cod/Carp/Eel/Tuna/Pike/Bass/Catfish/Salmon/
+  // Sturgeon/Swordfish/Misc) by migration 090 — this is a closed set; new
+  // entries via free text are no longer supported.
   let fishSpeciesOptions = $derived.by(() => {
     if (!$editMode || !Array.isArray(data.speciesList)) return [];
     return data.speciesList
       .filter(s => s?.Properties?.CodexType === 'Fish')
-      .map(s => ({ value: s.Name, label: s.Name, _raw: s }));
+      .map(s => ({ value: s.Name, label: s.Name }));
   });
 
+  // Side-effect when the Family dropdown changes: suggest a FishOil name
+  // matching the family if the user hasn't set one yet. InlineEdit already
+  // wrote Properties `Species.Name` via its `path` prop.
   function handleSpeciesSelect(e) {
     const name = e?.value ?? '';
-    updateField('Species.Name', name);
     if (name && !activeEntity?.FishOil?.Name) {
       updateField('FishOil.Name', `${name} Fish Oil`);
     }
   }
-
-  let isExistingSpecies = $derived.by(() => {
-    const name = activeEntity?.Species?.Name;
-    if (!name || !Array.isArray(data.speciesList)) return false;
-    return data.speciesList.some(s => s.Name === name && s.Properties?.CodexType === 'Fish');
-  });
 
   // ===== Multi-select add/remove for biomes, rod types, and planets =====
 
@@ -314,24 +339,12 @@
     updateField('Properties.Biomes', current);
   }
 
-  let timeAddOptions = $derived.by(() => {
-    const selected = new Set(activeEntity?.Properties?.TimesOfDay || []);
-    return TIMES_OF_DAY
-      .filter(t => !selected.has(t))
-      .map(t => ({ value: t, label: t }));
-  });
-
-  function addTime(t) {
-    if (!t) return;
-    const current = Array.isArray(activeEntity?.Properties?.TimesOfDay) ? [...activeEntity.Properties.TimesOfDay] : [];
-    if (current.includes(t)) return;
-    current.push(t);
-    updateField('Properties.TimesOfDay', current);
-  }
-
-  function removeTime(t) {
-    const current = (activeEntity?.Properties?.TimesOfDay || []).filter(x => x !== t);
-    updateField('Properties.TimesOfDay', current);
+  function updateTimeOfDay({ start, end }) {
+    if (start == null && end == null) {
+      updateField('Properties.TimeOfDay', null);
+    } else {
+      updateField('Properties.TimeOfDay', { Start: start, End: end });
+    }
   }
 
   // Remaining rod-type options (not yet selected).
@@ -471,7 +484,7 @@
             <span class="stat-value">{(activeEntity?.Properties?.Biomes || []).join(', ') || 'N/A'}</span>
           </div>
           <div class="stat-row primary">
-            <span class="stat-label">Difficulty</span>
+            <span class="stat-label">Tier</span>
             <span class="stat-value">{activeEntity?.Properties?.Difficulty || 'N/A'}</span>
           </div>
         </div>
@@ -480,14 +493,14 @@
         <div class="stats-section">
           <h4 class="section-title">General</h4>
           <div class="stat-row">
-            <span class="stat-label">Difficulty</span>
+            <span class="stat-label">Tier</span>
             <span class="stat-value">
               <InlineEdit
                 value={activeEntity?.Properties?.Difficulty}
                 path="Properties.Difficulty"
                 type="select"
-                placeholder="Select difficulty"
-                options={DIFFICULTIES.map(d => ({ value: d, label: d }))}
+                placeholder="Select tier"
+                options={TIERS.map(t => ({ value: t, label: t }))}
               />
             </span>
           </div>
@@ -503,21 +516,59 @@
             </span>
           </div>
           <div class="stat-row">
-            <span class="stat-label">Species</span>
+            <span class="stat-label">Strength</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Strength}
+                path="Properties.Strength"
+                type="number"
+                placeholder="-"
+              />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Scraps to Refine</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.ScrapsToRefine}
+                path="Properties.ScrapsToRefine"
+                type="number"
+                placeholder="-"
+              />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Rarity</span>
             <span class="stat-value">
               {#if $editMode}
-                <SearchInput
-                  value={activeEntity?.Species?.Name || ''}
-                  placeholder="Pick or type new..."
+                <InlineEdit
+                  value={activeEntity?.Properties?.Weight}
+                  path="Properties.Weight"
+                  type="number"
+                  placeholder="Weight 0..1"
+                />
+                {#if activeEntity?.Properties?.Weight != null}
+                  <span class="rarity-label">→ {weightToRarityLabel(activeEntity.Properties.Weight) ?? '-'}</span>
+                {/if}
+              {:else}
+                {weightToRarityLabel(activeEntity?.Properties?.Weight) ?? 'N/A'}
+              {/if}
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Family</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeEntity?.Species?.Name}
+                  path="Species.Name"
+                  type="select"
+                  placeholder="Select family"
                   options={fishSpeciesOptions}
                   onchange={handleSpeciesSelect}
-                  onselect={handleSpeciesSelect}
                 />
               {:else}
                 {activeEntity?.Species?.Name || 'N/A'}
-              {/if}
-              {#if $editMode && activeEntity?.Species?.Name}
-                <span class="species-state">{isExistingSpecies ? 'existing' : 'new'}</span>
               {/if}
             </span>
           </div>
@@ -577,28 +628,12 @@
 
           <div class="multi-group">
             <span class="multi-label">Time of Day</span>
-            {#if (activeEntity?.Properties?.TimesOfDay || []).length > 0}
-              <div class="chip-list">
-                {#each activeEntity.Properties.TimesOfDay as t}
-                  <span class="chip">
-                    {t}
-                    {#if $editMode}
-                      <button type="button" class="chip-remove" aria-label="Remove {t}" onclick={() => removeTime(t)}>×</button>
-                    {/if}
-                  </span>
-                {/each}
-              </div>
-            {:else if !$editMode}
-              <span class="empty-inline">Any</span>
-            {/if}
-            {#if $editMode && timeAddOptions.length > 0}
-              <select class="add-select" value="" onchange={(e) => { addTime(e.currentTarget.value); e.currentTarget.value = ''; }}>
-                <option value="" disabled>+ Add…</option>
-                {#each timeAddOptions as opt}
-                  <option value={opt.value}>{opt.label}</option>
-                {/each}
-              </select>
-            {/if}
+            <DayCycleSlider
+              start={activeEntity?.Properties?.TimeOfDay?.Start ?? null}
+              end={activeEntity?.Properties?.TimeOfDay?.End ?? null}
+              editable={$editMode}
+              onchange={updateTimeOfDay}
+            />
           </div>
 
           <div class="multi-group">
@@ -706,70 +741,6 @@
         </DataSection>
 
         <DataSection
-          title="Sizes"
-          expanded={true}
-          subtitle="{(activeEntity?.Sizes || []).length} sizes"
-        >
-          {#if $editMode}
-            {#if (activeEntity?.Sizes || []).length > 0}
-              <table class="sizes-table">
-                <thead>
-                  <tr>
-                    <th class="sizes-th-name">Name</th>
-                    <th class="sizes-th-num">Strength</th>
-                    <th class="sizes-th-num">Scraps to Refine</th>
-                    <th class="sizes-th-action"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each activeEntity.Sizes as size, i}
-                    <tr>
-                      <td>
-                        <input type="text" class="size-input" value={size.Name} placeholder="Size name"
-                          onchange={(e) => updateSize(i, 'Name', e.currentTarget.value)} />
-                      </td>
-                      <td>
-                        <input type="number" class="size-input size-input-num" value={size.Strength}
-                          placeholder="-" onchange={(e) => updateSize(i, 'Strength', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
-                      </td>
-                      <td>
-                        <input type="number" class="size-input size-input-num" value={size.ScrapsToRefine}
-                          placeholder="-" onchange={(e) => updateSize(i, 'ScrapsToRefine', e.currentTarget.value ? Number(e.currentTarget.value) : null)} />
-                      </td>
-                      <td class="sizes-td-action">
-                        <button type="button" class="chip-remove" aria-label="Remove size" onclick={() => removeSize(i)}>×</button>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            {/if}
-            <button type="button" class="add-btn" onclick={addSize}>+ Add size</button>
-          {:else if sortedSizes.length > 0}
-            <table class="sizes-table">
-              <thead>
-                <tr>
-                  <th class="sizes-th-name">Name</th>
-                  <th class="sizes-th-num">Strength</th>
-                  <th class="sizes-th-num">Scraps to Refine</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each sortedSizes as size}
-                  <tr>
-                    <td>{size.Name}</td>
-                    <td class="num">{size.Strength ?? '-'}</td>
-                    <td class="num">{size.ScrapsToRefine ?? '-'}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {:else}
-            <p class="muted">No sizes recorded yet.</p>
-          {/if}
-        </DataSection>
-
-        <DataSection
           title="Locations"
           expanded={true}
           subtitle="{(activeEntity?.Locations || []).reduce((n, l) => n + (l.Sectors?.length || 0), 0)} sectors"
@@ -821,17 +792,14 @@
     width: 100%;
   }
 
-  /* "existing" / "new" badge next to the Species section title */
-  .species-state {
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 999px;
-    background-color: var(--bg-color, var(--primary-color));
+  /* Derived rarity label beside the numeric Weight input */
+  .rarity-label {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 11px;
     color: var(--text-muted, #999);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin-left: 8px;
-    font-weight: 400;
   }
 
   /* Grouped multi-select rows inside a single Classifications section */
@@ -930,89 +898,4 @@
     margin: 0;
   }
 
-  /* Sizes table in article area */
-  .sizes-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  .sizes-table th {
-    text-align: left;
-    font-weight: 600;
-    padding: 6px 10px;
-    border-bottom: 2px solid var(--border-color, #555);
-    color: var(--text-muted, #999);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .sizes-table td {
-    padding: 5px 10px;
-    border-bottom: 1px solid var(--border-color-subtle, rgba(128, 128, 128, 0.2));
-  }
-
-  .sizes-table tr:hover {
-    background-color: var(--hover-bg, rgba(128, 128, 128, 0.08));
-  }
-
-  .sizes-th-name {
-    width: auto;
-  }
-
-  .sizes-th-num {
-    width: 120px;
-    text-align: right !important;
-  }
-
-  .sizes-th-action {
-    width: 32px;
-  }
-
-  .sizes-td-action {
-    text-align: center;
-  }
-
-  .sizes-table td.num {
-    text-align: right;
-  }
-
-  .size-input {
-    width: 100%;
-    padding: 4px 8px;
-    background-color: var(--bg-color, var(--primary-color));
-    color: var(--text-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 3px;
-    font-size: 13px;
-    box-sizing: border-box;
-  }
-
-  .size-input:focus {
-    border-color: var(--accent-color, #4a9eff);
-    outline: none;
-  }
-
-  .size-input-num {
-    text-align: right;
-  }
-
-  .add-btn {
-    width: 100%;
-    padding: 8px;
-    margin-top: 8px;
-    background-color: var(--bg-color, var(--primary-color));
-    color: var(--text-muted, #999);
-    border: 1px dashed var(--border-color, #555);
-    border-radius: 4px;
-    font-size: 13px;
-    cursor: pointer;
-    text-align: center;
-  }
-
-  .add-btn:hover {
-    border-color: var(--accent-color, #4a9eff);
-    color: var(--accent-color, #4a9eff);
-  }
 </style>

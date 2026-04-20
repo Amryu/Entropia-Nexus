@@ -5,7 +5,18 @@ const { idOffsets } = require('./constants');
 
 const queries = {
   Materials: 'SELECT * FROM ONLY "Materials"',
+  // Items.Id values that belong to an undiscovered fish (oil + sizes).
+  // Subtracting idOffsets.Materials from each recovers the Materials.Id to
+  // filter out of list and single-item responses.
+  UndiscoveredFishItemIds: 'SELECT "Id" FROM "UndiscoveredFishItemIds"',
 };
+
+async function loadHiddenMaterialIds() {
+  const { rows } = await pool.query(queries.UndiscoveredFishItemIds);
+  const ids = new Set();
+  for (const r of rows) ids.add(r.Id - idOffsets.Materials);
+  return ids;
+}
 
 function formatMaterial(x, data){
   const itemId = x.Id + idOffsets.Materials;
@@ -29,16 +40,29 @@ function formatMaterial(x, data){
 
 // DB methods
 async function getMaterials() {
-  const { rows } = await pool.query(queries.Materials);
-  const itemIds = rows.map(r => r.Id + idOffsets.Materials);
+  const [{ rows }, hidden] = await Promise.all([
+    pool.query(queries.Materials),
+    loadHiddenMaterialIds(),
+  ]);
+  const visible = rows.filter(r => !hidden.has(r.Id));
+  const itemIds = visible.map(r => r.Id + idOffsets.Materials);
   const [classIds, itemProps] = await Promise.all([
-    loadClassIds('Material', rows.map(r => r.Id)),
+    loadClassIds('Material', visible.map(r => r.Id)),
     loadItemProperties(itemIds)
   ]);
   const data = { ClassIds: classIds, ItemProps: itemProps };
-  return rows.map(r => formatMaterial(r, data));
+  return visible.map(r => formatMaterial(r, data));
 }
-const getMaterial = async (idOrName) => { const row = await getObjectByIdOrName(queries.Materials, 'Materials', idOrName); if (!row) return null; const itemId = row.Id + idOffsets.Materials; const [classIds, itemProps] = await Promise.all([loadClassIds('Material', [row.Id]), loadItemProperties([itemId])]); const data = { ClassIds: classIds, ItemProps: itemProps }; return formatMaterial(row, data); };
+const getMaterial = async (idOrName) => {
+  const row = await getObjectByIdOrName(queries.Materials, 'Materials', idOrName);
+  if (!row) return null;
+  const hidden = await loadHiddenMaterialIds();
+  if (hidden.has(row.Id)) return null;
+  const itemId = row.Id + idOffsets.Materials;
+  const [classIds, itemProps] = await Promise.all([loadClassIds('Material', [row.Id]), loadItemProperties([itemId])]);
+  const data = { ClassIds: classIds, ItemProps: itemProps };
+  return formatMaterial(row, data);
+};
 
 // Endpoints
 function register(app){
@@ -51,7 +75,7 @@ function register(app){
    *      '200':
    *        description: A list of materials
    */
-  app.get('/materials', async (req,res) => { res.json(await withCache('/materials', ['Materials', 'ClassIds', 'ItemProperties'], getMaterials)); });
+  app.get('/materials', async (req,res) => { res.json(await withCache('/materials', ['Materials', 'ClassIds', 'ItemProperties', 'FishDiscoveries'], getMaterials)); });
 
   /**
    * @swagger
@@ -71,7 +95,7 @@ function register(app){
    *      '404':
    *        description: Material not found
    */
-  app.get('/materials/:material', async (req,res) => { const r = await withCachedLookup('/materials', ['Materials', 'ClassIds', 'ItemProperties'], getMaterials, req.params.material); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/materials/:material', async (req,res) => { const r = await withCachedLookup('/materials', ['Materials', 'ClassIds', 'ItemProperties', 'FishDiscoveries'], getMaterials, req.params.material); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMaterials, getMaterial, formatMaterial };

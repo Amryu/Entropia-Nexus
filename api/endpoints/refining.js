@@ -7,6 +7,27 @@ const queries = {
   RefiningRecipes: 'SELECT "RefiningRecipes".*, "Items"."Name" AS "Product", "Items"."Type" AS "ProductType", "Items"."Value" AS "ProductValue" FROM ONLY "RefiningRecipes" INNER JOIN ONLY "Items" ON "RefiningRecipes"."ProductId" = "Items"."Id"',
 };
 
+// Recipes whose product or any ingredient references an undiscovered fish
+// material are filtered out in JS after query. Cheaper than rewriting the
+// base query with a CTE (the base query is also used by getObjectByIdOrName,
+// which blindly appends "WHERE ...").
+async function loadHiddenItemIds() {
+  const { pool } = require('./dbClient');
+  const { rows } = await pool.query(`SELECT "Id" FROM "UndiscoveredFishItemIds"`);
+  return new Set(rows.map(r => r.Id));
+}
+
+async function buildHiddenRecipeIdSet(hiddenItemIds) {
+  if (hiddenItemIds.size === 0) return new Set();
+  const { pool } = require('./dbClient');
+  const ids = Array.from(hiddenItemIds);
+  const { rows } = await pool.query(
+    `SELECT DISTINCT "RecipeId" FROM ONLY "RefiningIngredients" WHERE "ItemId" = ANY($1::int[])`,
+    [ids]
+  );
+  return new Set(rows.map(r => r.RecipeId));
+}
+
 function formatRefiningIngredient(x){
   return { Amount: x.Amount !== null ? Number(x.Amount) : null, Item: { Name: x.ItemName, Properties: { Type: x.ItemType, Economy: { MaxTT: x.ItemValue !== null ? Number(x.ItemValue) : null } }, Links: { "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}` } } };
 }
@@ -34,14 +55,23 @@ async function getRefiningRecipes(products = null, ingredients = null){
   if (products !== null) where = pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [products.map(x => `${x}`)]);
   else if (ingredients !== null) where = pgp.as.format(' WHERE "RefiningRecipes"."Id" IN (SELECT DISTINCT "RecipeId" FROM ONLY "RefiningIngredients" INNER JOIN ONLY "Items" ON "RefiningIngredients"."ItemId" = "Items"."Id" WHERE "Items"."Name" IN ($1:csv))', [ingredients.map(x => `${x}`)]);
   const { pool } = require('./dbClient');
-  const { rows } = await pool.query(queries.RefiningRecipes + where);
-  const ing = await _getRefiningRecipeIngredients(rows.map(r=>r.Id));
-  return rows.map(r => formatRefiningRecipe(r, ing));
+  const [{ rows }, hiddenItemIds] = await Promise.all([
+    pool.query(queries.RefiningRecipes + where),
+    loadHiddenItemIds(),
+  ]);
+  const hiddenRecipeIds = await buildHiddenRecipeIdSet(hiddenItemIds);
+  const visible = rows.filter(r => !hiddenItemIds.has(r.ProductId) && !hiddenRecipeIds.has(r.Id));
+  const ing = await _getRefiningRecipeIngredients(visible.map(r=>r.Id));
+  return visible.map(r => formatRefiningRecipe(r, ing));
 }
 
 async function getRefiningRecipe(idOrName){
   const row = await getObjectByIdOrName(queries.RefiningRecipes, 'RefiningRecipes', idOrName);
   if (!row) return null;
+  const hiddenItemIds = await loadHiddenItemIds();
+  if (hiddenItemIds.has(row.ProductId)) return null;
+  const hiddenRecipeIds = await buildHiddenRecipeIdSet(hiddenItemIds);
+  if (hiddenRecipeIds.has(row.Id)) return null;
   const ing = await _getRefiningRecipeIngredients([row.Id]);
   return formatRefiningRecipe(row, ing);
 }
@@ -77,7 +107,7 @@ function register(app){
         if (products.length === 0) return res.status(400).send('Products cannot be empty');
         res.json(await getRefiningRecipes(products));
       } else {
-        res.json(await withCache('/refiningrecipes', ['RefiningRecipes', 'RefiningIngredients', ...ITEM_TABLES], getRefiningRecipes));
+        res.json(await withCache('/refiningrecipes', ['RefiningRecipes', 'RefiningIngredients', 'FishDiscoveries', ...ITEM_TABLES], getRefiningRecipes));
       }
     } catch (e){ next(e); }
   });
@@ -102,7 +132,7 @@ function register(app){
    */
   app.get('/refiningrecipes/:refiningRecipe', async (req,res,next) => {
     try {
-      const result = await withCachedLookup('/refiningrecipes', ['RefiningRecipes', 'RefiningIngredients', ...ITEM_TABLES], getRefiningRecipes, req.params.refiningRecipe);
+      const result = await withCachedLookup('/refiningrecipes', ['RefiningRecipes', 'RefiningIngredients', 'FishDiscoveries', ...ITEM_TABLES], getRefiningRecipes, req.params.refiningRecipe);
       if (result) res.json(result); else res.status(404).send();
     } catch (e){ next(e); }
   });

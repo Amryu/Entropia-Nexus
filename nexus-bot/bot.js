@@ -11,6 +11,7 @@ import { handleReward, fetchEntityForReward, isAuthorizedReviewer, isDiscordAdmi
 import { getTypeLink, getStateLabel } from './util.js';
 import { renderMapChange } from './mapRenderer.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
+import { syncFishDiscoveries } from './fish-discoveries.js';
 import { checkAuctions, refreshAuctionColors } from './auctions.js';
 import { collectEuName } from './commands/verification/setEuName.js';
 import { resumeVerification } from './commands/verification/verifyUser.js';
@@ -2508,6 +2509,22 @@ async function runMarketPriceResolution() {
 }
 setInterval(() => runScheduled('runMarketPriceResolution', runMarketPriceResolution), 60 * 60 * 1000);
 runScheduled('runMarketPriceResolution', runMarketPriceResolution); // Run once on startup
+
+// Denormalize fish discovery globals (nexus_users) into nexus.FishDiscoveries.
+// Without this, no fish is visible on the public site. Runs every 10 minutes
+// plus once on startup so new discoveries surface quickly.
+async function runFishDiscoverySync() {
+  try {
+    const r = await syncFishDiscoveries();
+    if (r && r.total > 0) {
+      console.log(`Fish discoveries synced: ${r.total} matched, ${r.affected} row(s) upserted`);
+    }
+  } catch (e) {
+    console.error('Error syncing fish discoveries:', e);
+  }
+}
+setInterval(() => runScheduled('runFishDiscoverySync', runFishDiscoverySync), 10 * 60 * 1000);
+runScheduled('runFishDiscoverySync', runFishDiscoverySync);
 
 // Snapshot exchange prices then compute exchange summaries at quarter-hour boundaries (:00, :15, :30, :45)
 const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;

@@ -12,8 +12,14 @@ const queries = {
     END AS "Gender"
   FROM ONLY "Items" i
   LEFT JOIN ONLY "Armors" a ON i."Type" = 'Armor' AND i."Id" = a."Id" + ${idOffsets.Armors}
-  LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}`
+  LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}`,
+  UndiscoveredFishItemIds: 'SELECT "Id" FROM "UndiscoveredFishItemIds"',
 };
+
+async function loadHiddenItemIds() {
+  const { rows } = await pool.query(queries.UndiscoveredFishItemIds);
+  return new Set(rows.map(r => r.Id));
+}
 
 // Non-default `Type.toLowerCase() + 's'` URL paths. Each entry maps an
 // Items.Type value to the API path segment used in the item's `$Url`.
@@ -54,14 +60,16 @@ function formatItem(x, classIdMap, itemProps){
 }
 
 async function getItems() {
-  const [{ rows }, { rows: classIdRows }] = await Promise.all([
+  const [{ rows }, { rows: classIdRows }, hidden] = await Promise.all([
     pool.query(queries.Items),
     pool.query('SELECT "EntityType", "EntityId", "ClassId" FROM ONLY "ClassIds"'),
+    loadHiddenItemIds(),
   ]);
+  const visible = rows.filter(r => !hidden.has(r.Id));
   const classIdMap = {};
   for (const r of classIdRows) classIdMap[`${r.EntityType}:${r.EntityId}`] = String(r.ClassId);
-  const itemProps = await loadItemProperties(rows.map(r => r.Id));
-  return rows.map(r => formatItem(r, classIdMap, itemProps));
+  const itemProps = await loadItemProperties(visible.map(r => r.Id));
+  return visible.map(r => formatItem(r, classIdMap, itemProps));
 }
 
 async function getItem(idOrName) {
@@ -80,6 +88,8 @@ async function getItem(idOrName) {
     row = await getObjectByIdOrName(queries.Items, 'Items', idOrName);
   }
   if (!row) return null;
+  const hidden = await loadHiddenItemIds();
+  if (hidden.has(row.Id)) return null;
   const rawId = row.Id % 100000;
   const [classIds, itemProps] = await Promise.all([
     loadClassIds(row.Type, [rawId]),
@@ -104,7 +114,8 @@ async function getItemsByIds(ids) {
   FROM ONLY "Items" i
   LEFT JOIN ONLY "Armors" a ON i."Type" = 'Armor' AND i."Id" = a."Id" + ${idOffsets.Armors}
   LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}
-  WHERE i."Id" = ANY($1)`;
+  WHERE i."Id" = ANY($1)
+    AND i."Id" NOT IN (SELECT "Id" FROM "UndiscoveredFishItemIds")`;
   const { rows } = await pool.query(sql, [validIds]);
 
   // Load ClassIds grouped by entity type
@@ -144,7 +155,7 @@ function register(app){
       const ids = req.query.Ids.split(',').map(s => s.trim()).filter(Boolean);
       res.json(await getItemsByIds(ids));
     } else {
-      res.json(await withCache('/items', [...ITEM_TABLES, 'ClassIds', 'ItemProperties'], getItems));
+      res.json(await withCache('/items', [...ITEM_TABLES, 'ClassIds', 'ItemProperties', 'FishDiscoveries'], getItems));
     }
   });
   app.get('/items/:item', async (req,res) => {
@@ -166,7 +177,7 @@ function register(app){
      *      '404':
      *        description: Item not found
      */
-    const it = await withCachedLookup('/items', [...ITEM_TABLES, 'ClassIds', 'ItemProperties'], getItems, req.params.item);
+    const it = await withCachedLookup('/items', [...ITEM_TABLES, 'ClassIds', 'ItemProperties', 'FishDiscoveries'], getItems, req.params.item);
     if (it) res.json(it); else res.status(404).send('Item not found');
   });
 }

@@ -943,8 +943,11 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties?.Description ?? null },
+      // Species is now the fish *family* (Cod, Carp, ..., Misc). The 11
+      // family rows are seeded by migration 090; we still upsert here as a
+      // safety net but no longer fall back to the fish's own name.
       { name: "SpeciesId", value: async (x, c) => {
-        const speciesName = x.Species?.Name || x.Name;
+        const speciesName = x.Species?.Name;
         if (!speciesName) return null;
         await c.query(
           `INSERT INTO "MobSpecies" ("Name", "CodexBaseCost", "CodexType")
@@ -958,6 +961,9 @@ export const UpsertConfigs = {
       }},
       { name: "Difficulty", value: x => x.Properties?.Difficulty ?? null },
       { name: "MinDepth", value: x => x.Properties?.MinDepth ?? null },
+      { name: "Strength", value: x => x.Properties?.Strength ?? null },
+      { name: "ScrapsToRefine", value: x => x.Properties?.ScrapsToRefine ?? null },
+      { name: "Weight", value: x => x.Properties?.Weight ?? null },
       { name: "PreferredLureTypes", value: x => Array.isArray(x.Properties?.PreferredLureTypes) ? x.Properties.PreferredLureTypes : [] },
       { name: "FishOilItemId", value: async (x, c) => {
         if (!x.FishOil?.Name) return null;
@@ -966,14 +972,24 @@ export const UpsertConfigs = {
           [x.FishOil.Name]
         ).then(res => res.rows[0]?.Id ?? null);
       }},
-      { name: "TimeOfDay", value: x => x.Properties?.TimesOfDay ?? [] }
+      { name: "ItemId", value: async (x, c) => {
+        // Per-fish material item (the fish you catch). Resolve via name on
+        // the Items view so the frontend only has to submit the item name.
+        const name = x.FishItem?.Name || x.Name;
+        if (!name) return null;
+        return await c.query(
+          `SELECT "Id" FROM "Items" WHERE "Name" = $1 AND "Type" IN ('Fish','Material')`,
+          [name]
+        ).then(res => res.rows[0]?.Id ?? null);
+      }},
+      { name: "TimeOfDayStart", value: x => validateTimeOfDayGrid(x.Properties?.TimeOfDay?.Start) },
+      { name: "TimeOfDayEnd",   value: x => validateTimeOfDayGrid(x.Properties?.TimeOfDay?.End) }
     ],
     table: "Fish",
     relationChangeFunc: async (client, id, x) => {
       await applyFishPlanetsChanges(client, id, x.Planets || []);
       await applyFishBiomesChanges(client, id, x.Properties?.Biomes || []);
       await applyFishRodTypesChanges(client, id, x.Properties?.RodTypes || []);
-      await applyFishSizesChanges(client, id, x.Sizes || []);
       await applyFishSectorLocationsChanges(client, id, x.Locations || []);
     }
   },
@@ -1793,6 +1809,23 @@ async function applyMobAttackChanges(client, maturityId, attacks) {
   ]);
 }
 
+// Fish.TimeOfDay is stored as two numeric(3,2) values on the 0..1 day cycle
+// snapped to a 0.05 grid (21 steps, 1.00 wraps to 0.00). Both must be NULL
+// or both set — enforced by DB CHECK, mirrored here to fail fast with a
+// useful error message instead of a constraint violation.
+function validateTimeOfDayGrid(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 1) {
+    throw new Error(`Fish TimeOfDay value out of range: ${v}`);
+  }
+  const step = Math.round(n * 20);
+  if (Math.abs(n * 20 - step) > 1e-6) {
+    throw new Error(`Fish TimeOfDay value not on 0.05 grid: ${v}`);
+  }
+  return Number((step / 20).toFixed(2));
+}
+
 async function applyFishBiomesChanges(client, fishId, biomes) {
   biomes = Array.isArray(biomes) ? biomes.filter(Boolean) : [];
 
@@ -1837,61 +1870,6 @@ async function applyFishRodTypesChanges(client, fishId, rodTypes) {
     `INSERT INTO "FishRodTypes" ("FishId", "RodType") VALUES ($1, $2::"FishingRodType") ON CONFLICT DO NOTHING`,
     [fishId, rt]
   )));
-}
-
-async function applyFishSizesChanges(client, fishId, sizes) {
-  sizes = Array.isArray(sizes) ? sizes.filter(s => s?.Name) : [];
-
-  await client.query(
-    `DELETE FROM ONLY "FishSizes"
-     WHERE "FishId" = $1
-       AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`,
-    [fishId, sizes.map(s => s.Name)]
-  );
-
-  const weight = 0.01;
-  const ttValue = 0.01;
-
-  for (const size of sizes) {
-    const existing = await client.query(
-      `SELECT "ItemId" FROM ONLY "FishSizes" WHERE "FishId" = $1 AND "Name" = $2`,
-      [fishId, size.Name]
-    );
-    let itemId = existing.rows[0]?.ItemId ?? null;
-
-    if (itemId) {
-      await client.query(
-        `UPDATE ONLY "Materials" SET "Name" = $1, "Weight" = $2, "Value" = $3 WHERE "Id" = $4`,
-        [size.Name, weight, ttValue, itemId - 1000000]
-      );
-    } else {
-      const byName = await client.query(
-        `SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1`,
-        [size.Name]
-      );
-      if (byName.rows[0]) {
-        await client.query(
-          `UPDATE ONLY "Materials" SET "Weight" = $1, "Value" = $2 WHERE "Id" = $3`,
-          [weight, ttValue, byName.rows[0].Id]
-        );
-        itemId = byName.rows[0].Id + 1000000;
-      } else {
-        const inserted = await client.query(
-          `INSERT INTO "Materials" ("Name", "Weight", "Value") VALUES ($1, $2, $3) RETURNING "Id"`,
-          [size.Name, weight, ttValue]
-        );
-        itemId = inserted.rows[0].Id + 1000000;
-      }
-    }
-
-    await client.query(
-      `INSERT INTO "FishSizes" ("FishId", "Name", "Strength", "ScrapsToRefine", "ItemId")
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT ("FishId", "Name") DO UPDATE SET
-         "Strength" = $3, "ScrapsToRefine" = $4, "ItemId" = $5`,
-      [fishId, size.Name, size.Strength ?? null, size.ScrapsToRefine ?? null, itemId]
-    );
-  }
 }
 
 async function applyFishSectorLocationsChanges(client, fishId, locations) {

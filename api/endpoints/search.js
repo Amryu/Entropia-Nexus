@@ -581,6 +581,7 @@ async function searchItems(query, fuzzy = false, options = {}){
         LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
         LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
         WHERE "Items"."Type" = ANY($${filterTypeIdx}::text[])
+          AND "Items"."Id" NOT IN (SELECT "Id" FROM "UndiscoveredFishItemIds")
         UNION ALL
         SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
           ${armorMatchedPieceSubquery} AS "MatchedName"
@@ -616,7 +617,8 @@ async function searchItems(query, fuzzy = false, options = {}){
           FROM ONLY "Items"
           LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
           LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
-          WHERE ${armorExclude}${armorSetUnion}
+          WHERE ${armorExclude}
+            AND "Items"."Id" NOT IN (SELECT "Id" FROM "UndiscoveredFishItemIds")${armorSetUnion}
         )
         ${whereClause}
       ) x
@@ -662,7 +664,7 @@ async function searchItems(query, fuzzy = false, options = {}){
 // Map search result Type to cache config for enrichment
 const ENRICHMENT_MAP = {
   Weapon:       { route: '/weapons',      tables: ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getter: getWeapons },
-  Material:     { route: '/materials',     tables: ['Materials'], getter: getMaterials },
+  Material:     { route: '/materials',     tables: ['Materials', 'FishDiscoveries'], getter: getMaterials },
   Blueprint:    { route: '/blueprints',    tables: ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials'], getter: getBlueprints },
   ArmorSet:     { route: '/armorsets',     tables: ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials'], getter: getArmorSets },
   Vehicle:      { route: '/vehicles',      tables: ['Vehicles'], getter: getVehicles },
