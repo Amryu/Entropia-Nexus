@@ -5,16 +5,22 @@ const { withCache, withCachedLookup } = require('./responseCache');
 // Fish are hidden from all public queries until they have a confirmed
 // discovery global (populated by nexus-bot into "FishDiscoveries").
 // INNER JOIN, not LEFT JOIN — an undiscovered fish must not appear.
+// The fish oil material is keyed by naming convention: the Material whose
+// name equals `{MobSpecies.Name} Fish Oil` (migration 091 seeds the 10
+// family oils). We join to Materials directly rather than through the
+// Items view so the lookup remains a pure Materials join regardless of
+// whether the row has been tagged Type='Fish'/Material yet.
 const baseQuery = `
   SELECT f.*,
          ms."Name" AS "SpeciesName",
          ms."CodexBaseCost" AS "SpeciesCodexBaseCost",
          ms."CodexType" AS "SpeciesCodexType",
-         oil_t."Name" AS "FishOilName"
+         oil."Id" AS "FishOilMaterialId",
+         oil."Name" AS "FishOilName"
     FROM ONLY "Fish" f
     INNER JOIN "FishDiscoveries" fd ON fd."FishId" = f."Id"
     LEFT JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
-    LEFT JOIN "Items" oil_t ON oil_t."Id" = f."FishOilItemId"
+    LEFT JOIN ONLY "Materials" oil ON oil."Name" = ms."Name" || ' Fish Oil'
 `;
 
 // Map a catalog rarity weight (0..1, lower = rarer) to the same rarity
@@ -132,7 +138,7 @@ function formatFish(f, rel) {
     } : null,
     FishOil: f.FishOilName ? {
       Name: f.FishOilName,
-      Links: { "$Url": `/items/${f.FishOilItemId}` }
+      Links: { "$Url": `/items/materials/${f.FishOilMaterialId}` }
     } : null,
     Planets: rel.planetsByFish[f.Id] || [],
     Locations: rel.locationsByFish[f.Id] || [],

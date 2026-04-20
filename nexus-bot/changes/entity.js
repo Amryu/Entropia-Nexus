@@ -943,9 +943,11 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties?.Description ?? null },
-      // Species is now the fish *family* (Cod, Carp, ..., Misc). The 11
-      // family rows are seeded by migration 090; we still upsert here as a
-      // safety net but no longer fall back to the fish's own name.
+      // Species is the fish *family* (Cod, Carp, ..., Swordfish). The 10
+      // family rows are seeded by migration 090; upsert here as a safety
+      // net without falling back to the fish's own name. Fish oil is not
+      // stored as an FK — the API reads `{Species.Name} Fish Oil` out of
+      // Materials directly — so no side-effect needed here.
       { name: "SpeciesId", value: async (x, c) => {
         const speciesName = x.Species?.Name;
         if (!speciesName) return null;
@@ -957,7 +959,10 @@ export const UpsertConfigs = {
              "CodexType" = 'Fish'::"CodexType"`,
           [speciesName]
         );
-        return await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [speciesName]).then(res => res.rows[0]?.Id ?? null);
+        return await c.query(
+          `SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`,
+          [speciesName]
+        ).then(res => res.rows[0]?.Id ?? null);
       }},
       { name: "Difficulty", value: x => x.Properties?.Difficulty ?? null },
       { name: "MinDepth", value: x => x.Properties?.MinDepth ?? null },
@@ -965,13 +970,6 @@ export const UpsertConfigs = {
       { name: "ScrapsToRefine", value: x => x.Properties?.ScrapsToRefine ?? null },
       { name: "Weight", value: x => x.Properties?.Weight ?? null },
       { name: "PreferredLureTypes", value: x => Array.isArray(x.Properties?.PreferredLureTypes) ? x.Properties.PreferredLureTypes : [] },
-      { name: "FishOilItemId", value: async (x, c) => {
-        if (!x.FishOil?.Name) return null;
-        return await c.query(
-          `SELECT "Id" FROM "Items" WHERE "Name" = $1`,
-          [x.FishOil.Name]
-        ).then(res => res.rows[0]?.Id ?? null);
-      }},
       { name: "ItemId", value: async (x, c) => {
         // Per-fish material item (the fish you catch). Resolve via name on
         // the Items view so the frontend only has to submit the item name.

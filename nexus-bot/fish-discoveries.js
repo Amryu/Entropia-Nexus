@@ -18,11 +18,15 @@ const poolNexus = new pg.Pool({
 async function loadFishNameMap() {
   const [fishRes, oilRes] = await Promise.all([
     poolNexus.query(`SELECT "Id", "Name" FROM ONLY "Fish"`),
+    // Fish oil is resolved by naming convention: `{Species.Name} Fish Oil`.
+    // A discovery global whose target_name matches the family oil marks
+    // every fish in the family as discovered, so one oil name can map to
+    // many FishIds here.
     poolNexus.query(`
-      SELECT f."Id" AS "FishId", oil."Name"
+      SELECT f."Id" AS "FishId", (ms."Name" || ' Fish Oil') AS "Name"
         FROM ONLY "Fish" f
-        JOIN ONLY "Items" oil ON oil."Id" = f."FishOilItemId"
-       WHERE f."FishOilItemId" IS NOT NULL
+        JOIN ONLY "MobSpecies" ms ON ms."Id" = f."SpeciesId"
+       WHERE ms."CodexType" = 'Fish'::"CodexType"
     `),
   ]);
 
